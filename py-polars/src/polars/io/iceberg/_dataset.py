@@ -24,39 +24,25 @@ if TYPE_CHECKING:
     import pyiceberg.schema
     from pyiceberg.table import Table
 
+    from polars.io.cloud._utils import NoPickleOption
     from polars.lazyframe.frame import LazyFrame
 
 
+@dataclass(kw_only=True)
 class IcebergDataset:
     """Dataset interface for PyIceberg."""
 
-    def __init__(
-        self,
-        source: str | Table,
-        *,
-        snapshot_id: int | None = None,
-        iceberg_storage_properties: dict[str, Any] | None = None,
-        reader_override: Literal["native", "pyiceberg"] | None = None,
-        use_metadata_statistics: bool = True,
-        fast_deletion_count: bool = True,
-        use_pyiceberg_filter: bool = True,
-    ) -> None:
-        self._metadata_path = None
-        self._table = None
-        self._snapshot_id = snapshot_id
-        self._iceberg_storage_properties = iceberg_storage_properties
-        self._reader_override: Literal["native", "pyiceberg"] | None = reader_override
-        self._use_metadata_statistics = use_metadata_statistics
-        self._fast_deletion_count = fast_deletion_count
-        self._use_pyiceberg_filter = use_pyiceberg_filter
+    # We don't serialize the table object - the remote machine should use its
+    # own permissions to reconstruct the table object from the metadata path.
+    table_: NoPickleOption[Table]
+    metadata_path_: str | None
 
-        # Accept either a path or a table object. The one we don't have is
-        # lazily initialized when needed.
-
-        if isinstance(source, str):
-            self._metadata_path = source
-        else:
-            self._table = source
+    snapshot_id: int | None
+    iceberg_storage_properties: dict[str, Any] | None
+    reader_override: Literal["native", "pyiceberg"] | None
+    use_metadata_statistics: bool
+    fast_deletion_count: bool
+    use_pyiceberg_filter: bool
 
     #
     # PythonDatasetProvider interface functions
@@ -114,8 +100,8 @@ class IcebergDataset:
 
         if (
             pyarrow_predicate is not None
-            and self._use_metadata_statistics
-            and self._use_pyiceberg_filter
+            and self.use_metadata_statistics
+            and self.use_pyiceberg_filter
         ):
             iceberg_table_filter = try_convert_pyarrow_predicate(pyarrow_predicate)
 
@@ -129,13 +115,13 @@ class IcebergDataset:
 
             eprint(
                 "IcebergDataset: to_dataset_scan(): "
-                f"snapshot ID: {self._snapshot_id}, "
+                f"snapshot ID: {self.snapshot_id}, "
                 f"limit: {limit}, "
                 f"projection: {projection}, "
                 f"filter_columns: {filter_columns}, "
                 f"pyarrow_predicate: {pyarrow_predicate_display}, "
                 f"iceberg_table_filter: {iceberg_table_filter_display}, "
-                f"self._use_metadata_statistics: {self._use_metadata_statistics}"
+                f"self.use_metadata_statistics: {self.use_metadata_statistics}"
             )
 
         verbose_print_sensitive(
@@ -150,7 +136,7 @@ class IcebergDataset:
                 f"tbl.metadata.current_snapshot_id: {tbl.metadata.current_snapshot_id}"
             )
 
-        snapshot_id = self._snapshot_id
+        snapshot_id = self.snapshot_id
         schema_id = None
 
         if snapshot_id is not None:
@@ -192,7 +178,7 @@ class IcebergDataset:
             return None
 
         # Take from parameter first then envvar
-        reader_override = self._reader_override or os.getenv(
+        reader_override = self.reader_override or os.getenv(
             "POLARS_ICEBERG_READER_OVERRIDE"
         )
 
@@ -226,7 +212,7 @@ class IcebergDataset:
         )
         statistics_loader: IcebergStatisticsLoader | None = (
             IcebergStatisticsLoader(tbl, iceberg_schema.select(*filter_columns))
-            if self._use_metadata_statistics and filter_columns is not None
+            if self.use_metadata_statistics and filter_columns is not None
             else None
         )
         deletion_files: dict[int, list[str]] = {}
@@ -334,9 +320,9 @@ class IcebergDataset:
 
             storage_options = (
                 _convert_iceberg_to_object_store_storage_options(
-                    self._iceberg_storage_properties
+                    self.iceberg_storage_properties
                 )
-                if self._iceberg_storage_properties is not None
+                if self.iceberg_storage_properties is not None
                 else None
             )
 
@@ -352,12 +338,12 @@ class IcebergDataset:
                 row_count=(
                     (total_physical_rows, total_deleted_rows)
                     if (
-                        self._use_metadata_statistics
-                        and (self._fast_deletion_count or total_deleted_rows == 0)
+                        self.use_metadata_statistics
+                        and (self.fast_deletion_count or total_deleted_rows == 0)
                     )
                     else None
                 ),
-                _snapshot_id_key=snapshot_id_key,
+                snapshot_id_key=snapshot_id_key,
             )
 
         elif reader_override == "native":
@@ -388,7 +374,7 @@ class IcebergDataset:
             is_pure=True,
         )
 
-        return _PyIcebergScanData(lf=lf, _snapshot_id_key=snapshot_id_key)
+        return _PyIcebergScanData(lf=lf, snapshot_id_key=snapshot_id_key)
 
     #
     # Accessors
@@ -396,117 +382,50 @@ class IcebergDataset:
 
     def metadata_path(self) -> str:
         """Fetch the metadata path."""
-        if self._metadata_path is None:
-            if self._table is None:
+        if self.metadata_path_ is None:
+            if self.table_.get() is None:
                 msg = "impl error: both metadata_path and table are None"
                 raise ValueError(msg)
 
-            self._metadata_path = self.table().metadata_location
+            self.metadata_path_ = self.table().metadata_location
 
-        return self._metadata_path
+        return self.metadata_path_
 
     def table(self) -> Table:
         """Fetch the PyIceberg Table object."""
-        if self._table is None:
-            if self._metadata_path is None:
+        if self.table_.get() is None:
+            if self.metadata_path_ is None:
                 msg = "impl error: both metadata_path and table are None"
                 raise ValueError(msg)
 
             if verbose():
-                eprint(f"IcebergDataset: construct table from {self._metadata_path = }")
+                eprint(f"IcebergDataset: construct table from {self.metadata_path_ = }")
 
             from pyiceberg.table import StaticTable
 
-            self._table = StaticTable.from_metadata(
-                metadata_location=self._metadata_path,
-                properties=self._iceberg_storage_properties or {},
+            self.table_.set(
+                StaticTable.from_metadata(
+                    metadata_location=self.metadata_path_,
+                    properties=self.iceberg_storage_properties or {},
+                )
             )
 
-        return self._table
-
-    #
-    # Serialization functions
-    #
-    # We don't serialize the iceberg table object - the remote machine should
-    # use their own permissions to reconstruct the table object from the path.
-    #
+        return self.table_.get()  # type: ignore[return-value]
 
     def __getstate__(self) -> dict[str, Any]:
-        state = {
-            "metadata_path": self.metadata_path(),
-            "snapshot_id": self._snapshot_id,
-            "iceberg_storage_properties": self._iceberg_storage_properties,
-            "reader_override": self._reader_override,
-            "use_metadata_statistics": self._use_metadata_statistics,
-            "fast_deletion_count": self._fast_deletion_count,
-            "use_pyiceberg_filter": self._use_pyiceberg_filter,
-        }
-
-        if verbose():
-            path_repr = state["metadata_path"]
-            snapshot_id = f"'{v}'" if (v := state["snapshot_id"]) is not None else None
-            keys_repr = _redact_dict_values(state["iceberg_storage_properties"])
-            reader_override = state["reader_override"]
-            use_metadata_statistics = state["use_metadata_statistics"]
-            fast_deletion_count = state["fast_deletion_count"]
-            use_pyiceberg_filter = state["use_pyiceberg_filter"]
-
-            eprint(
-                "IcebergDataset: getstate(): "
-                f"path: '{path_repr}', "
-                f"snapshot_id: {snapshot_id}, "
-                f"iceberg_storage_properties: {keys_repr}, "
-                f"reader_override: {reader_override}, "
-                f"use_metadata_statistics: {use_metadata_statistics}, "
-                f"fast_deletion_count: {fast_deletion_count}, "
-                f"use_pyiceberg_filter: {use_pyiceberg_filter}"
-            )
-
-        return state
+        self.metadata_path()
+        return self.__dict__
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        if verbose():
-            path_repr = state["metadata_path"]
-            snapshot_id = f"'{v}'" if (v := state["snapshot_id"]) is not None else None
-            keys_repr = _redact_dict_values(state["iceberg_storage_properties"])
-            reader_override = state["reader_override"]
-            use_metadata_statistics = state["use_metadata_statistics"]
-            fast_deletion_count = state["fast_deletion_count"]
-            use_pyiceberg_filter = state["use_pyiceberg_filter"]
-
-            eprint(
-                "IcebergDataset: getstate(): "
-                f"path: '{path_repr}', "
-                f"snapshot_id: '{snapshot_id}', "
-                f"iceberg_storage_properties: {keys_repr}, "
-                f"reader_override: {reader_override}, "
-                f"use_metadata_statistics: {use_metadata_statistics}, "
-                f"fast_deletion_count: {fast_deletion_count}, "
-                f"use_pyiceberg_filter: {use_pyiceberg_filter}"
-            )
-
-        IcebergDataset.__init__(
-            self,
-            state["metadata_path"],
-            snapshot_id=state["snapshot_id"],
-            iceberg_storage_properties=state["iceberg_storage_properties"],
-            reader_override=state["reader_override"],
-            use_metadata_statistics=state["use_metadata_statistics"],
-            fast_deletion_count=state["fast_deletion_count"],
-            use_pyiceberg_filter=state["use_pyiceberg_filter"],
-        )
+        self.__dict__ = state
 
 
 class _ResolvedScanDataBase(ABC):
     @abstractmethod
     def to_lazyframe(self) -> pl.LazyFrame: ...
 
-    @property
-    @abstractmethod
-    def snapshot_id_key(self) -> str: ...
 
-
-@dataclass
+@dataclass(kw_only=True)
 class _NativeIcebergScanData(_ResolvedScanDataBase):
     """Resolved parameters for a native Iceberg scan."""
 
@@ -524,7 +443,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     storage_options: dict[str, str] | None
     # (physical, deleted)
     row_count: tuple[int, int] | None
-    _snapshot_id_key: str
+    snapshot_id_key: str
 
     def to_lazyframe(self) -> pl.LazyFrame:
         from polars.io.parquet.functions import scan_parquet
@@ -542,26 +461,18 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
             _row_count=self.row_count,
         )
 
-    @property
-    def snapshot_id_key(self) -> str:
-        return self._snapshot_id_key
 
-
-@dataclass
+@dataclass(kw_only=True)
 class _PyIcebergScanData(_ResolvedScanDataBase):
     """Resolved parameters for reading via PyIceberg."""
 
     # We're not interested in inspecting anything for the pyiceberg scan, so
     # this class is just a wrapper.
     lf: pl.LazyFrame
-    _snapshot_id_key: str
+    snapshot_id_key: str
 
     def to_lazyframe(self) -> pl.LazyFrame:
         return self.lf
-
-    @property
-    def snapshot_id_key(self) -> str:
-        return self._snapshot_id_key
 
 
 def _redact_dict_values(obj: Any) -> Any:
