@@ -205,6 +205,8 @@ pub(super) fn kurtosis(s: &Column, fisher: bool, bias: bool) -> PolarsResult<Col
         .map(|opt_v| Column::new(s.name().clone(), &[opt_v]))
 }
 
+// pub(super) // TODO: [amber] min/max by
+
 pub(super) fn arg_unique(s: &Column) -> PolarsResult<Column> {
     // @scalar-opt
     s.as_materialized_series()
