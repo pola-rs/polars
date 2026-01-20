@@ -42,6 +42,10 @@ pub(super) fn add_business_days(
     let start = &s[0];
     let n = &s[1];
     let holidays = &s[2];
+    polars_ensure!(
+        holidays.len() == 1 || holidays.len() == start.len(),
+        ShapeMismatch: "number of holiday lists must be either 1 or the number of dates"
+    );
     polars_ops::prelude::add_business_days(
         start.as_materialized_series(),
         n.as_materialized_series(),
