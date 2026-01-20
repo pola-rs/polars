@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import importlib
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal
 
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_ldf
@@ -11,6 +11,7 @@ from polars.io.iceberg._dataset import IcebergDataset
 if TYPE_CHECKING:
     from pyiceberg.table import Table
 
+    from polars._typing import StorageOptionsDict
     from polars.lazyframe.frame import LazyFrame
 
 
@@ -18,7 +19,7 @@ def scan_iceberg(
     source: str | Table,
     *,
     snapshot_id: int | None = None,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     reader_override: Literal["native", "pyiceberg"] | None = None,
     use_metadata_statistics: bool = True,
     fast_deletion_count: bool | None = None,

@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     import pyiceberg.schema
     from pyiceberg.table import Table
 
+    from polars._typing import StorageOptionsDict
     from polars.io.cloud._utils import NoPickleOption
     from polars.lazyframe.frame import LazyFrame
 
@@ -38,7 +39,7 @@ class IcebergDataset:
     metadata_path_: str | None
 
     snapshot_id: int | None
-    iceberg_storage_properties: dict[str, Any] | None
+    iceberg_storage_properties: StorageOptionsDict | None
     reader_override: Literal["native", "pyiceberg"] | None
     use_metadata_statistics: bool
     fast_deletion_count: bool
@@ -440,7 +441,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     # access the statistics loader directly to inspect the values before
     # coalescing.
     statistics_loader: IcebergStatisticsLoader | None
-    storage_options: dict[str, str] | None
+    storage_options: StorageOptionsDict | None
     # (physical, deleted)
     row_count: tuple[int, int] | None
     snapshot_id_key: str

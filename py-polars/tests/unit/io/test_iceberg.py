@@ -414,6 +414,45 @@ def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+def test_scan_iceberg_polars_storage_options_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("namespace")
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(1, "row_index", IntegerType()),
+            NestedField(2, "file_path", StringType()),
+        ),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+
+    pl.DataFrame(
+        {"row_index": [0, 1, 2, 3, 4], "file_path": None},
+        schema={"row_index": pl.Int32, "file_path": pl.String},
+    ).write_iceberg(tbl, mode="append")
+
+    capfd.readouterr()
+
+    pl.scan_iceberg(
+        tbl, storage_options={"max_retries": 13, "file_cache_ttl": 37}
+    ).collect()
+
+    capture = capfd.readouterr().err
+    assert "max_retries: 13, file_cache_ttl: 37" in capture
+
+
+@pytest.mark.write_disk
 @pytest.mark.parametrize("reader_override", ["pyiceberg", "native"])
 def test_scan_iceberg_collect_without_version_scans_latest(
     tmp_path: Path,

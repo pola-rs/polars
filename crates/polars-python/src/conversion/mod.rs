@@ -14,8 +14,6 @@ use polars::chunked_array::object::PolarsObjectSafe;
 use polars::frame::row::Row;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-#[cfg(feature = "cloud")]
-use polars::io::cloud::CloudOptions;
 use polars::prelude::ColumnMapping;
 use polars::prelude::default_values::{
     DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
@@ -1377,16 +1375,6 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<QuoteStyle> {
         };
         Ok(Wrap(parsed))
     }
-}
-
-#[cfg(feature = "cloud")]
-pub(crate) fn parse_cloud_options(
-    cloud_scheme: Option<CloudScheme>,
-    keys_and_values: impl IntoIterator<Item = (String, String)>,
-) -> PyResult<CloudOptions> {
-    let iter: &mut dyn Iterator<Item = _> = &mut keys_and_values.into_iter();
-    let out = CloudOptions::from_untyped_config(cloud_scheme, iter).map_err(PyPolarsErr::from)?;
-    Ok(out)
 }
 
 #[cfg(feature = "list_sets")]

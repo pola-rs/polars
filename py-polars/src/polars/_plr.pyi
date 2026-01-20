@@ -828,8 +828,6 @@ class PyLazyFrame:
         include_file_paths: str | None,
         cloud_options: dict[str, Any] | None,
         credential_provider: Any | None,
-        retries: int,
-        file_cache_ttl: int | None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_csv(
@@ -863,8 +861,6 @@ class PyLazyFrame:
         schema: Any | None,
         cloud_options: dict[str, Any] | None,
         credential_provider: Any | None,
-        retries: int,
-        file_cache_ttl: int | None,
         include_file_paths: str | None,
     ) -> PyLazyFrame: ...
     @staticmethod
@@ -880,7 +876,6 @@ class PyLazyFrame:
     def new_from_ipc(
         sources: Any,
         scan_options: ScanOptions,
-        file_cache_ttl: int | None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_scan_lines(
@@ -888,7 +883,6 @@ class PyLazyFrame:
         *,
         name: str,
         scan_options: ScanOptions,
-        file_cache_ttl: int | None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_dataset_object(dataset_object: Any) -> PyLazyFrame: ...
@@ -2227,7 +2221,7 @@ def concat_df_horizontal(dfs: Any, strict: bool = False) -> PyDataFrame: ...
 # functions.io
 def read_ipc_schema(py_f: Any) -> dict[str, Any]: ...
 def read_parquet_metadata(
-    py_f: Any, storage_options: Any, credential_provider: Any, retries: int
+    py_f: Any, storage_options: Any, credential_provider: Any
 ) -> dict[str, str]: ...
 def read_clipboard_string() -> str: ...
 def write_clipboard_string(s: str) -> None: ...
@@ -2397,7 +2391,6 @@ class PyCatalogClient:
         table_name: str,
         cloud_options: dict[str, str] | None,
         credential_provider: Any | None,
-        retries: int,
     ) -> PyLazyFrame: ...
     def create_catalog(
         self, catalog_name: str, comment: str | None, storage_root: str | None

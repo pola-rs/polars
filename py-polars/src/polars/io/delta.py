@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from polars._dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
-from polars.io.cloud._utils import _get_path_scheme
+from polars.io.cloud._utils import POLARS_STORAGE_CONFIG_KEYS, _get_path_scheme
 from polars.io.parquet import scan_parquet
 from polars.io.pyarrow_dataset.functions import scan_pyarrow_dataset
 from polars.io.scan_options.cast_options import ScanCastOptions
@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from deltalake import DeltaTable
 
     from polars import DataFrame, DataType, LazyFrame
+    from polars._typing import StorageOptionsDict
     from polars.io.cloud import CredentialProviderFunction
 
 
@@ -29,7 +30,7 @@ def read_delta(
     version: int | str | datetime | None = None,
     columns: list[str] | None = None,
     rechunk: bool | None = None,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     delta_table_options: dict[str, Any] | None = None,
     use_pyarrow: bool = False,
@@ -166,7 +167,7 @@ def scan_delta(
     source: str | Path | DeltaTable,
     *,
     version: int | str | datetime | None = None,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     delta_table_options: dict[str, Any] | None = None,
     use_pyarrow: bool = False,
@@ -432,7 +433,7 @@ def _resolve_delta_lake_uri(table_uri: str | Path, *, strict: bool = True) -> st
 def _get_delta_lake_table(
     table_path: str | Path | DeltaTable,
     version: int | str | datetime | None = None,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     delta_table_options: dict[str, Any] | None = None,
 ) -> deltalake.DeltaTable:
     """
@@ -444,6 +445,14 @@ def _get_delta_lake_table(
     `here <https://delta-io.github.io/delta-rs/usage/installation/>`_.
     """
     _check_if_delta_available()
+
+    if storage_options is not None:
+        # Don't pass these to delta as it errors on non-string type values.
+        storage_options = {
+            k: v
+            for k, v in storage_options.items()
+            if k not in POLARS_STORAGE_CONFIG_KEYS
+        }
 
     if isinstance(table_path, deltalake.DeltaTable):
         if any(
