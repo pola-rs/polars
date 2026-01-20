@@ -41,6 +41,7 @@ impl SupportedCompression {
 /// Decompress `bytes` if compression is detected, otherwise simply return it.
 /// An `out` vec must be given for ownership of the decompressed data.
 #[allow(clippy::ptr_arg)]
+#[deprecated(note = "may cause OOM, use CompressedReader instead")]
 pub fn maybe_decompress_bytes<'a>(bytes: &'a [u8], out: &'a mut Vec<u8>) -> PolarsResult<&'a [u8]> {
     assert!(out.is_empty());
 

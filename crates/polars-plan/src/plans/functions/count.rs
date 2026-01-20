@@ -213,6 +213,7 @@ pub(super) fn count_rows_ndjson(
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
     use polars_core::config;
+    #[expect(deprecated)] // TODO use CompressedReader
     use polars_io::utils::compression::maybe_decompress_bytes;
 
     if sources.is_empty() {
@@ -243,6 +244,7 @@ pub(super) fn count_rows_ndjson(
 
             let owned = &mut vec![];
             let reader = polars_io::ndjson::core::JsonLineReader::new(std::io::Cursor::new(
+                #[expect(deprecated)] // TODO use CompressedReader
                 maybe_decompress_bytes(&memslice[..], owned)?,
             ));
             reader.count()

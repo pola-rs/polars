@@ -273,6 +273,7 @@ where
                 polars_ensure!(!self.ignore_errors, InvalidOperation: "'ignore_errors' only supported in ndjson");
                 let mut bytes = rb.deref().to_vec();
                 let owned = &mut vec![];
+                #[expect(deprecated)] // JSON is not a row-format
                 compression::maybe_decompress_bytes(&bytes, owned)?;
                 // the easiest way to avoid ownership issues is by implicitly figuring out if
                 // decompression happened (owned is only populated on decompress), then pick which bytes to parse
