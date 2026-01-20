@@ -184,11 +184,70 @@ impl CloudType {
 
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 fn get_retry_config(max_retries: usize) -> RetryConfig {
-    RetryConfig {
-        backoff: BackoffConfig::default(),
+    use std::time::Duration;
+
+    use polars_core::config;
+
+    let mut out = RetryConfig {
         max_retries,
-        retry_timeout: std::time::Duration::from_secs(10),
+        ..Default::default()
+    };
+
+    let RetryConfig {
+        backoff:
+            BackoffConfig {
+                init_backoff,
+                max_backoff,
+                base,
+            },
+        max_retries: _,
+        retry_timeout,
+    } = &mut out;
+
+    *retry_timeout = std::time::Duration::from_secs(10);
+
+    if let Ok(v) = std::env::var("POLARS_STORAGE_BACKOFF_INIT_MS").as_deref() {
+        let v: u64 = v
+            .parse()
+            .ok()
+            .filter(|x| *x > 0)
+            .unwrap_or_else(|| panic!("invalid value for POLARS_STORAGE_BACKOFF_INIT_MS: {v}"));
+
+        *init_backoff = Duration::from_millis(v);
+    };
+
+    if let Ok(v) = std::env::var("POLARS_STORAGE_BACKOFF_MAX_MS").as_deref() {
+        let v: u64 = v
+            .parse()
+            .ok()
+            .filter(|x| *x > 0)
+            .unwrap_or_else(|| panic!("invalid value for POLARS_STORAGE_BACKOFF_MAX_MS: {v}"));
+
+        *max_backoff = Duration::from_millis(v);
+    };
+
+    if let Ok(v) = std::env::var("POLARS_STORAGE_BACKOFF_BASE_MULTIPLIER").as_deref() {
+        let v: f64 = v.parse().ok().filter(|x| *x > 0.0).unwrap_or_else(|| {
+            panic!("invalid value for POLARS_STORAGE_BACKOFF_BASE_MULTIPLIER: {v}")
+        });
+
+        *base = v;
+    };
+
+    if let Ok(v) = std::env::var("POLARS_STORAGE_RETRY_TIMEOUT_MS").as_deref() {
+        let v: u64 =
+            v.parse().ok().filter(|x| *x > 0).unwrap_or_else(|| {
+                panic!("invalid value for POLARS_STORAGE_RETRY_TIMEOUT_MS: {v}")
+            });
+
+        *retry_timeout = Duration::from_millis(v);
+    };
+
+    if config::verbose() {
+        eprintln!("get_retry_config: {:?}", &out)
     }
+
+    out
 }
 
 pub static USER_AGENT: &str = concat!("polars", "/", env!("CARGO_PKG_VERSION"),);
