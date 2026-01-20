@@ -773,19 +773,21 @@ unsafe fn series_get_bypass_validity<'a>(
     }
 }
 
-fn binary_search(
+fn binary_search<P>(
     vec: &DataFrameBuffer,
-    search_value: &AnyValue,
-    is_before: fn(Ordering) -> bool,
+    predicate: P,
     params: &MergeJoinParams,
     sp: &MergeJoinSideParams,
-) -> PolarsResult<usize> {
+) -> PolarsResult<usize>
+where
+    P: Fn(&AnyValue<'_>) -> bool,
+{
     let mut lower = 0;
     let mut upper = vec.height();
     while lower < upper {
         let mid = (lower + upper) / 2;
         let mid_val = unsafe { vec.get_bypass_validity(&sp.key_col, mid, params) };
-        if is_before(keys_cmp(search_value, &mid_val, params)) {
+        if predicate(&mid_val) {
             upper = mid;
         } else {
             lower = mid + 1;
@@ -800,7 +802,8 @@ fn binary_search_lower(
     params: &MergeJoinParams,
     sp: &MergeJoinSideParams,
 ) -> PolarsResult<usize> {
-    binary_search(vec, sv, Ordering::is_le, params, sp)
+    let predicate = |x: &AnyValue<'_>| keys_cmp(sv, x, params).is_le();
+    binary_search(vec, predicate, params, sp)
 }
 
 fn binary_search_upper(
@@ -809,7 +812,8 @@ fn binary_search_upper(
     params: &MergeJoinParams,
     sp: &MergeJoinSideParams,
 ) -> PolarsResult<usize> {
-    binary_search(vec, sv, Ordering::is_lt, params, sp)
+    let predicate = |x: &AnyValue<'_>| keys_cmp(sv, x, params).is_lt();
+    binary_search(vec, predicate, params, sp)
 }
 
 fn keys_cmp(lhs: &AnyValue, rhs: &AnyValue, params: &MergeJoinParams) -> Ordering {
