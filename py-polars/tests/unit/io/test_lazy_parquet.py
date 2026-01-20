@@ -1228,3 +1228,78 @@ def test_sink_large_rows_25834(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         partition_by="idx",
     )
     assert_frame_equal(pl.scan_parquet(tmp_path / "partitioned").collect(), df)
+
+
+@pytest.mark.write_disk
+def test_scan_parquet_sample(tmp_path: Path) -> None:
+    """Test scan_parquet followed by sample."""
+    n = 100_000
+    file_path = tmp_path / "sample_test.parquet"
+    df = pl.DataFrame({"a": range(n), "b": range(n, 2 * n)})
+    df.write_parquet(file_path)
+
+    fraction = 0.3
+    result = pl.scan_parquet(file_path).sample(fraction=fraction, seed=42).collect()
+
+    # Bernoulli sampling: expect ~n*fraction rows
+    expected = n * fraction
+    std = (n * fraction * (1 - fraction)) ** 0.5
+    assert abs(result.shape[0] - expected) < 5 * std
+    assert result.shape[1] == 2
+
+
+@pytest.mark.write_disk
+def test_scan_parquet_filter_sample(tmp_path: Path) -> None:
+    """Test scan_parquet.filter.sample - filter first, then sample."""
+    n = 100_000
+    file_path = tmp_path / "filter_sample_test.parquet"
+    df = pl.DataFrame({"a": range(n), "b": range(n, 2 * n)})
+    df.write_parquet(file_path)
+
+    # Filter to keep ~50% of rows (a < n/2), then sample 30%
+    filter_threshold = n // 2
+    fraction = 0.3
+    result = (
+        pl.scan_parquet(file_path)
+        .filter(pl.col("a") < filter_threshold)
+        .sample(fraction=fraction, seed=42)
+        .collect()
+    )
+
+    # After filter: ~filter_threshold rows, then Bernoulli sampling
+    filtered_count = filter_threshold
+    expected = filtered_count * fraction
+    std = (filtered_count * fraction * (1 - fraction)) ** 0.5
+    assert abs(result.shape[0] - expected) < 5 * std
+    assert result.shape[1] == 2
+    # Verify filter was applied
+    assert result["a"].max() < filter_threshold
+
+
+@pytest.mark.write_disk
+def test_scan_parquet_sample_filter(tmp_path: Path) -> None:
+    """Test scan_parquet.sample.filter - sample first, then filter."""
+    n = 100_000
+    file_path = tmp_path / "sample_filter_test.parquet"
+    df = pl.DataFrame({"a": range(n), "b": range(n, 2 * n)})
+    df.write_parquet(file_path)
+
+    # Sample 50% first, then filter to keep ~50% of those (a < n/2)
+    fraction = 0.5
+    filter_threshold = n // 2
+    result = (
+        pl.scan_parquet(file_path)
+        .sample(fraction=fraction, seed=42)
+        .filter(pl.col("a") < filter_threshold)
+        .collect()
+    )
+
+    # After sample: ~n*fraction rows, then filter keeps ~50% of those
+    sampled_count = n * fraction
+    expected = sampled_count * 0.5  # filter keeps ~50%
+    std = (sampled_count * 0.5 * 0.5) ** 0.5
+    # Allow larger tolerance since we have two sources of variance
+    assert abs(result.shape[0] - expected) < 10 * std
+    assert result.shape[1] == 2
+    # Verify filter was applied
+    assert result["a"].max() < filter_threshold
