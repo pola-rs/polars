@@ -1273,7 +1273,7 @@ def test_scan_parquet_filter_sample(tmp_path: Path) -> None:
     assert abs(result.shape[0] - expected) < 5 * std
     assert result.shape[1] == 2
     # Verify filter was applied
-    assert result["a"].max() < filter_threshold
+    assert result["a"].max() < filter_threshold  # type: ignore[operator]
 
 
 @pytest.mark.write_disk
@@ -1302,4 +1302,4 @@ def test_scan_parquet_sample_filter(tmp_path: Path) -> None:
     assert abs(result.shape[0] - expected) < 10 * std
     assert result.shape[1] == 2
     # Verify filter was applied
-    assert result["a"].max() < filter_threshold
+    assert result["a"].max() < filter_threshold  # type: ignore[operator]

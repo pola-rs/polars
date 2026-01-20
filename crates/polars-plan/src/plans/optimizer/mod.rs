@@ -120,17 +120,17 @@ fn sample_pushdown(root: Node, ir_arena: &mut Arena<IR>) {
 
         // Check if this is MapFunction(Sample)
         let sample_info: Option<(Node, f64, bool, u64)> = {
-            if let IR::MapFunction { input, function } = ir {
-                if let FunctionIR::Sample {
-                    fraction,
-                    with_replacement,
-                    seed,
-                } = function
-                {
-                    Some((*input, *fraction, *with_replacement, seed.unwrap_or(0)))
-                } else {
-                    None
-                }
+            if let IR::MapFunction {
+                input,
+                function:
+                    FunctionIR::Sample {
+                        fraction,
+                        with_replacement,
+                        seed,
+                    },
+            } = ir
+            {
+                Some((*input, *fraction, *with_replacement, seed.unwrap_or(0)))
             } else {
                 None
             }

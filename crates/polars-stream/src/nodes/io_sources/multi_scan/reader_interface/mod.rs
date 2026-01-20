@@ -170,7 +170,11 @@ impl SampleConfig {
     /// Generate Poisson counts for a batch of rows.
     /// Each row appears Poisson(fraction) times on average.
     /// Returns (mask, counts) where mask[i] = counts[i] > 0.
-    pub fn generate_poisson_counts(&self, num_rows: usize, row_offset: u64) -> (Vec<bool>, Vec<u32>) {
+    pub fn generate_poisson_counts(
+        &self,
+        num_rows: usize,
+        row_offset: u64,
+    ) -> (Vec<bool>, Vec<u32>) {
         use rand::prelude::Distribution;
         use rand_distr::Poisson;
 

@@ -6944,7 +6944,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Sample from this LazyFrame.
 
-        Row order is preserved. The number of rows returned is approximate ``fraction * n``.
+        Row order is preserved.
+        The number of rows returned is approximate ``fraction * n``.
 
         Parameters
         ----------
@@ -6984,11 +6985,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if len(fraction) != 1:
                 msg = "Sample fraction must be a single value."
                 raise ValueError(msg)
-            fraction = fraction[0]
+            fraction = float(fraction[0])
 
-        return self._from_pyldf(
-            self._ldf.sample_frac(fraction, with_replacement, seed)
-        )
+        return self._from_pyldf(self._ldf.sample_frac(fraction, with_replacement, seed))
 
     def last(self) -> LazyFrame:
         """

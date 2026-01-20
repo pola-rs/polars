@@ -1365,15 +1365,9 @@ impl PyLazyFrame {
 
     #[cfg(feature = "random")]
     #[pyo3(signature = (fraction, with_replacement, seed=None))]
-    fn sample_frac(
-        &self,
-        fraction: f64,
-        with_replacement: bool,
-        seed: Option<u64>,
-    ) -> Self {
+    fn sample_frac(&self, fraction: f64, with_replacement: bool, seed: Option<u64>) -> Self {
         let ldf = self.ldf.read().clone();
-        ldf.sample_frac(fraction, with_replacement, seed)
-            .into()
+        ldf.sample_frac(fraction, with_replacement, seed).into()
     }
 
     #[cfg(feature = "pivot")]

@@ -166,7 +166,7 @@ def _force_n_chunks_like(df: pl.LazyFrame, height: int, n: int) -> pl.LazyFrame:
 
 
 def test_sample_lazy_frame_bernoulli() -> None:
-    """Test LazyFrame.sample uses Bernoulli sampling (probabilistic, order-preserving)."""
+    """Test sample uses Bernoulli sampling (probabilistic, order-preserving)."""
     n = 10000
     lf = pl.LazyFrame({"foo": range(n), "bar": range(n, 2 * n)})
 
@@ -191,13 +191,21 @@ def test_sample_lazy_frame_preserves_order() -> None:
     values_without_replacement = result_without_replacement["foo"].to_list()
     assert values_without_replacement == sorted(values_without_replacement)
 
-    result_with_replacement = lf.sample(fraction=0.5, with_replacement=True, seed=0).collect()
+    result_with_replacement = lf.sample(
+        fraction=0.5, with_replacement=True, seed=0
+    ).collect()
     values_with_replacement = result_with_replacement["foo"].to_list()
     assert values_with_replacement == sorted(values_with_replacement)
 
-    result_without_replacement_force_n_chunks = _force_n_chunks_like(lf, 1000, 10).sample(fraction=0.5, seed=0).collect()
-    values_without_replacement_force_n_chunks = result_without_replacement_force_n_chunks["foo"].to_list()
-    assert values_without_replacement_force_n_chunks == sorted(values_without_replacement_force_n_chunks)
+    result_without_replacement_force_n_chunks = (
+        _force_n_chunks_like(lf, 1000, 10).sample(fraction=0.5, seed=0).collect()
+    )
+    values_without_replacement_force_n_chunks = (
+        result_without_replacement_force_n_chunks["foo"].to_list()
+    )
+    assert values_without_replacement_force_n_chunks == sorted(
+        values_without_replacement_force_n_chunks
+    )
 
 
 def test_sample_lazy_frame_with_replacement() -> None:
@@ -208,7 +216,8 @@ def test_sample_lazy_frame_with_replacement() -> None:
     fraction = 0.6
     result = lf.sample(fraction=fraction, with_replacement=True, seed=42).collect()
 
-    # Poisson: expect ~n*fraction rows, sum of Poisson(fraction) has mean=n*fraction, var=n*fraction
+    # Poisson: expect ~n*fraction rows, sum of Poisson(fraction) has
+    # mean=n*fraction, var=n*fraction
     expected = n * fraction
     std = (n * fraction) ** 0.5
     assert abs(result.shape[0] - expected) < 5 * std
@@ -242,8 +251,12 @@ def test_sample_lazy_frame_reproducibility() -> None:
     assert_frame_equal(result1, result2)
 
     lf_10_chunks = _force_n_chunks_like(lf, 100, 10)
-    result1_10_chunks = lf_10_chunks.sample(fraction=0.5, seed=42, with_replacement=True).collect()
-    result2_10_chunks = lf_10_chunks.sample(fraction=0.5, seed=42, with_replacement=True).collect()
+    result1_10_chunks = lf_10_chunks.sample(
+        fraction=0.5, seed=42, with_replacement=True
+    ).collect()
+    result2_10_chunks = lf_10_chunks.sample(
+        fraction=0.5, seed=42, with_replacement=True
+    ).collect()
     assert_frame_equal(result1_10_chunks, result2_10_chunks)
 
 

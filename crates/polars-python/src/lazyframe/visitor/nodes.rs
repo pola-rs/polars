@@ -682,13 +682,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     fraction,
                     with_replacement,
                     seed,
-                } => (
-                    "sample",
-                    fraction,
-                    *with_replacement,
-                    *seed,
-                )
-                    .into_py_any(py)?,
+                } => ("sample", fraction, *with_replacement, *seed).into_py_any(py)?,
             },
         }
         .into_py_any(py),

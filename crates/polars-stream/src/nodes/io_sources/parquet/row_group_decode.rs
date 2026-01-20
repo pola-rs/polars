@@ -801,8 +801,7 @@ impl RowGroupDecoder {
 
         // Filter row_index if present
         if !live_columns.is_empty() {
-            live_columns =
-                filter_cols(live_columns, &mask, self.target_values_per_thread).await?;
+            live_columns = filter_cols(live_columns, &mask, self.target_values_per_thread).await?;
         }
 
         // Decode all projected columns using prefiltered decode
@@ -822,32 +821,30 @@ impl RowGroupDecoder {
 
             parallelize_first_to_local(
                 TaskPriority::Low,
-                (0..num_fields)
-                    .step_by(cols_per_thread)
-                    .map(move |offset| {
-                        let row_group_data = row_group_data.clone();
-                        let projected_arrow_fields = projected_arrow_fields.clone();
-                        let mask = mask.clone();
-                        let mask_bitmap = mask_bitmap.clone();
+                (0..num_fields).step_by(cols_per_thread).map(move |offset| {
+                    let row_group_data = row_group_data.clone();
+                    let projected_arrow_fields = projected_arrow_fields.clone();
+                    let mask = mask.clone();
+                    let mask_bitmap = mask_bitmap.clone();
 
-                        async move {
-                            (offset..offset.saturating_add(cols_per_thread).min(num_fields))
-                                .map(|i| {
-                                    let projection = &projected_arrow_fields[i];
+                    async move {
+                        (offset..offset.saturating_add(cols_per_thread).min(num_fields))
+                            .map(|i| {
+                                let projection = &projected_arrow_fields[i];
 
-                                    let col = decode_column_prefiltered(
-                                        projection.arrow_field(),
-                                        row_group_data.as_ref(),
-                                        &mask,
-                                        &mask_bitmap,
-                                        expected_num_rows,
-                                    )?;
+                                let col = decode_column_prefiltered(
+                                    projection.arrow_field(),
+                                    row_group_data.as_ref(),
+                                    &mask,
+                                    &mask_bitmap,
+                                    expected_num_rows,
+                                )?;
 
-                                    projection.apply_transform(col)
-                                })
-                                .collect::<PolarsResult<UnitVec<_>>>()
-                        }
-                    }),
+                                projection.apply_transform(col)
+                            })
+                            .collect::<PolarsResult<UnitVec<_>>>()
+                    }
+                }),
             )
         };
 

@@ -8,7 +8,7 @@ use rand_distr::{Normal, StandardNormal, StandardUniform, Uniform};
 use crate::prelude::DataType::Float64;
 use crate::prelude::*;
 use crate::random::get_global_random_u64;
-use crate::utils::{accumulate_dataframes_vertical_unchecked, NoNull};
+use crate::utils::{NoNull, accumulate_dataframes_vertical_unchecked};
 
 fn create_rand_index_with_replacement(n: usize, len: usize, seed: Option<u64>) -> IdxCa {
     if len == 0 {
@@ -284,8 +284,9 @@ impl DataFrame {
 
                     for chunk_start in (0..height).step_by(CHUNK_SIZE) {
                         let chunk_end = (chunk_start + CHUNK_SIZE).min(height);
-                        let mut indices =
-                            Vec::with_capacity(((chunk_end - chunk_start) as f64 * fraction) as usize);
+                        let mut indices = Vec::with_capacity(
+                            ((chunk_end - chunk_start) as f64 * fraction) as usize,
+                        );
 
                         for i in chunk_start..chunk_end {
                             let count = poisson.sample(&mut rng) as usize;
