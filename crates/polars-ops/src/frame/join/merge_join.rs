@@ -20,9 +20,8 @@ pub fn match_keys(
     probe_keys: &Series,
     gather_build: &mut Vec<IdxSize>,
     gather_probe: &mut Vec<IdxSize>,
-    gather_unmatched_probe: &mut Vec<IdxSize>,
+    gather_probe_unmatched: Option<&mut Vec<IdxSize>>,
     build_emit_unmatched: bool,
-    probe_emit_unmatched: bool,
     descending: bool,
     nulls_equal: bool,
     limit_results: usize,
@@ -37,9 +36,8 @@ pub fn match_keys(
                 probe_keys.as_ref().as_ref(),
                 gather_build,
                 gather_probe,
-                gather_unmatched_probe,
+                gather_probe_unmatched,
                 build_emit_unmatched,
-                probe_emit_unmatched,
                 descending,
                 nulls_equal,
                 limit_results,
@@ -74,9 +72,8 @@ pub fn match_keys(
             probe_keys.len(),
             gather_build,
             gather_probe,
-            gather_unmatched_probe,
+            gather_probe_unmatched,
             build_emit_unmatched,
-            probe_emit_unmatched,
             descending,
             nulls_equal,
             limit_results,
@@ -94,9 +91,8 @@ fn match_keys_impl<'a, T: PolarsDataType>(
     probe_keys: &'a ChunkedArray<T>,
     gather_build: &mut Vec<IdxSize>,
     gather_probe: &mut Vec<IdxSize>,
-    gather_probe_unmatched: &mut Vec<IdxSize>,
+    mut gather_probe_unmatched: Option<&mut Vec<IdxSize>>,
     build_emit_unmatched: bool,
-    probe_emit_unmatched: bool,
     descending: bool,
     nulls_equal: bool,
     limit_results: usize,
@@ -138,18 +134,18 @@ where
 
                 match ord {
                     Ordering::Equal => {
-                        if probe_emit_unmatched {
-                            gather_probe_unmatched
+                        if let Some(probe_unmatched) = gather_probe_unmatched.as_mut() {
+                            probe_unmatched
                                 .extend(probe_first_unmatched as IdxSize..probe_idx as IdxSize);
                             probe_first_unmatched = probe_first_unmatched.max(probe_idx + 1);
                         }
                         gather_build.push(build_row_offset as IdxSize);
                         gather_probe.push(probe_idx as IdxSize);
                         build_keyval_matched = true;
-                    }
+                    },
                     Ordering::Greater => {
-                        if probe_emit_unmatched {
-                            gather_probe_unmatched
+                        if let Some(probe_unmatched) = gather_probe_unmatched.as_mut() {
+                            probe_unmatched
                                 .extend(probe_first_unmatched as IdxSize..=probe_idx as IdxSize);
                             probe_first_unmatched = probe_first_unmatched.max(probe_idx + 1);
                         }
@@ -157,7 +153,7 @@ where
                     },
                     Ordering::Less => {
                         break;
-                    }
+                    },
                 }
             }
         }
@@ -167,8 +163,8 @@ where
         }
         build_row_offset += 1;
     }
-    if probe_emit_unmatched {
-        gather_probe_unmatched.extend(probe_first_unmatched as IdxSize..probe_key.len() as IdxSize);
+    if let Some(probe_unmatched) = gather_probe_unmatched {
+        probe_unmatched.extend(probe_first_unmatched as IdxSize..probe_key.len() as IdxSize);
         probe_first_unmatched = probe_key.len();
     }
     probe_row_offset = probe_key.len();
@@ -181,9 +177,8 @@ fn match_null_keys_impl(
     probe_n: usize,
     gather_build: &mut Vec<IdxSize>,
     gather_probe: &mut Vec<IdxSize>,
-    gather_probe_unmatched: &mut Vec<IdxSize>,
+    gather_probe_unmatched: Option<&mut Vec<IdxSize>>,
     build_emit_unmatched: bool,
-    probe_emit_unmatched: bool,
     _descending: bool,
     nulls_equal: bool,
     limit_results: usize,
@@ -210,8 +205,8 @@ fn match_null_keys_impl(
             gather_build.extend(0..build_n as IdxSize);
             gather_probe.extend(repeat_n(IdxSize::MAX, build_n));
         }
-        if probe_emit_unmatched {
-            gather_probe_unmatched.extend(probe_last_matched as IdxSize..probe_n as IdxSize);
+        if let Some(probe_unmatched) = gather_probe_unmatched {
+            probe_unmatched.extend(probe_last_matched as IdxSize..probe_n as IdxSize);
             probe_last_matched = probe_n;
         }
     }
