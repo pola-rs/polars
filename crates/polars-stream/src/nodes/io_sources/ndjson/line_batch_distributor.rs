@@ -64,6 +64,7 @@ impl LineBatchDistributor {
             let range = global_idx_map.map_range(range);
 
             let chunk = &global_bytes[range];
+            let mut remainder_combines_to_full_chunk = false;
 
             // Split off the chunk occurring after the last newline char.
             let chunk_remainder = if chunk_idx == n_chunks - 1 {
@@ -71,17 +72,20 @@ impl LineBatchDistributor {
                 &[]
             } else if reverse {
                 // Remainder is on the left because we are parsing lines in reverse:
-                // chunk:     ---\n---------
-                // remainder: -----
-                let end_idx = chunk
-                    .iter()
-                    .position(|c| *c == LF)
-                    .map_or(chunk.len(), |i| 1 + i);
+                // N = '\n'
+                // chunk:     ---N---------
+                // remainder: ---N
+                let eol_idx = chunk.iter().position(|c| *c == LF);
+
+                remainder_combines_to_full_chunk = eol_idx.is_some() && !prev_remainder.is_empty();
+
+                let end_idx = eol_idx.map_or(chunk.len(), |i| 1 + i);
 
                 &chunk[..end_idx]
             } else {
-                // chunk:     ---------\n---
-                // remainder:            ---
+                // N = '\n'
+                // chunk:     ---------N---
+                // remainder:           ---
                 let start_idx = chunk.iter().rposition(|c| *c == LF).map_or(0, |i| 1 + i);
 
                 &chunk[start_idx..]
@@ -107,9 +111,11 @@ impl LineBatchDistributor {
                 )
             }
 
-            if !full_lines_chunk.is_empty() {
+            if !full_lines_chunk.is_empty() || remainder_combines_to_full_chunk {
                 let mut full_lines_chunk = if prev_remainder.is_empty() {
                     full_lines_chunk
+                } else if full_lines_chunk.is_empty() {
+                    prev_remainder
                 } else if reverse {
                     unsafe { merge_adjacent_non_empty_slices(full_lines_chunk, prev_remainder) }
                 } else {

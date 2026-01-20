@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import importlib
 from typing import TYPE_CHECKING, Literal
 
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_ldf
-from polars.io.iceberg.dataset import IcebergDataset
+from polars.io.cloud._utils import NoPickleOption
+from polars.io.iceberg._dataset import IcebergDataset
 
 if TYPE_CHECKING:
     from pyiceberg.table import Table
@@ -168,8 +170,17 @@ def scan_iceberg(
     else:
         fast_deletion_count = False
 
+    table: NoPickleOption[Table] = NoPickleOption()
+
+    if importlib.util.find_spec("pyiceberg.table") is not None:
+        from pyiceberg.table import Table
+
+        if isinstance(source, Table):
+            table.set(source)
+
     dataset = IcebergDataset(
-        source,
+        table_=table,
+        metadata_path_=str(source) if table.get() is None else None,
         snapshot_id=snapshot_id,
         iceberg_storage_properties=storage_options,
         reader_override=reader_override,

@@ -21,7 +21,8 @@ class NoPickleOption(Generic[T]):
     """
     Wrapper that does not pickle the wrapped value.
 
-    This wrapper will unpickle to contain a None. Used for cached values.
+    This wrapper will unpickle to contain a None. Useful for cached or sensitive
+    values.
     """
 
     def __init__(self, opt_value: T | None = None) -> None:

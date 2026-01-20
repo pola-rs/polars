@@ -715,8 +715,9 @@ impl PyLazyFrame {
 
     #[cfg(feature = "csv")]
     #[pyo3(signature = (
-        target, sink_options, include_bom, include_header, separator, line_terminator, quote_char, batch_size,
-        datetime_format, date_format, time_format, float_scientific, float_precision, decimal_comma, null_value,
+        target, sink_options, include_bom, compression, compression_level, check_extension,
+        include_header, separator, line_terminator, quote_char, batch_size, datetime_format,
+        date_format, time_format, float_scientific, float_precision, decimal_comma, null_value,
         quote_style
     ))]
     fn sink_csv(
@@ -725,6 +726,9 @@ impl PyLazyFrame {
         target: PyFileSinkDestination,
         sink_options: PySinkOptions,
         include_bom: bool,
+        compression: &str,
+        compression_level: Option<u32>,
+        check_extension: bool,
         include_header: bool,
         separator: u8,
         line_terminator: Wrap<PlSmallStr>,
@@ -758,8 +762,27 @@ impl PyLazyFrame {
             quote_style,
         };
 
+        let compression = match compression {
+            "uncompressed" => CsvCompression::Uncompressed,
+            "gzip" => CsvCompression::Gzip {
+                level: compression_level,
+            },
+            "zstd" => CsvCompression::Zstd {
+                level: compression_level,
+            },
+            _ => {
+                return Err(PyErr::from(PyPolarsErr::from(
+                    PolarsError::InvalidOperation(
+                        format!("Invalid compression lvel: ({compression})").into(),
+                    ),
+                )));
+            },
+        };
+
         let options = CsvWriterOptions {
             include_bom,
+            compression,
+            check_extension,
             include_header,
             batch_size,
             serialize_options: serialize_options.into(),
