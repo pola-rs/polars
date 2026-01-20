@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_core::error::PolarsResult;
+use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::prelude::Column;
 use polars_ops::series::Roll;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
@@ -55,6 +55,10 @@ pub(super) fn add_business_days(
 pub(super) fn is_business_day(s: &[Column], week_mask: [bool; 7]) -> PolarsResult<Column> {
     let dates = &s[0];
     let holidays = &s[1];
+    polars_ensure!(
+        holidays.len() == 1 || holidays.len() == dates.len(),
+        ShapeMismatch: "number of holiday lists must be either 1 or the number of dates"
+    );
     polars_ops::prelude::is_business_day(
         dates.as_materialized_series(),
         week_mask,

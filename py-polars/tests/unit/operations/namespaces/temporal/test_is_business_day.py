@@ -117,19 +117,21 @@ def test_is_business_day(
             ],
             [True, None, False, True],
         ),
-        # Null holiday lists, or nulls inside the holiday list, result in null:
+        # Null holiday lists result in null:
         (
             [
                 date(2026, 5, 1),
                 date(2026, 9, 7),
                 date(2026, 5, 1),
+                date(2026, 5, 1),
             ],
             [
                 None,
-                [date(2026, 9, 7), None],
+                [date(2026, 9, 7)],
+                [date(2026, 9, 7)],
                 [date(2026, 5, 1)],
             ],
-            [None, None, False],
+            [None, False, True, False],
         ),
     ],
 )
@@ -170,6 +172,28 @@ def test_is_business_day_invalid() -> None:
     with pytest.raises(ShapeError):
         df.select(
             pl.col("date").dt.is_business_day(holidays=holidays, week_mask=[True] * 7)
+        )
+    # Holidays are not a List:
+    with pytest.raises(ComputeError):
+        df.select(
+            pl.col("date").dt.is_business_day(
+                holidays=pl.Series(["a", "b", "c"]), week_mask=[True] * 7
+            )
+        )
+    # Holidays are a List of something that is not a Date:
+    with pytest.raises(ComputeError):
+        df.select(
+            pl.col("date").dt.is_business_day(
+                holidays=pl.Series([["a"], ["b"], ["c"]]), week_mask=[True] * 7
+            )
+        )
+    # List of holidays contains a null:
+    with pytest.raises(ComputeError, match="list of holidays contained a null"):
+        df.select(
+            pl.col("date").dt.is_business_day(
+                holidays=pl.Series([[], [None], [date(2025, 1, 1)]]),
+                week_mask=[True] * 7,
+            )
         )
 
 
