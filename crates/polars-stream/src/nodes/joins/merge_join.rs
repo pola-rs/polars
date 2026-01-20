@@ -704,28 +704,29 @@ fn find_mergeable_search(
 
     let build_mergeable_until; // bound is *exclusive*
     let probe_mergeable_until;
-    let ord = keys_cmp(&build_last_completed_val, &probe_last_completed_val, params);
-    if ord.is_eq() {
-        build_mergeable_until = build_first_incomplete;
-        probe_mergeable_until = probe_first_incomplete;
-    } else if ord.is_lt() {
-        build_mergeable_until = build_first_incomplete;
-        probe_mergeable_until = binary_search_upper(
-            probe,
-            &build_get(build_mergeable_until - 1),
-            params,
-            probe_params,
-        );
-    } else if ord.is_gt() {
-        probe_mergeable_until = probe_first_incomplete;
-        build_mergeable_until = binary_search_upper(
-            build,
-            &probe_get(probe_mergeable_until - 1),
-            params,
-            build_params,
-        );
-    } else {
-        unreachable!();
+    match keys_cmp(&build_last_completed_val, &probe_last_completed_val, params) {
+        Ordering::Equal => {
+            build_mergeable_until = build_first_incomplete;
+            probe_mergeable_until = probe_first_incomplete;
+        },
+        Ordering::Less => {
+            build_mergeable_until = build_first_incomplete;
+            probe_mergeable_until = binary_search_upper(
+                probe,
+                &build_get(build_mergeable_until - 1),
+                params,
+                probe_params,
+            );
+        },
+        Ordering::Greater => {
+            probe_mergeable_until = probe_first_incomplete;
+            build_mergeable_until = binary_search_upper(
+                build,
+                &probe_get(probe_mergeable_until - 1),
+                params,
+                build_params,
+            );
+        },
     }
 
     if build_mergeable_until == 0 && probe_mergeable_until == 0 {
