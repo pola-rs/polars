@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
-use either::{Either, Left, Right};
 use polars_core::POOL;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
@@ -354,7 +353,7 @@ async fn find_mergeable_task(
             params,
         };
         match find_mergeable(build_unmerged, probe_unmerged, get_ideal_morsel_size(), fmp)? {
-            Left(partitions) => {
+            Ok(partitions) => {
                 for (build_mergeable, probe_mergeable) in partitions.into_iter() {
                     if let Err((_, _, _, _)) = distributor
                         .send((
@@ -370,24 +369,24 @@ async fn find_mergeable_task(
                     *mergeable_seq = mergeable_seq.successor();
                 }
             },
-            Right(NeedMore::Build | NeedMore::Both) if recv_build.is_some() => {
+            Err(NeedMore::Build | NeedMore::Both) if recv_build.is_some() => {
                 let Ok(m) = recv_build.as_mut().unwrap().recv().await else {
                     stop_and_buffer_pipe_contents(recv_probe.as_mut(), probe_unmerged).await;
                     return Ok(());
                 };
                 build_unmerged.push_df(m.into_df());
             },
-            Right(NeedMore::Probe | NeedMore::Both) if recv_probe.is_some() => {
+            Err(NeedMore::Probe | NeedMore::Both) if recv_probe.is_some() => {
                 let Ok(m) = recv_probe.as_mut().unwrap().recv().await else {
                     stop_and_buffer_pipe_contents(recv_build.as_mut(), build_unmerged).await;
                     return Ok(());
                 };
                 probe_unmerged.push_df(m.into_df());
             },
-            Right(NeedMore::Finished) => {
+            Err(NeedMore::Finished) => {
                 return Ok(());
             },
-            Right(other) => {
+            Err(other) => {
                 unreachable!("unexpected NeedMore value: {other:?}");
             },
         }
@@ -572,16 +571,16 @@ fn find_mergeable(
     probe: &mut DataFrameBuffer,
     search_limit: usize,
     fmp: FindMergeableParams,
-) -> PolarsResult<Either<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
+) -> PolarsResult<Result<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
     let (build_mergeable, probe_mergeable) =
         match find_mergeable_limiting(build, probe, search_limit, fmp.clone())? {
-            Left((build, probe)) => (build, probe),
-            Right(need_more) => return Ok(Right(need_more)),
+            Ok((build, probe)) => (build, probe),
+            Err(need_more) => return Ok(Err(need_more)),
         };
     assert!(!build_mergeable.is_empty() || !probe_mergeable.is_empty());
 
     let partitions = find_mergeable_partition(build_mergeable, probe_mergeable, fmp)?;
-    Ok(Left(partitions))
+    Ok(Ok(partitions))
 }
 
 fn find_mergeable_limiting(
@@ -589,12 +588,12 @@ fn find_mergeable_limiting(
     probe: &mut DataFrameBuffer,
     mut search_limit: usize,
     fmp: FindMergeableParams,
-) -> PolarsResult<Either<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
+) -> PolarsResult<Result<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
     const SEARCH_LIMIT_BUMP_FACTOR: usize = 2;
     let mut mergeable = find_mergeable_search(build, probe, search_limit, fmp.clone())?;
     while match mergeable {
-        Right(NeedMore::Build | NeedMore::Both) if search_limit < build.height() => true,
-        Right(NeedMore::Probe | NeedMore::Both) if search_limit < probe.height() => true,
+        Err(NeedMore::Build | NeedMore::Both) if search_limit < build.height() => true,
+        Err(NeedMore::Probe | NeedMore::Both) if search_limit < probe.height() => true,
         _ => false,
     } {
         // Exponential increase
@@ -641,7 +640,7 @@ fn find_mergeable_search(
     probe: &mut DataFrameBuffer,
     search_limit: usize,
     fmp: FindMergeableParams,
-) -> PolarsResult<Either<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
+) -> PolarsResult<Result<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
     let FindMergeableParams {
         build_done,
         probe_done,
@@ -655,29 +654,29 @@ fn find_mergeable_search(
     let probe_get = |idx| unsafe { probe.get_bypass_validity(&probe_params.key_col, idx, params) };
 
     if build_done && build.is_empty() && probe_done && probe.is_empty() {
-        return Ok(Right(NeedMore::Finished));
+        return Ok(Err(NeedMore::Finished));
     } else if build_done && build.is_empty() && !probe_done && probe.is_empty() {
-        return Ok(Right(NeedMore::Probe));
+        return Ok(Err(NeedMore::Probe));
     } else if probe_done && probe.is_empty() && !build_done && build.is_empty() {
-        return Ok(Right(NeedMore::Build));
+        return Ok(Err(NeedMore::Build));
     } else if build_done && build.is_empty() && !probe_params.emit_unmatched {
         // We will never match on the remaining build keys
         probe.clear();
-        return Ok(Right(NeedMore::Finished));
+        return Ok(Err(NeedMore::Finished));
     } else if probe_done && probe.is_empty() && !build_params.emit_unmatched {
         // We will never match on the remaining probe keys
         build.clear();
-        return Ok(Right(NeedMore::Finished));
+        return Ok(Err(NeedMore::Finished));
     } else if build_done && build.is_empty() {
         let probe_split = probe.split_at(get_ideal_morsel_size());
-        return Ok(Left((build_empty_buf(), probe_split)));
+        return Ok(Ok((build_empty_buf(), probe_split)));
     } else if probe_done && probe.is_empty() {
         let build_split = build.split_at(get_ideal_morsel_size());
-        return Ok(Left((build_split, probe_empty_buf())));
+        return Ok(Ok((build_split, probe_empty_buf())));
     } else if build.is_empty() && !build_done {
-        return Ok(Right(NeedMore::Build));
+        return Ok(Err(NeedMore::Build));
     } else if probe.is_empty() && !probe_done {
-        return Ok(Right(NeedMore::Probe));
+        return Ok(Err(NeedMore::Probe));
     }
 
     let build_first = build_get(0);
@@ -688,13 +687,13 @@ fn find_mergeable_search(
         let build_first_nonnull_idx =
             binary_search_upper(build, &AnyValue::Null, params, build_params)?;
         let build_split = build.split_at(build_first_nonnull_idx);
-        return Ok(Left((build_split, probe_empty_buf())));
+        return Ok(Ok((build_split, probe_empty_buf())));
     }
     if !params.args.nulls_equal && !params.key_nulls_last && probe_first == AnyValue::Null {
         let probe_first_nonnull_idx =
             binary_search_upper(probe, &AnyValue::Null, params, probe_params)?;
         let right_split = probe.split_at(probe_first_nonnull_idx);
-        return Ok(Left((build_empty_buf(), right_split)));
+        return Ok(Ok((build_empty_buf(), right_split)));
     }
 
     let build_last_idx = usize::min(build.height(), search_limit);
@@ -713,13 +712,13 @@ fn find_mergeable_search(
 
     if build_first_incomplete == 0 && probe_first_incomplete == 0 {
         debug_assert!(!build_done && !probe_done);
-        return Ok(Right(NeedMore::Both));
+        return Ok(Err(NeedMore::Both));
     } else if build_first_incomplete == 0 {
         debug_assert!(!build_done);
-        return Ok(Right(NeedMore::Build));
+        return Ok(Err(NeedMore::Build));
     } else if probe_first_incomplete == 0 {
         debug_assert!(!probe_done);
-        return Ok(Right(NeedMore::Probe));
+        return Ok(Err(NeedMore::Probe));
     }
 
     let build_last_completed_val = build_get(build_first_incomplete - 1);
@@ -752,12 +751,12 @@ fn find_mergeable_search(
     }
 
     if build_mergeable_until == 0 && probe_mergeable_until == 0 {
-        return Ok(Right(NeedMore::Both));
+        return Ok(Err(NeedMore::Both));
     }
 
     let build_split = build.split_at(build_mergeable_until);
     let probe_split = probe.split_at(probe_mergeable_until);
-    Ok(Left((build_split, probe_split)))
+    Ok(Ok((build_split, probe_split)))
 }
 
 unsafe fn series_get_bypass_validity<'a>(

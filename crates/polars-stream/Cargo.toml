@@ -18,7 +18,6 @@ crossbeam-channel = { workspace = true }
 crossbeam-deque = { workspace = true }
 crossbeam-queue = { workspace = true }
 crossbeam-utils = { workspace = true }
-either = { workspace = true }
 futures = { workspace = true }
 memmap = { workspace = true }
 num-traits = { workspace = true }
