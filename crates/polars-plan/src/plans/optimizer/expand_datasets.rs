@@ -35,8 +35,8 @@ pub(super) fn expand_datasets(
             scan_type,
             unified_scan_args,
 
-            file_info: _,
-            hive_parts: _,
+            file_info,
+            hive_parts,
             predicate,
             predicate_file_skip_applied: _,
             output_schema: _,
@@ -193,7 +193,7 @@ pub(super) fn expand_datasets(
                         let UnifiedScanArgs {
                             schema: _,
                             cloud_options,
-                            hive_options: _,
+                            hive_options,
                             rechunk,
                             cache,
                             glob: _,
@@ -305,6 +305,32 @@ pub(super) fn expand_datasets(
                                 file_info: _,
                             } => FileScanIR::Anonymous { options, function },
                         };
+
+                        if hive_options.enabled == Some(true)
+                            && let Some(paths) = sources.as_paths()
+                        {
+                            use arrow::Either;
+
+                            use crate::plans::hive::hive_partitions_from_paths;
+
+                            let owned;
+
+                            *hive_parts = hive_partitions_from_paths(
+                                paths,
+                                hive_options.hive_start_idx,
+                                hive_options.schema.clone(),
+                                match file_info.reader_schema.as_ref().unwrap() {
+                                    Either::Left(v) => {
+                                        use polars_core::schema::{Schema, SchemaExt as _};
+
+                                        owned = Some(Schema::from_arrow_schema(v.as_ref()));
+                                        owned.as_ref().unwrap()
+                                    },
+                                    Either::Right(v) => v.as_ref(),
+                                },
+                                hive_options.try_parse_dates,
+                            )?;
+                        }
                     },
 
                     DslPlan::PythonScan { options } => {

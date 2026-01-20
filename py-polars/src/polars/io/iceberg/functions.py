@@ -170,17 +170,17 @@ def scan_iceberg(
     else:
         fast_deletion_count = False
 
-    table: NoPickleOption[Table] = NoPickleOption()
+    table: Table | None = None
 
     if importlib.util.find_spec("pyiceberg.table") is not None:
         from pyiceberg.table import Table
 
         if isinstance(source, Table):
-            table.set(source)
+            table = source
 
     dataset = IcebergDataset(
-        table_=table,
-        metadata_path_=str(source) if table.get() is None else None,
+        table_=NoPickleOption(table),
+        metadata_path_=str(source) if table is None else None,
         snapshot_id=snapshot_id,
         iceberg_storage_properties=storage_options,
         reader_override=reader_override,

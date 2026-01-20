@@ -347,3 +347,21 @@ def test_scan_pyarrow_dataset_filter_with_timezone_26029() -> None:
     )
 
     assert_frame_equal(lf.collect(), pl.DataFrame(table))
+
+
+def test_scan_pyarrow_dataset_filter_slice_order() -> None:
+    table = pa.table(
+        {
+            "index": [0, 1, 2],
+            "year": [2025, 2026, 2026],
+            "month": [0, 0, 0],
+        }
+    )
+    dataset = ds.dataset(table)
+
+    q = pl.scan_pyarrow_dataset(dataset).head(2).filter(pl.col("year") == 2026)
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"index": 1, "year": 2026, "month": 0}),
+    )

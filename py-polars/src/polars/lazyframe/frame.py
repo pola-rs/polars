@@ -3162,7 +3162,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     .execute()
         ... )  # doctest: +SKIP
         """
-        from polars.io.delta import (
+        from polars.io.delta._utils import (
             _check_for_unsupported_types,
             _check_if_delta_available,
             _resolve_delta_lake_uri,
