@@ -217,7 +217,7 @@ pub fn add_business_days(
     }
 
     let holidays = &prep_holidays(holidays, week_mask)?;
-    let mut holidays_lists = HolidaysListsExtractor::new(&holidays);
+    let mut holidays_lists = HolidaysListsExtractor::new(holidays);
 
     let start_dates = start.date()?;
     let n = match &n.dtype() {

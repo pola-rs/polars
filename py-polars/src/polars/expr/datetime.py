@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.functions.business import _holidays_to_expr
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
@@ -13,7 +12,7 @@ from polars._utils.unstable import unstable
 from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32, Int64
-
+from polars.functions.business import _holidays_to_expr
 
 if TYPE_CHECKING:
     import sys
