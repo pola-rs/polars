@@ -94,6 +94,11 @@ def sequence_to_pyseries(
     if isinstance(values, range):
         return range_to_series(name, values, dtype=dtype)._s
 
+    value = get_first_non_none(values)
+    if type(value) is type:
+        msg = "can't construct Series of types"
+        raise TypeError(msg)
+
     # empty sequence
     if len(values) == 0 and dtype is None:
         # if dtype for empty sequence could be guessed
@@ -108,7 +113,6 @@ def sequence_to_pyseries(
     py_temporal_types = {date, datetime, timedelta, time}
     pl_temporal_types = {Date, Datetime, Duration, Time}
 
-    value = get_first_non_none(values)
     if value is not None:
         if (
             dataclasses.is_dataclass(value)

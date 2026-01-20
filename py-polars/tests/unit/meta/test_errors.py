@@ -655,10 +655,16 @@ def test_err_invalid_comparison() -> None:
         _ = pl.Series("a", [date(2020, 1, 1)]) == pl.Series("b", [True])
 
     with pytest.raises(
+        TypeError,
+        match="can't construct Series of types",
+    ):
+        _ = pl.Series("a", [object()]) == pl.Series("b", [object])
+
+    with pytest.raises(
         InvalidOperationError,
         match="could not apply comparison on series of dtype 'object; operand names: 'a', 'b'",
     ):
-        _ = pl.Series("a", [object()]) == pl.Series("b", [object])
+        _ = pl.Series("a", [object()]) == pl.Series("b", [object()])
 
 
 def test_no_panic_pandas_nat() -> None:

@@ -580,11 +580,6 @@ def test_group_by_agg_input_types(input: Any) -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Test isolation issue: fails in full test suite but passes individually. "
-    "Known to fail after test_errors.py::test_err_invalid_comparison due to object() type pollution.",
-)
 @pytest.mark.parametrize("input", [str, "b".join])
 def test_group_by_agg_bad_input_types(input: Any) -> None:
     df = pl.LazyFrame({"a": [1, 1, 2, 2], "b": [1, 2, 3, 4]})
