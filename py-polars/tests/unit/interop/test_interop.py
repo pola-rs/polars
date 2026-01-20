@@ -1397,3 +1397,21 @@ def test_schema_to_arrow_15563() -> None:
     assert pl.Schema({"x": pl.String}).to_arrow(
         compat_level=CompatLevel.oldest()
     ) == pa.schema([pa.field("x", pa.large_string())])
+
+
+def test_0_width_df_roundtrip() -> None:
+    assert pl.DataFrame(height=(1 << 32) - 1).to_numpy().shape == ((1 << 32) - 1, 0)
+    assert pl.DataFrame(np.zeros((10, 0))).shape == (10, 0)
+
+    arrow_table = pl.DataFrame(height=(1 << 32) - 1).to_arrow()
+    assert arrow_table.shape == ((1 << 32) - 1, 0)
+    assert pl.DataFrame(arrow_table).shape == ((1 << 32) - 1, 0)
+
+    pandas_df = pl.DataFrame(height=(1 << 32) - 1).to_pandas()
+    assert pandas_df.shape == ((1 << 32) - 1, 0)
+    assert pl.DataFrame(pandas_df).shape == ((1 << 32) - 1, 0)
+
+    df = pl.DataFrame(height=5)
+
+    assert pl.DataFrame.deserialize(df.serialize()).shape == (5, 0)
+    assert pl.LazyFrame.deserialize(df.lazy().serialize()).collect().shape == (5, 0)

@@ -11,12 +11,11 @@ use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
     CastColumnsPolicy, FileSinkOptions, JoinTypeOptionsIR, MissingColumnsPolicy,
-    PartitionTargetCallback, PartitionVariantIR, PartitionedSinkOptionsIR, PredicateFileSkip,
-    ScanSources, SinkFinishCallback, SinkOptions, SortColumnIR, TableStatistics,
+    PartitionedSinkOptionsIR, PredicateFileSkip, ScanSources, TableStatistics,
 };
+use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, IR};
-use polars_plan::prelude::expr_ir::ExprIR;
 
 mod fmt;
 mod io;
@@ -24,16 +23,13 @@ mod lower_expr;
 mod lower_group_by;
 mod lower_ir;
 mod to_graph;
-#[cfg(feature = "physical_plan_visualization")]
-pub mod visualization;
 
-pub use fmt::visualize_plan;
-use polars_plan::prelude::{FileWriteFormat, PlanCallback};
+pub use fmt::{NodeStyle, visualize_plan};
+use polars_plan::prelude::PlanCallback;
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::DynamicGroupOptions;
 use polars_time::{ClosedWindow, Duration};
 use polars_utils::arena::{Arena, Node};
-use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use slotmap::{SecondaryMap, SlotMap};
@@ -103,10 +99,7 @@ impl PhysStream {
 /// Behaviour when handling multiple DataFrames with different heights.
 
 #[derive(Clone, Debug, Copy)]
-#[cfg_attr(
-    feature = "physical_plan_visualization",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
     feature = "physical_plan_visualization_schema",
     derive(schemars::JsonSchema)
@@ -121,10 +114,6 @@ pub enum ZipBehavior {
 }
 
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "physical_plan_visualization",
-    derive(strum_macros::IntoStaticStr)
-)]
 pub enum PhysNodeKind {
     InMemorySource {
         df: Arc<DataFrame>,
@@ -202,18 +191,6 @@ pub enum PhysNodeKind {
     },
 
     PartitionedSink {
-        input: PhysStream,
-        base_path: Arc<PlRefPath>,
-        file_path_cb: Option<PartitionTargetCallback>,
-        sink_options: SinkOptions,
-        variant: PartitionVariantIR,
-        file_type: FileWriteFormat,
-        cloud_options: Option<CloudOptions>,
-        per_partition_sort_by: Option<Vec<SortColumnIR>>,
-        finish_callback: Option<SinkFinishCallback>,
-    },
-
-    PartitionedSink2 {
         input: PhysStream,
         options: PartitionedSinkOptionsIR,
     },
@@ -370,6 +347,16 @@ pub enum PhysNodeKind {
         args: JoinArgs,
     },
 
+    MergeJoin {
+        input_left: PhysStream,
+        input_right: PhysStream,
+        left_on: Vec<PlSmallStr>,
+        right_on: Vec<PlSmallStr>,
+        descending: bool,
+        nulls_last: bool,
+        args: JoinArgs,
+    },
+
     SemiAntiJoin {
         input_left: PhysStream,
         input_right: PhysStream,
@@ -456,7 +443,6 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::CallbackSink { input, .. }
             | PhysNodeKind::FileSink { input, .. }
             | PhysNodeKind::PartitionedSink { input, .. }
-            | PhysNodeKind::PartitionedSink2 { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
             | PhysNodeKind::SortedGroupBy { input, .. }
             | PhysNodeKind::Map { input, .. }
@@ -493,6 +479,11 @@ fn visit_node_inputs_mut(
                 ..
             }
             | PhysNodeKind::EquiJoin {
+                input_left,
+                input_right,
+                ..
+            }
+            | PhysNodeKind::MergeJoin {
                 input_left,
                 input_right,
                 ..

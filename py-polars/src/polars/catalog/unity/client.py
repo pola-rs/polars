@@ -6,6 +6,7 @@ import os
 import sys
 from typing import TYPE_CHECKING, Any, Literal
 
+from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_ldf
 from polars.catalog.unity.models import (
@@ -21,7 +22,7 @@ if TYPE_CHECKING:
 
     import deltalake
 
-    from polars._typing import SchemaDict
+    from polars._typing import SchemaDict, StorageOptionsDict
     from polars.catalog.unity.models import DataSourceFormat, TableType
     from polars.dataframe.frame import DataFrame
     from polars.io.cloud import (
@@ -184,11 +185,11 @@ class Catalog:
         *,
         delta_table_version: int | str | datetime | None = None,
         delta_table_options: dict[str, Any] | None = None,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int = 2,
+        retries: int | None = None,
     ) -> LazyFrame:
         """
         Retrieve the metadata of the specified table.
@@ -234,11 +235,20 @@ class Catalog:
         retries
             Number of retries if accessing a cloud instance fails.
 
+            .. deprecated:: 1.37.1
+                Pass {"max_retries": n} via `storage_options` instead.
+
         """
         table_info = self.get_table_info(catalog_name, namespace, table_name)
         storage_location, data_source_format = _extract_location_and_data_format(
             table_info, "scan table"
         )
+
+        if retries is not None:
+            msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
+            issue_deprecation_warning(msg)
+            storage_options = storage_options or {}
+            storage_options["max_retries"] = retries
 
         credential_provider, storage_options = self._init_credentials(  # type: ignore[assignment]
             credential_provider,
@@ -273,12 +283,6 @@ class Catalog:
             )
             raise ValueError(msg)
 
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
         return wrap_ldf(
             self._client.scan_table(
                 catalog_name,
@@ -286,7 +290,6 @@ class Catalog:
                 table_name,
                 credential_provider=credential_provider,
                 cloud_options=storage_options,
-                retries=retries,
             )
         )
 
@@ -302,7 +305,7 @@ class Catalog:
         ] = "error",
         delta_write_options: dict[str, Any] | None = None,
         delta_merge_options: dict[str, Any] | None = None,
-        storage_options: dict[str, str] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
@@ -603,7 +606,7 @@ class Catalog:
     def _init_credentials(
         self,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        storage_options: dict[str, Any] | None,
+        storage_options: StorageOptionsDict | None,
         table_info: TableInfo,
         *,
         write: bool,

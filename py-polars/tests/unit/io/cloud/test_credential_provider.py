@@ -21,7 +21,6 @@ from polars.io.cloud.credential_provider._providers import (
     CachingCredentialProvider,
     UserProvidedGCPToken,
 )
-from polars.io.partition import _SinkDirectory
 
 
 @pytest.mark.parametrize(
@@ -761,7 +760,7 @@ def test_cached_credential_provider_returns_copied_creds() -> None:
     ],
 )
 def test_credential_provider_init_from_partition_target(
-    partition_target: _SinkDirectory,
+    partition_target: pl.PartitionBy,
 ) -> None:
     assert isinstance(
         _init_credential_provider_builder(

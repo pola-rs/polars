@@ -14,6 +14,7 @@ from hypothesis import strategies as st
 import polars as pl
 from polars.meta.index_type import get_index_type
 from polars.testing import assert_frame_equal
+from tests.unit.io.conftest import normalize_path_separator_pl
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -27,7 +28,6 @@ SCAN_AND_WRITE_FUNCS = [
 ]
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Windows paths are different")
 @pytest.mark.write_disk
 @pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
@@ -46,7 +46,7 @@ def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
                 "a": [5, 10, 1996],
                 "f": [str(a_path), str(a_path), str(b_path)],
             }
-        ),
+        ).with_columns(normalize_path_separator_pl(pl.col("f"))),
     )
 
 
@@ -149,7 +149,6 @@ def test_multiscan_projection(
             new_projection,
             new_projection[::-1],
         ]:
-            print(projection)
             assert_frame_equal(
                 scan(multiscan_path, **args)
                 .collect(engine="streaming")
@@ -291,7 +290,7 @@ def test_multiscan_row_index(
     )
 
     with pytest.raises(
-        pl.exceptions.DuplicateError, match="'index' has more than one occurrence"
+        pl.exceptions.DuplicateError, match="duplicate column name index"
     ):
         scan(g).with_row_index().with_row_index().collect()
 
@@ -745,7 +744,14 @@ def test_scan_null_upcast_to_nested(scan: Any, write: Any) -> None:
         (pl.scan_parquet, pl.DataFrame.write_parquet),
     ],
 )
-@pytest.mark.parametrize("prefix", ["", "file:", "file://"])
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "",
+        "file:" if sys.platform != "win32" else "file:/",
+        "file://" if sys.platform != "win32" else "file:///",
+    ],
+)
 @pytest.mark.parametrize("use_glob", [True, False])
 def test_scan_ignore_hidden_files_21762(
     tmp_path: Path, scan: Any, write: Any, use_glob: bool, prefix: str
@@ -770,9 +776,6 @@ def test_scan_ignore_hidden_files_21762(
             pl.DataFrame({"rel_path": f"_folder/{file_name}"}),
             tmp_path / "_folder" / file_name,
         )
-
-    if prefix.startswith("file:") and sys.platform == "win32":
-        pytest.skip("Unsupported on Windows")
 
     suffix = "/**/*.ext" if use_glob else "/" if prefix.startswith("file:") else ""
     root = f"{prefix}{tmp_path}{suffix}"

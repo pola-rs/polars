@@ -227,17 +227,25 @@ impl FileReader for IpcFileReader {
             None
         };
 
+        // Note. Environment variable is unstable.
+        let read_statistics_flags = std::env::var("POLARS_IPC_RW_RECORD_BATCH_STATISTICS_FLAGS")
+            .as_deref()
+            .unwrap_or("")
+            == "1";
+
         if verbose {
             eprintln!(
                 "[IpcFileReader]: \
                 project: {} / {}, \
-                pre_slice: {:?} \
+                pre_slice: {:?}, \
+                read_record_batch_statistics_flags: {}\
                 ",
                 projection_indices
                     .as_ref()
                     .map_or(file_metadata.schema.len(), |x| x.len()),
                 file_metadata.schema.len(),
                 pre_slice_arg,
+                read_statistics_flags
             )
         }
 
@@ -284,6 +292,7 @@ impl FileReader for IpcFileReader {
             projection_info,
             dictionaries: dictionaries.clone(),
             row_index,
+            read_statistics_flags,
         });
 
         // Set up channels.

@@ -13,7 +13,9 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing.asserts.frame import assert_frame_equal
+from tests.unit.io.conftest import format_file_uri, normalize_path_separator_pl
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -616,7 +618,6 @@ def test_scan_nonexistent_path(format: str) -> None:
     "streaming",
     [True, False],
 )
-@pytest.mark.skipif(sys.platform == "win32", reason="Windows paths are different")
 def test_scan_include_file_paths(
     tmp_path: Path,
     scan_func: Callable[..., pl.LazyFrame],
@@ -631,7 +632,7 @@ def test_scan_include_file_paths(
         dfs.append(pl.DataFrame({"x": 10 * [x]}).with_columns(path=pl.lit(str(path))))
         write_func(dfs[-1].drop("path"), path)
 
-    df = pl.concat(dfs)
+    df = pl.concat(dfs).with_columns(normalize_path_separator_pl(pl.col("path")))
     assert df.columns == ["x", "path"]
 
     with pytest.raises(
@@ -1026,7 +1027,6 @@ def test_only_project_missing(scan_type: tuple[Any, Any]) -> None:
     )
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="windows paths are a mess")
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     "scan_type",
@@ -1045,13 +1045,19 @@ def test_async_read_21945(tmp_path: Path, scan_type: tuple[Any, Any]) -> None:
     pl.DataFrame({"value": [3]}).write_parquet(f2)
 
     df = (
-        pl.scan_parquet(["file://" + str(f1), str(f2)], include_file_paths="foo")
+        pl.scan_parquet([format_file_uri(str(f1)), str(f2)], include_file_paths="foo")
         .filter(value=1)
         .collect()
     )
 
     assert_frame_equal(
-        df, pl.DataFrame({"value": [1], "foo": ["file://" + f1.as_posix()]})
+        df,
+        pl.DataFrame(
+            {
+                "value": [1],
+                "foo": [format_file_uri(f1)],
+            }
+        ),
     )
 
 
@@ -1261,3 +1267,13 @@ def test_scan_csv_streaming_decompression(
         ]
     )
     assert_frame_equal(df, expected)
+
+
+def test_scan_file_uri_hostname_component() -> None:
+    q = pl.scan_parquet("file://hostname:80/data.parquet")
+
+    with pytest.raises(
+        ComputeError,
+        match="unsupported: non-empty hostname for 'file:' URI: 'hostname:80'",
+    ):
+        q.collect()

@@ -2938,6 +2938,7 @@ dependencies = [
  "getrandom 0.2.16",
  "getrandom 0.3.4",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-core",
  "polars-error",
@@ -2980,6 +2981,7 @@ dependencies = [
  "num-traits",
  "polars-arrow",
  "polars-arrow-format",
+ "polars-buffer",
  "polars-error",
  "polars-schema",
  "polars-utils",
@@ -3008,6 +3010,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-buffer"
+version = "0.52.0"
+dependencies = [
+ "bytemuck",
+ "either",
+ "serde",
+ "version_check",
+]
+
+[[package]]
 name = "polars-compute"
 version = "0.52.0"
 dependencies = [
@@ -3023,6 +3035,7 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "polars-arrow",
+ "polars-buffer",
  "polars-error",
  "polars-utils",
  "proptest",
@@ -3055,6 +3068,7 @@ dependencies = [
  "ndarray",
  "num-traits",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-core",
  "polars-dtype",
@@ -3142,6 +3156,7 @@ dependencies = [
  "libloading",
  "num-traits",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-core",
  "polars-io",
@@ -3190,6 +3205,7 @@ dependencies = [
  "object_store",
  "percent-encoding",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-core",
  "polars-error",
@@ -3246,6 +3262,7 @@ dependencies = [
  "futures",
  "memchr",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-core",
  "polars-expr",
@@ -3305,6 +3322,7 @@ dependencies = [
  "memchr",
  "num-traits",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-core",
  "polars-error",
@@ -3342,6 +3360,7 @@ dependencies = [
  "lz4_flex",
  "num-traits",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-error",
  "polars-parquet",
@@ -3387,6 +3406,7 @@ dependencies = [
  "num-traits",
  "percent-encoding",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-core",
  "polars-error",
@@ -3432,6 +3452,7 @@ dependencies = [
  "parking_lot",
  "polars",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-core",
  "polars-dtype",
@@ -3463,6 +3484,7 @@ dependencies = [
  "bitflags",
  "bytemuck",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-dtype",
  "polars-error",
@@ -3555,6 +3577,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-core",
  "polars-error",
@@ -3575,7 +3598,6 @@ dependencies = [
  "serde",
  "serde_json",
  "slotmap",
- "strum_macros 0.27.2",
  "tokio",
  "version_check",
 ]

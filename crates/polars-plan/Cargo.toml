@@ -13,6 +13,7 @@ doctest = false
 
 [dependencies]
 libloading = { workspace = true, optional = true }
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-error = { workspace = true }
@@ -58,6 +59,7 @@ debugging = []
 python = ["dep:pyo3", "polars-utils/python", "polars-ffi", "polars-core/object", "serde"]
 serde = [
   "dep:serde",
+  "polars-buffer/serde",
   "polars-core/serde-lazy",
   "polars-core/serde",
   "polars-time/serde",
@@ -130,15 +132,6 @@ dsl-schema = [
   "polars-ops/dsl-schema",
   "polars-utils/dsl-schema",
   "polars-compute/dsl-schema",
-]
-ir_visualization = [
-  "dep:serde_json",
-  "ir_serde",
-  "serde",
-]
-ir_visualization_schema = [
-  "ir_visualization",
-  "dsl-schema",
 ]
 
 # operations

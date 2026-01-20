@@ -13,18 +13,18 @@ listed below. The license itself has the following shape:
 { "params": { "expiry": "2026-01-31T23:59:59Z", "name": "Company" }, "signature": "..." }
 ```
 
-| Key            | Type    | Description                                                                                                                                                         |
-| -------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster_id`   | string  | Logical ID for the cluster; workers and scheduler that share this ID will form a single cluster.<br>e.g. `prod-eu-1`; must be unique among all clusters.            |
-| `cublet_id`    | string  | Unique ID for this node (_aka_ "cublet") within the cluster, used for addressing and leader selection.<br>e.g. `scheduler`, `worker_0`; must be unique per cluster. |
-| `license`      | path    | Absolute path to the Polars on-premises license file required to start the process.<br>e.g. `/etc/polars/license.json`.                                             |
-| `memory_limit` | integer | Hard memory budget for all components in this cublet; enforced via cgroups when delegated.<br>e.g. `1073741824` (1 GiB), `10737418240` (10 GiB).                    |
+| Key            | Type    | Description                                                                                                                                              |
+| -------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_id`   | string  | Logical ID for the cluster; workers and scheduler that share this ID will form a single cluster.<br>e.g. `prod-eu-1`; must be unique among all clusters. |
+| `instance_id`  | string  | Unique ID for this node within the cluster, used for addressing and leader selection.<br>e.g. `scheduler`, `worker_0`; must be unique per cluster.       |
+| `license`      | path    | Absolute path to the Polars on-premises license file required to start the process.<br>e.g. `/etc/polars/license.json`.                                  |
+| `memory_limit` | integer | Hard memory budget for all components in this node; enforced via cgroups when delegated.<br>e.g. `1073741824` (1 GiB), `10737418240` (10 GiB).           |
 
 Example:
 
 ```toml
 cluster_id = "polars-cluster-dev"
-cublet_id = "scheduler"
+instance_id = "scheduler"
 license = "/etc/polars/license.json"
 memory_limit = 1073741824 # 1 GiB
 ```
@@ -43,29 +43,43 @@ You may configure the credentials using the options listed below; the key names 
 currently only support the AWS keys of the `storage_options` dictionary, but note that you can use
 any other cloud provider that supports the S3 API, such as MinIO or DigitalOcean Spaces.
 
-| Key                                             | Type    | Description                                                                                                                                                                                                                                                                                                                                                |
-| ----------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enabled`                                       | boolean | Whether the scheduler component runs in this process.<br> `true` for the leader node, `false` on pure workers.                                                                                                                                                                                                                                             |
-| `allow_shared_disk`                             | boolean | Whether workers are allowed to write to a shared/local disk visible to the scheduler.<br> `false` for fully remote/storage-only setups, `true` if you have a shared filesystem.                                                                                                                                                                            |
-| `n_workers`                                     | integer | Expected number of workers in this cluster; scheduler waits for the latter to be online before running queries.<br>e.g. `4`.                                                                                                                                                                                                                               |
-| `anonymous_result_dst`                          | string  | Destination for results of queries that do not have an explicit sink. Currently supported local mounted (must be reachable on the exact same path and `allow_shared_disk` enabled) and S3-based. Both options must be network reachable by scheduler, workers, and client.<br>e.g. `s3://bucket/path/to/key`.<br>e.g. `file:///mnt/storage/polars/results` |
-| `anonymous_result_dst.s3`                       | object  | Complex subject for when using S3-backed anonymous results.                                                                                                                                                                                                                                                                                                |
-| `anonymous_result_dst.s3.url`                   | string  | S3 bucket url.<br>e.g. `s3://bucket/path/to/key`.                                                                                                                                                                                                                                                                                                          |
-| `anonymous_result_dst.s3.aws_endpoint_url`      | string  | Storage option configuration, see [`scan_parquet()`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html).                                                                                                                                                                                                                       |
-| `anonymous_result_dst.s3.aws_region`            | string  | Storage option configuration.<br/>e.g. `eu-east-1`                                                                                                                                                                                                                                                                                                         |
-| `anonymous_result_dst.s3.aws_access_key_id`     | string  | Storage option configuration.                                                                                                                                                                                                                                                                                                                              |
-| `anonymous_result_dst.s3.aws_secret_access_key` | string  | Storage option configuration.                                                                                                                                                                                                                                                                                                                              |
+| Key                                                  | Type    | Description                                                                                                                                                                                                                                                                                                                                         |
+| ---------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`                                            | boolean | Whether the scheduler component runs in this process.<br> `true` for the leader node, `false` on pure workers.                                                                                                                                                                                                                                      |
+| `allow_local_sinks`                                  | boolean | Whether workers are allowed to write to a shared/local disk visible to the scheduler.<br> `false` for fully remote/storage-only setups, `true` if you have a shared filesystem.                                                                                                                                                                     |
+| `n_workers`                                          | integer | Expected number of workers in this cluster; scheduler waits for the latter to be online before running queries.<br>e.g. `4`.                                                                                                                                                                                                                        |
+| `anonymous_result_location`                          | object  | Destination for results of queries that do not have an explicit sink. Currently supported local mounted (must be reachable on the exact same path and `allow_local_sinks` enabled) and S3-based. Both options must be network reachable by scheduler, workers, and client.<br>e.g. `/mnt/storage/polars/results`.<br>e.g. `s3://bucket/path/to/key` |
+| `anonymous_result_location.local`                    | object  | Object used for local disk-backed anonymous results.                                                                                                                                                                                                                                                                                                |
+| `anonymous_result_location.local.path`               | path    | Local path where anonymous results are stored.<br>e.g. `/mnt/storage/polars/results`.                                                                                                                                                                                                                                                               |
+| `anonymous_result_location.s3`                       | object  | Object used for S3-backed anonymous results.                                                                                                                                                                                                                                                                                                        |
+| `anonymous_result_location.s3.url`                   | string  | S3 bucket url.<br>e.g. `s3://bucket/path/to/key`.                                                                                                                                                                                                                                                                                                   |
+| `anonymous_result_location.s3.aws_endpoint_url`      | string  | Storage option configuration, see [`scan_parquet()`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html).                                                                                                                                                                                                                |
+| `anonymous_result_location.s3.aws_region`            | string  | Storage option configuration.<br/>e.g. `eu-east-1`                                                                                                                                                                                                                                                                                                  |
+| `anonymous_result_location.s3.aws_access_key_id`     | string  | Storage option configuration.                                                                                                                                                                                                                                                                                                                       |
+| `anonymous_result_location.s3.aws_secret_access_key` | string  | Storage option configuration.                                                                                                                                                                                                                                                                                                                       |
+| `client_service`                                     | object  | Object used for configuring the bind address of the client service. This is the service used by the polars-cloud Python client. Defaults to `0.0.0.0:5051`.                                                                                                                                                                                         |
+| `client_service.bind_addr`                           | string  | Bind address for the client service.<br>e.g. `0.0.0.0:5051`.                                                                                                                                                                                                                                                                                        |
+| `client_service.bind_addr.ip`                        | string  | IP address for the client service bind address.<br>e.g. `192.168.1.1`.                                                                                                                                                                                                                                                                              |
+| `client_service.bind_addr.port`                      | integer | Port for the client service bind address.<br>e.g. `5051`.                                                                                                                                                                                                                                                                                           |
+| `client_service.bind_addr.hostname`                  | string  | Alternative to `ip`, resolved once at startup.<br>e.g. `my-host-1`.                                                                                                                                                                                                                                                                                 |
+| `worker_service`                                     | object  | Object used for configuring the bind address of the worker service. This is an internal service used by the workers. Defaults to `0.0.0.0:5050`.                                                                                                                                                                                                    |
+| `worker_service.bind_addr`                           | string  | Bind address for the worker service.<br>e.g. `0.0.0.0:5050`.                                                                                                                                                                                                                                                                                        |
+| `worker_service.bind_addr.ip`                        | string  | IP address for the worker service bind address.<br>e.g. `192.168.1.1`.                                                                                                                                                                                                                                                                              |
+| `worker_service.bind_addr.port`                      | integer | Port for the worker service bind address.<br>e.g. `5050`.                                                                                                                                                                                                                                                                                           |
+| `worker_service.bind_addr.hostname`                  | string  | Alternative to `ip`, resolved once at startup.<br>e.g. `my-host-2`.                                                                                                                                                                                                                                                                                 |
 
 Example:
 
 ```toml
 [scheduler]
 enabled = true
-allow_shared_disk = false
+allow_local_sinks = false
 n_workers = 4
-anonymous_result_dst.s3.url = "s3://bucket/path/to/key"
-anonymous_result_dst.s3.aws_secret_access_key = "YOURSECRETKEY"
-anonymous_result_dst.s3.aws_access_key_id = "YOURACCESSKEY"
+anonymous_result_location.s3.url = "s3://bucket/path/to/key"
+anonymous_result_location.s3.aws_secret_access_key = "YOURSECRETKEY"
+anonymous_result_location.s3.aws_access_key_id = "YOURACCESSKEY"
+client_service.bind_addr = "0.0.0.0:5051"
+worker_service.bind_addr.hostname = "my-host-2"
 ```
 
 Example with mounted local disk as anonymous result destination:
@@ -73,8 +87,8 @@ Example with mounted local disk as anonymous result destination:
 ```toml
 [scheduler]
 enabled = true
-allow_shared_disk = true
-anonymous_result_dst = "file:///mnt/storage/polars/results"
+allow_local_sinks = true
+anonymous_result_location = "/mnt/storage/polars/results"
 ```
 
 ### `[worker]` section
@@ -86,38 +100,61 @@ correspond to the
 [`storage_options` parameter from the `scan_parquet()` method](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html)
 (_e.g._ `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`, `aws_region`).
 
-| Key                                         | Type    | Description                                                                                                                          |
-| ------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `enabled`                                   | boolean | Whether the worker component runs in this process.<br> `true` on worker nodes, `false` on the dedicated scheduler.                   |
-| `worker_ip`                                 | string  | Public or routable IP address other workers/scheduler use to reach this worker.<br>e.g. `192.168.1.2`.                               |
-| `flight_port`                               | integer | Port for shuffle traffic between workers.<br>e.g. `5052`.                                                                            |
-| `service_port`                              | integer | Port on which the worker receives task instructions from the scheduler.<br>e.g. `5053`.                                              |
-| `heartbeat_interval_secs`                   | integer | Interval for worker heartbeats towards the scheduler, used for liveness and load reporting.<br>e.g. `5`.                             |
-| `shuffle_location.local.path`               | path    | Local path where shuffle/intermediate data is stored; fast local SSD is recommended.<br>e.g. `/mnt/storage/polars/shuffle`.          |
-| `shuffle_location.s3.url`                   | path    | Destination for shuffle/intermediate data.<br>e.g. `s3://bucket/path/to/key`.                                                        |
-| `shuffle_location.s3.aws_endpoint_url`      | string  | Storage option configuration, see [`scan_parquet()`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html). |
-| `shuffle_location.s3.aws_region`            | string  | Storage option configuration.<br/>e.g. `eu-east-1`                                                                                   |
-| `shuffle_location.s3.aws_access_key_id`     | string  | Storage option configuration.                                                                                                        |
-| `shuffle_location.s3.aws_secret_access_key` | string  | Storage option configuration.                                                                                                        |
+| Key                                         | Type    | Description                                                                                                                                                                                                                                              |
+| ------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`                                   | boolean | Whether the worker component runs in this process.<br> `true` on worker nodes, `false` on the dedicated scheduler.                                                                                                                                       |
+| `heartbeat_period`                          | string  | Interval for worker heartbeats towards the scheduler, used for liveness and load reporting. Either an ISO 8601 duration format or a jiff friendly duration format (see https://docs.rs/jiff/0.2.18/jiff/fmt/friendly/)<br>e.g. `5 secs`.<br>e.g. `PT5S`. |
+| `shuffle_location`                          | object  | Object used for shuffle data storage.                                                                                                                                                                                                                    |
+| `shuffle_location.local`                    | object  | Object used for local disk-backed shuffle data storage.                                                                                                                                                                                                  |
+| `shuffle_location.local.path`               | path    | Local path where shuffle/intermediate data is stored; fast local SSD is recommended.<br>e.g. `/mnt/storage/polars/shuffle`.                                                                                                                              |
+| `shuffle_location.s3`                       | object  | Object used for S3-backed shuffle data storage.                                                                                                                                                                                                          |
+| `shuffle_location.s3.url`                   | path    | Destination for shuffle/intermediate data.<br>e.g. `s3://bucket/path/to/key`.                                                                                                                                                                            |
+| `shuffle_location.s3.aws_endpoint_url`      | string  | Storage option configuration, see [`scan_parquet()`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html).                                                                                                                     |
+| `shuffle_location.s3.aws_region`            | string  | Storage option configuration.<br/>e.g. `eu-east-1`                                                                                                                                                                                                       |
+| `shuffle_location.s3.aws_access_key_id`     | string  | Storage option configuration.                                                                                                                                                                                                                            |
+| `shuffle_location.s3.aws_secret_access_key` | string  | Storage option configuration.                                                                                                                                                                                                                            |
+| `task_service`                              | object  | Object used for configuring the bind address of the task service. This is an internal service in the worker for receiving tasks from the scheduler. Defaults to `0.0.0.0:5052`.                                                                          |
+| `task_service.bind_addr`                    | string  | Bind address for the task service.<br>e.g. `0.0.0.0:5052`.                                                                                                                                                                                               |
+| `task_service.bind_addr.ip`                 | string  | IP address for the task service bind address.<br>e.g. `192.168.1.1`.                                                                                                                                                                                     |
+| `task_service.bind_addr.port`               | integer | Port for the task service bind address.<br>e.g. `5052`.                                                                                                                                                                                                  |
+| `task_service.bind_addr.hostname`           | string  | Alternative to `ip`, resolved once at startup.<br>e.g. `my-host-2`.                                                                                                                                                                                      |
+| `task_service.public_addr`                  | string  | Address at which this service is reachable by the scheduler. Defaults to the bind address if not set. This field is required when the bind address is `0.0.0.0`.<br>e.g. `192.168.1.1`.                                                                  |
+| `task_service.public_addr.ip`               | string  | IP address for the task service public address.<br>e.g. `192.168.1.2`.                                                                                                                                                                                   |
+| `task_service.public_addr.port`             | integer | Port for the task service public address.<br>e.g. `5052`.                                                                                                                                                                                                |
+| `task_service.public_addr.hostname`         | string  | Alternative to `ip`, resolved once at startup.<br>e.g. `my-host-2`.                                                                                                                                                                                      |
+| `shuffle_service`                           | object  | Object used for configuring the bind address of the task service. This is an internal service in the worker for receiving tasks from the scheduler. Defaults to `0.0.0.0:5052`.                                                                          |
+| `shuffle_service.bind_addr`                 | string  | Bind address for the task service.<br>e.g. `0.0.0.0:5053`.                                                                                                                                                                                               |
+| `shuffle_service.bind_addr.ip`              | string  | IP address for the task service bind address.<br>e.g. `192.168.1.1`.                                                                                                                                                                                     |
+| `shuffle_service.bind_addr.port`            | integer | Port for the task service bind address.<br>e.g. `5053`.                                                                                                                                                                                                  |
+| `shuffle_service.bind_addr.hostname`        | string  | Alternative to `ip`, resolved once at startup.<br>e.g. `my-host-2`.                                                                                                                                                                                      |
+| `shuffle_service.public_addr`               | string  | Address at which this service is reachable by the scheduler. Defaults to the bind address if not set. This field is required when the bind address is `0.0.0.0`.<br>e.g. `192.168.1.1`.                                                                  |
+| `shuffle_service.public_addr.ip`            | string  | IP address for the task service public address.<br>e.g. `192.168.1.2`.                                                                                                                                                                                   |
+| `shuffle_service.public_addr.port`          | integer | Port for the task service public address.<br>e.g. `5053`.                                                                                                                                                                                                |
+| `shuffle_service.public_addr.hostname`      | string  | Alternative to `ip`, resolved once at startup.<br>e.g. `my-host-2`.                                                                                                                                                                                      |
 
 Example:
 
 ```toml
 [worker]
 enabled = true
-worker_ip = "192.168.1.2"
-flight_port = 5052
-service_port = 5053
-heartbeat_interval_secs = 5
+heartbeat_period = "5 secs"
+task_service.bind_addr = "0.0.0.0:1234"
+task_service.public_addr.hostname = "my-host-2"
+shuffle_service.public_addr.hostname = "my-host-2"
 shuffle_location.local.path = "/mnt/storage/polars/shuffle"
 ```
 
 ### `[observatory]` section
 
-| Key                       | Type    | Description                                                                                                                                                                                                                                                           |
-| ------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enabled`                 | boolean | Enable sending/receiving profiling data so clients can call `result.await_profile()`.<br> `true` on both scheduler and workers if you want profiles on queries; `false` to disable.                                                                                   |
-| `max_metrics_bytes_total` | integer | How many bytes all the worker host metrics will consume in total. If a system-wide memory limit is specified then this is added to the share that the scheduler takes. Note that the worker host metrics is not yet available, so this configuration can be set to 0. |
+| Key                          | Type    | Description                                                                                                                                                                                                                                                           |
+| ---------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`                    | boolean | Enable sending/receiving profiling data so clients can call `result.await_profile()`.<br> `true` on both scheduler and workers if you want profiles on queries; `false` to disable.                                                                                   |
+| `max_metrics_bytes_total`    | integer | How many bytes all the worker host metrics will consume in total. If a system-wide memory limit is specified then this is added to the share that the scheduler takes. Note that the worker host metrics is not yet available, so this configuration can be set to 0. |
+| `service`                    | object  | Object used for configuring the bind address of the observatory service. This is an internal service in the scheduler for receiving profiling data from all nodes. Defaults to `0.0.0.0:5049`.                                                                        |
+| `service.bind_addr`          | string  | Bind address for the observatory service.<br>e.g. `0.0.0.0:5049`.                                                                                                                                                                                                     |
+| `service.bind_addr.ip`       | string  | IP address for the observatory service bind address.<br>e.g. `192.168.1.1`.                                                                                                                                                                                           |
+| `service.bind_addr.port`     | integer | Port for the observatory service bind address.<br>e.g. `5049`.                                                                                                                                                                                                        |
+| `service.bind_addr.hostname` | string  | Alternative to `ip`, resolved once at startup.<br>e.g. `my-host-2`.                                                                                                                                                                                                   |
 
 Example:
 
@@ -127,17 +164,38 @@ enabled = true
 max_metrics_bytes_total = 0
 ```
 
+### `[monitoring]` section
+
+| Key       | Type    | Description                                                                                                                                              |
+| --------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled` | boolean | Enable sending/receiving monitoring data to the observatory service. If enabled, it will use the address specified in `observatory_service.public_addr`. |
+
+Example:
+
+```toml
+[monitoring]
+enabled = true
+```
+
 ### `[static_leader]` section
 
-| Key                  | Type   | Description                                                                                                                |
-| -------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `leader_key`         | string | ID of the leader service; should match the scheduler’s `cublet_id`.<br>Typically `scheduler` to match your scheduler node. |
-| `public_leader_addr` | string | Host/IP at which the leader is reachable from this node.<br>e.g. `192.168.1.1`.                                            |
+| Key                                        | Type    | Description                                                                                                               |
+| ------------------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `leader_instance_id`                       | string  | ID of the leader node; should match the scheduler’s `instance_id`.<br>Typically `scheduler` to match your scheduler node. |
+| `scheduler_service.public_addr`            | string  | Address at which the scheduler client service is reachable from this node.<br>e.g. `192.168.1.1`.                         |
+| `scheduler_service.public_addr.ip`         | string  | IP address for the scheduler client service public address.<br>e.g. `192.168.1.1`.                                        |
+| `scheduler_service.public_addr.port`       | integer | Port for the scheduler client service public address.<br>e.g. `5051`.                                                     |
+| `scheduler_service.public_addr.hostname`   | string  | Alternative to `ip`, resolved once at startup.<br>e.g. `my-host-2`.                                                       |
+| `observatory_service.public_addr`          | string  | Address at which the observatory service is reachable from this node.<br>e.g. `192.168.1.1`.                              |
+| `observatory_service.public_addr.ip`       | string  | IP address for the observatory service public address.<br>e.g. `192.168.1.1`.                                             |
+| `observatory_service.public_addr.port`     | integer | Port for the observatory service public address.<br>e.g. `5049`.                                                          |
+| `observatory_service.public_addr.hostname` | string  | Alternative to `ip`, resolved once at startup.<br>e.g. `my-host-2`.                                                       |
 
 Example:
 
 ```toml
 [static_leader]
-leader_key = "scheduler"
-public_leader_addr = "192.168.1.1"
+leader_instance_id = "scheduler"
+observatory_service.public_addr = "127.0.0.1"
+scheduler_service.public_addr = "127.0.0.1"
 ```

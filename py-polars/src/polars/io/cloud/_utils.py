@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Generic, TypeVar
+from typing import Any, Final, Generic, TypeVar
 
 from polars._utils.various import is_path_or_str_sequence
-from polars.io.partition import PartitionBy, _SinkDirectory
+from polars.io.partition import PartitionBy
+
+# Custom polars config keys
+POLARS_STORAGE_CONFIG_KEYS: Final[frozenset[str]] = frozenset(
+    [
+        "max_retries",
+        "file_cache_ttl",
+    ]
+)
 
 T = TypeVar("T")
 
@@ -13,7 +21,8 @@ class NoPickleOption(Generic[T]):
     """
     Wrapper that does not pickle the wrapped value.
 
-    This wrapper will unpickle to contain a None. Used for cached values.
+    This wrapper will unpickle to contain a None. Useful for cached or sensitive
+    values.
     """
 
     def __init__(self, opt_value: T | None = None) -> None:
@@ -40,8 +49,6 @@ def _first_scan_path(
         return source
     elif is_path_or_str_sequence(source) and source:
         return source[0]
-    elif isinstance(source, _SinkDirectory):
-        return source._base_path
     elif isinstance(source, PartitionBy):
         return source._pl_partition_by.base_path
 

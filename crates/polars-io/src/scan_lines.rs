@@ -1,17 +1,21 @@
 use arrow::array::BinaryViewArrayGenericBuilder;
+use arrow::array::builder::StaticArrayBuilder;
 use arrow::datatypes::ArrowDataType;
 use polars_core::prelude::DataType;
 use polars_core::series::Series;
-use polars_error::{PolarsResult, polars_bail};
+use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::pl_str::PlSmallStr;
 
-const EOL_CHAR: u8 = b'\n';
+type BinviewArrayBuilder = BinaryViewArrayGenericBuilder<[u8]>;
+
+const CR: u8 = b'\r';
+const LF: u8 = b'\n';
 
 pub fn count_lines(full_bytes: &[u8]) -> usize {
-    let mut n: usize = full_bytes.iter().map(|c| (*c == EOL_CHAR) as usize).sum();
+    let mut n: usize = full_bytes.iter().map(|c| (*c == LF) as usize).sum();
 
     if let Some(c) = full_bytes.last()
-        && *c != EOL_CHAR
+        && *c != LF
     {
         n += 1;
     }
@@ -20,7 +24,7 @@ pub fn count_lines(full_bytes: &[u8]) -> usize {
 }
 
 pub fn split_lines_to_rows(bytes: &[u8]) -> PolarsResult<Series> {
-    split_lines_to_rows_impl(bytes, u32::MAX as usize)
+    split_lines_to_rows_impl(bytes, BinviewArrayBuilder::MAX_ROW_BYTE_LEN)
 }
 
 fn split_lines_to_rows_impl(bytes: &[u8], max_buffer_size: usize) -> PolarsResult<Series> {
@@ -28,31 +32,35 @@ fn split_lines_to_rows_impl(bytes: &[u8], max_buffer_size: usize) -> PolarsResul
         return Ok(Series::new_empty(PlSmallStr::EMPTY, &DataType::String));
     };
 
-    let first_line_len = bytes.split(|c| *c == EOL_CHAR).next().unwrap().len();
-    let last_line_len = bytes.rsplit(|c| *c == EOL_CHAR).next().unwrap().len();
+    let first_line_len = bytes.split(|c| *c == LF).next().unwrap().len();
+    let last_line_len = bytes.rsplit(|c| *c == LF).next().unwrap().len();
 
     let n_lines_estimate = bytes
         .len()
         .div_ceil(first_line_len.min(last_line_len).max(1));
 
-    use arrow::array::builder::StaticArrayBuilder;
-
-    let mut builder: BinaryViewArrayGenericBuilder<[u8]> =
-        BinaryViewArrayGenericBuilder::new(ArrowDataType::BinaryView);
+    let mut builder: BinviewArrayBuilder = BinviewArrayBuilder::new(ArrowDataType::BinaryView);
     builder.reserve(n_lines_estimate);
 
-    for line_bytes in bytes
-        .strip_suffix(&[EOL_CHAR])
-        .unwrap_or(bytes)
-        .split(|c| *c == EOL_CHAR)
-    {
-        if line_bytes.len() > max_buffer_size {
-            polars_bail!(
-                ComputeError:
-                "line byte length {} exceeds max buffer size {}",
-                line_bytes.len(), max_buffer_size,
-            )
-        }
+    let bytes = if bytes.last() == Some(&LF) {
+        &bytes[..bytes.len() - 1]
+    } else {
+        bytes
+    };
+
+    for line_bytes in bytes.split(|c| *c == LF) {
+        let line_bytes = if line_bytes.last() == Some(&CR) {
+            &line_bytes[..line_bytes.len() - 1]
+        } else {
+            line_bytes
+        };
+
+        polars_ensure!(
+            line_bytes.len() <= max_buffer_size,
+            ComputeError:
+            "line byte length {} exceeds max row byte length {}",
+            line_bytes.len(), max_buffer_size,
+        );
 
         builder.push_value_ignore_validity(line_bytes);
     }
@@ -73,7 +81,7 @@ fn split_lines_to_rows_impl(bytes: &[u8], max_buffer_size: usize) -> PolarsResul
 
 #[cfg(test)]
 mod tests {
-    use arrow::buffer::Buffer;
+    use polars_buffer::Buffer;
     use polars_error::PolarsError;
 
     use crate::scan_lines::split_lines_to_rows_impl;
@@ -118,7 +126,10 @@ EEEEEFFFFFGGGGGHHHHH
             unreachable!()
         };
 
-        assert_eq!(&*err_str, "line byte length 20 exceeds max buffer size 19");
+        assert_eq!(
+            &*err_str,
+            "line byte length 20 exceeds max row byte length 19"
+        );
     }
 
     #[test]

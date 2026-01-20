@@ -596,7 +596,6 @@ def test_overlapping_groups_4628() -> None:
     }
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Minor numerical diff")
 def test_rolling_skew_lagging_null_5179() -> None:
     s = pl.Series([None, 3, 4, 1, None, None, None, None, 3, None, 5, 4, 7, 2, 1, None])
     result = s.rolling_skew(3, min_samples=1).fill_nan(-1.0)
@@ -1422,18 +1421,6 @@ def test_rolling_aggs(
     )
     assert_frame_equal(result, expected)
     assert_frame_equal(result_from_unsorted, expected)
-
-
-def test_rolling_by_nulls() -> None:
-    df = pl.DataFrame({"a": [1, None], "b": [1, 2]})
-    with pytest.raises(
-        InvalidOperationError, match="not yet supported for series with null values"
-    ):
-        df.select(pl.col("a").rolling_min_by("b", "2i"))
-    with pytest.raises(
-        InvalidOperationError, match="not yet supported for series with null values"
-    ):
-        df.select(pl.col("b").rolling_min_by("a", "2i"))
 
 
 def test_window_size_validation() -> None:

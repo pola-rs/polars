@@ -185,6 +185,7 @@ if TYPE_CHECKING:
         SingleIndexSelector,
         SizeUnit,
         StartBy,
+        StorageOptionsDict,
         UniqueKeepStrategy,
         UnstackDirection,
     )
@@ -249,6 +250,13 @@ class DataFrame:
     nan_to_null : bool, default False
         If the data comes from one or more numpy arrays, can optionally convert input
         data np.nan values to null instead. This is a no-op for all other input data.
+    height : int or None, default None
+        Allows constructing DataFrames with 0 width and a specified height. If
+        passed with data, ensures the resulting DataFrame has this height.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Notes
     -----
@@ -372,11 +380,19 @@ class DataFrame:
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         nan_to_null: bool = False,
+        height: int | None = None,
     ) -> None:
+        if height is not None:
+            msg = "the `height` parameter of `DataFrame` is considered unstable."
+            issue_unstable_warning(msg)
+
         if data is None:
             self._df = dict_to_pydf(
                 {}, schema=schema, schema_overrides=schema_overrides
             )
+
+            if height is not None and self.width == 0:
+                self._df = PyDataFrame.empty_with_height(height)
 
         elif isinstance(data, dict):
             self._df = dict_to_pydf(
@@ -464,6 +480,12 @@ class DataFrame:
                 " for the `data` parameter"
             )
             raise TypeError(msg)
+
+        if height is not None and self.height != height:
+            from polars.exceptions import ShapeError
+
+            msg = f"height of data ({self.height}) does not match specified height ({height})"
+            raise ShapeError(msg)
 
     @classmethod
     def deserialize(
@@ -1742,8 +1764,20 @@ class DataFrame:
         foo: [[1,2,3,4,5,6]]
         bar: [["a","b","c","d","e","f"]]
         """
-        if not self.width:  # 0x0 dataframe, cannot infer schema from batches
-            return pa.table({})
+        if self.width == 0:
+            if self.height == 0:
+                return pa.table({})
+
+            s = pl.Series([{}], dtype=Struct({}))
+
+            arr = s.new_from_index(0, min(self.height, (1 << 32) - 2)).to_arrow()
+
+            if len(arr) < self.height:
+                arr = pa.concat_arrays(
+                    [arr, s.new_from_index(0, self.height - len(arr)).to_arrow()]
+                )
+
+            return pa.table({"": arr}).select([])
 
         compat_level_py: int | bool
         if compat_level is None:
@@ -2552,6 +2586,9 @@ class DataFrame:
         ham    large_string[pyarrow]
         dtype: object
         """
+        if self.width == 0:
+            return pd.DataFrame(index=range(self.height))
+
         if use_pyarrow_extension_array:
             if parse_version(pd.__version__) < (1, 5):
                 msg = f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__!r}'
@@ -2913,6 +2950,9 @@ class DataFrame:
         file: None = None,
         *,
         include_bom: bool = ...,
+        compression: Literal["uncompressed", "gzip", "zstd"] = ...,
+        compression_level: int | None = None,
+        check_extension: bool = ...,
         include_header: bool = ...,
         separator: str = ...,
         line_terminator: str = ...,
@@ -2926,9 +2966,9 @@ class DataFrame:
         decimal_comma: bool = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
-        storage_options: dict[str, Any] | None = ...,
+        storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
-        retries: int = ...,
+        retries: int | None = ...,
     ) -> str: ...
 
     @overload
@@ -2937,6 +2977,9 @@ class DataFrame:
         file: str | Path | IO[str] | IO[bytes],
         *,
         include_bom: bool = ...,
+        compression: Literal["uncompressed", "gzip", "zstd"] = ...,
+        compression_level: int | None = None,
+        check_extension: bool = ...,
         include_header: bool = ...,
         separator: str = ...,
         line_terminator: str = ...,
@@ -2950,9 +2993,9 @@ class DataFrame:
         decimal_comma: bool = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
-        storage_options: dict[str, Any] | None = ...,
+        storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
-        retries: int = ...,
+        retries: int | None = ...,
     ) -> None: ...
 
     def write_csv(
@@ -2960,6 +3003,9 @@ class DataFrame:
         file: str | Path | IO[str] | IO[bytes] | None = None,
         *,
         include_bom: bool = False,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
         include_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
@@ -2973,11 +3019,11 @@ class DataFrame:
         decimal_comma: bool = False,
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int = 2,
+        retries: int | None = None,
     ) -> str | None:
         """
         Write to comma-separated values (CSV) file.
@@ -2989,6 +3035,17 @@ class DataFrame:
             If set to `None` (default), the output is returned as a string instead.
         include_bom
             Whether to include UTF-8 BOM in the CSV output.
+        compression
+            What compression format to use.
+        compression_level
+            The compression level to use, typically 0-9 or `None` to let the
+            engine choose.
+        check_extension
+            Whether to check if the filename matches the compression settings.
+            Will raise an error if compression is set to 'uncompressed' and the
+            filename ends in one of (".gz", ".zst", ".zstd") or if
+            compression != 'uncompressed' and the filename does not end in the
+            appropriate extension. Only applies if file is a path.
         include_header
             Whether to include header in the CSV output.
         separator
@@ -3066,6 +3123,9 @@ class DataFrame:
         retries
             Number of retries if accessing a cloud instance fails.
 
+            .. deprecated:: 1.37.1
+                Pass {"max_retries": n} via `storage_options` instead.
+
         Examples
         --------
         >>> import pathlib
@@ -3104,6 +3164,9 @@ class DataFrame:
         self.lazy().sink_csv(
             target,
             include_bom=include_bom,
+            compression=compression,
+            compression_level=compression_level,
+            check_extension=check_extension,
             include_header=include_header,
             separator=separator,
             line_terminator=line_terminator,
@@ -3776,11 +3839,11 @@ class DataFrame:
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
         record_batch_size: int | None = None,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int = 2,
+        retries: int | None = None,
     ) -> BytesIO: ...
 
     @overload
@@ -3791,11 +3854,11 @@ class DataFrame:
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
         record_batch_size: int | None = None,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int = 2,
+        retries: int | None = None,
     ) -> None: ...
 
     @deprecate_renamed_parameter("future", "compat_level", version="1.1")
@@ -3806,11 +3869,11 @@ class DataFrame:
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
         record_batch_size: int | None = None,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int = 2,
+        retries: int | None = None,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -3860,6 +3923,9 @@ class DataFrame:
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
+
+            .. deprecated:: 1.37.1
+                Pass {"max_retries": n} via `storage_options` instead.
 
         Examples
         --------
@@ -3988,11 +4054,11 @@ class DataFrame:
         pyarrow_options: dict[str, Any] | None = None,
         partition_by: str | Sequence[str] | None = None,
         partition_chunk_size_bytes: int = 4_294_967_296,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         metadata: ParquetMetadata | None = None,
         mkdir: bool = False,
     ) -> None:
@@ -4080,6 +4146,9 @@ class DataFrame:
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
+
+            .. deprecated:: 1.37.1
+                Pass {"max_retries": n} via `storage_options` instead.
         metadata
             A dictionary or callback to add key-values to the file-level Parquet
             metadata.
@@ -4574,7 +4643,7 @@ class DataFrame:
         *,
         mode: Literal["error", "append", "overwrite", "ignore"] = ...,
         overwrite_schema: bool | None = ...,
-        storage_options: dict[str, str] | None = ...,
+        storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_write_options: dict[str, Any] | None = ...,
     ) -> None: ...
@@ -4586,7 +4655,7 @@ class DataFrame:
         *,
         mode: Literal["merge"],
         overwrite_schema: bool | None = ...,
-        storage_options: dict[str, str] | None = ...,
+        storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_merge_options: dict[str, Any],
     ) -> deltalake.table.TableMerger: ...
@@ -4597,7 +4666,7 @@ class DataFrame:
         *,
         mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
         overwrite_schema: bool | None = None,
-        storage_options: dict[str, str] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
