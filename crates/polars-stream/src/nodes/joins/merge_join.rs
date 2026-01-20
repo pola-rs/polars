@@ -297,10 +297,24 @@ impl ComputeNode for MergeJoinNode {
                     )
                     .await
                 }));
-                join_handles.extend(dist_recv.into_iter().zip(send).map(|(recv, send)| {
+                join_handles.extend(dist_recv.into_iter().zip(send).map(|(mut recv, mut send)| {
                     let unmatched_send = unmatched_send.clone();
                     scope.spawn_task(TaskPriority::High, async move {
-                        compute_join_and_send_task(recv, send, params, unmatched_send).await
+                        let mut arenas = ComputeJoinArenas::default();
+                        while let Ok((build, probe, seq, source_token)) = recv.recv().await {
+                            compute_join_and_send(
+                                build,
+                                probe,
+                                seq,
+                                source_token,
+                                params,
+                                &mut arenas,
+                                &mut send,
+                                unmatched_send.clone(),
+                            )
+                            .await?;
+                        }
+                        Ok(())
                     })
                 }));
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
@@ -409,34 +423,6 @@ async fn stop_and_buffer_pipe_contents(
         morsel.source_token().stop();
         unmerged.push_df(morsel.into_df());
     }
-}
-
-async fn compute_join_and_send_task(
-    mut recv: distributor_channel::Receiver<(
-        DataFrameBuffer,
-        DataFrameBuffer,
-        MorselSeq,
-        SourceToken,
-    )>,
-    mut send: PortSender,
-    params: &MergeJoinParams,
-    unmatched_send: tokio::sync::mpsc::Sender<(MorselSeq, DataFrame)>,
-) -> PolarsResult<()> {
-    let mut arenas = ComputeJoinArenas::default();
-    while let Ok((build, probe, seq, source_token)) = recv.recv().await {
-        compute_join_and_send(
-            build,
-            probe,
-            seq,
-            source_token,
-            params,
-            &mut arenas,
-            &mut send,
-            unmatched_send.clone(),
-        )
-        .await?;
-    }
-    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
