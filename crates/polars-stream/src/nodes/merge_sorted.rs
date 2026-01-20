@@ -289,16 +289,11 @@ impl ComputeNode for MergeSortedNode {
                 ) {
                     // If a stop was requested, we need to buffer the remaining
                     // morsels and trigger a phase transition.
-                    let Ok(morsel) = port.recv().await else {
-                        return;
-                    };
 
-                    // Request the port stop producing morsels.
-                    morsel.source_token().stop();
-
-                    // Buffer all the morsels that were already produced.
-                    unmerged.push_back(morsel.into_df());
                     while let Ok(morsel) = port.recv().await {
+                        // Request the port stop producing morsels.
+                        morsel.source_token().stop();
+                        // Buffer all the morsels that were already produced.
                         unmerged.push_back(morsel.into_df());
                     }
                 }
