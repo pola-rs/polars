@@ -145,21 +145,22 @@ def test_different_holidays_per_day(
             "date": dates,
         }
     )
-    holidays = pl.Series(holidays)
+    holidays_series = pl.Series(holidays)
     week_mask = [True] * 7
-    expected = pl.Series("date", expected)
+    expected_series = pl.Series("date", expected)
 
     # Check with holidays being both Series and an Expr:
     for df, holidays_expr in [
         (base_df, holidays),
-        (base_df.with_columns(holidays=holidays), pl.col("holidays")),
+        (base_df.with_columns(holidays=holidays_series), pl.col("holidays")),
     ]:
         result = df.select(
             pl.col("date").dt.is_business_day(
-                holidays=holidays_expr, week_mask=week_mask
+                holidays=holidays_expr,  # type: ignore[arg-type]
+                week_mask=week_mask,
             )
         )["date"]
-        assert_series_equal(result, expected)
+        assert_series_equal(result, expected_series)
 
 
 def test_is_business_day_invalid() -> None:

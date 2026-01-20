@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from polars._typing import IntoExprColumn
 
 
-def _holidays_to_expr(holidays: Iterable[date] | pl.Expr | pl.Series) -> pl.Expr:
+def _holidays_to_expr(holidays: Iterable[date] | pl.Expr | pl.Series) -> plr.PyExpr:
     """Convert into Expr of List of Date."""
     if not isinstance(holidays, (pl.Expr, pl.Series)):
         holidays = pl.Series("", [holidays], strict=False, dtype=pl.List(pl.Date))

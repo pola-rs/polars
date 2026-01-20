@@ -174,7 +174,7 @@ def test_add_business_days_multiple_holidays() -> None:
         (pl.col("holidays"), base_df.with_columns(holidays=holidays)),
     ]:
         result = df.select(
-            result=pl.col("start").dt.add_business_days("n", holidays=holidays_expr),
+            result=pl.col("start").dt.add_business_days("n", holidays=holidays_expr),  # type: ignore[arg-type]
         )["result"]
         expected = pl.Series(
             "result", [date(2020, 1, 10), date(2020, 1, 9), None, date(2020, 1, 15)]

@@ -194,7 +194,9 @@ def test_business_day_count_multiple_holidays() -> None:
     ]:
         result = df.select(
             business_day_count=pl.business_day_count(
-                "start", "end", holidays=holidays_expr
+                "start",
+                "end",
+                holidays=holidays_expr,  # type: ignore[arg-type]
             ),
         )["business_day_count"]
         expected = pl.Series("business_day_count", [1, None, 5], pl.Int32)
