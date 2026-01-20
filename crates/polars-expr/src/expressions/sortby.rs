@@ -319,7 +319,7 @@ impl PhysicalExpr for SortByExpr {
         // If every input is a LiteralScalar, we return a LiteralScalar.
         // Otherwise, we convert any LiteralScalar to AggregatedList.
         let all_literal = matches!(ac_in.state, AggState::LiteralScalar(_))
-            || ac_sort_by
+            && ac_sort_by
                 .iter()
                 .all(|ac| matches!(ac.state, AggState::LiteralScalar(_)));
 
