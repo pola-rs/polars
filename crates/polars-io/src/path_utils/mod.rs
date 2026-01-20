@@ -140,15 +140,19 @@ pub fn resolve_homedir<'a, S: AsRef<Path> + ?Sized>(path: &'a S) -> Cow<'a, Path
     }
 }
 
-/// Get the index of the first occurrence of a glob symbol.
-pub fn get_glob_start_idx(path: &[u8]) -> Option<usize> {
-    memchr::memchr3(b'*', b'?', b'[', path)
+fn has_glob(path: &[u8]) -> bool {
+    return get_glob_start_idx(path).is_some();
+
+    /// Get the index of the first occurrence of a glob symbol.
+    fn get_glob_start_idx(path: &[u8]) -> Option<usize> {
+        memchr::memchr3(b'*', b'?', b'[', path)
+    }
 }
 
 /// Returns `true` if `expanded_paths` were expanded from a single directory
 pub fn expanded_from_single_directory(paths: &[PlRefPath], expanded_paths: &[PlRefPath]) -> bool {
     // Single input that isn't a glob
-    paths.len() == 1 && get_glob_start_idx(paths[0].strip_scheme().as_bytes()).is_none()
+    paths.len() == 1 && !has_glob(paths[0].strip_scheme().as_bytes())
     // And isn't a file
     && {
         (
@@ -419,10 +423,9 @@ pub fn expand_paths_hive(
                     }
                 }
 
-                let glob_start_idx = get_glob_start_idx(path.as_bytes());
                 let sort_start_idx = out_paths.paths.len();
 
-                if !glob || glob_start_idx.is_none() {
+                if !glob || !has_glob(path.as_bytes()) {
                     let (expand_start_idx, paths) =
                         expand_path_cloud(path.into_owned(), cloud_options.as_ref())?;
                     out_paths.extend_from_slice(&paths);
@@ -491,7 +494,7 @@ pub fn expand_paths_hive(
                         }
                     }
                 }
-            } else if glob && let Some(i) = get_glob_start_idx(path.as_bytes()) {
+            } else if glob && has_glob(path.as_bytes()) {
                 hive_idx_tracker.update(0, path_idx)?;
 
                 let Ok(paths) = glob::glob(path.as_str()) else {
