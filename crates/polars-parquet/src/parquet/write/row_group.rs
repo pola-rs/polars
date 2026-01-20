@@ -99,6 +99,10 @@ where
     let num_rows = if num_rows != u64::MAX
         && let Ok(v) = i64::try_from(num_rows)
     {
+        if cfg!(debug_assertions) {
+            let inferred = compute_num_rows(&columns)?;
+            assert!(v == inferred || (columns.is_empty() && inferred == 0));
+        }
         v
     } else {
         compute_num_rows(&columns)?
