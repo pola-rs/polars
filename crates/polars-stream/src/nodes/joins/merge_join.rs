@@ -481,7 +481,7 @@ async fn compute_join_and_send(
         let gather_probe_unmatched = params
             .probe_params()
             .emit_unmatched
-            .then(|| &mut arenas.gather_probe_unmatched);
+            .then_some(&mut arenas.gather_probe_unmatched);
         (build_row_offset, probe_row_offset, probe_last_matched) = match_keys(
             &build_key,
             &probe_key,
