@@ -134,6 +134,7 @@ fn match_keys_impl<'a, T: PolarsDataType>(
                 match ord {
                     Ordering::Equal => {
                         if let Some(probe_unmatched) = gather_probe_unmatched.as_mut() {
+                            // All probe keys up to and *excluding* this matched key are unmatched
                             probe_unmatched
                                 .extend(*probe_first_unmatched as IdxSize..probe_idx as IdxSize);
                             *probe_first_unmatched = (*probe_first_unmatched).max(probe_idx + 1);
@@ -144,6 +145,7 @@ fn match_keys_impl<'a, T: PolarsDataType>(
                     },
                     Ordering::Greater => {
                         if let Some(probe_unmatched) = gather_probe_unmatched.as_mut() {
+                            // All probe keys up to and *including* this matched key are unmatched
                             probe_unmatched
                                 .extend(*probe_first_unmatched as IdxSize..=probe_idx as IdxSize);
                             *probe_first_unmatched = (*probe_first_unmatched).max(probe_idx + 1);
@@ -188,6 +190,7 @@ fn match_null_keys_impl(
     assert!(gather_probe.is_empty());
 
     if nulls_equal {
+        // All keys will match all other keys, so just emit the Cartesian product
         while *build_row_offset < build_n {
             if gather_build.len() >= limit_results {
                 return;
@@ -199,6 +202,8 @@ fn match_null_keys_impl(
             *build_row_offset += 1;
         }
     } else {
+        // No keys can ever match, so just emit all build keys into gather_build
+        // and all probe keys into gather_probe_unmatched.
         if build_emit_unmatched {
             gather_build.extend(0..build_n as IdxSize);
             gather_probe.extend(repeat_n(IdxSize::MAX, build_n));
