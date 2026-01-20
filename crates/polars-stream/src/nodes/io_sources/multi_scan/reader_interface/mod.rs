@@ -157,14 +157,29 @@ impl SampleConfig {
 
     /// Generate a Bernoulli sample mask for a batch of rows.
     /// Each row is independently included with probability `fraction`.
-    pub fn generate_bernoulli_mask(&self, num_rows: usize, row_offset: u64) -> Vec<bool> {
+    pub fn generate_bernoulli_mask(
+        &self,
+        num_rows: usize,
+        row_offset: u64,
+    ) -> PolarsResult<Vec<bool>> {
+        use polars_error::polars_bail;
         use rand::prelude::Distribution;
         use rand_distr::Bernoulli;
 
-        let mut rng = self.create_rng(row_offset);
-        let dist = Bernoulli::new(self.fraction).unwrap();
+        if !(0.0..=1.0).contains(&self.fraction) {
+            polars_bail!(
+                ComputeError:
+                "Bernoulli sample fraction must be between 0.0 and 1.0, got {}",
+                self.fraction
+            );
+        }
 
-        (0..num_rows).map(|_| dist.sample(&mut rng)).collect()
+        let mut rng = self.create_rng(row_offset);
+        let dist = Bernoulli::new(self.fraction).map_err(
+            |e| polars_error::polars_err!(ComputeError: "Invalid Bernoulli parameter: {}", e),
+        )?;
+
+        Ok((0..num_rows).map(|_| dist.sample(&mut rng)).collect())
     }
 
     /// Generate Poisson counts for a batch of rows.
@@ -174,19 +189,30 @@ impl SampleConfig {
         &self,
         num_rows: usize,
         row_offset: u64,
-    ) -> (Vec<bool>, Vec<u32>) {
+    ) -> PolarsResult<(Vec<bool>, Vec<u32>)> {
+        use polars_error::polars_bail;
         use rand::prelude::Distribution;
         use rand_distr::Poisson;
 
+        if self.fraction < 0.0 {
+            polars_bail!(
+                ComputeError:
+                "Poisson sample fraction must be non-negative, got {}",
+                self.fraction
+            );
+        }
+
         let mut rng = self.create_rng(row_offset);
-        let dist = Poisson::new(self.fraction).unwrap();
+        let dist = Poisson::new(self.fraction).map_err(
+            |e| polars_error::polars_err!(ComputeError: "Invalid Poisson parameter: {}", e),
+        )?;
 
         let counts: Vec<u32> = (0..num_rows)
             .map(|_| dist.sample(&mut rng) as u32)
             .collect();
         let mask: Vec<bool> = counts.iter().map(|&c| c > 0).collect();
 
-        (mask, counts)
+        Ok((mask, counts))
     }
 
     /// Apply sampling to a DataFrame.
@@ -206,7 +232,7 @@ impl SampleConfig {
 
         if !self.with_replacement {
             // Bernoulli sampling
-            let mask_vec = self.generate_bernoulli_mask(height, row_offset);
+            let mask_vec = self.generate_bernoulli_mask(height, row_offset)?;
             let mask: BooleanChunked = mask_vec.into_iter().collect();
             df.filter(&mask)
         } else {
@@ -214,7 +240,7 @@ impl SampleConfig {
             use polars_core::prelude::{IdxCa, IdxSize};
             use polars_utils::pl_str::PlSmallStr;
 
-            let (_, counts) = self.generate_poisson_counts(height, row_offset);
+            let (_, counts) = self.generate_poisson_counts(height, row_offset)?;
             let expected_size = counts.iter().sum::<u32>() as usize;
             let mut indices = Vec::with_capacity(expected_size);
 

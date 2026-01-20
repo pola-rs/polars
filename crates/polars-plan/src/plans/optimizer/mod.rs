@@ -104,6 +104,8 @@ pub(super) fn run_projection_predicate_pushdown(
 /// Push `FunctionIR::Sample` operations into `IR::Scan` nodes for better memory efficiency.
 #[cfg(feature = "random")]
 fn sample_pushdown(root: Node, ir_arena: &mut Arena<IR>) {
+    use polars_core::random::get_global_random_u64;
+
     use crate::dsl::ScanSampleArgs;
     use crate::plans::FunctionIR;
 
@@ -130,7 +132,13 @@ fn sample_pushdown(root: Node, ir_arena: &mut Arena<IR>) {
                     },
             } = ir
             {
-                Some((*input, *fraction, *with_replacement, seed.unwrap_or(0)))
+                // Use get_global_random_u64() for None seed to preserve random sampling semantics
+                Some((
+                    *input,
+                    *fraction,
+                    *with_replacement,
+                    seed.unwrap_or_else(get_global_random_u64),
+                ))
             } else {
                 None
             }

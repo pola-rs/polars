@@ -1231,7 +1231,7 @@ def test_sink_large_rows_25834(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.write_disk
-def test_scan_parquet_sample(tmp_path: Path) -> None:
+def test_scan_parquet_sample_pushdown(tmp_path: Path) -> None:
     """Test scan_parquet followed by sample."""
     n = 100_000
     file_path = tmp_path / "sample_test.parquet"
@@ -1249,7 +1249,7 @@ def test_scan_parquet_sample(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_scan_parquet_filter_sample(tmp_path: Path) -> None:
+def test_scan_parquet_filter_sample_pushdown(tmp_path: Path) -> None:
     """Test scan_parquet.filter.sample - filter first, then sample."""
     n = 100_000
     file_path = tmp_path / "filter_sample_test.parquet"
@@ -1277,7 +1277,7 @@ def test_scan_parquet_filter_sample(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_scan_parquet_sample_filter(tmp_path: Path) -> None:
+def test_scan_parquet_sample_filter_pushdown(tmp_path: Path) -> None:
     """Test scan_parquet.sample.filter - sample first, then filter."""
     n = 100_000
     file_path = tmp_path / "sample_filter_test.parquet"
@@ -1303,3 +1303,25 @@ def test_scan_parquet_sample_filter(tmp_path: Path) -> None:
     assert result.shape[1] == 2
     # Verify filter was applied
     assert result["a"].max() < filter_threshold  # type: ignore[operator]
+
+
+@pytest.mark.write_disk
+def test_scan_parquet_sample_with_replacement_pushdown(tmp_path: Path) -> None:
+    """Test scan_parquet.sample with replacement and fraction > 1."""
+    n = 100_000
+    file_path = tmp_path / "sample_replacement_test.parquet"
+    df = pl.DataFrame({"a": range(n), "b": range(n, 2 * n)})
+    df.write_parquet(file_path)
+
+    fraction = 2.0
+    result = (
+        pl.scan_parquet(file_path)
+        .sample(fraction=fraction, with_replacement=True, seed=42)
+        .collect()
+    )
+
+    # Poisson sampling with replacement: expect ~n*fraction rows
+    expected = n * fraction
+    std = (n * fraction) ** 0.5
+    assert abs(result.shape[0] - expected) < 5 * std
+    assert result.shape[1] == 2

@@ -579,12 +579,13 @@ impl RowGroupDecoder {
         let poisson_counts: Option<Vec<u32>> = if let Some(sample) = &self.sample {
             // Generate sample mask at projection_height
             let (sample_mask, counts) = if !sample.with_replacement {
-                let sample_mask_vec = sample.generate_bernoulli_mask(projection_height, row_offset);
+                let sample_mask_vec =
+                    sample.generate_bernoulli_mask(projection_height, row_offset)?;
                 let sample_mask: BooleanChunked = sample_mask_vec.into_iter().collect();
                 (sample_mask, None)
             } else {
                 let (sample_mask_vec, counts) =
-                    sample.generate_poisson_counts(projection_height, row_offset);
+                    sample.generate_poisson_counts(projection_height, row_offset)?;
                 let sample_mask: BooleanChunked = sample_mask_vec.into_iter().collect();
                 (sample_mask, Some(counts))
             };
@@ -767,11 +768,12 @@ impl RowGroupDecoder {
 
         // Generate sample mask and optional Poisson counts
         let (mut mask, poisson_counts) = if !sample.with_replacement {
-            let mask_vec = sample.generate_bernoulli_mask(projection_height, row_offset);
+            let mask_vec = sample.generate_bernoulli_mask(projection_height, row_offset)?;
             let mask: BooleanChunked = mask_vec.into_iter().collect();
             (mask, None)
         } else {
-            let (mask_vec, counts) = sample.generate_poisson_counts(projection_height, row_offset);
+            let (mask_vec, counts) =
+                sample.generate_poisson_counts(projection_height, row_offset)?;
             let mask: BooleanChunked = mask_vec.into_iter().collect();
             (mask, Some(counts))
         };
