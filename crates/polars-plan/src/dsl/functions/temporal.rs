@@ -345,6 +345,16 @@ impl DurationArgs {
             let av = lv.to_any_value()?;
             av.extract::<f64>()
         };
+        let overflows_i64 = |e: &&Expr| {
+            let Expr::Literal(lv) = e else { return false };
+            let av = lv.to_any_value();
+            match av {
+                Some(AnyValue::UInt128(x)) => x > i64::MAX as u128,
+                Some(AnyValue::UInt64(x)) => x > i64::MAX as u64,
+                Some(AnyValue::Int128(x)) => x < i64::MIN as i128 || x > i64::MAX as i128,
+                _ => false,
+            }
+        };
 
         let fields = [
             &self.weeks,
@@ -356,6 +366,11 @@ impl DurationArgs {
             &self.microseconds,
             &self.nanoseconds,
         ];
+
+        // go into the function expr implementation to throw an error
+        if fields.iter().any(overflows_i64) {
+            return None;
+        }
 
         let d = if let Some(fields) = array::try_map(fields, extract_i64_as_i128) {
             let [w, d, h, m, s, ms, us, ns] = fields;

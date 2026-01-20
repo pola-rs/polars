@@ -366,3 +366,23 @@ def test_duration_total_units_fractional(
         .dt,
     )
     assert_series_equal(actual, expected.slice(0, 1))
+
+
+def test_scalar_i64_overflow() -> None:
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="9223372036854775808",
+    ):
+        pl.select(pl.duration(nanoseconds=2**63))
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="18446744073709551616",
+    ):
+        pl.select(pl.duration(nanoseconds=2**64))
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="-9223372036854775809",
+    ):
+        pl.select(pl.duration(nanoseconds=-(2**63) - 1))
