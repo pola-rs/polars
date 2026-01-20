@@ -24,7 +24,7 @@ mod lower_group_by;
 mod lower_ir;
 mod to_graph;
 
-pub use fmt::visualize_plan;
+pub use fmt::{NodeStyle, visualize_plan};
 use polars_plan::prelude::PlanCallback;
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::DynamicGroupOptions;

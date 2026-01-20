@@ -15,7 +15,7 @@ use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::physical_plan::ZipBehavior;
 
 /// A style of a graph node.
-enum NodeStyle {
+pub enum NodeStyle {
     InMemoryFallback,
     MemoryIntensive,
     Generic,
