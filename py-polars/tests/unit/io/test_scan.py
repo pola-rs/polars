@@ -1292,7 +1292,7 @@ def test_scan_path_expansion_sorting_24528(
 
     for p in relpaths:
         Path(tmp_path / p).parent.mkdir(exist_ok=True, parents=True)
-        pl.DataFrame({"relpath": p}).write_parquet(str(tmp_path / p))
+        pl.DataFrame({"relpath": p}).write_parquet(tmp_path / p)
 
     assert_frame_equal(
         pl.scan_parquet(tmp_path).collect(),
@@ -1300,7 +1300,7 @@ def test_scan_path_expansion_sorting_24528(
     )
 
     assert_frame_equal(
-        pl.scan_parquet(tmp_path / "**/*").collect(),
+        pl.scan_parquet(f"{tmp_path}/**/*").collect(),
         pl.DataFrame({"relpath": relpaths}),
     )
 
@@ -1310,6 +1310,6 @@ def test_scan_path_expansion_sorting_24528(
     )
 
     assert_frame_equal(
-        pl.scan_parquet(format_file_uri(tmp_path / "**/*")).collect(),
+        pl.scan_parquet(format_file_uri(f"{tmp_path}/**/*")).collect(),
         pl.DataFrame({"relpath": relpaths}),
     )
