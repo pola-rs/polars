@@ -417,7 +417,7 @@ impl ComputeNode for MergeSortedNode {
                             }
                         }
 
-                        // Start passing on the port that is port that is still open.
+                        // Start passing on the port that is still open.
                         if let Some(pass_port) = pass_port {
                             let Ok(mut m) = pass_port.recv().await else {
                                 return Ok(());

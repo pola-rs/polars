@@ -36,6 +36,7 @@ use crate::nodes;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
+use crate::nodes::joins::merge_join::MergeJoinNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -1083,6 +1084,40 @@ fn to_graph_rec<'a>(
                     ],
                 ),
             }
+        },
+
+        MergeJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            descending,
+            nulls_last,
+            args,
+        } => {
+            let args = args.clone();
+            let left_input_key = to_graph_rec(input_left.node, ctx)?;
+            let right_input_key = to_graph_rec(input_right.node, ctx)?;
+            let left_input_schema = ctx.phys_sm[input_left.node].output_schema.clone();
+            let right_input_schema = ctx.phys_sm[input_right.node].output_schema.clone();
+            let output_schema = node.output_schema.clone();
+
+            ctx.graph.add_node(
+                MergeJoinNode::new(
+                    left_input_schema,
+                    right_input_schema,
+                    output_schema,
+                    left_on.clone(),
+                    right_on.clone(),
+                    *descending,
+                    *nulls_last,
+                    args,
+                )?,
+                [
+                    (left_input_key, input_left.port),
+                    (right_input_key, input_right.port),
+                ],
+            )
         },
 
         CrossJoin {
