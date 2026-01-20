@@ -378,7 +378,7 @@ impl LineBatchSource {
         let mut row_offset = 0usize;
         let mut morsel_seq = MorselSeq::default();
         let mut n_rows_skipped: usize = 0;
-        let mut read_size = CompressedReader::ideal_read_size();
+        let mut read_size = CompressedReader::initial_read_size();
 
         loop {
             let (mem_slice, bytes_read) = reader.read_next_slice(&prev_leftover, read_size)?;
