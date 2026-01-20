@@ -151,7 +151,7 @@ def test_different_holidays_per_day(
 
     # Check with holidays being both Series and an Expr:
     for df, holidays_expr in [
-        (base_df, holidays),
+        (base_df, holidays_series),
         (base_df.with_columns(holidays=holidays_series), pl.col("holidays")),
     ]:
         result = df.select(
