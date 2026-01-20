@@ -482,7 +482,7 @@ async fn compute_join_and_send(
             .probe_params()
             .emit_unmatched
             .then_some(&mut arenas.gather_probe_unmatched);
-        (build_row_offset, probe_row_offset, probe_last_matched) = match_keys(
+        match_keys(
             &build_key,
             &probe_key,
             &mut arenas.gather_build,
@@ -492,9 +492,9 @@ async fn compute_join_and_send(
             params.key_descending,
             params.args.nulls_equal,
             morsel_size,
-            build_row_offset,
-            probe_row_offset,
-            probe_last_matched,
+            &mut build_row_offset,
+            &mut probe_row_offset,
+            &mut probe_last_matched,
         );
 
         let df = gather_and_postprocess(

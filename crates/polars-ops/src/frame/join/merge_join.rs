@@ -25,10 +25,10 @@ pub fn match_keys(
     descending: bool,
     nulls_equal: bool,
     limit_results: usize,
-    build_row_offset: usize,
-    probe_row_offset: usize,
-    probe_last_matched: usize,
-) -> (usize, usize, usize) {
+    build_row_offset: &mut usize,
+    probe_row_offset: &mut usize,
+    probe_last_matched: &mut usize,
+) {
     macro_rules! dispatch {
         ($build_keys_ca:expr) => {
             match_keys_impl(
@@ -96,11 +96,10 @@ fn match_keys_impl<'a, T: PolarsDataType>(
     descending: bool,
     nulls_equal: bool,
     limit_results: usize,
-    mut build_row_offset: usize,
-    mut probe_row_offset: usize,
-    mut probe_first_unmatched: usize,
-) -> (usize, usize, usize)
-where
+    build_row_offset: &mut usize,
+    probe_row_offset: &mut usize,
+    probe_first_unmatched: &mut usize,
+) where
     T::Physical<'a>: TotalOrd,
 {
     assert!(gather_build.is_empty());
@@ -109,17 +108,17 @@ where
     let build_key = build_keys.downcast_as_array();
     let probe_key = probe_keys.downcast_as_array();
 
-    while build_row_offset < build_key.len() {
+    while *build_row_offset < build_key.len() {
         if gather_build.len() >= limit_results {
-            return (build_row_offset, probe_row_offset, probe_first_unmatched);
+            return;
         }
 
-        let build_keyval = unsafe { build_key.get_unchecked(build_row_offset) };
+        let build_keyval = unsafe { build_key.get_unchecked(*build_row_offset) };
         let build_keyval = build_keyval.as_ref();
         let mut build_keyval_matched = false;
 
         if nulls_equal || build_keyval.is_some() {
-            for probe_idx in probe_row_offset..probe_key.len() {
+            for probe_idx in *probe_row_offset..probe_key.len() {
                 let probe_keyval = unsafe { probe_key.get_unchecked(probe_idx) };
                 let probe_keyval = probe_keyval.as_ref();
 
@@ -136,20 +135,20 @@ where
                     Ordering::Equal => {
                         if let Some(probe_unmatched) = gather_probe_unmatched.as_mut() {
                             probe_unmatched
-                                .extend(probe_first_unmatched as IdxSize..probe_idx as IdxSize);
-                            probe_first_unmatched = probe_first_unmatched.max(probe_idx + 1);
+                                .extend(*probe_first_unmatched as IdxSize..probe_idx as IdxSize);
+                            *probe_first_unmatched = (*probe_first_unmatched).max(probe_idx + 1);
                         }
-                        gather_build.push(build_row_offset as IdxSize);
+                        gather_build.push(*build_row_offset as IdxSize);
                         gather_probe.push(probe_idx as IdxSize);
                         build_keyval_matched = true;
                     },
                     Ordering::Greater => {
                         if let Some(probe_unmatched) = gather_probe_unmatched.as_mut() {
                             probe_unmatched
-                                .extend(probe_first_unmatched as IdxSize..=probe_idx as IdxSize);
-                            probe_first_unmatched = probe_first_unmatched.max(probe_idx + 1);
+                                .extend(*probe_first_unmatched as IdxSize..=probe_idx as IdxSize);
+                            *probe_first_unmatched = (*probe_first_unmatched).max(probe_idx + 1);
                         }
-                        probe_row_offset = probe_idx + 1;
+                        *probe_row_offset = probe_idx + 1;
                     },
                     Ordering::Less => {
                         break;
@@ -158,17 +157,16 @@ where
             }
         }
         if build_emit_unmatched && !build_keyval_matched {
-            gather_build.push(build_row_offset as IdxSize);
+            gather_build.push(*build_row_offset as IdxSize);
             gather_probe.push(IdxSize::MAX);
         }
-        build_row_offset += 1;
+        *build_row_offset += 1;
     }
     if let Some(probe_unmatched) = gather_probe_unmatched {
-        probe_unmatched.extend(probe_first_unmatched as IdxSize..probe_key.len() as IdxSize);
-        probe_first_unmatched = probe_key.len();
+        probe_unmatched.extend(*probe_first_unmatched as IdxSize..probe_key.len() as IdxSize);
+        *probe_first_unmatched = probe_key.len();
     }
-    probe_row_offset = probe_key.len();
-    (build_row_offset, probe_row_offset, probe_first_unmatched)
+    *probe_row_offset = probe_key.len();
 }
 
 #[allow(clippy::mut_range_bound, clippy::too_many_arguments)]
@@ -182,23 +180,23 @@ fn match_null_keys_impl(
     _descending: bool,
     nulls_equal: bool,
     limit_results: usize,
-    mut build_row_offset: usize,
-    mut probe_row_offset: usize,
-    mut probe_last_matched: usize,
-) -> (usize, usize, usize) {
+    build_row_offset: &mut usize,
+    probe_row_offset: &mut usize,
+    probe_last_matched: &mut usize,
+) {
     assert!(gather_build.is_empty());
     assert!(gather_probe.is_empty());
 
     if nulls_equal {
-        while build_row_offset < build_n {
+        while *build_row_offset < build_n {
             if gather_build.len() >= limit_results {
-                return (build_row_offset, probe_row_offset, probe_last_matched);
+                return;
             }
-            for probe_idx in probe_row_offset..probe_n {
-                gather_build.push(build_row_offset as IdxSize);
+            for probe_idx in *probe_row_offset..probe_n {
+                gather_build.push(*build_row_offset as IdxSize);
                 gather_probe.push(probe_idx as IdxSize);
             }
-            build_row_offset += 1;
+            *build_row_offset += 1;
         }
     } else {
         if build_emit_unmatched {
@@ -206,13 +204,12 @@ fn match_null_keys_impl(
             gather_probe.extend(repeat_n(IdxSize::MAX, build_n));
         }
         if let Some(probe_unmatched) = gather_probe_unmatched {
-            probe_unmatched.extend(probe_last_matched as IdxSize..probe_n as IdxSize);
-            probe_last_matched = probe_n;
+            probe_unmatched.extend(*probe_last_matched as IdxSize..probe_n as IdxSize);
+            *probe_last_matched = probe_n;
         }
     }
-    build_row_offset = build_n;
-    probe_row_offset = probe_n;
-    (build_row_offset, probe_row_offset, probe_last_matched)
+    *build_row_offset = build_n;
+    *probe_row_offset = probe_n;
 }
 
 #[allow(clippy::too_many_arguments)]
