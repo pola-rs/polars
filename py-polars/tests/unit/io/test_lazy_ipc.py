@@ -410,4 +410,3 @@ def test_sink_scan_ipc_round_trip_statistics_projection(
     out = pl.scan_ipc(buf).select(selection).collect()
     assert_frame_equal(df, out)
     assert_frame_equal(df._to_metadata(), out._to_metadata())
-
