@@ -28,7 +28,6 @@ enum NeedMore {
     Build,
     Probe,
     Both,
-    Finished,
 }
 
 #[derive(Default)]
@@ -347,6 +346,14 @@ async fn find_mergeable_task(
             return Ok(());
         }
 
+        if recv_build.is_none()
+            && build_unmerged.is_empty()
+            && recv_probe.is_none()
+            && probe_unmerged.is_empty()
+        {
+            return Ok(());
+        }
+
         let fmp = FindMergeableParams {
             build_done: recv_build.is_none(),
             probe_done: recv_probe.is_none(),
@@ -382,9 +389,6 @@ async fn find_mergeable_task(
                     return Ok(());
                 };
                 probe_unmerged.push_df(m.into_df());
-            },
-            Err(NeedMore::Finished) => {
-                return Ok(());
             },
             Err(other) => {
                 unreachable!("unexpected NeedMore value: {other:?}");
@@ -649,20 +653,10 @@ fn find_mergeable_search(
     let build_get = |idx| unsafe { build.get_bypass_validity(&build_params.key_col, idx, params) };
     let probe_get = |idx| unsafe { probe.get_bypass_validity(&probe_params.key_col, idx, params) };
 
-    if build_done && build.is_empty() && probe_done && probe.is_empty() {
-        return Ok(Err(NeedMore::Finished));
-    } else if build_done && build.is_empty() && !probe_done && probe.is_empty() {
+    if build_done && build.is_empty() && !probe_done && probe.is_empty() {
         return Ok(Err(NeedMore::Probe));
     } else if probe_done && probe.is_empty() && !build_done && build.is_empty() {
         return Ok(Err(NeedMore::Build));
-    } else if build_done && build.is_empty() && !probe_params.emit_unmatched {
-        // We will never match on the remaining build keys
-        probe.clear();
-        return Ok(Err(NeedMore::Finished));
-    } else if probe_done && probe.is_empty() && !build_params.emit_unmatched {
-        // We will never match on the remaining probe keys
-        build.clear();
-        return Ok(Err(NeedMore::Finished));
     } else if build_done && build.is_empty() {
         let probe_split = probe.split_at(get_ideal_morsel_size());
         return Ok(Ok((build_empty_buf(), probe_split)));
@@ -919,12 +913,5 @@ impl DataFrameBuffer {
 
     fn is_empty(&self) -> bool {
         self.total_rows == 0
-    }
-
-    fn clear(&mut self) {
-        assert!(!self.frozen);
-        self.dfs_at_offsets.clear();
-        self.total_rows = 0;
-        self.skip_rows = 0;
     }
 }
