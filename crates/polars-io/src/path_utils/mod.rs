@@ -236,7 +236,6 @@ pub fn expand_paths_hive(
     let mut out_paths = OutPaths {
         paths: vec![],
         exts: [None, None],
-        current_idx: 0,
         is_hidden_file: &is_hidden_file,
     };
 
@@ -519,15 +518,13 @@ pub fn expand_paths_hive(
         }
     }
 
-    assert_eq!(out_paths.current_idx, out_paths.paths.len());
-
     if expanded_from_single_directory(paths, out_paths.paths.as_slice()) {
-        if let [Some((_, i1)), Some((_, i2))] = out_paths.exts {
+        if let [Some((_, p1)), Some((_, p2))] = out_paths.exts {
             polars_bail!(
                 InvalidOperation: "directory contained paths with different file extensions: \
                 first path: {}, second path: {}. Please use a glob pattern to explicitly specify \
                 which files to read (e.g. 'dir/**/*', 'dir/**/*.parquet')",
-                &out_paths.paths[i1], &out_paths.paths[i2]
+                &p1, &p2
             )
         }
     }
@@ -538,8 +535,7 @@ pub fn expand_paths_hive(
     /// we don't have to traverse the entire list again to validate extensions.
     struct OutPaths<'a, F: Fn(&PlRefPath) -> bool> {
         paths: Vec<PlRefPath>,
-        exts: [Option<(PlSmallStr, usize)>; 2],
-        current_idx: usize,
+        exts: [Option<(PlSmallStr, PlRefPath)>; 2],
         is_hidden_file: &'a F,
     }
 
@@ -552,15 +548,13 @@ pub fn expand_paths_hive(
                 return;
             }
 
-            let current_idx = &mut self.current_idx;
             let exts = &mut self.exts;
-            Self::update_ext_status(current_idx, exts, &value);
+            Self::update_ext_status(exts, &value);
 
             self.paths.push(value)
         }
 
         fn extend(&mut self, values: impl IntoIterator<Item = PlRefPath>) {
-            let current_idx = &mut self.current_idx;
             let exts = &mut self.exts;
 
             self.paths.extend(
@@ -568,7 +562,7 @@ pub fn expand_paths_hive(
                     .into_iter()
                     .filter(|x| !(self.is_hidden_file)(x))
                     .inspect(|x| {
-                        Self::update_ext_status(current_idx, exts, x);
+                        Self::update_ext_status(exts, x);
                     }),
             )
         }
@@ -577,22 +571,16 @@ pub fn expand_paths_hive(
             self.extend(values.iter().cloned())
         }
 
-        fn update_ext_status(
-            current_idx: &mut usize,
-            exts: &mut [Option<(PlSmallStr, usize)>; 2],
-            value: &PlRefPath,
-        ) {
+        fn update_ext_status(exts: &mut [Option<(PlSmallStr, PlRefPath)>; 2], value: &PlRefPath) {
             let ext = value
                 .extension()
                 .map_or(PlSmallStr::EMPTY, PlSmallStr::from);
 
             if exts[0].is_none() {
-                exts[0] = Some((ext, *current_idx));
+                exts[0] = Some((ext, value.clone()));
             } else if exts[1].is_none() && ext != exts[0].as_ref().unwrap().0 {
-                exts[1] = Some((ext, *current_idx));
+                exts[1] = Some((ext, value.clone()));
             }
-
-            *current_idx += 1;
         }
     }
 }
