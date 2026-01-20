@@ -216,7 +216,7 @@ impl BinaryChunked {
                     },
                     _ => {
                         let arr_group = _slice_from_offsets(&ca_self, first, len);
-                        arr_group.arg_min_binary()
+                        arr_group.arg_min_binary().map(|i| i as IdxSize)
                     },
                 }
             }),
@@ -282,7 +282,7 @@ impl BinaryChunked {
                     },
                     _ => {
                         let arr_group = _slice_from_offsets(&ca_self, first, len);
-                        arr_group.arg_max_binary()
+                        arr_group.arg_max_binary().map(|i| i as IdxSize)
                     },
                 }
             }),

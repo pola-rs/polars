@@ -591,27 +591,27 @@ impl BinaryChunked {
                 .reduce(MinMax::min_ignore_nan),
         }
     }
-    pub fn arg_min_binary(&self) -> Option<IdxSize> {
+    pub fn arg_min_binary(&self) -> Option<usize> {
         if self.is_empty() || self.null_count() == self.len() {
             return None;
         }
 
         match self.is_sorted_flag() {
-            IsSorted::Ascending => self.first_non_null().map(|i| i as IdxSize),
-            IsSorted::Descending => self.last_non_null().map(|i| i as IdxSize),
-            IsSorted::Not => arg_min_binary(self).map(|i| i as IdxSize),
+            IsSorted::Ascending => self.first_non_null(),
+            IsSorted::Descending => self.last_non_null(),
+            IsSorted::Not => arg_min_binary(self),
         }
     }
 
-    pub fn arg_max_binary(&self) -> Option<IdxSize> {
+    pub fn arg_max_binary(&self) -> Option<usize> {
         if self.is_empty() || self.null_count() == self.len() {
             return None;
         }
 
         match self.is_sorted_flag() {
-            IsSorted::Ascending => self.last_non_null().map(|i| i as IdxSize),
-            IsSorted::Descending => self.first_non_null().map(|i| i as IdxSize),
-            IsSorted::Not => arg_max_binary(self).map(|i| i as IdxSize),
+            IsSorted::Ascending => self.last_non_null(),
+            IsSorted::Descending => self.first_non_null(),
+            IsSorted::Not => arg_max_binary(self),
         }
     }
 }

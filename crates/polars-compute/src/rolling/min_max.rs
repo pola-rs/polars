@@ -41,10 +41,10 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<T> for MinMaxWind
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         let rel: IdxSize =
-            RollingAggWindowNulls::<T, IdxSize>::update(&mut self.inner, start, end)?;
+            unsafe { RollingAggWindowNulls::<T, IdxSize>::update(&mut self.inner, start, end)? };
 
         let abs = start + rel as usize;
-        Some(*self.inner.values.get_unchecked(abs))
+        unsafe { Some(*self.inner.values.get_unchecked(abs)) }
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {
@@ -82,10 +82,10 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<T> for MinMaxWi
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         let rel: IdxSize =
-            RollingAggWindowNoNulls::<T, IdxSize>::update(&mut self.inner, start, end)?;
+            unsafe { RollingAggWindowNoNulls::<T, IdxSize>::update(&mut self.inner, start, end)? };
 
         let abs = start + rel as usize;
-        Some(*self.inner.values.get_unchecked(abs))
+        unsafe { Some(*self.inner.values.get_unchecked(abs)) }
     }
 
     fn slice_len(&self) -> usize {

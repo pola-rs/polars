@@ -534,7 +534,7 @@ where
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
                 let arr = ca.downcast_iter().next().unwrap();
-                let no_nulls = arr.null_count() == 0;
+                let no_nulls = !arr.has_nulls();
 
                 agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
                     if idx.is_empty() {
@@ -581,7 +581,7 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
+                    let arr = self.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let idx_arr = match arr.validity() {
@@ -713,7 +713,7 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
-                let arr = ca.downcast_iter().next().unwrap();
+                let arr = ca.downcast_as_array();
                 let no_nulls = arr.null_count() == 0;
 
                 agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
