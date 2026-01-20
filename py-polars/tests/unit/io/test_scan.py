@@ -1287,12 +1287,12 @@ def test_scan_path_expansion_sorting_24528(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("POLARS_FORCE_ASYNC", polars_force_async)
-    Path.mkdir(tmp_path / "a")
 
     relpaths = ["a.parquet", "a/a.parquet", "ab.parquet"]
 
     for p in relpaths:
-        pl.DataFrame({"relpath": p}).write_parquet(tmp_path / p)
+        Path(tmp_path / p).parent.mkdir(exist_ok=True, parents=True)
+        pl.DataFrame({"relpath": p}).write_parquet(str(tmp_path / p))
 
     assert_frame_equal(
         pl.scan_parquet(tmp_path).collect(),
