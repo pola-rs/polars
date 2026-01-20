@@ -328,19 +328,21 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
                 use BitRepr as B;
                 match (lhs, rhs) {
-                    (B::U8(lhs), B::U8(rhs)) => group_join_inner(&lhs, &rhs, validate, nulls_equal),
+                    (B::U8(lhs), B::U8(rhs)) => {
+                        group_join_inner::<UInt8Type>(&lhs, &rhs, validate, nulls_equal)
+                    },
                     (B::U16(lhs), B::U16(rhs)) => {
-                        group_join_inner(&lhs, &rhs, validate, nulls_equal)
+                        group_join_inner::<UInt16Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     (B::U32(lhs), B::U32(rhs)) => {
-                        group_join_inner(&lhs, &rhs, validate, nulls_equal)
+                        group_join_inner::<UInt32Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     (B::U64(lhs), BitRepr::U64(rhs)) => {
-                        group_join_inner(&lhs, &rhs, validate, nulls_equal)
+                        group_join_inner::<UInt64Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     #[cfg(feature = "dtype-u128")]
                     (B::U128(lhs), BitRepr::U128(rhs)) => {
-                        group_join_inner(&lhs, &rhs, validate, nulls_equal)
+                        group_join_inner::<UInt128Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {
                         polars_bail!(
