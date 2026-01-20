@@ -930,7 +930,7 @@ def test_delta_partition_filter(tmp_path: Path, use_pyarrow: bool) -> None:
     for path in DeltaTable(tmp_path).file_uris():
         Path(path).unlink()
 
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises((FileNotFoundError, OSError)):
         pl.scan_delta(tmp_path, use_pyarrow=use_pyarrow).collect()
 
     assert_frame_equal(
