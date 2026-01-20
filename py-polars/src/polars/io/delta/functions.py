@@ -286,7 +286,6 @@ def scan_delta(
     ...     table_path, delta_table_options=delta_table_options
     ... ).collect()  # doctest: +SKIP
     """
-
     from polars._plr import PyLazyFrame
     from polars.io.cloud.credential_provider._builder import (
         _init_credential_provider_builder,
