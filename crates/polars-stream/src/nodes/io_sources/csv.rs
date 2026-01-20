@@ -396,7 +396,7 @@ impl LineBatchSource {
 
             if batch_slice.is_empty() && !is_eof {
                 // This allows the slice to grow until at least a single row is included. To avoid a quadratic run-time for large row sizes, we double the read size.
-                read_size = read_size.saturating_sub(2);
+                read_size = read_size.saturating_mul(2);
                 continue;
             }
 
