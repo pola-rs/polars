@@ -141,8 +141,7 @@ impl PageReader {
         let page_type = page_header.type_.try_into()?;
 
         if !matches!(page_type, PageType::DictionaryPage) {
-            self.reader
-                .seek(std::io::SeekFrom::Start(seek_offset))?;
+            self.reader.seek(std::io::SeekFrom::Start(seek_offset))?;
             return Ok(None);
         }
 
