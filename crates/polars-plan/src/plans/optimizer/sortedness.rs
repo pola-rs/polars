@@ -549,8 +549,8 @@ pub fn function_expr_sortedness(
 
         #[cfg(all(feature = "strings", feature = "concat_str"))]
         IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal { ignore_nulls, .. }) => {
-            // In cases like pl.concat_str(lit("prefix"), col("a"), lit("suffix")), we always
-            // want to return the sortedness of "a".
+            // In cases like pl.concat_str(pl.lit("prefix"), pl.col("a"), pl.lit("suffix")),
+            // we always want to return the sortedness of pl.col("a").
             let scalar_constants = inputs
                 .iter()
                 .map(|e| {
