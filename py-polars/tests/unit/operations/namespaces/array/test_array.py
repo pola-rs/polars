@@ -165,17 +165,27 @@ def test_arr_slice_on_series(as_array: bool) -> None:
 
 def test_array_gather() -> None:
     s = pl.Series("a", [[1, 2, 3], [4, 5, 6], [6, 7, 8]], dtype=pl.Array(pl.Int32, 3))
-    assert s.arr.gather([0, 1]).to_list() == [[1, 2], [4, 5], [6, 7]]
-    assert s.arr.gather([-1, 1]).to_list() == [[3, 2], [6, 5], [8, 7]]
 
-    # use another list to make sure negative indices are respected
-    gatherer = pl.Series([[-1, 1], [-1, 1], [-1, -2]])
-    assert s.arr.gather(gatherer).to_list() == [[3, 2], [6, 5], [8, 7]]
+    result = s.arr.gather([0, 1])
+    assert result.dtype == pl.Array(pl.Int32, 2)
+    assert result.to_list() == [[1, 2], [4, 5], [6, 7]]
+
+    result = s.arr.gather([-1, 1])
+    assert result.dtype == pl.Array(pl.Int32, 2)
+    assert result.to_list() == [[3, 2], [6, 5], [8, 7]]
+
+    gatherer = pl.Series([[-1, 1], [-1, 1], [-1, -2]], dtype=pl.Array(pl.Int64, 2))
+    result = s.arr.gather(gatherer)
+    assert result.dtype == pl.Array(pl.Int32, 2)
+    assert result.to_list() == [[3, 2], [6, 5], [8, 7]]
+
     with pytest.raises(ComputeError, match="gather index is out of bounds"):
         s.arr.gather([1, 3])
     s = pl.Series([["A"], ["A"], ["B"], None, ["e"]], dtype=pl.Array(pl.String, 1))
 
-    assert s.arr.gather([0, 2], null_on_oob=True).to_list() == [
+    result = s.arr.gather([0, 2], null_on_oob=True)
+    assert result.dtype == pl.Array(pl.String, 2)
+    assert result.to_list() == [
         ["A", None],
         ["A", None],
         ["B", None],
@@ -188,7 +198,9 @@ def test_array_gather() -> None:
     with pytest.raises(ComputeError, match="gather index is out of bounds"):
         s.arr.gather(pl.Series([[0, 1, 2, 3], [0, 1, 2, 3]]))
 
-    assert s.arr.gather([0, 1, 2, 3], null_on_oob=True).to_list() == [
+    result = s.arr.gather([0, 1, 2, 3], null_on_oob=True)
+    assert result.dtype == pl.Array(pl.Int32, 4)
+    assert result.to_list() == [
         [42, 1, 2, None],
         [5, 6, 7, None],
     ]
@@ -196,8 +208,8 @@ def test_array_gather() -> None:
 
 def test_array_gather_wrong_indices_list_type() -> None:
     a = pl.Series("a", [[1, 2, 3], [4, 5, 6], [6, 7, 8]], dtype=pl.Array(pl.Int64, 3))
-    expected = pl.Series("a", [[1, 2], [4], [6, 8]])
-    indices_series = pl.Series("indices", [[0, 1], [0], [0, 2]])
+    expected = pl.Series("a", [[1, 2], [4, 5], [6, 8]], dtype=pl.Array(pl.Int64, 2))
+    indices_series = pl.Series("indices", [[0, 1], [0, 1], [0, 2]])
 
     # int8
     result = a.arr.gather(indices=indices_series.cast(pl.List(pl.Int8)))
