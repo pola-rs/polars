@@ -48,6 +48,7 @@ n_workers = 4
 [observatory]
 enabled = true
 max_metrics_bytes_total = 0
+database_path = "/opt/db/observatory.db"
 
 [monitoring]
 enabled = true
@@ -76,6 +77,7 @@ shuffle_location.local.path = "/opt/shuffle-data-path"
 [observatory]
 enabled = true
 max_metrics_bytes_total = 0
+database_path = "/opt/db/observatory.db"
 
 [monitoring]
 enabled = true
