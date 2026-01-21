@@ -158,6 +158,28 @@ impl Hash for OpaqueColumnUdf {
     }
 }
 
+impl PartialEq for OpaqueColumnUdf {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Deserialized(l0), Self::Deserialized(r0)) => l0 == r0,
+            (Self::Bytes(l0), Self::Bytes(r0)) => l0 == r0,
+            (
+                Self::Named {
+                    name: l_name,
+                    payload: l_payload,
+                    value: l_value,
+                },
+                Self::Named {
+                    name: r_name,
+                    payload: r_payload,
+                    value: r_value,
+                },
+            ) => l_name == r_name && l_payload == r_payload && l_value == r_value,
+            _ => false,
+        }
+    }
+}
+
 pub fn new_column_udf<F: AnonymousColumnsUdf + 'static>(func: F) -> OpaqueColumnUdf {
     LazySerde::Deserialized(SpecialEq::new(Arc::new(func)))
 }

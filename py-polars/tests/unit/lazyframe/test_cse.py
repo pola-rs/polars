@@ -58,7 +58,8 @@ def test_cse_rename_cross_join_5405(use_custom_io_source: bool) -> None:
     right = pl.DataFrame({"A": [1, 2], "B": [3, 4], "D": [5, 6]}).lazy()
     if use_custom_io_source:
         right = create_dataframe_source(right.collect(), is_pure=True)
-    left = pl.DataFrame({"C": [3, 4]}).lazy().join(right.select("A"), how="cross")
+    left = pl.DataFrame({"C": [3, 4]}).lazy().join(
+        right.select("A"), how="cross")
 
     result = left.join(right.rename({"B": "C"}), on=["A", "C"], how="left").collect(
         optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
@@ -129,7 +130,8 @@ def test_cse_schema_6081() -> None:
     )
 
     result = df.join(min_value_by_group, on=["date", "id"], how="left").collect(
-        optimizations=pl.QueryOptFlags(comm_subplan_elim=True, projection_pushdown=True)
+        optimizations=pl.QueryOptFlags(
+            comm_subplan_elim=True, projection_pushdown=True)
     )
     expected = pl.DataFrame(
         {
@@ -188,7 +190,8 @@ def test_schema_row_index_cse(maintain_order: bool) -> None:
         df_a = pl.scan_csv(csv_a.name).with_row_index("Idx")
 
         result = (
-            df_a.join(df_a, on="B", maintain_order="left" if maintain_order else "none")
+            df_a.join(df_a, on="B",
+                      maintain_order="left" if maintain_order else "none")
             .group_by("A", maintain_order=maintain_order)
             .all()
             .collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))
@@ -202,7 +205,8 @@ def test_schema_row_index_cse(maintain_order: bool) -> None:
             "Idx_right": [[0, 1]],
             "A_right": [["Gr1", "Gr1"]],
         },
-        schema_overrides={"Idx": pl.List(pl.UInt32), "Idx_right": pl.List(pl.UInt32)},
+        schema_overrides={"Idx": pl.List(
+            pl.UInt32), "Idx_right": pl.List(pl.UInt32)},
     )
     assert_frame_equal(result, expected, check_row_order=maintain_order)
 
@@ -329,7 +333,8 @@ def test_cse_group_by_10215() -> None:
         }
     )
     assert_frame_equal(
-        result.collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)), expected
+        result.collect(optimizations=pl.QueryOptFlags(
+            comm_subexpr_elim=True)), expected
     )
 
 
@@ -381,11 +386,13 @@ def test_cse_10401() -> None:
 
     q = df.with_columns(pl.all().fill_null(0).fill_nan(0))
 
-    assert r"""col("clicks").fill_null([0.0]).alias("__POLARS_CSER""" in q.explain()
+    assert r"""col("clicks").fill_null([0.0]).alias("__POLARS_CSER""" in q.explain(
+    )
 
     expected = pl.DataFrame({"clicks": [1.0, 0.0, 0.0]})
     assert_frame_equal(
-        q.collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)), expected
+        q.collect(optimizations=pl.QueryOptFlags(
+            comm_subexpr_elim=True)), expected
     )
 
 
@@ -403,7 +410,8 @@ def test_cse_10441() -> None:
 def test_cse_10452() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 2, 1]})
     q = lf.select(
-        pl.col("b").sum() + pl.col("a").sum().over(pl.col("b")) + pl.col("b").sum()
+        pl.col("b").sum() + pl.col("a").sum().over(pl.col("b")) +
+        pl.col("b").sum()
     )
 
     assert "__POLARS_CSE" in q.explain(
@@ -412,7 +420,8 @@ def test_cse_10452() -> None:
 
     expected = pl.DataFrame({"b": [13, 14, 15]})
     assert_frame_equal(
-        q.collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)), expected
+        q.collect(optimizations=pl.QueryOptFlags(
+            comm_subexpr_elim=True)), expected
     )
 
 
@@ -429,7 +438,8 @@ def test_cse_group_by_ternary_10490() -> None:
         lf.group_by("a")
         .agg(
             [
-                pl.when(pl.col(col).is_null().all()).then(None).otherwise(1).alias(col)
+                pl.when(pl.col(col).is_null().all()).then(
+                    None).otherwise(1).alias(col)
                 for col in ["b", "c"]
             ]
             + [
@@ -665,7 +675,8 @@ def test_cse_14047() -> None:
         return (span[1] * 1000 - span[0] * 1000) / count_diff
 
     spans = [(0.001, 0.1), (1, 10)]
-    count_diff_exprs = [count_diff(pl.col("price"), span[0], span[1]) for span in spans]
+    count_diff_exprs = [count_diff(
+        pl.col("price"), span[0], span[1]) for span in spans]
     s_per_count_exprs = [
         s_per_count(count_diff, span).alias(f"zz_{span}")
         for count_diff, span in zip(count_diff_exprs, spans, strict=True)
@@ -686,8 +697,10 @@ def test_cse_15536() -> None:
 
     assert pl.concat(
         [
-            data.filter(pl.lit(True) & (pl.col("a") == 6) | (pl.col("a") == 9)),
-            data.filter(pl.lit(True) & (pl.col("a") == 7) | (pl.col("a") == 8)),
+            data.filter(pl.lit(True) & (pl.col("a") == 6)
+                        | (pl.col("a") == 9)),
+            data.filter(pl.lit(True) & (pl.col("a") == 7)
+                        | (pl.col("a") == 8)),
         ]
     ).collect()["a"].to_list() == [6, 9, 7, 8]
 
@@ -752,7 +765,8 @@ def test_cse_predicate_self_join(
 
 def test_cse_manual_cache_15688() -> None:
     df = pl.LazyFrame(
-        {"a": [1, 2, 3, 1, 2, 3], "b": [1, 1, 1, 1, 1, 1], "id": [1, 1, 1, 2, 2, 2]}
+        {"a": [1, 2, 3, 1, 2, 3], "b": [
+            1, 1, 1, 1, 1, 1], "id": [1, 1, 1, 2, 2, 2]}
     )
 
     df1 = df.filter(id=1).join(df.filter(id=2), on=["a", "b"], how="semi")
@@ -799,10 +813,14 @@ def test_cse_series_collision_16138() -> None:
     clp = ["CLP"]
 
     currency_factor_query_dict = [
-        pl.col("asset_currency").is_in(eur) & pl.col("fund_currency").is_in(clp),
-        pl.col("asset_currency").is_in(eur) & pl.col("fund_currency").is_in(usd),
-        pl.col("asset_currency").is_in(clp) & pl.col("fund_currency").is_in(clp),
-        pl.col("asset_currency").is_in(usd) & pl.col("fund_currency").is_in(usd),
+        pl.col("asset_currency").is_in(eur) & pl.col(
+            "fund_currency").is_in(clp),
+        pl.col("asset_currency").is_in(eur) & pl.col(
+            "fund_currency").is_in(usd),
+        pl.col("asset_currency").is_in(clp) & pl.col(
+            "fund_currency").is_in(clp),
+        pl.col("asset_currency").is_in(usd) & pl.col(
+            "fund_currency").is_in(usd),
     ]
 
     factor_holdings = holdings.lazy().with_columns(
@@ -871,7 +889,8 @@ def test_cse_chunks_18124() -> None:
         df.lazy()
         .with_columns(
             ts_diff_sign=pl.col("ts_diff") > pl.duration(seconds=0),
-            ts_diff_after_sign=pl.col("ts_diff_after") > pl.duration(seconds=0),
+            ts_diff_after_sign=pl.col(
+                "ts_diff_after") > pl.duration(seconds=0),
         )
         .filter(pl.col("ts_diff") > 1)
     ).collect().shape == (4, 4)
@@ -958,7 +977,8 @@ def test_cse_cache_leakage_22339(use_custom_io_source: bool) -> None:
     bc = b.join(c, on="x")
     ac = a.join(c, on="x")
 
-    assert pl.concat([ab, bc, ac]).collect().to_dict(as_series=False) == {"x": []}
+    assert pl.concat([ab, bc, ac]).collect().to_dict(
+        as_series=False) == {"x": []}
 
 
 @pytest.mark.write_disk
@@ -1019,7 +1039,8 @@ def test_cse_custom_io_source_same_object() -> None:
 
     plan = pl.explain_all(lfs)
 
-    caches = [x for x in map(str.strip, plan.splitlines()) if x.startswith("CACHE[")]
+    caches = [x for x in map(str.strip, plan.splitlines())
+              if x.startswith("CACHE[")]
     assert len(caches) == 0
 
     assert io_source.call_count == 0
@@ -1054,7 +1075,8 @@ def test_cse_custom_io_source_same_object() -> None:
         ),
     ]
 
-    caches = [x for x in map(str.strip, plan.splitlines()) if x.startswith("CACHE[")]
+    caches = [x for x in map(str.strip, plan.splitlines())
+              if x.startswith("CACHE[")]
     assert len(caches) == 0
 
     assert io_source.call_count == 0
@@ -1204,7 +1226,8 @@ def test_cpse_predicates_25030() -> None:
 
     got = q4.collect()
     expected = q4.collect(
-        optimizations=pl.lazyframe.opt_flags.QueryOptFlags(comm_subplan_elim=False)
+        optimizations=pl.lazyframe.opt_flags.QueryOptFlags(
+            comm_subplan_elim=False)
     )
 
     assert_frame_equal(got, expected)
@@ -1221,3 +1244,15 @@ def test_asof_join_25699() -> None:
         df.join_asof(df, on="b").collect(),
         pl.DataFrame({"a": [10], "b": [10], "a_right": [10]}),
     )
+
+
+def test_cspe_python_function() -> None:
+    print(
+        pl.LazyFrame({"a": [10], "b": [10]})
+        .with_columns(
+            # a = pl.col("a").map_elements(lambda x: hash(x)) * 10,
+            # b = pl.col("a").map_elements(lambda x: hash(x)) * 100
+            a = pl.col("a").sum() * 10,
+            b = pl.col("a").sum() * 100
+        ).explain()
+     )

@@ -250,7 +250,20 @@ impl AExpr {
                     all_same_name
                 }
             },
-            (AnonymousFunction { .. }, AnonymousFunction { .. }) => false,
+            (
+                AnonymousFunction {
+                    function: l1,
+                    options: l2,
+                    fmt_str: l3,
+                    input: _,
+                },
+                AnonymousFunction {
+                    function: r1,
+                    options: r2,
+                    fmt_str: r3,
+                    input: _,
+                },
+            ) => l1 == r2 && l2 == r2 && l3 == r3,
             (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
             _ => false,
         }
