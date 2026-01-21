@@ -347,3 +347,64 @@ def test_scan_pyarrow_dataset_filter_with_timezone_26029() -> None:
     )
 
     assert_frame_equal(lf.collect(), pl.DataFrame(table))
+
+
+def test_scan_pyarrow_dataset_filter_slice_order() -> None:
+    table = pa.table(
+        {
+            "index": [0, 1, 2],
+            "year": [2025, 2026, 2026],
+            "month": [0, 0, 0],
+        }
+    )
+    dataset = ds.dataset(table)
+
+    q = pl.scan_pyarrow_dataset(dataset).head(2).filter(pl.col("year") == 2026)
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"index": 1, "year": 2026, "month": 0}),
+    )
+
+    import polars.io.pyarrow_dataset.anonymous_scan
+
+    assert_frame_equal(
+        polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
+            dataset,
+            n_rows=2,
+            predicate="pa.compute.field('year') == 2026",
+            with_columns=None,
+        ),
+        pl.DataFrame({"index": 1, "year": 2026, "month": 0}),
+    )
+
+    assert_frame_equal(
+        polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
+            dataset,
+            n_rows=0,
+            predicate="pa.compute.field('year') == 2026",
+            with_columns=None,
+        ),
+        pl.DataFrame(schema={"index": pl.Int64, "year": pl.Int64, "month": pl.Int64}),
+    )
+
+    assert_frame_equal(
+        pl.concat(
+            polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
+                dataset,
+                n_rows=1,
+                predicate=None,
+                with_columns=None,
+                allow_pyarrow_filter=False,
+            )[0]
+        ),
+        pl.DataFrame({"index": 0, "year": 2025, "month": 0}),
+    )
+
+    assert not polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
+        dataset,
+        n_rows=0,
+        predicate="pa.compute.field('year') == 2026",
+        with_columns=None,
+        allow_pyarrow_filter=False,
+    )[1]

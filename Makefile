@@ -96,8 +96,8 @@ requirements:  ## Install/refresh Python project requirements
 
 .PHONY: requirements-all
 requirements-all:  ## Install/refresh all Python requirements (including those needed for CI tests)
-	$(MAKE) requirements
 	$(VENV_BIN)/uv pip install --upgrade --compile-bytecode -r py-polars/requirements-ci.txt
+	$(MAKE) requirements
 
 .PHONY: build
 build: .venv  ## Compile and install Python Polars for development
