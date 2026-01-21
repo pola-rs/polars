@@ -20,12 +20,14 @@ use crate::plans::{
 pub struct IRSorted(pub Arc<[Sorted]>);
 
 /// Are the keys together sorted in any way?
+///
+/// Returns: The way in which the keys are sorted, if they are sorted.
 pub fn are_keys_sorted_any(
     ir_sorted: Option<&IRSorted>,
     keys: &[ExprIR],
     expr_arena: &Arena<AExpr>,
     input_schema: &Schema,
-) -> bool {
+) -> Option<Vec<AExprSorted>> {
     if let Some(ir_sorted) = ir_sorted
         && keys.len() <= ir_sorted.0.len()
         && keys
@@ -33,22 +35,34 @@ pub fn are_keys_sorted_any(
             .zip(ir_sorted.0.iter())
             .all(|(k, s)| into_column(k.node(), expr_arena).is_some_and(|k| k == &s.column))
     {
-        return true;
+        let sortedness = keys
+            .iter()
+            .enumerate()
+            .map(|(idx, key)| {
+                aexpr_sortedness(
+                    expr_arena.get(key.node()),
+                    expr_arena,
+                    input_schema,
+                    Some(&ir_sorted.0[idx..]),
+                )
+            })
+            .map(|r| r.ok_or(()))
+            .try_collect_vec()
+            .ok()?;
+        return Some(sortedness);
     }
 
-    if keys.len() == 1
-        && aexpr_sortedness(
+    if keys.len() == 1 {
+        aexpr_sortedness(
             expr_arena.get(keys[0].node()),
             expr_arena,
             input_schema,
-            ir_sorted,
+            ir_sorted.map(|s| s.0.as_ref()),
         )
-        .is_some()
-    {
-        return true;
+        .map(|s| vec![s])
+    } else {
+        None
     }
-
-    false
 }
 
 pub fn is_sorted(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<IRSorted> {
@@ -108,26 +122,22 @@ fn is_sorted_rec(
             predicate: _,
         } => rec!(*input),
         IR::Scan { .. } => None,
-        IR::DataFrameScan { df, .. } => {
-            let sorted_cols = df
-                .columns()
-                .iter()
-                .filter_map(|c| match c.is_sorted_flag() {
-                    IsSorted::Not => None,
-                    IsSorted::Ascending => Some(Sorted {
-                        column: c.name().clone(),
-                        descending: Some(false),
-                        nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
-                    }),
-                    IsSorted::Descending => Some(Sorted {
-                        column: c.name().clone(),
-                        descending: Some(true),
-                        nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
-                    }),
-                })
-                .collect_vec();
-            (!sorted_cols.is_empty()).then(|| IRSorted(sorted_cols.into()))
-        },
+        IR::DataFrameScan { df, .. } => Some(IRSorted(
+            [df.columns().iter().find_map(|c| match c.is_sorted_flag() {
+                IsSorted::Not => None,
+                IsSorted::Ascending => Some(Sorted {
+                    column: c.name().clone(),
+                    descending: Some(false),
+                    nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
+                }),
+                IsSorted::Descending => Some(Sorted {
+                    column: c.name().clone(),
+                    descending: Some(true),
+                    nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
+                }),
+            })?]
+            .into(),
+        )),
         IR::SimpleProjection { input, columns } => {
             let (input, columns) = (*input, columns.clone());
             match rec!(input) {
@@ -167,7 +177,7 @@ fn is_sorted_rec(
                             expr,
                             expr_arena,
                             input_schema.as_ref(),
-                            Some(input_sorted),
+                            Some(&input_sorted.0),
                         )
                         .map(|s| IRSorted([s].into()))
                     },
@@ -207,7 +217,7 @@ fn is_sorted_rec(
                             exprs,
                             expr_arena,
                             input_schema.as_ref(),
-                            Some(input_sorted),
+                            Some(&input_sorted.0),
                         )
                         .map(|s| IRSorted([s].into()))
                     },
@@ -374,7 +384,7 @@ fn first_expr_ir_sorted(
     exprs: &[ExprIR],
     arena: &Arena<AExpr>,
     schema: &Schema,
-    input_sorted: Option<&IRSorted>,
+    input_sorted: Option<&[Sorted]>,
 ) -> Option<Sorted> {
     exprs.iter().find_map(|e| {
         aexpr_sortedness(arena.get(e.node()), arena, schema, input_sorted).map(|s| Sorted {
@@ -390,13 +400,13 @@ pub fn aexpr_sortedness(
     aexpr: &AExpr,
     arena: &Arena<AExpr>,
     schema: &Schema,
-    input_sorted: Option<&IRSorted>,
+    input_sorted: Option<&[Sorted]>,
 ) -> Option<AExprSorted> {
     match aexpr {
         AExpr::Element => None,
         AExpr::Explode { .. } => None,
         AExpr::Column(col) => {
-            let fst = input_sorted?.0.first().unwrap();
+            let fst = input_sorted?.first().unwrap();
             (fst.column == col).then_some(AExprSorted {
                 descending: fst.descending,
                 nulls_last: fst.nulls_last,
@@ -467,7 +477,7 @@ pub fn function_expr_sortedness(
     inputs: &[ExprIR],
     arena: &Arena<AExpr>,
     schema: &Schema,
-    input_sorted: Option<&IRSorted>,
+    input_sorted: Option<&[Sorted]>,
 ) -> Option<AExprSorted> {
     let nth_input =
         |n: usize| aexpr_sortedness(arena.get(inputs[n].node()), arena, schema, input_sorted);
@@ -535,6 +545,26 @@ pub fn function_expr_sortedness(
 
         #[cfg(all(feature = "strings", feature = "concat_str"))]
         IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal { ignore_nulls, .. }) => {
+            // In cases like pl.concat_str(lit("prefix"), col("a"), lit("suffix")), we always
+            // want to return the sortedness of "a".
+            let scalar_constants = inputs
+                .iter()
+                .map(|e| {
+                    constant_evaluate(e.node(), arena, schema, 0)
+                        .flatten()
+                        .filter(|c| c.is_scalar())
+                })
+                .collect::<Vec<_>>();
+            let scalar_constant_count = scalar_constants.iter().filter(|o| o.is_some()).count();
+            for idx in 0..inputs.len() {
+                let Some(sortedness) = nth_input(idx) else {
+                    continue;
+                };
+                if scalar_constant_count == inputs.len() - 1 && scalar_constants[idx].is_none() {
+                    return Some(sortedness);
+                }
+            }
+
             let sortedness = nth_input(0)?;
             if *ignore_nulls && sortedness.nulls_last? != sortedness.descending? {
                 return None;

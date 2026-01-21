@@ -956,7 +956,8 @@ pub fn lower_ir(
                 &keys,
                 expr_arena,
                 input_schema,
-            );
+            )
+            .is_some();
 
             return build_group_by_stream(
                 phys_input,
@@ -992,20 +993,24 @@ pub fn lower_ir(
             let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
             let args = options.args.clone();
             let options = options.options.clone();
-            let mut left_sortedness = is_sorted(input_left, ir_arena, expr_arena);
-            let left_is_sorted = are_keys_sorted_any(
-                left_sortedness.as_ref(),
+            let mut left_df_sortedness = is_sorted(input_left, ir_arena, expr_arena);
+            let left_on_sorted = are_keys_sorted_any(
+                left_df_sortedness.as_ref(),
                 &left_on,
                 expr_arena,
                 &input_left_schema,
             );
-            let mut right_sortedness = is_sorted(input_right, ir_arena, expr_arena);
-            let right_is_sorted = are_keys_sorted_any(
-                right_sortedness.as_ref(),
+            let mut right_df_sortedness = is_sorted(input_right, ir_arena, expr_arena);
+            let right_on_sorted = are_keys_sorted_any(
+                right_df_sortedness.as_ref(),
                 &right_on,
                 expr_arena,
                 &input_right_schema,
             );
+
+            let join_keys_sorted_together =
+                Option::zip(left_on_sorted, right_on_sorted).map_or(false, |(l, r)| l == r);
+
             let phys_left = lower_ir!(input_left)?;
             let phys_right = lower_ir!(input_right)?;
 
@@ -1046,7 +1051,7 @@ pub fn lower_ir(
                 trans_left_on.drain(left_on.len()..);
                 trans_right_on.drain(right_on.len()..);
 
-                let node = if args.how.is_equi() && left_is_sorted && right_is_sorted {
+                let node = if args.how.is_equi() && join_keys_sorted_together {
                     let row_encode_key_cols = left_on_names.len() > 1;
                     // For merge-joins, evaluate key expressions if they are non-trivial,
                     // row-encode them if there are multiple, and append them as new columns
@@ -1057,14 +1062,14 @@ pub fn lower_ir(
                             &mut trans_left_on,
                             &mut trans_input_left,
                             phys_left,
-                            &mut left_sortedness,
+                            &mut left_df_sortedness,
                         ),
                         (
                             right_on,
                             &mut trans_right_on,
                             &mut trans_input_right,
                             phys_right,
-                            &mut right_sortedness,
+                            &mut right_df_sortedness,
                         ),
                     ] {
                         let expr_is_trivial =
@@ -1138,8 +1143,12 @@ pub fn lower_ir(
                             input_right: trans_input_right,
                             left_on: left_on_names,
                             right_on: right_on_names,
-                            descending: left_sortedness.as_ref().unwrap().0[0].descending.unwrap(),
-                            nulls_last: left_sortedness.as_ref().unwrap().0[0].nulls_last.unwrap(),
+                            descending: left_df_sortedness.as_ref().unwrap().0[0]
+                                .descending
+                                .unwrap(),
+                            nulls_last: left_df_sortedness.as_ref().unwrap().0[0]
+                                .nulls_last
+                                .unwrap(),
                             keys_row_encoded: row_encode_key_cols,
                             args: args.clone(),
                         },
@@ -1311,7 +1320,8 @@ pub fn lower_ir(
                 &keys,
                 expr_arena,
                 input_schema,
-            );
+            )
+            .is_some();
 
             let mut stream = build_group_by_stream(
                 phys_input,

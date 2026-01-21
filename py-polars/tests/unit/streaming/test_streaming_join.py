@@ -591,3 +591,32 @@ def test_merge_join_exprs(ignore_nulls: bool) -> None:
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@pytest.mark.parametrize("left_descending", [False, True])
+@pytest.mark.parametrize("right_descending", [False, True])
+@pytest.mark.parametrize("left_nulls_last", [False, True])
+@pytest.mark.parametrize("right_nulls_last", [False, True])
+def test_merge_join_not_possible(
+    left_descending: bool,
+    right_descending: bool,
+    left_nulls_last: bool,
+    right_nulls_last: bool,
+) -> None:
+    left = pl.LazyFrame({"key": [1]}).set_sorted(
+        "key", descending=left_descending, nulls_last=left_nulls_last
+    )
+    right = pl.LazyFrame({"key": [2]}).set_sorted(
+        "key", descending=right_descending, nulls_last=right_nulls_last
+    )
+
+    q = left.join(right, on="key", how="full", maintain_order="left_right")
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    if (left_descending, left_nulls_last) == (right_descending, right_nulls_last):
+        assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
+    else:
+        assert "merge-join" not in typing.cast("str", dot), (
+            "merge-join used in plan unexpectedly"
+        )
+
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
