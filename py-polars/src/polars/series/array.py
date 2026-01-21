@@ -556,13 +556,12 @@ class ArrayNameSpace:
         """
         Gather elements from each sub-array by index.
 
-        The indices may be defined in a single column, or by sublists in another
-        column of dtype `Array`.
-
         Parameters
         ----------
         indices
-            Indices to return per subarray
+            Indices to gather. A Python list of ints will be broadcast to all rows.
+            An Array-typed column specifies indices per row. A List-typed column
+            with uniform element lengths will be coerced to Array.
         null_on_oob
             Behavior if an index is out of bounds:
             True -> set as null

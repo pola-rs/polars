@@ -684,7 +684,9 @@ class ExprArrayNameSpace:
         Parameters
         ----------
         indices
-            Indices to return per subarray
+            Indices to gather. A Python list of ints will be broadcast to all rows.
+            An Array-typed column specifies indices per row. A List-typed column
+            with uniform element lengths will be coerced to Array.
         null_on_oob
             Behavior if an index is out of bounds:
             True -> set as null
