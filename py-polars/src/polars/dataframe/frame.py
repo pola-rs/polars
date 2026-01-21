@@ -4371,7 +4371,7 @@ class DataFrame:
                     adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
 
                 elif _PYARROW_AVAILABLE:
-                # We know that if the we are able to instrospect 
+                # We know that if the we are able to instrospect
                 # adbc instantiated connections, then it must already has a driver
                 # either as a python package or a compiled library loaded.
                 # o.w, the connection could not be established through dbapi.connect()
@@ -4387,7 +4387,7 @@ class DataFrame:
                         adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
                     except ModuleNotFoundError:
                         adbc_driver = adbc_module_name
-                        adbc_driver_str_version = adbc_connection_info['driver_version']
+                        adbc_driver_str_version = adbc_connection_info.get('driver_version',0.0)
 
                 else:
                     # If we can't introspect the driver, guess that it has the same
