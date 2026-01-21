@@ -1,20 +1,28 @@
+use std::borrow::Cow;
+
 use polars_core::prelude::{StringChunked, StringChunkedBuilder};
 
 #[inline]
-pub fn escape_regex_str(s: &str) -> String {
-    regex_syntax::escape(s)
+pub fn escape_regex_str(s: &str) -> Cow<'_, str> {
+    if s.contains(|c: char| regex_syntax::is_meta_character(c)) {
+        Cow::Owned(regex_syntax::escape(s))
+    } else {
+        Cow::Borrowed(s)
+    }
 }
 
 pub fn escape_regex(ca: &StringChunked) -> StringChunked {
-    let mut buffer = String::new();
+    // When we use StringChunkedBuilder, it will still copy the data into its buffer.
+    // But we can avoid unnecessary formation using regex_syntax.
     let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
+
     for opt_s in ca.iter() {
-        if let Some(s) = opt_s {
-            buffer.clear();
-            regex_syntax::escape_into(s, &mut buffer);
-            builder.append_value(&buffer);
-        } else {
-            builder.append_null();
+        match opt_s {
+            Some(s) => {
+                let escaped = escape_regex_str(s);
+                builder.append_value(&escaped);
+            },
+            None => builder.append_null(),
         }
     }
     builder.finish()
