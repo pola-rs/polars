@@ -82,6 +82,7 @@ pub struct CloudOptions {
     #[cfg(feature = "file_cache")]
     pub file_cache_ttl: u64,
     pub(crate) config: Option<CloudConfig>,
+    #[cfg_attr(feature = "serde", serde(default))]
     pub retry_config: CloudRetryConfig,
     #[cfg(feature = "cloud")]
     /// Note: In most cases you will want to access this via [`CloudOptions::initialized_credential_provider`]
