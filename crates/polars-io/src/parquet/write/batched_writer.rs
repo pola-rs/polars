@@ -80,8 +80,8 @@ impl<W: Write> BatchedWriter<W> {
         );
         // Lock before looping so that order is maintained under contention.
         let mut writer = self.writer.lock().unwrap();
-        for group in row_group_iter {
-            writer.write(u64::MAX, group?)?;
+        for (num_rows, group) in row_group_iter {
+            writer.write(num_rows as u64, group?)?;
         }
         Ok(())
     }
@@ -155,11 +155,16 @@ fn prepare_rg_iter<'a>(
     column_options: &'a [ColumnWriteOptions],
     options: WriteOptions,
     parallel: bool,
-) -> impl Iterator<Item = PolarsResult<RowGroupIterColumns<'static, PolarsError>>> + 'a {
+) -> impl Iterator<
+    Item = (
+        usize,
+        PolarsResult<RowGroupIterColumns<'static, PolarsError>>,
+    ),
+> + 'a {
     let rb_iter = df.iter_chunks(CompatLevel::newest(), false);
     rb_iter.filter_map(move |batch| match batch.len() {
         0 => None,
-        _ => {
+        num_rows => {
             let row_group = create_serializer(
                 batch,
                 parquet_schema.fields(),
@@ -168,7 +173,7 @@ fn prepare_rg_iter<'a>(
                 parallel,
             );
 
-            Some(row_group)
+            Some((num_rows, row_group))
         },
     })
 }
