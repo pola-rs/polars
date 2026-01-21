@@ -19,7 +19,6 @@ pub fn escape_regex_str(s: &str) -> Cow<'_, str> {
 /// let out = escape_regex(&ca);
 /// assert_eq!(out.get(1), Some("\\.\\*"));
 /// ```
-
 pub fn escape_regex(ca: &StringChunked) -> StringChunked {
     // When we use StringChunkedBuilder, it will still copy the data into its buffer.
     // But we can avoid unnecessary formation using regex_syntax.
