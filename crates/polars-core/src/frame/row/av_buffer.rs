@@ -400,11 +400,12 @@ impl<'a> AnyValueBufferTrusted<'a> {
     /// The caller must ensure that the [`AnyValue`] type exactly matches the `Buffer` type.
     #[inline]
     unsafe fn add_physical(&mut self, val: &AnyValue<'_>) {
+        // SAFETY: All unsafe blocks rely directly on the function contract.
+
         use AnyValueBufferTrusted::*;
         match self {
             Boolean(builder) => {
                 let AnyValue::Boolean(v) = val else {
-                    // SAFETY: Function contract.
                     unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
@@ -412,7 +413,6 @@ impl<'a> AnyValueBufferTrusted<'a> {
             #[cfg(feature = "dtype-i8")]
             Int8(builder) => {
                 let AnyValue::Int8(v) = val else {
-                    // SAFETY: Function contract.
                     unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
@@ -420,21 +420,18 @@ impl<'a> AnyValueBufferTrusted<'a> {
             #[cfg(feature = "dtype-i16")]
             Int16(builder) => {
                 let AnyValue::Int16(v) = val else {
-                    // SAFETY: Function contract.
                     unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             Int32(builder) => {
                 let AnyValue::Int32(v) = val else {
-                    // SAFETY: Function contract.
                     unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             Int64(builder) => {
                 let AnyValue::Int64(v) = val else {
-                    // SAFETY: Function contract.
                     unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
@@ -442,7 +439,6 @@ impl<'a> AnyValueBufferTrusted<'a> {
             #[cfg(feature = "dtype-u8")]
             UInt8(builder) => {
                 let AnyValue::UInt8(v) = val else {
-                    // SAFETY: Function contract.
                     unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
@@ -450,42 +446,36 @@ impl<'a> AnyValueBufferTrusted<'a> {
             #[cfg(feature = "dtype-u16")]
             UInt16(builder) => {
                 let AnyValue::UInt16(v) = val else {
-                    // SAFETY: Function contract.
                     unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             UInt32(builder) => {
                 let AnyValue::UInt32(v) = val else {
-                    // SAFETY: Function contract.
                     unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             UInt64(builder) => {
                 let AnyValue::UInt64(v) = val else {
-                    // SAFETY: Function contract.
                     unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             Float32(builder) => {
                 let AnyValue::Float32(v) = val else {
-                    // SAFETY: Function contract.
                     unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             Float64(builder) => {
                 let AnyValue::Float64(v) = val else {
-                    // SAFETY: Function contract.
                     unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             Null(builder) => {
                 let AnyValue::Null = val else {
-                    // SAFETY: Function contract.
                     unsafe { unreachable_unchecked() }
                 };
                 builder.append_null()
@@ -550,7 +540,6 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 match self {
                     String(builder) => {
                         let AnyValue::String(v) = val else {
-                            // SAFETY: Function contract.
                             unsafe { unreachable_unchecked() }
                         };
                         builder.append_value(v)
