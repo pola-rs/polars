@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct CsvWriterOptions {
     pub include_bom: bool,
+    #[serde(default)]
     pub compression: CsvCompression,
+    #[serde(default)]
     pub check_extension: bool,
     pub include_header: bool,
     pub batch_size: NonZeroUsize,
