@@ -993,14 +993,14 @@ pub fn lower_ir(
             let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
             let args = options.args.clone();
             let options = options.options.clone();
-            let mut left_df_sortedness = is_sorted(input_left, ir_arena, expr_arena);
+            let left_df_sortedness = is_sorted(input_left, ir_arena, expr_arena);
             let left_on_sorted = are_keys_sorted_any(
                 left_df_sortedness.as_ref(),
                 &left_on,
                 expr_arena,
                 &input_left_schema,
             );
-            let mut right_df_sortedness = is_sorted(input_right, ir_arena, expr_arena);
+            let right_df_sortedness = is_sorted(input_right, ir_arena, expr_arena);
             let right_on_sorted = are_keys_sorted_any(
                 right_df_sortedness.as_ref(),
                 &right_on,
@@ -1008,7 +1008,8 @@ pub fn lower_ir(
                 &input_right_schema,
             );
             let join_keys_sorted_together =
-                Option::zip(left_on_sorted, right_on_sorted).is_some_and(|(ls, rs)| ls == rs);
+                Option::zip(left_on_sorted.as_ref(), right_on_sorted.as_ref())
+                    .is_some_and(|(ls, rs)| ls == rs);
 
             let phys_left = lower_ir!(input_left)?;
             let phys_right = lower_ir!(input_right)?;
@@ -1051,40 +1052,42 @@ pub fn lower_ir(
                 trans_right_on.drain(right_on.len()..);
 
                 let node = if args.how.is_equi() && join_keys_sorted_together {
-                    let row_encode_key_cols = left_on_names.len() > 1;
                     // For merge-joins, evaluate key expressions if they are non-trivial,
                     // row-encode them if there are multiple, and append them as new columns
                     // to the input dataframes.
-                    for (on, trans_on, trans_input, phys, sortedness) in [
+                    let row_encode_key_cols = left_on_names.len() > 1;
+                    let mut left_key_col_descending = false;
+                    let mut right_key_col_descending = false;
+                    let mut left_key_col_nulls_last = false;
+                    let mut right_key_col_nulls_last = false;
+                    for (on, trans_on, trans_input, phys, expr_sorted, descending, nulls_last) in [
                         (
                             left_on,
                             &mut trans_left_on,
                             &mut trans_input_left,
                             phys_left,
-                            &mut left_df_sortedness,
+                            &left_on_sorted.unwrap(),
+                            &mut left_key_col_descending,
+                            &mut left_key_col_nulls_last,
                         ),
                         (
                             right_on,
                             &mut trans_right_on,
                             &mut trans_input_right,
                             phys_right,
-                            &mut right_df_sortedness,
+                            &right_on_sorted.unwrap(),
+                            &mut right_key_col_descending,
+                            &mut right_key_col_nulls_last,
                         ),
                     ] {
                         let expr_is_trivial =
                             |c: &ExprIR| matches!(expr_arena.get(c.node()), AExpr::Column(_));
                         if row_encode_key_cols || !expr_is_trivial(&on[0]) {
-                            let descending = sortedness
-                                .as_ref()
-                                .unwrap()
-                                .0
+                            let sorted_descending = expr_sorted
                                 .iter()
                                 .map(|s| s.descending.unwrap())
                                 .collect_vec();
-                            let nulls_last = sortedness
-                                .as_ref()
-                                .unwrap()
-                                .0
+                            let sorted_nulls_last = expr_sorted
                                 .iter()
                                 .map(|s| s.nulls_last.unwrap())
                                 .collect_vec();
@@ -1093,13 +1096,13 @@ pub fn lower_ir(
                                 let tfc = ToFieldContext::new(expr_arena, &input_left_schema);
                                 let expr_dtype =
                                     |e: &ExprIR| expr_arena.get(e.node()).to_dtype(&tfc);
-                                let nulls_last_encoded = nulls_last[0];
+                                let nulls_last_encoded = sorted_nulls_last[0];
                                 let row_encode_col_expr = AExprBuilder::row_encode(
                                     trans_on.clone(),
                                     trans_on.iter().map(expr_dtype).try_collect_vec()?,
                                     RowEncodingVariant::Ordered {
-                                        descending: Some(descending),
-                                        nulls_last: Some(nulls_last),
+                                        descending: Some(sorted_descending),
+                                        nulls_last: Some(sorted_nulls_last),
                                         broadcast_nulls: Some(!args.nulls_equal),
                                     },
                                     expr_arena,
@@ -1107,31 +1110,21 @@ pub fn lower_ir(
                                 .expr_ir(merge_join::KEY_COL_NAME);
                                 trans_on.clear();
                                 trans_on.push(row_encode_col_expr);
-                                *sortedness = Some(IRSorted(
-                                    [Sorted {
-                                        column: merge_join::KEY_COL_NAME.into(),
-                                        descending: Some(false),
-                                        nulls_last: Some(nulls_last_encoded),
-                                    }]
-                                    .into(),
-                                ));
+                                *descending = false;
+                                *nulls_last = nulls_last_encoded;
                             } else {
                                 trans_on[0] = trans_on[0]
                                     .with_alias(PlSmallStr::from_str(merge_join::KEY_COL_NAME));
-                                *sortedness = Some(IRSorted(
-                                    [Sorted {
-                                        column: merge_join::KEY_COL_NAME.into(),
-                                        descending: Some(descending[0]),
-                                        nulls_last: Some(nulls_last[0]),
-                                    }]
-                                    .into(),
-                                ));
+                                *descending = expr_sorted[0].descending.unwrap();
+                                *nulls_last = expr_sorted[0].nulls_last.unwrap();
                             }
                             *trans_input = build_hstack_stream(
                                 phys, trans_on, expr_arena, phys_sm, expr_cache, ctx,
                             )?;
                         }
                     }
+                    assert!(left_key_col_descending == right_key_col_descending);
+                    assert!(left_key_col_nulls_last == right_key_col_nulls_last);
 
                     phys_sm.insert(PhysNode::new(
                         output_schema,
@@ -1140,12 +1133,8 @@ pub fn lower_ir(
                             input_right: trans_input_right,
                             left_on: left_on_names,
                             right_on: right_on_names,
-                            descending: left_df_sortedness.as_ref().unwrap().0[0]
-                                .descending
-                                .unwrap(),
-                            nulls_last: left_df_sortedness.as_ref().unwrap().0[0]
-                                .nulls_last
-                                .unwrap(),
+                            descending: left_key_col_descending,
+                            nulls_last: left_key_col_nulls_last,
                             keys_row_encoded: row_encode_key_cols,
                             args: args.clone(),
                         },
