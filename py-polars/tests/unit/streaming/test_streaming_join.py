@@ -609,14 +609,10 @@ def test_merge_join_not_possible(
     right = pl.LazyFrame({"key": [2]}).set_sorted(
         "key", descending=right_descending, nulls_last=right_nulls_last
     )
-
     q = left.join(right, on="key", how="full", maintain_order="left_right")
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     if (left_descending, left_nulls_last) == (right_descending, right_nulls_last):
-        assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
+        assert "merge-join" in typing.cast("str", dot)
     else:
-        assert "merge-join" not in typing.cast("str", dot), (
-            "merge-join used in plan unexpectedly"
-        )
-
+        assert "merge-join" not in typing.cast("str", dot)
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
