@@ -9,25 +9,25 @@ from polars.testing import assert_frame_equal, assert_frame_not_equal
 
 def test_tail_union() -> None:
     assert (
-               pl.concat(
-                   [
-                       pl.LazyFrame({"a": [1, 2]}),
-                       pl.LazyFrame({"a": [3, 4]}),
-                       pl.LazyFrame({"a": [5, 6]}),
-                   ]
-               )
-               .tail(1)
-               .collect()
-           ).to_dict(as_series=False) == {"a": [6]}
+        pl.concat(
+            [
+                pl.LazyFrame({"a": [1, 2]}),
+                pl.LazyFrame({"a": [3, 4]}),
+                pl.LazyFrame({"a": [5, 6]}),
+            ]
+        )
+        .tail(1)
+        .collect()
+    ).to_dict(as_series=False) == {"a": [6]}
 
 
 def test_python_slicing_data_frame() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
     expected = pl.DataFrame({"a": [2, 3], "b": ["b", "c"]})
     for slice_params in (
-            [1, 10],  # slice > len(df)
-            [1, 2],  # slice == len(df)
-            [1],  # optional len
+        [1, 10],  # slice > len(df)
+        [1, 2],  # slice == len(df)
+        [1],  # optional len
     ):
         assert_frame_equal(df.slice(*slice_params), expected)
 
@@ -36,12 +36,12 @@ def test_python_slicing_data_frame() -> None:
     assert_frame_equal(df.slice(-5, 4), expected)
 
     for py_slice in (
-            slice(1, 2),
-            slice(0, 2, 2),
-            slice(3, -3, -1),
-            slice(1, None, -2),
-            slice(-1, -3, -1),
-            slice(-3, None, -3),
+        slice(1, 2),
+        slice(0, 2, 2),
+        slice(3, -3, -1),
+        slice(1, None, -2),
+        slice(-1, -3, -1),
+        slice(-3, None, -3),
     ):
         # confirm frame slice matches python slice
         assert df[py_slice].rows() == df.rows()[py_slice]
@@ -50,23 +50,23 @@ def test_python_slicing_data_frame() -> None:
 def test_python_slicing_series() -> None:
     s = pl.Series(name="a", values=[0, 1, 2, 3, 4, 5], dtype=pl.UInt8)
     for srs_slice, expected in (
-            [s.slice(2, 3), [2, 3, 4]],
-            [s.slice(4, 1), [4]],
-            [s.slice(4, None), [4, 5]],
-            [s.slice(3), [3, 4, 5]],
-            [s.slice(-2), [4, 5]],
-            [s.slice(-7, 4), [0, 1, 2]],
-            [s.slice(-700, 4), []],
+        [s.slice(2, 3), [2, 3, 4]],
+        [s.slice(4, 1), [4]],
+        [s.slice(4, None), [4, 5]],
+        [s.slice(3), [3, 4, 5]],
+        [s.slice(-2), [4, 5]],
+        [s.slice(-7, 4), [0, 1, 2]],
+        [s.slice(-700, 4), []],
     ):
         assert srs_slice.to_list() == expected  # type: ignore[attr-defined]
 
     for py_slice in (
-            slice(1, 2),
-            slice(0, 2, 2),
-            slice(3, -3, -1),
-            slice(1, None, -2),
-            slice(-1, -3, -1),
-            slice(-3, None, -3),
+        slice(1, 2),
+        slice(0, 2, 2),
+        slice(3, -3, -1),
+        slice(1, None, -2),
+        slice(-1, -3, -1),
+        slice(-3, None, -3),
     ):
         # confirm series slice matches python slice
         assert s[py_slice].to_list() == s.to_list()[py_slice]
@@ -76,20 +76,20 @@ def test_python_slicing_lazy_frame() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": ["a", "b", "c", "d"]})
     expected = pl.LazyFrame({"a": [3, 4], "b": ["c", "d"]})
     for slice_params in (
-            [2, 10],  # slice > len(df)
-            [2, 4],  # slice == len(df)
-            [2],  # optional len
+        [2, 10],  # slice > len(df)
+        [2, 4],  # slice == len(df)
+        [2],  # optional len
     ):
         assert_frame_equal(ldf.slice(*slice_params), expected)
 
     for py_slice in (
-            slice(1, 2),
-            slice(0, 3, 2),
-            slice(-3, None),
-            slice(None, 2, 2),
-            slice(3, None, -1),
-            slice(1, None, -2),
-            slice(0, None, -1),
+        slice(1, 2),
+        slice(0, 3, 2),
+        slice(-3, None),
+        slice(None, 2, 2),
+        slice(3, None, -1),
+        slice(1, None, -2),
+        slice(0, None, -1),
     ):
         # confirm frame slice matches python slice
         assert ldf[py_slice].collect().rows() == ldf.collect().rows()[py_slice]
@@ -242,8 +242,8 @@ def test_slice_lazy_frame_raises_proper(input_slice: tuple[int | None]) -> None:
 
 def test_double_sort_slice_pushdown_15779() -> None:
     assert (
-               pl.LazyFrame({"foo": [1, 2]}).sort("foo").head(0).sort("foo").collect()
-           ).shape == (0, 1)
+        pl.LazyFrame({"foo": [1, 2]}).sort("foo").head(0).sort("foo").collect()
+    ).shape == (0, 1)
 
 
 def test_slice_pushdown_simple_projection_18288() -> None:
@@ -284,11 +284,11 @@ def test_slice_first_in_agg_18551() -> None:
         x=pl.col("name").sort_by("value").slice(0, 1).first(),
         y=pl.col("name").sort_by("value").slice(1, 1).first(),
     ).to_dict(as_series=False) == {
-               "id": [1, 2],
-               "sort_by": [["B", "A"], ["C"]],
-               "x": ["B", "C"],
-               "y": ["A", None],
-           }
+        "id": [1, 2],
+        "sort_by": [["B", "A"], ["C"]],
+        "x": ["B", "C"],
+        "y": ["A", None],
+    }
 
 
 def test_slice_after_sort_with_nulls_20079() -> None:
@@ -323,21 +323,21 @@ def test_slice_empty_morsel_input() -> None:
     "base_query",
     [
         (
-                pl.LazyFrame({"a": [[1]]})
-                .select("a", BARRIER=pl.col("a").sort())
-                .with_columns(MARKER=1)
-                .with_columns(b=pl.col("a").list.get(1, null_on_oob=False))
+            pl.LazyFrame({"a": [[1]]})
+            .select("a", BARRIER=pl.col("a").sort())
+            .with_columns(MARKER=1)
+            .with_columns(b=pl.col("a").list.get(1, null_on_oob=False))
         ),
         (  # Variant to ensure cluster_with_columns runs after slice pushdown.
-                pl.LazyFrame({"a": [[1]]})
-                .with_columns(BARRIER=pl.col("a").sort())
-                .with_columns(MARKER=1)
-                .with_columns(b=pl.col("a").list.get(1, null_on_oob=False))
+            pl.LazyFrame({"a": [[1]]})
+            .with_columns(BARRIER=pl.col("a").sort())
+            .with_columns(MARKER=1)
+            .with_columns(b=pl.col("a").list.get(1, null_on_oob=False))
         ),
     ],
 )
 def test_slice_pushdown_pushes_past_fallible(
-        base_query: pl.LazyFrame, monkeypatch: pytest.MonkeyPatch
+    base_query: pl.LazyFrame, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Ensure baseline fails
     with pytest.raises(ComputeError, match="index is out of bounds"):
@@ -360,7 +360,7 @@ def slice_ref(a: list[int], offset: int, length: int) -> list[int]:
         offset = 0
     if length < 0:
         length = 0
-    return a[offset: offset + length]
+    return a[offset : offset + length]
 
 
 @pytest.mark.slow
@@ -410,7 +410,7 @@ def test_slice_slice_pushdown() -> None:
     ],
 )
 def test_schema_slice_on_literal_23999(
-        lit: pl.Expr, offset: pl.Expr, len: pl.Expr, groupby: bool
+    lit: pl.Expr, offset: pl.Expr, len: pl.Expr, groupby: bool
 ) -> None:
     df = pl.DataFrame(
         {
@@ -449,7 +449,7 @@ def test_schema_slice_on_literal_23999(
     ],
 )
 def test_schema_gather_get_on_literal_24101(
-        lit: pl.Expr, idx: pl.Expr, groupby: bool
+    lit: pl.Expr, idx: pl.Expr, groupby: bool
 ) -> None:
     df = pl.DataFrame(
         {
@@ -495,7 +495,7 @@ def test_schema_gather_get_on_literal_24101(
     ],
 )
 def test_schema_head_tail_on_literal_24102(
-        lit: pl.Expr, len: pl.Expr, groupby: bool
+    lit: pl.Expr, len: pl.Expr, groupby: bool
 ) -> None:
     df = pl.DataFrame(
         {
