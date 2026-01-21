@@ -563,7 +563,7 @@ where
 {
     let chunks = ca
         .downcast_iter()
-        .map(|arr| op(arr))
+        .map(op)
         .collect::<PolarsResult<Vec<_>>>()?;
     Series::try_from((ca.name().clone(), chunks))
 }
