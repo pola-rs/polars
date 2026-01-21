@@ -49,7 +49,6 @@ def test_scan_lines(
             cx.setenv("POLARS_VERBOSE", "1")
             pl.scan_lines(b"").collect()
             capture = capfd.readouterr().err
-            print(capture)
             assert "fixed_read_size: Some(1)" in capture
 
     assert_frame_equal(
