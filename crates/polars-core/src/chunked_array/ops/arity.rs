@@ -556,7 +556,7 @@ where
     ca
 }
 
-pub fn try_unary_to_series<T, F>(ca: &ChunkedArray<T>, mut op: F) -> PolarsResult<Series>
+pub fn try_unary_to_series<T, F>(ca: &ChunkedArray<T>, op: F) -> PolarsResult<Series>
 where
     T: PolarsDataType,
     F: FnMut(&T::Array) -> PolarsResult<Box<dyn Array>>,
