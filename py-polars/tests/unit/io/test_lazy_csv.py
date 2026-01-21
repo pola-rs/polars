@@ -4,6 +4,7 @@ import io
 import tempfile
 from collections import OrderedDict
 from pathlib import Path
+from typing import IO
 
 import numpy as np
 import pytest
@@ -541,9 +542,12 @@ def test_csv_io_object_utf8_23629() -> None:
 
 
 def test_scan_csv_multiple_files_skip_rows_overflow_26127() -> None:
+    files: list[IO[bytes]] = [
+        io.BytesIO(b"foo,bar,baz\n1,2,3\n4,5,6") for _ in range(2)
+    ]
     assert_frame_equal(
         pl.scan_csv(
-            [io.BytesIO(b"foo,bar,baz\n1,2,3\n4,5,6") for _ in range(2)],
+            files,
             n_rows=4,
             skip_rows=2,
         ).collect(),
