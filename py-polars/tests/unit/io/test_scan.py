@@ -1277,3 +1277,41 @@ def test_scan_file_uri_hostname_component() -> None:
         match="unsupported: non-empty hostname for 'file:' URI: 'hostname:80'",
     ):
         q.collect()
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("polars_force_async", ["0", "1"])
+@pytest.mark.parametrize("n_repeats", [1, 2])
+def test_scan_path_expansion_sorting_24528(
+    tmp_path: Path,
+    polars_force_async: str,
+    n_repeats: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", polars_force_async)
+
+    relpaths = ["a.parquet", "a/a.parquet", "ab.parquet"]
+
+    for p in relpaths:
+        Path(tmp_path / p).parent.mkdir(exist_ok=True, parents=True)
+        pl.DataFrame({"relpath": p}).write_parquet(tmp_path / p)
+
+    assert_frame_equal(
+        pl.scan_parquet(n_repeats * [tmp_path]).collect(),
+        pl.DataFrame({"relpath": n_repeats * relpaths}),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(n_repeats * [f"{tmp_path}/**/*"]).collect(),
+        pl.DataFrame({"relpath": n_repeats * relpaths}),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(n_repeats * [format_file_uri(tmp_path) + "/"]).collect(),
+        pl.DataFrame({"relpath": n_repeats * relpaths}),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(n_repeats * [format_file_uri(f"{tmp_path}/**/*")]).collect(),
+        pl.DataFrame({"relpath": n_repeats * relpaths}),
+    )
