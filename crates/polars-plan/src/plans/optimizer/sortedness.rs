@@ -21,48 +21,24 @@ pub struct IRSorted(pub Arc<[Sorted]>);
 
 /// Are the keys together sorted in any way?
 ///
-/// Returns: The way in which the keys are sorted, if they are sorted.
+/// Returns the way in which the keys are sorted, if they are sorted.
 pub fn are_keys_sorted_any(
     ir_sorted: Option<&IRSorted>,
     keys: &[ExprIR],
     expr_arena: &Arena<AExpr>,
     input_schema: &Schema,
 ) -> Option<Vec<AExprSorted>> {
-    if let Some(ir_sorted) = ir_sorted
-        && keys.len() <= ir_sorted.0.len()
-        && keys
-            .iter()
-            .zip(ir_sorted.0.iter())
-            .all(|(k, s)| into_column(k.node(), expr_arena).is_some_and(|k| k == &s.column))
-    {
-        let sortedness = keys
-            .iter()
-            .enumerate()
-            .map(|(idx, key)| {
-                aexpr_sortedness(
-                    expr_arena.get(key.node()),
-                    expr_arena,
-                    input_schema,
-                    Some(&ir_sorted.0[idx..]),
-                )
-            })
-            .map(|r| r.ok_or(()))
-            .try_collect_vec()
-            .ok()?;
-        return Some(sortedness);
-    }
-
-    if keys.len() == 1 {
-        aexpr_sortedness(
-            expr_arena.get(keys[0].node()),
+    let mut sortedness = Vec::with_capacity(keys.len());
+    for (idx, key) in keys.iter().enumerate() {
+        let s = aexpr_sortedness(
+            expr_arena.get(key.node()),
             expr_arena,
             input_schema,
-            ir_sorted.map(|s| s.0.as_ref()),
-        )
-        .map(|s| vec![s])
-    } else {
-        None
+            Some(&ir_sorted?.0[idx..]),
+        )?;
+        sortedness.push(s);
     }
+    Some(sortedness)
 }
 
 pub fn is_sorted(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<IRSorted> {
@@ -410,7 +386,7 @@ pub fn aexpr_sortedness(
         AExpr::Element => None,
         AExpr::Explode { .. } => None,
         AExpr::Column(col) => {
-            let fst = input_sorted?.first().unwrap();
+            let fst = input_sorted?.first()?;
             (fst.column == col).then_some(AExprSorted {
                 descending: fst.descending,
                 nulls_last: fst.nulls_last,
