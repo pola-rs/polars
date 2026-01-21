@@ -74,6 +74,24 @@ def test_scan_delta_columns(delta_table_path: Path) -> None:
     assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
 
+def test_scan_delta_polars_storage_options_keys(
+    delta_table_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+    lf = pl.scan_delta(
+        delta_table_path,
+        version=0,
+        storage_options={"max_retries": 13, "file_cache_ttl": 37},
+    ).select("name")
+
+    lf.collect()
+
+    capture = capfd.readouterr().err
+    assert "max_retries: 13, file_cache_ttl: 37" in capture
+
+
 def test_scan_delta_relative(delta_table_path: Path) -> None:
     rel_delta_table_path = str(delta_table_path / ".." / "delta-table")
 

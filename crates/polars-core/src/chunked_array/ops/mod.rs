@@ -81,6 +81,14 @@ pub trait ChunkAnyValue {
     fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>>;
 }
 
+pub trait ChunkAnyValueBypassValidity {
+    /// Get a single value bypassing the validity map. Beware this is slow.
+    ///
+    /// # Safety
+    /// Does not do any bounds checking.
+    unsafe fn get_any_value_bypass_validity(&self, index: usize) -> AnyValue<'_>;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]

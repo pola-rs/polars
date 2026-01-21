@@ -306,7 +306,7 @@ def test_scan_csv_slice_offset_zero(io_files_path: Path) -> None:
 @pytest.mark.write_disk
 def test_scan_empty_csv_with_row_index(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
-    file_path = tmp_path / "small.parquet"
+    file_path = tmp_path / "small.csv"
     df = pl.DataFrame({"a": []})
     df.write_csv(file_path)
 

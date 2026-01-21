@@ -21,6 +21,6 @@ mod options;
 mod write_impl;
 mod writer;
 
-pub use options::{CsvWriterOptions, QuoteStyle, SerializeOptions};
-pub use write_impl::{CsvSerializer, write_bom, write_csv_header};
+pub use options::{CsvCompression, CsvWriterOptions, QuoteStyle, SerializeOptions};
+pub use write_impl::{CsvSerializer, UTF8_BOM, csv_header};
 pub use writer::{BatchedWriter, CsvWriter};

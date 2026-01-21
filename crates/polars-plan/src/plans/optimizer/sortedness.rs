@@ -5,6 +5,7 @@ use polars_core::prelude::{FillNullStrategy, PlHashMap, PlHashSet};
 use polars_core::schema::Schema;
 use polars_core::series::IsSorted;
 use polars_utils::arena::{Arena, Node};
+use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 
@@ -107,22 +108,26 @@ fn is_sorted_rec(
             predicate: _,
         } => rec!(*input),
         IR::Scan { .. } => None,
-        IR::DataFrameScan { df, .. } => Some(IRSorted(
-            [df.columns().iter().find_map(|c| match c.is_sorted_flag() {
-                IsSorted::Not => None,
-                IsSorted::Ascending => Some(Sorted {
-                    column: c.name().clone(),
-                    descending: Some(false),
-                    nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
-                }),
-                IsSorted::Descending => Some(Sorted {
-                    column: c.name().clone(),
-                    descending: Some(true),
-                    nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
-                }),
-            })?]
-            .into(),
-        )),
+        IR::DataFrameScan { df, .. } => {
+            let sorted_cols = df
+                .columns()
+                .iter()
+                .filter_map(|c| match c.is_sorted_flag() {
+                    IsSorted::Not => None,
+                    IsSorted::Ascending => Some(Sorted {
+                        column: c.name().clone(),
+                        descending: Some(false),
+                        nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
+                    }),
+                    IsSorted::Descending => Some(Sorted {
+                        column: c.name().clone(),
+                        descending: Some(true),
+                        nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
+                    }),
+                })
+                .collect_vec();
+            (!sorted_cols.is_empty()).then(|| IRSorted(sorted_cols.into()))
+        },
         IR::SimpleProjection { input, columns } => {
             let (input, columns) = (*input, columns.clone());
             match rec!(input) {
@@ -422,7 +427,7 @@ pub fn aexpr_sortedness(
             }
             Some(expr_sortedness)
         },
-        AExpr::Cast { .. } => None, // @TODO: More casts are allowed are allowed
+        AExpr::Cast { .. } => None, // @TODO: More casts are allowed
         AExpr::Sort { expr: _, options } => Some(AExprSorted {
             descending: Some(options.descending),
             nulls_last: Some(options.nulls_last),

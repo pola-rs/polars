@@ -1,5 +1,6 @@
+use polars_buffer::Buffer;
+
 use crate::array::{Array, ArrayRef, UInt32Array, Utf8ViewArray};
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::trusted_len::TrustedLenPush;
 

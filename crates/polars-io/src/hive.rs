@@ -1,7 +1,9 @@
 use polars_core::frame::DataFrame;
 use polars_core::frame::column::ScalarColumn;
-use polars_core::prelude::Column;
+use polars_core::prelude::{Column, DataType};
 use polars_core::series::Series;
+
+use crate::utils::HIVE_VALUE_ENCODE_CHARSET;
 
 /// Materializes hive partitions.
 /// We have a special num_rows arg, as df can be empty when a projection contains
@@ -131,4 +133,40 @@ pub fn merge_sorted_to_schema_order_impl<'a, T, O>(
     let [a, b] = series_arr;
     output.extend(a);
     output.extend(b);
+}
+
+/// # Panics
+/// The `Display` impl of this will panic if a column has non-unit length.
+pub struct HivePathFormatter<'a> {
+    keys: &'a [Column],
+}
+
+impl<'a> HivePathFormatter<'a> {
+    pub fn new(keys: &'a [Column]) -> Self {
+        Self { keys }
+    }
+}
+
+impl std::fmt::Display for HivePathFormatter<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for column in self.keys {
+            assert_eq!(column.len(), 1);
+            let column = column.cast(&DataType::String).unwrap();
+
+            let key = column.name();
+            let value = percent_encoding::percent_encode(
+                column
+                    .str()
+                    .unwrap()
+                    .get(0)
+                    .unwrap_or("__HIVE_DEFAULT_PARTITION__")
+                    .as_bytes(),
+                HIVE_VALUE_ENCODE_CHARSET,
+            );
+
+            write!(f, "{key}={value}/")?
+        }
+
+        Ok(())
+    }
 }
