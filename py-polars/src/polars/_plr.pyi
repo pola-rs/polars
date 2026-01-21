@@ -985,9 +985,12 @@ class PyLazyFrame:
         null_value: str | None,
         quote_style: QuoteStyle | None,
     ) -> PyLazyFrame: ...
-    def sink_json(
+    def sink_ndjson(
         self,
         target: SinkTarget,
+        compression: Literal["uncompressed", "gzip", "zstd"],
+        compression_level: int | None,
+        check_extension: bool,
         sink_options: Any,
     ) -> PyLazyFrame: ...
     def sink_batches(

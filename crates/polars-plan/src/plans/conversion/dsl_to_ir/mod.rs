@@ -1249,14 +1249,27 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 SinkType::Memory => SinkTypeIR::Memory,
                 SinkType::Callback(f) => SinkTypeIR::Callback(f),
                 SinkType::File(options) => {
+                    let mut compression_opt = None;
+
                     #[cfg(feature = "csv")]
-                    if let FileWriteFormat::Csv(csv_options) = &options.file_format {
-                        if let SinkTarget::Path(path) = &options.target
-                            && csv_options.check_extension
-                        {
+                    if let FileWriteFormat::Csv(csv_options) = &options.file_format
+                        && csv_options.check_extension
+                    {
+                        compression_opt = Some(csv_options.compression);
+                    }
+
+                    #[cfg(feature = "json")]
+                    if let FileWriteFormat::NDJson(ndjson_options) = &options.file_format
+                        && ndjson_options.check_extension
+                    {
+                        compression_opt = Some(ndjson_options.compression);
+                    }
+
+                    if let Some(compression) = compression_opt {
+                        if let SinkTarget::Path(path) = &options.target {
                             let path_str = path.as_str();
 
-                            if let Some(suffix) = csv_options.compression.file_suffix() {
+                            if let Some(suffix) = compression.file_suffix() {
                                 polars_ensure!(
                                     path_str.ends_with(suffix) || !path_str.contains('.'),
                                     InvalidOperation: "the path ({}) does not conform to standard naming, expected suffix: ({}), set `check_extension` to `False` if you don't want this behavior", path, suffix

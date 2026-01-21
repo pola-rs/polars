@@ -2891,13 +2891,32 @@ class DataFrame:
             return None
 
     @overload
-    def write_ndjson(self, file: None = None) -> str: ...
+    def write_ndjson(
+        self,
+        file: None = None,
+        *,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
+    ) -> str: ...
 
     @overload
-    def write_ndjson(self, file: str | Path | IO[bytes] | IO[str]) -> None: ...
+    def write_ndjson(
+        self,
+        file: str | Path | IO[bytes] | IO[str],
+        *,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
+    ) -> None: ...
 
     def write_ndjson(
-        self, file: str | Path | IO[bytes] | IO[str] | None = None
+        self,
+        file: str | Path | IO[bytes] | IO[str] | None = None,
+        *,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
     ) -> str | None:
         r"""
         Serialize to newline delimited JSON representation.
@@ -2907,6 +2926,17 @@ class DataFrame:
         file
             File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
+        compression
+            What compression format to use.
+        compression_level
+            The compression level to use, typically 0-9 or `None` to let the
+            engine choose.
+        check_extension
+            Whether to check if the filename matches the compression settings.
+            Will raise an error if compression is set to 'uncompressed' and the
+            filename ends in one of (".gz", ".zst", ".zstd") or if
+            compression != 'uncompressed' and the file uses an mismatched
+            extension. Only applies if file is a path.
 
         Examples
         --------
@@ -2935,6 +2965,9 @@ class DataFrame:
 
         self.lazy().sink_ndjson(
             target,
+            compression=compression,
+            compression_level=compression_level,
+            check_extension=check_extension,
             optimizations=QueryOptFlags._eager(),
             engine=engine,
         )
