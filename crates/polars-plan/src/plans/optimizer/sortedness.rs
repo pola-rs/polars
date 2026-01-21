@@ -560,11 +560,11 @@ pub fn function_expr_sortedness(
                 })
                 .collect::<Vec<_>>();
             let scalar_constant_count = scalar_constants.iter().filter(|o| o.is_some()).count();
-            for idx in 0..inputs.len() {
+            for (idx, sc) in scalar_constants.iter().enumerate() {
                 let Some(sortedness) = nth_input(idx) else {
                     continue;
                 };
-                if scalar_constant_count == inputs.len() - 1 && scalar_constants[idx].is_none() {
+                if scalar_constant_count == inputs.len() - 1 && sc.is_none() {
                     return Some(sortedness);
                 }
             }
