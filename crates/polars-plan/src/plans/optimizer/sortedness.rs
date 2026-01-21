@@ -122,22 +122,26 @@ fn is_sorted_rec(
             predicate: _,
         } => rec!(*input),
         IR::Scan { .. } => None,
-        IR::DataFrameScan { df, .. } => Some(IRSorted(
-            [df.columns().iter().find_map(|c| match c.is_sorted_flag() {
-                IsSorted::Not => None,
-                IsSorted::Ascending => Some(Sorted {
-                    column: c.name().clone(),
-                    descending: Some(false),
-                    nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
-                }),
-                IsSorted::Descending => Some(Sorted {
-                    column: c.name().clone(),
-                    descending: Some(true),
-                    nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
-                }),
-            })?]
-            .into(),
-        )),
+        IR::DataFrameScan { df, .. } => {
+            let sorted_cols = df
+                .columns()
+                .iter()
+                .filter_map(|c| match c.is_sorted_flag() {
+                    IsSorted::Not => None,
+                    IsSorted::Ascending => Some(Sorted {
+                        column: c.name().clone(),
+                        descending: Some(false),
+                        nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
+                    }),
+                    IsSorted::Descending => Some(Sorted {
+                        column: c.name().clone(),
+                        descending: Some(true),
+                        nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
+                    }),
+                })
+                .collect_vec();
+            (!sorted_cols.is_empty()).then(|| IRSorted(sorted_cols.into()))
+        },
         IR::SimpleProjection { input, columns } => {
             let (input, columns) = (*input, columns.clone());
             match rec!(input) {
