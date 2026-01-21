@@ -510,7 +510,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
         match av {
             #[cfg(feature = "object")]
             AnyValue::ObjectOwned(_) => {
-                // Check again for object allowance as for cache addresses this is not checked.
+                // Check again for object allowance as for cached addresses this is not checked.
                 if allow_object {
                     let s = PySeries::new_object(py, "", vec![value.extract()?], false)
                         .series
