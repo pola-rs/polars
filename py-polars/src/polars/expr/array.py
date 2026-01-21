@@ -9,7 +9,7 @@ from polars._utils.wrap import wrap_expr
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars import Expr
+    from polars import Expr, Series
     from polars._typing import IntoExpr, IntoExprColumn
 
 
@@ -670,13 +670,16 @@ class ExprArrayNameSpace:
         return wrap_expr(self._pyexpr.arr_get(index_pyexpr, null_on_oob))
 
     def gather(
-        self, indices: Expr | list[int] | list[list[int]], *, null_on_oob: bool = False
+        self,
+        indices: Expr | Series | list[int] | list[list[int]],
+        *,
+        null_on_oob: bool = False,
     ) -> Expr:
         """
-        Take sublists by multiple indices.
+        Gather elements from each sub-array by index.
 
         The indices may be defined in a single column, or by sublists in another
-        column of dtype `List`.
+        column of dtype `Array`.
 
         Parameters
         ----------
@@ -696,15 +699,15 @@ class ExprArrayNameSpace:
         ... )
         >>> df.with_columns(gather=pl.col("a").arr.gather([0, 2]))
         shape: (3, 2)
-        ┌───────────────┬───────────┐
-        │ a             ┆ gather    │
-        │ ---           ┆ ---       │
-        │ array[i32, 3] ┆ list[i32] │
-        ╞═══════════════╪═══════════╡
-        │ [1, 2, 3]     ┆ [1, 3]    │
-        │ [4, 5, 6]     ┆ [4, 6]    │
-        │ [7, 8, 9]     ┆ [7, 9]    │
-        └───────────────┴───────────┘
+        ┌───────────────┬────────────┐
+        │ a             ┆ gather     │
+        │ ---           ┆ ---        │
+        │ array[i32, 3] ┆ array[i32] │
+        ╞═══════════════╪════════════╡
+        │ [1, 2, 3]     ┆ [1, 3]     │
+        │ [4, 5, 6]     ┆ [4, 6]     │
+        │ [7, 8, 9]     ┆ [7, 9]     │
+        └───────────────┴────────────┘
         """
         indices_pyexpr = parse_into_expression(indices)
         return wrap_expr(self._pyexpr.arr_gather(indices_pyexpr, null_on_oob))

@@ -554,15 +554,15 @@ class ArrayNameSpace:
         null_on_oob: bool = False,
     ) -> Series:
         """
-        Take sublists by multiple indices.
+        Gather elements from each sub-array by index.
 
         The indices may be defined in a single column, or by sublists in another
-        column of dtype `List`.
+        column of dtype `Array`.
 
         Parameters
         ----------
         indices
-            Indices to return per sublist
+            Indices to return per subarray
         null_on_oob
             Behavior if an index is out of bounds:
             True -> set as null
@@ -578,7 +578,7 @@ class ArrayNameSpace:
         ... )
         >>> s.arr.gather([0, 2])
         shape: (3,)
-        Series: 'a' [list[i32]]
+        Series: 'a' [array[i32, 2]]
         [
             [3, 1]
             [1, null]
