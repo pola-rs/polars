@@ -150,6 +150,7 @@ shuffle_location.local.path = "/mnt/storage/polars/shuffle"
 | ---------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `enabled`                    | boolean | Enable sending/receiving profiling data so clients can call `result.await_profile()`.<br> `true` on both scheduler and workers if you want profiles on queries; `false` to disable.                                                                                   |
 | `max_metrics_bytes_total`    | integer | How many bytes all the worker host metrics will consume in total. If a system-wide memory limit is specified then this is added to the share that the scheduler takes. Note that the worker host metrics is not yet available, so this configuration can be set to 0. |
+| `database_path`              | string  | Location to use for storing profiling data. An SQLite database file will be created here, or if a file already exists it will be opened. If left unspecified an in-memory database will be used.                                                                      |
 | `service`                    | object  | Object used for configuring the bind address of the observatory service. This is an internal service in the scheduler for receiving profiling data from all nodes. Defaults to `0.0.0.0:5049`.                                                                        |
 | `service.bind_addr`          | string  | Bind address for the observatory service.<br>e.g. `0.0.0.0:5049`.                                                                                                                                                                                                     |
 | `service.bind_addr.ip`       | string  | IP address for the observatory service bind address.<br>e.g. `192.168.1.1`.                                                                                                                                                                                           |
@@ -162,6 +163,7 @@ Example:
 [observatory]
 enabled = true
 max_metrics_bytes_total = 0
+database_path = "/opt/db/observatory.db"
 ```
 
 ### `[monitoring]` section
