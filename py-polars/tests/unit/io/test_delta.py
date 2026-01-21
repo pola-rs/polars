@@ -909,9 +909,44 @@ def test_scan_delta_use_pyarrow(tmp_path: Path, use_pyarrow: bool) -> None:
         pl.DataFrame({"year": [2026], "month": [0]}),
     )
 
-    # Delta does not have stable row ordering.
+    # Delta does not have stable file scan ordering.
     assert (
         pl.scan_delta(tmp_path, use_pyarrow=use_pyarrow).head(1).collect().height == 1
+    )
+
+
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+@pytest.mark.write_disk
+def test_scan_delta_use_pyarrow_single_file(tmp_path: Path, use_pyarrow: bool) -> None:
+    df = pl.DataFrame({"year": [2025, 2026, 2026], "month": [0, 0, 0]})
+    df.write_delta(tmp_path)
+
+    assert_frame_equal(
+        pl.scan_delta(tmp_path, use_pyarrow=use_pyarrow)
+        .filter(pl.col("year") == 2026)
+        .collect(),
+        pl.DataFrame({"year": [2026, 2026], "month": [0, 0]}),
+    )
+
+    assert_frame_equal(
+        pl.scan_delta(tmp_path, use_pyarrow=use_pyarrow)
+        .filter(pl.col("year") == 2026)
+        .head(1)
+        .collect(),
+        pl.DataFrame({"year": [2026], "month": [0]}),
+    )
+
+    assert_frame_equal(
+        pl.scan_delta(tmp_path, use_pyarrow=use_pyarrow).head(1).collect(),
+        pl.DataFrame({"year": [2025], "month": [0]}),
+    )
+
+    assert_frame_equal(
+        pl.scan_delta(tmp_path, use_pyarrow=use_pyarrow)
+        .head(1)
+        .filter(pl.col("year") == 2026)
+        .collect(),
+        pl.DataFrame(schema={"year": pl.Int64, "month": pl.Int64}),
     )
 
 
