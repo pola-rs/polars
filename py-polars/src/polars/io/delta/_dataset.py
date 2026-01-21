@@ -98,7 +98,7 @@ class DeltaDataset:
                 polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl,
                 dataset,
                 n_rows=limit,
-                predicate=pyarrow_predicate if limit is None else None,
+                predicate=pyarrow_predicate,
                 with_columns=projection,
             )
 
