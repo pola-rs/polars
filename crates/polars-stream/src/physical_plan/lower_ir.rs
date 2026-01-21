@@ -1007,9 +1007,8 @@ pub fn lower_ir(
                 expr_arena,
                 &input_right_schema,
             );
-
             let join_keys_sorted_together =
-                Option::zip(left_on_sorted, right_on_sorted).map_or(false, |(l, r)| l == r);
+                Option::zip(left_on_sorted, right_on_sorted).map_or(false, |(ls, rs)| ls == rs);
 
             let phys_left = lower_ir!(input_left)?;
             let phys_right = lower_ir!(input_right)?;
@@ -1091,15 +1090,13 @@ pub fn lower_ir(
                                 .collect_vec();
 
                             if row_encode_key_cols {
+                                let tfc = ToFieldContext::new(expr_arena, &input_left_schema);
+                                let expr_dtype =
+                                    |e: &ExprIR| expr_arena.get(e.node()).to_dtype(&tfc);
                                 let nulls_last_encoded = nulls_last[0];
                                 let row_encode_col_expr = AExprBuilder::row_encode(
                                     trans_on.clone(),
-                                    trans_on
-                                        .iter()
-                                        .map(|e| {
-                                            input_left_schema.get(e.output_name()).unwrap().clone()
-                                        })
-                                        .collect_vec(),
+                                    trans_on.iter().map(expr_dtype).try_collect_vec()?,
                                     RowEncodingVariant::Ordered {
                                         descending: Some(descending),
                                         nulls_last: Some(nulls_last),
