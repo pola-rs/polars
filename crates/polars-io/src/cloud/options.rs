@@ -19,12 +19,11 @@ use object_store::azure::MicrosoftAzureBuilder;
 use object_store::gcp::GoogleCloudStorageBuilder;
 #[cfg(feature = "gcp")]
 pub use object_store::gcp::GoogleConfigKey;
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
-use object_store::{BackoffConfig, RetryConfig};
 use polars_error::*;
 #[cfg(feature = "aws")]
 use polars_utils::cache::LruCache;
 use polars_utils::pl_path::{CloudScheme, PlRefPath};
+use polars_utils::total_ord::TotalOrdWrap;
 #[cfg(feature = "http")]
 use reqwest::header::HeaderMap;
 #[cfg(feature = "serde")]
@@ -79,10 +78,12 @@ pub(crate) enum CloudConfig {
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 /// Options to connect to various cloud providers.
 pub struct CloudOptions {
-    pub max_retries: usize,
+    pub max_retries: usize, // TODO: Remove in a breaking DSL change
     #[cfg(feature = "file_cache")]
     pub file_cache_ttl: u64,
     pub(crate) config: Option<CloudConfig>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub retry_config: CloudRetryConfig,
     #[cfg(feature = "cloud")]
     /// Note: In most cases you will want to access this via [`CloudOptions::initialized_credential_provider`]
     /// rather than directly.
@@ -102,11 +103,72 @@ impl CloudOptions {
             #[cfg(feature = "file_cache")]
             file_cache_ttl: get_env_file_cache_ttl(),
             config: None,
+            retry_config: CloudRetryConfig::default(),
             #[cfg(feature = "cloud")]
             credential_provider: None,
         });
 
         &DEFAULT
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct CloudRetryConfig {
+    pub max_retries: usize,
+    pub retry_timeout: std::time::Duration,
+    pub retry_init_backoff: std::time::Duration,
+    pub retry_max_backoff: std::time::Duration,
+    pub retry_base_multiplier: TotalOrdWrap<f64>,
+}
+
+impl Default for CloudRetryConfig {
+    fn default() -> Self {
+        use std::time::Duration;
+
+        return Self {
+            max_retries: parse_env_var(2, "POLARS_CLOUD_MAX_RETRIES"),
+            retry_timeout: Duration::from_millis(parse_env_var(
+                10,
+                "POLARS_CLOUD_RETRY_TIMEOUT_MS",
+            )),
+            retry_init_backoff: Duration::from_millis(parse_env_var(
+                100,
+                "POLARS_CLOUD_RETRY_INIT_BACKOFF_MS",
+            )),
+            retry_max_backoff: Duration::from_millis(parse_env_var(
+                15,
+                "POLARS_CLOUD_RETRY_MAX_BACKOFF_MS",
+            )),
+            retry_base_multiplier: TotalOrdWrap(parse_env_var(
+                2.,
+                "POLARS_CLOUD_RETRY_BASE_MULTIPLIER",
+            )),
+        };
+
+        fn parse_env_var<T: FromStr>(default: T, name: &'static str) -> T {
+            std::env::var(name).map_or(default, |x| {
+                x.parse::<T>()
+                    .ok()
+                    .unwrap_or_else(|| panic!("invalid value for {name}: {x}"))
+            })
+        }
+    }
+}
+
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
+impl From<CloudRetryConfig> for object_store::RetryConfig {
+    fn from(value: CloudRetryConfig) -> Self {
+        object_store::RetryConfig {
+            backoff: object_store::BackoffConfig {
+                init_backoff: value.retry_init_backoff,
+                max_backoff: value.retry_max_backoff,
+                base: value.retry_base_multiplier.0,
+            },
+            max_retries: value.max_retries,
+            retry_timeout: value.retry_timeout,
+        }
     }
 }
 
@@ -182,15 +244,6 @@ impl CloudType {
     }
 }
 
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
-fn get_retry_config(max_retries: usize) -> RetryConfig {
-    RetryConfig {
-        backoff: BackoffConfig::default(),
-        max_retries,
-        retry_timeout: std::time::Duration::from_secs(10),
-    }
-}
-
 pub static USER_AGENT: &str = concat!("polars", "/", env!("CARGO_PKG_VERSION"),);
 
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
@@ -253,9 +306,9 @@ fn read_config(
 }
 
 impl CloudOptions {
-    /// Set the maximum number of retries.
-    pub fn with_max_retries(mut self, max_retries: usize) -> Self {
-        self.max_retries = max_retries;
+    pub fn with_retry_config(mut self, retry_config: CloudRetryConfig) -> Self {
+        self.max_retries = retry_config.max_retries;
+        self.retry_config = retry_config;
         self
     }
 
@@ -399,7 +452,7 @@ impl CloudOptions {
             };
         };
 
-        let builder = builder.with_retry(get_retry_config(self.max_retries));
+        let builder = builder.with_retry(self.retry_config.into());
 
         let opt_credential_provider = match opt_credential_provider {
             #[cfg(feature = "python")]
@@ -473,7 +526,7 @@ impl CloudOptions {
 
         let builder = builder
             .with_url(url.to_string())
-            .with_retry(get_retry_config(self.max_retries));
+            .with_retry(self.retry_config.into());
 
         let builder =
             if let Some(v) = self.initialized_credential_provider(clear_cached_credentials)? {
@@ -535,7 +588,7 @@ impl CloudOptions {
 
         let builder = builder
             .with_url(url.to_string())
-            .with_retry(get_retry_config(self.max_retries));
+            .with_retry(self.retry_config.into());
 
         let builder = if let Some(v) = credential_provider {
             builder.with_credentials(v.into_gcp_provider())
