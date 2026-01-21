@@ -1,10 +1,8 @@
 use arrow::array::{Array, ArrayRef, FixedSizeListArray, PrimitiveArray, ArrayCollectIterExt, StaticArray};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use arrow::datatypes::PhysicalType;
 use arrow::legacy::prelude::*;
 use arrow::legacy::utils::CustomIterTools;
-use arrow::offset::{Offsets, OffsetsBuffer};
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::IdxSize;
 
