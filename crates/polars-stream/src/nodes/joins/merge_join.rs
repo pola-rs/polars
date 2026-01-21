@@ -739,6 +739,9 @@ fn find_mergeable_search(
     Ok(Ok((build_split, probe_split)))
 }
 
+/// Get value from series bypassing the validity bitmap.
+///
+/// SAFETY: Caller must ensure that `index` is within bounds of `s`.
 unsafe fn series_get_bypass_validity<'a>(
     s: &'a Series,
     index: usize,
@@ -834,6 +837,9 @@ impl DataFrameBuffer {
         self.total_rows
     }
 
+    /// Get the `row_index`th value from the `column` bypassing its validity bitmap.
+    ///
+    /// SAFETY: Caller must ensure that `row_index` is within bounds.
     unsafe fn get_bypass_validity(
         &self,
         column: &str,
