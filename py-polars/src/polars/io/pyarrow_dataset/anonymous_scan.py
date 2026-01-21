@@ -117,14 +117,10 @@ def _scan_pyarrow_dataset_impl(
     -------
     DataFrame or tuple[Iterator[DataFrame], bool]
     """
-    from polars import from_arrow
-
     filter_ = None
     filter_post_slice_ = None
 
-    if predicate:
-        assert allow_pyarrow_filter
-
+    if allow_pyarrow_filter and predicate is not None:
         from polars._utils.convert import (
             to_py_date,
             to_py_datetime,
@@ -157,28 +153,20 @@ def _scan_pyarrow_dataset_impl(
     if batch_size is not None:
         common_params["batch_size"] = batch_size
 
-    if allow_pyarrow_filter:
-        return from_arrow(
+    def frames() -> Iterator[DataFrame]:
+        yield pl.DataFrame(
             (
                 ds.head(n_rows, **common_params).filter(filter_post_slice_)
                 if filter_post_slice_ is not None
                 else ds.head(n_rows, **common_params)
             )
-            if n_rows
+            if n_rows is not None
             else ds.to_table(**common_params)
         )
 
+    if allow_pyarrow_filter:
+        [x] = frames()
+        return x
+
     else:
-
-        def frames() -> Iterator[DataFrame]:
-            yield from_arrow(
-                (
-                    ds.head(n_rows, **common_params).filter(filter_post_slice_)
-                    if filter_post_slice_ is not None
-                    else ds.head(n_rows, **common_params)
-                )
-                if n_rows
-                else ds.to_table(**common_params)
-            )
-
         return frames(), False
