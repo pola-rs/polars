@@ -321,7 +321,7 @@ pub(super) async fn expand_paths_hf(
         }
 
         if let Some(mut_slice) = out_paths.get_mut(sort_start_idx..) {
-            mut_slice.sort_unstable();
+            <[PlRefPath]>::sort_unstable(mut_slice);
         }
     }
 

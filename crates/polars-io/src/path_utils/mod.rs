@@ -424,12 +424,7 @@ pub fn expand_paths_hive(
 
                 let sort_start_idx = out_paths.paths.len();
 
-                if !glob || !has_glob(path.as_bytes()) {
-                    let (expand_start_idx, paths) =
-                        expand_path_cloud(path.into_owned(), cloud_options.as_ref())?;
-                    out_paths.extend_from_slice(&paths);
-                    hive_idx_tracker.update(expand_start_idx, path_idx)?;
-                } else {
+                if glob && has_glob(path.as_bytes()) {
                     hive_idx_tracker.update(0, path_idx)?;
 
                     let iter = crate::pl_async::get_runtime().block_in_place_on(
@@ -443,10 +438,15 @@ pub fn expand_paths_hive(
                         // URI result.
                         out_paths.extend(iter.iter().map(|x| &x[7..]).map(PlRefPath::new))
                     };
+                } else {
+                    let (expand_start_idx, paths) =
+                        expand_path_cloud(path.into_owned(), cloud_options.as_ref())?;
+                    out_paths.extend_from_slice(&paths);
+                    hive_idx_tracker.update(expand_start_idx, path_idx)?;
                 };
 
                 if let Some(mut_slice) = out_paths.paths.get_mut(sort_start_idx..) {
-                    mut_slice.sort_unstable();
+                    <[PlRefPath]>::sort_unstable(mut_slice);
                 }
             }
         }
@@ -513,7 +513,7 @@ pub fn expand_paths_hive(
             };
 
             if let Some(mut_slice) = out_paths.paths.get_mut(sort_start_idx..) {
-                mut_slice.sort_unstable();
+                <[PlRefPath]>::sort_unstable(mut_slice);
             }
         }
     }
