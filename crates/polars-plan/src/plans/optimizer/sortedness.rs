@@ -356,8 +356,8 @@ fn is_sorted_rec(
 
 #[derive(Debug, PartialEq)]
 pub struct AExprSorted {
-    descending: Option<bool>,
-    nulls_last: Option<bool>,
+    pub descending: Option<bool>,
+    pub nulls_last: Option<bool>,
 }
 
 fn first_expr_ir_sorted(
