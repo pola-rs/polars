@@ -597,7 +597,7 @@ def test_merge_join_exprs(ignore_nulls: bool) -> None:
 @pytest.mark.parametrize("right_descending", [False, True])
 @pytest.mark.parametrize("left_nulls_last", [False, True])
 @pytest.mark.parametrize("right_nulls_last", [False, True])
-def test_merge_join_not_possible(
+def test_merge_join_applicable(
     left_descending: bool,
     right_descending: bool,
     left_nulls_last: bool,
