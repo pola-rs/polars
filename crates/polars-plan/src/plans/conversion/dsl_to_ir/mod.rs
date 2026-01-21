@@ -1297,6 +1297,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         } => {
                             let keys = to_expr_irs(keys, expr_to_ir_cx)?;
 
+                            polars_ensure!(
+                                keys.iter().all(|e| is_elementwise_rec(e.node(), ctxt.expr_arena)),
+                                InvalidOperation:
+                                "cannot use non-elementwise expressions for PartitionBy keys"
+                            );
+
                             PartitionStrategyIR::Keyed {
                                 keys,
                                 include_keys,

@@ -51,7 +51,7 @@ fn round_trip_opt_stats(
     let mut writer = FileWriter::try_new(writer, schema, options, &column_options)?;
 
     for group in row_groups {
-        writer.write(group?)?;
+        writer.write(u64::MAX, group?)?;
     }
     writer.end(None, &column_options)?;
 
