@@ -1064,7 +1064,16 @@ pub fn lower_ir(
                         left_on_sorted.as_ref().unwrap()[0].nulls_last.unwrap();
                     let mut right_key_col_nulls_last =
                         right_on_sorted.as_ref().unwrap()[0].nulls_last.unwrap();
-                    for (on, trans_on, trans_input, phys, expr_sorted, descending, nulls_last) in [
+                    for (
+                        on,
+                        trans_on,
+                        trans_input,
+                        phys,
+                        expr_sorted,
+                        descending,
+                        nulls_last,
+                        side_schema,
+                    ) in [
                         (
                             left_on,
                             &mut trans_left_on,
@@ -1073,6 +1082,7 @@ pub fn lower_ir(
                             &left_on_sorted.unwrap(),
                             &mut left_key_col_descending,
                             &mut left_key_col_nulls_last,
+                            &input_left_schema,
                         ),
                         (
                             right_on,
@@ -1082,6 +1092,7 @@ pub fn lower_ir(
                             &right_on_sorted.unwrap(),
                             &mut right_key_col_descending,
                             &mut right_key_col_nulls_last,
+                            &input_right_schema,
                         ),
                     ] {
                         let expr_is_trivial =
@@ -1097,7 +1108,7 @@ pub fn lower_ir(
                                 .collect_vec();
 
                             if row_encode_key_cols {
-                                let tfc = ToFieldContext::new(expr_arena, &input_left_schema);
+                                let tfc = ToFieldContext::new(expr_arena, side_schema);
                                 let expr_dtype =
                                     |e: &ExprIR| expr_arena.get(e.node()).to_dtype(&tfc);
                                 let nulls_last_encoded = sorted_nulls_last[0];
