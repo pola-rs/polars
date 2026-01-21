@@ -46,8 +46,9 @@ def assert_fast_count(
     assert result.schema == {expected_name: pl.get_index_type()}
     assert result.item() == expected_count
 
-    # Test effect of the environment variable
-    monkeypatch.setenv("POLARS_FAST_FILE_COUNT_DISPATCH", "0")
+    # We disable the fast-count optimization to check that the normal scan
+    # logic counts as expected.
+    monkeypatch.setenv("POLARS_NO_FAST_FILE_COUNT", "1")
 
     capfd.readouterr()
 
@@ -61,7 +62,17 @@ def assert_fast_count(
     assert "FAST COUNT" not in lf.explain()
     assert project_logs == {"project: 0"}
 
-    monkeypatch.setenv("POLARS_FAST_FILE_COUNT_DISPATCH", "1")
+    monkeypatch.setenv("POLARS_NO_FAST_FILE_COUNT", "0")
+
+    plan = lf.explain()
+    if "Csv" not in plan:
+        assert "FAST COUNT" not in plan
+        return
+
+    # CSV is the only format that uses a custom fast-count kernel, so we want
+    # to make sure that the normal scan logic has the same count behavior. Here
+    # we restore the default behavior that allows the fast-count optimization.
+    assert "FAST COUNT" in plan
 
     capfd.readouterr()
 
@@ -72,7 +83,6 @@ def assert_fast_count(
     capture = capfd.readouterr().err
     project_logs = set(re.findall(r"project: \d+", capture))
 
-    assert "FAST COUNT" in lf.explain()
     assert not project_logs
 
 
@@ -237,6 +247,7 @@ def test_count_compressed_csv_18057(
     assert_fast_count(q, 3, capfd=capfd, monkeypatch=monkeypatch)
 
 
+@pytest.mark.write_disk
 def test_count_compressed_ndjson(
     tmp_path: Path, capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

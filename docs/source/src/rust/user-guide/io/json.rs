@@ -29,12 +29,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:read]
     println!("{df}");
 
-    // --8<-- [start:readnd]
-    let mut file = std::fs::File::open("docs/assets/data/path.json").unwrap();
-    let df = JsonLineReader::new(&mut file).finish().unwrap();
-    // --8<-- [end:readnd]
-    println!("{df}");
-
     // --8<-- [start:scan]
     let lf = LazyJsonLineReader::new(PlRefPath::new("docs/assets/data/path.json"))
         .finish()
