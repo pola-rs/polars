@@ -354,6 +354,7 @@ pub enum PhysNodeKind {
         right_on: Vec<PlSmallStr>,
         descending: bool,
         nulls_last: bool,
+        keys_row_encoded: bool,
         args: JoinArgs,
     },
 
