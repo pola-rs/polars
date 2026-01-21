@@ -1008,7 +1008,7 @@ pub fn lower_ir(
                 &input_right_schema,
             );
             let join_keys_sorted_together =
-                Option::zip(left_on_sorted, right_on_sorted).map_or(false, |(ls, rs)| ls == rs);
+                Option::zip(left_on_sorted, right_on_sorted).is_some_and(|(ls, rs)| ls == rs);
 
             let phys_left = lower_ir!(input_left)?;
             let phys_right = lower_ir!(input_right)?;
