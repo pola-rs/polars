@@ -901,6 +901,14 @@ def test_scan_delta_use_pyarrow(tmp_path: Path, use_pyarrow: bool) -> None:
         pl.DataFrame({"year": [2026, 2026], "month": [0, 0]}),
     )
 
+    assert_frame_equal(
+        pl.scan_delta(tmp_path, use_pyarrow=use_pyarrow)
+        .filter(pl.col("year") == 2026)
+        .head(1)
+        .collect(),
+        pl.DataFrame({"year": [2026], "month": [0]}),
+    )
+
     # Delta does not have stable row ordering.
     assert (
         pl.scan_delta(tmp_path, use_pyarrow=use_pyarrow).head(1).collect().height == 1

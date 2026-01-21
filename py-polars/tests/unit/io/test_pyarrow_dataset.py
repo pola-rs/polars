@@ -365,3 +365,15 @@ def test_scan_pyarrow_dataset_filter_slice_order() -> None:
         q.collect(),
         pl.DataFrame({"index": 1, "year": 2026, "month": 0}),
     )
+
+    import polars.io.pyarrow_dataset.anonymous_scan
+
+    assert_frame_equal(
+        polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
+            dataset,
+            n_rows=2,
+            predicate="pa.compute.field('year') == 2026",
+            with_columns=None,
+        ),
+        pl.DataFrame({"index": 1, "year": 2026, "month": 0}),
+    )

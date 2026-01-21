@@ -119,9 +119,12 @@ def _scan_pyarrow_dataset_impl(
     """
     from polars import from_arrow
 
-    _filter = None
+    filter_ = None
+    filter_post_slice_ = None
 
-    if allow_pyarrow_filter and predicate:
+    if predicate:
+        assert allow_pyarrow_filter
+
         from polars._utils.convert import (
             to_py_date,
             to_py_datetime,
@@ -130,7 +133,7 @@ def _scan_pyarrow_dataset_impl(
         )
         from polars.datatypes import Date, Datetime, Duration
 
-        _filter = eval(
+        v = eval(
             predicate,
             {
                 "pa": pa,
@@ -144,22 +147,38 @@ def _scan_pyarrow_dataset_impl(
             },
         )
 
-    common_params: dict[str, Any] = {"columns": with_columns, "filter": _filter}
+        if n_rows is None:
+            filter_ = v
+        else:
+            filter_post_slice_ = v
+
+    common_params: dict[str, Any] = {"columns": with_columns, "filter": filter_}
     batch_size = user_batch_size if user_batch_size is not None else batch_size
     if batch_size is not None:
         common_params["batch_size"] = batch_size
 
     if allow_pyarrow_filter:
-        if n_rows:
-            return from_arrow(ds.head(n_rows, **common_params))  # type: ignore[return-value]
-        return from_arrow(ds.to_table(**common_params))  # type: ignore[return-value]
+        return from_arrow(
+            (
+                ds.head(n_rows, **common_params).filter(filter_post_slice_)
+                if filter_post_slice_ is not None
+                else ds.head(n_rows, **common_params)
+            )
+            if n_rows
+            else ds.to_table(**common_params)
+        )
+
     else:
 
         def frames() -> Iterator[DataFrame]:
-            if n_rows:
-                tbl = ds.head(n_rows, **common_params)
-            else:
-                tbl = ds.to_table(**common_params)
-            yield from_arrow(tbl)  # type: ignore[misc]
+            yield from_arrow(
+                (
+                    ds.head(n_rows, **common_params).filter(filter_post_slice_)
+                    if filter_post_slice_ is not None
+                    else ds.head(n_rows, **common_params)
+                )
+                if n_rows
+                else ds.to_table(**common_params)
+            )
 
         return frames(), False
