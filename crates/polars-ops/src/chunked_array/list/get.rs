@@ -4,6 +4,7 @@ use polars_error::{PolarsResult, polars_bail};
 use polars_utils::IdxSize;
 
 use super::ListNameSpaceImpl;
+use crate::series::convert_and_bound_idx_ca;
 
 pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> PolarsResult<Column> {
     match index.len() {
@@ -79,46 +80,20 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
             }
         },
         _ if ca.len() == 1 => {
-            if ca.null_count() > 0 {
-                return Ok(Column::full_null(
+            if let Some(list) = ca.get(0) {
+                let idx = convert_and_bound_idx_ca(index, list.len(), null_on_oob)?;
+                let s = Series::try_from((ca.name().clone(), vec![list])).unwrap();
+                unsafe {
+                    s.take_unchecked(&idx)
+                        .from_physical_unchecked(ca.inner_dtype())
+                        .map(Column::from)
+                }
+            } else {
+                Ok(Column::full_null(
                     ca.name().clone(),
-                    index.len(),
+                    ca.len(),
                     ca.inner_dtype(),
-                ));
-            }
-            let tmp = ca.rechunk();
-            let arr = tmp.downcast_as_array();
-            let offsets = arr.offsets().as_slice();
-            let start = offsets[0];
-            let end = offsets[1];
-            let out_of_bounds = |offset| offset >= end || offset < start || start == end;
-            let take_by: IdxCa = index
-                .iter()
-                .map(|opt_idx| match opt_idx {
-                    Some(idx) => {
-                        let offset = if idx >= 0 { start + idx } else { end + idx };
-                        if out_of_bounds(offset) {
-                            if null_on_oob {
-                                Ok(None)
-                            } else {
-                                polars_bail!(ComputeError: "get index is out of bounds");
-                            }
-                        } else {
-                            let Ok(offset) = IdxSize::try_from(offset) else {
-                                polars_bail!(ComputeError: "get index is out of bounds");
-                            };
-                            Ok(Some(offset))
-                        }
-                    },
-                    None => Ok(None),
-                })
-                .collect::<Result<IdxCa, _>>()?;
-
-            let s = Series::try_from((ca.name().clone(), arr.values().clone())).unwrap();
-            unsafe {
-                s.take_unchecked(&take_by)
-                    .from_physical_unchecked(ca.inner_dtype())
-                    .map(Column::from)
+                ))
             }
         },
         len => polars_bail!(
