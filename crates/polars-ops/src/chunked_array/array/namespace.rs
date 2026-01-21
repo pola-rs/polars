@@ -12,6 +12,7 @@ use super::*;
 use crate::chunked_array::array::count::array_count_matches;
 use crate::chunked_array::array::count::count_boolean_bits;
 use crate::chunked_array::array::sum_mean::sum_with_nulls;
+use crate::prelude::ListNameSpaceImpl;
 #[cfg(feature = "array_any_all")]
 use crate::prelude::array::any_all::{array_all, array_any};
 use crate::prelude::array::get::array_get;
@@ -270,58 +271,76 @@ fn arr_gather_impl(
 ) -> PolarsResult<Series> {
     use polars_compute::gather::sublist::fixed_size_list::sub_fixed_size_list_gather;
 
-    let idx_ca = idx.list()?;
+    // Get indices as ArrayChunked
+    // Prefer Array dtype; fall back to List→Array coercion
+    let idx_arr: ArrayChunked = if let Ok(arr) = idx.array() {
+        arr.clone()
+    } else if let Ok(list) = idx.list() {
+        // Coerce List to Array using first element's length as width
+        // This is a fallback; ideally type coercion handles this earlier
+        let first_len = list
+            .lst_lengths()
+            .get(0)
+            .ok_or_else(|| polars_err!(ComputeError: "cannot determine index width from empty list"))?;
+        let width = first_len as usize;
+        let arr_dtype = DataType::Array(Box::new(list.inner_dtype().clone()), width);
+        idx.cast(&arr_dtype)?.array()?.clone()
+    } else {
+        polars_bail!(ComputeError: "indices must be Array or List type")
+    };
 
     polars_ensure!(
-        idx_ca.inner_dtype().is_integer(),
-        ComputeError: "cannot use dtype `{}` as an index", idx_ca.inner_dtype()
+        idx_arr.inner_dtype().is_integer(),
+        ComputeError: "cannot use dtype `{}` as an index", idx_arr.inner_dtype()
     );
 
-    let (array_ca, idx_ca): (Cow<'_, ArrayChunked>, Cow<'_, ListChunked>) =
-        match (array_ca.len(), idx_ca.len()) {
+    // Handle broadcasting
+    let (array_ca, idx_arr): (Cow<'_, ArrayChunked>, Cow<'_, ArrayChunked>) =
+        match (array_ca.len(), idx_arr.len()) {
             (1, idx_len) if idx_len > 1 => {
-                // Broadcast array
                 if array_ca.has_nulls() {
-                    let out = ListChunked::full_null_with_dtype(
+                    let out = ArrayChunked::full_null_with_dtype(
                         array_ca.name().clone(),
                         idx_len,
                         array_ca.inner_dtype(),
+                        idx_arr.width(),
                     );
                     return Ok(out.into_series());
                 }
                 (
                     Cow::Owned(array_ca.new_from_index(0, idx_len)),
-                    Cow::Borrowed(idx_ca),
+                    Cow::Borrowed(&idx_arr),
                 )
             },
             (arr_len, 1) if arr_len > 1 => (
                 Cow::Borrowed(array_ca),
-                Cow::Owned(idx_ca.new_from_index(0, arr_len)),
+                Cow::Owned(idx_arr.new_from_index(0, arr_len)),
             ),
-            (a, b) if a == b => (Cow::Borrowed(array_ca), Cow::Borrowed(idx_ca)),
+            (a, b) if a == b => (Cow::Borrowed(array_ca), Cow::Borrowed(&idx_arr)),
             (a, b) => polars_bail!(length_mismatch = "arr.gather", a, b),
         };
 
-    // Rechunk for single-chunk processing
     let array_ca = array_ca.rechunk();
-    let idx_ca = idx_ca.rechunk();
+    let idx_arr = idx_arr.rechunk();
 
     let arr_chunk = array_ca.downcast_iter().next().unwrap();
-    let idx_chunk = idx_ca.downcast_iter().next().unwrap();
+    let idx_chunk = idx_arr.downcast_iter().next().unwrap();
 
     let result = sub_fixed_size_list_gather(arr_chunk, idx_chunk, null_on_oob)?;
 
+    // Result is FixedSizeListArray, wrap as ArrayChunked
     let chunks: Vec<ArrayRef> = vec![Box::new(result)];
-
-    // SAFETY: We constructed the ListArray with the correct dtype (matching inner_dtype)
-    // and the chunks come from sub_fixed_size_list_gather which produces valid ListArray<i64>
+    // SAFETY:
+    // - The result from sub_fixed_size_list_gather is a FixedSizeListArray with:
+    //   - inner dtype matching array_ca.inner_dtype()
+    //   - width matching idx_arr.width()
+    // - The constructed DataType::Array matches the Arrow dtype of the chunk
     let out = unsafe {
-        ListChunked::from_chunks_and_dtype(
+        ArrayChunked::from_chunks_and_dtype(
             array_ca.name().clone(),
             chunks,
-            DataType::List(Box::new(array_ca.inner_dtype().clone())),
+            DataType::Array(Box::new(array_ca.inner_dtype().clone()), idx_arr.width()),
         )
     };
-
     Ok(out.into_series())
 }

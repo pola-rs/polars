@@ -1,6 +1,7 @@
-use arrow::array::{Array, ArrayRef, FixedSizeListArray, ListArray, PrimitiveArray};
+use arrow::array::{Array, ArrayRef, FixedSizeListArray, PrimitiveArray, ArrayCollectIterExt, StaticArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
+use arrow::datatypes::PhysicalType;
 use arrow::legacy::prelude::*;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::offset::{Offsets, OffsetsBuffer};
@@ -8,6 +9,10 @@ use polars_error::{PolarsResult, polars_bail};
 use polars_utils::IdxSize;
 
 use crate::gather::take_unchecked;
+
+use arrow::with_match_primitive_type;
+use num_traits::ToPrimitive;
+use polars_utils::pl_str::PlSmallStr;
 
 /// Converts an index value to an array index, handling negative indexing.
 trait ToArrayIndex: Copy {
@@ -96,358 +101,218 @@ pub fn sub_fixed_size_list_get(
     unsafe { Ok(take_unchecked(&**arr.values(), &take_by)) }
 }
 
+/// Single-pass gather for primitive inner types.
+///
+/// - Uses `get_unchecked` which returns `Option<T>` and handles validity
+/// - Outer validity is handled by caller, not here
+///
 /// # Safety
-/// Caller must ensure indices are within bounds of the source array,
-/// or that `null_on_oob` is true.
-unsafe fn take_no_validity<T, O>(
-    width: usize,
-    arr_len: usize,
-    indices_offsets: &[O],
-    indices_values: &PrimitiveArray<T>,
+/// Caller must ensure indices are within bounds or `null_on_oob` is true.
+unsafe fn gather_inner_primitive<V, I>(
+    values_inner: &PrimitiveArray<V>,
+    indices_inner: &PrimitiveArray<I>,
+    value_width: usize,
+    output_width: usize,
+    num_rows: usize,
     null_on_oob: bool,
-) -> PolarsResult<(IdxArr, OffsetsBuffer<O>)>
+    dtype: &ArrowDataType,
+) -> PolarsResult<PrimitiveArray<V>>
 where
-    T: arrow::types::NativeType + ToArrayIndex,
-    O: arrow::offset::Offset,
+    V: arrow::types::NativeType,
+    I: arrow::types::NativeType + ToPrimitive,
 {
-    let total_indices = indices_offsets.last().unwrap().to_usize();
-    let mut flat_indices: Vec<Option<IdxSize>> = Vec::with_capacity(total_indices);
-    let mut offsets: Vec<O> = Vec::with_capacity(arr_len + 1);
-    offsets.push(O::zero());
+    let out_len = num_rows * output_width;
+    let mut any_oob = false;
 
-    for row in 0..arr_len {
-        let idx_start = indices_offsets[row].to_usize();
-        let idx_end = indices_offsets[row + 1].to_usize();
+    // Reference: horizontal_flatten uses (0..out_len).map(...).collect_arr_trusted_with_dtype()
+    let result: PrimitiveArray<V> = (0..out_len)
+        .map(|flat_idx| {
+            let row = flat_idx / output_width;
+            let elem = flat_idx % output_width;
+            let idx_pos = row * output_width + elem;
 
-        for idx_pos in idx_start..idx_end {
-            let idx_valid = indices_values
-                .validity()
-                .as_ref()
-                .is_none_or(|v| v.get_bit_unchecked(idx_pos));
+            // get_unchecked returns Option<T>, handles inner validity automatically
+            // Reference: horizontal_flatten/mod.rs:172
+            let opt_raw_idx = indices_inner.get_unchecked(idx_pos);
 
-            if !idx_valid {
-                flat_indices.push(None);
-                continue;
-            }
+            match opt_raw_idx {
+                None => None,
+                Some(raw_idx) => {
+                    let raw_idx_i64 = raw_idx.to_i64().unwrap_or(i64::MAX);
 
-            let idx_val = indices_values.value(idx_pos);
-            match idx_val.to_array_index(width) {
-                Some(local_idx) => {
-                    flat_indices.push(Some((row * width + local_idx) as IdxSize));
+                    match raw_idx_i64.negative_to_usize(value_width) {
+                        Some(local_idx) => {
+                            let abs_pos = row * value_width + local_idx;
+                            // get_unchecked handles value validity automatically
+                            values_inner.get_unchecked(abs_pos)
+                        },
+                        None => {
+                            any_oob = true;
+                            None
+                        },
+                    }
                 },
-                None if null_on_oob => flat_indices.push(None),
-                None => polars_bail!(ComputeError:
-                    "gather index is out of bounds for array of width {}", width
-                ),
             }
-        }
-        offsets.push(O::from_usize(flat_indices.len()).unwrap());
+        })
+        .collect_arr_trusted_with_dtype(dtype.clone());
+
+    if any_oob && !null_on_oob {
+        polars_bail!(ComputeError: "gather index is out of bounds");
     }
 
-    let flat_indices_arr: IdxArr = flat_indices.into_iter().collect_trusted();
-    let offsets_buffer: OffsetsBuffer<O> = Offsets::new_unchecked(offsets).into();
-    Ok((flat_indices_arr, offsets_buffer))
+    Ok(result)
 }
 
+/// Dispatch gather based on index type.
+///
 /// # Safety
-/// Caller must ensure indices are within bounds of the source array,
-/// or that `null_on_oob` is true.
-unsafe fn take_values_validity<T, O>(
-    width: usize,
-    arr_validity: &Bitmap,
-    indices_offsets: &[O],
-    indices_values: &PrimitiveArray<T>,
+/// Caller must ensure indices are within bounds or `null_on_oob` is true.
+unsafe fn gather_inner_primitive_idx_dispatch<V>(
+    values_inner: &PrimitiveArray<V>,
+    indices_inner: &dyn Array,
+    value_width: usize,
+    output_width: usize,
+    num_rows: usize,
     null_on_oob: bool,
-) -> PolarsResult<(IdxArr, OffsetsBuffer<O>, BitmapBuilder)>
+    dtype: &ArrowDataType,
+) -> PolarsResult<PrimitiveArray<V>>
 where
-    T: arrow::types::NativeType + ToArrayIndex,
-    O: arrow::offset::Offset,
+    V: arrow::types::NativeType,
 {
-    let arr_len = arr_validity.len();
-    let total_indices = indices_offsets.last().unwrap().to_usize();
-    let mut flat_indices: Vec<Option<IdxSize>> = Vec::with_capacity(total_indices);
-    let mut offsets: Vec<O> = Vec::with_capacity(arr_len + 1);
-    offsets.push(O::zero());
-    let mut validity = BitmapBuilder::with_capacity(arr_len);
-
-    for row in 0..arr_len {
-        if !arr_validity.get_bit_unchecked(row) {
-            validity.push(false);
-            offsets.push(*offsets.last().unwrap());
-            continue;
-        }
-        validity.push(true);
-
-        let idx_start = indices_offsets[row].to_usize();
-        let idx_end = indices_offsets[row + 1].to_usize();
-
-        for idx_pos in idx_start..idx_end {
-            let idx_valid = indices_values
-                .validity()
-                .as_ref()
-                .is_none_or(|v| v.get_bit_unchecked(idx_pos));
-
-            if !idx_valid {
-                flat_indices.push(None);
-                continue;
-            }
-
-            let idx_val = indices_values.value(idx_pos);
-            match idx_val.to_array_index(width) {
-                Some(local_idx) => {
-                    flat_indices.push(Some((row * width + local_idx) as IdxSize));
-                },
-                None if null_on_oob => flat_indices.push(None),
-                None => polars_bail!(ComputeError:
-                    "gather index is out of bounds for array of width {}", width
-                ),
-            }
-        }
-        offsets.push(O::from_usize(flat_indices.len()).unwrap());
+    use ArrowDataType::*;
+    match indices_inner.dtype() {
+        Int8 => {
+            let idx = indices_inner.as_any().downcast_ref::<PrimitiveArray<i8>>().unwrap();
+            gather_inner_primitive(values_inner, idx, value_width, output_width, num_rows, null_on_oob, dtype)
+        },
+        Int16 => {
+            let idx = indices_inner.as_any().downcast_ref::<PrimitiveArray<i16>>().unwrap();
+            gather_inner_primitive(values_inner, idx, value_width, output_width, num_rows, null_on_oob, dtype)
+        },
+        Int32 => {
+            let idx = indices_inner.as_any().downcast_ref::<PrimitiveArray<i32>>().unwrap();
+            gather_inner_primitive(values_inner, idx, value_width, output_width, num_rows, null_on_oob, dtype)
+        },
+        Int64 => {
+            let idx = indices_inner.as_any().downcast_ref::<PrimitiveArray<i64>>().unwrap();
+            gather_inner_primitive(values_inner, idx, value_width, output_width, num_rows, null_on_oob, dtype)
+        },
+        UInt8 => {
+            let idx = indices_inner.as_any().downcast_ref::<PrimitiveArray<u8>>().unwrap();
+            gather_inner_primitive(values_inner, idx, value_width, output_width, num_rows, null_on_oob, dtype)
+        },
+        UInt16 => {
+            let idx = indices_inner.as_any().downcast_ref::<PrimitiveArray<u16>>().unwrap();
+            gather_inner_primitive(values_inner, idx, value_width, output_width, num_rows, null_on_oob, dtype)
+        },
+        UInt32 => {
+            let idx = indices_inner.as_any().downcast_ref::<PrimitiveArray<u32>>().unwrap();
+            gather_inner_primitive(values_inner, idx, value_width, output_width, num_rows, null_on_oob, dtype)
+        },
+        UInt64 => {
+            let idx = indices_inner.as_any().downcast_ref::<PrimitiveArray<u64>>().unwrap();
+            gather_inner_primitive(values_inner, idx, value_width, output_width, num_rows, null_on_oob, dtype)
+        },
+        dt => polars_bail!(ComputeError: "cannot use dtype `{:?}` as gather index", dt),
     }
-
-    let flat_indices_arr: IdxArr = flat_indices.into_iter().collect_trusted();
-    let offsets_buffer: OffsetsBuffer<O> = Offsets::new_unchecked(offsets).into();
-    Ok((flat_indices_arr, offsets_buffer, validity))
 }
 
+/// Gather elements from a FixedSizeListArray, returning inner values.
+///
+/// Reference: horizontal_flatten/mod.rs:23-127 for type dispatch pattern
+///
 /// # Safety
-/// Caller must ensure indices are within bounds of the source array,
-/// or that `null_on_oob` is true.
-unsafe fn take_indices_validity<T, O>(
-    width: usize,
-    arr_len: usize,
-    indices_validity: &Bitmap,
-    indices_offsets: &[O],
-    indices_values: &PrimitiveArray<T>,
-    null_on_oob: bool,
-) -> PolarsResult<(IdxArr, OffsetsBuffer<O>, BitmapBuilder)>
-where
-    T: arrow::types::NativeType + ToArrayIndex,
-    O: arrow::offset::Offset,
-{
-    let total_indices = indices_offsets.last().unwrap().to_usize();
-    let mut flat_indices: Vec<Option<IdxSize>> = Vec::with_capacity(total_indices);
-    let mut offsets: Vec<O> = Vec::with_capacity(arr_len + 1);
-    offsets.push(O::zero());
-    let mut validity = BitmapBuilder::with_capacity(arr_len);
-
-    for row in 0..arr_len {
-        if !indices_validity.get_bit_unchecked(row) {
-            validity.push(false);
-            offsets.push(*offsets.last().unwrap());
-            continue;
-        }
-        validity.push(true);
-
-        let idx_start = indices_offsets[row].to_usize();
-        let idx_end = indices_offsets[row + 1].to_usize();
-
-        for idx_pos in idx_start..idx_end {
-            // Handle inner indices validity if present
-            let idx_valid = indices_values
-                .validity()
-                .as_ref()
-                .is_none_or(|v| v.get_bit_unchecked(idx_pos));
-
-            if !idx_valid {
-                flat_indices.push(None);
-                continue;
-            }
-
-            let idx_val = indices_values.value(idx_pos);
-            match idx_val.to_array_index(width) {
-                Some(local_idx) => {
-                    flat_indices.push(Some((row * width + local_idx) as IdxSize));
-                },
-                None if null_on_oob => flat_indices.push(None),
-                None => polars_bail!(ComputeError:
-                    "gather index is out of bounds for array of width {}", width
-                ),
-            }
-        }
-        offsets.push(O::from_usize(flat_indices.len()).unwrap());
-    }
-
-    let flat_indices_arr: IdxArr = flat_indices.into_iter().collect_trusted();
-    let offsets_buffer: OffsetsBuffer<O> = Offsets::new_unchecked(offsets).into();
-    Ok((flat_indices_arr, offsets_buffer, validity))
-}
-
-/// # Safety
-/// Caller must ensure indices are within bounds of the source array,
-/// or that `null_on_oob` is true.
-unsafe fn take_values_indices_validity<T, O>(
-    width: usize,
-    arr_validity: &Bitmap,
-    indices_validity: &Bitmap,
-    indices_offsets: &[O],
-    indices_values: &PrimitiveArray<T>,
-    null_on_oob: bool,
-) -> PolarsResult<(IdxArr, OffsetsBuffer<O>, BitmapBuilder)>
-where
-    T: arrow::types::NativeType + ToArrayIndex,
-    O: arrow::offset::Offset,
-{
-    let arr_len = arr_validity.len();
-    let total_indices = indices_offsets.last().unwrap().to_usize();
-    let mut flat_indices: Vec<Option<IdxSize>> = Vec::with_capacity(total_indices);
-    let mut offsets: Vec<O> = Vec::with_capacity(arr_len + 1);
-    offsets.push(O::zero());
-    let mut validity = BitmapBuilder::with_capacity(arr_len);
-
-    for row in 0..arr_len {
-        let arr_valid = arr_validity.get_bit_unchecked(row);
-        let idx_valid = indices_validity.get_bit_unchecked(row);
-
-        if !arr_valid || !idx_valid {
-            validity.push(false);
-            offsets.push(*offsets.last().unwrap());
-            continue;
-        }
-        validity.push(true);
-
-        let idx_start = indices_offsets[row].to_usize();
-        let idx_end = indices_offsets[row + 1].to_usize();
-
-        for idx_pos in idx_start..idx_end {
-            let inner_valid = indices_values
-                .validity()
-                .as_ref()
-                .is_none_or(|v| v.get_bit_unchecked(idx_pos));
-
-            if !inner_valid {
-                flat_indices.push(None);
-                continue;
-            }
-
-            let idx_val = indices_values.value(idx_pos);
-            match idx_val.to_array_index(width) {
-                Some(local_idx) => {
-                    flat_indices.push(Some((row * width + local_idx) as IdxSize));
-                },
-                None if null_on_oob => flat_indices.push(None),
-                None => polars_bail!(ComputeError:
-                    "gather index is out of bounds for array of width {}", width
-                ),
-            }
-        }
-        offsets.push(O::from_usize(flat_indices.len()).unwrap());
-    }
-
-    let flat_indices_arr: IdxArr = flat_indices.into_iter().collect_trusted();
-    let offsets_buffer: OffsetsBuffer<O> = Offsets::new_unchecked(offsets).into();
-    Ok((flat_indices_arr, offsets_buffer, validity))
-}
-
-fn sub_fixed_size_list_gather_typed<T, O>(
+/// Caller must ensure indices are within bounds or `null_on_oob` is true.
+unsafe fn gather_fixed_size_list_inner(
     arr: &FixedSizeListArray,
-    indices: &ListArray<O>,
+    indices: &FixedSizeListArray,
     null_on_oob: bool,
-) -> PolarsResult<ListArray<O>>
-where
-    T: arrow::types::NativeType + ToArrayIndex,
-    O: arrow::offset::Offset,
-{
-    let width = arr.size();
-    let values = arr.values();
-    let indices_offsets = indices.offsets().as_slice();
-    let indices_values = indices
-        .values()
-        .as_any()
-        .downcast_ref::<PrimitiveArray<T>>()
-        .expect("indices inner array type mismatch");
+) -> PolarsResult<Box<dyn Array>> {
+    let value_width = arr.size();
+    let output_width = indices.size();
+    let num_rows = arr.len();
 
-    let arr_has_validity = arr.validity().is_some();
-    let idx_has_validity = indices.validity().is_some();
+    let values_inner = arr.values();
+    let indices_inner = indices.values();
+    let dtype = values_inner.dtype();
 
-    // SAFETY: we check bounds via to_array_index, null_on_oob, or error
-    let (flat_indices_arr, offsets_buffer, validity) = unsafe {
-        match (arr_has_validity, idx_has_validity) {
-            (false, false) => {
-                let (idx, off) = take_no_validity(
-                    width,
-                    arr.len(),
-                    indices_offsets,
-                    indices_values,
+    // Reference: horizontal_flatten/mod.rs:30-127 for type dispatch
+    match dtype.to_physical_type() {
+        PhysicalType::Primitive(primitive) => {
+            with_match_primitive_type!(primitive, |$T| {
+                let values_prim = values_inner
+                    .as_any()
+                    .downcast_ref::<PrimitiveArray<$T>>()
+                    .unwrap();
+
+                let result = gather_inner_primitive_idx_dispatch(
+                    values_prim,
+                    indices_inner.as_ref(),
+                    value_width,
+                    output_width,
+                    num_rows,
                     null_on_oob,
+                    dtype,
                 )?;
-                (idx, off, None)
-            },
-            (true, false) => {
-                let (idx, off, val) = take_values_validity(
-                    width,
-                    arr.validity().unwrap(),
-                    indices_offsets,
-                    indices_values,
-                    null_on_oob,
-                )?;
-                (idx, off, val.into_opt_validity())
-            },
-            (false, true) => {
-                let (idx, off, val) = take_indices_validity(
-                    width,
-                    arr.len(),
-                    indices.validity().unwrap(),
-                    indices_offsets,
-                    indices_values,
-                    null_on_oob,
-                )?;
-                (idx, off, val.into_opt_validity())
-            },
-            (true, true) => {
-                let (idx, off, val) = take_values_indices_validity(
-                    width,
-                    arr.validity().unwrap(),
-                    indices.validity().unwrap(),
-                    indices_offsets,
-                    indices_values,
-                    null_on_oob,
-                )?;
-                (idx, off, val.into_opt_validity())
-            },
-        }
+
+                Ok(Box::new(result) as Box<dyn Array>)
+            })
+        },
+        t => polars_bail!(ComputeError: "arr.gather not yet supported for {:?}", t),
+    }
+}
+
+/// Gather elements from each sub-array by index.
+///
+/// Returns FixedSizeListArray (Array dtype), following arr.eval semantics.
+///
+/// # Arguments
+/// * `arr` - Source FixedSizeListArray
+/// * `indices` - FixedSizeListArray of indices (must have integer inner type)
+/// * `null_on_oob` - If true, out-of-bounds indices produce null; otherwise error
+pub fn sub_fixed_size_list_gather(
+    arr: &FixedSizeListArray,
+    indices: &FixedSizeListArray,
+    null_on_oob: bool,
+) -> PolarsResult<FixedSizeListArray> {
+    let output_width = indices.size();
+    let num_rows = arr.len();
+    let inner_dtype = arr.values().dtype().clone();
+
+    // Gather the inner values
+    let gathered_inner = unsafe { gather_fixed_size_list_inner(arr, indices, null_on_oob)? };
+
+    // Combine outer validity (Reference: horizontal_flatten/struct_.rs:47-56)
+    let validity = match (arr.validity(), indices.validity()) {
+        (None, None) => None,
+        (Some(v), None) | (None, Some(v)) => Some(v.clone()),
+        (Some(a), Some(b)) => Some(a & b),
     };
 
-    // SAFETY: indices are validated above
-    let gathered_values = unsafe { take_unchecked(&**values, &flat_indices_arr) };
+    // Return as FixedSizeListArray (Array dtype)
+    let dtype = ArrowDataType::FixedSizeList(
+        Box::new(arrow::datatypes::Field::new(
+            PlSmallStr::from_static("item"),
+            inner_dtype,
+            true,
+        )),
+        output_width,
+    );
 
-    let dtype = ListArray::<O>::default_datatype(gathered_values.dtype().clone());
-    Ok(ListArray::new(
+    Ok(FixedSizeListArray::new(
         dtype,
-        offsets_buffer,
-        gathered_values,
+        num_rows,
+        gathered_inner,
         validity,
     ))
 }
 
-/// Gather multiple indices from each fixed-size list element.
-pub fn sub_fixed_size_list_gather(
-    arr: &FixedSizeListArray,
-    indices: &ListArray<i64>,
-    null_on_oob: bool,
-) -> PolarsResult<ListArray<i64>> {
-    use ArrowDataType::*;
-    match indices.values().dtype() {
-        Int8 => sub_fixed_size_list_gather_typed::<i8, i64>(arr, indices, null_on_oob),
-        Int16 => sub_fixed_size_list_gather_typed::<i16, i64>(arr, indices, null_on_oob),
-        Int32 => sub_fixed_size_list_gather_typed::<i32, i64>(arr, indices, null_on_oob),
-        Int64 => sub_fixed_size_list_gather_typed::<i64, i64>(arr, indices, null_on_oob),
-        UInt8 => sub_fixed_size_list_gather_typed::<u8, i64>(arr, indices, null_on_oob),
-        UInt16 => sub_fixed_size_list_gather_typed::<u16, i64>(arr, indices, null_on_oob),
-        UInt32 => sub_fixed_size_list_gather_typed::<u32, i64>(arr, indices, null_on_oob),
-        UInt64 => sub_fixed_size_list_gather_typed::<u64, i64>(arr, indices, null_on_oob),
-        dt => polars_bail!(ComputeError: "unsupported index dtype for arr.gather: {:?}", dt),
-    }
-}
-
 #[cfg(test)]
 mod test {
-    use polars_utils::pl_str::PlSmallStr;
-
     use super::*;
 
     fn fixture_array() -> FixedSizeListArray {
+        // [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
         let values = PrimitiveArray::from_vec(vec![1i64, 2, 3, 4, 5, 6, 7, 8, 9]);
         FixedSizeListArray::new(
             ArrowDataType::FixedSizeList(
@@ -461,61 +326,139 @@ mod test {
             3,
             Box::new(values),
             None,
-        ) // [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+        )
     }
 
-    fn make_indices<T: arrow::types::NativeType>(
-        values: Vec<Option<T>>,
-        offsets: Vec<i64>,
-    ) -> ListArray<i64> {
-        let arr = PrimitiveArray::<T>::from_iter(values);
-        let offsets: OffsetsBuffer<i64> = unsafe { Offsets::new_unchecked(offsets).into() };
-        ListArray::new(
-            ListArray::<i64>::default_datatype(arr.dtype().clone()),
-            offsets,
+    fn make_indices_array(values: Vec<i64>, width: usize, len: usize) -> FixedSizeListArray {
+        let arr = PrimitiveArray::<i64>::from_vec(values);
+        FixedSizeListArray::new(
+            ArrowDataType::FixedSizeList(
+                Box::new(arrow::datatypes::Field::new(
+                    PlSmallStr::from_static("item"),
+                    ArrowDataType::Int64,
+                    true,
+                )),
+                width,
+            ),
+            len,
             Box::new(arr),
             None,
         )
     }
 
-    /// Test gather within FixedSizeListArray elements: negative indices, inner null indices, and OOB handling.
     #[test]
-    fn test_sub_fixed_size_list_gather() {
+    fn test_gather_returns_fixed_size_list_by_default() {
         let arr = fixture_array();
+        let indices = make_indices_array(vec![0, 2, 0, 2, 0, 2], 2, 3);
 
-        // basic usage
-        let indices = make_indices::<i64>(vec![Some(0), Some(2), Some(1)], vec![0, 1, 2, 3]); // [[0], [2], [1]]
         let result = sub_fixed_size_list_gather(&arr, &indices, false).unwrap();
-        let out = result
-            .values()
-            .as_any()
-            .downcast_ref::<PrimitiveArray<i64>>()
-            .unwrap();
-        assert_eq!(out.values().as_slice(), &[1, 6, 8]);
 
-        // negative index, inner null
-        let indices = make_indices::<i64>(vec![Some(-1), None, Some(0)], vec![0, 1, 2, 3]); // [[-1], [None], [0]]
+        assert!(result.as_any().downcast_ref::<FixedSizeListArray>().is_some());
+
+        let result = result.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+        assert_eq!(result.size(), 2);
+        assert_eq!(result.len(), 3);
+
+        let inner = result.values().as_any().downcast_ref::<PrimitiveArray<i64>>().unwrap();
+        assert_eq!(inner.values().as_slice(), &[1, 3, 4, 6, 7, 9]);
+    }
+
+    #[test]
+    fn test_gather_negative_index() {
+        let arr = fixture_array();
+        // [[-1], [-1], [-1]] -> last element of each
+        let indices = make_indices_array(vec![-1, -1, -1], 1, 3);
+
         let result = sub_fixed_size_list_gather(&arr, &indices, false).unwrap();
-        let out = result
-            .values()
-            .as_any()
-            .downcast_ref::<PrimitiveArray<i64>>()
-            .unwrap();
-        assert_eq!(out.value(0), 3);
-        assert!(!out.is_valid(1));
-        assert_eq!(out.value(2), 7);
+        let result = result.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
 
-        // oob error
-        let indices = make_indices::<i64>(vec![Some(10)], vec![0, 1, 1, 1]); // [[10], [], []]
-        assert!(sub_fixed_size_list_gather(&arr, &indices, false).is_err());
+        let inner = result.values().as_any().downcast_ref::<PrimitiveArray<i64>>().unwrap();
+        assert_eq!(inner.values().as_slice(), &[3, 6, 9]);
+    }
 
-        // oob null_on_oob=true
+    #[test]
+    fn test_gather_oob_error() {
+        let arr = fixture_array();
+        let indices = make_indices_array(vec![10, 0, 0], 1, 3);
+
+        let result = sub_fixed_size_list_gather(&arr, &indices, false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_gather_oob_null() {
+        let arr = fixture_array();
+        let indices = make_indices_array(vec![10, 0, 0], 1, 3);
+
         let result = sub_fixed_size_list_gather(&arr, &indices, true).unwrap();
-        let out = result
-            .values()
-            .as_any()
-            .downcast_ref::<PrimitiveArray<i64>>()
-            .unwrap();
-        assert!(!out.is_valid(0));
+        let result = result.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+
+        let inner = result.values().as_any().downcast_ref::<PrimitiveArray<i64>>().unwrap();
+        assert!(!inner.is_valid(0)); // OOB -> null
+        assert!(inner.is_valid(1));
+        assert!(inner.is_valid(2));
+    }
+
+    #[test]
+    fn test_gather_with_null_index() {
+        use arrow::bitmap::Bitmap;
+
+        let arr = fixture_array();
+        // Indices with a null in position 1
+        let idx_values = PrimitiveArray::<i64>::from_vec(vec![0, 0, 0]).with_validity(Some(Bitmap::from_iter([true, false, true])));
+        let indices = FixedSizeListArray::new(
+            ArrowDataType::FixedSizeList(
+                Box::new(arrow::datatypes::Field::new(
+                    PlSmallStr::from_static("item"),
+                    ArrowDataType::Int64,
+                    true,
+                )),
+                1,
+            ),
+            3,
+            Box::new(idx_values),
+            None,
+        );
+
+        let result = sub_fixed_size_list_gather(&arr, &indices, false).unwrap();
+        let result = result.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+
+        let inner = result.values().as_any().downcast_ref::<PrimitiveArray<i64>>().unwrap();
+        assert!(inner.is_valid(0));
+        assert!(!inner.is_valid(1)); // null index -> null value
+        assert!(inner.is_valid(2));
+    }
+
+    #[test]
+    fn test_gather_with_outer_validity() {
+        use arrow::bitmap::Bitmap;
+
+        // Source array with row 1 null
+        let values = PrimitiveArray::from_vec(vec![1i64, 2, 3, 4, 5, 6, 7, 8, 9]);
+        let arr = FixedSizeListArray::new(
+            ArrowDataType::FixedSizeList(
+                Box::new(arrow::datatypes::Field::new(
+                    PlSmallStr::from_static("item"),
+                    ArrowDataType::Int64,
+                    true,
+                )),
+                3,
+            ),
+            3,
+            Box::new(values),
+            Some(Bitmap::from_iter([true, false, true])), // row 1 is null
+        );
+
+        let indices = make_indices_array(vec![0, 0, 0], 1, 3);
+
+        let result = sub_fixed_size_list_gather(&arr, &indices, false).unwrap();
+        let result = result.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+
+        // Outer validity should propagate
+        assert!(result.validity().is_some());
+        let validity = result.validity().unwrap();
+        assert!(validity.get_bit(0));
+        assert!(!validity.get_bit(1)); // row 1 null
+        assert!(validity.get_bit(2));
     }
 }
