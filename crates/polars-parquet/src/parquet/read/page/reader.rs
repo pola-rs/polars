@@ -151,9 +151,12 @@ impl PageReader {
             return Err(ParquetError::WouldOverAllocate);
         }
 
+        // Read read_size into new buffer and advance reader.
         let orig_buf = self.reader.get_ref();
         let pos = self.reader.position() as usize;
-        let buffer = orig_buf.slice(pos..(pos + read_size).min(orig_buf.len()));
+        let new_pos = (pos + read_size).min(orig_buf.len());
+        let buffer = orig_buf.slice(pos..new_pos);
+        self.reader.set_position(new_pos as u64);
 
         if buffer.len() != read_size {
             return Err(ParquetError::oos(
@@ -221,9 +224,12 @@ pub(super) fn build_page(reader: &mut PageReader) -> ParquetResult<Option<Compre
         return Err(ParquetError::WouldOverAllocate);
     }
 
+    // Read read_size into new buffer and advance reader.
     let orig_buf = reader.reader.get_ref();
     let pos = reader.reader.position() as usize;
-    let buffer = orig_buf.slice(pos..(pos + read_size).min(orig_buf.len()));
+    let new_pos = (pos + read_size).min(orig_buf.len());
+    let buffer = orig_buf.slice(pos..new_pos);
+    reader.reader.set_position(new_pos as u64);
 
     if buffer.len() != read_size {
         return Err(ParquetError::oos(
