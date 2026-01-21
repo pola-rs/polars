@@ -163,3 +163,56 @@ def test_storage_options_retries(
         contextlib.suppress(OSError),
     ):
         function(file_cache_ttl=13)
+
+
+def test_storage_options_retry_config(
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+    monkeypatch.setenv("POLARS_CLOUD_MAX_RETRIES", "53")
+    monkeypatch.setenv("POLARS_CLOUD_RETRY_TIMEOUT_MS", "10371")
+    monkeypatch.setenv("POLARS_CLOUD_RETRY_INIT_BACKOFF_MS", "10372")
+    monkeypatch.setenv("POLARS_CLOUD_RETRY_MAX_BACKOFF_MS", "10373")
+    monkeypatch.setenv("POLARS_CLOUD_RETRY_BASE_MULTIPLIER", "6.28")
+
+    capfd.readouterr()
+    pl.scan_parquet("", storage_options={})
+    capture = capfd.readouterr().err
+
+    assert (
+        """\
+max_retries: 53, \
+retry_timeout: 10.371s, \
+retry_init_backoff: 10.372s, \
+retry_max_backoff: 10.373s, \
+retry_base_multiplier: TotalOrdWrap(6.28)"""
+        in capture
+    )
+
+    capfd.readouterr()
+    pl.scan_parquet(
+        "",
+        storage_options={
+            "file_cache_ttl": 7,
+            "max_retries": 3,
+            "retry_timeout_ms": 9873,
+            "retry_init_backoff_ms": 9874,
+            "retry_max_backoff_ms": 9875,
+            "retry_base_multiplier": 3.14159,
+        },
+    )
+    capture = capfd.readouterr().err
+
+    assert "file_cache_ttl: 7" in capture
+
+    assert (
+        """\
+max_retries: 3, \
+retry_timeout: 9.873s, \
+retry_init_backoff: 9.874s, \
+retry_max_backoff: 9.875s, \
+retry_base_multiplier: TotalOrdWrap(3.14159)"""
+        in capture
+    )
