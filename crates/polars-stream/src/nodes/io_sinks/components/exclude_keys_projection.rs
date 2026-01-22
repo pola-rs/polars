@@ -18,6 +18,7 @@ impl ExcludeKeysProjection {
         (0..end).map(|i| if indices.is_empty() { i } else { indices[i] })
     }
 
+    #[allow(unused)]
     pub fn len(&self) -> usize {
         match self {
             Self::Indices(indices) => indices.len(),

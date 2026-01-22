@@ -1,6 +1,9 @@
+use std::cmp;
+use std::num::NonZeroUsize;
+
 use polars_core::config;
 use polars_error::PolarsResult;
-use polars_utils::idx_mapper::IdxMapper;
+use polars_io::utils::compression::CompressedReader;
 use polars_utils::mmap::MemSlice;
 
 use super::line_batch_processor::LineBatch;
@@ -9,8 +12,7 @@ use crate::async_primitives::distributor_channel;
 const LF: u8 = b'\n';
 
 pub(super) struct LineBatchDistributor {
-    pub(super) global_bytes: MemSlice,
-    pub(super) chunk_size: usize,
+    pub(super) reader: CompressedReader,
     pub(super) reverse: bool,
     pub(super) row_skipper: RowSkipper,
     pub(super) line_batch_distribute_tx: distributor_channel::Sender<LineBatch>,
@@ -20,134 +22,102 @@ impl LineBatchDistributor {
     /// Returns the number of rows skipped (i.e. were not sent to LineBatchProcessors).
     pub(super) async fn run(self) -> PolarsResult<usize> {
         let LineBatchDistributor {
-            global_bytes: global_bytes_mem_slice,
-            chunk_size,
+            mut reader,
             reverse,
             mut row_skipper,
             mut line_batch_distribute_tx,
         } = self;
 
-        // Safety: All receivers (LineBatchProcessors) hold a MemSlice ref to this.
-        let global_bytes: &'static [u8] =
-            unsafe { std::mem::transmute(global_bytes_mem_slice.as_ref()) };
-        let n_chunks = global_bytes.len().div_ceil(chunk_size);
         let verbose = config::verbose();
+
+        let fixed_read_size = std::env::var("POLARS_FORCE_NDJSON_CHUNK_SIZE")
+            .map(|x| {
+                x.parse::<NonZeroUsize>().ok().unwrap_or_else(|| {
+                    panic!("invalid value for POLARS_FORCE_NDJSON_CHUNK_SIZE: {x}")
+                })
+            })
+            .ok();
 
         if verbose {
             eprintln!(
                 "\
                 [NDJSON LineBatchDistributor]: \
-                global_bytes.len(): {}, \
-                chunk_size: {}, \
-                n_chunks: {}, \
                 n_rows_to_skip: {}, \
-                reverse: {} \
+                reverse: {reverse} \
+                fixed_read_size: {fixed_read_size:?} \
                 ",
-                global_bytes.len(),
-                chunk_size,
-                n_chunks,
                 row_skipper.cfg_n_rows_to_skip,
-                reverse
-            )
+            );
         }
 
-        // The logic below processes in fixed chunks with remainder handling so that in the future
-        // we can handle receiving data in a batched manner.
+        let mut full_input_opt = if reverse {
+            // Since decompression doesn't support reverse decompression, we have to fully
+            // decompress the input. It's crucial for the streaming property that this doesn't get
+            // called in the non-reverse case.
+            let (full_input, _) = reader.read_next_slice(&MemSlice::EMPTY, usize::MAX)?;
+            let offset = full_input.len();
+            Some((full_input, offset))
+        } else {
+            None
+        };
 
-        let mut prev_remainder: &'static [u8] = &[];
+        let mut read_size = fixed_read_size
+            .map(NonZeroUsize::get)
+            .unwrap_or_else(CompressedReader::initial_read_size);
+        let mut prev_leftover = MemSlice::EMPTY;
+        let mut chunk_idx = 0;
 
-        let global_idx_map = IdxMapper::new(global_bytes.len(), reverse);
-
-        for chunk_idx in 0..n_chunks {
-            let offset = chunk_idx.saturating_mul(chunk_size);
-            let range = offset..offset.saturating_add(chunk_size).min(global_bytes.len());
-            let range = global_idx_map.map_range(range);
-
-            let chunk = &global_bytes[range];
-            let mut remainder_combines_to_full_chunk = false;
-
-            // Split off the chunk occurring after the last newline char.
-            let chunk_remainder = if chunk_idx == n_chunks - 1 {
-                // Last chunk, send everything.
-                &[]
-            } else if reverse {
-                // Remainder is on the left because we are parsing lines in reverse:
-                // N = '\n'
-                // chunk:     ---N---------
-                // remainder: ---N
-                let eol_idx = chunk.iter().position(|c| *c == LF);
-
-                remainder_combines_to_full_chunk = eol_idx.is_some() && !prev_remainder.is_empty();
-
-                let end_idx = eol_idx.map_or(chunk.len(), |i| 1 + i);
-
-                &chunk[..end_idx]
+        loop {
+            let (mem_slice, bytes_read) = if reverse {
+                let (full_input, offset) = full_input_opt.as_mut().unwrap();
+                let new_offset = offset.saturating_sub(read_size);
+                let bytes_read = *offset - new_offset;
+                let new_slice = full_input.slice(new_offset..(*offset + prev_leftover.len()));
+                *offset = new_offset;
+                (new_slice, bytes_read)
             } else {
-                // N = '\n'
-                // chunk:     ---------N---
-                // remainder:           ---
-                let start_idx = chunk.iter().rposition(|c| *c == LF).map_or(0, |i| 1 + i);
-
-                &chunk[start_idx..]
+                reader.read_next_slice(&prev_leftover, read_size)?
             };
 
-            // Holds a complete set of lines (remainder trimmed above).
-            let full_lines_chunk = &chunk[IdxMapper::new(chunk.len(), reverse)
-                .map_range(0..chunk.len() - chunk_remainder.len())];
-
-            // Ensure LF is not split from the line it originates from.
-            // This is important for `scan_lines` as it does not ignore empty lines.
-            if reverse {
-                debug_assert!(
-                    chunk_remainder.ends_with(&[LF])
-                        || chunk_remainder.is_empty()
-                        || full_lines_chunk.is_empty()
-                );
-            } else {
-                debug_assert!(
-                    full_lines_chunk.ends_with(&[LF])
-                        || full_lines_chunk.is_empty()
-                        || chunk_idx == n_chunks - 1
-                )
+            if mem_slice.is_empty() {
+                break;
             }
 
-            if !full_lines_chunk.is_empty() || remainder_combines_to_full_chunk {
-                let mut full_lines_chunk = if prev_remainder.is_empty() {
-                    full_lines_chunk
-                } else if full_lines_chunk.is_empty() {
-                    prev_remainder
-                } else if reverse {
-                    unsafe { merge_adjacent_non_empty_slices(full_lines_chunk, prev_remainder) }
+            mem_slice.prefetch();
+
+            let is_eof = bytes_read == 0;
+            let (unconsumed_offset, done) = process_chunk(
+                mem_slice.clone(),
+                is_eof,
+                reverse,
+                &mut chunk_idx,
+                &mut row_skipper,
+                &mut line_batch_distribute_tx,
+            )
+            .await;
+
+            if done || is_eof {
+                break;
+            }
+
+            if let Some(offset) = unconsumed_offset {
+                prev_leftover = if reverse {
+                    mem_slice.slice(0..offset)
                 } else {
-                    unsafe { merge_adjacent_non_empty_slices(prev_remainder, full_lines_chunk) }
+                    mem_slice.slice(offset..mem_slice.len())
                 };
-
-                prev_remainder = &[];
-                row_skipper.skip_rows(&mut full_lines_chunk);
-
-                if !full_lines_chunk.is_empty()
-                    && line_batch_distribute_tx
-                        .send(LineBatch {
-                            bytes: full_lines_chunk,
-                            chunk_idx,
-                        })
-                        .await
-                        .is_err()
-                {
-                    break;
+            } else {
+                if fixed_read_size.is_none() {
+                    // This allows the slice to grow until at least a single row is included. To avoid a quadratic run-time for large row sizes, we double the read size.
+                    read_size = read_size.saturating_mul(2);
                 }
+                prev_leftover = mem_slice;
+                continue;
             }
 
-            // Note: If `prev_remainder` is non-empty at this point, it means the entire current
-            // chunk does not contain a newline.
-            prev_remainder = if prev_remainder.is_empty() {
-                chunk_remainder
-            } else if reverse {
-                // Current chunk comes before the previous remainder in memory when reversed.
-                unsafe { merge_adjacent_non_empty_slices(chunk_remainder, prev_remainder) }
-            } else {
-                unsafe { merge_adjacent_non_empty_slices(prev_remainder, chunk_remainder) }
-            };
+            if read_size < CompressedReader::ideal_read_size() && fixed_read_size.is_none() {
+                read_size *= 4;
+            }
         }
 
         if verbose {
@@ -158,8 +128,58 @@ impl LineBatchDistributor {
     }
 }
 
+async fn process_chunk(
+    chunk: MemSlice,
+    is_eof: bool,
+    reverse: bool,
+    chunk_idx: &mut usize,
+    row_skipper: &mut RowSkipper,
+    line_batch_distribute_tx: &mut distributor_channel::Sender<LineBatch>,
+) -> (Option<usize>, bool) {
+    let len = chunk.len();
+    if len == 0 {
+        return (None, is_eof);
+    }
+
+    let unconsumed_offset = if is_eof {
+        Some(0)
+    } else if reverse {
+        memchr::memchr(LF, &chunk)
+    } else {
+        memchr::memrchr(LF, &chunk)
+    }
+    .map(|offset| cmp::min(offset + 1, len));
+
+    let mut done = false;
+    if let Some(offset) = unconsumed_offset {
+        let line_chunk = if is_eof {
+            // Consume full input in EOF case.
+            chunk
+        } else if reverse {
+            chunk.slice(offset..chunk.len())
+        } else {
+            chunk.slice(0..offset)
+        };
+
+        // Since this path is only executed if at least one line is found or EOF, we guarantee that
+        // `skip_rows` will always make progress.
+        let batch_chunk = row_skipper.skip_rows(line_chunk);
+
+        if !batch_chunk.is_empty() {
+            let batch = LineBatch {
+                bytes: batch_chunk,
+                chunk_idx: *chunk_idx,
+            };
+            done = line_batch_distribute_tx.send(batch).await.is_err();
+            *chunk_idx += 1;
+        }
+    }
+
+    (unconsumed_offset, done)
+}
+
 pub(super) struct RowSkipper {
-    /// Configured number of rows to skip. This must not be mutated during runtime.
+    /// Configured number of rows to skip. This MUST NOT be mutated during runtime.
     pub(super) cfg_n_rows_to_skip: usize,
     /// Number of rows skipped so far.
     pub(super) n_rows_skipped: usize,
@@ -169,83 +189,67 @@ pub(super) struct RowSkipper {
 }
 
 impl RowSkipper {
-    #[inline]
-    fn remaining_rows_to_skip(&self) -> usize {
-        self.cfg_n_rows_to_skip - self.n_rows_skipped
-    }
-
-    fn skip_rows(&mut self, chunk: &mut &[u8]) {
-        if self.remaining_rows_to_skip() == 0 {
-            return;
+    /// Takes `chunk` which contains N lines and consumes min(N, M) lines, where M is the number of
+    /// lines that have not yet been skipped.
+    ///
+    /// `chunk` is expected in the form "line_a\nline_b\nline_c(\n)?" regardless of `reverse`.
+    fn skip_rows(&mut self, chunk: MemSlice) -> MemSlice {
+        if self.n_rows_skipped >= self.cfg_n_rows_to_skip {
+            return chunk;
         }
 
         if self.reverse {
-            self._skip_reversed(chunk)
+            self._skip_rows_backward(chunk)
         } else {
-            // strip_suffix: E.g. ['\n'].split(c == '\n') will yield 2 empty slices (from LHS/RHS of the
-            // newline). But we don't want to consider the slice from the RHS of the '\n'.
-            let mut iter = if chunk.last() == Some(&LF) {
-                &chunk[..chunk.len() - 1]
-            } else {
-                *chunk
-            }
-            .split(|byte| *byte == LF)
-            .filter(|line| (self.is_line)(line));
-            let n_skipped = iter.by_ref().take(self.remaining_rows_to_skip()).count();
-            self.n_rows_skipped += n_skipped;
-
-            *chunk = if let Some(line) = iter.next() {
-                // chunk ----\n---\n---
-                // line        ---
-                // out         --------
-                assert!(chunk.as_ptr_range().contains(&line.as_ptr()));
-                unsafe {
-                    let len = chunk.len() - line.as_ptr().offset_from_unsigned(chunk.as_ptr());
-                    std::slice::from_raw_parts(line.as_ptr(), len)
-                }
-            } else {
-                &[]
-            }
+            self._skip_rows_forward(chunk)
         }
     }
 
-    /// Skip lines in reverse (right to left).
-    fn _skip_reversed(&mut self, chunk: &mut &[u8]) {
-        let mut iter = if chunk.last() == Some(&LF) {
-            &chunk[..chunk.len() - 1]
-        } else {
-            *chunk
-        }
-        .rsplit(|&c| c == LF)
-        .filter(|line| (self.is_line)(line));
+    fn _skip_rows_forward(&mut self, chunk: MemSlice) -> MemSlice {
+        let len = chunk.len();
+        let mut offset = 0;
 
-        let n_skipped = iter.by_ref().take(self.remaining_rows_to_skip()).count();
-        self.n_rows_skipped += n_skipped;
+        while let Some(pos) = memchr::memchr(LF, &chunk[offset..]) {
+            let prev_offset = offset;
+            offset = cmp::min(offset + pos + 1, len);
 
-        *chunk = if let Some(line) = iter.next() {
-            // chunk ----\n---\n---
-            // line        ---
-            // out    --------
-            let end_ptr: *const u8 = unsafe { line.as_ptr().add(line.len()) };
-            assert!(chunk.as_ptr_range().contains(&end_ptr));
-            unsafe {
-                std::slice::from_raw_parts(
-                    chunk.as_ptr(),
-                    end_ptr.offset_from_unsigned(chunk.as_ptr()),
-                )
+            if !(self.is_line)(&chunk[prev_offset..offset]) {
+                continue;
             }
-        } else {
-            &[]
-        }
-    }
-}
 
-/// # Safety
-/// `left` and `right` should be non-empty and `right` should be immediately  after `left` in memory.
-/// The slice resulting from combining them should adhere to all safety preconditions of [`std::slice::from_raw_parts`].
-unsafe fn merge_adjacent_non_empty_slices<'a>(left: &'a [u8], right: &'a [u8]) -> &'a [u8] {
-    assert!(!left.is_empty());
-    assert!(!right.is_empty());
-    assert_eq!(left.as_ptr() as usize + left.len(), right.as_ptr() as usize);
-    unsafe { std::slice::from_raw_parts(left.as_ptr(), left.len() + right.len()) }
+            self.n_rows_skipped += 1;
+
+            if self.n_rows_skipped >= self.cfg_n_rows_to_skip {
+                return chunk.slice(offset..len);
+            }
+        }
+
+        MemSlice::EMPTY
+    }
+
+    fn _skip_rows_backward(&mut self, chunk: MemSlice) -> MemSlice {
+        let len = chunk.len();
+        let mut offset = len.saturating_sub((chunk.last().copied() == Some(LF)) as usize);
+
+        while let Some(pos) = memchr::memrchr(LF, &chunk[..offset]) {
+            let prev_offset = offset;
+            offset = pos;
+
+            if !(self.is_line)(&chunk[offset..prev_offset]) {
+                continue;
+            }
+
+            self.n_rows_skipped += 1;
+
+            if self.n_rows_skipped >= self.cfg_n_rows_to_skip {
+                return chunk.slice(0..offset);
+            }
+
+            offset = offset.saturating_sub(1);
+        }
+
+        self.n_rows_skipped += !chunk.is_empty() as usize;
+
+        MemSlice::EMPTY
+    }
 }

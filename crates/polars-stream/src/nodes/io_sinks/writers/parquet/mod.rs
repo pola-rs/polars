@@ -38,6 +38,7 @@ pub struct InitializedState {
 }
 
 struct EncodedRowGroup {
+    num_rows: usize,
     data: Vec<Vec<CompressedPage>>,
     morsel_permit: SinkMorselPermit,
 }

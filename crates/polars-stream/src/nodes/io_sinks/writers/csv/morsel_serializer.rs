@@ -1,5 +1,5 @@
 use polars_core::frame::DataFrame;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_bail};
 use polars_io::prelude::CsvSerializer;
 
 use crate::async_executor::{self, TaskPriority};
@@ -77,6 +77,14 @@ impl MorselSerializer {
             csv_serializer,
             serialized_data,
         } = &mut self;
+
+        if df.width() == 0 && df.height() > 0 {
+            polars_bail!(
+                InvalidOperation:
+                "cannot sink 0-width DataFrame with non-zero height ({}) to CSV",
+                df.height()
+            )
+        }
 
         rechunk_par(unsafe { df.columns_mut_retain_schema() }).await;
 

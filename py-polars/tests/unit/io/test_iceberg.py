@@ -445,11 +445,30 @@ def test_scan_iceberg_polars_storage_options_keys(
     capfd.readouterr()
 
     pl.scan_iceberg(
-        tbl, storage_options={"max_retries": 13, "file_cache_ttl": 37}
+        tbl,
+        storage_options={
+            "file_cache_ttl": 7,
+            "max_retries": 3,
+            "retry_timeout_ms": 9873,
+            "retry_init_backoff_ms": 9874,
+            "retry_max_backoff_ms": 9875,
+            "retry_base_multiplier": 3.14159,
+        },
     ).collect()
 
     capture = capfd.readouterr().err
-    assert "max_retries: 13, file_cache_ttl: 37" in capture
+
+    assert "file_cache_ttl: 7" in capture
+
+    assert (
+        """\
+max_retries: 3, \
+retry_timeout: 9.873s, \
+retry_init_backoff: 9.874s, \
+retry_max_backoff: 9.875s, \
+retry_base_multiplier: TotalOrdWrap(3.14159)"""
+        in capture
+    )
 
 
 @pytest.mark.write_disk
