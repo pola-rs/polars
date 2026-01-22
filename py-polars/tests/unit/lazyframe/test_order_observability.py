@@ -546,3 +546,16 @@ def test_reverse_non_order_observe() -> None:
             }
         ),
     )
+
+
+def test_order_optimize_cspe_26277() -> None:
+    df = pl.LazyFrame({"x": [1, 2]}).sort("x")
+
+    q1 = pl.concat([df, df])
+    q2 = pl.concat([q1, q1])
+    q3 = q2.sort("x").with_columns("x")
+
+    assert_frame_equal(
+        q3.collect(),
+        pl.DataFrame({"x": [1, 1, 1, 1, 2, 2, 2, 2]}),
+    )
