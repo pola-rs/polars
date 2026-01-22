@@ -41,13 +41,7 @@ impl ComputeNode for UnorderedUnionNode {
             };
         }
 
-        if send[0] == PortState::Blocked {
-            for r in recv.iter_mut() {
-                if *r == PortState::Ready {
-                    *r = PortState::Blocked;
-                }
-            }
-        }
+        recv.fill(send[0]);
 
         Ok(())
     }
@@ -57,7 +51,7 @@ impl ComputeNode for UnorderedUnionNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s StreamingExecutionState,
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert_eq!(send_ports.len(), 1);
@@ -66,48 +60,27 @@ impl ComputeNode for UnorderedUnionNode {
 
         let output_senders = send_ports[0].take().unwrap().parallel();
         let n = output_senders.len();
-        assert_eq!(n, _state.num_pipelines);
+        assert_eq!(n, state.num_pipelines);
 
-        let mut mpsc_senders = Vec::new();
-        let mut mpsc_receivers = Vec::new();
-
-        for _ in 0..n {
-            let (tx, rx) = mpsc::channel::<Morsel>(1000); // what should be? 1000 is just random
-            mpsc_senders.push(tx);
-            mpsc_receivers.push(rx);
-        }
+        let (mpsc_senders, mpsc_receivers): (Vec<_>, Vec<_>) =
+            (0..n).map(|_| mpsc::channel::<Morsel>(1)).unzip();
 
         for recv_port in recv_ports {
-            let receivers = recv_port.take().unwrap().parallel();
-            let output_schema = output_schema.clone();
+            if let Some(recv) = recv_port.take() {
+                let receivers = recv.parallel();
+                let mpsc_senders_clone = mpsc_senders.clone();
 
-            let mpsc_senders_clone: Vec<_> = mpsc_senders.iter().map(|s| s.clone()).collect();
-
-            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                let mut sub_tasks = Vec::new();
-
-                for (lane_idx, mut receiver) in receivers.into_iter().enumerate() {
-                    let mpsc_senders = mpsc_senders_clone.clone();
-                    let output_schema = output_schema.clone();
-
-                    sub_tasks.push(scope.spawn_task(TaskPriority::High, async move {
-                        while let Ok(mut morsel) = receiver.recv().await {
-                            morsel.df_mut().ensure_matches_schema(&output_schema)?;
-
-                            if mpsc_senders[lane_idx].send(morsel).await.is_err() {
+                for (mut receiver, sender) in receivers.into_iter().zip(mpsc_senders_clone) {
+                    join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+                        while let Ok(morsel) = receiver.recv().await {
+                            if sender.send(morsel).await.is_err() {
                                 break;
                             }
                         }
                         PolarsResult::Ok(())
                     }));
                 }
-
-                for sub_task in sub_tasks {
-                    sub_task.await?;
-                }
-
-                PolarsResult::Ok(())
-            }));
+            }
         }
 
         drop(mpsc_senders);
