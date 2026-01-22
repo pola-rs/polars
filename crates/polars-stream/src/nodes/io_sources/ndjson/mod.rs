@@ -74,6 +74,7 @@ impl FileReader for NDJsonFileReader {
             pre_slice,
 
             num_pipelines,
+            disable_morsel_split: _,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx,

@@ -22,6 +22,17 @@ impl InMemorySourceNode {
             seq_offset,
         }
     }
+
+    pub fn new_no_morsel_split(source: Arc<DataFrame>, seq_offset: MorselSeq) -> Self {
+        let morsel_size = source.height();
+
+        InMemorySourceNode {
+            source: Some(source),
+            morsel_size,
+            seq: AtomicU64::new(0),
+            seq_offset,
+        }
+    }
 }
 
 impl ComputeNode for InMemorySourceNode {

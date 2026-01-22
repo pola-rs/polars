@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -303,3 +305,111 @@ def test_csv_scan_skip_lines_len_22889(
     out = pl.scan_csv(bb, skip_lines=2).collect().select(pl.len())
     expected = pl.DataFrame({"len": [1]}, schema={"len": pl.get_index_type()})
     assert_frame_equal(expected, out)
+
+
+@pytest.mark.write_disk
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "exec_str",
+    [
+        "pl.LazyFrame(height=n_rows).select(pl.len()).collect().item()",
+        "pl.scan_parquet(parquet_file_path).select(pl.len()).collect().item()",
+        "pl.scan_ipc(ipc_file_path).select(pl.len()).collect().item()",
+        'pl.LazyFrame({"a": s, "b": s, "c": s}).select("c", "b").collect().height',
+        """\
+pl.collect_all(
+    [
+        pl.scan_parquet(parquet_file_path).select(pl.len()),
+        pl.scan_ipc(ipc_file_path).select(pl.len()),
+        pl.LazyFrame(height=n_rows).select(pl.len()),
+    ]
+)[0].item()""",
+    ],
+)
+def test_streaming_fast_count_disables_morsel_split(
+    tmp_path: Path, exec_str: str
+) -> None:
+    n_rows = (1 << 32) - 2
+    parquet_file_path = tmp_path / "data.parquet"
+    ipc_file_path = tmp_path / "data.ipc"
+
+    script_args = [str(n_rows), str(parquet_file_path), str(ipc_file_path), exec_str]
+
+    # We spawn 2 processes - the first process sets a huge ideal morsel size to
+    # generate the data quickly. The 2nd process sets the ideal morsel size to 1,
+    # making it so that if morsel splitting is performed it would exceed the
+    # timeout of 5 seconds.
+
+    assert (
+        subprocess.check_output(
+            [
+                sys.executable,
+                "-c",
+                """\
+import os
+import sys
+
+os.environ["POLARS_IDEAL_MORSEL_SIZE"] = str(1_000_000_000)
+
+import polars as pl
+
+pl.Config.set_engine_affinity("streaming")
+
+(
+    _,
+    n_rows,
+    parquet_file_path,
+    ipc_file_path,
+    _,
+) = sys.argv
+
+n_rows = int(n_rows)
+
+pl.LazyFrame(height=n_rows).sink_parquet(parquet_file_path, row_group_size=1_000_000_000)
+pl.LazyFrame(height=n_rows).sink_ipc(ipc_file_path, record_batch_size=1_000_000_000)
+
+print("OK", end="")
+""",
+                *script_args,
+            ],
+            timeout=5,
+        )
+        == b"OK"
+    )
+
+    assert (
+        subprocess.check_output(
+            [
+                sys.executable,
+                "-c",
+                """\
+import os
+import sys
+
+os.environ["POLARS_IDEAL_MORSEL_SIZE"] = "1"
+
+import polars as pl
+
+pl.Config.set_engine_affinity("streaming")
+
+(
+    _,
+    n_rows,
+    parquet_file_path,
+    ipc_file_path,
+    exec_str,
+) = sys.argv
+
+n_rows = int(n_rows)
+
+s = pl.Series([{}], dtype=pl.Struct({})).new_from_index(0, n_rows)
+assert eval(exec_str) == n_rows
+
+print("OK", end="")
+""",
+                *script_args,
+            ],
+            timeout=5,
+        )
+        == b"OK"
+    )
