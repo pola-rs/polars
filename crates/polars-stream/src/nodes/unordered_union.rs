@@ -1,20 +1,15 @@
-use std::sync::Arc;
-
-use polars_core::schema::Schema;
 use tokio::sync::mpsc;
 
 use super::compute_node_prelude::*;
 
 pub struct UnorderedUnionNode {
     max_morsel_seq_sent: MorselSeq,
-    output_schema: Arc<Schema>,
 }
 
 impl UnorderedUnionNode {
-    pub fn new(output_schema: Arc<Schema>) -> Self {
+    pub fn new() -> Self {
         Self {
             max_morsel_seq_sent: MorselSeq::new(0),
-            output_schema,
         }
     }
 }
@@ -37,7 +32,7 @@ impl ComputeNode for UnorderedUnionNode {
         if all_done {
             send[0] = PortState::Done;
         } else {
-            let any_ready = recv.iter().any(|r| *r == PortState::Ready);
+            let any_ready = recv.contains(&PortState::Ready);
             send[0] = if any_ready {
                 PortState::Ready
             } else {
@@ -59,9 +54,6 @@ impl ComputeNode for UnorderedUnionNode {
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert_eq!(send_ports.len(), 1);
-
-        let output_schema = self.output_schema.clone();
-
         let output_senders = send_ports[0].take().unwrap().parallel();
         let n = output_senders.len();
         assert_eq!(n, state.num_pipelines);
