@@ -109,6 +109,8 @@ impl FileReaderBuilder for ParquetReaderBuilder {
             },
         };
 
+        dbg!(&byte_source_builder);
+
         assert!(self.prefetch_limit.load() > 0);
 
         let reader = ParquetFileReader {

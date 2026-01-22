@@ -204,7 +204,7 @@ impl RecordBatchDataFetcher {
                 IdxSize::try_from(n_rows)
                     .map_err(|_| polars_err!(bigidx, ctx = "ipc file", size = n_rows))?
             },
-            DynByteSource::Cloud(_) => {
+            DynByteSource::Cloud(_) | DynByteSource::MmapCopy(_) | DynByteSource::AsyncFile(_) => {
                 let io_runtime = polars_io::pl_async::get_runtime();
 
                 let mut n_rows = 0;
