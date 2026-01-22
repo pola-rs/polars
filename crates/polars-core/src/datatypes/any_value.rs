@@ -1832,9 +1832,9 @@ mod tests {
 
     #[test]
     fn test_hashset_dedup_works() {
-        use std::collections::HashSet;
+        use crate::prelude::PlHashSet;
 
-        let mut set = HashSet::new();
+        let mut set = PlHashSet::new();
         assert!(set.insert(AnyValue::String("hello test")));
         assert!(!set.insert(AnyValue::StringOwned("hello test".into())));
         assert_eq!(set.len(), 1);
