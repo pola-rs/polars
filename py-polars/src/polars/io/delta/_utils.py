@@ -103,3 +103,44 @@ def _check_for_unsupported_types(dtypes: list[DataType]) -> None:
     if overlap := schema_dtypes & unsupported_types:
         msg = f"dataframe contains unsupported data types: {overlap!r}"
         raise TypeError(msg)
+
+
+def _extract_pl_data_statistics(dl_tbl: DeltaTable) -> DataFrame | None:
+    import polars as pl
+
+    table_statistics = cast("pl.DataFrame", pl.from_arrow(dl_tbl.get_add_actions()))
+
+    if table_statistics["num_records"].null_count() == 0:
+        dfs = [table_statistics.select([pl.col("num_records").alias("len")])]
+        for stat in [("null_count", "nc"), ("min", "min"), ("max", "max")]:
+            if stat[0] in table_statistics.columns:
+                df_struct = table_statistics.select(pl.col(stat[0]).struct.unnest())
+                for col in df_struct.columns:
+                    stat_df = df_struct.select(pl.col(col).alias(f"{col}_{stat[1]}"))
+                    dfs.append(stat_df)
+
+        return pl.concat(dfs, how="horizontal")
+    else:
+        return None
+
+
+def _fill_missing_columns(
+    stats_df: DataFrame | None,
+    delta_schema: deltalake._internal.Schema,
+    partition_cols: list[str],
+) -> DataFrame | None:
+    if stats_df is None:
+        return None
+
+    import polars as pl
+
+    dfs = []
+
+    for col in [field.name for field in delta_schema.fields]:
+        if col not in partition_cols:
+            for stat in [("null_count", "nc"), ("min", "min"), ("max", "max")]:
+                stats_col = f"{col}_{stat[1]}"
+                if stats_col not in stats_df.columns:
+                    dfs.append(pl.lit(None).alias(stats_col))
+
+    return stats_df.with_columns(dfs)
