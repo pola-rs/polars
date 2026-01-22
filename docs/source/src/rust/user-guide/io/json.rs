@@ -33,8 +33,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let df = LazyJsonLineReader::new(PlRefPath::new("docs/assets/data/path.json"))
         .finish()
         .unwrap()
-        .collect();
+        .collect()
+        .unwrap();
     // --8<-- [end:readnd]
+    println!("{}", df);
 
     // --8<-- [start:scan]
     let lf = LazyJsonLineReader::new(PlRefPath::new("docs/assets/data/path.json"))
