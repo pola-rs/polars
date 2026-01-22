@@ -269,6 +269,10 @@ pub enum PhysNodeKind {
         inputs: Vec<PhysStream>,
     },
 
+    UnorderedUnion {
+        inputs: Vec<PhysStream>,
+    },
+
     Zip {
         inputs: Vec<PhysStream>,
         zip_behavior: ZipBehavior,
@@ -565,6 +569,7 @@ fn visit_node_inputs_mut(
 
             PhysNodeKind::GroupBy { inputs, .. }
             | PhysNodeKind::OrderedUnion { inputs }
+            | PhysNodeKind::UnorderedUnion { inputs }
             | PhysNodeKind::Zip { inputs, .. } => {
                 for input in inputs {
                     rec!(input.node);

@@ -35,6 +35,7 @@ pub mod simple_projection;
 pub mod sorted_group_by;
 pub mod streaming_slice;
 pub mod top_k;
+pub mod unordered_union;
 pub mod with_row_index;
 pub mod zip;
 
