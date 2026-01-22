@@ -329,7 +329,6 @@ def scan_delta(
         use_pyarrow=use_pyarrow,
         pyarrow_options=pyarrow_options,
         rechunk=rechunk or False,
-        _table_statistics=pl_table_statistics,
     )
 
     return wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset))

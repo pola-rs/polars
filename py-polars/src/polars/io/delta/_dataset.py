@@ -154,6 +154,7 @@ class DeltaDataset:
             storage_options=self.storage_options,
             credential_provider=self.credential_provider_builder,  # type: ignore[arg-type]
             rechunk=self.rechunk,
+            _table_statistics=pl_table_statistics,
         ), version_key
 
     #
