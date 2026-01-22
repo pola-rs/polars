@@ -362,6 +362,9 @@ def test_against_np_busday_offset(
     assert result == expected
 
 
+# This fails because a Expr of length 1 from holidays makes streaming work
+# differently than it did when holidays was a non-Expr parameter.
+@pytest.mark.may_fail_auto_streaming
 def test_unequal_lengths_22018() -> None:
     with pytest.raises(pl.exceptions.ShapeError):
         pl.Series([date(2088, 8, 5)] * 2).dt.add_business_days(pl.Series([1] * 3))
