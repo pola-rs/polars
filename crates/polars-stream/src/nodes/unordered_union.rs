@@ -6,12 +6,16 @@ use tokio::sync::mpsc;
 use super::compute_node_prelude::*;
 
 pub struct UnorderedUnionNode {
+    max_morsel_seq_sent: MorselSeq,
     output_schema: Arc<Schema>,
 }
 
 impl UnorderedUnionNode {
     pub fn new(output_schema: Arc<Schema>) -> Self {
-        Self { output_schema }
+        Self {
+            max_morsel_seq_sent: MorselSeq::new(0),
+            output_schema,
+        }
     }
 }
 
@@ -85,24 +89,36 @@ impl ComputeNode for UnorderedUnionNode {
 
         drop(mpsc_senders);
 
+        let morsel_offset = self.max_morsel_seq_sent.successor();
+
+        let mut inner_handles = Vec::new();
         for (lane_idx, (mut mpsc_receiver, mut output_sender)) in
             mpsc_receivers.into_iter().zip(output_senders).enumerate()
         {
-            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                let mut local_seq = lane_idx as u64;
+            inner_handles.push(scope.spawn_task(TaskPriority::High, async move {
+                let mut local_seq = morsel_offset.offset_by_u64(lane_idx as u64);
                 let seq_step = n as u64;
+                let mut max_seq = MorselSeq::new(0);
 
                 while let Some(mut morsel) = mpsc_receiver.recv().await {
-                    morsel.set_seq(MorselSeq::new(local_seq));
-                    local_seq += seq_step;
+                    morsel.set_seq(local_seq);
+                    max_seq = max_seq.max(local_seq);
+                    local_seq = local_seq.offset_by_u64(seq_step);
 
                     if output_sender.send(morsel).await.is_err() {
                         break;
                     }
                 }
 
-                PolarsResult::Ok(())
+                PolarsResult::Ok(max_seq)
             }));
         }
+
+        join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+            for handle in inner_handles {
+                self.max_morsel_seq_sent = self.max_morsel_seq_sent.max(handle.await?);
+            }
+            Ok(())
+        }));
     }
 }
