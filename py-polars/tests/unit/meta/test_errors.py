@@ -165,7 +165,7 @@ def test_join_lazy_on_df() -> None:
 
     with pytest.raises(
         TypeError,
-        match=r"expected `other` .*to be a 'LazyFrame'.* not 'pandas.core.frame.DataFrame'",
+        match=r"expected `other` .*to be a 'LazyFrame'.* not 'pandas.*DataFrame'",
     ):
         df_left.lazy().join_asof(df_right.to_pandas(), on="Id")  # type: ignore[arg-type]
 

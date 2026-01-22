@@ -21,6 +21,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
+from polars._utils.various import parse_version
 from polars.io.parquet import ParquetFieldOverwrites
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
         ParquetCompression,
         ParquetMetadata,
         ParquetMetadataContext,
+        TimeUnit,
     )
     from tests.unit.conftest import MemoryUsage
 
@@ -3252,6 +3254,9 @@ def test_parquet_read_timezone_22506() -> None:
 
     f.seek(0)
 
+    pd_version = parse_version(pd.__version__)
+    time_unit: TimeUnit = "us" if pd_version >= (3,) else "ns"
+
     assert_frame_equal(
         pl.read_parquet(f),
         pl.DataFrame(
@@ -3264,7 +3269,7 @@ def test_parquet_read_timezone_22506() -> None:
             },
             schema={
                 "a": pl.Int64,
-                "b": pl.Datetime(time_unit="ns", time_zone="Etc/GMT-1"),
+                "b": pl.Datetime(time_unit=time_unit, time_zone="Etc/GMT-1"),
             },
         ),
     )

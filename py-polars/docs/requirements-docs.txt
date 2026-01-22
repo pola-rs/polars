@@ -1,6 +1,6 @@
 hypothesis
 numpy
-pandas < 3
+pandas
 pyarrow
 
 sphinx==8.1.3
