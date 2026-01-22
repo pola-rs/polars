@@ -556,7 +556,18 @@ where
     ca
 }
 
-#[inline]
+pub fn try_unary_to_series<T, F>(ca: &ChunkedArray<T>, op: F) -> PolarsResult<Series>
+where
+    T: PolarsDataType,
+    F: FnMut(&T::Array) -> PolarsResult<Box<dyn Array>>,
+{
+    let chunks = ca
+        .downcast_iter()
+        .map(op)
+        .collect::<PolarsResult<Vec<_>>>()?;
+    Series::try_from((ca.name().clone(), chunks))
+}
+
 pub fn binary_to_series<T, U, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
@@ -573,6 +584,25 @@ where
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
         .collect::<Vec<_>>();
+    Series::try_from((lhs.name().clone(), chunks))
+}
+
+pub fn try_binary_to_series<T, U, F>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+) -> PolarsResult<Series>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    F: FnMut(&T::Array, &U::Array) -> PolarsResult<Box<dyn Array>>,
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    let chunks = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
+        .collect::<PolarsResult<Vec<_>>>()?;
     Series::try_from((lhs.name().clone(), chunks))
 }
 

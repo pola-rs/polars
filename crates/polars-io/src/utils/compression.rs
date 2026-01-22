@@ -1,9 +1,9 @@
 use std::cmp;
-use std::io::{Read, Write};
+use std::io::{Cursor, Read, Write};
 
 use polars_core::prelude::*;
 use polars_error::{feature_gated, to_compute_err};
-use polars_utils::mmap::{MemReader, MemSlice};
+use polars_utils::mmap::MemSlice;
 
 use crate::utils::file::{Writeable, WriteableTrait};
 use crate::utils::sync_on_close::SyncOnCloseType;
@@ -80,11 +80,11 @@ pub enum CompressedReader {
         offset: usize,
     },
     #[cfg(feature = "decompress")]
-    Gzip(flate2::bufread::MultiGzDecoder<MemReader>),
+    Gzip(flate2::bufread::MultiGzDecoder<Cursor<MemSlice>>),
     #[cfg(feature = "decompress")]
-    Zlib(flate2::bufread::ZlibDecoder<MemReader>),
+    Zlib(flate2::bufread::ZlibDecoder<Cursor<MemSlice>>),
     #[cfg(feature = "decompress")]
-    Zstd(zstd::Decoder<'static, MemReader>),
+    Zstd(zstd::Decoder<'static, Cursor<MemSlice>>),
 }
 
 impl CompressedReader {
@@ -95,15 +95,15 @@ impl CompressedReader {
             None => CompressedReader::Uncompressed { slice, offset: 0 },
             #[cfg(feature = "decompress")]
             Some(SupportedCompression::GZIP) => {
-                CompressedReader::Gzip(flate2::bufread::MultiGzDecoder::new(MemReader::new(slice)))
+                CompressedReader::Gzip(flate2::bufread::MultiGzDecoder::new(Cursor::new(slice)))
             },
             #[cfg(feature = "decompress")]
             Some(SupportedCompression::ZLIB) => {
-                CompressedReader::Zlib(flate2::bufread::ZlibDecoder::new(MemReader::new(slice)))
+                CompressedReader::Zlib(flate2::bufread::ZlibDecoder::new(Cursor::new(slice)))
             },
             #[cfg(feature = "decompress")]
             Some(SupportedCompression::ZSTD) => {
-                CompressedReader::Zstd(zstd::Decoder::with_buffer(MemReader::new(slice))?)
+                CompressedReader::Zstd(zstd::Decoder::with_buffer(Cursor::new(slice))?)
             },
             #[cfg(not(feature = "decompress"))]
             _ => panic!("activate 'decompress' feature"),
@@ -141,14 +141,16 @@ impl CompressedReader {
             CompressedReader::Uncompressed { slice, .. } => slice.len(),
             #[cfg(feature = "decompress")]
             CompressedReader::Gzip(reader) => {
-                reader.get_ref().total_len() * ESTIMATED_DEFLATE_RATIO
+                reader.get_ref().get_ref().len() * ESTIMATED_DEFLATE_RATIO
             },
             #[cfg(feature = "decompress")]
             CompressedReader::Zlib(reader) => {
-                reader.get_ref().total_len() * ESTIMATED_DEFLATE_RATIO
+                reader.get_ref().get_ref().len() * ESTIMATED_DEFLATE_RATIO
             },
             #[cfg(feature = "decompress")]
-            CompressedReader::Zstd(reader) => reader.get_ref().total_len() * ESTIMATED_ZSTD_RATIO,
+            CompressedReader::Zstd(reader) => {
+                reader.get_ref().get_ref().len() * ESTIMATED_ZSTD_RATIO
+            },
         }
     }
 

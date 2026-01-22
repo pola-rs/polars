@@ -1,6 +1,9 @@
+use std::time::Duration;
+
 use polars::prelude::CloudScheme;
 use polars_core::config::verbose_print_sensitive;
-use polars_io::cloud::CloudOptions;
+use polars_io::cloud::{CloudOptions, CloudRetryConfig};
+use polars_utils::total_ord::TotalOrdWrap;
 use pyo3::exceptions::PyValueError;
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -33,8 +36,8 @@ impl OptPyCloudOptions<'_> {
         let py = self.0.py();
 
         let mut storage_options: Vec<(PyBackedStr, String)> = vec![];
-        let mut max_retries: usize = 2;
-        let mut file_cache_ttl: u64 = 0;
+        let mut file_cache_ttl: u64 = 2;
+        let mut retry_config = CloudRetryConfig::default();
 
         let storage_options_dict: Option<Bound<'_, PyDict>> = self.0.extract()?;
 
@@ -70,9 +73,37 @@ impl OptPyCloudOptions<'_> {
                             .map_err(expected_type!("file_cache_ttl", "int"))?;
                     },
                     "max_retries" => {
-                        max_retries = value
+                        retry_config.max_retries = value
                             .extract()
                             .map_err(expected_type!("max_retries", "int"))?;
+                    },
+                    "retry_timeout_ms" => {
+                        retry_config.retry_timeout = Duration::from_millis(
+                            value
+                                .extract()
+                                .map_err(expected_type!("retry_timeout", "int"))?,
+                        );
+                    },
+                    "retry_init_backoff_ms" => {
+                        retry_config.retry_init_backoff = Duration::from_millis(
+                            value
+                                .extract()
+                                .map_err(expected_type!("retry_init_backoff", "int"))?,
+                        );
+                    },
+                    "retry_max_backoff_ms" => {
+                        retry_config.retry_max_backoff = Duration::from_millis(
+                            value
+                                .extract()
+                                .map_err(expected_type!("retry_max_backoff", "int"))?,
+                        );
+                    },
+                    "retry_base_multiplier" => {
+                        retry_config.retry_base_multiplier = TotalOrdWrap(
+                            value
+                                .extract()
+                                .map_err(expected_type!("retry_base_multiplier", "float"))?,
+                        );
                     },
                     _ => {
                         let value: String = value.extract().map_err(expected_type!(&key, "str"))?;
@@ -84,7 +115,7 @@ impl OptPyCloudOptions<'_> {
 
         let cloud_options = CloudOptions::from_untyped_config(cloud_scheme, storage_options)
             .map_err(to_py_err)?
-            .with_max_retries(max_retries);
+            .with_retry_config(retry_config);
 
         #[cfg(feature = "cloud")]
         let mut cloud_options =
