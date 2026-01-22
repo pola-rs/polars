@@ -20,15 +20,20 @@ pub fn escape_regex_str(s: &str) -> Cow<'_, str> {
 /// assert_eq!(out.get(1), Some("\\.\\*"));
 /// ```
 pub fn escape_regex(ca: &StringChunked) -> StringChunked {
-    // When we use StringChunkedBuilder, it will still copy the data into its buffer.
-    // But we can avoid unnecessary formation using regex_syntax.
     let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
+    let mut buffer = String::new();
 
     for opt_s in ca.iter() {
         match opt_s {
             Some(s) => {
-                let escaped = escape_regex_str(s);
-                builder.append_value(&escaped);
+                // Check metacharacters to avoid unnecessary buffer operations
+                if s.contains(regex_syntax::is_meta_character) {
+                    buffer.clear();
+                    regex_syntax::escape_into(s, &mut buffer);
+                    builder.append_value(&buffer);
+                } else {
+                    builder.append_value(s);
+                }
             },
             None => builder.append_null(),
         }
