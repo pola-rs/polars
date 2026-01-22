@@ -45,7 +45,7 @@ pub struct MergeJoinParams {
     pub output_schema: SchemaRef,
     pub key_descending: bool,
     pub key_nulls_last: bool,
-    pub use_row_encoding: bool,
+    pub keys_row_encoded: bool,
     pub args: JoinArgs,
 }
 
@@ -118,23 +118,25 @@ impl MergeJoinNode {
         right_on: Vec<PlSmallStr>,
         descending: bool,
         nulls_last: bool,
+        keys_row_encoded: bool,
         args: JoinArgs,
     ) -> PolarsResult<Self> {
-        assert!(left_on.len() == right_on.len());
-        assert!(
-            left_input_schema.contains(KEY_COL_NAME) == right_input_schema.contains(KEY_COL_NAME)
-        );
-        let use_row_encoding = left_input_schema.contains(KEY_COL_NAME);
         let state = MergeJoinState::Running;
-        let left_key_col;
-        let right_key_col;
-        if use_row_encoding {
-            left_key_col = PlSmallStr::from(KEY_COL_NAME);
-            right_key_col = PlSmallStr::from(KEY_COL_NAME);
-        } else {
-            left_key_col = left_on[0].clone();
-            right_key_col = right_on[0].clone();
+        assert!(left_on.len() == right_on.len());
+        if keys_row_encoded {
+            assert!(left_input_schema.contains(KEY_COL_NAME));
+            assert!(right_input_schema.contains(KEY_COL_NAME));
         }
+        let left_key_col = if left_input_schema.contains(&PlSmallStr::from(KEY_COL_NAME)) {
+            PlSmallStr::from(KEY_COL_NAME)
+        } else {
+            left_on[0].clone()
+        };
+        let right_key_col = if right_input_schema.contains(&PlSmallStr::from(KEY_COL_NAME)) {
+            PlSmallStr::from(KEY_COL_NAME)
+        } else {
+            right_on[0].clone()
+        };
         let left = MergeJoinSideParams {
             input_schema: left_input_schema.clone(),
             on: left_on,
@@ -153,7 +155,7 @@ impl MergeJoinNode {
             output_schema,
             key_descending: descending,
             key_nulls_last: nulls_last,
-            use_row_encoding,
+            keys_row_encoded,
             args,
         };
         let (build_schema, probe_schema) = match params.left_is_build() {
@@ -739,13 +741,16 @@ fn find_mergeable_search(
     Ok(Ok((build_split, probe_split)))
 }
 
+/// Get value from series bypassing the validity bitmap.
+///
+/// SAFETY: Caller must ensure that `index` is within bounds of `s`.
 unsafe fn series_get_bypass_validity<'a>(
     s: &'a Series,
     index: usize,
     params: &MergeJoinParams,
 ) -> AnyValue<'a> {
     debug_assert!(index < s.len());
-    if params.use_row_encoding {
+    if params.keys_row_encoded {
         let arr = s.binary_offset().unwrap();
         unsafe { arr.get_any_value_bypass_validity(index) }
     } else {
@@ -834,6 +839,9 @@ impl DataFrameBuffer {
         self.total_rows
     }
 
+    /// Get the `row_index`th value from the `column` bypassing its validity bitmap.
+    ///
+    /// SAFETY: Caller must ensure that `row_index` is within bounds.
     unsafe fn get_bypass_validity(
         &self,
         column: &str,

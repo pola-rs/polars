@@ -14,7 +14,6 @@ from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
     _normalize_windows_iceberg_file_uri,
-    _scan_pyarrow_dataset_impl,
     try_convert_pyarrow_predicate,
 )
 from polars.io.scan_options.cast_options import ScanCastOptions
@@ -357,8 +356,10 @@ class IcebergDataset:
                 f"fallback to python[pyiceberg] scan: {fallback_reason}"
             )
 
+        import polars.io.iceberg._utils
+
         func = partial(
-            _scan_pyarrow_dataset_impl,
+            polars.io.iceberg._utils._scan_pyarrow_dataset_impl,
             tbl,
             snapshot_id=snapshot_id,
             n_rows=limit,
@@ -437,7 +438,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     deletion_files: dict[int, list[str]]
     min_max_statistics: pl.DataFrame | None
     # This is here for test purposes, as the `min_max_statistics` on this
-    # dataclass contain coalesced values from `default_values`, a test may
+    # dataclass can contain coalesced values from `default_values`. A test may
     # access the statistics loader directly to inspect the values before
     # coalescing.
     statistics_loader: IcebergStatisticsLoader | None

@@ -320,7 +320,8 @@ impl PyDataFrame {
     pub fn slice(&self, py: Python<'_>, offset: i64, length: Option<usize>) -> PyResult<Self> {
         py.enter_polars_df(|| {
             let df = self.df.read();
-            Ok(df.slice(offset, length.unwrap_or_else(|| df.height())))
+            let len = length.unwrap_or(usize::MAX);
+            Ok(df.slice(offset, len))
         })
     }
 

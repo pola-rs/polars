@@ -4841,7 +4841,7 @@ class DataFrame:
                 version="0.20.14",
             )
 
-        from polars.io.delta import (
+        from polars.io.delta._utils import (
             _check_for_unsupported_types,
             _check_if_delta_available,
             _resolve_delta_lake_uri,
