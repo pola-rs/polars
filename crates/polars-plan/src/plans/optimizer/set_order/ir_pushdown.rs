@@ -69,8 +69,6 @@ pub(super) fn pushdown_orders(
                 // Remove sort.
                 let input = *input;
 
-                _ = ir_arena.take(node);
-
                 let node_outputs = outputs.remove(&node).unwrap();
                 for (to_node, to_input_idx) in node_outputs {
                     *ir_arena
