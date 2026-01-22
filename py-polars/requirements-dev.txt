@@ -19,7 +19,7 @@ polars-cloud
 # Interop
 numba >= 0.54
 numpy
-pandas
+pandas < 3
 pyarrow
 pydantic>=2.0.0
 # Datetime / time zones
