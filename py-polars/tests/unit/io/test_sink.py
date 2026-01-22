@@ -309,3 +309,12 @@ def test_write_alternative_extension(
     path = tmp_path / f"x.{extension}"
     write_fn(pl.DataFrame(), write_fn_name)(path)
     assert Path.exists(path)
+
+
+@pytest.mark.parametrize(
+    "write_fn_name", ["write_csv", "sink_csv", "write_ndjson", "sink_ndjson"]
+)
+@pytest.mark.parametrize("fmt", ["gzipd", "zs", ""])
+def test_write_unsupported_compression(write_fn_name: str, fmt: str) -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        write_fn(pl.DataFrame(), write_fn_name)("x", compression=fmt)
