@@ -1,15 +1,20 @@
+use std::sync::Arc;
+
+use polars_core::schema::Schema;
 use tokio::sync::mpsc;
 
 use super::compute_node_prelude::*;
 
 pub struct UnorderedUnionNode {
     max_morsel_seq_sent: MorselSeq,
+    output_schema: Arc<Schema>,
 }
 
 impl UnorderedUnionNode {
-    pub fn new() -> Self {
+    pub fn new(output_schema: Arc<Schema>) -> Self {
         Self {
             max_morsel_seq_sent: MorselSeq::new(0),
+            output_schema,
         }
     }
 }
@@ -67,8 +72,13 @@ impl ComputeNode for UnorderedUnionNode {
                 let mpsc_senders_clone = mpsc_senders.clone();
 
                 for (mut receiver, sender) in receivers.into_iter().zip(mpsc_senders_clone) {
+                    let output_schema = self.output_schema.clone();
                     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                        while let Ok(morsel) = receiver.recv().await {
+                        while let Ok(mut morsel) = receiver.recv().await {
+                            // Ensure the morsel matches the expected output schema,
+                            // casting nulls to the appropriate output type.
+                            morsel.df_mut().ensure_matches_schema(&output_schema)?;
+
                             if sender.send(morsel).await.is_err() {
                                 break;
                             }

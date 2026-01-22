@@ -682,7 +682,7 @@ fn to_graph_rec<'a>(
                 .map(|i| PolarsResult::Ok((to_graph_rec(i.node, ctx)?, i.port)))
                 .try_collect_vec()?;
             ctx.graph.add_node(
-                nodes::unordered_union::UnorderedUnionNode::new(),
+                nodes::unordered_union::UnorderedUnionNode::new(node.output_schema.clone()),
                 input_keys,
             )
         },
