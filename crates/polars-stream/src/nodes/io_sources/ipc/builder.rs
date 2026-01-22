@@ -90,6 +90,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
             Ok("mmap") => DynByteSourceBuilder::Mmap,
             Ok("mmap-copy") => DynByteSourceBuilder::MmapCopy,
             Ok("async-file") => DynByteSourceBuilder::AsyncFile,
+            Ok(v) => panic!("invalid value for POLARS_FORCE_BYTE_SOURCE: {v}"),
             Err(_) => {
                 if scan_source.is_cloud_url() || config::force_async() {
                     DynByteSourceBuilder::ObjectStore

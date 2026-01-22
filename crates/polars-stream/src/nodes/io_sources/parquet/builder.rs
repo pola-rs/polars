@@ -94,10 +94,19 @@ impl FileReaderBuilder for ParquetReaderBuilder {
         let config = self.options.clone();
         let verbose = config::verbose();
 
-        let byte_source_builder = if scan_source.is_cloud_url() || config::force_async() {
-            DynByteSourceBuilder::ObjectStore
-        } else {
-            DynByteSourceBuilder::Mmap
+        let byte_source_builder = match std::env::var("POLARS_FORCE_BYTE_SOURCE").as_deref() {
+            Ok("object-store") => DynByteSourceBuilder::ObjectStore,
+            Ok("mmap") => DynByteSourceBuilder::Mmap,
+            Ok("mmap-copy") => DynByteSourceBuilder::MmapCopy,
+            Ok("async-file") => DynByteSourceBuilder::AsyncFile,
+            Ok(v) => panic!("invalid value for POLARS_FORCE_BYTE_SOURCE: {v}"),
+            Err(_) => {
+                if scan_source.is_cloud_url() || config::force_async() {
+                    DynByteSourceBuilder::ObjectStore
+                } else {
+                    DynByteSourceBuilder::Mmap
+                }
+            },
         };
 
         assert!(self.prefetch_limit.load() > 0);
