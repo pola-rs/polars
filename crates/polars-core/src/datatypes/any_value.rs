@@ -29,6 +29,7 @@ use polars_compute::decimal::{
     dec128_cmp, dec128_eq, dec128_rescale, dec128_to_f64, dec128_to_i128, f64_to_dec128,
     i128_to_dec128,
 };
+
 use crate::utils::Container;
 
 #[derive(Debug, Clone, Default)]
@@ -1802,9 +1803,10 @@ mod test {
 // tests for hash_impl #25542
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
+
+    use super::*;
 
     fn hash<T: Hash>(t: &T) -> u64 {
         let mut s = DefaultHasher::new();
@@ -1818,7 +1820,11 @@ mod tests {
         let b = AnyValue::StringOwned("hello".into());
 
         assert_eq!(a, b, "String and StringOwned should be equal");
-        assert_eq!(hash(&a), hash(&b), "String and StringOwned must hash the same");
+        assert_eq!(
+            hash(&a),
+            hash(&b),
+            "String and StringOwned must hash the same"
+        );
     }
 
     #[test]
