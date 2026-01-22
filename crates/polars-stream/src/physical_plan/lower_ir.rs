@@ -18,7 +18,7 @@ use polars_plan::plans::{
     AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, are_keys_sorted_any, is_sorted,
     write_ir_non_recursive,
 };
-use polars_plan::prelude::GroupbyOptions;
+use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
@@ -36,6 +36,7 @@ use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+use crate::nodes::joins::merge_join;
 use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_expr::{ExprCache, build_select_stream, lower_exprs};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
@@ -320,13 +321,14 @@ pub fn lower_ir(
                 let key_dtype = key_dtype.clone();
                 let mut expr = AExprBuilder::col(key.clone(), expr_arena);
                 if key_dtype.is_nested() {
-                    expr = expr.row_encode_unary(
+                    expr = AExprBuilder::row_encode(
+                        vec![expr.expr_ir(key_name.clone())],
+                        vec![key_dtype],
                         RowEncodingVariant::Ordered {
                             descending: None,
                             nulls_last: None,
                             broadcast_nulls: None,
                         },
-                        key_dtype,
                         expr_arena,
                     );
                 }
@@ -954,7 +956,8 @@ pub fn lower_ir(
                 &keys,
                 expr_arena,
                 input_schema,
-            );
+            )
+            .is_some();
 
             return build_group_by_stream(
                 phys_input,
@@ -981,17 +984,42 @@ pub fn lower_ir(
         } => {
             let input_left = *input_left;
             let input_right = *input_right;
+            let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);
+            let input_right_schema = IR::schema_with_cache(input_right, ir_arena, schema_cache);
             let left_on = left_on.clone();
             let right_on = right_on.clone();
+            let get_expr_name = |e: &ExprIR| e.output_name().clone();
+            let left_on_names = left_on.iter().map(get_expr_name).collect_vec();
+            let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
             let args = options.args.clone();
             let options = options.options.clone();
+            let left_df_sortedness = is_sorted(input_left, ir_arena, expr_arena);
+            let left_on_sorted = are_keys_sorted_any(
+                left_df_sortedness.as_ref(),
+                &left_on,
+                expr_arena,
+                &input_left_schema,
+            );
+            let right_df_sortedness = is_sorted(input_right, ir_arena, expr_arena);
+            let right_on_sorted = are_keys_sorted_any(
+                right_df_sortedness.as_ref(),
+                &right_on,
+                expr_arena,
+                &input_right_schema,
+            );
+            let join_keys_sorted_together =
+                Option::zip(left_on_sorted.as_ref(), right_on_sorted.as_ref())
+                    .is_some_and(|(ls, rs)| ls == rs);
+
             let phys_left = lower_ir!(input_left)?;
             let phys_right = lower_ir!(input_right)?;
+
             if (args.how.is_equi() || args.how.is_semi_anti()) && !args.validation.needs_checks() {
                 // When lowering the expressions for the keys we need to ensure we keep around the
                 // payload columns, otherwise the input nodes can get replaced by input-independent
                 // nodes since the lowering code does not see we access any non-literal expressions.
                 // So we add dummy expressions before lowering and remove them afterwards.
+
                 let mut aug_left_on = left_on.clone();
                 for name in phys_sm[phys_left.node].output_schema.iter_names() {
                     let col_expr = expr_arena.add(AExpr::Column(name.clone()));
@@ -1002,7 +1030,8 @@ pub fn lower_ir(
                     let col_expr = expr_arena.add(AExpr::Column(name.clone()));
                     aug_right_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
                 }
-                let (trans_input_left, mut trans_left_on) = lower_exprs(
+
+                let (mut trans_input_left, mut trans_left_on) = lower_exprs(
                     phys_left,
                     &aug_left_on,
                     expr_arena,
@@ -1010,7 +1039,7 @@ pub fn lower_ir(
                     expr_cache,
                     ctx,
                 )?;
-                let (trans_input_right, mut trans_right_on) = lower_exprs(
+                let (mut trans_input_right, mut trans_right_on) = lower_exprs(
                     phys_right,
                     &aug_right_on,
                     expr_arena,
@@ -1018,10 +1047,112 @@ pub fn lower_ir(
                     expr_cache,
                     ctx,
                 )?;
+
                 trans_left_on.drain(left_on.len()..);
                 trans_right_on.drain(right_on.len()..);
 
-                let node = if args.how.is_equi() {
+                let node = if args.how.is_equi() && join_keys_sorted_together {
+                    // For merge-joins, evaluate key expressions if they are non-trivial,
+                    // row-encode them if there are multiple, and append them as new columns
+                    // to the input dataframes.
+                    let row_encode_key_cols = left_on_names.len() > 1;
+                    let mut left_key_col_descending =
+                        left_on_sorted.as_ref().unwrap()[0].descending.unwrap();
+                    let mut right_key_col_descending =
+                        right_on_sorted.as_ref().unwrap()[0].descending.unwrap();
+                    let mut left_key_col_nulls_last =
+                        left_on_sorted.as_ref().unwrap()[0].nulls_last.unwrap();
+                    let mut right_key_col_nulls_last =
+                        right_on_sorted.as_ref().unwrap()[0].nulls_last.unwrap();
+                    for (
+                        on,
+                        trans_on,
+                        trans_input,
+                        phys,
+                        expr_sorted,
+                        descending,
+                        nulls_last,
+                        side_schema,
+                    ) in [
+                        (
+                            left_on,
+                            &mut trans_left_on,
+                            &mut trans_input_left,
+                            phys_left,
+                            &left_on_sorted.unwrap(),
+                            &mut left_key_col_descending,
+                            &mut left_key_col_nulls_last,
+                            &input_left_schema,
+                        ),
+                        (
+                            right_on,
+                            &mut trans_right_on,
+                            &mut trans_input_right,
+                            phys_right,
+                            &right_on_sorted.unwrap(),
+                            &mut right_key_col_descending,
+                            &mut right_key_col_nulls_last,
+                            &input_right_schema,
+                        ),
+                    ] {
+                        let expr_is_trivial =
+                            |c: &ExprIR| matches!(expr_arena.get(c.node()), AExpr::Column(_));
+                        if row_encode_key_cols || !expr_is_trivial(&on[0]) {
+                            let sorted_descending = expr_sorted
+                                .iter()
+                                .map(|s| s.descending.unwrap())
+                                .collect_vec();
+                            let sorted_nulls_last = expr_sorted
+                                .iter()
+                                .map(|s| s.nulls_last.unwrap())
+                                .collect_vec();
+
+                            if row_encode_key_cols {
+                                let tfc = ToFieldContext::new(expr_arena, side_schema);
+                                let expr_dtype =
+                                    |e: &ExprIR| expr_arena.get(e.node()).to_dtype(&tfc);
+                                let nulls_last_encoded = sorted_nulls_last[0];
+                                let row_encode_col_expr = AExprBuilder::row_encode(
+                                    trans_on.clone(),
+                                    trans_on.iter().map(expr_dtype).try_collect_vec()?,
+                                    RowEncodingVariant::Ordered {
+                                        descending: Some(sorted_descending),
+                                        nulls_last: Some(sorted_nulls_last),
+                                        broadcast_nulls: Some(!args.nulls_equal),
+                                    },
+                                    expr_arena,
+                                )
+                                .expr_ir(merge_join::KEY_COL_NAME);
+                                trans_on.clear();
+                                trans_on.push(row_encode_col_expr);
+                                *descending = false;
+                                *nulls_last = nulls_last_encoded;
+                            } else {
+                                trans_on[0] = trans_on[0]
+                                    .with_alias(PlSmallStr::from_str(merge_join::KEY_COL_NAME));
+                            }
+                            *trans_input = build_hstack_stream(
+                                phys, trans_on, expr_arena, phys_sm, expr_cache, ctx,
+                            )?;
+                        }
+                    }
+                    assert!(left_key_col_descending == right_key_col_descending);
+                    assert!(left_key_col_nulls_last == right_key_col_nulls_last);
+
+                    phys_sm.insert(PhysNode::new(
+                        output_schema,
+                        PhysNodeKind::MergeJoin {
+                            input_left: trans_input_left,
+                            input_right: trans_input_right,
+                            left_on: left_on_names,
+                            right_on: right_on_names,
+                            descending: left_key_col_descending,
+                            nulls_last: left_key_col_nulls_last,
+                            keys_row_encoded: row_encode_key_cols,
+                            args: args.clone(),
+                        },
+                    ))
+                } else if args.how.is_equi() {
                     phys_sm.insert(PhysNode::new(
                         output_schema,
                         PhysNodeKind::EquiJoin {
@@ -1188,7 +1319,8 @@ pub fn lower_ir(
                 &keys,
                 expr_arena,
                 input_schema,
-            );
+            )
+            .is_some();
 
             let mut stream = build_group_by_stream(
                 phys_input,

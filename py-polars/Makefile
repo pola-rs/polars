@@ -109,6 +109,7 @@ clean:  ## Clean up caches and build artifacts
 	@rm -f .coverage
 	@rm -f coverage.xml
 	@rm -f polars/polars.abi3.so
+	@find runtime -type f -name '*.so' -delete
 	@find . -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -exec rm -r {} +
 
 .PHONY: help

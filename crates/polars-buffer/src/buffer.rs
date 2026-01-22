@@ -1,5 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::ops::Deref;
+use std::sync::LazyLock;
 
 use bytemuck::{Pod, Zeroable};
 use either::Either;
@@ -95,7 +96,7 @@ impl<T> Buffer<T> {
         Self::default()
     }
 
-    /// Auxiliary method to create a new Buffer
+    /// Auxiliary method to create a new Buffer.
     pub fn from_storage(storage: SharedStorage<T>) -> Self {
         let ptr = storage.as_ptr();
         let length = storage.len();
@@ -106,8 +107,14 @@ impl<T> Buffer<T> {
         }
     }
 
+    /// Creates a [`Buffer`] backed by static data.
     pub fn from_static(data: &'static [T]) -> Self {
         Self::from_storage(SharedStorage::from_static(data))
+    }
+
+    /// Returns the storage backing this [`Buffer`].
+    pub fn into_storage(self) -> SharedStorage<T> {
+        self.storage
     }
 
     /// Returns the number of bytes in the buffer
@@ -298,9 +305,39 @@ impl<T: Clone> Buffer<T> {
     }
 }
 
-impl<T: Zeroable + Copy> Buffer<T> {
-    pub fn zeroed(len: usize) -> Self {
-        vec![T::zeroed(); len].into()
+#[repr(C, align(4096))]
+#[derive(Copy, Clone)]
+struct Aligned([u8; 4096]);
+
+// We intentionally leak 8MiB of zeroed memory once so we don't have to
+// refcount it.
+const GLOBAL_ZERO_SIZE: usize = 8 * 1024 * 1024;
+static GLOBAL_ZEROES: LazyLock<SharedStorage<Aligned>> = LazyLock::new(|| {
+    assert!(GLOBAL_ZERO_SIZE.is_multiple_of(size_of::<Aligned>()));
+    let chunks = GLOBAL_ZERO_SIZE / size_of::<Aligned>();
+    let v = vec![Aligned([0; _]); chunks];
+    let mut ss = SharedStorage::from_vec(v);
+    ss.leak();
+    ss
+});
+
+impl<T: Zeroable> Buffer<T> {
+    pub fn zeroed(length: usize) -> Self {
+        let bytes_needed = length * size_of::<T>();
+        if align_of::<T>() <= align_of::<Aligned>() && bytes_needed <= GLOBAL_ZERO_SIZE {
+            unsafe {
+                // SAFETY: we checked the alignment of T, that it fits, and T is zeroable.
+                let storage = GLOBAL_ZEROES.clone().transmute_unchecked::<T>();
+                let ptr = storage.as_ptr();
+                Buffer {
+                    storage,
+                    ptr,
+                    length,
+                }
+            }
+        } else {
+            bytemuck::zeroed_vec(length).into()
+        }
     }
 }
 

@@ -87,7 +87,7 @@ fn test_column(column: &str, compression: CompressionOptions) -> ParquetResult<(
     let writer = Cursor::new(vec![]);
     let mut writer = FileWriter::new(writer, schema, options, None);
 
-    writer.write(DynIter::new(columns))?;
+    writer.write(u64::MAX, DynIter::new(columns))?;
     writer.end(None)?;
 
     let data = writer.into_inner().into_inner();
@@ -202,7 +202,7 @@ fn basic() -> ParquetResult<()> {
     let writer = Cursor::new(vec![]);
     let mut writer = FileWriter::new(writer, schema, options, None);
 
-    writer.write(DynIter::new(columns))?;
+    writer.write(u64::MAX, DynIter::new(columns))?;
     writer.end(None)?;
 
     let data = writer.into_inner().into_inner();

@@ -519,3 +519,10 @@ def test_schema_head_tail_on_literal_24102(
     else:
         q = df.lazy().group_by("g").agg(lit.tail(len))
     assert q.collect_schema() == q.collect().schema
+
+
+def test_slice_negative_offset_none_len_26150() -> None:
+    df = pl.DataFrame({"c0": [1, 2, 3], "c1": [6.0, 7.0, 8.0], "c2": ["a", "b", "c"]})
+
+    out = df.slice(-10, None)
+    assert_frame_equal(out, df)

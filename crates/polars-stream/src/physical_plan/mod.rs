@@ -13,9 +13,9 @@ use polars_plan::dsl::{
     CastColumnsPolicy, FileSinkOptions, JoinTypeOptionsIR, MissingColumnsPolicy,
     PartitionedSinkOptionsIR, PredicateFileSkip, ScanSources, TableStatistics,
 };
+use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, IR};
-use polars_plan::prelude::expr_ir::ExprIR;
 
 mod fmt;
 mod io;
@@ -24,7 +24,7 @@ mod lower_group_by;
 mod lower_ir;
 mod to_graph;
 
-pub use fmt::visualize_plan;
+pub use fmt::{NodeStyle, visualize_plan};
 use polars_plan::prelude::PlanCallback;
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::DynamicGroupOptions;
@@ -347,6 +347,17 @@ pub enum PhysNodeKind {
         args: JoinArgs,
     },
 
+    MergeJoin {
+        input_left: PhysStream,
+        input_right: PhysStream,
+        left_on: Vec<PlSmallStr>,
+        right_on: Vec<PlSmallStr>,
+        descending: bool,
+        nulls_last: bool,
+        keys_row_encoded: bool,
+        args: JoinArgs,
+    },
+
     SemiAntiJoin {
         input_left: PhysStream,
         input_right: PhysStream,
@@ -469,6 +480,11 @@ fn visit_node_inputs_mut(
                 ..
             }
             | PhysNodeKind::EquiJoin {
+                input_left,
+                input_right,
+                ..
+            }
+            | PhysNodeKind::MergeJoin {
                 input_left,
                 input_right,
                 ..

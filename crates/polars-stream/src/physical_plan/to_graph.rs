@@ -36,6 +36,7 @@ use crate::nodes;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
+use crate::nodes::joins::merge_join::MergeJoinNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -320,8 +321,8 @@ fn to_graph_rec<'a>(
                     unified_sink_args,
                 },
         } => {
-            use crate::nodes::io_sinks2::IOSinkNode;
-            use crate::nodes::io_sinks2::config::{IOSinkNodeConfig, IOSinkTarget};
+            use crate::nodes::io_sinks::IOSinkNode;
+            use crate::nodes::io_sinks::config::{IOSinkNodeConfig, IOSinkTarget};
 
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
             let input_key = to_graph_rec(input.node, ctx)?;
@@ -352,14 +353,14 @@ fn to_graph_rec<'a>(
                     approximate_bytes_per_file,
                 },
         } => {
-            use crate::nodes::io_sinks2::IOSinkNode;
-            use crate::nodes::io_sinks2::components::exclude_keys_projection::ExcludeKeysProjection;
-            use crate::nodes::io_sinks2::components::hstack_columns::HStackColumns;
-            use crate::nodes::io_sinks2::components::partitioner::{KeyedPartitioner, Partitioner};
-            use crate::nodes::io_sinks2::components::size::{
+            use crate::nodes::io_sinks::IOSinkNode;
+            use crate::nodes::io_sinks::components::exclude_keys_projection::ExcludeKeysProjection;
+            use crate::nodes::io_sinks::components::hstack_columns::HStackColumns;
+            use crate::nodes::io_sinks::components::partitioner::{KeyedPartitioner, Partitioner};
+            use crate::nodes::io_sinks::components::size::{
                 NonZeroRowCountAndSize, RowCountAndSize,
             };
-            use crate::nodes::io_sinks2::config::{
+            use crate::nodes::io_sinks::config::{
                 IOSinkNodeConfig, IOSinkTarget, PartitionedTarget,
             };
 
@@ -367,7 +368,6 @@ fn to_graph_rec<'a>(
             let input_key = to_graph_rec(input.node, ctx)?;
 
             let file_schema: SchemaRef;
-            let mut exclude_keys_from_file: Option<ExcludeKeysProjection> = None;
             let mut hstack_keys: Option<HStackColumns> = None;
             let mut include_keys_in_file = false;
 
@@ -403,10 +403,6 @@ fn to_graph_rec<'a>(
                         } else {
                             ExcludeKeysProjection::Indices(exclude_keys_projection)
                         };
-
-                    if !*include_keys {
-                        exclude_keys_from_file = Some(exclude_keys_projection.clone());
-                    }
 
                     let schema_excluding_keys: Schema = exclude_keys_projection
                         .iter_indices()
@@ -448,11 +444,6 @@ fn to_graph_rec<'a>(
                     Partitioner::FileSize
                 },
             };
-
-            if let Some(exclude_keys_from_file) = exclude_keys_from_file.as_ref() {
-                // Should have been checked in IR.
-                assert!(exclude_keys_from_file.len() > 0);
-            }
 
             let mut file_size_limit = RowCountAndSize::MAX;
 
@@ -1083,6 +1074,42 @@ fn to_graph_rec<'a>(
                     ],
                 ),
             }
+        },
+
+        MergeJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            descending,
+            nulls_last,
+            keys_row_encoded,
+            args,
+        } => {
+            let args = args.clone();
+            let left_input_key = to_graph_rec(input_left.node, ctx)?;
+            let right_input_key = to_graph_rec(input_right.node, ctx)?;
+            let left_input_schema = ctx.phys_sm[input_left.node].output_schema.clone();
+            let right_input_schema = ctx.phys_sm[input_right.node].output_schema.clone();
+            let output_schema = node.output_schema.clone();
+
+            ctx.graph.add_node(
+                MergeJoinNode::new(
+                    left_input_schema,
+                    right_input_schema,
+                    output_schema,
+                    left_on.clone(),
+                    right_on.clone(),
+                    *descending,
+                    *nulls_last,
+                    *keys_row_encoded,
+                    args,
+                )?,
+                [
+                    (left_input_key, input_left.port),
+                    (right_input_key, input_right.port),
+                ],
+            )
         },
 
         CrossJoin {

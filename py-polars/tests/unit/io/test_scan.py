@@ -1229,13 +1229,11 @@ def test_scan_with_schema_skips_schema_inference(
     assert_frame_equal(q.collect(engine="streaming"), pl.DataFrame(schema=schema))
 
 
-@pytest.fixture(scope="session")
-def corrupt_compressed_csv() -> bytes:
-    large_and_simple_csv = b"line_val\n" * 200_000
-    compressed_data = zlib.compress(large_and_simple_csv, level=0)
+def corrupt_compressed_impl(base_line: bytes, target_size: int) -> bytes:
+    large_and_simple_data = base_line * round(target_size / len(base_line))
+    compressed_data = zlib.compress(large_and_simple_data, level=0)
 
     corruption_start_pos = round(len(compressed_data) * 0.9)
-    assert corruption_start_pos > 1_600_000
     corruption_len = 500
 
     # The idea is to corrupt the input to make sure the scan never fully
@@ -1244,9 +1242,22 @@ def corrupt_compressed_csv() -> bytes:
     corrupted_data[corruption_start_pos : corruption_start_pos + corruption_len] = (
         b"\00"
     )
-    # ~1.6MB of valid zlib compressed CSV to read before the corrupted data
+    # ~1.8MB of valid zlib compressed data to read before the corrupted data
     # appears.
     return corrupted_data
+
+
+@pytest.fixture(scope="session")
+def corrupt_compressed_csv() -> bytes:
+    return corrupt_compressed_impl(b"line_val\n", int(2e6))
+
+
+@pytest.fixture(scope="session")
+def corrupt_compressed_ndjson() -> bytes:
+    # The decompressor is part of the line-batch provider which only stops once
+    # processing noticed that it doesn't need anymore data. This can take a
+    # bit. Tested with debug/release and calm/stressed machine.
+    return corrupt_compressed_impl(b'{"line_val": 45}\n', int(100e6))
 
 
 @pytest.mark.parametrize("schema", [{"line_val": pl.String}, None])
@@ -1261,12 +1272,29 @@ def test_scan_csv_streaming_decompression(
         .collect(engine="streaming")
     )
 
-    expected = pl.DataFrame(
-        [
-            pl.Series("line_val", ["line_val"] * slice_count, dtype=pl.String),
-        ]
+    expected = [
+        pl.Series("line_val", ["line_val"] * slice_count, dtype=pl.String),
+    ]
+    assert_frame_equal(df, pl.DataFrame(expected))
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("schema", [{"line_val": pl.Int64}, None])
+def test_scan_ndjson_streaming_decompression(
+    corrupt_compressed_ndjson: bytes, schema: Any
+) -> None:
+    slice_count = 11
+
+    df = (
+        pl.scan_ndjson(io.BytesIO(corrupt_compressed_ndjson), schema=schema)
+        .slice(0, slice_count)
+        .collect(engine="streaming")
     )
-    assert_frame_equal(df, expected)
+
+    expected = [
+        pl.Series("line_val", [45] * slice_count, dtype=pl.Int64),
+    ]
+    assert_frame_equal(df, pl.DataFrame(expected))
 
 
 def test_scan_file_uri_hostname_component() -> None:
@@ -1277,3 +1305,41 @@ def test_scan_file_uri_hostname_component() -> None:
         match="unsupported: non-empty hostname for 'file:' URI: 'hostname:80'",
     ):
         q.collect()
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("polars_force_async", ["0", "1"])
+@pytest.mark.parametrize("n_repeats", [1, 2])
+def test_scan_path_expansion_sorting_24528(
+    tmp_path: Path,
+    polars_force_async: str,
+    n_repeats: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", polars_force_async)
+
+    relpaths = ["a.parquet", "a/a.parquet", "ab.parquet"]
+
+    for p in relpaths:
+        Path(tmp_path / p).parent.mkdir(exist_ok=True, parents=True)
+        pl.DataFrame({"relpath": p}).write_parquet(tmp_path / p)
+
+    assert_frame_equal(
+        pl.scan_parquet(n_repeats * [tmp_path]).collect(),
+        pl.DataFrame({"relpath": n_repeats * relpaths}),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(n_repeats * [f"{tmp_path}/**/*"]).collect(),
+        pl.DataFrame({"relpath": n_repeats * relpaths}),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(n_repeats * [format_file_uri(tmp_path) + "/"]).collect(),
+        pl.DataFrame({"relpath": n_repeats * relpaths}),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(n_repeats * [format_file_uri(f"{tmp_path}/**/*")]).collect(),
+        pl.DataFrame({"relpath": n_repeats * relpaths}),
+    )
