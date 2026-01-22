@@ -8,6 +8,7 @@
 pub mod abs_diff;
 pub mod algebraic_ops;
 pub mod arena;
+pub mod array;
 pub mod binary_search;
 pub mod cache;
 pub mod cardinality_sketch;
@@ -26,7 +27,6 @@ pub mod functions;
 pub mod hashing;
 pub mod ideal_morsel_size;
 pub mod idx_map;
-pub mod idx_mapper;
 pub mod idx_vec;
 pub mod marked_usize;
 pub mod mem;
