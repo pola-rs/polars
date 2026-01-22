@@ -9,8 +9,12 @@ from polars.io.partition import PartitionBy
 # Custom polars config keys
 POLARS_STORAGE_CONFIG_KEYS: Final[frozenset[str]] = frozenset(
     [
-        "max_retries",
         "file_cache_ttl",
+        "max_retries",
+        "retry_timeout_ms",
+        "retry_init_backoff_ms",
+        "retry_max_backoff_ms",
+        "retry_base_multiplier",
     ]
 )
 
