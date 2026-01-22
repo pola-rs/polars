@@ -4,6 +4,7 @@ use expr_expansion::rewrite_projections;
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
+use polars_io::ExternalCompression;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_path::PlRefPath;
@@ -1249,7 +1250,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 SinkType::Memory => SinkTypeIR::Memory,
                 SinkType::Callback(f) => SinkTypeIR::Callback(f),
                 SinkType::File(options) => {
-                    let mut compression_opt = None;
+                    let mut compression_opt = None::<ExternalCompression>;
 
                     #[cfg(feature = "csv")]
                     if let FileWriteFormat::Csv(csv_options) = &options.file_format
