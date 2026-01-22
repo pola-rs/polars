@@ -130,7 +130,7 @@ impl Default for CloudRetryConfig {
         return Self {
             max_retries: parse_env_var(2, "POLARS_CLOUD_MAX_RETRIES"),
             retry_timeout: Duration::from_millis(parse_env_var(
-                10,
+                10 * 1000,
                 "POLARS_CLOUD_RETRY_TIMEOUT_MS",
             )),
             retry_init_backoff: Duration::from_millis(parse_env_var(
@@ -138,7 +138,7 @@ impl Default for CloudRetryConfig {
                 "POLARS_CLOUD_RETRY_INIT_BACKOFF_MS",
             )),
             retry_max_backoff: Duration::from_millis(parse_env_var(
-                15,
+                15 * 1000,
                 "POLARS_CLOUD_RETRY_MAX_BACKOFF_MS",
             )),
             retry_base_multiplier: TotalOrdWrap(parse_env_var(
