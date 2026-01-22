@@ -40,6 +40,10 @@ pub fn business_day_count(
     if !week_mask.iter().any(|&x| x) {
         polars_bail!(ComputeError:"`week_mask` must have at least one business day");
     }
+    polars_ensure!(
+        holidays.len() == 1 || start.len() == 1 || end.len() == 1 || holidays.len() == start.len(),
+        ShapeMismatch: "number of holiday lists must be either 1 or the number of dates"
+    );
 
     let holidays = prep_holidays(holidays, week_mask)?;
     let mut holidays_lists = HolidaysListsExtractor::new(&holidays);
@@ -118,7 +122,7 @@ fn business_day_count_impl(
     mut end_date: i32,
     week_mask: &[bool; 7],
     n_business_days_in_week_mask: i32,
-    holidays: &[i32], // Caller's responsibility to ensure it's sorted
+    holidays: &[i32], // Caller's responsibility to ensure it's sorted.
 ) -> i32 {
     let swapped = start_date > end_date;
     if swapped {
@@ -168,6 +172,10 @@ pub fn add_business_days(
     if !week_mask.iter().any(|&x| x) {
         polars_bail!(ComputeError:"`week_mask` must have at least one business day");
     }
+    polars_ensure!(
+        holidays.len() == 1 || holidays.len() == start.len(),
+        ShapeMismatch: "number of holiday lists must be either 1 or the number of dates"
+    );
 
     match start.dtype() {
         DataType::Date => {},
@@ -216,8 +224,8 @@ pub fn add_business_days(
         _ => polars_bail!(InvalidOperation: "expected date or datetime, got {}", start.dtype()),
     }
 
-    let holidays = &prep_holidays(holidays, week_mask)?;
-    let mut holidays_lists = HolidaysListsExtractor::new(holidays);
+    let holidays = prep_holidays(holidays, week_mask)?;
+    let mut holidays_lists = HolidaysListsExtractor::new(&holidays);
 
     let start_dates = start.date()?;
     let n = match &n.dtype() {
@@ -368,6 +376,10 @@ pub fn is_business_day(
     if !week_mask.iter().any(|&x| x) {
         polars_bail!(ComputeError:"`week_mask` must have at least one business day");
     }
+    polars_ensure!(
+        holidays.len() == 1 || holidays.len() == dates.len(),
+        ShapeMismatch: "number of holiday lists must be either 1 or the number of dates"
+    );
 
     match dates.dtype() {
         DataType::Date => {},
@@ -469,7 +481,7 @@ fn normalise_holidays(holidays: &mut Vec<i32>, week_mask: &[bool; 7]) {
 /// Convert from List of Date to normalized List of Int32 (see
 /// `normalize_holidays`), trying to minimize allocations along the way.
 ///
-/// If a List contains a null, that is considered an error.
+/// If a list contains a null, that is considered an error.
 fn prep_holidays(holidays: &Series, week_mask: [bool; 7]) -> PolarsResult<ListChunked> {
     polars_ensure!(
         holidays.dtype().is_list() && holidays.dtype().inner_dtype() == Some(&DataType::Date),
@@ -565,11 +577,7 @@ impl<'a> HolidaysListsExtractor<'a> {
     /// trait, Option<Option<>> just makes things harder for the caller.
     fn get_next(&mut self) -> Option<&[i32]> {
         if let Some(repeat_a_value) = self.repeating_value {
-            return if repeat_a_value {
-                Some(&self.staging)
-            } else {
-                None
-            };
+            return repeat_a_value.then_some(&self.staging);
         }
 
         match self.amortized_iter.next() {
