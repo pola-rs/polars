@@ -4,6 +4,8 @@ use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 use crate::utils::index_to_chunked_index;
 
+/// # Safety
+/// `idx` MUST be in-bounds for `arr` and `dtype` has to match the data stored in `arr`.
 #[inline]
 #[allow(unused_variables)]
 pub(crate) unsafe fn arr_to_any_value<'a>(

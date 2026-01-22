@@ -1083,6 +1083,7 @@ fn to_graph_rec<'a>(
             right_on,
             descending,
             nulls_last,
+            keys_row_encoded,
             args,
         } => {
             let args = args.clone();
@@ -1101,6 +1102,7 @@ fn to_graph_rec<'a>(
                     right_on.clone(),
                     *descending,
                     *nulls_last,
+                    *keys_row_encoded,
                     args,
                 )?,
                 [
