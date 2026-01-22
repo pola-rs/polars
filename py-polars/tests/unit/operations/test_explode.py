@@ -28,6 +28,16 @@ def test_group_by_flatten_list() -> None:
     assert_frame_equal(result, expected)
 
 
+# https://github.com/pola-rs/polars/issues/26119
+def test_flatten_empty_list_not_null() -> None:
+    df = pl.DataFrame({"v": []}).cast({"v": pl.List(pl.String)})
+    result = df.select(pl.col("v").implode().flatten())
+
+    # flatten() should not convert empty lists to null
+    assert result.shape == (0, 1)
+    assert result.dtypes == [pl.List(pl.String)]
+
+
 def test_explode_empty_df_3402() -> None:
     df = pl.DataFrame({"a": pa.array([], type=pa.large_list(pa.int32()))})
     assert df.explode("a").dtypes == [pl.Int32]

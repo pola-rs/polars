@@ -5031,7 +5031,7 @@ Consider using {self}.implode() instead"""
         """
         Flatten a list or string column.
 
-        Alias for :func:`Expr.list.explode`.
+        Similar to :func:`Expr.explode`, but does not convert empty lists to null.
 
         Examples
         --------
@@ -5052,7 +5052,7 @@ Consider using {self}.implode() instead"""
         │ b     ┆ [2, 3, 4] │
         └───────┴───────────┘
         """
-        return self.explode(empty_as_null=True, keep_nulls=True)
+        return self.explode(empty_as_null=False, keep_nulls=True)
 
     def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
         """
