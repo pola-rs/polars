@@ -13,7 +13,7 @@ from polars.io.cloud._utils import POLARS_STORAGE_CONFIG_KEYS, _get_path_scheme
 if TYPE_CHECKING:
     from deltalake import DeltaTable
 
-    from polars import DataType
+    from polars import DataFrame, DataType
     from polars._typing import StorageOptionsDict
 
 
