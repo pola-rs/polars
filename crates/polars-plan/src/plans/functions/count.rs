@@ -5,8 +5,7 @@ pub fn count_rows(
     scan_type: &FileScanIR,
     alias: Option<PlSmallStr>,
 ) -> PolarsResult<DataFrame> {
-    #[cfg(feature = "csv")]
-    {
+    feature_gated!("csv", {
         let count: PolarsResult<usize> = match scan_type {
             #[cfg(feature = "csv")]
             FileScanIR::Csv { options } => count_all_rows_csv(sources, options),
@@ -19,7 +18,7 @@ pub fn count_rows(
         let column_name = alias.unwrap_or(PlSmallStr::from_static(crate::constants::LEN));
 
         Ok(unsafe { DataFrame::new_unchecked(1, vec![Column::new(column_name, [count])]) })
-    }
+    })
 }
 
 #[cfg(feature = "csv")]
