@@ -32,21 +32,20 @@ impl ComputeNode for UnorderedUnionNode {
     ) -> PolarsResult<()> {
         assert_eq!(send.len(), 1);
 
-        let all_done = recv.iter().all(|r| *r == PortState::Done);
-
-        if all_done {
+        let done = send[0] == PortState::Done || recv.iter().all(|r| *r == PortState::Done);
+        if done {
             send[0] = PortState::Done;
-        } else {
-            let any_ready = recv.contains(&PortState::Ready);
-            send[0] = if any_ready {
-                PortState::Ready
-            } else {
-                PortState::Blocked
-            };
+            recv.fill(PortState::Done);
+            return Ok(());
         }
 
+        let any_ready = recv.contains(&PortState::Ready);
         recv.fill(send[0]);
-
+        send[0] = if any_ready {
+            PortState::Ready
+        } else {
+            PortState::Blocked
+        };
         Ok(())
     }
 
@@ -60,11 +59,12 @@ impl ComputeNode for UnorderedUnionNode {
     ) {
         assert_eq!(send_ports.len(), 1);
         let output_senders = send_ports[0].take().unwrap().parallel();
-        let n = output_senders.len();
-        assert_eq!(n, state.num_pipelines);
+        let num_pipelines = output_senders.len();
+        assert_eq!(num_pipelines, state.num_pipelines);
 
-        let (mpsc_senders, mpsc_receivers): (Vec<_>, Vec<_>) =
-            (0..n).map(|_| mpsc::channel::<Morsel>(1)).unzip();
+        let (mpsc_senders, mpsc_receivers): (Vec<_>, Vec<_>) = (0..num_pipelines)
+            .map(|_| mpsc::channel::<Morsel>(1))
+            .unzip();
 
         for recv_port in recv_ports {
             if let Some(recv) = recv_port.take() {
@@ -91,6 +91,21 @@ impl ComputeNode for UnorderedUnionNode {
 
         drop(mpsc_senders);
 
+        // Each pipeline relabels morsel sequences independently of the others.
+        // We first compute the `morsel_offset` as (max morsel sequence sent so far + 1), so this
+        // phase never reuses sequence numbers from earlier phases.
+        //
+        // Then, each pipeline assigns sequences by:
+        // - starting at `morsel_offset + pipeline_idx` (so pipelines start at different values),
+        // - advancing by `num_pipelines` each time it emits a morsel.
+        //
+        // Example with 2 pipelines (num_pipelines = 2) and morsel_offset = 1000:
+        // pipeline 0: 1000, 1002, 1004, ...
+        // pipeline 1: 1001, 1003, 1005, ...
+        //
+        // This guarantees:
+        // - Global uniqueness: no collisions with earlier phases, and no collisions across pipelines.
+        // - Per-pipeline non-decreasing: each pipeline only moves forward by a fixed positive step.
         let morsel_offset = self.max_morsel_seq_sent.successor();
 
         let mut inner_handles = Vec::new();
@@ -99,7 +114,7 @@ impl ComputeNode for UnorderedUnionNode {
         {
             inner_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let mut local_seq = morsel_offset.offset_by_u64(lane_idx as u64);
-                let seq_step = n as u64;
+                let seq_step = num_pipelines as u64;
                 let mut max_seq = MorselSeq::new(0);
 
                 while let Some(mut morsel) = mpsc_receiver.recv().await {
