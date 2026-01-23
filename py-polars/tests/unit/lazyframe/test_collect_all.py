@@ -35,4 +35,4 @@ def test_collect_all_issue_26097() -> None:
     expected = pl.DataFrame({"A": [1]})
     assert_frame_equal(results[1], expected)
 
-    Path.unlink(tmp_file)
+    Path(tmp_file).unlink()
