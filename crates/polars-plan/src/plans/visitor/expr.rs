@@ -250,7 +250,43 @@ impl AExpr {
                     all_same_name
                 }
             },
-            (AnonymousFunction { .. }, AnonymousFunction { .. }) => false,
+            (
+                AnonymousFunction {
+                    function: l1,
+                    options: l2,
+                    fmt_str: l3,
+                    input: _,
+                },
+                AnonymousFunction {
+                    function: r1,
+                    options: r2,
+                    fmt_str: r3,
+                    input: _,
+                },
+            ) => {
+                l2 == r2 && l3 == r3 && {
+                    use LazySerde as L;
+                    match (l1, r1) {
+                        // We only check the pointers, so this works for python
+                        // functions that are on the same address.
+                        (L::Deserialized(l0), L::Deserialized(r0)) => l0 == r0,
+                        (L::Bytes(l0), L::Bytes(r0)) => l0 == r0,
+                        (
+                            L::Named {
+                                name: l_name,
+                                payload: l_payload,
+                                value: l_value,
+                            },
+                            L::Named {
+                                name: r_name,
+                                payload: r_payload,
+                                value: r_value,
+                            },
+                        ) => l_name == r_name && l_payload == r_payload && l_value == r_value,
+                        _ => false,
+                    }
+                }
+            },
             (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
             _ => false,
         }
