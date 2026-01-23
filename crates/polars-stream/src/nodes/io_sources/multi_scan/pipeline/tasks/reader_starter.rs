@@ -409,6 +409,7 @@ async fn start_reader_impl(
         missing_columns_policy,
         forbid_extra_columns,
         num_pipelines,
+        disable_morsel_split,
         verbose,
     } = constant_args;
 
@@ -605,6 +606,7 @@ async fn start_reader_impl(
         predicate,
         cast_columns_policy: cast_columns_policy.clone(),
         num_pipelines,
+        disable_morsel_split,
         callbacks,
     };
 

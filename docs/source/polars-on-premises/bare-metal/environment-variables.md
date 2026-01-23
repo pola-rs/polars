@@ -1,9 +1,8 @@
 ## Polars
 
-| Variable                       | Description                                                                                           |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `POLARS_ALLOW_PQ_EMPTY_STRUCT` | Allows reading or writing Parquet files that contain empty struct fields that are otherwise rejected. |
-| `POLARS_TEMP_DIR`              | Override the default temporary directory Polars uses for scratch files and some I/O operations.       |
+| Variable          | Description                                                                                     |
+| ----------------- | ----------------------------------------------------------------------------------------------- |
+| `POLARS_TEMP_DIR` | Override the default temporary directory Polars uses for scratch files and some I/O operations. |
 
 You may also set any Polars OSS-recognized environment variables.
 

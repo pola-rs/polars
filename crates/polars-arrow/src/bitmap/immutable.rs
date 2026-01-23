@@ -1,9 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::ops::Deref;
-use std::sync::LazyLock;
 
 use either::Either;
-use polars_buffer::SharedStorage;
+use polars_buffer::{Buffer, SharedStorage};
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::relaxed_cell::RelaxedCell;
 
@@ -386,21 +385,8 @@ impl Bitmap {
     /// Initializes an new [`Bitmap`] filled with unset values.
     #[inline]
     pub fn new_zeroed(length: usize) -> Self {
-        // We intentionally leak 1MiB of zeroed memory once so we don't have to
-        // refcount it.
-        const GLOBAL_ZERO_SIZE: usize = 1024 * 1024;
-        static GLOBAL_ZEROES: LazyLock<SharedStorage<u8>> = LazyLock::new(|| {
-            let mut ss = SharedStorage::from_vec(vec![0; GLOBAL_ZERO_SIZE]);
-            ss.leak();
-            ss
-        });
-
         let bytes_needed = length.div_ceil(8);
-        let storage = if bytes_needed <= GLOBAL_ZERO_SIZE {
-            GLOBAL_ZEROES.clone()
-        } else {
-            SharedStorage::from_vec(vec![0; bytes_needed])
-        };
+        let storage = Buffer::zeroed(bytes_needed).into_storage();
         Self {
             storage,
             offset: 0,

@@ -1248,7 +1248,32 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let payload = match payload {
                 SinkType::Memory => SinkTypeIR::Memory,
                 SinkType::Callback(f) => SinkTypeIR::Callback(f),
-                SinkType::File(options) => SinkTypeIR::File(options),
+                SinkType::File(options) => {
+                    #[cfg(feature = "csv")]
+                    if let FileWriteFormat::Csv(csv_options) = &options.file_format {
+                        if let SinkTarget::Path(path) = &options.target
+                            && csv_options.check_extension
+                        {
+                            let path_str = path.as_str();
+
+                            if let Some(suffix) = csv_options.compression.file_suffix() {
+                                polars_ensure!(
+                                    path_str.ends_with(suffix) || !path_str.contains('.'),
+                                    InvalidOperation: "the path ({}) does not conform to standard naming, expected suffix: ({}), set `check_extension` to `False` if you don't want this behavior", path, suffix
+                                );
+                            } else if [".gz", ".zst", ".zstd"]
+                                .iter()
+                                .any(|extension| path_str.ends_with(extension))
+                            {
+                                polars_bail!(
+                                    InvalidOperation: "use the compression parameter to control compression, or set `check_extension` to `False` if you want to suffix an uncompressed filename with an ending intended for compression"
+                                );
+                            }
+                        }
+                    }
+
+                    SinkTypeIR::File(options)
+                },
                 SinkType::Partitioned(PartitionedSinkOptions {
                     base_path,
                     file_path_provider,
@@ -1271,6 +1296,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             keys_pre_grouped,
                         } => {
                             let keys = to_expr_irs(keys, expr_to_ir_cx)?;
+
+                            polars_ensure!(
+                                keys.iter().all(|e| is_elementwise_rec(e.node(), ctxt.expr_arena)),
+                                InvalidOperation:
+                                "cannot use non-elementwise expressions for PartitionBy keys"
+                            );
 
                             PartitionStrategyIR::Keyed {
                                 keys,

@@ -313,7 +313,11 @@ fn read_compressed_bitmap<R: Read + Seek>(
         })?
     };
 
-    polars_ensure!(length.div_ceil(8) == decompressed_bytes, ComputeError: "Malformed IPC file: got unexpected decompressed output length {decompressed_bytes}, expected {}", length.div_ceil(8));
+    // Allow excess bytes in untruncated buffers,
+    // see https://github.com/pola-rs/polars/issues/26126
+    // and https://github.com/apache/arrow/issues/48883
+    polars_ensure!(decompressed_bytes >= length.div_ceil(8),
+        ComputeError: "Malformed IPC file: got unexpected decompressed output length {decompressed_bytes}, expected {}", length.div_ceil(8));
 
     if decompressed_len_field == -1 {
         return Ok(bytemuck::cast_slice(&scratch[8..]).to_vec());

@@ -107,6 +107,7 @@ impl<T> Drop for SharedStorageInner<T> {
     }
 }
 
+#[repr(transparent)]
 pub struct SharedStorage<T> {
     inner: NonNull<SharedStorageInner<T>>,
     phantom: PhantomData<SharedStorageInner<T>>,
@@ -214,6 +215,17 @@ impl<T> SharedStorage<T> {
             ));
         }
     }
+
+    /// # Safety
+    /// The caller is responsible for ensuring the resulting slice is valid and aligned for U.
+    pub unsafe fn transmute_unchecked<U>(self) -> SharedStorage<U> {
+        let storage = SharedStorage {
+            inner: self.inner.cast(),
+            phantom: PhantomData,
+        };
+        std::mem::forget(self);
+        storage
+    }
 }
 
 pub struct SharedStorageAsVecMut<'a, T> {
@@ -280,7 +292,13 @@ impl<T> SharedStorage<T> {
     }
 
     pub fn try_as_mut_slice(&mut self) -> Option<&mut [T]> {
-        self.is_exclusive().then(|| {
+        // We don't know if what we're created from may be mutated unless we're
+        // backed by an exclusive Vec. Perhaps in the future we can add a
+        // mutability bit?
+        let inner = self.inner();
+        let may_mut = inner.ref_count.load(Ordering::Acquire) == 1
+            && matches!(inner.backing, BackingStorage::Vec { .. });
+        may_mut.then(|| {
             let inner = self.inner();
             let len = inner.length_in_bytes / size_of::<T>();
             unsafe { core::slice::from_raw_parts_mut(inner.ptr, len) }
@@ -366,12 +384,7 @@ impl<T: Pod> SharedStorage<T> {
             return Err(self);
         }
 
-        let storage = SharedStorage {
-            inner: self.inner.cast(),
-            phantom: PhantomData,
-        };
-        std::mem::forget(self);
-        Ok(storage)
+        Ok(unsafe { self.transmute_unchecked::<U>() })
     }
 }
 

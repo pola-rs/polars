@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct CsvWriterOptions {
     pub include_bom: bool,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub compression: CsvCompression,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub check_extension: bool,
     pub include_header: bool,
     pub batch_size: NonZeroUsize,
     pub serialize_options: Arc<SerializeOptions>,
@@ -20,9 +24,40 @@ impl Default for CsvWriterOptions {
     fn default() -> Self {
         Self {
             include_bom: false,
+            compression: CsvCompression::default(),
+            check_extension: true,
             include_header: true,
             batch_size: NonZeroUsize::new(1024).unwrap(),
             serialize_options: SerializeOptions::default().into(),
+        }
+    }
+}
+
+/// Compression options for CSV.
+///
+/// Compared to other formats like IPC and Parquet, compression is external.
+#[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive()]
+pub enum CsvCompression {
+    #[default]
+    Uncompressed,
+    Gzip {
+        level: Option<u32>,
+    },
+    Zstd {
+        level: Option<u32>,
+    },
+}
+
+impl CsvCompression {
+    /// Returns the expected file suffix associated with the compression format.
+    pub fn file_suffix(self) -> Option<&'static str> {
+        match self {
+            Self::Uncompressed => None,
+            Self::Gzip { .. } => Some(".gz"),
+            Self::Zstd { .. } => Some(".zst"),
         }
     }
 }

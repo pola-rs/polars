@@ -140,15 +140,19 @@ pub fn resolve_homedir<'a, S: AsRef<Path> + ?Sized>(path: &'a S) -> Cow<'a, Path
     }
 }
 
-/// Get the index of the first occurrence of a glob symbol.
-pub fn get_glob_start_idx(path: &[u8]) -> Option<usize> {
-    memchr::memchr3(b'*', b'?', b'[', path)
+fn has_glob(path: &[u8]) -> bool {
+    return get_glob_start_idx(path).is_some();
+
+    /// Get the index of the first occurrence of a glob symbol.
+    fn get_glob_start_idx(path: &[u8]) -> Option<usize> {
+        memchr::memchr3(b'*', b'?', b'[', path)
+    }
 }
 
 /// Returns `true` if `expanded_paths` were expanded from a single directory
 pub fn expanded_from_single_directory(paths: &[PlRefPath], expanded_paths: &[PlRefPath]) -> bool {
     // Single input that isn't a glob
-    paths.len() == 1 && get_glob_start_idx(paths[0].strip_scheme().as_bytes()).is_none()
+    paths.len() == 1 && !has_glob(paths[0].strip_scheme().as_bytes())
     // And isn't a file
     && {
         (
@@ -232,7 +236,6 @@ pub fn expand_paths_hive(
     let mut out_paths = OutPaths {
         paths: vec![],
         exts: [None, None],
-        current_idx: 0,
         is_hidden_file: &is_hidden_file,
     };
 
@@ -419,82 +422,78 @@ pub fn expand_paths_hive(
                     }
                 }
 
-                let glob_start_idx = get_glob_start_idx(path.as_bytes());
+                let sort_start_idx = out_paths.paths.len();
 
-                let path = if glob && glob_start_idx.is_some() {
-                    path.clone()
+                if glob && has_glob(path.as_bytes()) {
+                    hive_idx_tracker.update(0, path_idx)?;
+
+                    let iter = crate::pl_async::get_runtime().block_in_place_on(
+                        crate::async_glob(path.into_owned(), cloud_options.as_ref()),
+                    )?;
+
+                    if first_path_has_scheme {
+                        out_paths.extend(iter.into_iter().map(PlRefPath::new))
+                    } else {
+                        // FORCE_ASYNC, remove leading file:// as the caller may not be expecting a
+                        // URI result.
+                        out_paths.extend(iter.iter().map(|x| &x[7..]).map(PlRefPath::new))
+                    };
                 } else {
                     let (expand_start_idx, paths) =
                         expand_path_cloud(path.into_owned(), cloud_options.as_ref())?;
                     out_paths.extend_from_slice(&paths);
                     hive_idx_tracker.update(expand_start_idx, path_idx)?;
-                    continue;
                 };
 
-                hive_idx_tracker.update(0, path_idx)?;
-
-                let iter = crate::pl_async::get_runtime().block_in_place_on(crate::async_glob(
-                    path.into_owned(),
-                    cloud_options.as_ref(),
-                ))?;
-
-                if first_path_has_scheme {
-                    out_paths.extend(iter.into_iter().map(PlRefPath::new))
-                } else {
-                    // FORCE_ASYNC, remove leading file:// as the caller may not be expecting a
-                    // URI result.
-                    out_paths.extend(iter.iter().map(|x| &x[7..]).map(PlRefPath::new))
-                };
+                if let Some(mut_slice) = out_paths.paths.get_mut(sort_start_idx..) {
+                    <[PlRefPath]>::sort_unstable(mut_slice);
+                }
             }
         }
         #[cfg(not(feature = "cloud"))]
         panic!("Feature `cloud` must be enabled to use globbing patterns with cloud urls.")
     } else {
-        let mut stack = VecDeque::new();
-        let mut paths_scratch: Vec<Cow<'_, Path>> = vec![];
+        let mut stack: VecDeque<Cow<'_, Path>> = VecDeque::new();
+        let mut paths_scratch: Vec<PathBuf> = vec![];
 
         for (path_idx, path) in paths.iter().enumerate() {
             stack.clear();
+            let sort_start_idx = out_paths.paths.len();
 
             if path.as_std_path().is_dir() {
                 let i = path.as_str().len();
-                let path = Cow::Borrowed(path.as_std_path());
 
                 hive_idx_tracker.update(i, path_idx)?;
 
-                stack.push_back(path.clone());
+                stack.push_back(Cow::Borrowed(path.as_std_path()));
 
                 while let Some(dir) = stack.pop_front() {
                     let mut last_err = Ok(());
 
                     paths_scratch.clear();
-                    paths_scratch.extend(std::fs::read_dir(dir)?.map_while(|x| match x {
-                        Ok(v) => Some(Cow::Owned(v.path())),
-                        Err(e) => {
-                            last_err = Err(e);
-                            None
-                        },
+                    paths_scratch.extend(std::fs::read_dir(dir)?.map_while(|x| {
+                        match x.map(|x| x.path()) {
+                            Ok(v) => Some(v),
+                            Err(e) => {
+                                last_err = Err(e);
+                                None
+                            },
+                        }
                     }));
 
                     last_err?;
 
-                    paths_scratch.sort_unstable();
-
                     for path in paths_scratch.drain(..) {
-                        if path.is_dir() {
-                            stack.push_back(path);
-                        } else if path.metadata()?.len() > 0 {
+                        let md = path.metadata()?;
+
+                        if md.is_dir() {
+                            stack.push_back(Cow::Owned(path));
+                        } else if md.len() > 0 {
                             out_paths.push(PlRefPath::try_from_path(&path)?);
                         }
                     }
                 }
-
-                continue;
-            }
-
-            let i = get_glob_start_idx(path.as_bytes());
-
-            if glob && i.is_some() {
+            } else if glob && has_glob(path.as_bytes()) {
                 hive_idx_tracker.update(0, path_idx)?;
 
                 let Ok(paths) = glob::glob(path.as_str()) else {
@@ -503,26 +502,29 @@ pub fn expand_paths_hive(
 
                 for path in paths {
                     let path = path.map_err(to_compute_err)?;
-                    if !path.is_dir() && path.metadata()?.len() > 0 {
+                    let md = path.metadata()?;
+                    if !md.is_dir() && md.len() > 0 {
                         out_paths.push(PlRefPath::try_from_path(&path)?);
                     }
                 }
             } else {
                 hive_idx_tracker.update(0, path_idx)?;
                 out_paths.push(path.clone());
+            };
+
+            if let Some(mut_slice) = out_paths.paths.get_mut(sort_start_idx..) {
+                <[PlRefPath]>::sort_unstable(mut_slice);
             }
         }
     }
 
-    assert_eq!(out_paths.current_idx, out_paths.paths.len());
-
     if expanded_from_single_directory(paths, out_paths.paths.as_slice()) {
-        if let [Some((_, i1)), Some((_, i2))] = out_paths.exts {
+        if let [Some((_, p1)), Some((_, p2))] = out_paths.exts {
             polars_bail!(
                 InvalidOperation: "directory contained paths with different file extensions: \
                 first path: {}, second path: {}. Please use a glob pattern to explicitly specify \
                 which files to read (e.g. 'dir/**/*', 'dir/**/*.parquet')",
-                &out_paths.paths[i1], &out_paths.paths[i2]
+                &p1, &p2
             )
         }
     }
@@ -533,8 +535,7 @@ pub fn expand_paths_hive(
     /// we don't have to traverse the entire list again to validate extensions.
     struct OutPaths<'a, F: Fn(&PlRefPath) -> bool> {
         paths: Vec<PlRefPath>,
-        exts: [Option<(PlSmallStr, usize)>; 2],
-        current_idx: usize,
+        exts: [Option<(PlSmallStr, PlRefPath)>; 2],
         is_hidden_file: &'a F,
     }
 
@@ -547,15 +548,13 @@ pub fn expand_paths_hive(
                 return;
             }
 
-            let current_idx = &mut self.current_idx;
             let exts = &mut self.exts;
-            Self::update_ext_status(current_idx, exts, &value);
+            Self::update_ext_status(exts, &value);
 
             self.paths.push(value)
         }
 
         fn extend(&mut self, values: impl IntoIterator<Item = PlRefPath>) {
-            let current_idx = &mut self.current_idx;
             let exts = &mut self.exts;
 
             self.paths.extend(
@@ -563,7 +562,7 @@ pub fn expand_paths_hive(
                     .into_iter()
                     .filter(|x| !(self.is_hidden_file)(x))
                     .inspect(|x| {
-                        Self::update_ext_status(current_idx, exts, x);
+                        Self::update_ext_status(exts, x);
                     }),
             )
         }
@@ -572,22 +571,16 @@ pub fn expand_paths_hive(
             self.extend(values.iter().cloned())
         }
 
-        fn update_ext_status(
-            current_idx: &mut usize,
-            exts: &mut [Option<(PlSmallStr, usize)>; 2],
-            value: &PlRefPath,
-        ) {
+        fn update_ext_status(exts: &mut [Option<(PlSmallStr, PlRefPath)>; 2], value: &PlRefPath) {
             let ext = value
                 .extension()
                 .map_or(PlSmallStr::EMPTY, PlSmallStr::from);
 
             if exts[0].is_none() {
-                exts[0] = Some((ext, *current_idx));
+                exts[0] = Some((ext, value.clone()));
             } else if exts[1].is_none() && ext != exts[0].as_ref().unwrap().0 {
-                exts[1] = Some((ext, *current_idx));
+                exts[1] = Some((ext, value.clone()));
             }
-
-            *current_idx += 1;
         }
     }
 }

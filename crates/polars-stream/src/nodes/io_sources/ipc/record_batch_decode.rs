@@ -15,7 +15,7 @@ use polars_io::RowIndex;
 use polars_utils::IdxSize;
 
 use super::record_batch_data_fetch::RecordBatchData;
-use crate::nodes::io_sinks2::writers::interface::IPC_RW_RECORD_BATCH_FLAGS_KEY;
+use crate::nodes::io_sinks::writers::interface::IPC_RW_RECORD_BATCH_FLAGS_KEY;
 
 pub(super) struct RecordBatchDecoder {
     pub(super) file_metadata: Arc<FileMetadata>,
