@@ -28,6 +28,7 @@ pub fn start_single_file_sink_pipeline(
     let inflight_morsel_limit = config.inflight_morsel_limit(num_pipelines);
     let num_pipelines_per_sink = config.num_pipelines_per_sink(num_pipelines);
     let upload_chunk_size = config.cloud_upload_chunk_size();
+    let upload_max_concurrency = config.cloud_upload_max_concurrency();
 
     let IOSinkNodeConfig {
         file_format,
@@ -51,7 +52,12 @@ pub fn start_single_file_sink_pipeline(
     let file_open_task =
         tokio_handle_ext::AbortOnDropHandle(pl_async::get_runtime().spawn(async move {
             target
-                .open_into_writeable_async(cloud_options.as_deref(), mkdir, upload_chunk_size)
+                .open_into_writeable_async(
+                    cloud_options.as_deref(),
+                    mkdir,
+                    upload_chunk_size,
+                    upload_max_concurrency,
+                )
                 .await
         }));
     let file_open_task = FileOpenTaskHandle::new(file_open_task, sync_on_close);

@@ -71,6 +71,11 @@ impl IOSinkNodeConfig {
 
         6 * 1024 * 1024
     }
+
+    pub fn cloud_upload_max_concurrency(&self) -> usize {
+        //kdn TODO tbd - split for partitioned
+        polars_io::get_upload_max_concurrency()
+    }
 }
 
 pub enum IOSinkTarget {

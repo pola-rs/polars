@@ -33,6 +33,7 @@ pub fn start_partition_sink_pipeline(
     let num_pipelines_per_sink = config.num_pipelines_per_sink(num_pipelines);
     let max_open_sinks = config.max_open_sinks().get();
     let upload_chunk_size = config.partitioned_cloud_upload_chunk_size();
+    let upload_max_concurrency = config.cloud_upload_max_concurrency(); //kdn TODO CHECK
 
     let IOSinkNodeConfig {
         file_format,
@@ -69,6 +70,7 @@ pub fn start_partition_sink_pipeline(
         cloud_options,
         provider_type: file_path_provider,
         upload_chunk_size,
+        upload_max_concurrency,
     });
 
     let file_writer_starter: Arc<dyn FileWriterStarter> =
