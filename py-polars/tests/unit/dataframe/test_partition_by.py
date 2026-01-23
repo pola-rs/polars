@@ -216,7 +216,9 @@ def test_partition_by_series() -> None:
 def test_partition_by_invalid_type() -> None:
     """Test that partitioning by an invalid type raises TypeError."""
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    with pytest.raises(TypeError, match="expected column name, selector, or expression"):
+    with pytest.raises(
+        TypeError, match="expected column name, selector, or expression"
+    ):
         df.partition_by(123)  # type: ignore[arg-type]
 
 
