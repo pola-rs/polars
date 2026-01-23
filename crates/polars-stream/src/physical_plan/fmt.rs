@@ -412,6 +412,9 @@ fn visualize_plan_rec(
             &[*input][..],
         ),
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
+        PhysNodeKind::UnorderedUnion { inputs } => {
+            ("unordered-union".to_string(), inputs.as_slice())
+        },
         PhysNodeKind::Zip {
             inputs,
             zip_behavior,
