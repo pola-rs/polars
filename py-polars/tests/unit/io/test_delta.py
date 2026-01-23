@@ -899,7 +899,7 @@ endpoint_url = http://127.0.0.1:54321
         pl.DataFrame({"x": 1}).write_delta("s3://.../...", mode="append")
 
 
-# TODO: uncomment test cases pending resolution of #26238
+# TODO: uncomment float test cases pending resolution of #26238
 @pytest.mark.parametrize(
     "expr",
     [
@@ -909,6 +909,8 @@ endpoint_url = http://127.0.0.1:54321
         pl.col.c.is_null(),
         (pl.col.a == 2) & (pl.col.b.is_not_null()),
         pl.col.p == 10,
+        pl.col.e == pl.date(2020, 1, 1),
+        pl.col.f == pl.datetime(2020, 1, 1),
     ],
 )
 @pytest.mark.write_disk
@@ -925,6 +927,11 @@ def test_parquet_filter_on_file_statistics_23780(
             "b": [1.0, 2.0, 3.0, 4.0],
             "c": [None, 2, 3, 4],
         }
+    ).with_columns(
+        e=pl.date_range(pl.date(2020, 1, 1), pl.date(2020, 1, 4), closed="both"),
+        f=pl.datetime_range(
+            pl.datetime(2020, 1, 1), pl.datetime(2020, 1, 4), closed="both"
+        ),
     )
     root = tmp_path / "delta"
 
