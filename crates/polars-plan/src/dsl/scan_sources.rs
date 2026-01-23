@@ -430,9 +430,11 @@ impl ScanSourceRef<'_> {
         match self {
             ScanSourceRef::Path(path) => {
                 let file = polars_utils::open_file(path.as_std_path())?;
-                Buffer::from_file(&file)
+                Ok(Buffer::from_owner(MMapSemaphore::new_from_file(&file)?))
             },
-            ScanSourceRef::File(file) => Buffer::from_file(file),
+            ScanSourceRef::File(file) => {
+                Ok(Buffer::from_owner(MMapSemaphore::new_from_file(file)?))
+            },
             ScanSourceRef::Buffer(buff) => Ok((*buff).clone()),
         }
     }
