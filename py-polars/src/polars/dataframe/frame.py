@@ -9777,8 +9777,8 @@ class DataFrame:
     @overload
     def partition_by(
         self,
-        by: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
-        *more_by: ColumnNameOrSelector,
+        by: IntoExpr | ColumnNameOrSelector | Sequence[IntoExpr | ColumnNameOrSelector],
+        *more_by: IntoExpr | ColumnNameOrSelector,
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: Literal[False] = ...,
@@ -9787,8 +9787,8 @@ class DataFrame:
     @overload
     def partition_by(
         self,
-        by: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
-        *more_by: ColumnNameOrSelector,
+        by: IntoExpr | ColumnNameOrSelector | Sequence[IntoExpr | ColumnNameOrSelector],
+        *more_by: IntoExpr | ColumnNameOrSelector,
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: Literal[True],
@@ -9797,8 +9797,8 @@ class DataFrame:
     @overload
     def partition_by(
         self,
-        by: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
-        *more_by: ColumnNameOrSelector,
+        by: IntoExpr | ColumnNameOrSelector | Sequence[IntoExpr | ColumnNameOrSelector],
+        *more_by: IntoExpr | ColumnNameOrSelector,
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: bool,
@@ -9806,8 +9806,8 @@ class DataFrame:
 
     def partition_by(
         self,
-        by: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
-        *more_by: ColumnNameOrSelector,
+        by: IntoExpr | ColumnNameOrSelector | Sequence[IntoExpr | ColumnNameOrSelector],
+        *more_by: IntoExpr | ColumnNameOrSelector,
         maintain_order: bool = True,
         include_key: bool = True,
         as_dict: bool = False,
@@ -9818,9 +9818,11 @@ class DataFrame:
         Parameters
         ----------
         by
-            Column name(s) or selector(s) to group by.
+            Column name(s), selector(s), or expression(s) to group by.
+            Accepts expression input. Strings are parsed as column names.
         *more_by
-            Additional names of columns to group by, specified as positional arguments.
+            Additional columns to group by, specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default partition by operation.
@@ -9937,24 +9939,109 @@ class DataFrame:
         ╞═════╪═════╪═════╡
         │ c   ┆ 3   ┆ 1   │
         └─────┴─────┴─────┘}
-        """
-        by_parsed = _expand_selectors(self, by, *more_by)
 
-        partitions = [
-            self._from_pydf(_df)
-            for _df in self._df.partition_by(by_parsed, maintain_order, include_key)
+        Partition by an expression. This is useful for partitioning based on
+        computed values without having to create a new column first.
+
+        >>> df.partition_by(
+        ...     pl.col("b") >= 2, maintain_order=True
+        ... )  # doctest: +IGNORE_RESULT
+        [shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 1   ┆ 5   │
+        │ a   ┆ 1   ┆ 3   │
+        └─────┴─────┴─────┘,
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ b   ┆ 2   ┆ 4   │
+        │ b   ┆ 3   ┆ 2   │
+        │ c   ┆ 3   ┆ 1   │
+        └─────┴─────┴─────┘]
+        """
+        from polars.selectors import is_selector
+
+        # Collect all inputs into a flat list
+        all_by: list[Any] = []
+        if isinstance(by, Sequence) and not isinstance(by, str):
+            all_by.extend(by)
+        else:
+            all_by.append(by)
+        all_by.extend(more_by)
+
+        # Separate expressions from column names/selectors
+        col_names: list[str] = []
+        expr_cols: list[tuple[str, pl.Expr]] = []  # (temp_name, expr)
+        temp_col_prefix = "__POLARS_PB_"
+
+        for i, item in enumerate(all_by):
+            if isinstance(item, str):
+                col_names.append(item)
+            elif is_selector(item):
+                # Expand selector to column names
+                expanded = _expand_selectors(self, item)
+                col_names.extend(expanded)
+            elif isinstance(item, pl.Expr):
+                # Generate a temporary column name for the expression
+                temp_name = f"{temp_col_prefix}{i}"
+                expr_cols.append((temp_name, item.alias(temp_name)))
+            elif isinstance(item, pl.Series):
+                # Convert Series to expression
+                temp_name = f"{temp_col_prefix}{i}"
+                expr_cols.append((temp_name, lit(item).alias(temp_name)))
+            else:
+                msg = f"expected column name, selector, or expression; got {type(item).__name__!r}"
+                raise TypeError(msg)
+
+        # If we have expressions, we need to create temporary columns
+        if expr_cols:
+            temp_names = [name for name, _ in expr_cols]
+            temp_exprs = [expr for _, expr in expr_cols]
+            df_with_temp = self.with_columns(temp_exprs)
+            by_parsed = col_names + temp_names
+        else:
+            df_with_temp = self
+            by_parsed = col_names
+
+        # Always include key columns for partitioning, we'll drop them later if needed
+        partitions_with_keys = [
+            df_with_temp._from_pydf(_df)
+            for _df in df_with_temp._df.partition_by(by_parsed, maintain_order, True)
         ]
 
         if as_dict:
-            if include_key:
-                names = [p.select(by_parsed).row(0) for p in partitions]
-            else:
-                if not maintain_order:  # Group keys cannot be matched to partitions
-                    msg = "cannot use `partition_by` with `maintain_order=False, include_key=False, as_dict=True`"
-                    raise ValueError(msg)
-                names = self.select(by_parsed).unique(maintain_order=True).rows()
+            if not include_key and not maintain_order:
+                msg = "cannot use `partition_by` with `maintain_order=False, include_key=False, as_dict=True`"
+                raise ValueError(msg)
+
+            # Get the partition keys (including temp column values)
+            names = [p.select(by_parsed).row(0) for p in partitions_with_keys]
+
+            # Prepare final partitions: drop temp columns and optionally key columns
+            cols_to_drop = [name for name, _ in expr_cols] if expr_cols else []
+            if not include_key:
+                cols_to_drop.extend(col_names)
+            partitions = [
+                p.drop(cols_to_drop) if cols_to_drop else p
+                for p in partitions_with_keys
+            ]
 
             return dict(zip(names, partitions, strict=True))
+
+        # For list output: drop temp columns and optionally key columns
+        cols_to_drop = [name for name, _ in expr_cols] if expr_cols else []
+        if not include_key:
+            cols_to_drop.extend(col_names)
+        partitions = [
+            p.drop(cols_to_drop) if cols_to_drop else p for p in partitions_with_keys
+        ]
 
         return partitions
 

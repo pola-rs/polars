@@ -96,3 +96,100 @@ def test_partition_by_tuple_typing_24112() -> None:
     df = pl.DataFrame({"id": ["a", "b", "a"], "val": [1, 2, 3]})
     for (id_,) in df.partition_by("id", as_dict=True):
         _should_work: str = id_
+
+
+def test_partition_by_expression() -> None:
+    """Test partitioning by an expression. Fixes #26108."""
+    df = pl.DataFrame(
+        {
+            "a": ["a", "b", "a", "b", "c"],
+            "b": [1, 2, 1, 3, 3],
+            "c": [5, 4, 3, 2, 1],
+        }
+    )
+    result = df.partition_by(pl.col("b") >= 2, maintain_order=True)
+    expected = [
+        {"a": ["a", "a"], "b": [1, 1], "c": [5, 3]},
+        {"a": ["b", "b", "c"], "b": [2, 3, 3], "c": [4, 2, 1]},
+    ]
+    assert [a.to_dict(as_series=False) for a in result] == expected
+
+
+def test_partition_by_expression_as_dict() -> None:
+    """Test partitioning by an expression with as_dict=True."""
+    df = pl.DataFrame(
+        {
+            "a": ["a", "b", "a", "b", "c"],
+            "b": [1, 2, 1, 3, 3],
+            "c": [5, 4, 3, 2, 1],
+        }
+    )
+    result = df.partition_by(pl.col("b") >= 2, maintain_order=True, as_dict=True)
+    assert (False,) in result
+    assert (True,) in result
+    assert result[(False,)].to_dict(as_series=False) == {
+        "a": ["a", "a"],
+        "b": [1, 1],
+        "c": [5, 3],
+    }
+    assert result[(True,)].to_dict(as_series=False) == {
+        "a": ["b", "b", "c"],
+        "b": [2, 3, 3],
+        "c": [4, 2, 1],
+    }
+
+
+def test_partition_by_column_and_expression() -> None:
+    """Test partitioning by a combination of column name and expression."""
+    df = pl.DataFrame(
+        {
+            "a": ["a", "b", "a", "b", "c"],
+            "b": [1, 2, 1, 3, 3],
+            "c": [5, 4, 3, 2, 1],
+        }
+    )
+    result = df.partition_by("a", pl.col("b") >= 2, maintain_order=True)
+    expected = [
+        {"a": ["a", "a"], "b": [1, 1], "c": [5, 3]},
+        {"a": ["b", "b"], "b": [2, 3], "c": [4, 2]},
+        {"a": ["c"], "b": [3], "c": [1]},
+    ]
+    assert [a.to_dict(as_series=False) for a in result] == expected
+
+
+def test_partition_by_expression_include_key_false() -> None:
+    """Test partitioning by an expression with include_key=False."""
+    df = pl.DataFrame(
+        {
+            "a": ["a", "b", "a", "b", "c"],
+            "b": [1, 2, 1, 3, 3],
+            "c": [5, 4, 3, 2, 1],
+        }
+    )
+    # With expression only, include_key=False should not remove any original columns
+    result = df.partition_by(pl.col("b") >= 2, maintain_order=True, include_key=False)
+    expected = [
+        {"a": ["a", "a"], "b": [1, 1], "c": [5, 3]},
+        {"a": ["b", "b", "c"], "b": [2, 3, 3], "c": [4, 2, 1]},
+    ]
+    assert [a.to_dict(as_series=False) for a in result] == expected
+
+
+def test_partition_by_column_and_expression_include_key_false() -> None:
+    """Test partitioning by column + expression with include_key=False."""
+    df = pl.DataFrame(
+        {
+            "a": ["a", "b", "a", "b", "c"],
+            "b": [1, 2, 1, 3, 3],
+            "c": [5, 4, 3, 2, 1],
+        }
+    )
+    result = df.partition_by(
+        "a", pl.col("b") >= 2, maintain_order=True, include_key=False
+    )
+    expected = [
+        {"b": [1, 1], "c": [5, 3]},
+        {"b": [2, 3], "c": [4, 2]},
+        {"b": [3], "c": [1]},
+    ]
+    assert [a.to_dict(as_series=False) for a in result] == expected
