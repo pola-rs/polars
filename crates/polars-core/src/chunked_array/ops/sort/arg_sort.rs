@@ -214,7 +214,7 @@ where
             || (!options.descending && is_sorted_flag == IsSorted::Descending)
         {
             let idx = reverse_stable_no_nulls(iters, len);
-            let idx = Buffer::from(idx).sliced(0, len_final);
+            let idx = Buffer::from(idx).sliced(..len_final);
             return ChunkedArray::with_chunk(name, IdxArr::from_data_default(idx, None));
         }
     }

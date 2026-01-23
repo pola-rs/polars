@@ -14,7 +14,7 @@ pub use metadata::{deserialize_metadata, read_metadata, read_metadata_with_size}
 pub use page::{PageIterator, PageMetaData, PageReader};
 #[cfg(feature = "async")]
 pub use page::{get_page_stream, get_page_stream_from_column_start};
-use polars_utils::mmap::MemSlice;
+use polars_buffer::Buffer;
 #[cfg(feature = "async")]
 pub use stream::read_metadata as read_metadata_async;
 
@@ -24,7 +24,7 @@ use crate::parquet::metadata::ColumnChunkMetadata;
 /// Returns a new [`PageReader`] by seeking `reader` to the beginning of `column_chunk`.
 pub fn get_page_iterator(
     column_chunk: &ColumnChunkMetadata,
-    mut reader: Cursor<MemSlice>,
+    mut reader: Cursor<Buffer<u8>>,
     scratch: Vec<u8>,
     max_page_size: usize,
 ) -> ParquetResult<PageReader> {

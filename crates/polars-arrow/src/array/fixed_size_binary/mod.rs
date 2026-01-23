@@ -119,8 +119,9 @@ impl FixedSizeBinaryArray {
             .take()
             .map(|bitmap| bitmap.sliced_unchecked(offset, length))
             .filter(|bitmap| bitmap.unset_bits() > 0);
+        let start = offset * self.size;
         self.values
-            .slice_unchecked(offset * self.size, length * self.size);
+            .slice_in_place_unchecked(start..start + length * self.size);
     }
 
     impl_sliced!();
