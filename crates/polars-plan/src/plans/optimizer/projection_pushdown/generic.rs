@@ -19,6 +19,8 @@ pub(super) fn process_generic(
     let new_inputs = inputs
         .into_iter()
         .map(|node| {
+            proj_pd.is_count_star = false;
+
             let alp = lp_arena.take(node);
             let mut alp = proj_pd.push_down(alp, ctx.clone(), lp_arena, expr_arena)?;
 
