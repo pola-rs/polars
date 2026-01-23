@@ -324,9 +324,15 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[staticmethod]
-    #[pyo3(signature = (sources, scan_options))]
-    fn new_from_ipc(sources: Wrap<ScanSources>, scan_options: PyScanOptions) -> PyResult<Self> {
-        let options = IpcScanOptions;
+    #[pyo3(signature = (sources, record_batch_statistics, scan_options))]
+    fn new_from_ipc(
+        sources: Wrap<ScanSources>,
+        record_batch_statistics: bool,
+        scan_options: PyScanOptions,
+    ) -> PyResult<Self> {
+        let options = IpcScanOptions {
+            record_batch_statistics,
+        };
 
         let sources = sources.0;
         let first_path = sources.first_path().cloned();
@@ -681,7 +687,7 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[pyo3(signature = (
-        target, sink_options, compression, compat_level, record_batch_size
+        target, sink_options, compression, compat_level, record_batch_size, record_batch_statistics
     ))]
     fn sink_ipc(
         &self,
@@ -691,11 +697,13 @@ impl PyLazyFrame {
         compression: Wrap<Option<IpcCompression>>,
         compat_level: PyCompatLevel,
         record_batch_size: Option<usize>,
+        record_batch_statistics: bool,
     ) -> PyResult<PyLazyFrame> {
         let options = IpcWriterOptions {
             compression: compression.0,
             compat_level: compat_level.0,
             record_batch_size,
+            record_batch_statistics,
             ..Default::default()
         };
 

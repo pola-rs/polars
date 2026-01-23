@@ -349,10 +349,8 @@ def test_scan_ipc_compression_with_slice_26063(
     assert_frame_equal(out, expected)
 
 
-def test_sink_scan_ipc_round_trip_statistics(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_IPC_RW_RECORD_BATCH_STATISTICS_FLAGS", "1")
-
-    n_rows = 4_000  # must be high to avoid sortedness inference
+def test_sink_scan_ipc_round_trip_statistics() -> None:
+    n_rows = 4_000  # must be higher than (n_vCPU)^2 to avoid sortedness inference
     buf = io.BytesIO()
 
     df = (
@@ -361,7 +359,7 @@ def test_sink_scan_ipc_round_trip_statistics(monkeypatch: Any) -> None:
         .with_columns(pl.col.a.shuffle().alias("d"))
         .with_columns(pl.col.a.shuffle().sort().alias("d"))
     )
-    df.lazy().sink_ipc(buf)
+    df.lazy().sink_ipc(buf, _record_batch_statistics=True)
 
     metadata = df._to_metadata()
 
@@ -370,12 +368,10 @@ def test_sink_scan_ipc_round_trip_statistics(monkeypatch: Any) -> None:
     assert metadata.select(pl.col("sorted_dsc").sum()).item() == 1
 
     # round-trip
-    out = pl.scan_ipc(buf).collect()
+    out = pl.scan_ipc(buf, _record_batch_statistics=True).collect()
     assert_frame_equal(metadata, out._to_metadata())
 
     # do not read unless requested
-    monkeypatch.setenv("POLARS_IPC_RW_RECORD_BATCH_STATISTICS_FLAGS", "0")
-
     out = pl.scan_ipc(buf).collect()
     assert out._to_metadata().select(pl.col("sorted_asc").sum()).item() == 0
     assert out._to_metadata().select(pl.col("sorted_dsc").sum()).item() == 0
@@ -391,10 +387,9 @@ def test_sink_scan_ipc_round_trip_statistics(monkeypatch: Any) -> None:
 )
 @pytest.mark.parametrize("record_batch_size", [None, 100])
 def test_sink_scan_ipc_round_trip_statistics_projection(
-    selection: list[str], record_batch_size: int, monkeypatch: Any
+    selection: list[str], record_batch_size: int
 ) -> None:
-    monkeypatch.setenv("POLARS_IPC_RW_RECORD_BATCH_STATISTICS_FLAGS", "1")
-    n_rows = 4_000  # must be high to avoid sortedness inference
+    n_rows = 4_000  # must be higher than (n_vCPU)^2 to avoid sortedness inference
     buf = io.BytesIO()
 
     df = (
@@ -403,10 +398,12 @@ def test_sink_scan_ipc_round_trip_statistics_projection(
         .with_columns(pl.col.a.shuffle().alias("c"))
         .with_columns(pl.col.a.shuffle().sort().alias("d"))
     )
-    df.lazy().sink_ipc(buf, record_batch_size=record_batch_size)
+    df.lazy().sink_ipc(
+        buf, record_batch_size=record_batch_size, _record_batch_statistics=True
+    )
 
     # round-trip with projection
     df = df.select(selection)
-    out = pl.scan_ipc(buf).select(selection).collect()
+    out = pl.scan_ipc(buf, _record_batch_statistics=True).select(selection).collect()
     assert_frame_equal(df, out)
     assert_frame_equal(df._to_metadata(), out._to_metadata())

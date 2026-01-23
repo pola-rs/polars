@@ -875,6 +875,7 @@ class PyLazyFrame:
     @staticmethod
     def new_from_ipc(
         sources: Any,
+        record_batch_statistics: bool | None,
         scan_options: ScanOptions,
     ) -> PyLazyFrame: ...
     @staticmethod
@@ -962,6 +963,7 @@ class PyLazyFrame:
         compression: IpcCompression | None,
         compat_level: CompatLevel,
         record_batch_size: int | None,
+        record_batch_statistics: bool | None,
     ) -> PyLazyFrame: ...
     def sink_csv(
         self,

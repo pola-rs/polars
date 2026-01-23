@@ -641,9 +641,10 @@ pub fn lower_ir(
 
                     #[cfg(feature = "ipc")]
                     FileScanIR::Ipc {
-                        options: polars_io::ipc::IpcScanOptions {},
+                        options,
                         metadata: first_metadata,
                     } => Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
+                        options: Arc::new(options.clone()),
                         first_metadata: first_metadata.clone(),
                         prefetch_limit: RelaxedCell::new_usize(0),
                         prefetch_semaphore: std::sync::OnceLock::new(),
