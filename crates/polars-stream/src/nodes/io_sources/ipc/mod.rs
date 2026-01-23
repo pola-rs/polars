@@ -162,6 +162,7 @@ impl FileReader for IpcFileReader {
             predicate: None,
             cast_columns_policy: _,
             num_pipelines,
+            disable_morsel_split,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx,
@@ -397,6 +398,20 @@ impl FileReader for IpcFileReader {
                 if df.height() == 0 {
                     continue;
                 }
+
+                if disable_morsel_split {
+                    if morsel_send
+                        .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
+                        .await
+                        .is_err()
+                    {
+                        return Ok(());
+                    }
+                    drop(permit);
+                    morsel_seq = morsel_seq.successor();
+                    continue;
+                }
+
                 next = Some((df, permit));
                 break;
             }

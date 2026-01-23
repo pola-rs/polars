@@ -137,6 +137,7 @@ impl FileReader for CsvFileReader {
             predicate: None,
             cast_columns_policy: _,
             num_pipelines,
+            disable_morsel_split: _,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx,

@@ -49,6 +49,7 @@ pub struct MultiScanConfig {
     /// step.
     pub n_readers_pre_init: RelaxedCell<usize>,
     pub max_concurrent_scans: RelaxedCell<usize>,
+    pub disable_morsel_split: bool,
 
     pub verbose: bool,
 }

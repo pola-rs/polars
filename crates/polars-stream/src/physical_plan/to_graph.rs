@@ -107,8 +107,18 @@ fn to_graph_rec<'a>(
     use PhysNodeKind::*;
     let node = &ctx.phys_sm[phys_node_key];
     let graph_key = match &node.kind {
-        InMemorySource { df } => ctx.graph.add_node(
-            nodes::in_memory_source::InMemorySourceNode::new(df.clone(), MorselSeq::default()),
+        InMemorySource {
+            df,
+            disable_morsel_split,
+        } => ctx.graph.add_node(
+            if *disable_morsel_split {
+                nodes::in_memory_source::InMemorySourceNode::new_no_morsel_split(
+                    df.clone(),
+                    MorselSeq::default(),
+                )
+            } else {
+                nodes::in_memory_source::InMemorySourceNode::new(df.clone(), MorselSeq::default())
+            },
             [],
         ),
         SinkMultiple { sinks } => {
@@ -255,7 +265,8 @@ fn to_graph_rec<'a>(
             let mut inputs = Vec::with_capacity(reductions.len());
 
             for e in exprs {
-                let (red, input_nodes) = into_reduction(e.node(), ctx.expr_arena, input_schema)?;
+                let (red, input_nodes) =
+                    into_reduction(e.node(), ctx.expr_arena, input_schema, false)?;
                 reductions.push(red);
 
                 let input_phys_exprs = input_nodes
@@ -709,6 +720,7 @@ fn to_graph_rec<'a>(
             deletion_files,
             table_statistics,
             file_schema,
+            disable_morsel_split,
         } => {
             let hive_parts = hive_parts.clone();
 
@@ -747,6 +759,7 @@ fn to_graph_rec<'a>(
             let cast_columns_policy = cast_columns_policy.clone();
             let deletion_files = deletion_files.clone();
             let table_statistics = table_statistics.clone();
+            let disable_morsel_split = *disable_morsel_split;
 
             let verbose = config::verbose();
 
@@ -772,6 +785,7 @@ fn to_graph_rec<'a>(
                     num_pipelines: RelaxedCell::new_usize(0),
                     n_readers_pre_init: RelaxedCell::new_usize(0),
                     max_concurrent_scans: RelaxedCell::new_usize(0),
+                    disable_morsel_split,
                     verbose,
                 })),
                 [],
@@ -816,7 +830,7 @@ fn to_graph_rec<'a>(
                         )
                     );
                     let (reduction, input_nodes) =
-                        into_reduction(agg.node(), ctx.expr_arena, input_schema)?;
+                        into_reduction(agg.node(), ctx.expr_arena, input_schema, true)?;
                     let cols = input_nodes
                         .iter()
                         .map(|node| {
@@ -1337,6 +1351,7 @@ fn to_graph_rec<'a>(
             let cast_columns_policy = CastColumnsPolicy::ERROR_ON_MISMATCH;
             let deletion_files = None;
             let table_statistics = None;
+            let disable_morsel_split = false;
             let verbose = config::verbose();
 
             ctx.graph.add_node(
@@ -1361,6 +1376,7 @@ fn to_graph_rec<'a>(
                     num_pipelines: RelaxedCell::new_usize(0),
                     n_readers_pre_init: RelaxedCell::new_usize(0),
                     max_concurrent_scans: RelaxedCell::new_usize(0),
+                    disable_morsel_split,
                     verbose,
                 })),
                 [],

@@ -165,7 +165,10 @@ fn visualize_plan_rec(
 
     use std::slice::from_ref;
     let (label, inputs) = match kind {
-        PhysNodeKind::InMemorySource { df } => (
+        PhysNodeKind::InMemorySource {
+            df,
+            disable_morsel_split: _,
+        } => (
             format!(
                 "in-memory-source\\ncols: {}",
                 df.get_column_names_owned().join(", ")
@@ -439,6 +442,7 @@ fn visualize_plan_rec(
             deletion_files,
             table_statistics: _,
             file_schema: _,
+            disable_morsel_split: _,
         } => {
             let mut out = format!("multi-scan[{}]", file_reader_builder.reader_name());
             let mut f = EscapeLabel(&mut out);

@@ -117,6 +117,7 @@ pub enum ZipBehavior {
 pub enum PhysNodeKind {
     InMemorySource {
         df: Arc<DataFrame>,
+        disable_morsel_split: bool,
     },
 
     Select {
@@ -305,6 +306,7 @@ pub enum PhysNodeKind {
 
         /// Schema of columns contained in the file. Does not contain external columns (e.g. hive / row_index).
         file_schema: SchemaRef,
+        disable_morsel_split: bool,
     },
 
     #[cfg(feature = "python")]
@@ -634,6 +636,7 @@ pub fn build_physical_plan(
         &mut expr_cache,
         &mut cache_nodes,
         ctx,
+        None,
     )?;
     insert_multiplexers(vec![phys_root.node], phys_sm);
     Ok(phys_root.node)
