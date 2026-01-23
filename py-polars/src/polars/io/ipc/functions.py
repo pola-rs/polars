@@ -394,6 +394,7 @@ def scan_ipc(
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
     include_file_paths: str | None = None,
+    _record_batch_statistics: bool = False,
 ) -> LazyFrame:
     """
     Lazily read from an Arrow IPC (Feather v2) file or multiple files via glob patterns.
@@ -504,6 +505,7 @@ def scan_ipc(
 
     pylf = PyLazyFrame.new_from_ipc(
         sources=sources,
+        record_batch_statistics=_record_batch_statistics,
         scan_options=ScanOptions(
             row_index=(
                 (row_index_name, row_index_offset)

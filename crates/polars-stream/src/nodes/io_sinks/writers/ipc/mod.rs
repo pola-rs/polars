@@ -81,10 +81,7 @@ impl FileWriterStarter for IpcWriterStarter {
         let compression = self.options.compression.map(|x| x.into());
 
         // Note. Environment variable is unstable.
-        let write_statistics_flags = std::env::var("POLARS_IPC_RW_RECORD_BATCH_STATISTICS_FLAGS")
-            .as_deref()
-            .unwrap_or("")
-            == "1";
+        let write_statistics_flags = self.options.record_batch_statistics;
 
         if write_statistics_flags && config::verbose() {
             eprintln!(

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use arrow::io::ipc::read::FileMetadata;
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
+use polars_io::ipc::IpcScanOptions;
 use polars_plan::dsl::ScanSource;
 use polars_utils::relaxed_cell::RelaxedCell;
 
@@ -15,6 +16,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::Reader
 
 pub struct IpcReaderBuilder {
     pub first_metadata: Option<Arc<FileMetadata>>,
+    pub options: Arc<IpcScanOptions>, //kdn TODO review options type
     pub prefetch_limit: RelaxedCell<usize>,
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
@@ -24,6 +26,7 @@ impl std::fmt::Debug for IpcReaderBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("IpcBuilder")
             .field("first_metadata", &self.first_metadata)
+            .field("options", &self.options)
             .field("prefetch_semaphore", &self.prefetch_semaphore)
             .finish()
     }
@@ -77,6 +80,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
         use crate::nodes::io_sources::ipc::RecordBatchPrefetchSync;
 
         let scan_source = source;
+        let config = self.options.clone();
         let verbose = config::verbose();
 
         let metadata = if scan_source_idx == 0 {
@@ -94,6 +98,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
         let reader = IpcFileReader {
             scan_source,
             cloud_options,
+            config,
             metadata,
             byte_source_builder,
             record_batch_prefetch_sync: RecordBatchPrefetchSync {
