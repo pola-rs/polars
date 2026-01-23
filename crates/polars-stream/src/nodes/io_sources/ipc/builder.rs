@@ -16,7 +16,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::Reader
 
 pub struct IpcReaderBuilder {
     pub first_metadata: Option<Arc<FileMetadata>>,
-    pub options: Arc<IpcScanOptions>, //kdn TODO review options type
+    pub options: Arc<IpcScanOptions>,
     pub prefetch_limit: RelaxedCell<usize>,
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
