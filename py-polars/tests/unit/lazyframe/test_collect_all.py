@@ -22,9 +22,9 @@ def test_collect_all(df: pl.DataFrame, optimizations: pl.QueryOptFlags) -> None:
     assert cast("float", out[1].item()) == 12.0
 
 
-def test_collect_all_issue_26097() -> None:
+def test_collect_all_issue_26097(tmp_path: Path) -> None:
     data = pl.DataFrame({"A": [1]})
-    tmp_file = "/tmp/polars-bug-repr.parquet"
+    tmp_file = tmp_path / "polars-bug-repr.parquet"
     data.write_parquet(tmp_file)
 
     df = pl.scan_parquet(tmp_file).select([pl.col("A")])
