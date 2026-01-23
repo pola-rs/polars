@@ -3,13 +3,13 @@ use std::io::BufReader;
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 use polars::prelude::ArrowSchema;
 use polars::prelude::CloudScheme;
-use polars_io::cloud::CloudOptions;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::file::{EitherRustPythonFile, get_either_file};
+use crate::io::cloud_options::OptPyCloudOptions;
 
 #[cfg(feature = "ipc")]
 #[pyfunction]
@@ -32,10 +32,9 @@ pub fn read_ipc_schema(py: Python<'_>, py_f: Py<PyAny>) -> PyResult<Bound<'_, Py
 pub fn read_parquet_metadata(
     py: Python,
     py_f: Py<PyAny>,
-    storage_options: Option<Vec<(String, String)>>,
+    storage_options: OptPyCloudOptions,
     credential_provider: Option<Py<PyAny>>,
-    retries: usize,
-) -> PyResult<Bound<PyDict>> {
+) -> PyResult<Py<PyDict>> {
     use std::io::Cursor;
 
     use polars_error::feature_gated;
@@ -50,11 +49,9 @@ pub fn read_parquet_metadata(
             read_metadata(&mut Cursor::new(buf)).map_err(PyPolarsErr::from)?
         },
         PythonScanSourceInput::Path(p) => {
-            let cloud_options = parse_cloud_options(
+            let cloud_options = storage_options.extract_opt_cloud_options(
                 CloudScheme::from_path(p.as_str()),
-                storage_options,
                 credential_provider,
-                retries,
             )?;
 
             if p.has_scheme() {
@@ -88,7 +85,7 @@ pub fn read_parquet_metadata(
     for (key, value) in key_value_metadata.into_iter() {
         dict.set_item(key.as_str(), value.as_str())?;
     }
-    Ok(dict)
+    Ok(dict.unbind())
 }
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
@@ -122,37 +119,4 @@ pub fn write_clipboard_string(s: &str) -> PyResult<()> {
         .set_text(s)
         .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
     Ok(())
-}
-
-pub fn parse_cloud_options(
-    cloud_scheme: Option<CloudScheme>,
-    storage_options: Option<Vec<(String, String)>>,
-    credential_provider: Option<Py<PyAny>>,
-    retries: usize,
-) -> PyResult<Option<CloudOptions>> {
-    let result: Option<CloudOptions> = {
-        #[cfg(feature = "cloud")]
-        {
-            use polars_io::cloud::credential_provider::PlCredentialProvider;
-
-            use crate::prelude::parse_cloud_options;
-
-            let cloud_options =
-                parse_cloud_options(cloud_scheme, storage_options.unwrap_or_default())?;
-
-            Some(
-                cloud_options
-                    .with_max_retries(retries)
-                    .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_builder),
-                    ),
-            )
-        }
-
-        #[cfg(not(feature = "cloud"))]
-        {
-            None
-        }
-    };
-    Ok(result)
 }

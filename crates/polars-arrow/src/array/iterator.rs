@@ -1,3 +1,5 @@
+use polars_buffer::Buffer;
+
 use crate::bitmap::Bitmap;
 use crate::bitmap::iterator::TrueIdxIter;
 use crate::trusted_len::TrustedLen;
@@ -18,6 +20,18 @@ pub unsafe trait ArrayAccessor<'a>: private::Sealed {
     /// The index must be in-bounds in the array.
     unsafe fn value_unchecked(&'a self, index: usize) -> Self::Item;
     fn len(&self) -> usize;
+}
+
+unsafe impl<'a, T: 'a> ArrayAccessor<'a> for Buffer<T> {
+    type Item = &'a T;
+
+    unsafe fn value_unchecked(&'a self, index: usize) -> Self::Item {
+        unsafe { self.get_unchecked(index) }
+    }
+
+    fn len(&self) -> usize {
+        Buffer::len(self)
+    }
 }
 
 /// Iterator of values of an [`ArrayAccessor`].

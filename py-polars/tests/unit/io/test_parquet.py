@@ -3809,3 +3809,24 @@ def test_parquet_is_in_pushdown_large_26007() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_parquet_ordered_cat_26174() -> None:
+    df_pandas = pd.DataFrame(
+        {
+            "dummy": pd.Categorical(
+                ["alpha", "beta", "gamma", "alpha", "delta", "beta", "gamma"],
+                ordered=True,
+            )
+        }
+    )
+    df_pandas.to_parquet(r"test.parquet", index=False)
+
+    df = pl.scan_parquet(r"test.parquet").collect()
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {"dummy": ["alpha", "beta", "gamma", "alpha", "delta", "beta", "gamma"]},
+            schema={"dummy": pl.Categorical},
+        ),
+    )

@@ -120,6 +120,25 @@ macro_rules! impl_cat_series {
             }
 
             #[cfg(feature = "algorithm_group_by")]
+            unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+                if self.0.uses_lexical_ordering() {
+                    unimplemented!()
+                } else {
+                    self.0.physical().agg_arg_min(groups)
+                }
+            }
+
+            #[cfg(feature = "algorithm_group_by")]
+            unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+                if self.0.uses_lexical_ordering() {
+                    unimplemented!()
+                } else {
+                    self.0.physical().agg_arg_max(groups)
+                }
+            }
+
+
+            #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
                 // we cannot cast and dispatch as the inner type of the list would be incorrect
                 let list = self.0.physical().agg_list(groups);

@@ -902,6 +902,8 @@ pub enum GroupByMethod {
     Implode,
     Std(u8),
     Var(u8),
+    ArgMin,
+    ArgMax,
 }
 
 impl Display for GroupByMethod {
@@ -927,6 +929,8 @@ impl Display for GroupByMethod {
             Implode => "list",
             Std(_) => "std",
             Var(_) => "var",
+            ArgMin => "arg_min",
+            ArgMax => "arg_max",
         };
         write!(f, "{s}")
     }
@@ -955,6 +959,8 @@ pub fn fmt_group_by_column(name: &str, method: GroupByMethod) -> PlSmallStr {
         Quantile(quantile, _interpol) => format_pl_smallstr!("{name}_quantile_{quantile:.2}"),
         Std(_) => format_pl_smallstr!("{name}_agg_std"),
         Var(_) => format_pl_smallstr!("{name}_agg_var"),
+        ArgMin => format_pl_smallstr!("{name}_arg_min"),
+        ArgMax => format_pl_smallstr!("{name}_arg_max"),
     }
 }
 

@@ -1,13 +1,13 @@
 use std::ops::Range;
 
 use either::Either;
+use polars_buffer::Buffer;
 use polars_utils::float16::pf16;
 
 use super::{Array, Splitable};
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::Bitmap;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
-use crate::buffer::Buffer;
 use crate::datatypes::*;
 use crate::trusted_len::TrustedLen;
 use crate::types::{NativeType, days_ms, i256, months_days_ns};
@@ -41,7 +41,7 @@ use polars_utils::slice::SliceAble;
 /// ```
 /// use polars_arrow::array::PrimitiveArray;
 /// use polars_arrow::bitmap::Bitmap;
-/// use polars_arrow::buffer::Buffer;
+/// use polars_buffer::Buffer;
 ///
 /// let array = PrimitiveArray::from([Some(1i32), None, Some(10)]);
 /// assert_eq!(array.value(0), 1);
@@ -305,7 +305,7 @@ impl<T: NativeType> PrimitiveArray<T> {
         if let Some(slice) = self.values.get_mut_slice() {
             f(slice)
         } else {
-            let mut values = self.values.to_vec();
+            let mut values = self.values.as_slice().to_vec();
             f(&mut values);
             self.values = Buffer::from(values);
         }

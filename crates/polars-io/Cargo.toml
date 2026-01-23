@@ -9,6 +9,7 @@ repository = { workspace = true }
 description = "IO related logic for the Polars DataFrame library"
 
 [dependencies]
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true }
 polars-error = { workspace = true }
@@ -70,7 +71,13 @@ json = [
   "csv",
 ]
 scan_lines = []
-serde = ["dep:serde", "polars-core/serde-lazy", "polars-parquet/serde", "polars-utils/serde"]
+serde = [
+  "dep:serde",
+  "polars-buffer/serde",
+  "polars-core/serde-lazy",
+  "polars-parquet/serde",
+  "polars-utils/serde",
+]
 dsl-schema = ["dep:schemars", "polars-core/dsl-schema", "polars-parquet/dsl-schema", "polars-utils/dsl-schema"]
 # support for arrows ipc file parsing
 ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]

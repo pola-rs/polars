@@ -24,7 +24,7 @@ use polars_parquet::parquet::schema::Repetition;
 use polars_parquet::parquet::schema::types::{GroupConvertedType, ParquetType};
 use polars_parquet::parquet::types::int96_to_i64_ns;
 use polars_parquet::read::PageReader;
-use polars_utils::mmap::MemReader;
+use polars_utils::mmap::MemSlice;
 
 use super::*;
 
@@ -214,7 +214,7 @@ where
 }
 
 pub fn read_column(
-    mut reader: MemReader,
+    mut reader: Cursor<MemSlice>,
     row_group: usize,
     field_name: &str,
 ) -> ParquetResult<(Array, Option<Statistics>)> {
@@ -246,8 +246,8 @@ pub fn read_column(
 }
 
 fn get_column(path: &str, column: &str) -> ParquetResult<(Array, Option<Statistics>)> {
-    let file = File::open(path).unwrap();
-    let memreader = MemReader::from_reader(file).unwrap();
+    let file = std::fs::read(path).unwrap();
+    let memreader = Cursor::new(MemSlice::from_vec(file));
     read_column(memreader, 0, column)
 }
 

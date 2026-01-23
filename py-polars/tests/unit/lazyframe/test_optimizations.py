@@ -1,6 +1,6 @@
 import datetime as dt
+import io
 import itertools
-from io import BytesIO
 
 import pytest
 
@@ -418,7 +418,7 @@ def test_slice_pushdown_within_concat_24734() -> None:
 
 
 def test_is_between_pushdown_25499() -> None:
-    f = BytesIO()
+    f = io.BytesIO()
     pl.LazyFrame(
         {"a": [0, 1, 2, 3, 4]}, schema_overrides={"a": pl.UInt32}
     ).sink_parquet(f)
@@ -539,3 +539,27 @@ def test_lazy_groupby_maintain_order_after_asof_join_25973() -> None:
     )
 
     assert_frame_equal(result, expected)
+
+
+def test_fast_count_alias_18581() -> None:
+    f = io.BytesIO()
+    f.write(b"a,b,c\n1,2,3\n4,5,6")
+    f.flush()
+    f.seek(0)
+
+    df = pl.scan_csv(f).select(pl.len().alias("weird_name")).collect()
+
+    # Just check the value, let assert_frame_equal handle dtype matching
+    expected = pl.DataFrame(
+        {"weird_name": [2]}, schema={"weird_name": pl.get_index_type()}
+    )
+    assert_frame_equal(expected, df)
+
+
+def test_flatten_alias() -> None:
+    assert (
+        """len().alias("bar")"""
+        in pl.LazyFrame({"a": [1, 2]})
+        .select(pl.len().alias("foo").alias("bar"))
+        .explain()
+    )

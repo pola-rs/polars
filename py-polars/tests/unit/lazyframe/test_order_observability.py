@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 from typing import Any
 
 import pytest
@@ -503,36 +502,6 @@ def test_with_columns_sensitivity(
             assert_series_equal(df_opt[c], df_unopt[c], check_order=False)
 
 
-def test_partition_sink_sensitivity() -> None:
-    q = (
-        pl.LazyFrame({"a": [1, 2, 3]})
-        .unique(maintain_order=True)
-        .sink_csv(
-            pl.PartitionBy(".", file_path_provider=lambda _: io.BytesIO(), key="a"),
-            lazy=True,
-            maintain_order=False,
-        )
-    )
-
-    assert "UNIQUE[maintain_order: false" in q.explain()
-
-    q = (
-        pl.LazyFrame({"a": [1, 2, 3]})
-        .unique(maintain_order=True)
-        .sink_csv(
-            pl.PartitionBy(
-                ".",
-                file_path_provider=lambda _: io.BytesIO(),
-                key=pl.col.a.cum_sum(),
-            ),
-            lazy=True,
-            maintain_order=False,
-        )
-    )
-
-    assert "UNIQUE[maintain_order: true" in q.explain()
-
-
 def test_reverse_non_order_observe() -> None:
     q = (
         pl.LazyFrame({"x": [0, 1, 2, 3, 4]})
@@ -576,4 +545,17 @@ def test_reverse_non_order_observe() -> None:
                 "x_reverse": [4, 3, 2, 1, 0],
             }
         ),
+    )
+
+
+def test_order_optimize_cspe_26277() -> None:
+    df = pl.LazyFrame({"x": [1, 2]}).sort("x")
+
+    q1 = pl.concat([df, df])
+    q2 = pl.concat([q1, q1])
+    q3 = q2.sort("x").with_columns("x")
+
+    assert_frame_equal(
+        q3.collect(),
+        pl.DataFrame({"x": [1, 1, 1, 1, 2, 2, 2, 2]}),
     )

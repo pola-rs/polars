@@ -1,4 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+
 use crate::array::{
     Array, BooleanArray, FixedSizeListArray, ListArray, MutableBinaryViewArray, PrimitiveArray,
     StructArray, ViewType, new_null_array,

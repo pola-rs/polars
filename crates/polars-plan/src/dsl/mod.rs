@@ -289,7 +289,6 @@ impl Expr {
     pub fn arg_max(self) -> Self {
         self.map_unary(FunctionExpr::ArgMax)
     }
-
     /// Get the index values that would sort this expression.
     pub fn arg_sort(self, descending: bool, nulls_last: bool) -> Self {
         self.map_unary(FunctionExpr::ArgSort {

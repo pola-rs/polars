@@ -686,3 +686,12 @@ def test_schema_non_array(expr: pl.Expr) -> None:
         match="expected Array datatype for array operation, got: String",
     ):
         lf.select(expr).collect_schema()
+
+
+def test_array_get_broadcast_26217() -> None:
+    df = pl.DataFrame({"idx": [0, 1, 2, 1, 2, 0, 1]})
+    out = df.select(pl.lit([42, 13, 37], pl.Array(pl.UInt8, 3)).arr.get(pl.col.idx))
+    expected = pl.DataFrame(
+        {"literal": [42, 13, 37, 13, 37, 42, 13]}, schema={"literal": pl.UInt8}
+    )
+    assert_frame_equal(out, expected)

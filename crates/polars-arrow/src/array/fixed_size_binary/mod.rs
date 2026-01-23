@@ -1,6 +1,7 @@
+use polars_buffer::Buffer;
+
 use super::{Array, Splitable};
 use crate::bitmap::Bitmap;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 
 mod builder;

@@ -1,6 +1,8 @@
 # User-defined Python functions
 
-<!-- (TODO) add note mentioning the person might be interested in looking at plugins. -->
+!!! note
+
+    Before writing custom Python functions, consider using Polars plugins which offer better performance and integration. Check out the [expression plugins](../plugins/expr_plugins.md) documentation for custom expressions and [I/O plugins](../plugins/io_plugins.md) for custom data sources.
 
 Polars expressions are quite powerful and flexible, so there is much less need for custom Python
 functions compared to other libraries. Still, you may need to pass an expression's state to a third

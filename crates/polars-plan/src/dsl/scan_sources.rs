@@ -2,7 +2,7 @@ use std::fmt::{Debug, Formatter};
 use std::fs::File;
 use std::sync::Arc;
 
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_core::error::{PolarsResult, feature_gated};
 use polars_error::polars_err;
 use polars_io::cloud::CloudOptions;
@@ -14,8 +14,21 @@ use polars_io::{expand_paths, expand_paths_hive, expanded_from_single_directory}
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::UnifiedScanArgs;
+
+#[cfg(feature = "serde")]
+fn serialize_paths<S: Serializer>(paths: &Buffer<PlRefPath>, s: S) -> Result<S::Ok, S::Error> {
+    paths.as_slice().serialize(s)
+}
+
+#[cfg(feature = "serde")]
+fn deserialize_paths<'de, D: Deserializer<'de>>(d: D) -> Result<Buffer<PlRefPath>, D::Error> {
+    let v: Vec<PlRefPath> = Deserialize::deserialize(d)?;
+    Ok(Buffer::from(v))
+}
 
 /// Set of sources to scan from
 ///
@@ -25,8 +38,15 @@ use super::UnifiedScanArgs;
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone)]
 pub enum ScanSources {
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "serialize_paths",
+            deserialize_with = "deserialize_paths"
+        )
+    )]
+    #[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<PlRefPath>"))]
     Paths(Buffer<PlRefPath>),
-
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Files(Arc<[File]>),
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]

@@ -1,7 +1,7 @@
 use arrow::array::builder::StaticArrayBuilder;
 use arrow::array::{BinaryViewArrayGenericBuilder, PrimitiveArray, View};
 use arrow::bitmap::MutableBitmap;
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_utils::vec::PushUnchecked;
 
 use super::*;

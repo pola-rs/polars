@@ -25,7 +25,7 @@ pub struct PlPath {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-// TODO: Derive after DSL unfreeze
+// TODO: Derive for next release.
 // #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 // #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 /// Reference-counted [`PlPath`].

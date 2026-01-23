@@ -83,6 +83,15 @@ impl private::PrivateSeries for SeriesWrap<TimeChunked> {
     unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         self.0.physical().agg_max(groups).into_time().into_series()
     }
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_max(groups)
+    }
 
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {

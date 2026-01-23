@@ -465,11 +465,6 @@ impl ChunkCast for ListChunked {
             Array(child_type, width) => {
                 let physical_type = dtype.to_physical();
 
-                // TODO @ cat-rework: can we implement this now?
-                // TODO!: properly implement this recursively.
-                #[cfg(feature = "dtype-categorical")]
-                polars_ensure!(!matches!(&**child_type, Categorical(_, _)), InvalidOperation: "array of categorical is not yet supported");
-
                 // cast to the physical type to avoid logical chunks.
                 let chunks = cast_chunks(ca.chunks(), &physical_type, options)?;
                 // SAFETY: we just cast so the dtype matches.

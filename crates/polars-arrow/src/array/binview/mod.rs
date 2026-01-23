@@ -15,12 +15,12 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
+use polars_buffer::Buffer;
 use polars_error::*;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::array::Array;
 use crate::bitmap::Bitmap;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 
 mod private {
@@ -268,7 +268,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     pub fn into_views(self) -> Vec<View> {
-        self.views.make_mut()
+        self.views.to_vec()
     }
 
     pub fn into_inner(
@@ -301,7 +301,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         let arr = self.clone();
         let (views, buffers, validity, total_bytes_len, total_buffer_len) = arr.into_inner();
 
-        let mut views = views.make_mut();
+        let mut views = views.to_vec();
         for v in views.iter_mut() {
             let str_slice = T::from_bytes_unchecked(v.get_slice_unchecked(&buffers));
             *v = update_view(*v, str_slice);
@@ -324,7 +324,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         if let Some(views) = self.views.get_mut_slice() {
             f(views)
         } else {
-            let mut views = self.views.to_vec();
+            let mut views = self.views.as_slice().to_vec();
             f(&mut views);
             self.views = Buffer::from(views);
         }
@@ -554,7 +554,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     pub fn make_mut(self) -> MutableBinaryViewArray<T> {
-        let views = self.views.make_mut();
+        let views = self.views.to_vec();
         let completed_buffers = self.buffers.to_vec();
         let validity = self.validity.map(|bitmap| bitmap.make_mut());
 

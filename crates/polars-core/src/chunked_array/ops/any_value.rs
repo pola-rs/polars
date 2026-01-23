@@ -4,6 +4,8 @@ use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 use crate::utils::index_to_chunked_index;
 
+/// # Safety
+/// `idx` MUST be in-bounds for `arr` and `dtype` has to match the data stored in `arr`.
 #[inline]
 #[allow(unused_variables)]
 pub(crate) unsafe fn arr_to_any_value<'a>(
@@ -241,6 +243,19 @@ impl ChunkAnyValue for BinaryOffsetChunked {
 
     fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
+    }
+}
+
+impl ChunkAnyValueBypassValidity for BinaryOffsetChunked {
+    #[inline]
+    unsafe fn get_any_value_bypass_validity(&self, index: usize) -> AnyValue<'_> {
+        debug_assert!(index < self.len());
+        let (chunk_idx, idx) = self.index_to_chunked_index(index);
+        debug_assert!(chunk_idx < self.chunks.len());
+        let arr = &**self.chunks.get_unchecked(chunk_idx);
+        let arr = &*(arr as *const dyn Array as *const LargeBinaryArray);
+        let v = arr.value_unchecked(idx);
+        AnyValue::Binary(v)
     }
 }
 

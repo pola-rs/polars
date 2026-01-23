@@ -763,6 +763,22 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
+    pub unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Self {
+        self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_arg_min(g) })
+    }
+
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
+    pub unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Self {
+        self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_arg_max(g) })
+    }
+
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_sum(&self, groups: &GroupsType) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_sum(groups) }.into()

@@ -654,7 +654,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 FunctionIR::FastCount {
                     sources,
                     scan_type,
-                    cloud_options,
                     alias,
                 } => {
                     let sources = sources
@@ -667,7 +666,10 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                         .collect::<Vec<_>>()
                         .into_py_any(py)?;
 
-                    let scan_type = scan_type_to_pyobject(py, scan_type, cloud_options)?;
+                    // FastCount does not support cloud options.
+                    let cloud_options = None;
+
+                    let scan_type = scan_type_to_pyobject(py, scan_type, &cloud_options)?;
 
                     let alias = alias
                         .as_ref()

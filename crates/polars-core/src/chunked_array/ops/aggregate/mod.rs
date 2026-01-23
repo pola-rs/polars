@@ -16,7 +16,7 @@ pub use var::*;
 use super::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
-use crate::chunked_array::ChunkedArray;
+use crate::chunked_array::{ChunkedArray, arg_max_binary, arg_min_binary};
 use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -589,6 +589,29 @@ impl BinaryChunked {
                 .downcast_iter()
                 .filter_map(MinMaxKernel::min_ignore_nan_kernel)
                 .reduce(MinMax::min_ignore_nan),
+        }
+    }
+    pub fn arg_min_binary(&self) -> Option<usize> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
+
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => self.first_non_null(),
+            IsSorted::Descending => self.last_non_null(),
+            IsSorted::Not => arg_min_binary(self),
+        }
+    }
+
+    pub fn arg_max_binary(&self) -> Option<usize> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
+
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => self.last_non_null(),
+            IsSorted::Descending => self.first_non_null(),
+            IsSorted::Not => arg_max_binary(self),
         }
     }
 }

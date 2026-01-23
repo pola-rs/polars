@@ -6,8 +6,8 @@ use std::mem;
 
 use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::BitmapBuilder;
-use arrow::buffer::Buffer;
 use arrow::datatypes::ExtensionType;
+use polars_buffer::Buffer;
 use polars_extension::PolarsExtension;
 use polars_utils::format_pl_smallstr;
 use polars_utils::relaxed_cell::RelaxedCell;

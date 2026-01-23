@@ -100,8 +100,8 @@ where
 #[cfg(test)]
 mod test {
     use arrow::array::{Array, Int32Array};
-    use arrow::buffer::Buffer;
     use arrow::datatypes::ArrowDataType;
+    use polars_buffer::Buffer;
     use polars_utils::min_max::MaxIgnoreNan;
 
     use super::*;

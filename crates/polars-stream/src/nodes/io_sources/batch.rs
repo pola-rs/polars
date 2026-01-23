@@ -180,6 +180,7 @@ impl FileReader for BatchFnReader {
             predicate: None,
             cast_columns_policy: _,
             num_pipelines: _,
+            disable_morsel_split: _,
             callbacks:
                 FileReaderCallbacks {
                     mut file_schema_tx,

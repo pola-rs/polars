@@ -7,6 +7,7 @@ mod general;
 mod hash_join;
 #[cfg(feature = "iejoin")]
 mod iejoin;
+pub mod merge_join;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 

@@ -1,8 +1,8 @@
 use std::io::BufReader;
 use std::sync::LazyLock;
 
-use arrow::buffer::Buffer;
 use either::Either;
+use polars_buffer::Buffer;
 use polars_io::RowIndex;
 use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
 #[cfg(feature = "cloud")]
@@ -393,7 +393,7 @@ pub fn csv_file_info(
                     (_, true) => Ok((schema_a, row_estimate_a)),
                     _ => {
                         schema_a.to_supertype(&schema_b)?;
-                        Ok((schema_a, row_estimate_a + row_estimate_b))
+                        Ok((schema_a, row_estimate_a.saturating_add(row_estimate_b)))
                     },
                 }
             },

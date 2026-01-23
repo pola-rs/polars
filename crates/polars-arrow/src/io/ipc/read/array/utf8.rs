@@ -1,11 +1,11 @@
 use std::io::{Read, Seek};
 
+use polars_buffer::Buffer;
 use polars_error::polars_err;
 
 use super::super::read_basic::*;
 use super::*;
 use crate::array::Utf8Array;
-use crate::buffer::Buffer;
 use crate::offset::Offset;
 
 #[allow(clippy::too_many_arguments)]

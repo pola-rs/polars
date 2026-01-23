@@ -115,6 +115,22 @@ pub(crate) mod private {
         unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "algorithm_group_by")]
+        unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), &IDX_DTYPE)
+        }
+
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "algorithm_group_by")]
+        unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), &IDX_DTYPE)
+        }
+
         /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
         /// first cast to `Int64` to prevent overflow issues.
         #[cfg(feature = "algorithm_group_by")]

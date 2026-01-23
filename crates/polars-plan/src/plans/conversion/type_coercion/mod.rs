@@ -476,7 +476,7 @@ impl OptimizationRule for TypeCoercionRule {
                     expr_arena.add(AExpr::Cast {
                         expr: input_expr.node(),
                         dtype: DataType::Float64,
-                        // FIXME: Non-strict to match legacy execution behavior, but should be strict.
+                        // TODO: Non-strict to match legacy execution behavior, but should be strict.
                         options: CastOptions::NonStrict,
                     }),
                     expr_arena,

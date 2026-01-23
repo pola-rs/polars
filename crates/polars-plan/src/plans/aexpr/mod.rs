@@ -175,7 +175,6 @@ impl From<IRAggExpr> for GroupByMethod {
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
             AggGroups(_) => GroupByMethod::Groups,
-
             // Multi-input aggregations.
             Quantile { .. } | MinBy { .. } | MaxBy { .. } => unreachable!(),
         }

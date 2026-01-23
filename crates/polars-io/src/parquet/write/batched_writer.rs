@@ -80,8 +80,8 @@ impl<W: Write> BatchedWriter<W> {
         );
         // Lock before looping so that order is maintained under contention.
         let mut writer = self.writer.lock().unwrap();
-        for group in row_group_iter {
-            writer.write(group?)?;
+        for (num_rows, group) in row_group_iter {
+            writer.write(num_rows as u64, group?)?;
         }
         Ok(())
     }
@@ -91,14 +91,19 @@ impl<W: Write> BatchedWriter<W> {
         writer.parquet_schema()
     }
 
-    pub fn write_row_group(&mut self, rg: &[Vec<CompressedPage>]) -> PolarsResult<()> {
+    /// Note: `num_rows` can be passed as `u64::MAX` to infer `num_rows` from the encoded data.
+    pub fn write_row_group(
+        &mut self,
+        num_rows: u64,
+        rg: &[Vec<CompressedPage>],
+    ) -> PolarsResult<()> {
         let writer = self.writer.get_mut().unwrap();
         let rg = DynIter::new(rg.iter().map(|col_pages| {
             Ok(DynStreamingIterator::new(
                 fallible_streaming_iterator::convert(col_pages.iter().map(PolarsResult::Ok)),
             ))
         }));
-        writer.write(rg)?;
+        writer.write(num_rows, rg)?;
         Ok(())
     }
 
@@ -113,7 +118,7 @@ impl<W: Write> BatchedWriter<W> {
         // Lock before looping so that order is maintained.
         let mut writer = self.writer.lock().unwrap();
         for group in rgs {
-            writer.write(group)?;
+            writer.write(u64::MAX, group)?;
         }
         Ok(())
     }
@@ -150,11 +155,16 @@ fn prepare_rg_iter<'a>(
     column_options: &'a [ColumnWriteOptions],
     options: WriteOptions,
     parallel: bool,
-) -> impl Iterator<Item = PolarsResult<RowGroupIterColumns<'static, PolarsError>>> + 'a {
+) -> impl Iterator<
+    Item = (
+        usize,
+        PolarsResult<RowGroupIterColumns<'static, PolarsError>>,
+    ),
+> + 'a {
     let rb_iter = df.iter_chunks(CompatLevel::newest(), false);
     rb_iter.filter_map(move |batch| match batch.len() {
         0 => None,
-        _ => {
+        num_rows => {
             let row_group = create_serializer(
                 batch,
                 parquet_schema.fields(),
@@ -163,7 +173,7 @@ fn prepare_rg_iter<'a>(
                 parallel,
             );
 
-            Some(row_group)
+            Some((num_rows, row_group))
         },
     })
 }

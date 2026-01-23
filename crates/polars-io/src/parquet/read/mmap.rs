@@ -1,3 +1,5 @@
+use std::io::Cursor;
+
 use arrow::array::Array;
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::Field;
@@ -5,7 +7,7 @@ use polars_error::PolarsResult;
 use polars_parquet::read::{
     BasicDecompressor, ColumnChunkMetadata, Filter, PageReader, column_iter_to_arrays,
 };
-use polars_utils::mmap::{MemReader, MemSlice};
+use polars_utils::mmap::MemSlice;
 
 /// Store columns data in two scenarios:
 /// 1. a local memory mapped file
@@ -60,7 +62,7 @@ pub fn to_deserializer(
             // Advise fetching the data for the column chunk
             chunk.prefetch();
 
-            let pages = PageReader::new(MemReader::new(chunk), column_meta, vec![], usize::MAX);
+            let pages = PageReader::new(Cursor::new(chunk), column_meta, vec![], usize::MAX);
             (
                 BasicDecompressor::new(pages, vec![]),
                 &column_meta.descriptor().descriptor.primitive_type,

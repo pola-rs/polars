@@ -1,8 +1,8 @@
 use arrow::array::*;
-use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::Offset;
 use arrow::types::NativeType;
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_utils::vec::PushUnchecked;
 

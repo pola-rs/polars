@@ -1,6 +1,5 @@
 use std::ffi::c_void;
 use std::fs::File;
-use std::io;
 use std::mem::ManuallyDrop;
 use std::sync::LazyLock;
 
@@ -201,124 +200,6 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 
 use crate::mem::PAGE_SIZE;
 
-/// A cursor over a [`MemSlice`].
-#[derive(Debug, Clone)]
-pub struct MemReader {
-    data: MemSlice,
-    position: usize,
-}
-
-impl MemReader {
-    pub fn new(data: MemSlice) -> Self {
-        Self { data, position: 0 }
-    }
-
-    #[inline(always)]
-    pub fn remaining_len(&self) -> usize {
-        self.data.len() - self.position
-    }
-
-    #[inline(always)]
-    pub fn total_len(&self) -> usize {
-        self.data.len()
-    }
-
-    #[inline(always)]
-    pub fn position(&self) -> usize {
-        self.position
-    }
-
-    /// Construct a `MemSlice` from an existing `Vec<u8>`. This is zero-copy.
-    #[inline(always)]
-    pub fn from_vec(v: Vec<u8>) -> Self {
-        Self::new(MemSlice::from_vec(v))
-    }
-
-    /// Construct a `MemSlice` from [`bytes::Bytes`]. This is zero-copy.
-    #[inline(always)]
-    pub fn from_bytes(bytes: bytes::Bytes) -> Self {
-        Self::new(MemSlice::from_bytes(bytes))
-    }
-
-    // Construct a `MemSlice` that simply wraps around a `&[u8]`. The caller must ensure the
-    /// slice outlives the returned `MemSlice`.
-    #[inline]
-    pub fn from_slice(slice: &'static [u8]) -> Self {
-        Self::new(MemSlice::from_static(slice))
-    }
-
-    #[inline(always)]
-    pub fn from_reader<R: io::Read>(mut reader: R) -> io::Result<Self> {
-        let mut vec = Vec::new();
-        reader.read_to_end(&mut vec)?;
-        Ok(Self::from_vec(vec))
-    }
-
-    #[inline(always)]
-    pub fn read_slice(&mut self, n: usize) -> MemSlice {
-        let start = self.position;
-        let end = usize::min(self.position + n, self.data.len());
-        self.position = end;
-        self.data.slice(start..end)
-    }
-}
-
-impl From<MemSlice> for MemReader {
-    fn from(data: MemSlice) -> Self {
-        Self { data, position: 0 }
-    }
-}
-
-impl io::Read for MemReader {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let n = usize::min(buf.len(), self.remaining_len());
-        buf[..n].copy_from_slice(&self.data[self.position..self.position + n]);
-        self.position += n;
-        Ok(n)
-    }
-}
-
-/// Native implementation is more efficient than wrapping it in [`io::BufReader`]. The memory is
-/// already available as slice, duplicating the memory into a local buffer only adds an additional
-/// copy step. The number of total page-faults if the memory is backed by mmap will still be the
-/// same.
-impl io::BufRead for MemReader {
-    fn fill_buf(&mut self) -> io::Result<&[u8]> {
-        Ok(&self.data[self.position..])
-    }
-
-    fn consume(&mut self, amount: usize) {
-        assert!(amount <= self.remaining_len());
-        self.position += amount;
-    }
-}
-
-impl io::Seek for MemReader {
-    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
-        let position = match pos {
-            io::SeekFrom::Start(position) => usize::min(position as usize, self.total_len()),
-            io::SeekFrom::End(offset) => {
-                let Some(position) = self.total_len().checked_add_signed(offset as isize) else {
-                    return Err(io::Error::other("Seek before to before buffer"));
-                };
-
-                position
-            },
-            io::SeekFrom::Current(offset) => {
-                let Some(position) = self.position.checked_add_signed(offset as isize) else {
-                    return Err(io::Error::other("Seek before to before buffer"));
-                };
-
-                position
-            },
-        };
-
-        self.position = position;
-
-        Ok(position as u64)
-    }
-}
-
 pub static UNMAP_POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
     let thread_name = std::env::var("POLARS_THREAD_NAME").unwrap_or_else(|_| "polars".to_string());
     ThreadPoolBuilder::new()
@@ -414,7 +295,7 @@ impl MMapSemaphore {
 
         #[cfg(target_family = "unix")]
         {
-            // FIXME: We aren't handling the case where the file is already open in write-mode here.
+            // TODO: We aren't handling the case where the file is already open in write-mode here.
 
             use std::os::unix::fs::MetadataExt;
             let metadata = file.metadata()?;

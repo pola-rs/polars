@@ -85,6 +85,16 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_max(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         self.0

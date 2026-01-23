@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from contextlib import AbstractContextManager as ContextManager
 
+    from polars._typing import StorageOptionsDict
+
 
 def parse_columns_arg(
     columns: Sequence[str] | Sequence[int] | str | int | None,
@@ -87,7 +89,7 @@ def prepare_file_arg(
     *,
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
-    storage_options: dict[str, Any] | None = ...,
+    storage_options: StorageOptionsDict | None = ...,
 ) -> ContextManager[str | BytesIO]: ...
 
 
@@ -98,7 +100,7 @@ def prepare_file_arg(
     *,
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
-    storage_options: dict[str, Any] | None = ...,
+    storage_options: StorageOptionsDict | None = ...,
 ) -> ContextManager[str | BytesIO]: ...
 
 
@@ -109,7 +111,7 @@ def prepare_file_arg(
     *,
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
-    storage_options: dict[str, Any] | None = ...,
+    storage_options: StorageOptionsDict | None = ...,
 ) -> ContextManager[str | list[str] | BytesIO | list[BytesIO]]: ...
 
 
@@ -119,7 +121,7 @@ def prepare_file_arg(
     *,
     use_pyarrow: bool = False,
     raise_if_empty: bool = True,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
 ) -> ContextManager[str | list[str] | BytesIO | list[BytesIO]]:
     """
     Prepare file argument.

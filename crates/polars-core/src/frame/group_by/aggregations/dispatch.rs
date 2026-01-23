@@ -150,6 +150,140 @@ impl Series {
     }
 
     #[doc(hidden)]
+    pub unsafe fn agg_arg_first(&self, groups: &GroupsType) -> Series {
+        let out: IdxCa = match groups {
+            GroupsType::Idx(groups) => groups
+                .iter()
+                .map(|(_, idx)| {
+                    if idx.is_empty() {
+                        None
+                    } else {
+                        Some(0 as IdxSize)
+                    }
+                })
+                .collect_ca(PlSmallStr::EMPTY),
+
+            GroupsType::Slice { groups, .. } => groups
+                .iter()
+                .map(|&[_first, len]| if len == 0 { None } else { Some(0 as IdxSize) })
+                .collect_ca(PlSmallStr::EMPTY),
+        };
+        out.into_series()
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn agg_arg_first_non_null(&self, groups: &GroupsType) -> Series {
+        if !self.has_nulls() {
+            return self.agg_arg_first(groups);
+        }
+
+        let validity = self.rechunk_validity().unwrap();
+
+        let out: IdxCa = match groups {
+            GroupsType::Idx(groups) => groups
+                .iter()
+                .map(|(_, idx)| {
+                    let mut pos: Option<IdxSize> = None;
+                    for (p, &ii) in idx.iter().enumerate() {
+                        if validity.get_bit_unchecked(ii as usize) {
+                            pos = Some(p as IdxSize);
+                            break;
+                        }
+                    }
+                    pos
+                })
+                .collect_ca(PlSmallStr::EMPTY),
+
+            GroupsType::Slice { groups, .. } => {
+                let mask = BitMask::from_bitmap(&validity);
+                groups
+                    .iter()
+                    .map(|&[first, len]| {
+                        if len == 0 {
+                            return None;
+                        }
+                        let v = mask.sliced_unchecked(first as usize, len as usize);
+                        let lz = v.leading_zeros() as IdxSize;
+                        if lz == len { None } else { Some(lz) }
+                    })
+                    .collect_ca(PlSmallStr::EMPTY)
+            },
+        };
+
+        out.into_series()
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn agg_arg_last(&self, groups: &GroupsType) -> Series {
+        let out: IdxCa = match groups {
+            GroupsType::Idx(groups) => groups
+                .all()
+                .iter()
+                .map(|idx| {
+                    if idx.is_empty() {
+                        None
+                    } else {
+                        Some((idx.len() - 1) as IdxSize)
+                    }
+                })
+                .collect_ca(PlSmallStr::EMPTY),
+
+            GroupsType::Slice { groups, .. } => groups
+                .iter()
+                .map(|&[_first, len]| {
+                    if len == 0 {
+                        None
+                    } else {
+                        Some((len - 1) as IdxSize)
+                    }
+                })
+                .collect_ca(PlSmallStr::EMPTY),
+        };
+
+        out.into_series()
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn agg_arg_last_non_null(&self, groups: &GroupsType) -> Series {
+        if !self.has_nulls() {
+            return self.agg_arg_last(groups);
+        }
+
+        let validity = self.rechunk_validity().unwrap();
+
+        let out: IdxCa = match groups {
+            GroupsType::Idx(groups) => groups
+                .iter()
+                .map(|(_, idx)| {
+                    for (p, &ii) in idx.iter().enumerate().rev() {
+                        if validity.get_bit_unchecked(ii as usize) {
+                            return Some(p as IdxSize);
+                        }
+                    }
+                    None
+                })
+                .collect_ca(PlSmallStr::EMPTY),
+
+            GroupsType::Slice { groups, .. } => {
+                let mask = BitMask::from_bitmap(&validity);
+                groups
+                    .iter()
+                    .map(|&[first, len]| {
+                        if len == 0 {
+                            return None;
+                        }
+                        let v = mask.sliced_unchecked(first as usize, len as usize);
+                        let tz = v.trailing_zeros() as IdxSize;
+                        if tz == len { None } else { Some(len - tz - 1) }
+                    })
+                    .collect_ca(PlSmallStr::EMPTY)
+            },
+        };
+
+        out.into_series()
+    }
+
+    #[doc(hidden)]
     pub unsafe fn agg_n_unique(&self, groups: &GroupsType) -> Series {
         let values = self.to_physical_repr();
         let dtype = values.dtype();

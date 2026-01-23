@@ -308,6 +308,8 @@ fn try_lower_elementwise_scalar_agg_expr(
             ..
         } => Some(replace_agg_uniq!(expr)),
 
+        AExpr::AnonymousStreamingAgg { .. } => Some(replace_agg_uniq!(expr)),
+
         node @ AExpr::Function { input, options, .. }
         | node @ AExpr::AnonymousFunction { input, options, .. }
             if options.is_elementwise() && !is_fake_elementwise_function(node) =>
@@ -336,9 +338,7 @@ fn try_lower_elementwise_scalar_agg_expr(
             Some(expr_arena.add(new_node))
         },
 
-        AExpr::Function { .. }
-        | AExpr::AnonymousFunction { .. }
-        | AExpr::AnonymousStreamingAgg { .. } => None,
+        AExpr::Function { .. } | AExpr::AnonymousFunction { .. } => None,
 
         AExpr::Cast {
             expr,

@@ -927,9 +927,17 @@ impl TryFrom<(&ArrowField, Vec<ArrayRef>)> for Series {
 
     fn try_from(field_arr: (&ArrowField, Vec<ArrayRef>)) -> PolarsResult<Self> {
         let (field, chunks) = field_arr;
-
+        let arrow_dt = field.dtype();
         let dtype = check_types(&chunks)?;
-        polars_ensure!(dtype == *field.dtype(), ComputeError: "Arrow Field dtype does not match the ArrayRef dtypes");
+        let compatible = match (&dtype, arrow_dt) {
+            // See #26174, we don't care about dictionary ordering.
+            (
+                ArrowDataType::Dictionary(int0, inner0, _ord0),
+                ArrowDataType::Dictionary(int1, inner1, _ord1),
+            ) => (int0, inner0) == (int1, inner1),
+            (l, r) => l == r,
+        };
+        polars_ensure!(compatible, ComputeError: "Arrow Field dtype does not match the ArrayRef dtypes");
 
         // SAFETY:
         // dtype is checked

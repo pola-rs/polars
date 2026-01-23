@@ -149,7 +149,6 @@ def test_multiscan_projection(
             new_projection,
             new_projection[::-1],
         ]:
-            print(projection)
             assert_frame_equal(
                 scan(multiscan_path, **args)
                 .collect(engine="streaming")

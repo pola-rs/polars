@@ -4,8 +4,8 @@ use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::Arc;
 
+pub mod file_provider;
 pub mod sink;
-pub mod sink2;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
@@ -13,7 +13,7 @@ use polars_io::csv::write::CsvWriterOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcWriterOptions;
 #[cfg(feature = "json")]
-use polars_io::json::JsonWriterOptions;
+use polars_io::ndjson::NDJsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::write::ParquetWriteOptions;
 #[cfg(feature = "iejoin")]
@@ -29,12 +29,10 @@ use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 pub use sink::{
-    CallbackSinkType, FileSinkOptions, PartitionTargetCallback, PartitionTargetCallbackResult,
-    PartitionTargetContext, PartitionTargetContextKey, PartitionVariantIR, PartitionedSinkOptions,
-    PartitionedSinkOptionsIR, SinkFinishCallback, SinkOptions, SinkTarget, SinkType, SinkTypeIR,
-    SortColumn, SortColumnIR,
+    CallbackSinkType, FileSinkOptions, PartitionStrategy, PartitionStrategyIR,
+    PartitionedSinkOptions, PartitionedSinkOptionsIR, SinkDestination, SinkTarget, SinkType,
+    SinkTypeIR, UnifiedSinkArgs,
 };
-pub use sink2::{PartitionStrategy, PartitionStrategyIR, SinkDestination, UnifiedSinkArgs};
 use strum_macros::IntoStaticStr;
 
 use super::Expr;
@@ -351,7 +349,7 @@ pub enum FileWriteFormat {
     #[cfg(feature = "csv")]
     Csv(CsvWriterOptions),
     #[cfg(feature = "json")]
-    NDJson(JsonWriterOptions),
+    NDJson(NDJsonWriterOptions),
 }
 
 impl FileWriteFormat {
