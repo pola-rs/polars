@@ -72,8 +72,9 @@ pub fn create_file_writer_starter(
             }) as _
         },
         #[cfg(feature = "json")]
-        FileWriteFormat::NDJson(polars_io::json::JsonWriterOptions {}) => Arc::new(
+        FileWriteFormat::NDJson(options) => Arc::new(
             crate::nodes::io_sinks::writers::ndjson::NDJsonWriterStarter {
+                options: *options,
                 schema: file_schema.clone(),
                 initialized_state: Default::default(),
             },

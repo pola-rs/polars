@@ -1,6 +1,7 @@
 use polars_core::config;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
+use polars_io::ndjson::NDJsonWriterOptions;
 use polars_io::pl_async;
 use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
@@ -21,6 +22,7 @@ mod io_writer;
 mod morsel_serializer;
 
 pub struct NDJsonWriterStarter {
+    pub options: NDJsonWriterOptions,
     pub schema: SchemaRef,
     pub initialized_state: std::sync::Mutex<Option<InitializedState>>,
 }
@@ -107,6 +109,7 @@ impl FileWriterStarter for NDJsonWriterStarter {
                     file,
                     filled_serializer_rx,
                     reuse_serializer_tx,
+                    options: self.options,
                 }
                 .run(),
             ),

@@ -13,7 +13,7 @@ use polars_io::csv::write::CsvWriterOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcWriterOptions;
 #[cfg(feature = "json")]
-use polars_io::json::JsonWriterOptions;
+use polars_io::ndjson::NDJsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::write::ParquetWriteOptions;
 #[cfg(feature = "iejoin")]
@@ -349,7 +349,7 @@ pub enum FileWriteFormat {
     #[cfg(feature = "csv")]
     Csv(CsvWriterOptions),
     #[cfg(feature = "json")]
-    NDJson(JsonWriterOptions),
+    NDJson(NDJsonWriterOptions),
 }
 
 impl FileWriteFormat {
