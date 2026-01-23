@@ -109,6 +109,12 @@ impl Field {
         self
     }
 
+    // Returns this `Field`, with a different datatype.
+    pub fn with_dtype(mut self, dtype: DataType) -> Self {
+        self.dtype = dtype;
+        self
+    }
+
     /// Converts the `Field` to an `arrow::datatypes::Field`.
     ///
     /// # Example

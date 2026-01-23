@@ -143,7 +143,7 @@ def test_cte_aliasing() -> None:
               test1 AS (SELECT * FROM df1),
               test2 AS (SELECT * FROM df2),
               test3 AS (
-                SELECT ROW_NUMBER() OVER (ORDER BY colx) AS n, t1.colx, t2.colz
+                SELECT ROW_NUMBER() OVER (ORDER BY t1.colx) AS n, t1.colx, t2.colz
                 FROM test1 t1
                 LEFT JOIN test2 t2 ON t1.colx = t2.colx
             )

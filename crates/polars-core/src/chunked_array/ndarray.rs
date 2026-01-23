@@ -86,7 +86,7 @@ impl DataFrame {
     /// let a = UInt32Chunked::new("a".into(), &[1, 2, 3]).into_column();
     /// let b = Float64Chunked::new("b".into(), &[10., 8., 6.]).into_column();
     ///
-    /// let df = DataFrame::new(vec![a, b]).unwrap();
+    /// let df = DataFrame::new_infer_height(vec![a, b]).unwrap();
     /// let ndarray = df.to_ndarray::<Float64Type>(IndexOrder::Fortran).unwrap();
     /// println!("{:?}", ndarray);
     /// ```
@@ -105,7 +105,7 @@ impl DataFrame {
         let mut membuf = Vec::with_capacity(shape.0 * shape.1);
         let ptr = membuf.as_ptr() as usize;
 
-        let columns = self.get_columns();
+        let columns = self.columns();
         POOL.install(|| {
             columns.par_iter().enumerate().try_for_each(|(col_idx, s)| {
                 let s = s.as_materialized_series().cast(&N::get_static_dtype())?;

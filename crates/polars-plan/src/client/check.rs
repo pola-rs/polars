@@ -10,7 +10,7 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan, allow_local_scans: bool) -> P
     }
 
     // Check that the plan ends with a sink.
-    if !matches!(dsl, DslPlan::Sink { .. }) {
+    if !matches!(dsl, DslPlan::Sink { .. } | DslPlan::SinkMultiple { .. }) {
         return ineligible_error("does not contain a sink");
     }
 
@@ -22,11 +22,11 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan, allow_local_scans: bool) -> P
                 sources, scan_type, ..
             } => {
                 match sources {
-                    ScanSources::Paths(addrs) => {
+                    ScanSources::Paths(paths) => {
                         if !allow_local_scans
-                            && addrs
+                            && paths
                                 .iter()
-                                .any(|p| !p.is_cloud_url() && p.to_str() != POLARS_PLACEHOLDER)
+                                .any(|p| !p.has_scheme() && p.as_str() != POLARS_PLACEHOLDER)
                         {
                             return ineligible_error("contains scan of local file system");
                         }
@@ -56,9 +56,6 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan, allow_local_scans: bool) -> P
                         // eligibility here.
                     },
                 }
-            },
-            DslPlan::SinkMultiple { .. } => {
-                return ineligible_error("contains sink multiple");
             },
             _ => (),
         }

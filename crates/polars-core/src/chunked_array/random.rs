@@ -188,7 +188,7 @@ impl DataFrame {
         ComputeError: "Sample size must be a single value."
         );
 
-        let n = n.cast(&IDX_DTYPE)?;
+        let n = n.strict_cast(&IDX_DTYPE)?;
         let n = n.idx()?;
 
         match n.get(0) {

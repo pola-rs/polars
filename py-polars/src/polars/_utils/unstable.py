@@ -3,18 +3,14 @@ from __future__ import annotations
 import inspect
 import os
 from functools import wraps
-from typing import TYPE_CHECKING, Callable, TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 from polars._utils.various import issue_warning
 from polars.exceptions import UnstableWarning
 
 if TYPE_CHECKING:
-    import sys
-
-    if sys.version_info >= (3, 10):
-        from typing import ParamSpec
-    else:
-        from typing_extensions import ParamSpec
+    from collections.abc import Callable
+    from typing import ParamSpec
 
     P = ParamSpec("P")
     T = TypeVar("T")

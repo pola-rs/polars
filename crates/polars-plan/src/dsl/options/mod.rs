@@ -4,8 +4,8 @@ use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::Arc;
 
+pub mod file_provider;
 pub mod sink;
-pub mod sink2;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
@@ -29,16 +29,15 @@ use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 pub use sink::{
-    CallbackSinkType, FileSinkOptions, PartitionTargetCallback, PartitionTargetCallbackResult,
-    PartitionTargetContext, PartitionTargetContextKey, PartitionVariantIR, PartitionedSinkOptions,
-    PartitionedSinkOptionsIR, SinkFinishCallback, SinkOptions, SinkTarget, SinkType, SinkTypeIR,
-    SortColumn, SortColumnIR,
+    CallbackSinkType, FileSinkOptions, PartitionStrategy, PartitionStrategyIR,
+    PartitionedSinkOptions, PartitionedSinkOptionsIR, SinkDestination, SinkTarget, SinkType,
+    SinkTypeIR, UnifiedSinkArgs,
 };
-pub use sink2::{PartitionStrategy, PartitionStrategyIR, SinkDestination, UnifiedSinkArgs};
 use strum_macros::IntoStaticStr;
 
-use super::{Expr, ExprIR};
+use super::Expr;
 use crate::dsl::Selector;
+use crate::plans::ExprIR;
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -149,7 +148,7 @@ pub struct JoinOptions {
 
 impl Default for JoinOptions {
     fn default() -> Self {
-        JoinOptions {
+        Self {
             allow_parallel: true,
             force_parallel: false,
             // Todo!: make default
@@ -335,22 +334,25 @@ pub struct AnonymousScanOptions {
     pub fmt_str: &'static str,
 }
 
+const _: () = {
+    assert!(std::mem::size_of::<FileWriteFormat>() <= 50);
+};
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, strum_macros::IntoStaticStr)]
-/// TODO: Rename to `FileWriteFormat`
-pub enum FileType {
+pub enum FileWriteFormat {
     #[cfg(feature = "parquet")]
-    Parquet(ParquetWriteOptions),
+    Parquet(Arc<ParquetWriteOptions>),
     #[cfg(feature = "ipc")]
     Ipc(IpcWriterOptions),
     #[cfg(feature = "csv")]
     Csv(CsvWriterOptions),
     #[cfg(feature = "json")]
-    Json(JsonWriterOptions),
+    NDJson(JsonWriterOptions),
 }
 
-impl FileType {
+impl FileWriteFormat {
     pub fn extension(&self) -> &'static str {
         match self {
             #[cfg(feature = "parquet")]
@@ -360,7 +362,7 @@ impl FileType {
             #[cfg(feature = "csv")]
             Self::Csv(_) => "csv",
             #[cfg(feature = "json")]
-            Self::Json(_) => "jsonl",
+            Self::NDJson(_) => "jsonl",
 
             #[allow(unreachable_patterns)]
             _ => unreachable!("enable file type features"),

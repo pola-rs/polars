@@ -23,17 +23,18 @@ mod read_impl;
 mod reader;
 pub mod schema_inference;
 mod splitfields;
+pub mod streaming;
 mod utils;
 
 pub use options::{CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues};
 pub use parser::{SplitLines, count_rows, count_rows_from_slice_par};
 pub use reader::CsvReader;
-pub use schema_inference::infer_file_schema;
+pub use streaming::read_until_start_and_infer_schema;
 
 pub mod _csv_read_internal {
     pub use super::buffer::validate_utf8;
     pub use super::options::{CommentPrefix, NullValuesCompiled};
     pub use super::parser::{CountLines, SplitLines, is_comment_line};
-    pub use super::read_impl::{cast_columns, find_starting_point, read_chunk};
+    pub use super::read_impl::{cast_columns, read_chunk};
     pub use super::reader::prepare_csv_schema;
 }

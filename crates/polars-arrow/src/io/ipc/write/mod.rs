@@ -1,10 +1,11 @@
 //! APIs to write to Arrow's IPC format.
 pub(crate) mod common;
-mod schema;
+pub mod schema;
 mod serialize;
 mod stream;
 pub(crate) mod writer;
 
+pub use arrow_format::ipc::{KeyValue, KeyValueRef};
 pub use common::{
     Compression, DictionaryTracker, EncodedData, Record, WriteOptions, commit_encoded_arrays,
     dictionaries_to_encode, encode_array, encode_dictionary_values, encode_new_dictionaries,

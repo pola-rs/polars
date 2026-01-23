@@ -2,6 +2,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 
+use crate::dsl::functions::lit;
 use crate::prelude::function_expr::ListFunction;
 use crate::prelude::*;
 

@@ -17,28 +17,22 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     Final,
     Literal,
     NamedTuple,
-    Union,
 )
 
 from polars._utils.cache import LRUCache
 from polars._utils.various import no_default, re_escape
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, MutableMapping
+    from collections.abc import Callable, Iterator, MutableMapping
     from collections.abc import Set as AbstractSet
     from dis import Instruction
+    from typing import TypeAlias
 
     from polars._utils.various import NoDefault
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
 
 
 class StackValue(NamedTuple):
@@ -50,7 +44,7 @@ class StackValue(NamedTuple):
 
 
 MapTarget: TypeAlias = Literal["expr", "frame", "series"]
-StackEntry: TypeAlias = Union[str, StackValue]
+StackEntry: TypeAlias = str | StackValue
 
 _MIN_PY311: Final = sys.version_info >= (3, 11)
 _MIN_PY312: Final = _MIN_PY311 and sys.version_info >= (3, 12)

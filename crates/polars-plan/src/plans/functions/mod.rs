@@ -15,7 +15,6 @@ pub use hint::*;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_io::cloud::CloudOptions;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -43,7 +42,6 @@ pub enum FunctionIR {
     FastCount {
         sources: ScanSources,
         scan_type: Box<FileScanIR>,
-        cloud_options: Option<CloudOptions>,
         alias: Option<PlSmallStr>,
     },
 
@@ -79,41 +77,6 @@ pub enum FunctionIR {
     Hint(HintIR),
 }
 
-impl Eq for FunctionIR {}
-
-impl PartialEq for FunctionIR {
-    fn eq(&self, other: &Self) -> bool {
-        use FunctionIR::*;
-        match (self, other) {
-            (Rechunk, Rechunk) => true,
-            (
-                FastCount {
-                    sources: srcs_l, ..
-                },
-                FastCount {
-                    sources: srcs_r, ..
-                },
-            ) => srcs_l == srcs_r,
-            (
-                Explode {
-                    columns: l,
-                    options: l_options,
-                    ..
-                },
-                Explode {
-                    columns: r,
-                    options: r_options,
-                    ..
-                },
-            ) => l == r && l_options == r_options,
-            #[cfg(feature = "pivot")]
-            (Unpivot { args: l, .. }, Unpivot { args: r, .. }) => l == r,
-            (RowIndex { name: l, .. }, RowIndex { name: r, .. }) => l == r,
-            _ => false,
-        }
-    }
-}
-
 impl Hash for FunctionIR {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
@@ -124,12 +87,10 @@ impl Hash for FunctionIR {
             FunctionIR::FastCount {
                 sources,
                 scan_type,
-                cloud_options,
                 alias,
             } => {
                 sources.hash(state);
                 scan_type.hash(state);
-                cloud_options.hash(state);
                 alias.hash(state);
             },
             FunctionIR::Unnest { columns, separator } => {
@@ -237,11 +198,10 @@ impl FunctionIR {
             FastCount {
                 sources,
                 scan_type,
-                cloud_options,
                 alias,
-            } => count::count_rows(sources, scan_type, cloud_options.as_ref(), alias.clone()),
+            } => count::count_rows(sources, scan_type, alias.clone()),
             Rechunk => {
-                df.as_single_chunk_par();
+                df.rechunk_mut_par();
                 Ok(df)
             },
             Unnest { columns, separator } => {
@@ -266,7 +226,7 @@ impl FunctionIR {
                     && let Some(s) = s.first()
                 {
                     let idx = df.try_get_column_index(&s.column)?;
-                    let col = &mut unsafe { df.get_columns_mut() }[idx];
+                    let col = &mut unsafe { df.columns_mut_retain_schema() }[idx];
                     if let Some(d) = s.descending {
                         let flag = if d {
                             IsSorted::Descending
@@ -359,7 +319,6 @@ impl Display for FunctionIR {
             FastCount {
                 sources,
                 scan_type,
-                cloud_options: _,
                 alias,
             } => {
                 let scan_type: &str = (&(**scan_type)).into();

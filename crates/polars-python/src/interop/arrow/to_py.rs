@@ -129,7 +129,7 @@ impl DataFrameStreamIterator {
 
         Self {
             columns: df
-                .get_columns()
+                .columns()
                 .iter()
                 .map(|v| v.as_materialized_series().clone())
                 .collect(),

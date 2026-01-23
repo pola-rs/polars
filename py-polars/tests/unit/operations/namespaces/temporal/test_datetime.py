@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -15,6 +15,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType, TemporalLiteral, TimeUnit
 
 
@@ -1400,7 +1402,7 @@ def test_series_duration_timeunits(
         for us in micros
         if isinstance(us, int)
     ):
-        for ns, us in zip(s.dt.total_nanoseconds(), micros):
+        for ns, us in zip(s.dt.total_nanoseconds(), micros, strict=True):
             assert ns == (us * 1000)
 
 

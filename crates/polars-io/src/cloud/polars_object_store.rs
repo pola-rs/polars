@@ -4,7 +4,7 @@ use bytes::Bytes;
 use futures::{StreamExt, TryStreamExt};
 use hashbrown::hash_map::RawEntryMut;
 use object_store::path::Path;
-use object_store::{ObjectMeta, ObjectStore};
+use object_store::{ObjectMeta, ObjectStore, ObjectStoreExt};
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_error::{PolarsError, PolarsResult};
 use polars_utils::mmap::MemSlice;

@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, OutOfBoundsError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -397,3 +397,73 @@ def test_gather_group_by_lit(maintain_order: bool) -> None:
         pl.DataFrame({"a": [1, 2, 3], "literal": [[[1], [1], [1]]] * 3}),
         check_row_order=maintain_order,
     )
+
+
+def test_get_window_with_filtered_empty_groups_23029() -> None:
+    # https://github.com/pola-rs/polars/issues/23029
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 2, 2, 3, 3],
+            "value": [10, 20, 30, 40, 50, 60],
+            "filter_condition": [False, True, False, False, True, True],
+        }
+    )
+
+    result = df.with_columns(
+        get_first=(
+            pl.col("value")
+            .filter(pl.col("filter_condition"))
+            .get(0, null_on_oob=True)
+            .over("group")
+        ),
+        first_value=(
+            pl.col("value").filter(pl.col("filter_condition")).first().over("group")
+        ),
+    )
+
+    assert_series_equal(
+        result["get_first"],
+        result["first_value"],
+        check_names=False,
+    )
+
+    # And the concrete expected values are:
+    expected = pl.DataFrame(
+        {
+            "group": [1, 1, 2, 2, 3, 3],
+            "value": [10, 20, 30, 40, 50, 60],
+            "filter_condition": [False, True, False, False, True, True],
+            "get_first": [20, 20, None, None, 50, 50],
+            "first_value": [20, 20, None, None, 50, 50],
+        }
+    )
+
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("idx_dtype", [pl.Int64, pl.UInt64, pl.Int128, pl.UInt128])
+def test_get_typed_index_null_on_oob_true(idx_dtype: pl.DataType) -> None:
+    # OOB typed index with null_on_oob=True -> null, for multiple integer dtypes.
+    df = pl.DataFrame({"value": [1, 2, 10]})
+
+    out = df.select(v=pl.col("value").get(pl.lit(5, dtype=idx_dtype), null_on_oob=True))
+
+    assert out["v"].to_list() == [None]
+
+
+@pytest.mark.parametrize("idx_dtype", [pl.Int64, pl.UInt64, pl.Int128, pl.UInt128])
+def test_get_typed_index_null_on_oob_false_raises(idx_dtype: pl.DataType) -> None:
+    # OOB typed index with null_on_oob=False -> OutOfBoundsError, for multiple dtypes.
+    df = pl.DataFrame({"value": [10, 11]})
+
+    with pytest.raises(OutOfBoundsError, match="gather indices are out of bounds"):
+        df.select(pl.col("value").get(pl.lit(5, dtype=idx_dtype), null_on_oob=False))
+
+
+@pytest.mark.parametrize("idx_dtype", [pl.Int64, pl.UInt64, pl.Int128, pl.UInt128])
+def test_get_typed_index_default_raises_out_of_bounds(idx_dtype: pl.DataType) -> None:
+    # Default behavior (null_on_oob omitted) should behave like null_on_oob=False
+    df = pl.DataFrame({"value": [10, 11]})
+
+    with pytest.raises(OutOfBoundsError, match="gather indices are out of bounds"):
+        df.select(pl.col("value").get(pl.lit(5, dtype=idx_dtype)))

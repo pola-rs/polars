@@ -24,7 +24,7 @@ impl PyDataFrame {
         let df = self.df.read();
         let height = df.height();
         let col_series: Vec<_> = df
-            .get_columns()
+            .columns()
             .iter()
             .map(|s| s.as_materialized_series().clone())
             .collect();

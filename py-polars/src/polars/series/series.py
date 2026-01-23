@@ -11,7 +11,6 @@ from decimal import Decimal as PyDecimal
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     Literal,
     NoReturn,
@@ -115,6 +114,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     with contextlib.suppress(ImportError):  # Module not available when building docs
         import polars._plr as plr
 
@@ -494,7 +495,7 @@ class Series:
         keys = ("values", "validity", "offsets")
         return {  # type: ignore[return-value]
             k: self._from_pyseries(b) if b is not None else b
-            for k, b in zip(keys, buffers)
+            for k, b in zip(keys, buffers, strict=True)
         }
 
     @classmethod
@@ -2156,6 +2157,32 @@ class Series:
         """
         return self._s.min()
 
+    @unstable()
+    def min_by(self, by: IntoExpr) -> Expr:
+        """
+        Get the minimum value in this Series, ordered by an expression.
+
+        If the by expression has multiple values equal to the minimum it is not
+        defined which value will be chosen.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        by
+            Column used to determine the smallest element.
+            Accepts expression input. Strings are parsed as column names.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [-2.0, float("nan"), 1.0])
+        >>> s.min_by(pl.col.a.abs())
+        1.0
+        """
+        return self.to_frame().select_seq(F.col(self.name).min_by(by)).item()
+
     def max(self) -> PythonLiteral | None:
         """
         Get the maximum value in this Series.
@@ -2167,6 +2194,32 @@ class Series:
         3
         """
         return self._s.max()
+
+    @unstable()
+    def max_by(self, by: IntoExpr) -> Expr:
+        """
+        Get the maximum value in this Series, ordered by an expression.
+
+        If the by expression has multiple values equal to the maximum it is not
+        defined which value will be chosen.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        by
+            Column used to determine the largest element.
+            Accepts expression input. Strings are parsed as column names.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [-2.0, float("nan"), 1.0])
+        >>> s.max_by(pl.col.a.abs())
+        -2.0
+        """
+        return self.to_frame().select_seq(F.col(self.name).max_by(by)).item()
 
     def nan_max(self) -> int | float | date | datetime | timedelta | str:
         """
@@ -8110,6 +8163,11 @@ class Series:
             Rank in descending order.
         seed
             If `method="random"`, use this as seed.
+
+        Notes
+        -----
+        If you're coming from SQL, you may be expecting null values to be ranked last.
+        Polars, however, only ranks non-null values and preserves the null ones.
 
         Examples
         --------

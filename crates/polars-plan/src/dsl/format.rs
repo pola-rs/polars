@@ -109,9 +109,16 @@ impl fmt::Debug for Expr {
                 expr,
                 idx,
                 returns_scalar,
+                null_on_oob,
             } => {
                 if *returns_scalar {
-                    write!(f, "{expr:?}.get({idx:?})")
+                    if *null_on_oob {
+                        write!(f, "{expr:?}.get({idx:?}, null_on_oob=true)")
+                    } else {
+                        write!(f, "{expr:?}.get({idx:?})")
+                    }
+                } else if *null_on_oob {
+                    write!(f, "{expr:?}.gather({idx:?}, null_on_oob=true)")
                 } else {
                     write!(f, "{expr:?}.gather({idx:?})")
                 }
@@ -141,6 +148,12 @@ impl fmt::Debug for Expr {
                         } else {
                             write!(f, "{input:?}.max()")
                         }
+                    },
+                    MinBy { input, by } => {
+                        write!(f, "{input:?}.min_by({by:?})")
+                    },
+                    MaxBy { input, by } => {
+                        write!(f, "{input:?}.max_by({by:?})")
                     },
                     Median(expr) => write!(f, "{expr:?}.median()"),
                     Mean(expr) => write!(f, "{expr:?}.mean()"),
@@ -238,6 +251,13 @@ impl fmt::Debug for Expr {
                     f,
                     "{input:?}.Cumulative_eval({evaluation:?}, min_samples={min_samples}"
                 ),
+            },
+            #[cfg(feature = "dtype-struct")]
+            StructEval {
+                expr: input,
+                evaluation,
+            } => {
+                write!(f, "{input:?}.struct.eval({evaluation:?}")
             },
             Slice {
                 input,

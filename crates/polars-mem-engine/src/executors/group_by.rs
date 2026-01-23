@@ -63,7 +63,7 @@ pub(super) fn group_by_helper(
     maintain_order: bool,
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
-    df.as_single_chunk_par();
+    df.rechunk_mut_par();
     let gb = df.group_by_with_series(keys, true, maintain_order)?;
 
     if let Some(f) = apply {
@@ -90,7 +90,7 @@ pub(super) fn group_by_helper(
     });
 
     columns.extend(agg_columns?);
-    DataFrame::new(columns)
+    DataFrame::new_infer_height(columns)
 }
 
 impl GroupByExec {

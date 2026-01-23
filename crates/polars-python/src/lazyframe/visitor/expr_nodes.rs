@@ -168,6 +168,7 @@ pub enum PyStringFunction {
     SplitN,
     Strptime,
     Split,
+    SplitRegex,
     ToDecimal,
     Titlecase,
     Uppercase,
@@ -561,6 +562,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
             name: name.into_py_any(py)?,
         }
         .into_py_any(py),
+        AExpr::StructField(_) => Err(PyNotImplementedError::new_err("field")),
         AExpr::Literal(lit) => {
             use polars_core::prelude::AnyValue;
             let dtype: Py<PyAny> = Wrap(lit.get_datatype()).into_py_any(py)?;
@@ -622,6 +624,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
             expr,
             idx,
             returns_scalar,
+            null_on_oob: _,
         } => Gather {
             expr: expr.0,
             idx: idx.0,
@@ -663,6 +666,16 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 name: "max".into_py_any(py)?,
                 arguments: vec![input.0],
                 options: propagate_nans.into_py_any(py)?,
+            },
+            IRAggExpr::MinBy { input, by } => Agg {
+                name: "min_by".into_py_any(py)?,
+                arguments: vec![input.0, by.0],
+                options: py.None(),
+            },
+            IRAggExpr::MaxBy { input, by } => Agg {
+                name: "max_by".into_py_any(py)?,
+                arguments: vec![input.0, by.0],
+                options: py.None(),
             },
             IRAggExpr::Median(n) => Agg {
                 name: "median".into_py_any(py)?,
@@ -916,6 +929,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRStringFunction::Split(inclusive) => {
                         (PyStringFunction::Split, inclusive).into_py_any(py)
                     },
+                    IRStringFunction::SplitRegex { inclusive, strict } => {
+                        (PyStringFunction::SplitRegex, inclusive, strict).into_py_any(py)
+                    },
                     IRStringFunction::ToDecimal { scale } => {
                         (PyStringFunction::ToDecimal, scale).into_py_any(py)
                     },
@@ -965,9 +981,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     #[cfg(feature = "json")]
                     IRStructFunction::JsonEncode => (PyStructFunction::JsonEncode,).into_py_any(py),
-                    IRStructFunction::WithFields => {
-                        return Err(PyNotImplementedError::new_err("with_fields"));
-                    },
                     IRStructFunction::MapFieldNames(_) => {
                         return Err(PyNotImplementedError::new_err("map_field_names"));
                     },
@@ -1468,5 +1481,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
         .into_py_any(py),
         AExpr::Len => Len {}.into_py_any(py),
         AExpr::Eval { .. } => Err(PyNotImplementedError::new_err("list.eval")),
+        AExpr::StructEval { .. } => Err(PyNotImplementedError::new_err("struct.with_fields")),
     }
 }

@@ -523,7 +523,7 @@ mod test {
             .into_column();
             date.set_sorted_flag(IsSorted::Ascending);
             let a = Column::new("a".into(), [3, 7, 5, 9, 2, 1]);
-            let df = DataFrame::new(vec![date, a.clone()])?;
+            let df = DataFrame::new_infer_height(vec![date, a.clone()])?;
 
             let (_, groups) = df
                 .rolling(
@@ -570,7 +570,7 @@ mod test {
         date.set_sorted_flag(IsSorted::Ascending);
 
         let a = Column::new("a".into(), [3, 7, 5, 9, 2, 1]);
-        let df = DataFrame::new(vec![date, a.clone()])?;
+        let df = DataFrame::new_infer_height(vec![date, a.clone()])?;
 
         let (_, groups) = df
             .rolling(

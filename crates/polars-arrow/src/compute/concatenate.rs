@@ -1,4 +1,5 @@
 use hashbrown::hash_map::Entry;
+use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::itertools::Itertools;
@@ -6,7 +7,6 @@ use polars_utils::vec::PushUnchecked;
 
 use crate::array::*;
 use crate::bitmap::{Bitmap, BitmapBuilder};
-use crate::buffer::Buffer;
 use crate::datatypes::PhysicalType;
 use crate::offset::Offsets;
 use crate::types::{NativeType, Offset};

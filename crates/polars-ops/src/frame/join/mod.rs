@@ -7,6 +7,7 @@ mod general;
 mod hash_join;
 #[cfg(feature = "iejoin")]
 mod iejoin;
+pub mod merge_join;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 
@@ -86,14 +87,14 @@ pub trait DataFrameJoinOps: IntoDf {
     fn join(
         &self,
         other: &DataFrame,
-        left_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
-        right_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+        left_on: impl IntoIterator<Item = impl AsRef<str>>,
+        right_on: impl IntoIterator<Item = impl AsRef<str>>,
         args: JoinArgs,
         options: Option<JoinTypeOptions>,
     ) -> PolarsResult<DataFrame> {
         let df_left = self.to_df();
-        let selected_left = df_left.select_columns(left_on)?;
-        let selected_right = other.select_columns(right_on)?;
+        let selected_left = df_left.select_to_vec(left_on)?;
+        let selected_right = other.select_to_vec(right_on)?;
 
         let selected_left = selected_left
             .into_iter()
@@ -153,10 +154,10 @@ pub trait DataFrameJoinOps: IntoDf {
                 }
             }
         }
-        if left_df.is_empty() {
+        if left_df.height() == 0 {
             clear(&mut selected_left);
         }
-        if other.is_empty() {
+        if other.height() == 0 {
             clear(&mut selected_right);
         }
 
@@ -184,7 +185,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     }
 
                     let mut tmp_left = left_df.clone();
-                    tmp_left.as_single_chunk_par();
+                    tmp_left.rechunk_mut_par();
                     left = Cow::Owned(tmp_left);
                 }
                 if other.should_rechunk() {
@@ -196,7 +197,7 @@ pub trait DataFrameJoinOps: IntoDf {
                         );
                     }
                     let mut tmp_right = other.clone();
-                    tmp_right.as_single_chunk_par();
+                    tmp_right.rechunk_mut_par();
                     right = Cow::Owned(tmp_right);
                 }
                 return left._join_impl(
@@ -230,7 +231,9 @@ pub trait DataFrameJoinOps: IntoDf {
             let Some(JoinTypeOptions::IEJoin(options)) = options else {
                 unreachable!()
             };
-            let func = if POOL.current_num_threads() > 1 && !left_df.is_empty() && !other.is_empty()
+            let func = if POOL.current_num_threads() > 1
+                && !left_df.shape_has_zero()
+                && !other.shape_has_zero()
             {
                 iejoin::iejoin_par
             } else {
@@ -332,19 +335,20 @@ pub trait DataFrameJoinOps: IntoDf {
                 },
             };
         }
-        let (lhs_keys, rhs_keys) =
-            if (left_df.is_empty() || other.is_empty()) && matches!(&args.how, JoinType::Inner) {
-                // Fast path for empty inner joins.
-                // Return 2 dummies so that we don't row-encode.
-                let a = Series::full_null("".into(), 0, &DataType::Null);
-                (a.clone(), a)
-            } else {
-                // Row encode the keys.
-                (
-                    prepare_keys_multiple(&selected_left, args.nulls_equal)?.into_series(),
-                    prepare_keys_multiple(&selected_right, args.nulls_equal)?.into_series(),
-                )
-            };
+        let (lhs_keys, rhs_keys) = if (left_df.height() == 0 || other.height() == 0)
+            && matches!(&args.how, JoinType::Inner)
+        {
+            // Fast path for empty inner joins.
+            // Return 2 dummies so that we don't row-encode.
+            let a = Series::full_null("".into(), 0, &DataType::Null);
+            (a.clone(), a)
+        } else {
+            // Row encode the keys.
+            (
+                prepare_keys_multiple(&selected_left, args.nulls_equal)?.into_series(),
+                prepare_keys_multiple(&selected_right, args.nulls_equal)?.into_series(),
+            )
+        };
 
         let drop_names = if should_coalesce {
             if args.how == JoinType::Right {
@@ -449,8 +453,8 @@ pub trait DataFrameJoinOps: IntoDf {
     fn inner_join(
         &self,
         other: &DataFrame,
-        left_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
-        right_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+        left_on: impl IntoIterator<Item = impl AsRef<str>>,
+        right_on: impl IntoIterator<Item = impl AsRef<str>>,
     ) -> PolarsResult<DataFrame> {
         self.join(
             other,
@@ -499,8 +503,8 @@ pub trait DataFrameJoinOps: IntoDf {
     fn left_join(
         &self,
         other: &DataFrame,
-        left_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
-        right_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+        left_on: impl IntoIterator<Item = impl AsRef<str>>,
+        right_on: impl IntoIterator<Item = impl AsRef<str>>,
     ) -> PolarsResult<DataFrame> {
         self.join(
             other,
@@ -524,8 +528,8 @@ pub trait DataFrameJoinOps: IntoDf {
     fn full_join(
         &self,
         other: &DataFrame,
-        left_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
-        right_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+        left_on: impl IntoIterator<Item = impl AsRef<str>>,
+        right_on: impl IntoIterator<Item = impl AsRef<str>>,
     ) -> PolarsResult<DataFrame> {
         self.join(
             other,
@@ -579,8 +583,12 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         try_raise_keyboard_interrupt();
         let (df_left, df_right) =
             if args.maintain_order != MaintainOrderJoin::None && !already_left_sorted {
-                let mut df =
-                    DataFrame::new(vec![left.into_series().into(), right.into_series().into()])?;
+                let mut df = unsafe {
+                    DataFrame::new_unchecked_infer_height(vec![
+                        left.into_series().into(),
+                        right.into_series().into(),
+                    ])
+                };
 
                 let columns = match args.maintain_order {
                     MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => vec!["a"],
@@ -594,7 +602,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
 
                 df.sort_in_place(columns, options)?;
 
-                let [mut a, b]: [Column; 2] = df.take_columns().try_into().unwrap();
+                let [mut a, b]: [Column; 2] = df.into_columns().try_into().unwrap();
                 if matches!(
                     args.maintain_order,
                     MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
@@ -650,12 +658,12 @@ pub fn private_left_join_multiple_keys(
 ) -> PolarsResult<LeftJoinIds> {
     // @scalar-opt
     let a_cols = a
-        .get_columns()
+        .columns()
         .iter()
         .map(|c| c.as_materialized_series().clone())
         .collect::<Vec<_>>();
     let b_cols = b
-        .get_columns()
+        .columns()
         .iter()
         .map(|c| c.as_materialized_series().clone())
         .collect::<Vec<_>>();

@@ -11,8 +11,8 @@ use polars_io::cloud::CloudOptions;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{CastColumnsPolicy, ScanSource};
 use polars_utils::format_pl_smallstr;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::plpath::PlPath;
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::slice_enum::Slice;
 
@@ -109,7 +109,7 @@ impl DeletionFilesProvider {
                     .iter()
                     .enumerate()
                     .map(|(deletion_file_idx, path)| {
-                        let source = ScanSource::Path(PlPath::new(path));
+                        let source = ScanSource::Path(PlRefPath::new(path));
                         let mut reader = reader_builder.build_file_reader(
                             source,
                             cloud_options.clone(),
@@ -157,6 +157,7 @@ impl DeletionFilesProvider {
                                     predicate: None,
                                     cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
                                     num_pipelines,
+                                    disable_morsel_split: false,
                                     callbacks: FileReaderCallbacks {
                                         file_schema_tx: None,
                                         n_rows_in_file_tx: None,
@@ -310,11 +311,11 @@ impl ExternalFilterMask {
                 if !mask.is_empty() {
                     *df = if mask.len() < df.height() {
                         accumulate_dataframes_vertical_unchecked([
-                            df.slice(0, mask.len())._filter_seq(mask)?,
+                            df.slice(0, mask.len()).filter_seq(mask)?,
                             df.slice(i64::try_from(mask.len()).unwrap(), df.height() - mask.len()),
                         ])
                     } else {
-                        df._filter_seq(mask)?
+                        df.filter_seq(mask)?
                     }
                 }
             },

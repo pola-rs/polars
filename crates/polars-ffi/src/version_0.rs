@@ -126,7 +126,7 @@ pub unsafe fn import_df(e: *mut SeriesExport, len: usize) -> PolarsResult<DataFr
         let s = import_series(e)?;
         out.push(s.into())
     }
-    Ok(DataFrame::new_no_checks_height_from_first(out))
+    Ok(DataFrame::new_unchecked_infer_height(out))
 }
 
 /// Passed to an expression.

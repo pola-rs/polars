@@ -9,15 +9,11 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 import inspect
 from functools import wraps
-from typing import TYPE_CHECKING, Callable, TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
-    import sys
-
-    if sys.version_info >= (3, 10):
-        from typing import ParamSpec
-    else:
-        from typing_extensions import ParamSpec
+    from collections.abc import Callable
+    from typing import ParamSpec
 
     P = ParamSpec("P")
     T = TypeVar("T")

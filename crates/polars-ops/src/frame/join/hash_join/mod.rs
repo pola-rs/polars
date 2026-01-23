@@ -162,10 +162,12 @@ pub trait JoinDispatch: IntoDf {
         let idx_ca_r = IdxCa::with_chunk("b".into(), join_idx_r);
 
         let (df_left, df_right) = if args.maintain_order != MaintainOrderJoin::None {
-            let mut df = DataFrame::new(vec![
-                idx_ca_l.into_series().into(),
-                idx_ca_r.into_series().into(),
-            ])?;
+            let mut df = unsafe {
+                DataFrame::new_unchecked_infer_height(vec![
+                    idx_ca_l.into_series().into(),
+                    idx_ca_r.into_series().into(),
+                ])
+            };
 
             let options = SortMultipleOptions::new()
                 .with_order_descending(false)

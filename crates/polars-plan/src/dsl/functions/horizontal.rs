@@ -1,4 +1,5 @@
 use super::*;
+use crate::prelude::PlanCallback;
 
 /// Accumulate over multiple columns horizontally / row wise.
 pub fn fold_exprs<E>(

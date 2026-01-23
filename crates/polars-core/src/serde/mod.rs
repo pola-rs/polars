@@ -1,5 +1,5 @@
 pub mod chunked_array;
-mod df;
+pub mod df;
 pub mod series;
 
 #[cfg(test)]
@@ -44,14 +44,14 @@ mod test {
         let s3 = Series::new("string".into(), &["mouse", "elephant", "dog"]);
         let s_list = Column::new("list".into(), &[s1.clone(), s1.clone(), s1.clone()]);
 
-        DataFrame::new(vec![s1.into(), s2.into(), s3.into(), s_list]).unwrap()
+        DataFrame::new_infer_height(vec![s1.into(), s2.into(), s3.into(), s_list]).unwrap()
     }
 
     #[test]
     fn test_serde_flags() {
         let df = sample_dataframe();
 
-        for mut column in df.columns {
+        for mut column in df.into_columns() {
             column.set_sorted_flag(IsSorted::Descending);
             let json = serde_json::to_string(&column).unwrap();
             let out = serde_json::from_reader::<_, Column>(json.as_bytes()).unwrap();
@@ -118,7 +118,7 @@ mod test {
         let s =
             Series::from_any_values_and_dtype("item".into(), &[row_1, row_2, row_3], &dtype, false)
                 .unwrap();
-        let df = DataFrame::new(vec![s.into()]).unwrap();
+        let df = DataFrame::new_infer_height(vec![s.into()]).unwrap();
 
         let df_str = serde_json::to_string(&df).unwrap();
         let out = serde_json::from_str::<DataFrame>(&df_str).unwrap();

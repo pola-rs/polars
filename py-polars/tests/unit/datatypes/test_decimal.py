@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from decimal import Decimal as D
 from math import ceil, floor
 from random import choice, randrange, seed
-from typing import Any, Callable, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import pyarrow as pa
 import pytest
@@ -15,6 +15,9 @@ import pytest
 import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @pytest.fixture(scope="module")

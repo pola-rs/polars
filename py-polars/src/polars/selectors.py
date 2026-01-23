@@ -3,7 +3,6 @@ from __future__ import annotations
 import builtins
 import contextlib
 import datetime as pydatetime
-import sys
 from collections.abc import Collection, Mapping, Sequence
 from decimal import Decimal as PyDecimal
 from functools import reduce
@@ -35,11 +34,7 @@ from polars.expr import Expr
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import PyExpr, PySelector
 
-if sys.version_info >= (3, 10):
-    from types import NoneType
-else:  # pragma: no cover
-    # Define equivalent for older Python versions
-    NoneType = type(None)
+from types import NoneType
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

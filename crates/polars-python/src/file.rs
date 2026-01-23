@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars::io::mmap::MmapBytesReader;
-use polars::prelude::PlPath;
+use polars::prelude::PlRefPath;
 use polars::prelude::file::{Writeable, WriteableTrait};
 use polars_error::polars_err;
 use polars_utils::create_file;
@@ -22,6 +22,7 @@ use pyo3::types::{PyBytes, PyString, PyStringMethods};
 
 use crate::error::PyPolarsErr;
 use crate::prelude::resolve_homedir;
+use crate::utils::to_py_err;
 
 pub(crate) struct PyFileLikeObject {
     inner: Py<PyAny>,
@@ -76,13 +77,19 @@ impl PyFileLikeObject {
                 .expect("no read method found");
 
             if let Ok(b) = bytes.cast_bound::<PyBytes>(py) {
-                return MemSlice::from_arc(b.as_bytes(), Arc::new(bytes.clone_ref(py)));
+                // SAFETY: we keep the underlying python object alive.
+                let slice = b.as_bytes();
+                let arc = Arc::new(bytes.clone_ref(py));
+                return unsafe { MemSlice::from_arc(slice, arc) };
             }
 
             if let Ok(b) = bytes.cast_bound::<PyString>(py) {
                 return match b.to_cow().expect("PyString is not valid UTF-8") {
                     Cow::Borrowed(v) => {
-                        MemSlice::from_arc(v.as_bytes(), Arc::new(bytes.clone_ref(py)))
+                        // SAFETY: we keep the underlying python object alive.
+                        let slice = v.as_bytes();
+                        let arc = Arc::new(bytes.clone_ref(py));
+                        unsafe { MemSlice::from_arc(slice, arc) }
                     },
                     Cow::Owned(v) => MemSlice::from_vec(v.into_bytes()),
                 };
@@ -297,7 +304,7 @@ impl EitherRustPythonFile {
 
 pub(crate) enum PythonScanSourceInput {
     Buffer(MemSlice),
-    Path(PlPath),
+    Path(PlRefPath),
     File(std::fs::File),
 }
 
@@ -412,20 +419,17 @@ pub(crate) fn get_python_scan_source_input(
 
         // If the pyobject is a `bytes` class
         if let Ok(b) = py_f.cast::<PyBytes>() {
-            return Ok(PythonScanSourceInput::Buffer(MemSlice::from_arc(
-                b.as_bytes(),
-                // We want to specifically keep alive the PyBytes object.
-                Arc::new(b.clone().unbind()),
-            )));
+            // SAFETY: we keep the underlying python object alive.
+            let slice = b.as_bytes();
+            let arc = Arc::new(b.clone().unbind());
+            let memslice = unsafe { MemSlice::from_arc(slice, arc) };
+            return Ok(PythonScanSourceInput::Buffer(memslice));
         }
 
         if let Ok(s) = py_f.extract::<Cow<str>>() {
-            let mut file_path = PlPath::new(&s);
-            if let Some(p) = file_path.as_ref().as_local_path() {
-                if p.starts_with("~/") {
-                    file_path = PlPath::Local(resolve_homedir(&p).into());
-                }
-            }
+            let file_path = PlRefPath::try_from_path(resolve_homedir(s.as_ref()).as_ref())
+                .map_err(to_py_err)?;
+
             Ok(PythonScanSourceInput::Path(file_path))
         } else {
             Ok(try_get_pyfile(py, py_f, write)?.0.into_scan_source_input())
@@ -440,13 +444,16 @@ fn get_either_buffer_or_path(
     Python::attach(|py| {
         let py_f = py_f.into_bound(py);
         if let Ok(s) = py_f.extract::<Cow<str>>() {
-            let file_path = resolve_homedir(&&*s);
+            let file_path = resolve_homedir(s.as_ref());
             let f = if write {
                 create_file(&file_path).map_err(PyPolarsErr::from)?
             } else {
                 polars_utils::open_file(&file_path).map_err(PyPolarsErr::from)?
             };
-            Ok((EitherRustPythonFile::Rust(f.into()), Some(file_path)))
+            Ok((
+                EitherRustPythonFile::Rust(f.into()),
+                Some(file_path.into_owned()),
+            ))
         } else {
             try_get_pyfile(py, py_f, write)
         }
@@ -491,13 +498,11 @@ pub(crate) fn get_mmap_bytes_reader_and_path(
 
     // bytes object
     if let Ok(bytes) = py_f.cast::<PyBytes>() {
-        Ok((
-            Box::new(Cursor::new(MemSlice::from_arc(
-                bytes.as_bytes(),
-                Arc::new(py_f.clone().unbind()),
-            ))),
-            None,
-        ))
+        // SAFETY: we keep the underlying python object alive.
+        let slice = bytes.as_bytes();
+        let arc = Arc::new(bytes.clone().unbind());
+        let memslice = unsafe { MemSlice::from_arc(slice, arc) };
+        Ok((Box::new(Cursor::new(memslice)), None))
     }
     // string so read file
     else {

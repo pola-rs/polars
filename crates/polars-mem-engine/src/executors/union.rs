@@ -109,7 +109,7 @@ impl Executor for UnionExec {
         }
         .map(|mut df| {
             if self.options.rechunk {
-                df.as_single_chunk_par();
+                df.rechunk_mut_par();
             }
             df
         })

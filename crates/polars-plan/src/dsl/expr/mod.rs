@@ -29,6 +29,14 @@ pub enum AggExpr {
         input: Arc<Expr>,
         propagate_nans: bool,
     },
+    MinBy {
+        input: Arc<Expr>,
+        by: Arc<Expr>,
+    },
+    MaxBy {
+        input: Arc<Expr>,
+        by: Arc<Expr>,
+    },
     Median(Arc<Expr>),
     NUnique(Arc<Expr>),
     First(Arc<Expr>),
@@ -61,8 +69,8 @@ impl AsRef<Expr> for AggExpr {
     fn as_ref(&self) -> &Expr {
         use AggExpr::*;
         match self {
-            Min { input, .. } => input,
-            Max { input, .. } => input,
+            Min { input, .. } | MinBy { input, .. } => input,
+            Max { input, .. } | MaxBy { input, .. } => input,
             Median(e) => e,
             NUnique(e) => e,
             First(e) => e,
@@ -119,6 +127,7 @@ pub enum Expr {
         expr: Arc<Expr>,
         idx: Arc<Expr>,
         returns_scalar: bool,
+        null_on_oob: bool,
     },
     SortBy {
         expr: Arc<Expr>,
@@ -192,6 +201,14 @@ pub enum Expr {
         expr: Arc<Expr>,
         evaluation: Arc<Expr>,
         variant: EvalVariant,
+    },
+    /// Evaluates the `evaluation` expressions on the output of the `expr`.
+    ///
+    /// Consequently, `expr` is an input and `evaluation` uses an extended schema that includes this input.
+    #[cfg(feature = "dtype-struct")]
+    StructEval {
+        expr: Arc<Expr>,
+        evaluation: Vec<Expr>,
     },
     SubPlan(SpecialEq<Arc<DslPlan>>, Vec<String>),
     RenameAlias {
@@ -327,10 +344,12 @@ impl Hash for Expr {
                 expr,
                 idx,
                 returns_scalar,
+                null_on_oob,
             } => {
                 expr.hash(state);
                 idx.hash(state);
                 returns_scalar.hash(state);
+                null_on_oob.hash(state);
             },
             // already hashed by discriminant
             Expr::Element | Expr::Len => {},
@@ -409,6 +428,14 @@ impl Hash for Expr {
                 evaluation.hash(state);
                 variant.hash(state);
             },
+            #[cfg(feature = "dtype-struct")]
+            Expr::StructEval {
+                expr: input,
+                evaluation,
+            } => {
+                input.hash(state);
+                evaluation.hash(state);
+            },
             Expr::SubPlan(_, names) => names.hash(state),
             #[cfg(feature = "dtype-struct")]
             Expr::Field(names) => names.hash(state),
@@ -444,7 +471,7 @@ impl Expr {
         schema: &Schema,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Field> {
-        let mut ctx = ExprToIRContext::new(expr_arena, schema);
+        let mut ctx = ExprToIRContext::new_with_fields(expr_arena, schema);
         ctx.allow_unknown = true;
         let expr = to_expr_ir(self.clone(), &mut ctx)?;
         let (node, output_name) = expr.into_inner();

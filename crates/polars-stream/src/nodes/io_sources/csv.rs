@@ -1,20 +1,19 @@
-use std::cmp;
 use std::iter::Iterator;
 use std::ops::Range;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use polars_core::prelude::{Field, Schema};
+use polars_core::prelude::Field;
 use polars_core::schema::{SchemaExt, SchemaRef};
-use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err, polars_warn};
+use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
 use polars_io::cloud::CloudOptions;
+use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
 use polars_io::prelude::_csv_read_internal::{
-    CommentPrefix, CountLines, NullValuesCompiled, SplitLines, cast_columns, is_comment_line,
-    prepare_csv_schema, read_chunk,
+    CountLines, NullValuesCompiled, cast_columns, prepare_csv_schema, read_chunk,
 };
 use polars_io::prelude::buffer::validate_utf8;
 use polars_io::prelude::{CsvEncoding, CsvParseOptions, CsvReadOptions};
-use polars_io::utils::compression::{CompressedReader, maybe_decompress_bytes};
+use polars_io::utils::compression::CompressedReader;
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
@@ -130,8 +129,6 @@ impl FileReader for CsvFileReader {
     ) -> PolarsResult<(FileReaderOutputRecv, JoinHandle<PolarsResult<()>>)> {
         let verbose = self.verbose;
 
-        let reader = CompressedReader::try_new(self.cached_bytes.clone().unwrap())?;
-
         let BeginReadArgs {
             projection: Projection::Plain(projected_schema),
             // Because we currently only support PRE_SLICE we don't need to handle row index here.
@@ -140,6 +137,7 @@ impl FileReader for CsvFileReader {
             predicate: None,
             cast_columns_policy: _,
             num_pipelines,
+            disable_morsel_split: _,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx,
@@ -168,15 +166,16 @@ impl FileReader for CsvFileReader {
             _ => {},
         }
 
-        // TODO: Always compare inferred and provided schema once schema inference can handle
-        // streaming decompression.
-        let used_schema = if let Some(schema) = &self.options.schema
-            && !self.options.parse_options.truncate_ragged_lines
-        {
-            schema.clone()
-        } else {
-            Arc::new(self.infer_schema(projected_schema.clone())?)
-        };
+        let mut reader = CompressedReader::try_new(self.cached_bytes.clone().unwrap())?;
+
+        let (inferred_schema, base_leftover) = read_until_start_and_infer_schema(
+            &self.options,
+            Some(projected_schema.clone()),
+            None,
+            &mut reader,
+        )?;
+
+        let used_schema = Arc::new(inferred_schema);
 
         if let Some(tx) = file_schema_tx {
             _ = tx.send(used_schema.clone())
@@ -216,11 +215,10 @@ impl FileReader for CsvFileReader {
         let line_batch_source_handle = AbortOnDropHandle::new(spawn(
             TaskPriority::Low,
             LineBatchSource {
+                base_leftover,
                 reader,
                 line_counter,
                 line_batch_tx,
-                options: self.options.clone(),
-                file_schema_len: used_schema.len(),
                 pre_slice,
                 needs_full_row_count,
                 verbose,
@@ -339,86 +337,11 @@ impl FileReader for CsvFileReader {
     }
 }
 
-impl CsvFileReader {
-    /// Does *not* handle compressed files in a streaming manner.
-    fn infer_schema(&self, projected_schema: SchemaRef) -> PolarsResult<Schema> {
-        // We need to infer the schema to get the columns of this file.
-        let infer_schema_length = if self.options.has_header {
-            Some(1)
-        } else {
-            // If there is no header the line length may increase later in the
-            // file (https://github.com/pola-rs/polars/pull/21979).
-            self.options.infer_schema_length
-        };
-
-        let mut decompress_buf = Vec::new();
-        let bytes =
-            maybe_decompress_bytes(self.cached_bytes.as_ref().unwrap(), &mut decompress_buf)?;
-
-        let (mut inferred_schema, ..) = polars_io::csv::read::infer_file_schema(
-            &polars_io::mmap::ReaderBytes::Borrowed(bytes),
-            &self.options.parse_options,
-            infer_schema_length,
-            self.options.has_header,
-            self.options.schema_overwrite.as_deref(),
-            self.options.skip_rows,
-            self.options.skip_lines,
-            self.options.skip_rows_after_header,
-            self.options.raise_if_empty,
-        )?;
-
-        if let Some(schema) = &self.options.schema {
-            // Note: User can provide schema with more columns, they will simply
-            // be projected as NULL.
-            // TODO: Should maybe expose a missing_columns parameter to the API for this.
-            if schema.len() < inferred_schema.len()
-                && !self.options.parse_options.truncate_ragged_lines
-            {
-                polars_bail!(
-                    SchemaMismatch:
-                    "provided schema does not match number of columns in file ({} != {} in file)",
-                    schema.len(),
-                    inferred_schema.len(),
-                );
-            }
-
-            if self.options.parse_options.truncate_ragged_lines {
-                inferred_schema = Arc::unwrap_or_clone(schema.clone());
-            } else {
-                inferred_schema = schema
-                    .iter_names()
-                    .zip(inferred_schema.into_iter().map(|(_, dtype)| dtype))
-                    .map(|(name, dtype)| (name.clone(), dtype))
-                    .collect();
-            }
-        }
-
-        if let Some(dtypes) = self.options.dtype_overwrite.as_deref() {
-            for (i, dtype) in dtypes.iter().enumerate() {
-                inferred_schema.set_dtype_at_index(i, dtype.clone());
-            }
-        }
-
-        // TODO
-        // We currently always override with the projected dtype, but this may cause
-        // issues e.g. with temporal types. This can be improved to better choose
-        // between the 2 dtypes.
-        for (name, inferred_dtype) in inferred_schema.iter_mut() {
-            if let Some(projected_dtype) = projected_schema.get(name) {
-                *inferred_dtype = projected_dtype.clone();
-            }
-        }
-
-        Ok(inferred_schema)
-    }
-}
-
 struct LineBatchSource {
+    base_leftover: MemSlice,
     reader: CompressedReader,
     line_counter: CountLines,
     line_batch_tx: distributor_channel::Sender<LineBatch>,
-    options: Arc<CsvReadOptions>,
-    file_schema_len: usize,
     pre_slice: Option<Slice>,
     needs_full_row_count: bool,
     verbose: bool,
@@ -428,11 +351,10 @@ impl LineBatchSource {
     /// Returns the number of rows skipped from the start of the file according to CountLines.
     async fn run(self) -> PolarsResult<usize> {
         let LineBatchSource {
+            base_leftover,
             mut reader,
             line_counter,
             mut line_batch_tx,
-            options,
-            file_schema_len,
             pre_slice,
             needs_full_row_count,
             verbose,
@@ -453,24 +375,11 @@ impl LineBatchSource {
             eprintln!("[CsvSource]: Start line splitting",);
         }
 
-        let parse_options = options.parse_options.as_ref();
-
-        let mut prev_leftover = read_until_starting_point(
-            parse_options.quote_char,
-            parse_options.eol_char,
-            file_schema_len,
-            options.skip_lines,
-            options.skip_rows,
-            options.skip_rows_after_header,
-            options.parse_options.comment_prefix.as_ref(),
-            options.has_header,
-            &mut reader,
-        )?;
-
+        let mut prev_leftover = base_leftover;
         let mut row_offset = 0usize;
         let mut morsel_seq = MorselSeq::default();
         let mut n_rows_skipped: usize = 0;
-        let mut read_size = 512 * 1024; // L2 sized chunks performed the best in testing.
+        let mut read_size = CompressedReader::initial_read_size();
 
         loop {
             let (mem_slice, bytes_read) = reader.read_next_slice(&prev_leftover, read_size)?;
@@ -488,7 +397,7 @@ impl LineBatchSource {
 
             if batch_slice.is_empty() && !is_eof {
                 // This allows the slice to grow until at least a single row is included. To avoid a quadratic run-time for large row sizes, we double the read size.
-                read_size *= 2;
+                read_size = read_size.saturating_mul(2);
                 continue;
             }
 
@@ -540,6 +449,10 @@ impl LineBatchSource {
 
             if is_eof {
                 break;
+            }
+
+            if read_size < CompressedReader::ideal_read_size() {
+                read_size *= 4;
             }
         }
 
@@ -650,224 +563,5 @@ impl ChunkReader {
         cast_columns(&mut df, &self.fields_to_cast, false, self.ignore_errors)?;
 
         Ok((df, height))
-    }
-}
-
-/// Reads bytes from `reader` until the CSV starting point is reached depending on the options.
-///
-/// Returns the leftover bytes not yet consumed, which may be empty.
-///
-/// The reading is done in an iterative streaming fashion
-#[expect(clippy::too_many_arguments)]
-pub fn read_until_starting_point(
-    quote_char: Option<u8>,
-    eol_char: u8,
-    schema_len: usize,
-    skip_lines: usize,
-    skip_rows_before_header: usize,
-    skip_rows_after_header: usize,
-    comment_prefix: Option<&CommentPrefix>,
-    has_header: bool,
-    reader: &mut CompressedReader,
-) -> PolarsResult<MemSlice> {
-    #[derive(Copy, Clone)]
-    enum State {
-        // Ordered so that all states only happen after the ones before it.
-        SkipEmpty,
-        SkipRowsBeforeHeader(usize),
-        SkipHeader(bool),
-        SkipRowsAfterHeader(usize),
-        Done,
-    }
-
-    polars_ensure!(
-        !(skip_lines != 0 && skip_rows_before_header != 0),
-        InvalidOperation: "only one of 'skip_rows'/'skip_lines' may be set"
-    );
-
-    // We have to treat skip_lines differently since the lines it skips may not follow regular CSV
-    // quote escape rules.
-    let prev_leftover = skip_lines_naive(eol_char, skip_lines, reader)?;
-
-    let mut state = if schema_len > 1 || has_header {
-        State::SkipEmpty
-    } else if skip_lines != 0 {
-        // skip_lines shouldn't skip extra comments before the header, so directly go to SkipHeader
-        // state.
-        State::SkipHeader(false)
-    } else {
-        State::SkipRowsBeforeHeader(skip_rows_before_header)
-    };
-
-    for_each_line_from_reader(
-        quote_char,
-        eol_char,
-        comment_prefix,
-        true,
-        prev_leftover,
-        reader,
-        |line| {
-            let done = loop {
-                match &mut state {
-                    State::SkipEmpty => {
-                        if line.is_empty() || line == b"\r" {
-                            break false;
-                        }
-
-                        state = State::SkipRowsBeforeHeader(skip_rows_before_header);
-                    },
-                    State::SkipRowsBeforeHeader(remaining) => {
-                        let is_comment = is_comment_line(line, comment_prefix);
-
-                        if *remaining == 0 && !is_comment {
-                            state = State::SkipHeader(false);
-                            continue;
-                        }
-
-                        *remaining -= !is_comment as usize;
-                        break false;
-                    },
-                    State::SkipHeader(did_skip) => {
-                        if !has_header || *did_skip {
-                            state = State::SkipRowsAfterHeader(skip_rows_after_header);
-                            continue;
-                        }
-
-                        *did_skip = true;
-                        break false;
-                    },
-                    State::SkipRowsAfterHeader(remaining) => {
-                        let is_comment = is_comment_line(line, comment_prefix);
-
-                        if *remaining == 0 && !is_comment {
-                            state = State::Done;
-                            continue;
-                        }
-
-                        *remaining -= !is_comment as usize;
-                        break false;
-                    },
-                    State::Done => {
-                        break true;
-                    },
-                }
-            };
-
-            Ok(done)
-        },
-    )
-}
-
-/// Iterate over valid CSV lines produced by reader.
-pub fn for_each_line_from_reader(
-    quote_char: Option<u8>,
-    eol_char: u8,
-    comment_prefix: Option<&CommentPrefix>,
-    is_file_start: bool,
-    mut prev_leftover: MemSlice,
-    reader: &mut CompressedReader,
-    mut line_fn: impl FnMut(&[u8]) -> PolarsResult<bool>,
-) -> PolarsResult<MemSlice> {
-    let mut is_first_line = is_file_start;
-
-    // Since this is used for schema inference, we want to avoid needlessly large reads at first.
-    let mut read_size = 128 * 1024;
-
-    loop {
-        let (mut slice, bytes_read) = reader.read_next_slice(&prev_leftover, read_size)?;
-        if slice.is_empty() {
-            return Ok(MemSlice::EMPTY);
-        }
-
-        if is_first_line {
-            is_first_line = false;
-            const UTF8_BOM_MARKER: Option<&[u8]> = Some(b"\xef\xbb\xbf");
-            if slice.get(0..3) == UTF8_BOM_MARKER {
-                slice = slice.slice(3..slice.len());
-            }
-        }
-
-        let mut lines = SplitLines::new(&slice, quote_char, eol_char, comment_prefix);
-        let Some(mut prev_line) = lines.next() else {
-            read_size *= 2;
-            prev_leftover = slice;
-            continue;
-        };
-
-        let mut should_ret = false;
-
-        // The last line in `SplitLines` may be incomplete if `slice` ends before the file does, so
-        // we iterate everything except the last line.
-        for next_line in lines {
-            if line_fn(prev_line)? {
-                should_ret = true;
-                break;
-            }
-            prev_line = next_line;
-        }
-
-        // EOF file reached, the last line will have no continuation on the next call to
-        // `read_next_slice`.
-        if bytes_read == 0 {
-            if !line_fn(prev_line)? {
-                // The `line_fn` wants to consume more lines, but there aren't any.
-                // Make sure to report to the caller that there is no leftover.
-                prev_line = &slice[slice.len()..slice.len()];
-            }
-            should_ret = true;
-        }
-
-        let unconsumed_offset = prev_line.as_ptr() as usize - slice.as_ptr() as usize;
-        prev_leftover = slice.slice(unconsumed_offset..slice.len());
-
-        if should_ret {
-            return Ok(prev_leftover);
-        }
-    }
-}
-
-fn skip_lines_naive(
-    eol_char: u8,
-    skip_lines: usize,
-    reader: &mut CompressedReader,
-) -> PolarsResult<MemSlice> {
-    let mut prev_leftover = MemSlice::EMPTY;
-
-    if skip_lines == 0 {
-        return Ok(prev_leftover);
-    }
-
-    let mut remaining = skip_lines;
-    // Since this is used for schema inference, we want to avoid needlessly large reads at first.
-    let mut read_size = 128 * 1024;
-
-    loop {
-        let (slice, bytes_read) = reader.read_next_slice(&prev_leftover, read_size)?;
-        let mut bytes: &[u8] = &slice;
-
-        'inner: loop {
-            let Some(mut pos) = memchr::memchr(eol_char, bytes) else {
-                read_size *= 2;
-                break 'inner;
-            };
-            pos = cmp::min(pos + 1, bytes.len());
-
-            bytes = &bytes[pos..];
-            remaining -= 1;
-
-            if remaining == 0 {
-                let unconsumed_offset = bytes.as_ptr() as usize - slice.as_ptr() as usize;
-                prev_leftover = slice.slice(unconsumed_offset..slice.len());
-                return Ok(prev_leftover);
-            }
-        }
-
-        polars_ensure!(
-            bytes_read > 0,
-            NoData: "specified skip_lines is larger than total number of lines."
-        );
-
-        // No need to search for naive eol twice in the leftover.
-        prev_leftover = MemSlice::EMPTY;
     }
 }

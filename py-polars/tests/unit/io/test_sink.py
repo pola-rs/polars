@@ -1,5 +1,6 @@
 import io
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 import pytest
@@ -169,3 +170,28 @@ def test_sink_boolean_panic_25806(sink: Any, scan: Any) -> None:
     sink(df.lazy(), f)
 
     assert_frame_equal(scan(f).collect(), df)
+
+
+def test_collect_all_lazy() -> None:
+    with TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+
+        a = pl.LazyFrame({"a": [1, 2, 3, 4, 5, 6]})
+        b = a.filter(pl.col("a") % 2 == 0).sink_csv(tmp_path / "b.csv", lazy=True)
+        c = a.filter(pl.col("a") % 3 == 0).sink_csv(tmp_path / "c.csv", lazy=True)
+        d = a.sink_csv(tmp_path / "a.csv", lazy=True)
+
+        q = pl.collect_all([d, b, c], lazy=True)
+
+        assert q._ldf._node_name() == "SinkMultiple"  # type: ignore[attr-defined]
+        q.collect()
+        df_a = pl.read_csv(tmp_path / "a.csv")
+        df_b = pl.read_csv(tmp_path / "b.csv")
+        df_c = pl.read_csv(tmp_path / "c.csv")
+
+        assert_frame_equal(df_a, pl.DataFrame({"a": [1, 2, 3, 4, 5, 6]}))
+        assert_frame_equal(df_b, pl.DataFrame({"a": [2, 4, 6]}))
+        assert_frame_equal(df_c, pl.DataFrame({"a": [3, 6]}))
+
+    with pytest.raises(ValueError, match="all LazyFrames must end with a sink to use"):
+        pl.collect_all([a, a], lazy=True)

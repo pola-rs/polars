@@ -8,7 +8,7 @@ pub struct ProjectionSimple {
 impl ProjectionSimple {
     fn execute_impl(&mut self, df: DataFrame, columns: &[PlSmallStr]) -> PolarsResult<DataFrame> {
         // No duplicate check as that an invariant of this node.
-        df._select_impl_unchecked(columns.as_ref())
+        unsafe { df.select_unchecked(columns) }
     }
 }
 

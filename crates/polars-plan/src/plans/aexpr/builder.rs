@@ -67,17 +67,13 @@ impl AExprBuilder {
         Self { node }
     }
 
-    pub fn row_encode_unary(
-        self,
+    pub fn row_encode(
+        exprs: Vec<ExprIR>,
+        dtypes: Vec<DataType>,
         variant: RowEncodingVariant,
-        dtype: DataType,
         arena: &mut Arena<AExpr>,
     ) -> Self {
-        Self::function(
-            vec![ExprIR::from_node(self.node(), arena)],
-            IRFunctionExpr::RowEncode(vec![dtype], variant),
-            arena,
-        )
+        Self::function(exprs, IRFunctionExpr::RowEncode(dtypes, variant), arena)
     }
 
     pub fn cast(self, dtype: DataType, arena: &mut Arena<AExpr>) -> Self {
@@ -165,6 +161,26 @@ impl AExprBuilder {
         )
     }
 
+    pub fn min_by(self, by: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(
+            IRAggExpr::MinBy {
+                input: self.node(),
+                by: by.into_aexpr_builder().node(),
+            },
+            arena,
+        )
+    }
+
+    pub fn max_by(self, by: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(
+            IRAggExpr::MaxBy {
+                input: self.node(),
+                by: by.into_aexpr_builder().node(),
+            },
+            arena,
+        )
+    }
+
     pub fn sum(self, arena: &mut Arena<AExpr>) -> Self {
         Self::agg(IRAggExpr::Sum(self.node()), arena)
     }
@@ -175,6 +191,22 @@ impl AExprBuilder {
                 input: self.node(),
                 include_nulls: true,
             },
+            arena,
+        )
+    }
+
+    pub fn any_horizontal(exprs: Vec<ExprIR>, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            exprs,
+            IRFunctionExpr::Boolean(IRBooleanFunction::AnyHorizontal),
+            arena,
+        )
+    }
+
+    pub fn all_horizontal(exprs: Vec<ExprIR>, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            exprs,
+            IRFunctionExpr::Boolean(IRBooleanFunction::AllHorizontal),
             arena,
         )
     }

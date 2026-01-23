@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import contextlib
-import re
 from typing import (
     TYPE_CHECKING,
-    Callable,
     Generic,
-    Union,
     overload,
 )
 
@@ -29,29 +26,24 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Collection, Mapping
+    from collections.abc import Callable, Collection, Mapping
     from types import TracebackType
-    from typing import Any, Final, Literal
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
+    from typing import Any, Final, Literal, TypeAlias
 
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
         from typing_extensions import Self
 
-    CompatibleFrameType: TypeAlias = Union[
-        DataFrame,
-        LazyFrame,
-        Series,
-        pd.DataFrame,
-        pd.Series[Any],
-        pa.Table,
-        pa.RecordBatch,
-    ]
+    CompatibleFrameType: TypeAlias = (
+        DataFrame
+        | LazyFrame
+        | Series
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pa.Table
+        | pa.RecordBatch
+    )
 
 __all__ = ["SQLContext"]
 
@@ -276,21 +268,17 @@ class SQLContext(Generic[FrameType]):
         │ 3   ┆ 6   ┆ 8   │
         └─────┴─────┴─────┘
         """
-        # basic extraction of possible table names from the query, so we don't register
-        # unnecessary objects from the globals (ideally we shuoold look to make the
-        # underlying `sqlparser-rs` lib parse the query to identify table names)
-        q = re.split(r"\bFROM\b", query, maxsplit=1, flags=re.I)
-        possible_names = (
-            {
-                nm.strip('"')
-                for nm in re.split(r"\b", q[1])
-                if re.match(r'^("[^"]+")$', nm) or nm.isidentifier()
-            }
-            if len(q) > 1
-            else set()
+        # extract table names from the query, checking against them so that
+        # we don't register unnecessary objects found in the globals
+        table_names = set(
+            PySQLContext.table_identifiers(
+                query,
+                include_schema=False,
+                unique=True,
+            )
         )
-        # get compatible frame objects from the globals, constraining by possible names
-        named_frames = _get_frame_locals(all_compatible=True, named=possible_names)
+        # get compatible objects from the globals, constraining by possible names
+        named_frames = _get_frame_locals(all_compatible=True, named=table_names)
         with cls(frames=named_frames, register_globals=False) as ctx:
             return ctx.execute(query=query, eager=eager)
 

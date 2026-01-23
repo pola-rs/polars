@@ -9,7 +9,7 @@ fn create_sample_df() -> DataFrame {
         (1..10000i64).map(|i| i / 100).collect::<Vec<_>>(),
     );
     let b = Column::new("b".into(), 1..10000i64);
-    DataFrame::new(vec![a, b]).unwrap()
+    DataFrame::new_infer_height(vec![a, b]).unwrap()
 }
 
 fn create_struct_df() -> (DataFrame, DataFrame) {
@@ -646,7 +646,7 @@ fn test_multiple_explodes_with_same_column() {
         })
         .collect();
 
-    let expected_df = DataFrame::new(vec![
+    let expected_df = DataFrame::new_infer_height(vec![
         Column::new(PlSmallStr::from_static("list_a"), expected_list_a),
         Column::new(PlSmallStr::from_static("list_b"), expected_list_b),
         Column::new(
@@ -712,7 +712,7 @@ fn test_multiple_explodes_different_columns() {
     let expected_list_b: Vec<i64> = (1..10000).collect();
     let expected_value: Vec<i32> = vec![100i32; expected_list_b.len()];
 
-    let expected_df = DataFrame::new(vec![
+    let expected_df = DataFrame::new_infer_height(vec![
         Column::new(PlSmallStr::from_static("list_a"), expected_list_a),
         Column::new(PlSmallStr::from_static("list_b"), expected_list_b),
         Column::new(PlSmallStr::from_static("value"), expected_value),
@@ -745,7 +745,7 @@ fn explode_same_name_with_cte() {
 
     let list_series = Column::new(PlSmallStr::from_static("list_a"), values);
 
-    let df = DataFrame::new(vec![list_series]).unwrap();
+    let df = DataFrame::new_infer_height(vec![list_series]).unwrap();
 
     let df_imploded = df
         .lazy()
@@ -809,7 +809,7 @@ fn explode_same_name_with_cte() {
         .unwrap();
 
     let expected_results = vec![1i64, 2, 3, 4, 5, 6, 7, 8];
-    let expected_df = DataFrame::new(vec![Column::new(
+    let expected_df = DataFrame::new_infer_height(vec![Column::new(
         PlSmallStr::from_static("list_a"),
         expected_results,
     )])
@@ -859,7 +859,7 @@ fn test_cte_values() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "ipc")]
 fn test_group_by_2() -> PolarsResult<()> {
-    use polars_utils::plpath::PlPath;
+    use polars_utils::pl_path::PlRefPath;
 
     let mut context = SQLContext::new();
     let sql = r#"
@@ -882,7 +882,7 @@ fn test_group_by_2() -> PolarsResult<()> {
     let df_sql = context.execute(sql)?;
     let df_sql = df_sql.collect()?;
     let expected = LazyFrame::scan_ipc(
-        PlPath::new("../../examples/datasets/foods1.ipc"),
+        PlRefPath::new("../../examples/datasets/foods1.ipc"),
         Default::default(),
         Default::default(),
     )?

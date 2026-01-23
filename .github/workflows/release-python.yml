@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: '3.9'
+  PYTHON_VERSION: '3.10'
   PYTHON_VERSION_WIN_ARM64: '3.11' # ARM64 Windows doesn't have older versions
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
@@ -44,12 +44,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.sha }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -86,7 +86,7 @@ jobs:
           uv build py-polars --out-dir dist
 
       - name: Upload base package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           path: dist
 
@@ -100,12 +100,12 @@ jobs:
         package: [polars-runtime-32, polars-runtime-64, polars-runtime-compat]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.sha }}
 
       - name: Download base package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
@@ -117,7 +117,7 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -142,7 +142,7 @@ jobs:
           python -c 'import polars; polars.show_versions()'
 
       - name: Upload sdist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: sdist-${{ matrix.package }}
           path: dist/*.tar.gz
@@ -154,22 +154,40 @@ jobs:
       fail-fast: false
       matrix:
         package: [polars-runtime-32, polars-runtime-64, polars-runtime-compat]
-        # macos-15-intel is x86-64
-        # macos-15 is aarch64
-        os: [ubuntu-latest, macos-15-intel, macos-15, windows-latest, windows-11-arm]
-        architecture: [x86-64, aarch64]
-        exclude:
-          - os: windows-latest
-            architecture: aarch64
-          - os: windows-11-arm
+        job_config: [linux-x64, linux-arm64, linux-musl-x64, linux-musl-arm64, macos-x64, macos-arm64, win-x64, win-arm64]
+        include:
+          - job_config: linux-x64
+            os: ubuntu-latest
             architecture: x86-64
-          - os: macos-15
-            architecture: x86-64
-          - os: macos-15-intel
+            target: x86_64-unknown-linux-gnu
+          - job_config: linux-arm64
+            os: ubuntu-24.04-arm
             architecture: aarch64
-
-    env:
-      SED_INPLACE: ${{ startsWith(matrix.os, 'macos') && '-i ''''' || '-i' }}
+            target: aarch64-unknown-linux-gnu
+          - job_config: linux-musl-x64
+            os: ubuntu-latest
+            architecture: x86-64
+            target: x86_64-unknown-linux-musl
+          - job_config: linux-musl-arm64
+            os: ubuntu-24.04-arm
+            architecture: aarch64
+            target: aarch64-unknown-linux-musl
+          - job_config: macos-x64
+            os: macos-15-intel
+            architecture: x86-64
+            target: x86_64-apple-darwin
+          - job_config: macos-arm64
+            os: macos-15
+            architecture: aarch64
+            target: aarch64-apple-darwin
+          - job_config: win-x64
+            os: windows-latest
+            architecture: x86-64
+            target: x86_64-pc-windows-msvc
+          - job_config: win-arm64
+            os: windows-11-arm
+            architecture: aarch64
+            target: aarch64-pc-windows-msvc
 
     steps:
       - name: Setup build environment (ARM64 Windows)
@@ -228,32 +246,32 @@ jobs:
           clang -v
           cmake --version
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.sha }}
 
       - name: Download base package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
 
       # Avoid potential out-of-memory errors
       - name: Set swap space for Linux
-        if: matrix.os == 'ubuntu-latest'
+        if: runner.os == 'Linux'
         uses: pierotofy/set-swap-space@master
         with:
           swap-size-gb: 10
 
       - name: Set up Python
         if: matrix.os != 'windows-11-arm'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Set up Python (ARM64 Windows)
         if: matrix.os == 'windows-11-arm'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION_WIN_ARM64 }}
 
@@ -305,23 +323,8 @@ jobs:
             echo "CFLAGS=$CC_FEATURES -mtune=$TUNE_CPU" >> $GITHUB_ENV
           fi
 
-      - name: Set Rust target for aarch64
-        if: matrix.architecture == 'aarch64'
-        id: target
-        run: |
-          TARGET=$(
-            if [[ "${{ matrix.os }}" == "macos-15" ]]; then
-              echo "aarch64-apple-darwin";
-            elif [[ "${{ matrix.os }}" == "windows-11-arm" ]]; then
-              echo "aarch64-pc-windows-msvc";
-            else
-              echo "aarch64-unknown-linux-gnu";
-            fi
-          )
-          echo "target=$TARGET" >> $GITHUB_OUTPUT
-
       - name: Set jemalloc for aarch64 Linux
-        if: matrix.architecture == 'aarch64' && matrix.os == 'ubuntu-latest'
+        if: matrix.architecture == 'aarch64' && runner.os == 'Linux'
         run: |
           echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
 
@@ -336,25 +339,25 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           command: build
-          target: ${{ steps.target.outputs.target }}
+          target: ${{ matrix.target }}
           args: >
-            --profile dist-release
+            --profile ${{ inputs.dry-run == true && 'mindebug-dev' || 'dist-release' }}
             --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
             --out dist
-          manylinux: ${{ matrix.architecture == 'aarch64' && '2_24' || 'auto' }}
+          manylinux: auto
           maturin-version: 1.8.3
 
       - name: Test wheel
-        # For linux; only test on x86-64 for now as this matches the runner architecture
-        if: matrix.architecture == 'x86-64' || startsWith(matrix.os, 'macos') || startsWith(matrix.os, 'windows')
+        # Testing on entire matrix except musl targets, which are missing on all ubuntu-x images.
+        if: endsWith(matrix.target, '-musl') == false
         run: |
           pip install --force-reinstall --verbose dist/*.whl
           python -c 'import polars; polars.show_versions()'
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
-          name: wheel-${{ matrix.package }}-${{ matrix.os }}-${{ matrix.architecture }}
+          name: wheel-${{ matrix.package }}-${{ matrix.job_config }}
           path: dist/*.whl
 
   publish-to-pypi:
@@ -368,7 +371,7 @@ jobs:
 
     steps:
       - name: Download sdists and wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
@@ -387,7 +390,7 @@ jobs:
     needs: [publish-to-pypi]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.sha }}
 
@@ -426,7 +429,7 @@ jobs:
 
       - name: Trigger other workflows related to the release
         if: inputs.dry-run == false
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@v4
         with:
           event-type: python-release
           client-payload: >

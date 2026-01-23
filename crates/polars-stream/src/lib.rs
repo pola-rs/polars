@@ -18,9 +18,7 @@ pub use metrics::{GraphMetrics, NodeMetrics};
 mod morsel;
 mod nodes;
 mod physical_plan;
-pub use physical_plan::PhysNodeKey;
-#[cfg(feature = "physical_plan_visualization")]
-pub use physical_plan::visualization as physical_plan_visualization;
+pub use physical_plan::{NodeStyle, PhysNode, PhysNodeKey, PhysNodeKind, ZipBehavior};
 mod pipe;
 mod utils;
 

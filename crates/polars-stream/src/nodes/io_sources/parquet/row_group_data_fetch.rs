@@ -90,7 +90,7 @@ impl RowGroupDataFetcher {
                     if let DynByteSource::MemSlice(mem_slice) = current_byte_source.as_ref() {
                         // Skip byte range calculation for `no_prefetch`.
                         if memory_prefetch_func as usize
-                            != polars_utils::mem::prefetch::no_prefetch as usize
+                            != polars_utils::mem::prefetch::no_prefetch as *const () as usize
                         {
                             let slice = mem_slice.0.as_ref();
 

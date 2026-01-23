@@ -23,7 +23,7 @@ impl GroupByDynamicExec {
     ) -> PolarsResult<DataFrame> {
         use crate::executors::group_by_rolling::sort_and_groups;
 
-        df.as_single_chunk_par();
+        df.rechunk_mut_par();
 
         let mut keys = self
             .keys
@@ -75,7 +75,7 @@ impl GroupByDynamicExec {
         columns.push(time_key);
         columns.extend(agg_columns);
 
-        DataFrame::new(columns)
+        DataFrame::new_infer_height(columns)
     }
 }
 

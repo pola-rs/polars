@@ -1282,3 +1282,77 @@ def test_sum_inf_not_nan_25849() -> None:
     data = [10.0, None, 10.0, 10.0, 10.0, 10.0, float("inf"), 10.0, 10.0]
     df = pl.DataFrame({"x": data, "g": ["X"] * len(data)})
     assert df.group_by("g").agg(pl.col("x").sum())["x"].item() == float("inf")
+
+
+COLS = ["flt", "dec", "int", "str", "cat", "enum", "date", "dt"]
+
+
+@pytest.mark.parametrize(
+    "agg_funcs", [(pl.Expr.min_by, pl.Expr.min), (pl.Expr.max_by, pl.Expr.max)]
+)
+@pytest.mark.parametrize("by_col", COLS)
+def test_min_max_by(agg_funcs: Any, by_col: str) -> None:
+    agg_by, agg = agg_funcs
+    df = pl.DataFrame(
+        {
+            "flt": [3.0, 2.0, float("nan"), 5.0, None, 4.0],
+            "dec": [3, 2, None, 5, None, 4],
+            "int": [3, 2, None, 5, None, 4],
+            "str": ["c", "b", None, "e", None, "d"],
+            "cat": ["c", "b", None, "e", None, "d"],
+            "enum": ["c", "b", None, "e", None, "d"],
+            "date": [
+                date(2023, 3, 3),
+                date(2023, 2, 2),
+                None,
+                date(2023, 5, 5),
+                None,
+                date(2023, 4, 4),
+            ],
+            "dt": [
+                datetime(2023, 3, 3),
+                datetime(2023, 2, 2),
+                None,
+                datetime(2023, 5, 5),
+                None,
+                datetime(2023, 4, 4),
+            ],
+            "g": [1, 1, 1, 2, 2, 2],
+        },
+        schema_overrides={
+            "dec": pl.Decimal(scale=5),
+            "cat": pl.Categorical,
+            "enum": pl.Enum(["a", "b", "c", "d", "e", "f"]),
+        },
+    )
+
+    result = df.select([agg_by(pl.col(c), pl.col(by_col)) for c in COLS])
+    expected = df.select([agg(pl.col(c)) for c in COLS])
+    assert_frame_equal(result, expected)
+
+    # TODO: remove after https://github.com/pola-rs/polars/issues/25906.
+    if by_col != "cat":
+        df = df.drop("cat")
+        cols = [c for c in COLS if c != "cat"]
+
+        result = df.group_by("g").agg([agg_by(pl.col(c), pl.col(by_col)) for c in cols])
+        expected = df.group_by("g").agg([agg(pl.col(c)) for c in cols])
+        assert_frame_equal(result, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(("agg", "expected"), [("max", 2), ("min", 0)])
+def test_grouped_minmax_after_reverse_on_sorted_column_26141(
+    agg: str, expected: int
+) -> None:
+    df = pl.DataFrame({"a": [0, 1, 2]}).sort("a")
+
+    expr = getattr(pl.col("a").reverse(), agg)()
+    out = df.group_by(1).agg(expr)
+
+    expected_df = pl.DataFrame(
+        {
+            "literal": pl.Series([1], dtype=pl.Int32),
+            "a": [expected],
+        }
+    )
+    assert_frame_equal(out, expected_df)

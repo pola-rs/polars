@@ -386,7 +386,7 @@ impl StructChunked {
 
     pub fn get_row_encoded_array(&self, options: SortOptions) -> PolarsResult<BinaryArray<i64>> {
         let c = self.clone().into_column();
-        _get_rows_encoded_arr(&[c], &[options.descending], &[options.nulls_last])
+        _get_rows_encoded_arr(&[c], &[options.descending], &[options.nulls_last], false)
     }
 
     pub fn get_row_encoded(&self, options: SortOptions) -> PolarsResult<BinaryOffsetChunked> {
@@ -396,6 +396,7 @@ impl StructChunked {
             &[c],
             &[options.descending],
             &[options.nulls_last],
+            false,
         )
     }
 
@@ -450,7 +451,7 @@ impl StructChunked {
             .collect::<Vec<_>>();
 
         // SAFETY: invariants for struct are the same
-        unsafe { DataFrame::new_no_checks(self.len(), columns) }
+        unsafe { DataFrame::new_unchecked(self.len(), columns) }
     }
 
     /// Get access to one of this [`StructChunked`]'s fields

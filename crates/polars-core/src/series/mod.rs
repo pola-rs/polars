@@ -277,7 +277,7 @@ impl Series {
 
     pub fn into_frame(self) -> DataFrame {
         // SAFETY: A single-column dataframe cannot have length mismatches or duplicate names
-        unsafe { DataFrame::new_no_checks(self.len(), vec![self.into()]) }
+        unsafe { DataFrame::new_unchecked(self.len(), vec![self.into()]) }
     }
 
     /// Rename series.
@@ -1085,7 +1085,14 @@ impl Series {
             &[self.clone().into_column()],
             &[descending],
             &[nulls_last],
+            false,
         )
+    }
+}
+
+impl Default for Series {
+    fn default() -> Self {
+        NullChunked::new(PlSmallStr::EMPTY, 0).into_series()
     }
 }
 
@@ -1100,12 +1107,6 @@ impl Deref for Series {
 impl<'a> AsRef<dyn SeriesTrait + 'a> for Series {
     fn as_ref(&self) -> &(dyn SeriesTrait + 'a) {
         self.0.as_ref()
-    }
-}
-
-impl Default for Series {
-    fn default() -> Self {
-        Int64Chunked::default().into_series()
     }
 }
 

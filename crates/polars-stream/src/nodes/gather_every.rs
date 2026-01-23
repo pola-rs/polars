@@ -81,11 +81,15 @@ impl ComputeNode for GatherEveryNode {
                 let wait_group = WaitGroup::default();
                 while let Ok((morsel, offset)) = recv.recv().await {
                     let mut morsel = morsel.try_map(|mut df| {
-                        let column = &df.get_columns()[0];
+                        let column = &df.columns()[0];
                         let out = column
                             .gather_every(n, offset)?
                             .with_name(column.name().clone());
-                        unsafe { df.get_columns_mut()[0] = out };
+                        unsafe {
+                            let height = out.len();
+                            df.columns_mut_retain_schema()[0] = out;
+                            df.set_height(height);
+                        };
                         PolarsResult::Ok(df)
                     })?;
                     morsel.set_consume_token(wait_group.token());

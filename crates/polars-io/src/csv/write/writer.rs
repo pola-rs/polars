@@ -6,8 +6,9 @@ use polars_core::POOL;
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
+use polars_utils::pl_str::PlSmallStr;
 
-use super::write_impl::{write, write_bom, write_csv_header};
+use super::write_impl::{UTF8_BOM, csv_header, write};
 use super::{QuoteStyle, SerializeOptions};
 use crate::shared::SerWriter;
 
@@ -30,11 +31,7 @@ where
     W: Write,
 {
     fn new(buffer: W) -> Self {
-        // 9f: all nanoseconds
-        let options = SerializeOptions {
-            time_format: Some("%T%.9f".to_string()),
-            ..Default::default()
-        };
+        let options = SerializeOptions::default();
 
         CsvWriter {
             buffer,
@@ -48,7 +45,7 @@ where
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         if self.bom {
-            write_bom(&mut self.buffer)?;
+            self.buffer.write_all(&UTF8_BOM)?;
         }
         let names = df
             .get_column_names()
@@ -56,7 +53,8 @@ where
             .map(|x| x.as_str())
             .collect::<Vec<_>>();
         if self.header {
-            write_csv_header(&mut self.buffer, names.as_slice(), &self.options)?;
+            self.buffer
+                .write_all(&csv_header(names.as_slice(), &self.options)?)?;
         }
         write(
             &mut self.buffer,
@@ -76,7 +74,7 @@ where
         Arc::make_mut(&mut self.options)
     }
 
-    /// Set whether to write UTF-8 BOM.
+    /// Set whether to write UTF-8 UTF8_BOM.
     pub fn include_bom(mut self, include_bom: bool) -> Self {
         self.bom = include_bom;
         self
@@ -101,7 +99,7 @@ where
     }
 
     /// Set the CSV file's date format.
-    pub fn with_date_format(mut self, format: Option<String>) -> Self {
+    pub fn with_date_format(mut self, format: Option<PlSmallStr>) -> Self {
         if format.is_some() {
             self.options_mut().date_format = format;
         }
@@ -109,7 +107,7 @@ where
     }
 
     /// Set the CSV file's time format.
-    pub fn with_time_format(mut self, format: Option<String>) -> Self {
+    pub fn with_time_format(mut self, format: Option<PlSmallStr>) -> Self {
         if format.is_some() {
             self.options_mut().time_format = format;
         }
@@ -117,7 +115,7 @@ where
     }
 
     /// Set the CSV file's datetime format.
-    pub fn with_datetime_format(mut self, format: Option<String>) -> Self {
+    pub fn with_datetime_format(mut self, format: Option<PlSmallStr>) -> Self {
         if format.is_some() {
             self.options_mut().datetime_format = format;
         }
@@ -153,13 +151,13 @@ where
     }
 
     /// Set the CSV file's null value representation.
-    pub fn with_null_value(mut self, null_value: String) -> Self {
+    pub fn with_null_value(mut self, null_value: PlSmallStr) -> Self {
         self.options_mut().null = null_value;
         self
     }
 
     /// Set the CSV file's line terminator.
-    pub fn with_line_terminator(mut self, line_terminator: String) -> Self {
+    pub fn with_line_terminator(mut self, line_terminator: PlSmallStr) -> Self {
         self.options_mut().line_terminator = line_terminator;
         self
     }
@@ -203,7 +201,7 @@ impl<W: Write> BatchedWriter<W> {
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         if !self.has_written_bom {
             self.has_written_bom = true;
-            write_bom(&mut self.writer.buffer)?;
+            self.writer.buffer.write_all(&UTF8_BOM)?;
         }
 
         if !self.has_written_header {
@@ -213,11 +211,10 @@ impl<W: Write> BatchedWriter<W> {
                 .into_iter()
                 .map(|x| x.as_str())
                 .collect::<Vec<_>>();
-            write_csv_header(
-                &mut self.writer.buffer,
-                names.as_slice(),
-                &self.writer.options,
-            )?;
+
+            self.writer
+                .buffer
+                .write_all(&csv_header(names.as_slice(), &self.writer.options)?)?;
         }
 
         write(
@@ -234,7 +231,7 @@ impl<W: Write> BatchedWriter<W> {
     pub fn finish(&mut self) -> PolarsResult<()> {
         if !self.has_written_bom {
             self.has_written_bom = true;
-            write_bom(&mut self.writer.buffer)?;
+            self.writer.buffer.write_all(&UTF8_BOM)?;
         }
 
         if !self.has_written_header {
@@ -244,7 +241,10 @@ impl<W: Write> BatchedWriter<W> {
                 .iter_names()
                 .map(|x| x.as_str())
                 .collect::<Vec<_>>();
-            write_csv_header(&mut self.writer.buffer, &names, &self.writer.options)?;
+
+            self.writer
+                .buffer
+                .write_all(&csv_header(&names, &self.writer.options)?)?;
         };
 
         Ok(())

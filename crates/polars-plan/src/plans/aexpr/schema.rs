@@ -1,15 +1,20 @@
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DEC128_MAX_PREC;
+use polars_core::series::arithmetic::NumericListOp;
 use polars_utils::format_pl_smallstr;
 use recursive::recursive;
 
 use super::*;
-use crate::constants::{POLARS_ELEMENT, get_literal_name, get_pl_element_name};
+use crate::constants::{
+    POLARS_ELEMENT, POLARS_STRUCTFIELDS, get_literal_name, get_pl_element_name,
+    get_pl_structfields_name,
+};
 
 fn validate_expr(node: Node, ctx: &ToFieldContext) -> PolarsResult<()> {
     ctx.arena.get(node).to_field_impl(ctx).map(|_| ())
 }
 
+#[derive(Debug)]
 pub struct ToFieldContext<'a> {
     arena: &'a Arena<AExpr>,
     schema: &'a Schema,
@@ -94,6 +99,27 @@ impl AExpr {
                 .schema
                 .get_field(name)
                 .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into())),
+            #[cfg(feature = "dtype-struct")]
+            StructField(name) => {
+                let struct_field = ctx
+                    .schema
+                    .get_field(POLARS_STRUCTFIELDS)
+                    .ok_or_else(|| polars_err!(invalid_field_use))?;
+                let DataType::Struct(fields) = struct_field.dtype() else {
+                    return Err(polars_err!(
+                        InvalidOperation: "expected `Struct` dtype for `with_fields` Expr, got `{}`", 
+                        struct_field.dtype()));
+                };
+                // @NOTE. Linear search performance is not ideal. An alternative approach
+                // would be to map each field to a new column with a temporary name (see streaming engine),
+                // and extend the schema accordingly.
+                for f in fields {
+                    if f.name() == name {
+                        return Ok(f.clone());
+                    }
+                }
+                Err(PolarsError::StructFieldNotFound(name.to_string().into()))
+            },
             Literal(sv) => Ok(match sv {
                 LiteralValue::Series(s) => s.field().into_owned(),
                 _ => Field::new(sv.output_column_name(), sv.get_datatype()),
@@ -140,6 +166,8 @@ impl AExpr {
                 match agg {
                     Max { input: expr, .. }
                     | Min { input: expr, .. }
+                    | MinBy { input: expr, .. }
+                    | MaxBy { input: expr, .. }
                     | First(expr)
                     | FirstNonNull(expr)
                     | Last(expr)
@@ -292,6 +320,41 @@ impl AExpr {
 
                 Ok(output_field)
             },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, evaluation } => {
+                let struct_field = ctx.arena.get(*expr).to_field_impl(ctx)?;
+                let mut evaluation_schema = ctx.schema.clone();
+                evaluation_schema.insert(get_pl_structfields_name(), struct_field.dtype().clone());
+
+                let eval_fields = func_args_to_fields(
+                    evaluation,
+                    &ToFieldContext::new(ctx.arena, &evaluation_schema),
+                )?;
+
+                // Merge evaluation fields into the expr Struct
+                if let DataType::Struct(expr_fields) = struct_field.dtype() {
+                    let mut fields_map =
+                        PlIndexMap::with_capacity(expr_fields.len() + eval_fields.len());
+                    for field in expr_fields {
+                        fields_map.insert(field.name(), field.dtype());
+                    }
+                    for field in &eval_fields {
+                        fields_map.insert(field.name(), field.dtype());
+                    }
+                    let dtype = DataType::Struct(
+                        fields_map
+                            .iter()
+                            .map(|(&name, &dtype)| Field::new(name.clone(), dtype.clone()))
+                            .collect(),
+                    );
+                    let mut out = struct_field.clone();
+                    out.coerce(dtype);
+                    Ok(out)
+                } else {
+                    let dt = struct_field.dtype();
+                    polars_bail!(op = "with_fields", got = dt, expected = "Struct")
+                }
+            },
             Function {
                 function,
                 input,
@@ -358,8 +421,10 @@ impl AExpr {
             | Ternary { truthy: expr, .. }
             | Eval { expr, .. }
             | Slice { input: expr, .. }
-            | Agg(Max { input: expr, .. })
             | Agg(Min { input: expr, .. })
+            | Agg(Max { input: expr, .. })
+            | Agg(MinBy { input: expr, .. })
+            | Agg(MaxBy { input: expr, .. })
             | Agg(First(expr))
             | Agg(FirstNonNull(expr))
             | Agg(Last(expr))
@@ -383,6 +448,8 @@ impl AExpr {
                     input[0].output_name().clone()
                 }
             },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, .. } => expr_arena.get(*expr).to_name(expr_arena),
             Function {
                 input, function, ..
             } => match function.output_name().and_then(|v| v.into_inner()) {
@@ -391,7 +458,9 @@ impl AExpr {
                 None => input[0].output_name().clone(),
             },
             Column(name) => name.clone(),
-            Literal(lv) => lv.output_column_name(),
+            #[cfg(feature = "dtype-struct")]
+            StructField(name) => name.clone(),
+            Literal(lv) => lv.output_column_name().clone(),
         }
     }
 }
@@ -478,12 +547,12 @@ fn get_arithmetic_field(
                     )
                 },
                 (list_dtype @ List(_), other_dtype) | (other_dtype, list_dtype @ List(_)) => {
-                    // FIXME: This should not use `try_get_supertype()`! It should instead recursively use the enclosing match block.
+                    // TODO: This should not use `try_get_supertype()`! It should instead recursively use the enclosing match block.
                     // Otherwise we will silently permit addition operations between logical types (see above).
                     // This currently doesn't cause any problems because the list arithmetic implementation checks and raises errors
                     // if the leaf types aren't numeric, but it means we don't raise an error until execution and the DSL schema
                     // may be incorrect.
-                    list_dtype.cast_leaf(try_get_supertype(
+                    list_dtype.cast_leaf(NumericListOp::sub().try_get_leaf_supertype(
                         list_dtype.leaf_dtype(),
                         other_dtype.leaf_dtype(),
                     )?)
@@ -545,7 +614,7 @@ fn get_arithmetic_field(
                     )
                 },
                 (list_dtype @ List(_), other_dtype) | (other_dtype, list_dtype @ List(_)) => {
-                    list_dtype.cast_leaf(try_get_supertype(
+                    list_dtype.cast_leaf(NumericListOp::add().try_get_leaf_supertype(
                         list_dtype.leaf_dtype(),
                         other_dtype.leaf_dtype(),
                     )?)

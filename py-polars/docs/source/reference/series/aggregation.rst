@@ -11,9 +11,11 @@ Aggregation
     Series.count
     Series.implode
     Series.max
+    Series.max_by
     Series.mean
     Series.median
     Series.min
+    Series.min_by
     Series.mode
     Series.nan_max
     Series.nan_min

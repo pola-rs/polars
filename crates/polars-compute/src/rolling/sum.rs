@@ -108,19 +108,21 @@ where
     }
 }
 
-impl<'a, T, S> RollingAggWindowNoNulls<'a, T> for SumWindow<'a, T, S>
+impl<T, S> RollingAggWindowNoNulls<T> for SumWindow<'_, T, S>
 where
     T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
     S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
-    fn new(
+    type This<'a> = SumWindow<'a, T, S>;
+
+    fn new<'a>(
         slice: &'a [T],
         start: usize,
         end: usize,
         _params: Option<RollingFnParams>,
         _window_size: Option<usize>,
-    ) -> Self {
-        let mut out = Self::new_impl(slice, None);
+    ) -> Self::This<'a> {
+        let mut out = SumWindow::new_impl(slice, None);
         unsafe { RollingAggWindowNoNulls::update(&mut out, start, end) };
         out
     }
@@ -146,22 +148,30 @@ where
         self.last_end = end;
         self.finalize()
     }
+
+    fn slice_len(&self) -> usize {
+        self.slice.len()
+    }
 }
 
-impl<'a, T, S> RollingAggWindowNulls<'a, T> for SumWindow<'a, T, S>
+impl<T, S> RollingAggWindowNulls<T> for SumWindow<'_, T, S>
 where
     T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
     S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
-    unsafe fn new(
+    type This<'a> = SumWindow<'a, T, S>;
+
+    fn new<'a>(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
         end: usize,
         _params: Option<RollingFnParams>,
         _window_size: Option<usize>,
-    ) -> Self {
-        let mut out = Self::new_impl(slice, Some(validity));
+    ) -> Self::This<'a> {
+        assert!(start <= slice.len() && end <= slice.len() && start <= end);
+        let mut out = SumWindow::new_impl(slice, Some(validity));
+        // SAFETY: We bounds checked `start` and `end`.
         unsafe { RollingAggWindowNulls::update(&mut out, start, end) };
         out
     }
@@ -202,5 +212,9 @@ where
 
     fn is_valid(&self, min_periods: usize) -> bool {
         ((self.last_end - self.last_start) - self.null_count) >= min_periods
+    }
+
+    fn slice_len(&self) -> usize {
+        self.slice.len()
     }
 }

@@ -159,7 +159,7 @@ impl DynamicGroupBy {
             let mut lower = lower.into_column();
             let mut upper = upper.into_column();
 
-            let index_column = &df.get_columns()[index_column_idx];
+            let index_column = &df.columns()[index_column_idx];
             let index_dtype = index_column.dtype();
             let mut bound_dtype_physical = index_dtype.to_physical();
             let mut bound_dtype = index_dtype;
@@ -200,7 +200,7 @@ impl DynamicGroupBy {
             columns.push(agg.with_name(name.clone()));
         }
 
-        Ok(unsafe { DataFrame::new_no_checks(height, columns) })
+        Ok(unsafe { DataFrame::new_unchecked(height, columns) })
     }
 
     /// Progress the state and get the next available evaluation windows, data and key.
@@ -310,7 +310,7 @@ impl ComputeNode for DynamicGroupBy {
             recv[0] = PortState::Done;
             std::mem::take(&mut self.buf_df);
         } else if recv[0] == PortState::Done {
-            if self.buf_df.is_empty() {
+            if self.buf_df.height() == 0 {
                 send[0] = PortState::Done;
             } else {
                 send[0] = PortState::Ready;
@@ -334,7 +334,7 @@ impl ComputeNode for DynamicGroupBy {
 
         let Some(recv) = recv_ports[0].take() else {
             // We no longer have to receive data. Finalize and send all remaining data.
-            assert!(!self.buf_df.is_empty());
+            assert!(self.buf_df.height() > 0);
             assert!(self.slice_length > 0);
             let mut send = send_ports[0].take().unwrap().serial();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
