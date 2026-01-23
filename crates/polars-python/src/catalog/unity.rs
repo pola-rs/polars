@@ -6,15 +6,15 @@ use polars_io::catalog::unity::models::{
     CatalogInfo, ColumnInfo, DataSourceFormat, NamespaceInfo, TableInfo, TableType,
 };
 use polars_io::catalog::unity::schema::parse_type_json_str;
-use polars_io::cloud::credential_provider::PlCredentialProvider;
 use polars_io::pl_async;
 use pyo3::exceptions::PyValueError;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyAnyMethods, PyDict, PyList, PyNone, PyTuple};
 use pyo3::{Bound, IntoPyObject, Py, PyAny, PyResult, Python, pyclass, pymethods};
 
+use crate::io::cloud_options::OptPyCloudOptions;
 use crate::lazyframe::PyLazyFrame;
-use crate::prelude::{Wrap, parse_cloud_options};
+use crate::prelude::Wrap;
 use crate::utils::{EnterPolarsExt, to_py_err};
 
 macro_rules! pydict_insert_keys {
@@ -232,16 +232,15 @@ impl PyCatalogClient {
         Ok(PyTuple::new(py, [credentials, storage_update_options, expiry])?.into())
     }
 
-    #[pyo3(signature = (catalog_name, namespace, table_name, cloud_options, credential_provider, retries))]
+    #[pyo3(signature = (catalog_name, namespace, table_name, cloud_options, credential_provider))]
     pub fn scan_table(
         &self,
         py: Python<'_>,
         catalog_name: &str,
         namespace: &str,
         table_name: &str,
-        cloud_options: Option<Vec<(String, String)>>,
+        cloud_options: OptPyCloudOptions,
         credential_provider: Option<Py<PyAny>>,
-        retries: usize,
     ) -> PyResult<PyLazyFrame> {
         let table_info = py.enter_polars(|| {
             pl_async::get_runtime().block_in_place_on(self.client().get_table_info(
@@ -257,20 +256,14 @@ impl PyCatalogClient {
             ));
         };
 
-        let cloud_options = parse_cloud_options(
+        let cloud_options = cloud_options.extract_opt_cloud_options(
             CloudScheme::from_path(storage_location),
-            cloud_options.unwrap_or_default(),
-        )?
-        .with_max_retries(retries)
-        .with_credential_provider(
-            credential_provider.map(PlCredentialProvider::from_python_builder),
-        );
+            credential_provider,
+        )?;
 
-        Ok(
-            LazyFrame::scan_catalog_table(&table_info, Some(cloud_options))
-                .map_err(to_py_err)?
-                .into(),
-        )
+        Ok(LazyFrame::scan_catalog_table(&table_info, cloud_options)
+            .map_err(to_py_err)?
+            .into())
     }
 
     #[pyo3(signature = (catalog_name, comment, storage_root))]

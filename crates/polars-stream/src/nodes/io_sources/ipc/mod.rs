@@ -12,6 +12,7 @@ use polars_core::utils::arrow::io::ipc::read::{
 };
 use polars_error::{ErrString, PolarsError, PolarsResult, feature_gated};
 use polars_io::cloud::CloudOptions;
+use polars_io::ipc::IpcScanOptions;
 use polars_io::pl_async;
 #[cfg(feature = "cloud")]
 use polars_io::pl_async::get_runtime;
@@ -49,6 +50,7 @@ consider compiling with polars-bigidx feature (pip install polars[rt64])",
 struct IpcFileReader {
     scan_source: ScanSource,
     cloud_options: Option<Arc<CloudOptions>>,
+    config: Arc<IpcScanOptions>,
     metadata: Option<Arc<FileMetadata>>,
     byte_source_builder: DynByteSourceBuilder,
     record_batch_prefetch_sync: RecordBatchPrefetchSync,
@@ -162,6 +164,7 @@ impl FileReader for IpcFileReader {
             predicate: None,
             cast_columns_policy: _,
             num_pipelines,
+            disable_morsel_split,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx,
@@ -227,11 +230,8 @@ impl FileReader for IpcFileReader {
             None
         };
 
-        // Note. Environment variable is unstable.
-        let read_statistics_flags = std::env::var("POLARS_IPC_RW_RECORD_BATCH_STATISTICS_FLAGS")
-            .as_deref()
-            .unwrap_or("")
-            == "1";
+        // Unstable.
+        let read_statistics_flags = self.config.record_batch_statistics;
 
         if verbose {
             eprintln!(
@@ -397,6 +397,20 @@ impl FileReader for IpcFileReader {
                 if df.height() == 0 {
                     continue;
                 }
+
+                if disable_morsel_split {
+                    if morsel_send
+                        .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
+                        .await
+                        .is_err()
+                    {
+                        return Ok(());
+                    }
+                    drop(permit);
+                    morsel_seq = morsel_seq.successor();
+                    continue;
+                }
+
                 next = Some((df, permit));
                 break;
             }

@@ -494,22 +494,31 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
     } else if let Ok(value) = value.cast::<PyBytes>() {
         Ok(dsl::lit(value.as_bytes()).into())
     } else {
-        let av = py_object_to_any_value(value, true, allow_object).map_err(|_| {
-            PyTypeError::new_err(
-                format!(
-                    "cannot create expression literal for value of type {}.\
+        let raise = || {
+            PyTypeError::new_err(format!(
+                "cannot create expression literal for value of type {}.\
                     \n\nHint: Pass `allow_object=True` to accept any value and create a literal of type Object.",
-                    value.get_type().qualname().map(|s|s.to_string()).unwrap_or("unknown".to_owned()),
-                )
-            )
-        })?;
+                value
+                    .get_type()
+                    .qualname()
+                    .map(|s| s.to_string())
+                    .unwrap_or("unknown".to_owned()),
+            ))
+        };
+
+        let av = py_object_to_any_value(value, true, allow_object).map_err(|_| raise())?;
         match av {
             #[cfg(feature = "object")]
             AnyValue::ObjectOwned(_) => {
-                let s = PySeries::new_object(py, "", vec![value.extract()?], false)
-                    .series
-                    .into_inner();
-                Ok(dsl::lit(s).into())
+                // Check again for object allowance as for cached addresses this is not checked.
+                if allow_object {
+                    let s = PySeries::new_object(py, "", vec![value.extract()?], false)
+                        .series
+                        .into_inner();
+                    Ok(dsl::lit(s).into())
+                } else {
+                    Err(raise())
+                }
             },
             _ => Ok(Expr::Literal(LiteralValue::from(av)).into()),
         }

@@ -1,13 +1,13 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek, SeekFrom};
 
+use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 
 use super::super::compression;
 use super::super::endianness::is_native_little_endian;
 use super::{Compression, IpcBuffer, Node, OutOfSpecKind};
 use crate::bitmap::Bitmap;
-use crate::buffer::Buffer;
 use crate::types::NativeType;
 
 fn read_swapped<T: NativeType, R: Read + Seek>(
@@ -313,7 +313,11 @@ fn read_compressed_bitmap<R: Read + Seek>(
         })?
     };
 
-    polars_ensure!(length.div_ceil(8) == decompressed_bytes, ComputeError: "Malformed IPC file: got unexpected decompressed output length {decompressed_bytes}, expected {}", length.div_ceil(8));
+    // Allow excess bytes in untruncated buffers,
+    // see https://github.com/pola-rs/polars/issues/26126
+    // and https://github.com/apache/arrow/issues/48883
+    polars_ensure!(decompressed_bytes >= length.div_ceil(8),
+        ComputeError: "Malformed IPC file: got unexpected decompressed output length {decompressed_bytes}, expected {}", length.div_ceil(8));
 
     if decompressed_len_field == -1 {
         return Ok(bytemuck::cast_slice(&scratch[8..]).to_vec());

@@ -53,12 +53,17 @@ use crate::shared::{ArrowReader, finish_reader};
 #[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct IpcScanOptions;
+pub struct IpcScanOptions {
+    /// Read StatisticsFlags from the record batch custom metadata.
+    pub record_batch_statistics: bool,
+}
 
 #[expect(clippy::derivable_impls)]
 impl Default for IpcScanOptions {
     fn default() -> Self {
-        Self {}
+        Self {
+            record_batch_statistics: false,
+        }
     }
 }
 

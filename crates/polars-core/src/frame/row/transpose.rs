@@ -67,14 +67,17 @@ impl DataFrame {
 
                 // this is very expensive. A lot of cache misses here.
                 // This is the part that is performance critical.
-                for s in columns {
-                    polars_ensure!(s.dtype() == &phys_dtype, ComputeError: "cannot transpose with supertype: {}", dtype);
-                    s.iter().zip(buffers.iter_mut()).for_each(|(av, buf)| {
+                for series in &columns {
+                    polars_ensure!(
+                        series.dtype() == &phys_dtype,
+                        ComputeError: "cannot transpose with supertype: {}", dtype
+                    );
+                    for (av, buf) in series.iter().zip(buffers.iter_mut()) {
                         // SAFETY: we checked the type and we borrow
                         unsafe {
                             buf.add_unchecked_borrowed_physical(&av);
                         }
-                    });
+                    }
                 }
                 cols_t.extend(buffers.into_iter().zip(names_out).map(|(buf, name)| {
                     // SAFETY: we are casting back to the supertype
