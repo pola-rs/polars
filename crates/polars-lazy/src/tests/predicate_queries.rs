@@ -314,3 +314,19 @@ fn test_push_join_col_predicates_to_both_sides_semi_12565() -> PolarsResult<()> 
     assert_eq!(out, expected);
     Ok(())
 }
+
+#[test]
+fn test_replace_strict_filter_issue() -> PolarsResult<()> {
+    let df = df![
+        "x" => [true, true, true, false]
+    ]?;
+
+    let out = df
+        .lazy()
+        .filter(col("x"))
+        .filter(col("x").replace_strict(lit(true), lit(true), None, Option::<DataType>::None))
+        .collect()?;
+
+    assert_eq!(out.height(), 3);
+    Ok(())
+}
