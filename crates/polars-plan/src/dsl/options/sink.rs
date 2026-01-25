@@ -130,7 +130,12 @@ impl SinkTarget {
 
         #[cfg(not(feature = "cloud"))]
         {
-            self.open_into_writeable(cloud_options, mkdir, cloud_upload_chunk_size, cloud_upload_max_concurrency)
+            self.open_into_writeable(
+                cloud_options,
+                mkdir,
+                cloud_upload_chunk_size,
+                cloud_upload_max_concurrency,
+            )
         }
     }
 
