@@ -451,7 +451,7 @@ pub fn get_supertype_with_options(
                     },
                     // Materialize float to float
                     UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() => Some(dt.clone()),
-                    UnknownKind::Float if dt.is_integer() | dt.is_decimal() => Some(Unknown(UnknownKind::Float)),
+                    UnknownKind::Float if dt.is_integer() | dt.is_decimal() | dt.is_bool() => Some(Unknown(UnknownKind::Float)),
                     // Materialize str
                     UnknownKind::Str if dt.is_string() | dt.is_enum() => Some(dt.clone()),
                     // Materialize str
