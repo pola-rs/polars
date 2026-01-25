@@ -3604,15 +3604,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Whether to include UTF-8 BOM in the CSV output.
         compression
             What compression format to use.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         compression_level
             The compression level to use, typically 0-9 or `None` to let the
             engine choose.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         check_extension
             Whether to check if the filename matches the compression settings.
             Will raise an error if compression is set to 'uncompressed' and the
             filename ends in one of (".gz", ".zst", ".zstd") or if
             compression != 'uncompressed' and the file uses an mismatched
             extension. Only applies if file is a path.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         include_header
             Whether to include header in the CSV output.
         separator
@@ -3833,6 +3845,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         path: str | Path | IO[bytes] | IO[str] | PartitionBy,
         *,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
         maintain_order: bool = True,
         storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
@@ -3851,6 +3866,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         path: str | Path | IO[bytes] | IO[str] | PartitionBy,
         *,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
         maintain_order: bool = True,
         storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
@@ -3868,6 +3886,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         path: str | Path | IO[bytes] | IO[str] | PartitionBy,
         *,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
         maintain_order: bool = True,
         storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
@@ -3889,6 +3910,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         path
             File path to which the file should be written.
+        compression
+            What compression format to use.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
+        compression_level
+            The compression level to use, typically 0-9 or `None` to let the
+            engine choose.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
+        check_extension
+            Whether to check if the filename matches the compression settings.
+            Will raise an error if compression is set to 'uncompressed' and the
+            filename ends in one of (".gz", ".zst", ".zstd") or if
+            compression != 'uncompressed' and the file uses an mismatched
+            extension. Only applies if file is a path.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
@@ -4017,7 +4061,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             credential_provider=credential_provider_builder,
         )
 
-        ldf_py = self._ldf.sink_json(target=target, sink_options=sink_options)
+        ldf_py = self._ldf.sink_ndjson(
+            target=target,
+            compression=compression,
+            compression_level=compression_level,
+            check_extension=check_extension,
+            sink_options=sink_options,
+        )
 
         if not lazy:
             ldf_py = ldf_py.with_optimizations(optimizations._pyoptflags)

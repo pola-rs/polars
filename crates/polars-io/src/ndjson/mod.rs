@@ -3,9 +3,21 @@ use std::num::NonZeroUsize;
 
 use arrow::array::StructArray;
 use polars_core::prelude::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+use crate::ExternalCompression;
 
 pub(crate) mod buffer;
 pub mod core;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct NDJsonWriterOptions {
+    pub compression: ExternalCompression,
+    pub check_extension: bool,
+}
 
 pub fn infer_schema<R: std::io::BufRead>(
     reader: &mut R,

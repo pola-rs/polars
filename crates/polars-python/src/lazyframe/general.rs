@@ -770,26 +770,10 @@ impl PyLazyFrame {
             quote_style,
         };
 
-        let compression = match compression {
-            "uncompressed" => CsvCompression::Uncompressed,
-            "gzip" => CsvCompression::Gzip {
-                level: compression_level,
-            },
-            "zstd" => CsvCompression::Zstd {
-                level: compression_level,
-            },
-            _ => {
-                return Err(PyErr::from(PyPolarsErr::from(
-                    PolarsError::InvalidOperation(
-                        format!("Invalid compression lvel: ({compression})").into(),
-                    ),
-                )));
-            },
-        };
-
         let options = CsvWriterOptions {
             include_bom,
-            compression,
+            compression: ExternalCompression::try_from(compression, compression_level)
+                .map_err(PyPolarsErr::from)?,
             check_extension,
             include_header,
             batch_size,
@@ -812,14 +796,21 @@ impl PyLazyFrame {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "json")]
-    #[pyo3(signature = (target, sink_options))]
-    fn sink_json(
+    #[pyo3(signature = (target, compression, compression_level, check_extension, sink_options))]
+    fn sink_ndjson(
         &self,
         py: Python<'_>,
         target: PyFileSinkDestination,
+        compression: &str,
+        compression_level: Option<u32>,
+        check_extension: bool,
         sink_options: PySinkOptions,
     ) -> PyResult<PyLazyFrame> {
-        let options = JsonWriterOptions {};
+        let options = NDJsonWriterOptions {
+            compression: ExternalCompression::try_from(compression, compression_level)
+                .map_err(PyPolarsErr::from)?,
+            check_extension,
+        };
 
         let target = target.extract_file_sink_destination()?;
         let unified_sink_args = sink_options.extract_unified_sink_args(target.cloud_scheme())?;

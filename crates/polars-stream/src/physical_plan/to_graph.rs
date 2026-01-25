@@ -676,6 +676,17 @@ fn to_graph_rec<'a>(
             )
         },
 
+        UnorderedUnion { inputs } => {
+            let input_keys = inputs
+                .iter()
+                .map(|i| PolarsResult::Ok((to_graph_rec(i.node, ctx)?, i.port)))
+                .try_collect_vec()?;
+            ctx.graph.add_node(
+                nodes::unordered_union::UnorderedUnionNode::new(node.output_schema.clone()),
+                input_keys,
+            )
+        },
+
         Zip {
             inputs,
             zip_behavior,

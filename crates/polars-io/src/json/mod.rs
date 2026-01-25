@@ -75,17 +75,10 @@ use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_error::{PolarsResult, polars_bail};
 use polars_json::json::write::FallibleStreamingIterator;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 use simd_json::BorrowedValue;
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::*;
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct JsonWriterOptions {}
 
 /// The format to use to write the DataFrame to JSON: `Json` (a JSON array)
 /// or `JsonLines` (each row output on a separate line).
