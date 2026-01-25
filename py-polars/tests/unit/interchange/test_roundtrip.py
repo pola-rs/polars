@@ -80,6 +80,7 @@ def test_to_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
+@pytest.mark.filterwarnings("ignore:.*copy keyword is deprecated:Warning")
 @pytest.mark.filterwarnings(
     "ignore:.*PEP3118 format string that does not match its itemsize:RuntimeWarning"
 )
@@ -230,6 +231,7 @@ def test_from_dataframe_pandas_native_zero_copy_parametric(df: pl.DataFrame) -> 
     assert_frame_equal(result, df)
 
 
+@pytest.mark.filterwarnings("ignore:.*copy keyword is deprecated:Warning")
 def test_to_dataframe_pandas_boolean_subchunks() -> None:
     df = pl.Series("a", [False, False]).to_frame()
     df_chunked = pl.concat([df[0, :], df[1, :]], rechunk=False)
