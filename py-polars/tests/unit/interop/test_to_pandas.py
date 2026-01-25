@@ -11,6 +11,7 @@ import pytest
 from hypothesis import given
 
 import polars as pl
+from polars._utils.various import parse_version
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -42,13 +43,17 @@ def test_to_pandas() -> None:
 
     pd_out = df.to_pandas()
 
+    pd_version = parse_version(pd.__version__)
+    string_dtype = (
+        pd.StringDtype(na_value=float("nan")) if pd_version >= (3,) else np.object_
+    )
     pd_out_dtypes_expected = [
         np.dtype(np.uint8),
         np.dtype(np.float64),
         np.dtype(np.float64),
         np.dtype("datetime64[ms]"),
-        np.dtype(np.object_),
-        np.dtype(np.object_),
+        string_dtype,
+        string_dtype,
         np.dtype("datetime64[us]"),
     ]
     assert pd_out_dtypes_expected == pd_out.dtypes.to_list()[:-2]

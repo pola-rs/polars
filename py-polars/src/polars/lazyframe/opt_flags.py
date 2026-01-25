@@ -15,6 +15,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import ParamSpec
 
+    from polars._utils.various import IdentityFunction
+
     P = ParamSpec("P")
     T = TypeVar("T")
 
@@ -265,7 +267,7 @@ except (ImportError, NameError) as _:
     DEFAULT_QUERY_OPT_FLAGS = ()  # type: ignore[assignment]
 
 
-def forward_old_opt_flags() -> Callable[[Callable[P, T]], Callable[P, T]]:
+def forward_old_opt_flags() -> IdentityFunction:
     """Decorator to mark to forward the old optimization flags."""
 
     def helper(f: QueryOptFlags, field_name: str, value: bool) -> QueryOptFlags:  # noqa: FBT001

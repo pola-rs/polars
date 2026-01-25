@@ -1,6 +1,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use polars_buffer::Buffer;
 use polars_core::prelude::PlHashMap;
 use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::Bitmap;
@@ -9,7 +10,6 @@ use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, create_sorting_map};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 use polars_parquet::read::RowGroupMetadata;
-use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
@@ -87,7 +87,7 @@ impl RowGroupDataFetcher {
             let handle = io_runtime.spawn(async move {
                 let row_group_metadata = &metadata.row_groups[idx];
                 let fetched_bytes =
-                    if let DynByteSource::MemSlice(mem_slice) = current_byte_source.as_ref() {
+                    if let DynByteSource::Buffer(mem_slice) = current_byte_source.as_ref() {
                         // Skip byte range calculation for `no_prefetch`.
                         if memory_prefetch_func as usize
                             != polars_utils::mem::prefetch::no_prefetch as *const () as usize
@@ -113,9 +113,9 @@ impl RowGroupDataFetcher {
                         // file that can be sliced directly, so we can skip the byte-range
                         // calculations and HashMap allocation.
                         let mem_slice = mem_slice.0.clone();
-                        FetchedBytes::MemSlice {
+                        FetchedBytes::Buffer {
                             offset: 0,
-                            mem_slice,
+                            buffer: mem_slice,
                         }
                     } else if !is_full_projection {
                         let mut ranges = get_row_group_byte_ranges_for_projection(
@@ -170,17 +170,19 @@ impl RowGroupDataFetcher {
 }
 
 pub(super) enum FetchedBytes {
-    MemSlice { mem_slice: MemSlice, offset: usize },
-    BytesMap(PlHashMap<usize, MemSlice>),
+    Buffer { buffer: Buffer<u8>, offset: usize },
+    BytesMap(PlHashMap<usize, Buffer<u8>>),
 }
 
 impl FetchedBytes {
-    pub(super) fn get_range(&self, range: std::ops::Range<usize>) -> MemSlice {
+    pub(super) fn get_range(&self, range: std::ops::Range<usize>) -> Buffer<u8> {
         match self {
-            Self::MemSlice { mem_slice, offset } => {
+            Self::Buffer { buffer, offset } => {
                 let offset = *offset;
                 debug_assert!(range.start >= offset);
-                mem_slice.slice(range.start - offset..range.end - offset)
+                buffer
+                    .clone()
+                    .sliced(range.start - offset..range.end - offset)
             },
             Self::BytesMap(v) => {
                 let v = v.get(&range.start).unwrap();
