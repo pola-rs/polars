@@ -113,7 +113,7 @@ impl PrimitiveParser for Int128Type {
     }
 }
 
-trait ParsedBuffer {
+trait ParsedBuilder {
     fn parse_bytes(
         &mut self,
         bytes: &[u8],
@@ -124,7 +124,7 @@ trait ParsedBuffer {
     ) -> PolarsResult<()>;
 }
 
-impl<T> ParsedBuffer for PrimitiveChunkedBuilder<T>
+impl<T> ParsedBuilder for PrimitiveChunkedBuilder<T>
 where
     T: PolarsNumericType + PrimitiveParser,
 {
@@ -194,7 +194,7 @@ pub fn validate_utf8(bytes: &[u8]) -> bool {
     simdutf8::basic::from_utf8(bytes).is_ok()
 }
 
-impl ParsedBuffer for Utf8Field {
+impl ParsedBuilder for Utf8Field {
     #[inline]
     fn parse_bytes(
         &mut self,
@@ -335,7 +335,7 @@ impl<T: PolarsCategoricalType> CategoricalField<T> {
     }
 }
 
-impl ParsedBuffer for BooleanChunkedBuilder {
+impl ParsedBuilder for BooleanChunkedBuilder {
     #[inline]
     fn parse_bytes(
         &mut self,
@@ -394,7 +394,7 @@ impl DecimalField {
 }
 
 #[cfg(feature = "dtype-decimal")]
-impl ParsedBuffer for DecimalField {
+impl ParsedBuilder for DecimalField {
     #[inline]
     fn parse_bytes(
         &mut self,
@@ -520,7 +520,7 @@ where
 }
 
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-impl<T> ParsedBuffer for DatetimeField<T>
+impl<T> ParsedBuilder for DatetimeField<T>
 where
     T: PolarsNumericType,
     DatetimeInfer<T>: TryFromWithUnit<Pattern> + StrpTimeParser<T::Native>,
@@ -562,70 +562,72 @@ where
     }
 }
 
-pub fn init_buffers(
+pub fn init_builders(
     projection: &[usize],
     capacity: usize,
     schema: &Schema,
     quote_char: Option<u8>,
     encoding: CsvEncoding,
     decimal_comma: bool,
-) -> PolarsResult<Vec<Buffer>> {
+) -> PolarsResult<Vec<Builder>> {
     projection
         .iter()
         .map(|&i| {
             let (name, dtype) = schema.get_at_index(i).unwrap();
             let name = name.clone();
             let builder = match dtype {
-                &DataType::Boolean => Buffer::Boolean(BooleanChunkedBuilder::new(name, capacity)),
+                &DataType::Boolean => Builder::Boolean(BooleanChunkedBuilder::new(name, capacity)),
                 #[cfg(feature = "dtype-i8")]
-                &DataType::Int8 => Buffer::Int8(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::Int8 => Builder::Int8(PrimitiveChunkedBuilder::new(name, capacity)),
                 #[cfg(feature = "dtype-i16")]
-                &DataType::Int16 => Buffer::Int16(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::Int32 => Buffer::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::Int64 => Buffer::Int64(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::Int16 => Builder::Int16(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::Int32 => Builder::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::Int64 => Builder::Int64(PrimitiveChunkedBuilder::new(name, capacity)),
                 #[cfg(feature = "dtype-i128")]
-                &DataType::Int128 => Buffer::Int128(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::Int128 => Builder::Int128(PrimitiveChunkedBuilder::new(name, capacity)),
                 #[cfg(feature = "dtype-u8")]
-                &DataType::UInt8 => Buffer::UInt8(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::UInt8 => Builder::UInt8(PrimitiveChunkedBuilder::new(name, capacity)),
                 #[cfg(feature = "dtype-u16")]
-                &DataType::UInt16 => Buffer::UInt16(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::UInt32 => Buffer::UInt32(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::UInt16 => Builder::UInt16(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::UInt32 => Builder::UInt32(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::UInt64 => Builder::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
                 #[cfg(feature = "dtype-u128")]
-                &DataType::UInt128 => Buffer::UInt128(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::UInt128 => {
+                    Builder::UInt128(PrimitiveChunkedBuilder::new(name, capacity))
+                },
                 #[cfg(feature = "dtype-f16")]
                 &DataType::Float16 => {
                     if decimal_comma {
-                        Buffer::DecimalFloat16(
+                        Builder::DecimalFloat16(
                             PrimitiveChunkedBuilder::new(name, capacity),
                             Default::default(),
                         )
                     } else {
-                        Buffer::Float16(PrimitiveChunkedBuilder::new(name, capacity))
+                        Builder::Float16(PrimitiveChunkedBuilder::new(name, capacity))
                     }
                 },
                 &DataType::Float32 => {
                     if decimal_comma {
-                        Buffer::DecimalFloat32(
+                        Builder::DecimalFloat32(
                             PrimitiveChunkedBuilder::new(name, capacity),
                             Default::default(),
                         )
                     } else {
-                        Buffer::Float32(PrimitiveChunkedBuilder::new(name, capacity))
+                        Builder::Float32(PrimitiveChunkedBuilder::new(name, capacity))
                     }
                 },
                 &DataType::Float64 => {
                     if decimal_comma {
-                        Buffer::DecimalFloat64(
+                        Builder::DecimalFloat64(
                             PrimitiveChunkedBuilder::new(name, capacity),
                             Default::default(),
                         )
                     } else {
-                        Buffer::Float64(PrimitiveChunkedBuilder::new(name, capacity))
+                        Builder::Float64(PrimitiveChunkedBuilder::new(name, capacity))
                     }
                 },
                 #[cfg(feature = "dtype-decimal")]
-                &DataType::Decimal(precision, scale) => Buffer::Decimal(DecimalField::new(
+                &DataType::Decimal(precision, scale) => Builder::Decimal(DecimalField::new(
                     name,
                     capacity,
                     precision,
@@ -633,21 +635,21 @@ pub fn init_buffers(
                     decimal_comma,
                 )),
                 &DataType::String => {
-                    Buffer::Utf8(Utf8Field::new(name, capacity, quote_char, encoding))
+                    Builder::Utf8(Utf8Field::new(name, capacity, quote_char, encoding))
                 },
                 #[cfg(feature = "dtype-datetime")]
-                DataType::Datetime(time_unit, time_zone) => Buffer::Datetime {
+                DataType::Datetime(time_unit, time_zone) => Builder::Datetime {
                     buf: DatetimeField::new(name, capacity),
                     time_unit: *time_unit,
                     time_zone: time_zone.clone(),
                 },
                 #[cfg(feature = "dtype-date")]
-                &DataType::Date => Buffer::Date(DatetimeField::new(name, capacity)),
+                &DataType::Date => Builder::Date(DatetimeField::new(name, capacity)),
                 #[cfg(feature = "dtype-categorical")]
                 DataType::Categorical(_, _) | DataType::Enum(_, _) => {
                     match dtype.cat_physical().unwrap() {
                         CategoricalPhysical::U8 => {
-                            Buffer::Categorical8(CategoricalField::<Categorical8Type>::new(
+                            Builder::Categorical8(CategoricalField::<Categorical8Type>::new(
                                 name,
                                 capacity,
                                 quote_char,
@@ -655,7 +657,7 @@ pub fn init_buffers(
                             ))
                         },
                         CategoricalPhysical::U16 => {
-                            Buffer::Categorical16(CategoricalField::<Categorical16Type>::new(
+                            Builder::Categorical16(CategoricalField::<Categorical16Type>::new(
                                 name,
                                 capacity,
                                 quote_char,
@@ -663,7 +665,7 @@ pub fn init_buffers(
                             ))
                         },
                         CategoricalPhysical::U32 => {
-                            Buffer::Categorical32(CategoricalField::<Categorical32Type>::new(
+                            Builder::Categorical32(CategoricalField::<Categorical32Type>::new(
                                 name,
                                 capacity,
                                 quote_char,
@@ -682,7 +684,7 @@ pub fn init_buffers(
 }
 
 #[allow(clippy::large_enum_variant)]
-pub enum Buffer {
+pub enum Builder {
     Boolean(BooleanChunkedBuilder),
     #[cfg(feature = "dtype-i8")]
     Int8(PrimitiveChunkedBuilder<Int8Type>),
@@ -728,36 +730,36 @@ pub enum Buffer {
     DecimalFloat64(PrimitiveChunkedBuilder<Float64Type>, Vec<u8>),
 }
 
-impl Buffer {
+impl Builder {
     pub fn into_series(self) -> PolarsResult<Series> {
         let s = match self {
-            Buffer::Boolean(v) => v.finish().into_series(),
+            Builder::Boolean(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-i8")]
-            Buffer::Int8(v) => v.finish().into_series(),
+            Builder::Int8(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-i16")]
-            Buffer::Int16(v) => v.finish().into_series(),
-            Buffer::Int32(v) => v.finish().into_series(),
-            Buffer::Int64(v) => v.finish().into_series(),
+            Builder::Int16(v) => v.finish().into_series(),
+            Builder::Int32(v) => v.finish().into_series(),
+            Builder::Int64(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-i128")]
-            Buffer::Int128(v) => v.finish().into_series(),
+            Builder::Int128(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-u8")]
-            Buffer::UInt8(v) => v.finish().into_series(),
+            Builder::UInt8(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-u16")]
-            Buffer::UInt16(v) => v.finish().into_series(),
-            Buffer::UInt32(v) => v.finish().into_series(),
-            Buffer::UInt64(v) => v.finish().into_series(),
+            Builder::UInt16(v) => v.finish().into_series(),
+            Builder::UInt32(v) => v.finish().into_series(),
+            Builder::UInt64(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-u128")]
-            Buffer::UInt128(v) => v.finish().into_series(),
+            Builder::UInt128(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-f16")]
-            Buffer::Float16(v) => v.finish().into_series(),
-            Buffer::Float32(v) => v.finish().into_series(),
-            Buffer::Float64(v) => v.finish().into_series(),
+            Builder::Float16(v) => v.finish().into_series(),
+            Builder::Float32(v) => v.finish().into_series(),
+            Builder::Float64(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-f16")]
-            Buffer::DecimalFloat16(v, _) => v.finish().into_series(),
-            Buffer::DecimalFloat32(v, _) => v.finish().into_series(),
-            Buffer::DecimalFloat64(v, _) => v.finish().into_series(),
+            Builder::DecimalFloat16(v, _) => v.finish().into_series(),
+            Builder::DecimalFloat32(v, _) => v.finish().into_series(),
+            Builder::DecimalFloat64(v, _) => v.finish().into_series(),
             #[cfg(feature = "dtype-decimal")]
-            Buffer::Decimal(DecimalField {
+            Builder::Decimal(DecimalField {
                 builder,
                 precision,
                 scale,
@@ -770,7 +772,7 @@ impl Buffer {
                     .unwrap()
             },
             #[cfg(feature = "dtype-datetime")]
-            Buffer::Datetime {
+            Builder::Datetime {
                 buf,
                 time_unit,
                 time_zone,
@@ -781,58 +783,58 @@ impl Buffer {
                 .cast(&DataType::Datetime(time_unit, time_zone))
                 .unwrap(),
             #[cfg(feature = "dtype-date")]
-            Buffer::Date(v) => v
+            Builder::Date(v) => v
                 .builder
                 .finish()
                 .into_series()
                 .cast(&DataType::Date)
                 .unwrap(),
 
-            Buffer::Utf8(v) => {
+            Builder::Utf8(v) => {
                 let arr = v.mutable.freeze();
                 StringChunked::with_chunk(v.name, unsafe { arr.to_utf8view_unchecked() })
                     .into_series()
             },
             #[cfg(feature = "dtype-categorical")]
-            Buffer::Categorical8(buf) => buf.builder.finish().into_series(),
+            Builder::Categorical8(buf) => buf.builder.finish().into_series(),
             #[cfg(feature = "dtype-categorical")]
-            Buffer::Categorical16(buf) => buf.builder.finish().into_series(),
+            Builder::Categorical16(buf) => buf.builder.finish().into_series(),
             #[cfg(feature = "dtype-categorical")]
-            Buffer::Categorical32(buf) => buf.builder.finish().into_series(),
+            Builder::Categorical32(buf) => buf.builder.finish().into_series(),
         };
         Ok(s)
     }
 
     pub fn add_null(&mut self, valid: bool) {
         match self {
-            Buffer::Boolean(v) => v.append_null(),
+            Builder::Boolean(v) => v.append_null(),
             #[cfg(feature = "dtype-i8")]
-            Buffer::Int8(v) => v.append_null(),
+            Builder::Int8(v) => v.append_null(),
             #[cfg(feature = "dtype-i16")]
-            Buffer::Int16(v) => v.append_null(),
-            Buffer::Int32(v) => v.append_null(),
-            Buffer::Int64(v) => v.append_null(),
+            Builder::Int16(v) => v.append_null(),
+            Builder::Int32(v) => v.append_null(),
+            Builder::Int64(v) => v.append_null(),
             #[cfg(feature = "dtype-i128")]
-            Buffer::Int128(v) => v.append_null(),
+            Builder::Int128(v) => v.append_null(),
             #[cfg(feature = "dtype-u8")]
-            Buffer::UInt8(v) => v.append_null(),
+            Builder::UInt8(v) => v.append_null(),
             #[cfg(feature = "dtype-u16")]
-            Buffer::UInt16(v) => v.append_null(),
-            Buffer::UInt32(v) => v.append_null(),
-            Buffer::UInt64(v) => v.append_null(),
+            Builder::UInt16(v) => v.append_null(),
+            Builder::UInt32(v) => v.append_null(),
+            Builder::UInt64(v) => v.append_null(),
             #[cfg(feature = "dtype-u128")]
-            Buffer::UInt128(v) => v.append_null(),
+            Builder::UInt128(v) => v.append_null(),
             #[cfg(feature = "dtype-f16")]
-            Buffer::Float16(v) => v.append_null(),
-            Buffer::Float32(v) => v.append_null(),
-            Buffer::Float64(v) => v.append_null(),
+            Builder::Float16(v) => v.append_null(),
+            Builder::Float32(v) => v.append_null(),
+            Builder::Float64(v) => v.append_null(),
             #[cfg(feature = "dtype-decimal")]
-            Buffer::Decimal(buf) => buf.builder.append_null(),
+            Builder::Decimal(buf) => buf.builder.append_null(),
             #[cfg(feature = "dtype-f16")]
-            Buffer::DecimalFloat16(v, _) => v.append_null(),
-            Buffer::DecimalFloat32(v, _) => v.append_null(),
-            Buffer::DecimalFloat64(v, _) => v.append_null(),
-            Buffer::Utf8(v) => {
+            Builder::DecimalFloat16(v, _) => v.append_null(),
+            Builder::DecimalFloat32(v, _) => v.append_null(),
+            Builder::DecimalFloat64(v, _) => v.append_null(),
+            Builder::Utf8(v) => {
                 if valid {
                     v.mutable.push_value("")
                 } else {
@@ -840,56 +842,56 @@ impl Buffer {
                 }
             },
             #[cfg(feature = "dtype-datetime")]
-            Buffer::Datetime { buf, .. } => buf.builder.append_null(),
+            Builder::Datetime { buf, .. } => buf.builder.append_null(),
             #[cfg(feature = "dtype-date")]
-            Buffer::Date(v) => v.builder.append_null(),
+            Builder::Date(v) => v.builder.append_null(),
             #[cfg(feature = "dtype-categorical")]
-            Buffer::Categorical8(buf) => buf.builder.append_null(),
+            Builder::Categorical8(buf) => buf.builder.append_null(),
             #[cfg(feature = "dtype-categorical")]
-            Buffer::Categorical16(buf) => buf.builder.append_null(),
+            Builder::Categorical16(buf) => buf.builder.append_null(),
             #[cfg(feature = "dtype-categorical")]
-            Buffer::Categorical32(buf) => buf.builder.append_null(),
+            Builder::Categorical32(buf) => buf.builder.append_null(),
         };
     }
 
     pub fn dtype(&self) -> DataType {
         match self {
-            Buffer::Boolean(_) => DataType::Boolean,
+            Builder::Boolean(_) => DataType::Boolean,
             #[cfg(feature = "dtype-i8")]
-            Buffer::Int8(_) => DataType::Int8,
+            Builder::Int8(_) => DataType::Int8,
             #[cfg(feature = "dtype-i16")]
-            Buffer::Int16(_) => DataType::Int16,
-            Buffer::Int32(_) => DataType::Int32,
-            Buffer::Int64(_) => DataType::Int64,
+            Builder::Int16(_) => DataType::Int16,
+            Builder::Int32(_) => DataType::Int32,
+            Builder::Int64(_) => DataType::Int64,
             #[cfg(feature = "dtype-i128")]
-            Buffer::Int128(_) => DataType::Int128,
+            Builder::Int128(_) => DataType::Int128,
             #[cfg(feature = "dtype-u8")]
-            Buffer::UInt8(_) => DataType::UInt8,
+            Builder::UInt8(_) => DataType::UInt8,
             #[cfg(feature = "dtype-u16")]
-            Buffer::UInt16(_) => DataType::UInt16,
-            Buffer::UInt32(_) => DataType::UInt32,
-            Buffer::UInt64(_) => DataType::UInt64,
+            Builder::UInt16(_) => DataType::UInt16,
+            Builder::UInt32(_) => DataType::UInt32,
+            Builder::UInt64(_) => DataType::UInt64,
             #[cfg(feature = "dtype-u128")]
-            Buffer::UInt128(_) => DataType::UInt128,
+            Builder::UInt128(_) => DataType::UInt128,
             #[cfg(feature = "dtype-f16")]
-            Buffer::Float16(_) | Buffer::DecimalFloat16(_, _) => DataType::Float16,
-            Buffer::Float32(_) | Buffer::DecimalFloat32(_, _) => DataType::Float32,
-            Buffer::Float64(_) | Buffer::DecimalFloat64(_, _) => DataType::Float64,
+            Builder::Float16(_) | Builder::DecimalFloat16(_, _) => DataType::Float16,
+            Builder::Float32(_) | Builder::DecimalFloat32(_, _) => DataType::Float32,
+            Builder::Float64(_) | Builder::DecimalFloat64(_, _) => DataType::Float64,
             #[cfg(feature = "dtype-decimal")]
-            Buffer::Decimal(DecimalField {
+            Builder::Decimal(DecimalField {
                 precision, scale, ..
             }) => DataType::Decimal(*precision, *scale),
-            Buffer::Utf8(_) => DataType::String,
+            Builder::Utf8(_) => DataType::String,
             #[cfg(feature = "dtype-datetime")]
-            Buffer::Datetime { time_unit, .. } => DataType::Datetime(*time_unit, None),
+            Builder::Datetime { time_unit, .. } => DataType::Datetime(*time_unit, None),
             #[cfg(feature = "dtype-date")]
-            Buffer::Date(_) => DataType::Date,
+            Builder::Date(_) => DataType::Date,
             #[cfg(feature = "dtype-categorical")]
-            Buffer::Categorical8(buf) => buf.builder.dtype().clone(),
+            Builder::Categorical8(buf) => buf.builder.dtype().clone(),
             #[cfg(feature = "dtype-categorical")]
-            Buffer::Categorical16(buf) => buf.builder.dtype().clone(),
+            Builder::Categorical16(buf) => buf.builder.dtype().clone(),
             #[cfg(feature = "dtype-categorical")]
-            Buffer::Categorical32(buf) => buf.builder.dtype().clone(),
+            Builder::Categorical32(buf) => buf.builder.dtype().clone(),
         }
     }
 
@@ -901,9 +903,9 @@ impl Buffer {
         needs_escaping: bool,
         missing_is_null: bool,
     ) -> PolarsResult<()> {
-        use Buffer::*;
+        use Builder::*;
         match self {
-            Boolean(buf) => <BooleanChunkedBuilder as ParsedBuffer>::parse_bytes(
+            Boolean(buf) => <BooleanChunkedBuilder as ParsedBuilder>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
@@ -912,7 +914,7 @@ impl Buffer {
                 None,
             ),
             #[cfg(feature = "dtype-i8")]
-            Int8(buf) => <PrimitiveChunkedBuilder<Int8Type> as ParsedBuffer>::parse_bytes(
+            Int8(buf) => <PrimitiveChunkedBuilder<Int8Type> as ParsedBuilder>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
@@ -921,7 +923,7 @@ impl Buffer {
                 None,
             ),
             #[cfg(feature = "dtype-i16")]
-            Int16(buf) => <PrimitiveChunkedBuilder<Int16Type> as ParsedBuffer>::parse_bytes(
+            Int16(buf) => <PrimitiveChunkedBuilder<Int16Type> as ParsedBuilder>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
@@ -929,7 +931,7 @@ impl Buffer {
                 missing_is_null,
                 None,
             ),
-            Int32(buf) => <PrimitiveChunkedBuilder<Int32Type> as ParsedBuffer>::parse_bytes(
+            Int32(buf) => <PrimitiveChunkedBuilder<Int32Type> as ParsedBuilder>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
@@ -937,7 +939,7 @@ impl Buffer {
                 missing_is_null,
                 None,
             ),
-            Int64(buf) => <PrimitiveChunkedBuilder<Int64Type> as ParsedBuffer>::parse_bytes(
+            Int64(buf) => <PrimitiveChunkedBuilder<Int64Type> as ParsedBuilder>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
@@ -946,7 +948,7 @@ impl Buffer {
                 None,
             ),
             #[cfg(feature = "dtype-i128")]
-            Int128(buf) => <PrimitiveChunkedBuilder<Int128Type> as ParsedBuffer>::parse_bytes(
+            Int128(buf) => <PrimitiveChunkedBuilder<Int128Type> as ParsedBuilder>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
@@ -955,7 +957,7 @@ impl Buffer {
                 None,
             ),
             #[cfg(feature = "dtype-u8")]
-            UInt8(buf) => <PrimitiveChunkedBuilder<UInt8Type> as ParsedBuffer>::parse_bytes(
+            UInt8(buf) => <PrimitiveChunkedBuilder<UInt8Type> as ParsedBuilder>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
@@ -964,7 +966,7 @@ impl Buffer {
                 None,
             ),
             #[cfg(feature = "dtype-u16")]
-            UInt16(buf) => <PrimitiveChunkedBuilder<UInt16Type> as ParsedBuffer>::parse_bytes(
+            UInt16(buf) => <PrimitiveChunkedBuilder<UInt16Type> as ParsedBuilder>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
@@ -972,7 +974,7 @@ impl Buffer {
                 missing_is_null,
                 None,
             ),
-            UInt32(buf) => <PrimitiveChunkedBuilder<UInt32Type> as ParsedBuffer>::parse_bytes(
+            UInt32(buf) => <PrimitiveChunkedBuilder<UInt32Type> as ParsedBuilder>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
@@ -980,7 +982,7 @@ impl Buffer {
                 missing_is_null,
                 None,
             ),
-            UInt64(buf) => <PrimitiveChunkedBuilder<UInt64Type> as ParsedBuffer>::parse_bytes(
+            UInt64(buf) => <PrimitiveChunkedBuilder<UInt64Type> as ParsedBuilder>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
@@ -989,7 +991,7 @@ impl Buffer {
                 None,
             ),
             #[cfg(feature = "dtype-u128")]
-            UInt128(buf) => <PrimitiveChunkedBuilder<UInt128Type> as ParsedBuffer>::parse_bytes(
+            UInt128(buf) => <PrimitiveChunkedBuilder<UInt128Type> as ParsedBuilder>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
@@ -998,7 +1000,7 @@ impl Buffer {
                 None,
             ),
             #[cfg(feature = "dtype-f16")]
-            Float16(buf) => <PrimitiveChunkedBuilder<Float16Type> as ParsedBuffer>::parse_bytes(
+            Float16(buf) => <PrimitiveChunkedBuilder<Float16Type> as ParsedBuilder>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
@@ -1006,7 +1008,7 @@ impl Buffer {
                 missing_is_null,
                 None,
             ),
-            Float32(buf) => <PrimitiveChunkedBuilder<Float32Type> as ParsedBuffer>::parse_bytes(
+            Float32(buf) => <PrimitiveChunkedBuilder<Float32Type> as ParsedBuilder>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
@@ -1014,7 +1016,7 @@ impl Buffer {
                 missing_is_null,
                 None,
             ),
-            Float64(buf) => <PrimitiveChunkedBuilder<Float64Type> as ParsedBuffer>::parse_bytes(
+            Float64(buf) => <PrimitiveChunkedBuilder<Float64Type> as ParsedBuilder>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
@@ -1025,7 +1027,7 @@ impl Buffer {
             #[cfg(feature = "dtype-f16")]
             DecimalFloat16(buf, scratch) => {
                 prepare_decimal_comma(bytes, scratch);
-                <PrimitiveChunkedBuilder<Float16Type> as ParsedBuffer>::parse_bytes(
+                <PrimitiveChunkedBuilder<Float16Type> as ParsedBuilder>::parse_bytes(
                     buf,
                     scratch,
                     ignore_errors,
@@ -1036,7 +1038,7 @@ impl Buffer {
             },
             DecimalFloat32(buf, scratch) => {
                 prepare_decimal_comma(bytes, scratch);
-                <PrimitiveChunkedBuilder<Float32Type> as ParsedBuffer>::parse_bytes(
+                <PrimitiveChunkedBuilder<Float32Type> as ParsedBuilder>::parse_bytes(
                     buf,
                     scratch,
                     ignore_errors,
@@ -1047,7 +1049,7 @@ impl Buffer {
             },
             DecimalFloat64(buf, scratch) => {
                 prepare_decimal_comma(bytes, scratch);
-                <PrimitiveChunkedBuilder<Float64Type> as ParsedBuffer>::parse_bytes(
+                <PrimitiveChunkedBuilder<Float64Type> as ParsedBuilder>::parse_bytes(
                     buf,
                     scratch,
                     ignore_errors,
@@ -1057,7 +1059,7 @@ impl Buffer {
                 )
             },
             #[cfg(feature = "dtype-decimal")]
-            Decimal(buf) => <DecimalField as ParsedBuffer>::parse_bytes(
+            Decimal(buf) => <DecimalField as ParsedBuilder>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
@@ -1065,7 +1067,7 @@ impl Buffer {
                 missing_is_null,
                 None,
             ),
-            Utf8(buf) => <Utf8Field as ParsedBuffer>::parse_bytes(
+            Utf8(buf) => <Utf8Field as ParsedBuilder>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
@@ -1075,7 +1077,7 @@ impl Buffer {
             ),
             #[cfg(feature = "dtype-datetime")]
             Datetime { buf, time_unit, .. } => {
-                <DatetimeField<Int64Type> as ParsedBuffer>::parse_bytes(
+                <DatetimeField<Int64Type> as ParsedBuilder>::parse_bytes(
                     buf,
                     bytes,
                     ignore_errors,
@@ -1085,7 +1087,7 @@ impl Buffer {
                 )
             },
             #[cfg(feature = "dtype-date")]
-            Date(buf) => <DatetimeField<Int32Type> as ParsedBuffer>::parse_bytes(
+            Date(buf) => <DatetimeField<Int32Type> as ParsedBuilder>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,

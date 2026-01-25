@@ -1,8 +1,9 @@
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek};
 
+use polars_buffer::Buffer;
 use polars_core::config::verbose;
-use polars_utils::mmap::MemSlice;
+use polars_utils::mmap::MMapSemaphore;
 
 /// Trait used to get a hold to file handler or to the underlying bytes
 /// without performing a Read.
@@ -63,10 +64,11 @@ impl<T: MmapBytesReader> MmapBytesReader for &mut T {
     }
 }
 
-// Handle various forms of input bytes
+// Handle various forms of input bytes.
+// TODO: we should just remove this and use Buffer.
 pub enum ReaderBytes<'a> {
     Borrowed(&'a [u8]),
-    Owned(MemSlice),
+    Owned(Buffer<u8>),
 }
 
 impl std::ops::Deref for ReaderBytes<'_> {
@@ -75,21 +77,6 @@ impl std::ops::Deref for ReaderBytes<'_> {
         match self {
             Self::Borrowed(ref_bytes) => ref_bytes,
             Self::Owned(vec) => vec,
-        }
-    }
-}
-
-/// There are some places that perform manual lifetime management after transmuting `ReaderBytes`
-/// to have a `'static` inner lifetime. The advantage to doing this is that it lets you construct a
-/// `MemSlice` from the `ReaderBytes` in a zero-copy manner regardless of the underlying enum
-/// variant.
-impl ReaderBytes<'static> {
-    /// Construct a `MemSlice` in a zero-copy manner from the underlying bytes, with the assumption
-    /// that the underlying bytes have a `'static` lifetime.
-    pub fn to_memslice(&self) -> MemSlice {
-        match self {
-            ReaderBytes::Borrowed(v) => MemSlice::from_static(v),
-            ReaderBytes::Owned(v) => v.clone(),
         }
     }
 }
@@ -104,14 +91,15 @@ impl<'a, T: 'a + MmapBytesReader> From<&'a mut T> for ReaderBytes<'a> {
             },
             None => {
                 if let Some(f) = m.to_file() {
-                    ReaderBytes::Owned(MemSlice::from_file(f).unwrap())
+                    let mmap = MMapSemaphore::new_from_file(f).unwrap();
+                    ReaderBytes::Owned(Buffer::from_owner(mmap))
                 } else {
                     if verbose() {
                         eprintln!("could not memory map file; read to buffer.")
                     }
                     let mut buf = vec![];
                     m.read_to_end(&mut buf).expect("could not read");
-                    ReaderBytes::Owned(MemSlice::from_vec(buf))
+                    ReaderBytes::Owned(Buffer::from_vec(buf))
                 }
             },
         }
