@@ -73,8 +73,23 @@ impl IOSinkNodeConfig {
     }
 
     pub fn cloud_upload_max_concurrency(&self) -> usize {
-        //kdn TODO tbd - split for partitioned
         polars_io::get_upload_max_concurrency()
+    }
+
+    pub fn partitioned_cloud_upload_max_concurrency(&self) -> usize {
+        if let Ok(v) = std::env::var("POLARS_PARTITIONED_UPLOAD_MAX_CONCURRENCY").map(|x| {
+            x.parse::<NonZeroUsize>()
+                .ok()
+                .unwrap_or_else(|| {
+                    panic!("invalid value for POLARS_PARTITIONED_UPLOAD_MAX_CONCURRENCY: {x}")
+                })
+                .get()
+        }) {
+            return v;
+        }
+
+        // For now, same default as the underlying object_store::BufWriter default.
+        8
     }
 }
 
