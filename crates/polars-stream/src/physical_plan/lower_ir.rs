@@ -529,23 +529,31 @@ pub fn lower_ir(
 
             return Ok(stream);
         },
-
         IR::Union { inputs, options } => {
             let options = *options;
+
             let inputs = inputs
                 .clone() // Needed to borrow ir_arena mutably.
                 .into_iter()
                 .map(|input| lower_ir!(input))
                 .collect::<Result<_, _>>()?;
 
+            let kind = if options.maintain_order {
+                PhysNodeKind::OrderedUnion { inputs }
+            } else {
+                PhysNodeKind::UnorderedUnion { inputs }
+            };
+
             let node = phys_sm.insert(PhysNode {
                 output_schema,
-                kind: PhysNodeKind::OrderedUnion { inputs },
+                kind,
             });
             let mut stream = PhysStream::first(node);
+
             if let Some((offset, length)) = options.slice {
                 stream = build_slice_stream(stream, offset, length, phys_sm);
             }
+
             return Ok(stream);
         },
 
