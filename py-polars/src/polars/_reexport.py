@@ -8,6 +8,7 @@ from polars.lazyframe import LazyFrame
 from polars.schema import Schema
 from polars.selectors import Selector
 from polars.series import Series
+from polars.functions import lit, select
 
 __all__ = [
     "DataFrame",
@@ -20,4 +21,6 @@ __all__ = [
     "Selector",
     "Series",
     "When",
+    "lit",
+    "select",
 ]
