@@ -16,6 +16,7 @@ pub struct SumWindow<'a, T, S> {
     pub(super) null_count: usize,
     last_start: usize,
     last_end: usize,
+    current_agg: Option<T>,
 }
 
 impl<'a, T, S> SumWindow<'a, T, S>
@@ -36,6 +37,7 @@ where
             null_count: 0,
             last_start: 0,
             last_end: 0,
+            current_agg: None,
         }
     }
 
@@ -129,7 +131,7 @@ where
 
     // # Safety
     // The start, end range must be in-bounds.
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
+    unsafe fn update(&mut self, start: usize, end: usize) {
         if start >= self.last_end {
             self.reset();
             self.last_start = start;
@@ -146,7 +148,11 @@ where
 
         self.last_start = start;
         self.last_end = end;
-        self.finalize()
+        self.current_agg = self.finalize();
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<T> {
+        self.current_agg
     }
 
     fn slice_len(&self) -> usize {
@@ -178,7 +184,7 @@ where
 
     // # Safety
     // The start, end range must be in-bounds.
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
+    unsafe fn update(&mut self, start: usize, end: usize) {
         let validity = unsafe { self.validity.unwrap_unchecked() };
 
         if start >= self.last_end {
@@ -207,7 +213,11 @@ where
 
         self.last_start = start;
         self.last_end = end;
-        self.finalize()
+        self.current_agg = self.finalize();
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<T> {
+        self.current_agg
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {

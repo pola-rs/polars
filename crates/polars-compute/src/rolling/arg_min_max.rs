@@ -22,6 +22,7 @@ pub struct ArgMinMaxWindow<'a, T, P> {
     last_start: usize,
     last_end: usize,
     policy: PhantomData<P>,
+    current_agg: Option<IdxSize>,
 }
 
 impl<T: NativeType, P: MinMaxPolicy> ArgMinMaxWindow<'_, T, P> {
@@ -80,14 +81,15 @@ impl<T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<T, IdxSize>
             last_start: 0,
             last_end: 0,
             policy: PhantomData,
+            current_agg: None,
         };
         // SAFETY: We bounds checked `start` and `end`.
         unsafe { RollingAggWindowNulls::update(&mut this, start, end) };
         this
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<IdxSize> {
-        unsafe {
+    unsafe fn update(&mut self, start: usize, end: usize) {
+        self.current_agg = unsafe {
             let v = self.validity.unwrap_unchecked();
             self.remove_old_values(start);
             for i in self.last_start..start.min(self.last_end) {
@@ -104,7 +106,11 @@ impl<T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<T, IdxSize>
             self.monotonic_idxs
                 .front()
                 .map(|&best_abs| (best_abs - start) as IdxSize)
-        }
+        };
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<IdxSize> {
+        self.current_agg
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {
@@ -139,6 +145,7 @@ impl<T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<T, IdxSize>
             last_start: 0,
             last_end: 0,
             policy: PhantomData,
+            current_agg: None,
         };
 
         // SAFETY: We bounds checked `start` and `end`.
@@ -146,8 +153,8 @@ impl<T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<T, IdxSize>
         this
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<IdxSize> {
-        unsafe {
+    unsafe fn update(&mut self, start: usize, end: usize) {
+        self.current_agg = unsafe {
             self.remove_old_values(start);
 
             for i in start.max(self.last_end)..end {
@@ -160,7 +167,11 @@ impl<T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<T, IdxSize>
             self.monotonic_idxs
                 .front()
                 .map(|&best_abs| (best_abs - start) as IdxSize)
-        }
+        };
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<IdxSize> {
+        self.current_agg
     }
 
     fn slice_len(&self) -> usize {

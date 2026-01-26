@@ -11,6 +11,7 @@ pub struct QuantileWindow<'a, T: NativeType> {
     sorted: SortedBuf<'a, T>,
     prob: f64,
     method: QuantileMethod,
+    current_agg: Option<T>,
 }
 
 impl<
@@ -45,15 +46,17 @@ impl<
             sorted: SortedBuf::new(slice, start, end, window_size),
             prob: params.prob,
             method: params.method,
+            current_agg: None,
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
+    unsafe fn update(&mut self, start: usize, end: usize) {
         self.sorted.update(start, end);
         let length = self.sorted.len();
 
         if length == 0 {
-            return None;
+            self.current_agg = None;
+            return;
         };
 
         let idx = match self.method {
@@ -64,7 +67,7 @@ impl<
 
                 let float_idx_top = (length_f - 1.0) * self.prob;
                 let top_idx = float_idx_top.ceil() as usize;
-                return if idx == top_idx {
+                self.current_agg = if idx == top_idx {
                     Some(self.sorted.get(idx))
                 } else {
                     let proportion = T::from(float_idx_top - idx as f64).unwrap();
@@ -72,6 +75,7 @@ impl<
                     let vj = self.sorted.get(idx + 1);
                     Some(proportion * (vj - vi) + vi)
                 };
+                return;
             },
             Midpoint => {
                 let length_f = length as f64;
@@ -80,13 +84,14 @@ impl<
                 let idx = std::cmp::min(idx, length - 1);
                 let top_idx = ((length_f - 1.0) * self.prob).ceil() as usize;
 
-                return if top_idx == idx {
+                self.current_agg = if top_idx == idx {
                     Some(self.sorted.get(idx))
                 } else {
                     let mid = self.sorted.get(idx);
                     let mid_plus_1 = self.sorted.get(idx + 1);
                     Some((mid + mid_plus_1) / (T::one() + T::one()))
                 };
+                return;
             },
             Nearest => {
                 let idx = (((length as f64) - 1.0) * self.prob).round() as usize;
@@ -100,7 +105,11 @@ impl<
             Equiprobable => ((length as f64 * self.prob).ceil() - 1.0).max(0.0) as usize,
         };
 
-        Some(self.sorted.get(idx))
+        self.current_agg = Some(self.sorted.get(idx));
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<T> {
+        self.current_agg
     }
 
     fn slice_len(&self) -> usize {

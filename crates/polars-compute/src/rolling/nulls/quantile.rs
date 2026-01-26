@@ -6,6 +6,7 @@ pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
     sorted: SortedBufNulls<'a, T>,
     prob: f64,
     method: QuantileMethod,
+    current_agg: Option<T>,
 }
 
 impl<
@@ -42,15 +43,17 @@ impl<
             sorted: SortedBufNulls::new(slice, validity, start, end, window_size),
             prob: params.prob,
             method: params.method,
+            current_agg: None,
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
+    unsafe fn update(&mut self, start: usize, end: usize) {
         let null_count = self.sorted.update(start, end);
         let mut length = self.sorted.len();
         // The min periods_issue will be taken care of when actually rolling
         if null_count == length {
-            return None;
+            self.current_agg = None;
+            return;
         }
         // Nulls are guaranteed to be at the front
         length -= null_count;
@@ -68,7 +71,7 @@ impl<
         idx = std::cmp::min(idx, length - 1);
 
         // we can unwrap because we sliced of the nulls
-        match self.method {
+        self.current_agg = match self.method {
             QuantileMethod::Midpoint => {
                 let top_idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;
 
@@ -97,7 +100,11 @@ impl<
                 }
             },
             _ => Some(self.sorted.get(idx + null_count).unwrap()),
-        }
+        };
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<T> {
+        self.current_agg
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {

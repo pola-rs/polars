@@ -5,6 +5,7 @@ use super::*;
 
 pub struct MeanWindow<'a, T> {
     sum: SumWindow<'a, T, f64>,
+    current_agg: Option<T>,
 }
 
 impl<T> RollingAggWindowNoNulls<T> for MeanWindow<'_, T>
@@ -37,18 +38,20 @@ where
                 params,
                 window_size,
             ),
+            current_agg: None,
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
+    unsafe fn update(&mut self, start: usize, end: usize) {
         let sum = unsafe {
-            RollingAggWindowNoNulls::update(&mut self.sum, start, end).unwrap_unchecked()
+            RollingAggWindowNoNulls::update(&mut self.sum, start, end);
+            RollingAggWindowNoNulls::get_agg(&self.sum, start).unwrap_unchecked()
         };
-        if start == end {
-            None
-        } else {
-            Some(sum / NumCast::from(end - start).unwrap())
-        }
+        self.current_agg = (start != end).then(|| sum / NumCast::from(end - start).unwrap());
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<T> {
+        self.current_agg
     }
 
     fn slice_len(&self) -> usize {
@@ -87,17 +90,23 @@ impl<
                 params,
                 window_size,
             ),
+            current_agg: None,
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        let sum = unsafe { RollingAggWindowNulls::update(&mut self.sum, start, end) };
+    unsafe fn update(&mut self, start: usize, end: usize) {
+        unsafe { RollingAggWindowNulls::update(&mut self.sum, start, end) };
+        let sum = RollingAggWindowNulls::get_agg(&self.sum, start);
         let len = end - start;
-        if self.sum.null_count == len {
+        self.current_agg = if self.sum.null_count == len {
             None
         } else {
             sum.map(|sum| sum / NumCast::from(end - start - self.sum.null_count).unwrap())
-        }
+        };
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<T> {
+        self.current_agg
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {
