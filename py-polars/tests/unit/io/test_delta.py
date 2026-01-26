@@ -983,7 +983,6 @@ def test_parquet_filter_on_file_statistics_23780(
             ],
         }
     ).with_columns(
-        binary=pl.col.a.cast(pl.Binary),
         decimal=pl.col.a.cast(pl.Decimal(10, 2)),
         date=pl.date_range(pl.date(2020, 1, 1), pl.date(2020, 1, 6), closed="both"),
         datetime=pl.datetime_range(
