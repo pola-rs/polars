@@ -582,7 +582,12 @@ fn av_decimal_strategy(
     decimal_precision_range: RangeInclusive<usize>,
 ) -> impl Strategy<Value = AnyValue<'static>> {
     decimal_precision_range
-        .prop_flat_map(|precision| (any::<i128>(), Just(precision), 0..=precision))
+        .prop_flat_map(|precision| {
+            let max_value = 10_i128.pow(precision as u32) - 1;
+            let min_value = -max_value;
+
+            (min_value..=max_value, Just(precision), 0..=precision)
+        })
         .prop_map(|(value, precision, scale)| AnyValue::Decimal(value, precision, scale))
 }
 
