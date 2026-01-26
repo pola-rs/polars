@@ -840,36 +840,20 @@ Other dataframe has additional columns: [{df2_extra}]."#,
     )
 }
 
-pub fn accumulate_dataframes_vertical_unchecked_optional<I>(dfs: I) -> Option<DataFrame>
+/// Vertically accumulate DataFrames from an iterator of DataFrames
+/// with a known schema.
+///
+/// If the `dfs` iterator is empty, this function will return an empty dataframe
+/// with that schema.  Prefer this function over `accumulate_dataframes_vertical`
+/// when the schema is known, such that we do not get incorrectly schema'd
+/// dataframes when the iterator is empty.
+pub fn accumulate_schema_dataframes_vertical_unchecked<I>(schema: SchemaRef, dfs: I) -> DataFrame
 where
     I: IntoIterator<Item = DataFrame>,
 {
-    let mut iter = dfs.into_iter();
-    let additional = iter.size_hint().0;
-    let mut acc_df = iter.next()?;
-    acc_df.reserve_chunks(additional);
-
-    for df in iter {
-        if acc_df.width() != df.width() {
-            panic!("{}", width_mismatch(&acc_df, &df));
-        }
-
-        acc_df.vstack_mut_owned_unchecked(df);
-    }
-    Some(acc_df)
-}
-
-/// This takes ownership of the DataFrame so that drop is called earlier.
-/// Does not check if schema is correct
-pub fn accumulate_dataframes_vertical_unchecked<I>(dfs: I) -> DataFrame
-where
-    I: IntoIterator<Item = DataFrame>,
-{
-    let mut iter = dfs.into_iter();
-    let additional = iter.size_hint().0;
-    let mut acc_df = iter.next().unwrap();
-    acc_df.reserve_chunks(additional);
-
+    let iter = dfs.into_iter();
+    let mut acc_df = DataFrame::empty_with_arc_schema(schema);
+    acc_df.reserve_chunks(iter.size_hint().0);
     for df in iter {
         if acc_df.width() != df.width() {
             panic!("{}", width_mismatch(&acc_df, &df));
@@ -880,17 +864,23 @@ where
     acc_df
 }
 
-/// This takes ownership of the DataFrame so that drop is called earlier.
-/// # Panics
-/// Panics if `dfs` is empty.
-pub fn accumulate_dataframes_vertical<I>(dfs: I) -> PolarsResult<DataFrame>
+/// Vertically accumulate DataFrames from an iterator of DataFrames
+/// with a known schema.
+///
+/// If the `dfs` iterator is empty, this function will return an empty dataframe
+/// with that schema.  Prefer this function over `accumulate_dataframes_vertical`
+/// when the schema is known, such that we do not get incorrectly schema'd
+/// dataframes when the iterator is empty.
+pub fn accumulate_schema_dataframes_vertical<I>(
+    schema: SchemaRef,
+    dfs: I,
+) -> PolarsResult<DataFrame>
 where
     I: IntoIterator<Item = DataFrame>,
 {
-    let mut iter = dfs.into_iter();
-    let additional = iter.size_hint().0;
-    let mut acc_df = iter.next().unwrap();
-    acc_df.reserve_chunks(additional);
+    let iter = dfs.into_iter();
+    let mut acc_df = DataFrame::empty_with_arc_schema(schema);
+    acc_df.reserve_chunks(iter.size_hint().0);
     for df in iter {
         if acc_df.width() != df.width() {
             return Err(width_mismatch(&acc_df, &df));
@@ -898,8 +888,41 @@ where
 
         acc_df.vstack_mut_owned(df)?;
     }
-
     Ok(acc_df)
+}
+
+pub fn accumulate_dataframes_vertical_unchecked_optional<I>(dfs: I) -> Option<DataFrame>
+where
+    I: IntoIterator<Item = DataFrame>,
+{
+    let mut iter = dfs.into_iter().peekable();
+    let schema = iter.peek().map(|df| df.schema().clone())?;
+    Some(accumulate_schema_dataframes_vertical_unchecked(
+        schema, iter,
+    ))
+}
+
+/// This takes ownership of the DataFrame so that drop is called earlier.
+/// Does not check if schema is correct
+pub fn accumulate_dataframes_vertical_unchecked<I>(dfs: I) -> DataFrame
+where
+    I: IntoIterator<Item = DataFrame>,
+{
+    let mut iter = dfs.into_iter().peekable();
+    let schema = iter.peek().map(|df| df.schema().clone()).unwrap();
+    accumulate_schema_dataframes_vertical_unchecked(schema, iter)
+}
+
+/// This takes ownership of the DataFrame so that drop is called earlier.
+/// # Panics
+/// Panics if `dfs` is empty.
+pub fn accumulate_dataframes_vertical<I>(dfs: I) -> PolarsResult<DataFrame>
+where
+    I: IntoIterator<Item = DataFrame>,
+{
+    let mut iter = dfs.into_iter().peekable();
+    let schema = iter.peek().unwrap().schema().clone();
+    accumulate_schema_dataframes_vertical(schema, iter)
 }
 
 /// Concat the DataFrames to a single DataFrame.
