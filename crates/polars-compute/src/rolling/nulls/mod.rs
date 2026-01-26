@@ -31,7 +31,10 @@ pub trait RollingAggWindowNulls<T: NativeType, Out: NativeType = T> {
 
     /// # Safety
     /// `start` and `end` must be in bounds of `slice` and `bitmap`
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<Out>;
+    unsafe fn update(&mut self, new_start: usize, new_end: usize);
+
+    /// Get the aggregate of the current window relative to the value at `idx`.
+    fn get_agg(&self, idx: usize) -> Option<Out>;
 
     /// Returns the length of the underlying input.
     fn slice_len(&self) -> usize;
@@ -70,8 +73,8 @@ where
             let (start, end) = det_offsets_fn(idx, window_size, len);
             // SAFETY:
             // we are in bounds
-            let agg = unsafe { agg_window.update(start, end) };
-            match agg {
+            unsafe { agg_window.update(start, end) };
+            match agg_window.get_agg(idx) {
                 Some(val) => {
                     if agg_window.is_valid(min_periods) {
                         val

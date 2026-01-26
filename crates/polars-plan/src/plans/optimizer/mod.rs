@@ -120,14 +120,8 @@ pub fn optimize(
     // This can be turned on again during ir-conversion.
     #[allow(clippy::eq_op)]
     #[cfg(feature = "cse")]
-    {
-        if opt_flags.contains(OptFlags::EAGER) {
-            opt_flags &= !(OptFlags::COMM_SUBEXPR_ELIM | OptFlags::COMM_SUBEXPR_ELIM);
-        } else if opt_flags.contains(OptFlags::NEW_STREAMING) {
-            // The new streaming engine can't deal with the way the common
-            // subexpression elimination adds length-incorrect with_columns.
-            opt_flags &= !OptFlags::COMM_SUBEXPR_ELIM;
-        }
+    if opt_flags.contains(OptFlags::EAGER) {
+        opt_flags &= !(OptFlags::COMM_SUBEXPR_ELIM | OptFlags::COMM_SUBEXPR_ELIM);
     }
     let mut root = to_alp(logical_plan, expr_arena, ir_arena, &mut opt_flags)?;
 
@@ -260,7 +254,8 @@ pub fn optimize(
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
     if comm_subexpr_elim && !get_or_init_members!().has_ext_context {
-        let mut optimizer = CommonSubExprOptimizer::new();
+        let mut optimizer =
+            CommonSubExprOptimizer::new(opt_flags.contains(OptFlags::NEW_STREAMING));
         let ir_node = IRNode::new_mutate(root);
 
         root = try_with_ir_arena(ir_arena, expr_arena, |arena| {

@@ -481,7 +481,7 @@ fn create_physical_plan_impl(
             keys,
             aggs,
             apply,
-            schema: _,
+            schema: output_schema,
             maintain_order,
             options,
         } => {
@@ -510,6 +510,7 @@ fn create_physical_plan_impl(
                     aggs: phys_aggs,
                     options,
                     input_schema,
+                    output_schema,
                     slice: _slice,
                     apply,
                 }));
@@ -524,6 +525,7 @@ fn create_physical_plan_impl(
                     aggs: phys_aggs,
                     options,
                     input_schema,
+                    output_schema,
                     slice: _slice,
                     apply,
                 }));
@@ -551,6 +553,7 @@ fn create_physical_plan_impl(
                     phys_keys,
                     phys_aggs,
                     maintain_order,
+                    output_schema,
                     _slice,
                     from_partitioned_ds,
                 ));
@@ -565,6 +568,7 @@ fn create_physical_plan_impl(
                     apply,
                     maintain_order,
                     input_schema,
+                    output_schema,
                     options.slice,
                 )))
             }

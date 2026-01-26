@@ -552,6 +552,13 @@ pub trait SeriesOpsTime: AsSeries {
         by: &Series,
         options: RollingOptionsDynamicWindow,
     ) -> PolarsResult<Series> {
+        if !matches!(
+            options.closed_window,
+            ClosedWindow::Right | ClosedWindow::Both
+        ) {
+            polars_bail!(InvalidOperation: "`rolling_rank_by` window needs to be closed on the right side (i.e., `closed` must be `right` or `both`)");
+        }
+
         let s = self.as_series().clone();
 
         match s.dtype() {
