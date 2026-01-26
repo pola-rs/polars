@@ -46,7 +46,6 @@ extensions = [
     "sphinx_copybutton",
     "sphinx_design",
     "sphinx_favicon",
-    "sphinx_llms_txt",
     "sphinx_reredirects",
     "sphinx_toolbox.more_autodoc.overloads",
 ]
