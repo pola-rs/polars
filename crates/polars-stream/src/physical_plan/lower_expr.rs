@@ -2220,6 +2220,7 @@ fn lower_exprs_with_ctx(
 
     if !fallback_subset.is_empty() {
         let fallback_node = build_fallback_node_with_ctx(input, &fallback_subset, ctx)?;
+        // This can always be false B/C the memory engine is the one handling broadcasting
         input_streams.insert((
             PhysStream::first(fallback_node),
             fallback_subset
