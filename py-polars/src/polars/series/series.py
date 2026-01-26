@@ -1086,6 +1086,9 @@ class Series:
         """
         if isinstance(other, pl.Expr):
             return F.lit(self).eq_missing(other)
+        if self.len() == 1:
+            # Allows broadcasting `self`
+            return self.to_frame().select(F.col(self.name).first().eq_missing(other)).to_series()
         return self.to_frame().select(F.col(self.name).eq_missing(other)).to_series()
 
     @overload
@@ -1143,6 +1146,9 @@ class Series:
         """
         if isinstance(other, pl.Expr):
             return F.lit(self).ne_missing(other)
+        if self.len() == 1:
+            # Allows broadcasting `self`
+            return self.to_frame().select(F.col(self.name).first().ne_missing(other)).to_series()
         return self.to_frame().select(F.col(self.name).ne_missing(other)).to_series()
 
     @overload
