@@ -2,14 +2,16 @@ use std::io::Write;
 use std::sync::Arc;
 
 use arrow_format::ipc::planus::Builder;
+use bytes::Bytes;
 use polars_error::{PolarsResult, polars_bail};
 
 use super::super::{ARROW_MAGIC_V2, IpcField};
 use super::common::{DictionaryTracker, EncodedData, WriteOptions};
-use super::common_sync::{write_continuation, write_message};
+use super::common_sync::{put_message, write_continuation, write_message};
 use super::{default_ipc_fields, schema, schema_to_bytes};
 use crate::array::Array;
 use crate::datatypes::*;
+use crate::io::ipc::write::EncodedDataBytes;
 use crate::io::ipc::write::common::encode_chunk_amortized;
 use crate::record_batch::RecordBatchT;
 
@@ -260,5 +262,91 @@ impl<W: Write> FileWriter<W> {
     /// Sets custom schema metadata. Must be called before `start` is called
     pub fn set_custom_schema_metadata(&mut self, custom_metadata: Arc<Metadata>) {
         self.custom_schema_metadata = Some(custom_metadata);
+    }
+}
+
+pub trait PutOwned {
+    fn put(&mut self, data: Bytes) -> std::io::Result<()>;
+}
+
+impl<'a, T: PutOwned + ?Sized> PutOwned for &'a mut T {
+    fn put(&mut self, data: Bytes) -> std::io::Result<()> {
+        (**self).put(data)
+    }
+}
+
+pub struct PutEnabledFileWriter<W: Write + PutOwned> {
+    pub inner: FileWriter<W>,
+}
+
+impl<W: Write + PutOwned> PutEnabledFileWriter<W> {
+    pub fn new(
+        writer: W,
+        schema: ArrowSchemaRef,
+        ipc_fields: Option<Vec<IpcField>>,
+        options: WriteOptions,
+    ) -> Self {
+        Self {
+            inner: FileWriter::new(writer, schema, ipc_fields, options),
+        }
+    }
+
+    pub fn put_encoded(
+        &mut self,
+        encoded_dictionaries: Vec<EncodedDataBytes>,
+        encoded_message: EncodedDataBytes,
+    ) -> PolarsResult<()> {
+        if self.inner.state != State::Started {
+            polars_bail!(
+                oos = "The IPC file must be started before it can be written to. Call `start` before `write`"
+            );
+        }
+
+        self.put_encoded_dictionaries(encoded_dictionaries)?;
+        self.put_encoded_record_batch(encoded_message)?;
+
+        Ok(())
+    }
+
+    pub fn put_encoded_record_batch(
+        &mut self,
+        encoded_message: EncodedDataBytes,
+    ) -> PolarsResult<()> {
+        let (meta, data) = put_message(&mut self.inner.writer, encoded_message)?;
+        // add a record block for the footer
+        let block = arrow_format::ipc::Block {
+            offset: self.inner.block_offsets as i64,
+            meta_data_length: meta as i32, // TODO: is this still applicable?
+            body_length: data as i64,
+        };
+        self.inner.record_blocks.push(block);
+        self.inner.block_offsets += meta + data;
+
+        Ok(())
+    }
+
+    pub fn put_encoded_dictionaries(
+        &mut self,
+        encoded_dictionaries: Vec<EncodedDataBytes>,
+    ) -> PolarsResult<()> {
+        for encoded_dictionary in encoded_dictionaries {
+            let (meta, data) = put_message(&mut self.inner.writer, encoded_dictionary)?;
+
+            let block = arrow_format::ipc::Block {
+                offset: self.inner.block_offsets as i64,
+                meta_data_length: meta as i32,
+                body_length: data as i64,
+            };
+            self.inner.dictionary_blocks.push(block);
+            self.inner.block_offsets += meta + data;
+        }
+
+        Ok(())
+    }
+}
+
+impl<W: Write + PutOwned> PutOwned for PutEnabledFileWriter<W> {
+    fn put(&mut self, data: Bytes) -> std::io::Result<()> {
+        self.inner.writer.put(data)
     }
 }
