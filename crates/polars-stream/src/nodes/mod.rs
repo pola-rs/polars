@@ -14,7 +14,6 @@ pub mod in_memory_sink;
 pub mod in_memory_source;
 pub mod input_independent_select;
 pub mod io_sinks;
-pub mod io_sinks2;
 pub mod io_sources;
 pub mod joins;
 pub mod map;
@@ -36,6 +35,7 @@ pub mod simple_projection;
 pub mod sorted_group_by;
 pub mod streaming_slice;
 pub mod top_k;
+pub mod unordered_union;
 pub mod with_row_index;
 pub mod zip;
 

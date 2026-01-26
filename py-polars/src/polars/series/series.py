@@ -2162,6 +2162,9 @@ class Series:
         """
         Get the minimum value in this Series, ordered by an expression.
 
+        If the by expression has multiple values equal to the minimum it is not
+        defined which value will be chosen.
+
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
@@ -2196,6 +2199,9 @@ class Series:
     def max_by(self, by: IntoExpr) -> Expr:
         """
         Get the maximum value in this Series, ordered by an expression.
+
+        If the by expression has multiple values equal to the maximum it is not
+        defined which value will be chosen.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed

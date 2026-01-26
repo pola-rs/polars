@@ -16,26 +16,30 @@ pub struct RankWindow<'a, T, Out, P> {
     _out: PhantomData<Out>,
 }
 
-impl<'a, T, Out, P> RollingAggWindowNulls<'a, T, Out> for RankWindow<'a, T, Out, P>
+impl<T, Out, P> RollingAggWindowNulls<T, Out> for RankWindow<'_, T, Out, P>
 where
     T: NativeType,
     Out: NativeType,
     P: RankPolicy<T, Out>,
 {
-    unsafe fn new(
+    type This<'a> = RankWindow<'a, T, Out, P>;
+
+    fn new<'a>(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
-    ) -> Self {
+    ) -> Self::This<'a> {
+        assert!(start <= slice.len() && end <= slice.len() && start <= end);
+
         let cmp = |a: &&T, b: &&T| T::tot_cmp(*a, *b);
         let ost: OrderStatisticTree<&T> = match window_size {
             Some(ws) => OrderStatisticTree::with_capacity(ws, cmp),
             None => OrderStatisticTree::new(cmp),
         };
-        let mut slf = Self {
+        let mut this = RankWindow {
             slice,
             validity,
             last_start: 0,
@@ -44,10 +48,11 @@ where
             policy: P::new(&params.unwrap()),
             _out: PhantomData,
         };
+        // SAFETY: We bounds checked `start` and `end`.
         unsafe {
-            slf.update(start, end);
+            this.update(start, end);
         }
-        slf
+        this
     }
 
     unsafe fn update(&mut self, new_start: usize, new_end: usize) -> Option<Out> {
@@ -74,6 +79,12 @@ where
         }
         self.last_start = new_start;
         self.last_end = new_end;
+
+        if self.last_end == 0 {
+            return None;
+        }
+        // SAFETY: We checked that `last_end` is not zero and the caller MUST uphold the function
+        // safety contract.
         let cur = unsafe { self.slice.get_unchecked(self.last_end - 1) };
         self.policy.rank(&self.ost, cur)
     }
@@ -81,13 +92,17 @@ where
     fn is_valid(&self, _min_periods: usize) -> bool {
         self.validity.get(self.last_end - 1).unwrap()
     }
+
+    fn slice_len(&self) -> usize {
+        self.slice.len()
+    }
 }
 
-type RankWindowAvg<'a, T> = RankWindow<'a, T, f64, RankPolicyAverage>;
-type RankWindowMin<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyMin>;
-type RankWindowMax<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyMax>;
-type RankWindowDense<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyDense>;
-type RankWindowRandom<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyRandom>;
+pub type RankWindowAvg<'a, T> = RankWindow<'a, T, f64, RankPolicyAverage>;
+pub type RankWindowMin<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyMin>;
+pub type RankWindowMax<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyMax>;
+pub type RankWindowDense<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyDense>;
+pub type RankWindowRandom<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyRandom>;
 
 pub fn rolling_rank<T>(
     arr: &PrimitiveArray<T>,

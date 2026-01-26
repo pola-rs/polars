@@ -12,6 +12,8 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             options,
         },
         AExpr::Column(a) => Expr::Column(a),
+        #[cfg(feature = "dtype-struct")]
+        AExpr::StructField(a) => Expr::Field(Arc::new([a])),
         AExpr::Literal(s) => Expr::Literal(s),
         AExpr::BinaryExpr { left, op, right } => {
             let l = node_to_expr(left, expr_arena);
@@ -239,6 +241,11 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             expr: Arc::new(node_to_expr(expr, expr_arena)),
             evaluation: Arc::new(node_to_expr(evaluation, expr_arena)),
             variant,
+        },
+        #[cfg(feature = "dtype-struct")]
+        AExpr::StructEval { expr, evaluation } => Expr::StructEval {
+            expr: Arc::new(node_to_expr(expr, expr_arena)),
+            evaluation: expr_irs_to_exprs(evaluation, expr_arena),
         },
         AExpr::Function {
             input,
@@ -523,6 +530,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     B::Strptime(dtype.into(), strptime_options)
                 },
                 IB::Split(v) => B::Split(v),
+                #[cfg(feature = "regex")]
+                IB::SplitRegex { inclusive, strict } => B::SplitRegex { inclusive, strict },
                 #[cfg(feature = "dtype-decimal")]
                 IB::ToDecimal { scale } => B::ToDecimal { scale },
                 #[cfg(feature = "nightly")]
@@ -578,7 +587,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::SuffixFields(pl_small_str) => B::SuffixFields(pl_small_str),
                 #[cfg(feature = "json")]
                 IB::JsonEncode => B::JsonEncode,
-                IB::WithFields => B::WithFields,
                 IB::MapFieldNames(f) => B::MapFieldNames(f),
             })
         },

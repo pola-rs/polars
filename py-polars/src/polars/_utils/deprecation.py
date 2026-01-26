@@ -14,6 +14,8 @@ from polars._typing import DeprecationType
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from polars._utils.various import IdentityFunction
+
 if sys.version_info >= (3, 13):
     from warnings import deprecated
 else:
@@ -21,9 +23,7 @@ else:
         from typing_extensions import deprecated
     except ImportError:
 
-        def deprecated(  # type: ignore[no-redef]
-            message: str,
-        ) -> Callable[[Callable[P, T]], Callable[P, T]]:
+        def deprecated(message: str) -> IdentityFunction:  # type: ignore[no-redef]
             return _deprecate_function(message)
 
 
@@ -61,7 +61,7 @@ def issue_deprecation_warning(message: str, *, version: str = "") -> None:
     issue_warning(message, DeprecationWarning)
 
 
-def _deprecate_function(message: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
+def _deprecate_function(message: str) -> IdentityFunction:
     """Decorator to mark a function as deprecated."""
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
@@ -77,7 +77,7 @@ def _deprecate_function(message: str) -> Callable[[Callable[P, T]], Callable[P, 
     return decorate
 
 
-def deprecate_streaming_parameter() -> Callable[[Callable[P, T]], Callable[P, T]]:
+def deprecate_streaming_parameter() -> IdentityFunction:
     """Decorator to mark `streaming` argument as deprecated due to being renamed."""
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
@@ -104,7 +104,7 @@ def deprecate_streaming_parameter() -> Callable[[Callable[P, T]], Callable[P, T]
 
 def deprecate_renamed_parameter(
     old_name: str, new_name: str, *, version: str
-) -> Callable[[Callable[P, T]], Callable[P, T]]:
+) -> IdentityFunction:
     """
     Decorator to mark a function parameter as deprecated due to being renamed.
 
@@ -162,7 +162,7 @@ def _rename_keyword_argument(
 
 def deprecate_nonkeyword_arguments(
     allowed_args: list[str] | None = None, message: str | None = None, *, version: str
-) -> Callable[[Callable[P, T]], Callable[P, T]]:
+) -> IdentityFunction:
     """
     Decorator for deprecating the use of non-keyword arguments in a function.
 
@@ -251,9 +251,7 @@ def _format_argument_list(allowed_args: list[str]) -> str:
         return f" except for {args} and {last!r}"
 
 
-def deprecate_parameter_as_multi_positional(
-    old_name: str,
-) -> Callable[[Callable[P, T]], Callable[P, T]]:
+def deprecate_parameter_as_multi_positional(old_name: str) -> IdentityFunction:
     """
     Decorator to mark a function argument as deprecated due to being made multi-positional.
 

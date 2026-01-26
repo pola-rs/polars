@@ -39,6 +39,7 @@ use arrow::datatypes::{ArrowSchemaRef, Metadata};
 use arrow::io::ipc::read::{self, get_row_count};
 use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
+use polars_utils::pl_str::PlRefStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -52,12 +53,17 @@ use crate::shared::{ArrowReader, finish_reader};
 #[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct IpcScanOptions;
+pub struct IpcScanOptions {
+    /// Read StatisticsFlags from the record batch custom metadata.
+    pub record_batch_statistics: bool,
+}
 
 #[expect(clippy::derivable_impls)]
 impl Default for IpcScanOptions {
     fn default() -> Self {
-        Self {}
+        Self {
+            record_batch_statistics: false,
+        }
     }
 }
 
@@ -87,7 +93,7 @@ pub struct IpcReader<R: MmapBytesReader> {
     pub(super) projection: Option<Vec<usize>>,
     pub(crate) columns: Option<Vec<String>>,
     hive_partition_columns: Option<Vec<Series>>,
-    include_file_path: Option<(PlSmallStr, Arc<str>)>,
+    include_file_path: Option<(PlSmallStr, PlRefStr)>,
     pub(super) row_index: Option<RowIndex>,
     // Stores the as key semaphore to make sure we don't write to the memory mapped file.
     pub(super) memory_map: Option<PathBuf>,
@@ -152,7 +158,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
 
     pub fn with_include_file_path(
         mut self,
-        include_file_path: Option<(PlSmallStr, Arc<str>)>,
+        include_file_path: Option<(PlSmallStr, PlRefStr)>,
     ) -> Self {
         self.include_file_path = include_file_path;
         self
@@ -315,7 +321,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
                     col,
                     Scalar::new(
                         DataType::String,
-                        AnyValue::StringOwned(value.as_ref().into()),
+                        AnyValue::StringOwned(value.as_str().into()),
                     ),
                     df.height(),
                 ))

@@ -17,20 +17,20 @@ pip
 
 polars-cloud
 # Interop
+numba >= 0.54
 numpy
-numba >= 0.54; python_version < '3.14'  # Numba can lag Python releases
 pandas
 pyarrow
 pydantic>=2.0.0
 # Datetime / time zones
 tzdata; platform_system == 'Windows'
+pytz
 # Database
 sqlalchemy
 adbc-driver-manager; platform_system != 'Windows'
 adbc-driver-sqlite; platform_system != 'Windows'
 aiosqlite
-connectorx
-kuzu
+connectorx>=0.4.5
 # Cloud
 azure-identity
 boto3
@@ -42,7 +42,7 @@ s3fs
 fastexcel>=0.11.5
 openpyxl
 xlsx2csv
-xlsxwriter<=3.2.5
+xlsxwriter>=3.2.9
 # Other I/O
 deltalake>=1.1.4
 # Csv

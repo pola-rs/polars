@@ -1,16 +1,17 @@
 use std::cmp;
 
 use memchr::memchr2_iter;
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_core::{POOL, config};
 use polars_error::feature_gated;
-use polars_utils::mmap::{MMapSemaphore, MemSlice};
-use polars_utils::plpath::PlPathRef;
+use polars_utils::mmap::MMapSemaphore;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::select::select_unpredictable;
 use rayon::prelude::*;
 
 use super::CsvParseOptions;
-use super::buffer::Buffer;
+use super::builder::Builder;
 use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use crate::csv::read::read_until_start_and_infer_schema;
@@ -21,7 +22,7 @@ use crate::utils::compression::CompressedReader;
 /// useful for count(*) queries
 #[allow(clippy::too_many_arguments)]
 pub fn count_rows(
-    addr: PlPathRef<'_>,
+    path: PlRefPath,
     quote_char: Option<u8>,
     comment_prefix: Option<&CommentPrefix>,
     eol_char: u8,
@@ -30,24 +31,22 @@ pub fn count_rows(
     skip_rows_before_header: usize,
     skip_rows_after_header: usize,
 ) -> PolarsResult<usize> {
-    let file = match addr
-        .as_local_path()
-        .and_then(|v| (!config::force_async()).then_some(v))
-    {
-        None => feature_gated!("cloud", {
+    let file = if path.has_scheme() || config::force_async() {
+        feature_gated!("cloud", {
             crate::file_cache::FILE_CACHE
-                .get_entry(addr)
+                .get_entry(path)
                 // Safety: This was initialized by schema inference.
                 .unwrap()
                 .try_open_assume_latest()?
-        }),
-        Some(path) => polars_utils::open_file(path)?,
+        })
+    } else {
+        polars_utils::open_file(path.as_std_path())?
     };
 
     let mmap = MMapSemaphore::new_from_file(&file).unwrap();
 
     count_rows_from_slice_par(
-        MemSlice::from_mmap(Arc::new(mmap)),
+        Buffer::from_owner(mmap),
         quote_char,
         comment_prefix,
         eol_char,
@@ -62,7 +61,7 @@ pub fn count_rows(
 /// useful for count(*) queries
 #[allow(clippy::too_many_arguments)]
 pub fn count_rows_from_slice_par(
-    mem_slice: MemSlice,
+    buffer: Buffer<u8>,
     quote_char: Option<u8>,
     comment_prefix: Option<&CommentPrefix>,
     eol_char: u8,
@@ -71,8 +70,7 @@ pub fn count_rows_from_slice_par(
     skip_rows_before_header: usize,
     skip_rows_after_header: usize,
 ) -> PolarsResult<usize> {
-    // TODO: Improve default scan_csv path to match count perf or implement streaming count.
-    let mut reader = CompressedReader::try_new(mem_slice)?;
+    let mut reader = CompressedReader::try_new(buffer)?;
 
     let reader_options = CsvReadOptions {
         parse_options: Arc::new(CsvParseOptions {
@@ -88,26 +86,64 @@ pub fn count_rows_from_slice_par(
         ..Default::default()
     };
 
-    let (_, leftover) =
+    let (_, mut leftover) =
         read_until_start_and_infer_schema(&reader_options, None, None, &mut reader)?;
 
-    // For the non-compressed case this is a zero-copy op.
-    let (bytes, _) = reader.read_next_slice(&leftover, usize::MAX)?;
-
-    #[cfg(debug_assertions)]
-    const BYTES_PER_CHUNK: usize = 128;
-    #[cfg(not(debug_assertions))]
-    const BYTES_PER_CHUNK: usize = 1 << 16;
+    const BYTES_PER_CHUNK: usize = if cfg!(debug_assertions) {
+        128
+    } else {
+        512 * 1024
+    };
 
     let count = CountLines::new(quote_char, eol_char, comment_prefix.cloned());
     POOL.install(|| {
         let mut states = Vec::new();
+        let eof_unterminated_row;
+
         if comment_prefix.is_none() {
-            bytes
-                .par_chunks(BYTES_PER_CHUNK)
-                .map(|chunk| count.analyze_chunk(chunk))
-                .collect_into_vec(&mut states);
+            let mut last_slice = Buffer::new();
+            let mut err = None;
+
+            let streaming_iter = std::iter::from_fn(|| {
+                let (slice, read_n) = match reader.read_next_slice(&leftover, BYTES_PER_CHUNK) {
+                    Ok(tup) => tup,
+                    Err(e) => {
+                        err = Some(e);
+                        return None;
+                    },
+                };
+
+                leftover = Buffer::new();
+                if slice.is_empty() && read_n == 0 {
+                    return None;
+                }
+
+                last_slice = slice.clone();
+                Some(slice)
+            });
+
+            states = streaming_iter
+                .enumerate()
+                .par_bridge()
+                .map(|(id, slice)| (count.analyze_chunk(&slice), id))
+                .collect::<Vec<_>>();
+
+            if let Some(e) = err {
+                return Err(e.into());
+            }
+
+            // par_bridge does not guarantee order, but is mostly sorted so `slice::sort` is a
+            // decent fit.
+            states.sort_by_key(|(_, id)| *id);
+
+            // Technically this is broken if the input has a comment line at the end that is longer
+            // than `BYTES_PER_CHUNK`, but in practice this ought to be fine.
+            eof_unterminated_row = ends_in_unterminated_row(&last_slice, eol_char, comment_prefix);
         } else {
+            // For the non-compressed case this is a zero-copy op.
+            // TODO: Implement streaming chunk logic.
+            let (bytes, _) = reader.read_next_slice(&leftover, usize::MAX)?;
+
             let num_chunks = bytes.len().div_ceil(BYTES_PER_CHUNK);
             (0..num_chunks)
                 .into_par_iter()
@@ -123,7 +159,7 @@ pub fn count_rows_from_slice_par(
                         {
                             start_offset += nl_off + 1;
                         } else {
-                            return count.analyze_chunk(&[]);
+                            return (count.analyze_chunk(&[]), 0);
                         }
                     }
 
@@ -136,27 +172,20 @@ pub fn count_rows_from_slice_par(
                         bytes.len()
                     };
 
-                    count.analyze_chunk(&bytes[start_offset..stop_offset])
+                    (count.analyze_chunk(&bytes[start_offset..stop_offset]), 0)
                 })
                 .collect_into_vec(&mut states);
+
+            eof_unterminated_row = ends_in_unterminated_row(&bytes, eol_char, comment_prefix);
         }
 
         let mut n = 0;
         let mut in_string = false;
-        for pair in states {
+        for (pair, _) in states {
             n += pair[in_string as usize].newline_count;
             in_string = pair[in_string as usize].end_inside_string;
         }
-        if let Some(last) = bytes.last()
-            && *last != eol_char
-            && (comment_prefix.is_none()
-                || !is_comment_line(
-                    bytes.rsplit(|c| *c == eol_char).next().unwrap(),
-                    comment_prefix,
-                ))
-        {
-            n += 1
-        }
+        n += eof_unterminated_row as usize;
 
         Ok(n)
     })
@@ -803,18 +832,8 @@ impl CountLines {
         }
 
         if is_eof {
-            // +1 count correction for when last line does not end with '\n'
-            if !bytes.is_empty() && bytes.last().copied().unwrap() != self.eol_char {
-                // We can do a simple backwards-scan to find the start of last line if it is a
-                // comment line, since comment lines can't escape new-lines.
-                let last_new_line_post = memchr::memrchr(self.eol_char, bytes).unwrap_or(0);
-                let last_line_is_comment_line = bytes
-                    .get(last_new_line_post + 1..)
-                    .map(|line| is_comment_line(line, self.comment_prefix.as_ref()))
-                    .unwrap_or(false);
-
-                count += !last_line_is_comment_line as usize;
-            }
+            count += ends_in_unterminated_row(bytes, self.eol_char, self.comment_prefix.as_ref())
+                as usize;
             offset = bytes.len();
         }
 
@@ -911,6 +930,26 @@ impl CountLines {
     }
 }
 
+fn ends_in_unterminated_row(
+    bytes: &[u8],
+    eol_char: u8,
+    comment_prefix: Option<&CommentPrefix>,
+) -> bool {
+    if !bytes.is_empty() && bytes.last().copied().unwrap() != eol_char {
+        // We can do a simple backwards-scan to find the start of last line if it is a
+        // comment line, since comment lines can't escape new-lines.
+        let last_new_line_post = memchr::memrchr(eol_char, bytes).unwrap_or(0);
+        let last_line_is_comment_line = bytes
+            .get(last_new_line_post + 1..)
+            .map(|line| is_comment_line(line, comment_prefix))
+            .unwrap_or(false);
+
+        return !last_line_is_comment_line;
+    }
+
+    false
+}
+
 #[inline]
 fn find_quoted(bytes: &[u8], quote_char: u8, needle: u8) -> Option<usize> {
     let mut in_field = false;
@@ -974,7 +1013,7 @@ pub(super) fn parse_lines(
     ignore_errors: bool,
     null_values: Option<&NullValuesCompiled>,
     projection: &[usize],
-    buffers: &mut [Buffer],
+    buffers: &mut [Builder],
     n_lines: usize,
     // length of original schema
     schema_len: usize,

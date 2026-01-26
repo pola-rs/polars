@@ -42,12 +42,14 @@ pub fn initialize_multi_scan_pipeline(
             reader name: {}, \
             {:?}, \
             n_readers_pre_init: {}, \
-            max_concurrent_scans: {}",
+            max_concurrent_scans: {}, \
+            disable_morsel_split: {}",
             config.sources.len(),
             config.file_reader_builder.reader_name(),
             config.reader_capabilities(),
             config.n_readers_pre_init(),
             config.max_concurrent_scans(),
+            config.disable_morsel_split,
         );
     }
 
@@ -145,12 +147,7 @@ async fn finish_initialize_multi_scan_pipeline(
         // In cloud execution the entries may not exist at this point due to DSL resolution
         // happening on a separate machine.
         polars_io::file_cache::init_entries_from_uri_list(
-            config
-                .sources
-                .as_paths()
-                .unwrap()
-                .iter()
-                .map(|path| Arc::from(path.to_str())),
+            config.sources.as_paths().unwrap().iter().cloned(),
             config.cloud_options.as_deref(),
         )?;
     }
@@ -368,6 +365,7 @@ async fn finish_initialize_multi_scan_pipeline(
     let final_output_schema = config.final_output_schema.clone();
     let file_projection_builder = config.file_projection_builder.clone();
     let max_concurrent_scans = config.max_concurrent_scans();
+    let disable_morsel_split = config.disable_morsel_split;
 
     let (started_reader_tx, started_reader_rx) =
         tokio::sync::mpsc::channel(max_concurrent_scans.max(2) - 1);
@@ -392,6 +390,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 missing_columns_policy,
                 forbid_extra_columns: config.forbid_extra_columns.clone(),
                 num_pipelines,
+                disable_morsel_split,
                 verbose,
             },
             verbose,

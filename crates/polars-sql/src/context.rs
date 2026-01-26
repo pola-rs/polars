@@ -428,8 +428,7 @@ impl SQLContext {
             }) => self.process_values(rows),
 
             SetExpr::Table(tbl) => {
-                if tbl.table_name.is_some() {
-                    let table_name = tbl.table_name.as_ref().unwrap();
+                if let Some(table_name) = tbl.table_name.as_ref() {
                     self.get_table_from_current_scope(table_name)
                         .ok_or_else(|| {
                             polars_err!(
@@ -514,6 +513,7 @@ impl SQLContext {
                 let opts = UnionArgs {
                     parallel: true,
                     to_supertypes: true,
+                    maintain_order: false,
                     ..Default::default()
                 };
                 let out = match quantifier {
@@ -1755,7 +1755,7 @@ impl SQLContext {
         let tbl_name = alias
             .as_ref()
             .map(|a| a.name.value.clone())
-            .unwrap_or_else(|| tbl_name.to_str().to_string());
+            .unwrap_or_else(|| tbl_name.to_string());
 
         self.table_map.insert(tbl_name.clone(), lf.clone());
         Ok((tbl_name, lf))
@@ -1840,8 +1840,7 @@ impl SQLContext {
             &by,
             SortMultipleOptions::default()
                 .with_order_descending_multi(descending)
-                .with_nulls_last_multi(nulls_last)
-                .with_maintain_order(true),
+                .with_nulls_last_multi(nulls_last),
         ))
     }
 

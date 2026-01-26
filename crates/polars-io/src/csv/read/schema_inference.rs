@@ -1,15 +1,13 @@
-use std::borrow::Cow;
-
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 #[cfg(feature = "polars-time")]
 use polars_time::chunkedarray::string::infer as date_infer;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::string::Pattern;
 use polars_utils::format_pl_smallstr;
-use polars_utils::mmap::MemSlice;
 
 use super::splitfields::SplitFields;
-use super::{CsvEncoding, CsvParseOptions, NullValues};
+use super::{CsvParseOptions, NullValues};
 use crate::utils::{BOOLEAN_RE, FLOAT_RE, FLOAT_RE_DECIMAL, INTEGER_RE};
 
 /// Low-level CSV schema inference function.
@@ -17,16 +15,15 @@ use crate::utils::{BOOLEAN_RE, FLOAT_RE, FLOAT_RE_DECIMAL, INTEGER_RE};
 /// Use `read_until_start_and_infer_schema` instead.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn infer_file_schema_impl(
-    header_line: &Option<MemSlice>,
-    content_lines: &[MemSlice],
+    header_line: &Option<Buffer<u8>>,
+    content_lines: &[Buffer<u8>],
     infer_all_as_str: bool,
     parse_options: &CsvParseOptions,
     schema_overwrite: Option<&Schema>,
-) -> PolarsResult<Schema> {
+) -> Schema {
     let mut headers = header_line
         .as_ref()
         .map(|line| infer_headers(line, parse_options))
-        .transpose()?
         .unwrap_or_else(|| Vec::with_capacity(8));
 
     let extend_header_with_unknown_column = header_line.is_none();
@@ -43,20 +40,13 @@ pub(super) fn infer_file_schema_impl(
             parse_options,
             &mut column_types,
             &mut nulls,
-        )?;
+        );
     }
 
-    Ok(build_schema(&headers, &column_types, schema_overwrite))
+    build_schema(&headers, &column_types, schema_overwrite)
 }
 
-// We use lossy utf8 here because we don't want the schema inference to fail on utf8.
-// It may later.
-const INFER_ENCODING: CsvEncoding = CsvEncoding::LossyUtf8;
-
-fn infer_headers(
-    mut header_line: &[u8],
-    parse_options: &CsvParseOptions,
-) -> PolarsResult<Vec<PlSmallStr>> {
+fn infer_headers(mut header_line: &[u8], parse_options: &CsvParseOptions) -> Vec<PlSmallStr> {
     let len = header_line.len();
 
     if header_line.last().copied() == Some(b'\r') {
@@ -77,10 +67,9 @@ fn infer_headers(
             } else {
                 slice
             };
-            let s = parse_bytes_with_encoding(slice_escaped, INFER_ENCODING)?;
-            Ok(s)
+            String::from_utf8_lossy(slice_escaped)
         })
-        .collect::<PolarsResult<Vec<_>>>()?;
+        .collect::<Vec<_>>();
 
     let mut deduplicated_headers = Vec::with_capacity(headers.len());
     let mut header_names = PlHashMap::with_capacity(headers.len());
@@ -95,7 +84,7 @@ fn infer_headers(
         *count += 1;
     }
 
-    Ok(deduplicated_headers)
+    deduplicated_headers
 }
 
 fn infer_types_from_line(
@@ -106,7 +95,7 @@ fn infer_types_from_line(
     parse_options: &CsvParseOptions,
     column_types: &mut Vec<PlHashSet<DataType>>,
     nulls: &mut Vec<bool>,
-) -> PolarsResult<()> {
+) {
     let line_len = line.len();
     if line.last().copied() == Some(b'\r') {
         line = &line[..line_len - 1];
@@ -143,7 +132,7 @@ fn infer_types_from_line(
             } else {
                 slice
             };
-            let s = parse_bytes_with_encoding(slice_escaped, INFER_ENCODING)?;
+            let s = String::from_utf8_lossy(slice_escaped);
             let dtype = match &parse_options.null_values {
                 None => Some(infer_field_schema(
                     &s,
@@ -200,8 +189,6 @@ fn infer_types_from_line(
             }
         }
     }
-
-    Ok(())
 }
 
 fn build_schema(
@@ -320,16 +307,6 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
     } else {
         DataType::String
     }
-}
-
-#[inline]
-fn parse_bytes_with_encoding(bytes: &[u8], encoding: CsvEncoding) -> PolarsResult<Cow<'_, str>> {
-    Ok(match encoding {
-        CsvEncoding::Utf8 => simdutf8::basic::from_utf8(bytes)
-            .map_err(|_| polars_err!(ComputeError: "invalid utf-8 sequence"))?
-            .into(),
-        CsvEncoding::LossyUtf8 => String::from_utf8_lossy(bytes),
-    })
 }
 
 fn column_name(i: usize) -> PlSmallStr {

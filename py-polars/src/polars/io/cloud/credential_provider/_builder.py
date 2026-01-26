@@ -9,7 +9,7 @@ import polars._utils.logging
 from polars._utils.cache import LRUCache
 from polars._utils.logging import eprint, verbose
 from polars._utils.unstable import issue_unstable_warning
-from polars.io.cloud._utils import NoPickleOption
+from polars.io.cloud._utils import POLARS_STORAGE_CONFIG_KEYS, NoPickleOption
 from polars.io.cloud.credential_provider._providers import (
     CachedCredentialProvider,
     CachingCredentialProvider,
@@ -25,9 +25,14 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import TypeAlias
 
-# https://docs.rs/object_store/latest/object_store/enum.ClientConfigKey.html
-OBJECT_STORE_CLIENT_OPTIONS: Final[frozenset[str]] = frozenset(
+    from polars._typing import StorageOptionsDict
+
+
+# `storage_options` keys that are ignored when auto-initializing a credential provider.
+AUTOINIT_IGNORED_KEYS: Final[frozenset[str]] = frozenset(
     [
+        # Object store client options
+        # https://docs.rs/object_store/latest/object_store/enum.ClientConfigKey.html
         "allow_http",
         "allow_invalid_certificates",
         "connect_timeout",
@@ -45,8 +50,21 @@ OBJECT_STORE_CLIENT_OPTIONS: Final[frozenset[str]] = frozenset(
         "proxy_excludes",
         "timeout",
         "user_agent",
+        *POLARS_STORAGE_CONFIG_KEYS,
+        # Azure
+        "azure_use_azure_cli",
+        "use_azure_cli",
+        # AWS
+        "aws_request_payer",
+        "request_payer",
+        # GCS
+        "google_bucket",
+        "google_bucket_name",
+        "bucket",
+        "bucket_name",
     ]
 )
+
 
 CredentialProviderBuilderReturn: TypeAlias = (
     CredentialProvider | CredentialProviderFunction | None
@@ -306,7 +324,7 @@ def _init_credential_provider_builder(
     | Literal["auto"]
     | None,
     source: Any,
-    storage_options: dict[str, Any] | None,
+    storage_options: StorageOptionsDict | None,
     caller_name: str,
 ) -> CredentialProviderBuilder | None:
     def f() -> CredentialProviderBuilder | None:
@@ -376,9 +394,7 @@ def _init_credential_provider_builder(
                         tenant_id = v
                     elif k in {"azure_storage_account_name", "account_name"}:
                         storage_account = v
-                    elif k in {"azure_use_azure_cli", "use_azure_cli"}:
-                        continue
-                    elif k in OBJECT_STORE_CLIENT_OPTIONS:
+                    elif k in AUTOINIT_IGNORED_KEYS:
                         continue
                     else:
                         # We assume some sort of access key was given, so we
@@ -429,9 +445,7 @@ def _init_credential_provider_builder(
                         "endpoint_url",
                     }:
                         has_endpoint_url = True
-                    elif k in {"aws_request_payer", "request_payer"}:
-                        continue
-                    elif k in OBJECT_STORE_CLIENT_OPTIONS:
+                    elif k in AUTOINIT_IGNORED_KEYS:
                         continue
                     else:
                         # We assume this is some sort of access key
@@ -472,14 +486,7 @@ def _init_credential_provider_builder(
                     # https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html
                     if k in {"token", "bearer_token"}:
                         token = v
-                    elif k in {
-                        "google_bucket",
-                        "google_bucket_name",
-                        "bucket",
-                        "bucket_name",
-                    }:
-                        continue
-                    elif k in OBJECT_STORE_CLIENT_OPTIONS:
+                    elif k in AUTOINIT_IGNORED_KEYS:
                         continue
                     else:
                         # We assume some sort of access key was given, so we

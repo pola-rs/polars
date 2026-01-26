@@ -103,7 +103,7 @@ impl LazyFrame {
         self.opt_state
     }
 
-    fn from_logical_plan(logical_plan: DslPlan, opt_state: OptFlags) -> Self {
+    pub fn from_logical_plan(logical_plan: DslPlan, opt_state: OptFlags) -> Self {
         LazyFrame {
             logical_plan,
             opt_state,
@@ -524,20 +524,9 @@ impl LazyFrame {
         expr_arena: &mut Arena<AExpr>,
         scratch: &mut Vec<Node>,
     ) -> PolarsResult<Node> {
-        #[allow(unused_mut)]
-        let mut opt_state = self.opt_state;
-        let new_streaming = self.opt_state.contains(OptFlags::NEW_STREAMING);
-
-        #[cfg(feature = "cse")]
-        if new_streaming {
-            // The new streaming engine can't deal with the way the common
-            // subexpression elimination adds length-incorrect with_columns.
-            opt_state &= !OptFlags::COMM_SUBEXPR_ELIM;
-        }
-
         let lp_top = optimize(
             self.logical_plan,
-            opt_state,
+            self.opt_state,
             lp_arena,
             expr_arena,
             scratch,
@@ -627,14 +616,28 @@ impl LazyFrame {
     ///
     /// The query is optimized prior to execution.
     pub fn collect_with_engine(mut self, mut engine: Engine) -> PolarsResult<DataFrame> {
-        let payload = if let DslPlan::Sink { payload, .. } = &self.logical_plan {
-            payload.clone()
-        } else {
-            self.logical_plan = DslPlan::Sink {
-                input: Arc::new(self.logical_plan),
-                payload: SinkType::Memory,
-            };
-            SinkType::Memory
+        let payload = match &self.logical_plan {
+            DslPlan::Sink { payload, .. } => payload.clone(),
+            DslPlan::SinkMultiple { .. } => {
+                polars_ensure!(matches!(engine, Engine::Auto | Engine::Streaming), InvalidOperation: "lazy multisinks only supported on streaming engine");
+                feature_gated!("new_streaming", {
+                    let sink_multiple = self.with_new_streaming(true);
+                    let mut alp_plan = sink_multiple.to_alp_optimized()?;
+                    let result = polars_stream::run_query(
+                        alp_plan.lp_top,
+                        &mut alp_plan.lp_arena,
+                        &mut alp_plan.expr_arena,
+                    );
+                    return result.map(|_| DataFrame::empty());
+                })
+            },
+            _ => {
+                self.logical_plan = DslPlan::Sink {
+                    input: Arc::new(self.logical_plan),
+                    payload: SinkType::Memory,
+                };
+                SinkType::Memory
+            },
         };
 
         // Default engine for collect is InMemory, sink_* is Streaming
@@ -977,7 +980,7 @@ impl LazyFrame {
     pub fn sink(
         mut self,
         sink_type: SinkDestination,
-        file_format: impl Into<Arc<FileType>>,
+        file_format: FileWriteFormat,
         unified_sink_args: UnifiedSinkArgs,
     ) -> PolarsResult<Self> {
         polars_ensure!(
@@ -990,22 +993,20 @@ impl LazyFrame {
             payload: match sink_type {
                 SinkDestination::File { target } => SinkType::File(FileSinkOptions {
                     target,
-                    file_format: file_format.into(),
+                    file_format,
                     unified_sink_args,
                 }),
                 SinkDestination::Partitioned {
                     base_path,
                     file_path_provider,
                     partition_strategy,
-                    finish_callback,
                     max_rows_per_file,
                     approximate_bytes_per_file,
                 } => SinkType::Partitioned(PartitionedSinkOptions {
                     base_path,
                     file_path_provider,
                     partition_strategy,
-                    finish_callback,
-                    file_format: file_format.into(),
+                    file_format,
                     unified_sink_args,
                     max_rows_per_file,
                     approximate_bytes_per_file,

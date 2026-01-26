@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 import ast
 import contextlib
+import sys
 from _ast import GtE, Lt, LtE
 from ast import (
     Attribute,
@@ -49,6 +50,18 @@ _temporal_conversions: dict[str, Callable[..., datetime | date]] = {
 }
 
 ICEBERG_TIME_TO_NS: int = 1000
+
+
+# PyIceberg on Windows uses `file://C:/` rather than `file:///C:/`.
+def _normalize_windows_iceberg_file_uri(path: str) -> str:
+    if (
+        sys.platform == "win32"
+        and path.startswith("file://")
+        and not path.startswith("file:///")
+    ):
+        return f"file:///{path.removeprefix('file://')}"
+
+    return path
 
 
 def _scan_pyarrow_dataset_impl(

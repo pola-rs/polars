@@ -363,7 +363,8 @@ mod tests {
     use polars_error::PolarsResult;
 
     use super::*;
-    use crate::dsl::{Expr, col};
+    use crate::dsl::Expr;
+    use crate::dsl::functions::col;
     use crate::plans::{ExprToIRContext, to_expr_ir, typed_lit};
 
     /// Given a single-column `Expr`, call `aexpr_to_column_predicates()` and

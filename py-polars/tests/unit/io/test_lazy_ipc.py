@@ -327,3 +327,83 @@ def test_sink_ipc_record_batch_size(record_batch_size: int, n_chunks: int) -> No
         assert n_rows == record_batch_size or (
             i + 1 == n_batches and n_rows <= record_batch_size
         )
+
+
+@pytest.mark.parametrize("record_batch_size", [None, 3])
+@pytest.mark.parametrize("slice", [(0, 0), (0, 1), (0, 5), (4, 7), (-1, 1), (-5, 4)])
+@pytest.mark.parametrize("compression", COMPRESSIONS)
+def test_scan_ipc_compression_with_slice_26063(
+    record_batch_size: int, slice: tuple[int, int], compression: IpcCompression
+) -> None:
+    n_rows = 15
+    df = pl.DataFrame({"a": range(n_rows)}).with_columns(
+        pl.col.a.pow(3).cast(pl.String).alias("b")
+    )
+    buf = io.BytesIO()
+
+    df.lazy().sink_ipc(
+        buf, compression=compression, record_batch_size=record_batch_size
+    )
+    out = pl.scan_ipc(buf).slice(slice[0], slice[1]).collect()
+    expected = df.slice(slice[0], slice[1])
+    assert_frame_equal(out, expected)
+
+
+def test_sink_scan_ipc_round_trip_statistics() -> None:
+    n_rows = 4_000  # must be higher than (n_vCPU)^2 to avoid sortedness inference
+    buf = io.BytesIO()
+
+    df = (
+        pl.DataFrame({"a": range(n_rows)})
+        .with_columns(pl.col.a.reverse().alias("b"))
+        .with_columns(pl.col.a.shuffle().alias("d"))
+        .with_columns(pl.col.a.shuffle().sort().alias("d"))
+    )
+    df.lazy().sink_ipc(buf, _record_batch_statistics=True)
+
+    metadata = df._to_metadata()
+
+    # baseline
+    assert metadata.select(pl.col("sorted_asc").sum()).item() == 2
+    assert metadata.select(pl.col("sorted_dsc").sum()).item() == 1
+
+    # round-trip
+    out = pl.scan_ipc(buf, _record_batch_statistics=True).collect()
+    assert_frame_equal(metadata, out._to_metadata())
+
+    # do not read unless requested
+    out = pl.scan_ipc(buf).collect()
+    assert out._to_metadata().select(pl.col("sorted_asc").sum()).item() == 0
+    assert out._to_metadata().select(pl.col("sorted_dsc").sum()).item() == 0
+
+    # remain pyarrow compatible
+    out = pl.read_ipc(buf, use_pyarrow=True)
+    assert_frame_equal(df, out)
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [["b"], ["a", "b", "c", "d"], ["d", "c", "a", "b"], ["d", "a", "b"]],
+)
+@pytest.mark.parametrize("record_batch_size", [None, 100])
+def test_sink_scan_ipc_round_trip_statistics_projection(
+    selection: list[str], record_batch_size: int
+) -> None:
+    n_rows = 4_000  # must be higher than (n_vCPU)^2 to avoid sortedness inference
+    buf = io.BytesIO()
+
+    df = (
+        pl.DataFrame({"a": range(n_rows)})
+        .with_columns(pl.col.a.reverse().alias("b"))
+        .with_columns(pl.col.a.shuffle().alias("c"))
+        .with_columns(pl.col.a.shuffle().sort().alias("d"))
+    )
+    df.lazy().sink_ipc(
+        buf, record_batch_size=record_batch_size, _record_batch_statistics=True
+    )
+
+    # round-trip with projection
+    df = df.select(selection)
+    out = pl.scan_ipc(buf, _record_batch_statistics=True).select(selection).collect()
+    assert_frame_equal(df, out)
+    assert_frame_equal(df._to_metadata(), out._to_metadata())

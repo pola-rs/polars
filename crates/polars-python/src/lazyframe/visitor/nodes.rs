@@ -421,7 +421,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     // Manual conversion to preserve `uri://...` - converting Rust `Path` to `PosixPath`
                     // will corrupt to `uri:/...`
                     for path in paths.iter() {
-                        out.append(path.to_str())?;
+                        out.append(path.as_str())?;
                     }
 
                     out.into_py_any(py)?
@@ -654,7 +654,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 FunctionIR::FastCount {
                     sources,
                     scan_type,
-                    cloud_options,
                     alias,
                 } => {
                     let sources = sources
@@ -663,11 +662,14 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                             PyNotImplementedError::new_err("FastCount with BytesIO sources")
                         })?
                         .iter()
-                        .map(|p| p.to_str())
+                        .map(|p| p.as_str())
                         .collect::<Vec<_>>()
                         .into_py_any(py)?;
 
-                    let scan_type = scan_type_to_pyobject(py, scan_type, cloud_options)?;
+                    // FastCount does not support cloud options.
+                    let cloud_options = None;
+
+                    let scan_type = scan_type_to_pyobject(py, scan_type, &cloud_options)?;
 
                     let alias = alias
                         .as_ref()

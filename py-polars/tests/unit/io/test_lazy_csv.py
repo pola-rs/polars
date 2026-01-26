@@ -4,6 +4,7 @@ import io
 import tempfile
 from collections import OrderedDict
 from pathlib import Path
+from typing import IO
 
 import numpy as np
 import pytest
@@ -306,7 +307,7 @@ def test_scan_csv_slice_offset_zero(io_files_path: Path) -> None:
 @pytest.mark.write_disk
 def test_scan_empty_csv_with_row_index(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
-    file_path = tmp_path / "small.parquet"
+    file_path = tmp_path / "small.csv"
     df = pl.DataFrame({"a": []})
     df.write_csv(file_path)
 
@@ -538,3 +539,17 @@ def test_csv_io_object_utf8_23629() -> None:
         f_str.seek(0)
         df_str = pl.read_csv(f_str)
         assert_frame_equal(df, df_str)
+
+
+def test_scan_csv_multiple_files_skip_rows_overflow_26127() -> None:
+    files: list[IO[bytes]] = [
+        io.BytesIO(b"foo,bar,baz\n1,2,3\n4,5,6") for _ in range(2)
+    ]
+    assert_frame_equal(
+        pl.scan_csv(
+            files,
+            n_rows=4,
+            skip_rows=2,
+        ).collect(),
+        pl.DataFrame(schema={"4": pl.String, "5": pl.String, "6": pl.String}),
+    )

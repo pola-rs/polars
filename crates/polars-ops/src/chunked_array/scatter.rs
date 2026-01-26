@@ -1,6 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::{Array, BinaryViewArrayGeneric, BooleanArray, PrimitiveArray, View, ViewType};
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::MutableBitmap;
@@ -178,7 +178,7 @@ unsafe fn scatter_binview_impl<'a, V, T: ViewType + ?Sized>(
         }
     }
 
-    let mut buffers = Buffer::make_mut(core::mem::take(arr.data_buffers_mut()));
+    let mut buffers = Buffer::to_vec(core::mem::take(arr.data_buffers_mut()));
     buffers.extend(new_buffers.into_iter().map(Buffer::from));
     *arr.data_buffers_mut() = Buffer::from(buffers);
 }

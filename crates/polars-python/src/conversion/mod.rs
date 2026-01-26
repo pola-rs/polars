@@ -14,14 +14,13 @@ use polars::chunked_array::object::PolarsObjectSafe;
 use polars::frame::row::Row;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-#[cfg(feature = "cloud")]
-use polars::io::cloud::CloudOptions;
 use polars::prelude::ColumnMapping;
 use polars::prelude::default_values::{
     DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
 };
 use polars::prelude::deletion::DeletionFilesList;
 use polars::series::ops::NullBehavior;
+use polars_buffer::Buffer;
 use polars_compute::decimal::dec128_verify_prec_scale;
 use polars_core::datatypes::extension::get_extension_type_or_generic;
 use polars_core::schema::iceberg::IcebergSchema;
@@ -32,7 +31,6 @@ use polars_lazy::prelude::*;
 use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
 use polars_utils::compression::{BrotliLevel, GzipLevel, ZstdLevel};
-use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
@@ -655,9 +653,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ScanSources> {
         }
 
         enum MutableSources {
-            Paths(Vec<PlPath>),
+            Paths(Vec<PlRefPath>),
             Files(Vec<File>),
-            Buffers(Vec<MemSlice>),
+            Buffers(Vec<Buffer<u8>>),
         }
 
         let num_items = list.len();
@@ -1379,16 +1377,6 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<QuoteStyle> {
     }
 }
 
-#[cfg(feature = "cloud")]
-pub(crate) fn parse_cloud_options(
-    cloud_scheme: Option<CloudScheme>,
-    keys_and_values: impl IntoIterator<Item = (String, String)>,
-) -> PyResult<CloudOptions> {
-    let iter: &mut dyn Iterator<Item = _> = &mut keys_and_values.into_iter();
-    let out = CloudOptions::from_untyped_config(cloud_scheme, iter).map_err(PyPolarsErr::from)?;
-    Ok(out)
-}
-
 #[cfg(feature = "list_sets")]
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<SetOperation> {
     type Error = PyErr;
@@ -1902,29 +1890,30 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DefaultFieldValues> {
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PlPath> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PlRefPath> {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         if let Ok(path) = ob.extract::<PyBackedStr>() {
-            Ok(Wrap(PlPath::new(&path)))
+            Ok(Wrap(PlRefPath::new(&*path)))
         } else if let Ok(path) = ob.extract::<std::path::PathBuf>() {
-            Ok(Wrap(PlPath::Local(path.into())))
+            Ok(Wrap(PlRefPath::try_from_path(&path).map_err(to_py_err)?))
         } else {
-            Err(
-                PyTypeError::new_err(format!("PlPath cannot be formed from '{}'", ob.get_type()))
-                    .into(),
-            )
+            Err(PyTypeError::new_err(format!(
+                "PlRefPath cannot be formed from '{}'",
+                ob.get_type()
+            ))
+            .into())
         }
     }
 }
 
-impl<'py> IntoPyObject<'py> for Wrap<PlPath> {
+impl<'py> IntoPyObject<'py> for Wrap<PlRefPath> {
     type Target = PyString;
     type Output = Bound<'py, Self::Target>;
     type Error = Infallible;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        self.0.to_str().into_pyobject(py)
+        self.0.as_str().into_pyobject(py)
     }
 }

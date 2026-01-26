@@ -243,9 +243,11 @@ def test_nested_query_with_streaming_dispatch_25172() -> None:
         import io
 
         pl.LazyFrame({}).sink_parquet(
-            pl.PartitionMaxSize("", file_path=lambda _: io.BytesIO(), max_size=1),
-            engine="in-memory",
+            pl.PartitionBy(
+                "", file_path_provider=lambda _: io.BytesIO(), max_rows_per_file=1
+            ),
         )
+
         return pl.Series([1])
 
     assert_frame_equal(

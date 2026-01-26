@@ -3,6 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 
 use hashbrown::hash_map::Entry;
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
@@ -13,7 +14,6 @@ use crate::array::binview::{
 };
 use crate::array::{Array, MutableArray, TryExtend, TryPush, View};
 use crate::bitmap::MutableBitmap;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::trusted_len::TrustedLenPush;
 use crate::trusted_len::TrustedLen;
@@ -179,7 +179,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     pub(crate) unsafe fn push_view_unchecked(&mut self, v: View, buffers: &[Buffer<u8>]) {
         let len = v.length;
         self.total_bytes_len += len as usize;
-        if len <= 12 {
+        if len <= View::MAX_INLINE_SIZE {
             debug_assert!(self.views.capacity() > self.views.len());
             self.views.push_unchecked(v)
         } else {
@@ -200,7 +200,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     pub unsafe fn push_view_unchecked_dedupe(&mut self, mut v: View, buffers: &[Buffer<u8>]) {
         let len = v.length;
         self.total_bytes_len += len as usize;
-        if len <= 12 {
+        if len <= View::MAX_INLINE_SIZE {
             self.views.push_unchecked(v);
         } else {
             let buffer = buffers.get_unchecked(v.buffer_idx as usize);
@@ -222,7 +222,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     pub fn push_view(&mut self, mut v: View, buffers: &[Buffer<u8>]) {
         let len = v.length;
         self.total_bytes_len += len as usize;
-        if len <= 12 {
+        if len <= View::MAX_INLINE_SIZE {
             self.views.push(v);
         } else {
             // Do no mix use of push_view and push_value_ignore_validity -
@@ -564,7 +564,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         // length: 4 bytes
         // data: 12 bytes
         let len = view.length;
-        let bytes = if len <= 12 {
+        let bytes = if len <= View::MAX_INLINE_SIZE {
             let ptr = view as *const View as *const u8;
             std::slice::from_raw_parts(ptr.add(4), len as usize)
         } else {

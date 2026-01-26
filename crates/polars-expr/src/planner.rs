@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_plan::constants::{get_literal_name, get_pl_element_name};
+use polars_plan::constants::{get_literal_name, get_pl_element_name, get_pl_structfields_name};
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;
@@ -310,6 +310,18 @@ fn create_physical_expr_inner(
 
             Ok(Arc::new(ElementExpr::new(output_field)))
         },
+        #[cfg(feature = "dtype-struct")]
+        StructField(field) => {
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+
+            Ok(Arc::new(FieldExpr::new(
+                field.clone(),
+                node_to_expr(expression, expr_arena),
+                output_field,
+            )))
+        },
         Sort { expr, options } => {
             let phys_expr = create_physical_expr_inner(expr, expr_arena, schema, state)?;
             Ok(Arc::new(SortExpr::new(
@@ -428,6 +440,36 @@ fn create_physical_expr_inner(
                 output_field,
             )))
         },
+        Function {
+            input,
+            function: function @ (IRFunctionExpr::ArgMin | IRFunctionExpr::ArgMax),
+            options: _,
+        } => {
+            let phys_input =
+                create_physical_expr_inner(input[0].node(), expr_arena, schema, state)?;
+
+            let mut output_field = expr_arena
+                .get(expression)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+            output_field = Field::new(output_field.name().clone(), IDX_DTYPE.clone());
+
+            let groupby = match function {
+                IRFunctionExpr::ArgMin => GroupByMethod::ArgMin,
+                IRFunctionExpr::ArgMax => GroupByMethod::ArgMax,
+                _ => unreachable!(), // guaranteed by pattern
+            };
+
+            let agg_type = AggregationType {
+                groupby,
+                allow_threading: state.allow_threading,
+            };
+
+            Ok(Arc::new(AggregationExpr::new(
+                phys_input,
+                agg_type,
+                output_field,
+            )))
+        },
         Cast {
             expr,
             dtype,
@@ -534,15 +576,47 @@ fn create_physical_expr_inner(
                 evaluation_is_fallible,
             )))
         },
+        #[cfg(feature = "dtype-struct")]
+        StructEval { expr, evaluation } => {
+            let is_scalar = is_scalar_ae(expression, expr_arena);
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+            let input_field = expr_arena
+                .get(expr)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+
+            let input = create_physical_expr_inner(expr, expr_arena, schema, state)?;
+
+            let mut eval_schema = schema.as_ref().clone();
+            eval_schema.insert(get_pl_structfields_name(), input_field.dtype().clone());
+            let eval_schema = Arc::new(eval_schema);
+
+            let evaluation = evaluation
+                .iter()
+                .map(|e| create_physical_expr(e, expr_arena, &eval_schema, state))
+                .collect::<PolarsResult<Vec<_>>>()?;
+
+            Ok(Arc::new(StructEvalExpr::new(
+                input,
+                evaluation,
+                node_to_expr(expression, expr_arena),
+                output_field,
+                is_scalar,
+                state.allow_threading,
+            )))
+        },
         Function {
             input,
             function,
             options,
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
+
             let output_field = expr_arena
                 .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
+
             let input = create_physical_expressions_from_irs(&input, expr_arena, schema, state)?;
             let is_fallible = expr_arena.get(expression).is_fallible_top_level(expr_arena);
 
@@ -559,6 +633,7 @@ fn create_physical_expr_inner(
                 is_fallible,
             )))
         },
+
         Slice {
             input,
             offset,
