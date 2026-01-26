@@ -27,6 +27,7 @@ pub struct GroupByExec {
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     maintain_order: bool,
     input_schema: SchemaRef,
+    output_schema: SchemaRef,
     slice: Option<(i64, usize)>,
 }
 
@@ -39,6 +40,7 @@ impl GroupByExec {
         apply: Option<PlanCallback<DataFrame, DataFrame>>,
         maintain_order: bool,
         input_schema: SchemaRef,
+        output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
         Self {
@@ -48,6 +50,7 @@ impl GroupByExec {
             apply,
             maintain_order,
             input_schema,
+            output_schema,
             slice,
         }
     }
@@ -61,13 +64,14 @@ pub(super) fn group_by_helper(
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     state: &ExecutionState,
     maintain_order: bool,
+    output_schema: &SchemaRef,
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
     df.rechunk_mut_par();
     let gb = df.group_by_with_series(keys, true, maintain_order)?;
 
     if let Some(f) = apply {
-        return gb.apply_sliced(slice, move |df| f.call(df));
+        return gb.apply_sliced(slice, move |df| f.call(df), Some(output_schema));
     }
 
     let mut groups = gb.get_groups();
@@ -107,6 +111,7 @@ impl GroupByExec {
             self.apply.take(),
             state,
             self.maintain_order,
+            &self.output_schema,
             self.slice,
         )
     }
