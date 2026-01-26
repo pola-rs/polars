@@ -1230,8 +1230,27 @@ def test_csee_python_function() -> None:
         b=expr * 100,
     )
 
-    print(q.explain())
     assert "__POLARS_CSER" in q.explain()
     assert_frame_equal(
         q.collect(), q.collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=False))
     )
+
+
+def test_csee_streaming() -> None:
+    lf = pl.LazyFrame({"a": [10], "b": [10]})
+
+    # elementwise is allowed
+    expr = pl.col("a") * pl.col("b")
+    q = lf.with_columns(
+        a=expr * 10,
+        b=expr * 100,
+    )
+    assert "__POLARS_CSER" in q.explain(engine="streaming")
+
+    # non-elementwise not
+    expr = pl.col("a").sum()
+    q = lf.with_columns(
+        a=expr * 10,
+        b=expr * 100,
+    )
+    assert "__POLARS_CSER" not in q.explain(engine="streaming")

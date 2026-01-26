@@ -2,10 +2,10 @@ use std::cmp;
 use std::iter::Iterator;
 use std::sync::Arc;
 
+use polars_buffer::Buffer;
 use polars_core::prelude::Schema;
 use polars_core::schema::SchemaRef;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
-use polars_utils::mmap::MemSlice;
 
 use crate::csv::read::schema_inference::infer_file_schema_impl;
 use crate::prelude::_csv_read_internal::{SplitLines, is_comment_line};
@@ -32,7 +32,7 @@ pub fn read_until_start_and_infer_schema(
     projected_schema: Option<SchemaRef>,
     mut inspect_first_content_row_fn: Option<InspectContentFn<'_>>,
     reader: &mut CompressedReader,
-) -> PolarsResult<(Schema, MemSlice)> {
+) -> PolarsResult<(Schema, Buffer<u8>)> {
     #[derive(Copy, Clone)]
     enum State {
         // Ordered so that all states only happen after the ones before it.
@@ -173,15 +173,15 @@ enum LineUse {
 
 /// Iterate over valid CSV lines produced by reader.
 ///
-/// Returning `ConsumeDiscard` after `ConsumeKeep` is a logic error, since a segmented `MemSlice`
+/// Returning `ConsumeDiscard` after `ConsumeKeep` is a logic error, since a segmented `Buffer`
 /// can't be constructed.
 fn for_each_line_from_reader(
     parse_options: &CsvParseOptions,
     is_file_start: bool,
-    mut prev_leftover: MemSlice,
+    mut prev_leftover: Buffer<u8>,
     reader: &mut CompressedReader,
-    mut line_fn: impl FnMut(MemSlice) -> PolarsResult<LineUse>,
-) -> PolarsResult<MemSlice> {
+    mut line_fn: impl FnMut(Buffer<u8>) -> PolarsResult<LineUse>,
+) -> PolarsResult<Buffer<u8>> {
     let mut is_first_line = is_file_start;
 
     let mut read_size = CompressedReader::initial_read_size();
@@ -190,25 +190,25 @@ fn for_each_line_from_reader(
     loop {
         let (mut slice, bytes_read) = reader.read_next_slice(&prev_leftover, read_size)?;
         if slice.is_empty() {
-            return Ok(MemSlice::EMPTY);
+            return Ok(Buffer::new());
         }
 
         if is_first_line {
             is_first_line = false;
             const UTF8_BOM_MARKER: Option<&[u8]> = Some(b"\xef\xbb\xbf");
             if slice.get(0..3) == UTF8_BOM_MARKER {
-                slice = slice.slice(3..slice.len());
+                slice = slice.sliced(3..);
             }
         }
 
         let line_to_sub_slice = |line: &[u8]| {
             let start = line.as_ptr() as usize - slice.as_ptr() as usize;
-            slice.slice(start..(start + line.len()))
+            slice.clone().sliced(start..(start + line.len()))
         };
 
-        // When reading a CSV with `has_header=False` we need to read up to `infer_schema_length` lines, but we only want to decompress the input once, so we grow a `MemSlice` that will be returned as leftover.
+        // When reading a CSV with `has_header=False` we need to read up to `infer_schema_length` lines, but we only want to decompress the input once, so we grow a `Buffer` that will be returned as leftover.
         let effective_slice = if let Some(offset) = retain_offset {
-            slice.slice(offset..slice.len())
+            slice.clone().sliced(offset..)
         } else {
             slice.clone()
         };
@@ -266,11 +266,11 @@ fn for_each_line_from_reader(
         } else {
             // Since `read_next_slice` has to copy the leftover bytes in the decompression case,
             // it's more efficient to hand in as little as possible.
-            prev_leftover = slice.slice(unconsumed_offset..slice.len());
+            prev_leftover = slice.sliced(unconsumed_offset..);
         }
 
         if should_ret {
-            let leftover = prev_leftover.slice(retain_offset.unwrap_or(0)..prev_leftover.len());
+            let leftover = prev_leftover.sliced(retain_offset.unwrap_or(0)..);
             return Ok(leftover);
         }
 
@@ -285,8 +285,8 @@ fn skip_lines_naive(
     skip_lines: usize,
     raise_if_empty: bool,
     reader: &mut CompressedReader,
-) -> PolarsResult<MemSlice> {
-    let mut prev_leftover = MemSlice::EMPTY;
+) -> PolarsResult<Buffer<u8>> {
+    let mut prev_leftover = Buffer::new();
 
     if skip_lines == 0 {
         return Ok(prev_leftover);
@@ -311,7 +311,7 @@ fn skip_lines_naive(
 
             if remaining == 0 {
                 let unconsumed_offset = bytes.as_ptr() as usize - slice.as_ptr() as usize;
-                prev_leftover = slice.slice(unconsumed_offset..slice.len());
+                prev_leftover = slice.sliced(unconsumed_offset..);
                 return Ok(prev_leftover);
             }
         }
@@ -320,12 +320,12 @@ fn skip_lines_naive(
             if raise_if_empty {
                 polars_bail!(NoData: "specified skip_lines is larger than total number of lines.");
             } else {
-                return Ok(MemSlice::EMPTY);
+                return Ok(Buffer::new());
             }
         }
 
         // No need to search for naive eol twice in the leftover.
-        prev_leftover = MemSlice::EMPTY;
+        prev_leftover = Buffer::new();
 
         if read_size < CompressedReader::ideal_read_size() {
             read_size *= 4;
@@ -334,8 +334,8 @@ fn skip_lines_naive(
 }
 
 fn infer_schema(
-    header_line: &Option<MemSlice>,
-    content_lines: &[MemSlice],
+    header_line: &Option<Buffer<u8>>,
+    content_lines: &[Buffer<u8>],
     infer_all_as_str: bool,
     options: &CsvReadOptions,
     projected_schema: Option<SchemaRef>,

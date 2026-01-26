@@ -168,7 +168,9 @@ def test_init_inputs(monkeypatch: Any) -> None:
     assert s.dtype.time_zone == tz  # type: ignore[attr-defined]
 
     # datetime64: check timeunit (auto-detect, implicit/explicit) and NaT
-    d64 = pd.date_range(date(2021, 8, 1), date(2021, 8, 3)).values
+    d64 = pd.date_range(date(2021, 8, 1), date(2021, 8, 3)).values.astype(
+        "datetime64[ns]"
+    )
     d64[1] = None
 
     expected = [datetime(2021, 8, 1, 0), None, datetime(2021, 8, 3, 0)]

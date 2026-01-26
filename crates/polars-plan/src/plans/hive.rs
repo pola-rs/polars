@@ -161,7 +161,7 @@ pub fn hive_partitions_from_paths(
         Arc::new(hive_schema)
     };
 
-    let mut buffers = polars_io::csv::read::buffer::init_buffers(
+    let mut buffers = polars_io::csv::read::builder::init_builders(
         &(0..hive_schema.len()).collect::<Vec<_>>(),
         paths.len(),
         hive_schema.as_ref(),

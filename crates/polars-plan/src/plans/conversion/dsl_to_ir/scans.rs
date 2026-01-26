@@ -365,7 +365,7 @@ pub fn csv_file_info(
 
     let infer_schema_func = |i| {
         let source = sources.at(i);
-        let mem_slice = source.to_memslice_possibly_async(run_async, cache_entries.as_ref(), i)?;
+        let mem_slice = source.to_buffer_possibly_async(run_async, cache_entries.as_ref(), i)?;
         let mut reader = CompressedReader::try_new(mem_slice)?;
 
         let mut first_row_len = 0;
@@ -464,7 +464,7 @@ pub fn ndjson_file_info(
         schema
     } else {
         let mem_slice =
-            first_scan_source.to_memslice_possibly_async(run_async, cache_entries.as_ref(), 0)?;
+            first_scan_source.to_buffer_possibly_async(run_async, cache_entries.as_ref(), 0)?;
         let mut reader = BufReader::new(CompressedReader::try_new(mem_slice)?);
 
         Arc::new(polars_io::ndjson::infer_schema(

@@ -9,6 +9,7 @@ from polars._utils.logging import eprint
 from polars.io.cloud.credential_provider._providers import (
     _get_credentials_from_provider_expiry_aware,
 )
+from polars.io.delta._utils import _extract_pl_data_statistics, _fill_missing_columns
 from polars.io.parquet.functions import scan_parquet
 from polars.io.scan_options.cast_options import ScanCastOptions
 from polars.schema import Schema
@@ -133,6 +134,16 @@ class DeltaDataset:
                 f"path expansion time: {elapsed:.3f}s"
             )
 
+        pl_table_statistics = _extract_pl_data_statistics(table)
+
+        # Predicate pushown expects all statistics to be present for every column
+        # that is not a partition column.
+        pl_table_statistics = _fill_missing_columns(
+            pl_table_statistics,
+            table.schema(),
+            table_md.partition_columns,
+        )
+
         return scan_parquet(
             paths,
             hive_schema=hive_schema if len(partition_columns) > 0 else None,
@@ -143,6 +154,7 @@ class DeltaDataset:
             storage_options=self.storage_options,
             credential_provider=self.credential_provider_builder,  # type: ignore[arg-type]
             rechunk=self.rechunk,
+            _table_statistics=pl_table_statistics,
         ), version_key
 
     #

@@ -19,11 +19,12 @@ polars-cloud
 # Interop
 numba >= 0.54
 numpy
-pandas < 3
+pandas
 pyarrow
 pydantic>=2.0.0
 # Datetime / time zones
 tzdata; platform_system == 'Windows'
+pytz
 # Database
 sqlalchemy
 adbc-driver-manager; platform_system != 'Windows'

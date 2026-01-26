@@ -211,7 +211,7 @@ pub fn create_scan_predicate(
 pub fn initialize_scan_predicate<'a>(
     predicate: Option<&'a ScanIOPredicate>,
     hive_parts: Option<&HivePartitionsDf>,
-    table_statsitics: Option<&TableStatistics>,
+    table_statistics: Option<&TableStatistics>,
     verbose: bool,
 ) -> PolarsResult<(Option<SkipFilesMask>, Option<&'a ScanIOPredicate>)> {
     #[expect(clippy::never_loop)]
@@ -248,7 +248,7 @@ pub fn initialize_scan_predicate<'a>(
                 SkipFilesMask::Inclusion(inclusion_mask),
                 !predicate.hive_predicate_is_full_predicate,
             )
-        } else if let Some(table_statsitics) = table_statsitics
+        } else if let Some(table_statistics) = table_statistics
             && let Some(skip_batch_predicate) = &predicate.skip_batch_predicate
         {
             if verbose {
@@ -257,9 +257,9 @@ pub fn initialize_scan_predicate<'a>(
                 );
             }
 
-            expected_mask_len = table_statsitics.0.height();
+            expected_mask_len = table_statistics.0.height();
 
-            let exclusion_mask = skip_batch_predicate.evaluate_with_stat_df(&table_statsitics.0)?;
+            let exclusion_mask = skip_batch_predicate.evaluate_with_stat_df(&table_statistics.0)?;
 
             (SkipFilesMask::Exclusion(exclusion_mask), true)
         } else {

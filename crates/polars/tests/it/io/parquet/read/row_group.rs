@@ -4,12 +4,12 @@ use arrow::array::Array;
 use arrow::datatypes::{ArrowSchemaRef, Field};
 use arrow::record_batch::RecordBatchT;
 use polars::prelude::ArrowSchema;
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_parquet::arrow::read::{Filter, column_iter_to_arrays};
 use polars_parquet::parquet::metadata::ColumnChunkMetadata;
 use polars_parquet::parquet::read::{BasicDecompressor, PageReader};
 use polars_parquet::read::RowGroupMetadata;
-use polars_utils::mmap::MemSlice;
 
 /// An [`Iterator`] of [`RecordBatchT`] that (dynamically) adapts a vector of iterators of [`Array`] into
 /// an iterator of [`RecordBatchT`].
@@ -121,7 +121,7 @@ pub fn to_deserializer(
         .map(|(column_meta, chunk)| {
             let len = chunk.len();
             let pages = PageReader::new(
-                Cursor::new(MemSlice::from_vec(chunk)),
+                Cursor::new(Buffer::from_vec(chunk)),
                 column_meta,
                 vec![],
                 len * 2 + 1024,

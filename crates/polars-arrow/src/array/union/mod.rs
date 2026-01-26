@@ -247,9 +247,9 @@ impl UnionArray {
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         debug_assert!(offset + length <= self.len());
 
-        self.types.slice_unchecked(offset, length);
+        self.types.slice_in_place_unchecked(offset..offset + length);
         if let Some(offsets) = self.offsets.as_mut() {
-            offsets.slice_unchecked(offset, length)
+            offsets.slice_in_place_unchecked(offset..offset + length)
         }
         self.offset += offset;
     }

@@ -261,7 +261,8 @@ impl<T: NativeType> PrimitiveArray<T> {
             .take()
             .map(|bitmap| bitmap.sliced_unchecked(offset, length))
             .filter(|bitmap| bitmap.unset_bits() > 0);
-        self.values.slice_unchecked(offset, length);
+        self.values
+            .slice_in_place_unchecked(offset..offset + length);
     }
 
     impl_sliced!();

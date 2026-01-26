@@ -145,9 +145,9 @@ def test_from_pandas_datetime() -> None:
         (
             pd.TimedeltaIndex,
             ["24 hours", "2 days 8 hours", "3 days 42 seconds"],
-            {},
+            {"dtype": "timedelta64[us]"},
             [timedelta(1), timedelta(days=2, hours=8), timedelta(days=3, seconds=42)],
-            pl.Duration("ns"),
+            pl.Duration("us"),
         ),
     ],
 )
@@ -346,7 +346,7 @@ def _set_pyarrow_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_from_pandas_pyarrow_not_available_succeeds() -> None:
     data: dict[str, Any] = {
         "a": [1, 2],
-        "b": ["one", "two"],
+        "b": [3, 4],
         "c": np.array(["2020-01-01", "2020-01-02"], dtype="datetime64[ns]"),
         "d": np.array(["2020-01-01", "2020-01-02"], dtype="datetime64[us]"),
         "e": np.array(["2020-01-01", "2020-01-02"], dtype="datetime64[ms]"),

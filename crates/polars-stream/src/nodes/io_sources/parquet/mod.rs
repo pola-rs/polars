@@ -8,7 +8,7 @@ use polars_error::{PolarsResult, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
-use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder, MemSliceByteSource};
+use polars_io::utils::byte_source::{BufferByteSource, DynByteSource, DynByteSourceBuilder};
 use polars_io::{RowIndex, pl_async};
 use polars_parquet::read::schema::infer_schema_with_options;
 use polars_plan::dsl::ScanSource;
@@ -111,7 +111,7 @@ impl FileReader for ParquetFileReader {
             };
 
             if let Some(full_bytes) = opt_full_bytes {
-                byte_source = Arc::new(DynByteSource::MemSlice(MemSliceByteSource(full_bytes)));
+                byte_source = Arc::new(DynByteSource::Buffer(BufferByteSource(full_bytes)));
             }
 
             Arc::new(polars_parquet::parquet::read::deserialize_metadata(

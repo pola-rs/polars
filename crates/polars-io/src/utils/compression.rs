@@ -1,9 +1,9 @@
 use std::cmp;
 use std::io::{Cursor, Read, Write};
 
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_error::{feature_gated, to_compute_err};
-use polars_utils::mmap::MemSlice;
 
 use crate::utils::file::{Writeable, WriteableTrait};
 use crate::utils::sync_on_close::SyncOnCloseType;
@@ -76,19 +76,19 @@ pub fn maybe_decompress_bytes<'a>(bytes: &'a [u8], out: &'a mut Vec<u8>) -> Pola
 /// This allows handling decompression transparently in a streaming fashion.
 pub enum CompressedReader {
     Uncompressed {
-        slice: MemSlice,
+        slice: Buffer<u8>,
         offset: usize,
     },
     #[cfg(feature = "decompress")]
-    Gzip(flate2::bufread::MultiGzDecoder<Cursor<MemSlice>>),
+    Gzip(flate2::bufread::MultiGzDecoder<Cursor<Buffer<u8>>>),
     #[cfg(feature = "decompress")]
-    Zlib(flate2::bufread::ZlibDecoder<Cursor<MemSlice>>),
+    Zlib(flate2::bufread::ZlibDecoder<Cursor<Buffer<u8>>>),
     #[cfg(feature = "decompress")]
-    Zstd(zstd::Decoder<'static, Cursor<MemSlice>>),
+    Zstd(zstd::Decoder<'static, Cursor<Buffer<u8>>>),
 }
 
 impl CompressedReader {
-    pub fn try_new(slice: MemSlice) -> PolarsResult<Self> {
+    pub fn try_new(slice: Buffer<u8>) -> PolarsResult<Self> {
         let algo = SupportedCompression::check(&slice);
 
         Ok(match algo {
@@ -155,13 +155,13 @@ impl CompressedReader {
     }
 
     /// Reads exactly `read_size` bytes if possible from the internal readers and creates a new
-    /// [`MemSlice`] with the content `concat(prev_leftover, new_bytes)`.
+    /// [`Buffer`] with the content `concat(prev_leftover, new_bytes)`.
     ///
     /// Returns the new slice and the number of bytes read, which will be 0 when eof is reached and
     /// this function is called again.
     ///
     /// If the underlying reader is uncompressed the operation is a cheap zero-copy
-    /// [`MemSlice::slice`] operation.
+    /// [`Buffer::sliced`] operation.
     ///
     /// By handling slice concatenation at this level we can implement zero-copy reading *and* make
     /// the interface easier to use.
@@ -170,9 +170,9 @@ impl CompressedReader {
     /// function.
     pub fn read_next_slice(
         &mut self,
-        prev_leftover: &MemSlice,
+        prev_leftover: &Buffer<u8>,
         read_size: usize,
-    ) -> std::io::Result<(MemSlice, usize)> {
+    ) -> std::io::Result<(Buffer<u8>, usize)> {
         // Assuming that callers of this function correctly handle re-trying, by continuously growing
         // prev_leftover if it doesn't contain a single row, this abstraction supports arbitrarily
         // sized rows.
@@ -189,15 +189,17 @@ impl CompressedReader {
         }
 
         let new_slice_from_read =
-            |bytes_read: usize, mut buf: Vec<u8>| -> std::io::Result<(MemSlice, usize)> {
+            |bytes_read: usize, mut buf: Vec<u8>| -> std::io::Result<(Buffer<u8>, usize)> {
                 buf.truncate(prev_len + bytes_read);
-                Ok((MemSlice::from_vec(buf), bytes_read))
+                Ok((Buffer::from_vec(buf), bytes_read))
             };
 
         match self {
             CompressedReader::Uncompressed { slice, offset, .. } => {
                 let bytes_read = cmp::min(read_size, slice.len() - *offset);
-                let new_slice = slice.slice((*offset - prev_len)..(*offset + bytes_read));
+                let new_slice = slice
+                    .clone()
+                    .sliced(*offset - prev_len..*offset + bytes_read);
                 *offset += bytes_read;
                 Ok((new_slice, bytes_read))
             },
@@ -224,7 +226,7 @@ impl Read for CompressedReader {
         match self {
             CompressedReader::Uncompressed { slice, offset, .. } => {
                 let bytes_read = cmp::min(buf.len(), slice.len() - *offset);
-                buf[..bytes_read].copy_from_slice(&slice.slice(*offset..(*offset + bytes_read)));
+                buf[..bytes_read].copy_from_slice(&slice[*offset..(*offset + bytes_read)]);
                 *offset += bytes_read;
                 Ok(bytes_read)
             },

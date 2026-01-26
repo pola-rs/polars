@@ -187,7 +187,8 @@ where
             .take()
             .map(|bitmap| bitmap.sliced_unchecked(offset, length))
             .filter(|bitmap| bitmap.unset_bits() > 0);
-        self.values.slice_unchecked(offset, length);
+        self.values
+            .slice_in_place_unchecked(offset..offset + length);
     }
 
     fn split_at_boxed(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>) {

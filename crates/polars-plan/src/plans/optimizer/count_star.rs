@@ -1,7 +1,7 @@
 use std::env;
 
+use polars_buffer::Buffer;
 use polars_io::cloud::CloudOptions;
-use polars_utils::mmap::MemSlice;
 use polars_utils::pl_path::PlRefPath;
 
 use super::*;
@@ -89,7 +89,7 @@ fn visit_logical_plan_for_scan_paths(
         IR::Union { inputs, .. } => {
             enum MutableSources {
                 Paths(Vec<PlRefPath>),
-                Buffers(Vec<MemSlice>),
+                Buffers(Vec<Buffer<u8>>),
             }
 
             let mut scan_type: Option<Box<FileScanIR>> = None;

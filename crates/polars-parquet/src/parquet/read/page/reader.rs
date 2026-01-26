@@ -1,8 +1,8 @@
 use std::io::{Cursor, Seek};
 use std::sync::OnceLock;
 
+use polars_buffer::Buffer;
 use polars_parquet_format::thrift::protocol::TCompactInputProtocol;
-use polars_utils::mmap::MemSlice;
 
 use super::PageIterator;
 use crate::parquet::CowBuffer;
@@ -64,7 +64,7 @@ impl From<&ColumnChunkMetadata> for PageMetaData {
 /// pre-computed [page index](https://github.com/apache/parquet-format/blob/master/PageIndex.md).
 pub struct PageReader {
     // The source
-    reader: Cursor<MemSlice>,
+    reader: Cursor<Buffer<u8>>,
 
     compression: Compression,
 
@@ -89,7 +89,7 @@ impl PageReader {
     /// It assumes that the reader has been `sought` (`seek`) to the beginning of `column`.
     /// The parameter `max_header_size`
     pub fn new(
-        reader: Cursor<MemSlice>,
+        reader: Cursor<Buffer<u8>>,
         column: &ColumnChunkMetadata,
         scratch: Vec<u8>,
         max_page_size: usize,
@@ -101,7 +101,7 @@ impl PageReader {
     ///
     /// It assumes that the reader has been `sought` (`seek`) to the beginning of `column`.
     pub fn new_with_page_meta(
-        reader: Cursor<MemSlice>,
+        reader: Cursor<Buffer<u8>>,
         reader_meta: PageMetaData,
         scratch: Vec<u8>,
         max_page_size: usize,
@@ -118,7 +118,7 @@ impl PageReader {
     }
 
     /// Returns the reader and this Readers' interval buffer
-    pub fn into_inner(self) -> (Cursor<MemSlice>, Vec<u8>) {
+    pub fn into_inner(self) -> (Cursor<Buffer<u8>>, Vec<u8>) {
         (self.reader, self.scratch)
     }
 
@@ -155,7 +155,7 @@ impl PageReader {
         let orig_buf = self.reader.get_ref();
         let pos = self.reader.position() as usize;
         let new_pos = (pos + read_size).min(orig_buf.len());
-        let buffer = orig_buf.slice(pos..new_pos);
+        let buffer = orig_buf.clone().sliced(pos..new_pos);
         self.reader.set_position(new_pos as u64);
 
         if buffer.len() != read_size {
@@ -196,7 +196,7 @@ impl Iterator for PageReader {
 
 /// Reads Page header from Thrift.
 pub(super) fn read_page_header(
-    reader: &mut Cursor<MemSlice>,
+    reader: &mut Cursor<Buffer<u8>>,
     max_size: usize,
 ) -> ParquetResult<ParquetPageHeader> {
     let mut prot = TCompactInputProtocol::new(reader, max_size);
@@ -228,7 +228,7 @@ pub(super) fn build_page(reader: &mut PageReader) -> ParquetResult<Option<Compre
     let orig_buf = reader.reader.get_ref();
     let pos = reader.reader.position() as usize;
     let new_pos = (pos + read_size).min(orig_buf.len());
-    let buffer = orig_buf.slice(pos..new_pos);
+    let buffer = orig_buf.clone().sliced(pos..new_pos);
     reader.reader.set_position(new_pos as u64);
 
     if buffer.len() != read_size {
@@ -242,7 +242,7 @@ pub(super) fn build_page(reader: &mut PageReader) -> ParquetResult<Option<Compre
 
 pub(super) fn finish_page(
     page_header: ParquetPageHeader,
-    data: MemSlice,
+    data: Buffer<u8>,
     compression: Compression,
     descriptor: &Descriptor,
 ) -> ParquetResult<CompressedPage> {

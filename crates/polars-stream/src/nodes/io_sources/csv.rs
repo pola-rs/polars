@@ -3,6 +3,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use polars_buffer::Buffer;
 use polars_core::prelude::Field;
 use polars_core::schema::{SchemaExt, SchemaRef};
 use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
@@ -11,13 +12,13 @@ use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
 use polars_io::prelude::_csv_read_internal::{
     CountLines, NullValuesCompiled, cast_columns, prepare_csv_schema, read_chunk,
 };
-use polars_io::prelude::buffer::validate_utf8;
+use polars_io::prelude::builder::validate_utf8;
 use polars_io::prelude::{CsvEncoding, CsvParseOptions, CsvReadOptions};
 use polars_io::utils::compression::CompressedReader;
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
-use polars_utils::mmap::MemSlice;
+use polars_utils::mem::prefetch::prefetch_l2;
 use polars_utils::slice_enum::Slice;
 
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
@@ -90,8 +91,8 @@ const NO_SLICE: (usize, usize) = (0, usize::MAX);
 const SLICE_ENDED: (usize, usize) = (usize::MAX, 0);
 
 struct LineBatch {
-    // Safety: All receivers (LineBatchProcessors) hold a MemSlice ref to this.
-    mem_slice: MemSlice,
+    // Safety: All receivers (LineBatchProcessors) hold a Buffer ref to this.
+    mem_slice: Buffer<u8>,
     n_lines: usize,
     slice: (usize, usize),
     /// Position of this chunk relative to the start of the file according to CountLines.
@@ -105,20 +106,20 @@ struct CsvFileReader {
     cloud_options: Option<Arc<CloudOptions>>,
     options: Arc<CsvReadOptions>,
     // Cached on first access - we may be called multiple times e.g. on negative slice.
-    cached_bytes: Option<MemSlice>,
+    cached_bytes: Option<Buffer<u8>>,
     verbose: bool,
 }
 
 #[async_trait]
 impl FileReader for CsvFileReader {
     async fn initialize(&mut self) -> PolarsResult<()> {
-        let memslice = self
+        let buffer = self
             .scan_source
             .as_scan_source_ref()
-            .to_memslice_async_assume_latest(self.scan_source.run_async())?;
+            .to_buffer_async_assume_latest(self.scan_source.run_async())?;
 
         // Note: We do not decompress in `initialize()`.
-        self.cached_bytes = Some(memslice);
+        self.cached_bytes = Some(buffer);
 
         Ok(())
     }
@@ -338,7 +339,7 @@ impl FileReader for CsvFileReader {
 }
 
 struct LineBatchSource {
-    base_leftover: MemSlice,
+    base_leftover: Buffer<u8>,
     reader: CompressedReader,
     line_counter: CountLines,
     line_batch_tx: distributor_channel::Sender<LineBatch>,
@@ -387,13 +388,13 @@ impl LineBatchSource {
                 break;
             }
 
-            mem_slice.prefetch();
+            prefetch_l2(&mem_slice);
 
             let is_eof = bytes_read == 0;
             let (n_lines, unconsumed_offset) = line_counter.count_rows(&mem_slice, is_eof);
 
-            let batch_slice = mem_slice.slice(0..unconsumed_offset);
-            prev_leftover = mem_slice.slice(unconsumed_offset..mem_slice.len());
+            let batch_slice = mem_slice.clone().sliced(0..unconsumed_offset);
+            prev_leftover = mem_slice.sliced(unconsumed_offset..);
 
             if batch_slice.is_empty() && !is_eof {
                 // This allows the slice to grow until at least a single row is included. To avoid a quadratic run-time for large row sizes, we double the read size.

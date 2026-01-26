@@ -676,7 +676,7 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
             .take()
             .map(|bitmap| bitmap.sliced_unchecked(offset, length))
             .filter(|bitmap| bitmap.unset_bits() > 0);
-        self.views.slice_unchecked(offset, length);
+        self.views.slice_in_place_unchecked(offset..offset + length);
         self.total_bytes_len.store(UNKNOWN_LEN)
     }
 

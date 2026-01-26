@@ -1,10 +1,11 @@
 use std::cmp;
 use std::num::NonZeroUsize;
 
+use polars_buffer::Buffer;
 use polars_core::config;
 use polars_error::PolarsResult;
 use polars_io::utils::compression::CompressedReader;
-use polars_utils::mmap::MemSlice;
+use polars_utils::mem::prefetch::prefetch_l2;
 
 use super::line_batch_processor::LineBatch;
 use crate::async_primitives::distributor_channel;
@@ -54,7 +55,7 @@ impl LineBatchDistributor {
             // Since decompression doesn't support reverse decompression, we have to fully
             // decompress the input. It's crucial for the streaming property that this doesn't get
             // called in the non-reverse case.
-            let (full_input, _) = reader.read_next_slice(&MemSlice::EMPTY, usize::MAX)?;
+            let (full_input, _) = reader.read_next_slice(&Buffer::new(), usize::MAX)?;
             let offset = full_input.len();
             Some((full_input, offset))
         } else {
@@ -64,7 +65,7 @@ impl LineBatchDistributor {
         let mut read_size = fixed_read_size
             .map(NonZeroUsize::get)
             .unwrap_or_else(CompressedReader::initial_read_size);
-        let mut prev_leftover = MemSlice::EMPTY;
+        let mut prev_leftover = Buffer::new();
         let mut chunk_idx = 0;
 
         loop {
@@ -72,7 +73,9 @@ impl LineBatchDistributor {
                 let (full_input, offset) = full_input_opt.as_mut().unwrap();
                 let new_offset = offset.saturating_sub(read_size);
                 let bytes_read = *offset - new_offset;
-                let new_slice = full_input.slice(new_offset..(*offset + prev_leftover.len()));
+                let new_slice = full_input
+                    .clone()
+                    .sliced(new_offset..(*offset + prev_leftover.len()));
                 *offset = new_offset;
                 (new_slice, bytes_read)
             } else {
@@ -83,7 +86,7 @@ impl LineBatchDistributor {
                 break;
             }
 
-            mem_slice.prefetch();
+            prefetch_l2(&mem_slice);
 
             let is_eof = bytes_read == 0;
             let (unconsumed_offset, done) = process_chunk(
@@ -102,9 +105,9 @@ impl LineBatchDistributor {
 
             if let Some(offset) = unconsumed_offset {
                 prev_leftover = if reverse {
-                    mem_slice.slice(0..offset)
+                    mem_slice.sliced(..offset)
                 } else {
-                    mem_slice.slice(offset..mem_slice.len())
+                    mem_slice.sliced(offset..)
                 };
             } else {
                 if fixed_read_size.is_none() {
@@ -129,7 +132,7 @@ impl LineBatchDistributor {
 }
 
 async fn process_chunk(
-    chunk: MemSlice,
+    chunk: Buffer<u8>,
     is_eof: bool,
     reverse: bool,
     chunk_idx: &mut usize,
@@ -156,9 +159,9 @@ async fn process_chunk(
             // Consume full input in EOF case.
             chunk
         } else if reverse {
-            chunk.slice(offset..chunk.len())
+            chunk.sliced(offset..)
         } else {
-            chunk.slice(0..offset)
+            chunk.sliced(..offset)
         };
 
         // Since this path is only executed if at least one line is found or EOF, we guarantee that
@@ -193,7 +196,7 @@ impl RowSkipper {
     /// lines that have not yet been skipped.
     ///
     /// `chunk` is expected in the form "line_a\nline_b\nline_c(\n)?" regardless of `reverse`.
-    fn skip_rows(&mut self, chunk: MemSlice) -> MemSlice {
+    fn skip_rows(&mut self, chunk: Buffer<u8>) -> Buffer<u8> {
         if self.n_rows_skipped >= self.cfg_n_rows_to_skip {
             return chunk;
         }
@@ -205,7 +208,7 @@ impl RowSkipper {
         }
     }
 
-    fn _skip_rows_forward(&mut self, chunk: MemSlice) -> MemSlice {
+    fn _skip_rows_forward(&mut self, chunk: Buffer<u8>) -> Buffer<u8> {
         let len = chunk.len();
         let mut offset = 0;
 
@@ -220,14 +223,14 @@ impl RowSkipper {
             self.n_rows_skipped += 1;
 
             if self.n_rows_skipped >= self.cfg_n_rows_to_skip {
-                return chunk.slice(offset..len);
+                return chunk.sliced(offset..len);
             }
         }
 
-        MemSlice::EMPTY
+        Buffer::new()
     }
 
-    fn _skip_rows_backward(&mut self, chunk: MemSlice) -> MemSlice {
+    fn _skip_rows_backward(&mut self, chunk: Buffer<u8>) -> Buffer<u8> {
         let len = chunk.len();
         let mut offset = len.saturating_sub((chunk.last().copied() == Some(LF)) as usize);
 
@@ -242,7 +245,7 @@ impl RowSkipper {
             self.n_rows_skipped += 1;
 
             if self.n_rows_skipped >= self.cfg_n_rows_to_skip {
-                return chunk.slice(0..offset);
+                return chunk.sliced(0..offset);
             }
 
             offset = offset.saturating_sub(1);
@@ -250,6 +253,6 @@ impl RowSkipper {
 
         self.n_rows_skipped += !chunk.is_empty() as usize;
 
-        MemSlice::EMPTY
+        Buffer::new()
     }
 }

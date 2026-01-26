@@ -3,6 +3,7 @@ use std::future::Future;
 use std::ops::Deref;
 use std::sync::LazyLock;
 
+use polars_buffer::Buffer;
 use polars_core::POOL;
 use polars_core::config::{self, verbose};
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -35,7 +36,7 @@ pub trait GetSize {
     fn size(&self) -> u64;
 }
 
-impl GetSize for bytes::Bytes {
+impl GetSize for Buffer<u8> {
     fn size(&self) -> u64 {
         self.len() as u64
     }

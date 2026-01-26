@@ -1,13 +1,13 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
+use polars_buffer::Buffer;
 use polars_core::utils::arrow::io::ipc::read::{
     BlockReader, FileMetadata, get_row_count_from_blocks,
 };
 use polars_error::{PolarsResult, polars_err};
-use polars_io::utils::byte_source::{ByteSource, DynByteSource, MemSliceByteSource};
+use polars_io::utils::byte_source::{BufferByteSource, ByteSource, DynByteSource};
 use polars_utils::IdxSize;
-use polars_utils::mmap::MemSlice;
 use polars_utils::relaxed_cell::RelaxedCell;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -19,7 +19,7 @@ use crate::utils::tokio_handle_ext;
 
 /// Represents byte-data that can be transformed into a DataFrame after some computation.
 pub(super) struct RecordBatchData {
-    pub(super) fetched_bytes: MemSlice,
+    pub(super) fetched_bytes: Buffer<u8>,
     pub(super) block_index: usize,
     pub(super) num_rows: usize,
     // Lazily updated.
@@ -83,7 +83,7 @@ impl RecordBatchDataFetcher {
                             + block.body_length as usize;
 
                     let fetched_bytes =
-                        if let DynByteSource::MemSlice(mem_slice) = current_byte_source.as_ref() {
+                        if let DynByteSource::Buffer(mem_slice) = current_byte_source.as_ref() {
                             let slice = mem_slice.0.as_ref();
 
                             if !std::ptr::eq(
@@ -94,7 +94,7 @@ impl RecordBatchDataFetcher {
                                 memory_prefetch_func(unsafe { slice.get_unchecked(range.clone()) })
                             }
 
-                            mem_slice.0.slice(range)
+                            mem_slice.0.clone().sliced(range)
                         } else {
                             // @NOTE. Performance can be optimized by grouping requests and downloading
                             // through `get_ranges()`.
@@ -195,7 +195,7 @@ impl RecordBatchDataFetcher {
         let start_offset = start_offset.unwrap_or_default();
 
         let n_rows = match &*byte_source {
-            DynByteSource::MemSlice(MemSliceByteSource(memslice)) => {
+            DynByteSource::Buffer(BufferByteSource(memslice)) => {
                 let n_rows: i64 = get_row_count_from_blocks(
                     &mut std::io::Cursor::new(memslice.as_ref()),
                     &file_metadata.blocks[start_offset..],

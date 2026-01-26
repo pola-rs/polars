@@ -284,6 +284,8 @@ filterwarnings = [
   "ignore:Deprecated API features detected.*:DeprecationWarning",
   # numpy import can generate this warning in Python 3.13 on certain runners
   "ignore:.*numpy\\.longdouble.*:UserWarning",
+  # TODO: https://github.com/pola-rs/polars/issues/20065.
+  "ignore:.*DataFrame Interchange Protocol is deprecated",
 ]
 xfail_strict = true
 

@@ -169,6 +169,8 @@ pub fn aexpr_to_column_predicates(
                                 function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }),
                                 options: _,
                             } => {
+                                into_column(input[0].node(), expr_arena)?;
+
                                 let (Some(l), Some(r)) = (
                                     constant_evaluate(
                                         input[1].node(),

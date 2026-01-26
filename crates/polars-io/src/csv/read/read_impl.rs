@@ -1,17 +1,17 @@
 use std::fmt;
 use std::sync::Mutex;
 
+use polars_buffer::{Buffer, SharedStorage};
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
-use polars_utils::mmap::MemSlice;
 use polars_utils::relaxed_cell::RelaxedCell;
 use rayon::prelude::*;
 
 use super::CsvParseOptions;
-use super::buffer::init_buffers;
+use super::builder::init_builders;
 use super::options::{CsvEncoding, NullValuesCompiled};
 use super::parser::{CountLines, is_comment_line, parse_lines};
 use super::reader::prepare_csv_schema;
@@ -97,7 +97,7 @@ struct ReaderBytesAndDependents<'a> {
     // SAFETY: This is lifetime bound to `reader_bytes`
     compressed_reader: CompressedReader,
     // SAFETY: This is lifetime bound to `reader_bytes`
-    leftover: MemSlice,
+    leftover: Buffer<u8>,
     _reader_bytes: ReaderBytes<'a>,
 }
 
@@ -187,8 +187,8 @@ impl<'a> CoreReader<'a> {
             ReaderBytes::Borrowed(slice) => {
                 // SAFETY: The produced slice and derived slices MUST not live longer than
                 // `reader_bytes`. TODO use `scan_csv` to implement `read_csv`.
-                let static_slice = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(slice) };
-                MemSlice::from_static(static_slice)
+                let ss = unsafe { SharedStorage::from_slice_unchecked(slice) };
+                Buffer::from_storage(ss)
             },
             ReaderBytes::Owned(slice) => slice.clone(),
         };
@@ -434,7 +434,7 @@ impl<'a> CoreReader<'a> {
                     let projection = projection.as_ref();
                     let slf = &(*self);
                     s.spawn(move |_| {
-                        if check_utf8 && !super::buffer::validate_utf8(b) {
+                        if check_utf8 && !super::builder::validate_utf8(b) {
                             let mut results = results.lock().unwrap();
                             results.push((
                                 b.as_ptr() as usize,
@@ -558,7 +558,7 @@ pub fn read_chunk(
     // approximate (sometimes they're smaller), this isn't broken, but it does
     // mean a bunch of extra allocation and copying. So we allocate a
     // larger-by-one buffer so the size is more likely to be accurate.
-    let mut buffers = init_buffers(
+    let mut buffers = init_builders(
         projection,
         capacity + 1,
         schema,

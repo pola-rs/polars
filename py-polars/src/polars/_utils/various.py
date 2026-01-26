@@ -48,7 +48,7 @@ if TYPE_CHECKING:
         MutableMapping,
         Reversible,
     )
-    from typing import ParamSpec, TypeGuard
+    from typing import ParamSpec, Protocol, TypeGuard
 
     from polars import DataFrame, Expr
     from polars._typing import PolarsDataType, SizeUnit
@@ -60,6 +60,11 @@ if TYPE_CHECKING:
 
     P = ParamSpec("P")
     T = TypeVar("T")
+
+    class IdentityFunction(Protocol):
+        # Use as a return type for signature preserving decorators
+        def __call__(self, fn: Callable[P, T], /) -> Callable[P, T]: ...
+
 
 # note: reversed views don't match as instances of MappingView
 if sys.version_info >= (3, 11):

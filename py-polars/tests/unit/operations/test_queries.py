@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 import pytest
 
 import polars as pl
+from polars._utils.various import parse_version
 from polars.testing import assert_frame_equal
 from tests.unit.conftest import NUMERIC_DTYPES
+
+if TYPE_CHECKING:
+    from polars._typing import TimeUnit
 
 
 def test_sort_by_bools() -> None:
@@ -357,8 +362,10 @@ def test_datetime_supertype_5236() -> None:
         pl.col("StartDateTime")
         < (pl.col("EndDateTime").dt.truncate("1d").max() - timedelta(days=1))
     )
+    pd_version = parse_version(pd.__version__)
+    time_unit: TimeUnit = "us" if pd_version >= (3,) else "ns"
     assert out.shape == (0, 2)
-    assert out.dtypes == [pl.Datetime("ns", "UTC")] * 2
+    assert out.dtypes == [pl.Datetime(time_unit, "UTC")] * 2
 
 
 def test_shift_drop_nulls_10875() -> None:
