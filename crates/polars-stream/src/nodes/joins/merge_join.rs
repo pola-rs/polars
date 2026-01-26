@@ -893,7 +893,7 @@ impl DataFrameBuffer {
     fn into_df(self) -> DataFrame {
         let acc = accumulate_schema_dataframes_vertical_unchecked(
             self.schema,
-            self.dfs_at_offsets.into_iter().map(|(_, df)| df),
+            self.dfs_at_offsets.into_values(),
         );
         acc.slice(self.skip_rows as i64, self.total_rows)
     }
