@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import random
-import sys
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -1964,7 +1963,6 @@ def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
         ("dense", get_index_type()),
     ],
 )
-@pytest.mark.parametrize("center", [False, True])
 @given(
     s=series(
         name="a",
@@ -1979,7 +1977,6 @@ def test_rolling_rank(
     window_size: int,
     method: RankMethod,
     out_dtype: pl.DataType,
-    center: bool,
 ) -> None:
     df = pl.DataFrame({"a": s})
     expected = (
@@ -1991,31 +1988,15 @@ def test_rolling_rank(
             .list.last()
             .cast(out_dtype)
         )
-        .with_columns(
-            a=pl.when(pl.col("index") < window_size - 1)
-            .then(None)
-            .otherwise(pl.col("a"))
-        )
         .drop("index")
     )
-    if center:
-        expected = expected.with_columns(a=pl.col("a").shift(-((window_size - 1) // 2)))
     actual = df.lazy().select(
-        pl.col("a").rolling_rank(window_size=window_size, method=method, center=center)
-    )
-
-    try:
-        assert actual.collect_schema() == actual.collect().schema, (
-            f"expected {actual.collect_schema()}, got {actual.collect().schema}"
+        pl.col("a").rolling_rank(
+            window_size=window_size, method=method, seed=0, min_samples=1
         )
-        assert_frame_equal(actual.collect(), expected)
-        print("PASS", file=sys.stderr)
-    except AssertionError:
-        print("FAIL", file=sys.stderr)
-        print(f"{actual.collect() = }", file=sys.stderr)
-        print(f"{expected = }", file=sys.stderr)
-        print(f"{s = }", file=sys.stderr)
-        raise
+    )
+    assert actual.collect_schema() == actual.collect().schema
+    assert_frame_equal(actual.collect(), expected)
 
 
 @pytest.mark.parametrize("center", [False, True])
