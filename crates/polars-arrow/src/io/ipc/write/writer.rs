@@ -269,7 +269,7 @@ pub trait PutOwned {
     fn put(&mut self, data: Bytes) -> std::io::Result<()>;
 }
 
-impl<'a, T: PutOwned + ?Sized> PutOwned for &'a mut T {
+impl<T: PutOwned + ?Sized> PutOwned for &mut T {
     fn put(&mut self, data: Bytes) -> std::io::Result<()> {
         (**self).put(data)
     }
