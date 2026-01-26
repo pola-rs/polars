@@ -2310,23 +2310,33 @@ class Series:
         return self._s.median()
 
     def quantile(
-        self, quantile: float, interpolation: QuantileMethod = "nearest"
-    ) -> float | None:
+        self, quantile: float | list[float], interpolation: QuantileMethod = "nearest"
+    ) -> float | list[float] | None:
         """
         Get the quantile value of this Series.
 
         Parameters
         ----------
         quantile
-            Quantile between 0.0 and 1.0.
+            Quantile(s) between 0.0 and 1.0. Can be a single float or a list of floats.
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
+
+        Returns
+        -------
+        float | list[float] | None
+            A single quantile value if a float is provided, or a list of quantile values if a list is provided.
 
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.quantile(0.5)
         2.0
+
+        Return a list of quantiles:
+
+        >>> s.quantile([0.25, 0.75], interpolation="linear")
+        [1.5, 2.5]
         """  # noqa: W505
         return self._s.quantile(quantile, interpolation)
 
