@@ -132,28 +132,20 @@ impl From<CloudRetryConfig> for object_store::RetryConfig {
 
         let out = object_store::RetryConfig {
             backoff: object_store::BackoffConfig {
-                init_backoff: value.retry_init_backoff.unwrap_or_else(|| {
-                    Duration::from_millis(parse_env_var(100, "POLARS_CLOUD_RETRY_INIT_BACKOFF_MS"))
-                }),
-                max_backoff: value.retry_max_backoff.unwrap_or_else(|| {
-                    Duration::from_millis(parse_env_var(
-                        15 * 1000,
-                        "POLARS_CLOUD_RETRY_MAX_BACKOFF_MS",
-                    ))
-                }),
+                init_backoff: value
+                    .retry_init_backoff
+                    .unwrap_or_else(|| DEFAULTS.backoff.init_backoff),
+                max_backoff: value
+                    .retry_max_backoff
+                    .unwrap_or_else(|| DEFAULTS.backoff.max_backoff),
                 base: value
                     .retry_base_multiplier
-                    .unwrap_or_else(|| {
-                        TotalOrdWrap(parse_env_var(2., "POLARS_CLOUD_RETRY_BASE_MULTIPLIER"))
-                    })
-                    .0,
+                    .map_or_else(|| DEFAULTS.backoff.base, |x| x.0),
             },
-            max_retries: value
-                .max_retries
-                .unwrap_or_else(|| parse_env_var(2, "POLARS_CLOUD_MAX_RETRIES")),
-            retry_timeout: value.retry_timeout.unwrap_or_else(|| {
-                Duration::from_millis(parse_env_var(10 * 1000, "POLARS_CLOUD_RETRY_TIMEOUT_MS"))
-            }),
+            max_retries: value.max_retries.unwrap_or_else(|| DEFAULTS.max_retries),
+            retry_timeout: value
+                .retry_timeout
+                .unwrap_or_else(|| DEFAULTS.retry_timeout),
         };
 
         if verbose() {
@@ -161,6 +153,26 @@ impl From<CloudRetryConfig> for object_store::RetryConfig {
         }
 
         return out;
+
+        static DEFAULTS: LazyLock<object_store::RetryConfig> =
+            LazyLock::new(|| object_store::RetryConfig {
+                backoff: object_store::BackoffConfig {
+                    init_backoff: Duration::from_millis(parse_env_var(
+                        100,
+                        "POLARS_CLOUD_RETRY_INIT_BACKOFF_MS",
+                    )),
+                    max_backoff: Duration::from_millis(parse_env_var(
+                        15 * 1000,
+                        "POLARS_CLOUD_RETRY_MAX_BACKOFF_MS",
+                    )),
+                    base: parse_env_var(2., "POLARS_CLOUD_RETRY_BASE_MULTIPLIER"),
+                },
+                max_retries: parse_env_var(2, "POLARS_CLOUD_MAX_RETRIES"),
+                retry_timeout: Duration::from_millis(parse_env_var(
+                    10 * 1000,
+                    "POLARS_CLOUD_RETRY_TIMEOUT_MS",
+                )),
+            });
 
         fn parse_env_var<T: FromStr>(default: T, name: &'static str) -> T {
             std::env::var(name).map_or(default, |x| {
