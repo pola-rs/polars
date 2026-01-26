@@ -38,7 +38,7 @@ pub trait RollingAggWindowNoNulls<T: NativeType, Out: NativeType = T> {
     ///
     /// # Safety
     /// `start` and `end` must be within the windows bounds
-    unsafe fn update(&mut self, start: usize, end: usize);
+    unsafe fn update(&mut self, new_start: usize, new_end: usize);
 
     /// Get the aggregate of the current window relative to the value at `idx`.
     fn get_agg(&self, idx: usize) -> Option<Out>;

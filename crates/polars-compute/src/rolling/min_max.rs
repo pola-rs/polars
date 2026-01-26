@@ -11,7 +11,6 @@ use super::nulls::RollingAggWindowNulls;
 /// Min/max window implemented on top of ArgMinMaxWindow (arg-based).
 pub struct MinMaxWindow<'a, T, P> {
     inner: ArgMinMaxWindow<'a, T, P>,
-    current_agg: Option<T>,
 }
 
 impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<T> for MinMaxWindow<'a, T, P> {
@@ -37,25 +36,17 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<T> for MinMaxWind
             window_size,
         );
 
-        MinMaxWindow {
-            inner,
-            current_agg: None,
-        }
+        MinMaxWindow { inner }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) {
-        unsafe { RollingAggWindowNulls::<T, IdxSize>::update(&mut self.inner, start, end) };
-        let rel = RollingAggWindowNulls::<T, IdxSize>::get_agg(&self.inner, start);
-        self.current_agg = if let Some(rel) = rel {
-            let abs = start + rel as usize;
-            unsafe { Some(*self.inner.values.get_unchecked(abs)) }
-        } else {
-            None
-        };
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        unsafe { RollingAggWindowNulls::<T, IdxSize>::update(&mut self.inner, new_start, new_end) };
     }
 
-    fn get_agg(&self, _idx: usize) -> Option<T> {
-        self.current_agg
+    fn get_agg(&self, idx: usize) -> Option<T> {
+        let rel = RollingAggWindowNulls::<T, IdxSize>::get_agg(&self.inner, idx)?;
+        let abs = self.inner.start + rel as usize;
+        unsafe { Some(*self.inner.values.get_unchecked(abs)) }
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {
@@ -88,27 +79,19 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<T> for MinMaxWi
             window_size,
         );
 
-        MinMaxWindow {
-            inner,
-            current_agg: None,
-        }
+        MinMaxWindow { inner }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) {
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
         unsafe {
-            RollingAggWindowNoNulls::<T, IdxSize>::update(&mut self.inner, start, end);
-        };
-        let rel = RollingAggWindowNoNulls::<T, IdxSize>::get_agg(&self.inner, start);
-        self.current_agg = if let Some(rel) = rel {
-            let abs = start + rel as usize;
-            unsafe { Some(*self.inner.values.get_unchecked(abs)) }
-        } else {
-            None
+            RollingAggWindowNoNulls::<T, IdxSize>::update(&mut self.inner, new_start, new_end);
         };
     }
 
-    fn get_agg(&self, _idx: usize) -> Option<T> {
-        self.current_agg
+    fn get_agg(&self, idx: usize) -> Option<T> {
+        let rel = RollingAggWindowNoNulls::<T, IdxSize>::get_agg(&self.inner, idx)?;
+        let abs = self.inner.start + rel as usize;
+        unsafe { Some(*self.inner.values.get_unchecked(abs)) }
     }
 
     fn slice_len(&self) -> usize {

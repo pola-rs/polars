@@ -19,10 +19,9 @@ pub struct ArgMinMaxWindow<'a, T, P> {
     // all i, as per the policy.
     monotonic_idxs: VecDeque<usize>,
     nonnulls_in_window: usize,
-    last_start: usize,
-    last_end: usize,
+    pub(super) start: usize,
+    pub(super) end: usize,
     policy: PhantomData<P>,
-    current_agg: Option<IdxSize>,
 }
 
 impl<T: NativeType, P: MinMaxPolicy> ArgMinMaxWindow<'_, T, P> {
@@ -78,39 +77,36 @@ impl<T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<T, IdxSize>
             validity: Some(validity),
             monotonic_idxs: VecDeque::new(),
             nonnulls_in_window: 0,
-            last_start: 0,
-            last_end: 0,
+            start: 0,
+            end: 0,
             policy: PhantomData,
-            current_agg: None,
         };
         // SAFETY: We bounds checked `start` and `end`.
         unsafe { RollingAggWindowNulls::update(&mut this, start, end) };
         this
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) {
-        self.current_agg = unsafe {
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        unsafe {
             let v = self.validity.unwrap_unchecked();
-            self.remove_old_values(start);
-            for i in self.last_start..start.min(self.last_end) {
+            self.remove_old_values(new_start);
+            for i in self.start..new_start.min(self.end) {
                 self.nonnulls_in_window -= v.get_bit_unchecked(i) as usize;
             }
-            for i in start.max(self.last_end)..end {
+            for i in new_start.max(self.end)..new_end {
                 if v.get_bit_unchecked(i) {
                     self.insert_nonnull_value(i);
                 }
             }
-
-            self.last_start = start;
-            self.last_end = end;
-            self.monotonic_idxs
-                .front()
-                .map(|&best_abs| (best_abs - start) as IdxSize)
         };
+        self.start = new_start;
+        self.end = new_end;
     }
 
     fn get_agg(&self, _idx: usize) -> Option<IdxSize> {
-        self.current_agg
+        self.monotonic_idxs
+            .front()
+            .map(|&best_abs| (best_abs - self.start) as IdxSize)
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {
@@ -142,10 +138,9 @@ impl<T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<T, IdxSize>
             validity: None,
             monotonic_idxs: VecDeque::new(),
             nonnulls_in_window: 0,
-            last_start: 0,
-            last_end: 0,
+            start: 0,
+            end: 0,
             policy: PhantomData,
-            current_agg: None,
         };
 
         // SAFETY: We bounds checked `start` and `end`.
@@ -153,25 +148,22 @@ impl<T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<T, IdxSize>
         this
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) {
-        self.current_agg = unsafe {
-            self.remove_old_values(start);
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        unsafe {
+            self.remove_old_values(new_start);
 
-            for i in start.max(self.last_end)..end {
+            for i in new_start.max(self.end)..new_end {
                 self.insert_nonnull_value(i);
             }
-
-            self.last_start = start;
-            self.last_end = end;
-
-            self.monotonic_idxs
-                .front()
-                .map(|&best_abs| (best_abs - start) as IdxSize)
         };
+        self.start = new_start;
+        self.end = new_end;
     }
 
     fn get_agg(&self, _idx: usize) -> Option<IdxSize> {
-        self.current_agg
+        self.monotonic_idxs
+            .front()
+            .map(|&best_abs| (best_abs - self.start) as IdxSize)
     }
 
     fn slice_len(&self) -> usize {

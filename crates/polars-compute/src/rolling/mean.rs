@@ -5,7 +5,6 @@ use super::*;
 
 pub struct MeanWindow<'a, T> {
     sum: SumWindow<'a, T, f64>,
-    current_agg: Option<T>,
 }
 
 impl<T> RollingAggWindowNoNulls<T> for MeanWindow<'_, T>
@@ -38,20 +37,19 @@ where
                 params,
                 window_size,
             ),
-            current_agg: None,
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) {
-        let sum = unsafe {
-            RollingAggWindowNoNulls::update(&mut self.sum, start, end);
-            RollingAggWindowNoNulls::get_agg(&self.sum, start).unwrap_unchecked()
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        unsafe {
+            RollingAggWindowNoNulls::update(&mut self.sum, new_start, new_end);
         };
-        self.current_agg = (start != end).then(|| sum / NumCast::from(end - start).unwrap());
     }
 
-    fn get_agg(&self, _idx: usize) -> Option<T> {
-        self.current_agg
+    fn get_agg(&self, idx: usize) -> Option<T> {
+        let sum = RollingAggWindowNoNulls::get_agg(&self.sum, idx).unwrap();
+        (self.sum.start != self.sum.end)
+            .then(|| sum / NumCast::from(self.sum.end - self.sum.start).unwrap())
     }
 
     fn slice_len(&self) -> usize {
@@ -90,23 +88,23 @@ impl<
                 params,
                 window_size,
             ),
-            current_agg: None,
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) {
-        unsafe { RollingAggWindowNulls::update(&mut self.sum, start, end) };
-        let sum = RollingAggWindowNulls::get_agg(&self.sum, start);
-        let len = end - start;
-        self.current_agg = if self.sum.null_count == len {
-            None
-        } else {
-            sum.map(|sum| sum / NumCast::from(end - start - self.sum.null_count).unwrap())
-        };
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        unsafe { RollingAggWindowNulls::update(&mut self.sum, new_start, new_end) };
     }
 
-    fn get_agg(&self, _idx: usize) -> Option<T> {
-        self.current_agg
+    fn get_agg(&self, idx: usize) -> Option<T> {
+        let sum = RollingAggWindowNulls::get_agg(&self.sum, idx);
+        let len = self.sum.end - self.sum.start;
+        if self.sum.null_count == len {
+            None
+        } else {
+            sum.map(|sum| {
+                sum / NumCast::from(self.sum.end - self.sum.start - self.sum.null_count).unwrap()
+            })
+        }
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {

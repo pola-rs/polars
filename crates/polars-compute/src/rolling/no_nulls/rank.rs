@@ -14,8 +14,8 @@ where
     P: RankPolicy<T, Out>,
 {
     slice: &'a [T],
-    start: usize,
-    end: usize,
+    pub(super) start: usize,
+    pub(super) end: usize,
     ost: OrderStatisticTree<&'a T>,
     policy: P,
     _out: PhantomData<Out>,
