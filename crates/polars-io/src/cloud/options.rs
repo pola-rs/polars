@@ -112,40 +112,55 @@ impl CloudOptions {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct CloudRetryConfig {
-    pub max_retries: usize,
-    pub retry_timeout: std::time::Duration,
-    pub retry_init_backoff: std::time::Duration,
-    pub retry_max_backoff: std::time::Duration,
-    pub retry_base_multiplier: TotalOrdWrap<f64>,
+    pub max_retries: Option<usize>,
+    pub retry_timeout: Option<std::time::Duration>,
+    pub retry_init_backoff: Option<std::time::Duration>,
+    pub retry_max_backoff: Option<std::time::Duration>,
+    pub retry_base_multiplier: Option<TotalOrdWrap<f64>>,
 }
 
-impl Default for CloudRetryConfig {
-    fn default() -> Self {
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
+impl From<CloudRetryConfig> for object_store::RetryConfig {
+    fn from(value: CloudRetryConfig) -> Self {
         use std::time::Duration;
 
-        return Self {
-            max_retries: parse_env_var(2, "POLARS_CLOUD_MAX_RETRIES"),
-            retry_timeout: Duration::from_millis(parse_env_var(
-                10 * 1000,
-                "POLARS_CLOUD_RETRY_TIMEOUT_MS",
-            )),
-            retry_init_backoff: Duration::from_millis(parse_env_var(
-                100,
-                "POLARS_CLOUD_RETRY_INIT_BACKOFF_MS",
-            )),
-            retry_max_backoff: Duration::from_millis(parse_env_var(
-                15 * 1000,
-                "POLARS_CLOUD_RETRY_MAX_BACKOFF_MS",
-            )),
-            retry_base_multiplier: TotalOrdWrap(parse_env_var(
-                2.,
-                "POLARS_CLOUD_RETRY_BASE_MULTIPLIER",
-            )),
+        use polars_core::config::verbose;
+
+        let out = object_store::RetryConfig {
+            backoff: object_store::BackoffConfig {
+                init_backoff: value.retry_init_backoff.unwrap_or_else(|| {
+                    Duration::from_millis(parse_env_var(100, "POLARS_CLOUD_RETRY_INIT_BACKOFF_MS"))
+                }),
+                max_backoff: value.retry_max_backoff.unwrap_or_else(|| {
+                    Duration::from_millis(parse_env_var(
+                        15 * 1000,
+                        "POLARS_CLOUD_RETRY_MAX_BACKOFF_MS",
+                    ))
+                }),
+                base: value
+                    .retry_base_multiplier
+                    .unwrap_or_else(|| {
+                        TotalOrdWrap(parse_env_var(2., "POLARS_CLOUD_RETRY_BASE_MULTIPLIER"))
+                    })
+                    .0,
+            },
+            max_retries: value
+                .max_retries
+                .unwrap_or_else(|| parse_env_var(2, "POLARS_CLOUD_MAX_RETRIES")),
+            retry_timeout: value.retry_timeout.unwrap_or_else(|| {
+                Duration::from_millis(parse_env_var(10 * 1000, "POLARS_CLOUD_RETRY_TIMEOUT_MS"))
+            }),
         };
+
+        if verbose() {
+            eprintln!("object-store retry config: {:?}", &out)
+        }
+
+        return out;
 
         fn parse_env_var<T: FromStr>(default: T, name: &'static str) -> T {
             std::env::var(name).map_or(default, |x| {
@@ -153,21 +168,6 @@ impl Default for CloudRetryConfig {
                     .ok()
                     .unwrap_or_else(|| panic!("invalid value for {name}: {x}"))
             })
-        }
-    }
-}
-
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
-impl From<CloudRetryConfig> for object_store::RetryConfig {
-    fn from(value: CloudRetryConfig) -> Self {
-        object_store::RetryConfig {
-            backoff: object_store::BackoffConfig {
-                init_backoff: value.retry_init_backoff,
-                max_backoff: value.retry_max_backoff,
-                base: value.retry_base_multiplier.0,
-            },
-            max_retries: value.max_retries,
-            retry_timeout: value.retry_timeout,
         }
     }
 }
@@ -307,7 +307,7 @@ fn read_config(
 
 impl CloudOptions {
     pub fn with_retry_config(mut self, retry_config: CloudRetryConfig) -> Self {
-        self.max_retries = retry_config.max_retries;
+        self.max_retries = retry_config.max_retries.unwrap_or(2);
         self.retry_config = retry_config;
         self
     }

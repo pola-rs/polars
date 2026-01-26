@@ -169,50 +169,66 @@ def test_storage_options_retry_config(
     monkeypatch: pytest.MonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
 
-    monkeypatch.setenv("POLARS_CLOUD_MAX_RETRIES", "53")
-    monkeypatch.setenv("POLARS_CLOUD_RETRY_TIMEOUT_MS", "10371")
-    monkeypatch.setenv("POLARS_CLOUD_RETRY_INIT_BACKOFF_MS", "10372")
+    monkeypatch.setenv("POLARS_CLOUD_MAX_RETRIES", "1")
+    monkeypatch.setenv("POLARS_CLOUD_RETRY_TIMEOUT_MS", "1")
+    monkeypatch.setenv("POLARS_CLOUD_RETRY_INIT_BACKOFF_MS", "2")
     monkeypatch.setenv("POLARS_CLOUD_RETRY_MAX_BACKOFF_MS", "10373")
     monkeypatch.setenv("POLARS_CLOUD_RETRY_BASE_MULTIPLIER", "6.28")
 
+    q = pl.scan_parquet(
+        "s3://.../...",
+        storage_options={"aws_endpoint_url": "https://localhost:333"},
+        credential_provider=None,
+    )
+
     capfd.readouterr()
-    pl.scan_parquet("", storage_options={})
+
+    with pytest.raises(OSError):
+        q.collect()
+
     capture = capfd.readouterr().err
 
     assert (
         """\
-max_retries: 53, \
-retry_timeout: 10.371s, \
-retry_init_backoff: 10.372s, \
-retry_max_backoff: 10.373s, \
-retry_base_multiplier: TotalOrdWrap(6.28)"""
+init_backoff: 2ms, \
+max_backoff: 10.373s, \
+base: 6.28 }, \
+max_retries: 1, \
+retry_timeout: 1ms"""
         in capture
     )
 
-    capfd.readouterr()
-    pl.scan_parquet(
-        "",
+    q = pl.scan_parquet(
+        "s3://.../...",
         storage_options={
             "file_cache_ttl": 7,
-            "max_retries": 3,
-            "retry_timeout_ms": 9873,
-            "retry_init_backoff_ms": 9874,
+            "max_retries": 0,
+            "retry_timeout_ms": 23,
+            "retry_init_backoff_ms": 24,
             "retry_max_backoff_ms": 9875,
             "retry_base_multiplier": 3.14159,
+            "aws_endpoint_url": "https://localhost:333",
         },
+        credential_provider=None,
     )
+
+    capfd.readouterr()
+
+    with pytest.raises(OSError):
+        q.collect()
+
     capture = capfd.readouterr().err
 
     assert "file_cache_ttl: 7" in capture
 
     assert (
         """\
-max_retries: 3, \
-retry_timeout: 9.873s, \
-retry_init_backoff: 9.874s, \
-retry_max_backoff: 9.875s, \
-retry_base_multiplier: TotalOrdWrap(3.14159)"""
+init_backoff: 24ms, \
+max_backoff: 9.875s, \
+base: 3.14159 }, \
+max_retries: 0, \
+retry_timeout: 23ms"""
         in capture
     )
