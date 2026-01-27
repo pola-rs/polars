@@ -106,12 +106,17 @@ impl FileReader for IpcFileReader {
         let file_metadata = if let Some(v) = self.metadata.clone() {
             v
         } else {
-            let (metadata_bytes, opt_full_bytes) = pl_async::get_runtime()
-                .spawn(async move {
-                    read_ipc_metadata_bytes(&byte_source, verbose, &self.io_metrics).await
-                })
-                .await
-                .unwrap()?;
+            let (metadata_bytes, opt_full_bytes) = {
+                let byte_source = byte_source.clone();
+                let io_metrics = self.io_metrics.clone();
+
+                pl_async::get_runtime()
+                    .spawn(async move {
+                        read_ipc_metadata_bytes(&byte_source, verbose, &io_metrics).await
+                    })
+                    .await
+                    .unwrap()?
+            };
 
             if let Some(full_bytes) = opt_full_bytes {
                 byte_source = Arc::new(DynByteSource::Buffer(BufferByteSource(full_bytes)));
