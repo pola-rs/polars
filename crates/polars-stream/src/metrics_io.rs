@@ -64,7 +64,6 @@ impl Drop for IOSession<'_> {
 }
 
 impl ActiveIOMetrics {
-    /// MUST have an associated `end_io_session()`.
     fn start_io_session(&self) -> (IOSession<'_>, bool) {
         let started_by_this_call = self.active_io_count.fetch_add(1) == 0;
 
