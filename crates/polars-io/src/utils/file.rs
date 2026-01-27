@@ -42,14 +42,19 @@ impl Writeable {
         path: PlRefPath,
         #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_options: Option<&CloudOptions>,
         #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_upload_chunk_size: usize,
+        #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_upload_max_concurrency: usize,
     ) -> PolarsResult<Self> {
         Ok(if path.has_scheme() {
             feature_gated!("cloud", {
                 use crate::cloud::BlockingCloudWriter;
 
-                let writer = crate::pl_async::get_runtime().block_in_place_on(
-                    BlockingCloudWriter::new(path, cloud_options, cloud_upload_chunk_size),
-                )?;
+                let writer =
+                    crate::pl_async::get_runtime().block_in_place_on(BlockingCloudWriter::new(
+                        path,
+                        cloud_options,
+                        cloud_upload_chunk_size,
+                        cloud_upload_max_concurrency,
+                    ))?;
 
                 Self::Cloud(writer)
             })
@@ -66,9 +71,13 @@ impl Writeable {
                 let path = path.to_str().ok_or_else(|| polars_err!(non_utf8_path))?;
                 let path = format_file_uri(path);
 
-                let writer = crate::pl_async::get_runtime().block_in_place_on(
-                    BlockingCloudWriter::new(path, cloud_options, cloud_upload_chunk_size),
-                )?;
+                let writer =
+                    crate::pl_async::get_runtime().block_in_place_on(BlockingCloudWriter::new(
+                        path,
+                        cloud_options,
+                        cloud_upload_chunk_size,
+                        cloud_upload_max_concurrency,
+                    ))?;
 
                 Self::Cloud(writer)
             })
@@ -262,10 +271,16 @@ mod async_writeable {
             path: PlRefPath,
             cloud_options: Option<&CloudOptions>,
             cloud_upload_chunk_size: usize,
+            cloud_upload_max_concurrency: usize,
         ) -> PolarsResult<Self> {
             // TODO: Native async impl
-            Writeable::try_new(path, cloud_options, cloud_upload_chunk_size)
-                .and_then(|x| x.try_into_async_writeable())
+            Writeable::try_new(
+                path,
+                cloud_options,
+                cloud_upload_chunk_size,
+                cloud_upload_max_concurrency,
+            )
+            .and_then(|x| x.try_into_async_writeable())
         }
 
         pub async fn sync_all(&mut self) -> io::Result<()> {
