@@ -88,7 +88,8 @@ def test_time_to_int(t: time, expected: int) -> None:
 
 
 @pytest.mark.parametrize(
-    "tzinfo", [None, ZoneInfo("UTC"), ZoneInfo("Asia/Shanghai"), ZoneInfo("America/Chicago")]
+    "tzinfo",
+    [None, ZoneInfo("UTC"), ZoneInfo("Asia/Shanghai"), ZoneInfo("America/Chicago")],
 )
 def test_time_to_int_with_time_zone(tzinfo: Any) -> None:
     t = time(12, 0, tzinfo=tzinfo)

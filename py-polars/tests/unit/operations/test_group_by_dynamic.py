@@ -747,7 +747,9 @@ def test_group_by_dynamic_startby_monday_crossing_dst(
     expected = pl.DataFrame(
         {"time": expected_time, "value": expected_value},
     )
-    expected = expected.with_columns(pl.col("time").dt.replace_time_zone("America/Chicago"))
+    expected = expected.with_columns(
+        pl.col("time").dt.replace_time_zone("America/Chicago")
+    )
     assert_frame_equal(result, expected)
 
 
@@ -769,7 +771,9 @@ def test_group_by_dynamic_startby_monday_dst_8737() -> None:
             "value": [0.5],
         },
     )
-    expected = expected.with_columns(pl.col("time").dt.replace_time_zone("America/Chicago"))
+    expected = expected.with_columns(
+        pl.col("time").dt.replace_time_zone("America/Chicago")
+    )
     assert_frame_equal(result, expected)
 
 
