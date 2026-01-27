@@ -489,6 +489,7 @@ pub fn get_supertype_with_options(
                         let DataType::Decimal(_prec, scale) = dt else { unreachable!() };
                         Some(DataType::Decimal(DEC128_MAX_PREC, *scale))
                     }
+                    UnknownKind::Int(v) if dt.is_bool() => Some(Unknown(UnknownKind::Int(*v))),
                     _ => Some(Unknown(UnknownKind::Any))
                 }
             },
