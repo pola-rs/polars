@@ -1986,16 +1986,9 @@ fn lower_exprs_with_ctx(
                     IRFunctionExpr::Boolean(
                         IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. },
                     )
+                    | IRFunctionExpr::MinBy
+                    | IRFunctionExpr::MaxBy
                     | IRFunctionExpr::NullCount,
-                ..
-            } => {
-                let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
-                input_streams.insert(trans_stream);
-                transformed_exprs.push(trans_expr);
-            },
-
-            AExpr::Function {
-                function: IRFunctionExpr::MinBy | IRFunctionExpr::MaxBy,
                 ..
             } => {
                 let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;

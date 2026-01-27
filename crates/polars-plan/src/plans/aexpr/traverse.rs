@@ -358,14 +358,16 @@ impl AExpr {
                 return self;
             },
             Agg(a) => {
-                match a {
-                    IRAggExpr::Quantile { expr, quantile, .. } => {
-                        *expr = inputs[0];
-                        *quantile = inputs[1];
-                    },
-                    _ => {
-                        a.set_input(inputs[0]);
-                    },
+                if let IRAggExpr::Quantile {
+                    expr,
+                    quantile,
+                    method: _,
+                } = a
+                {
+                    *expr = inputs[0];
+                    *quantile = inputs[1];
+                } else {
+                    a.set_input(inputs[0]);
                 }
                 return self;
             },
