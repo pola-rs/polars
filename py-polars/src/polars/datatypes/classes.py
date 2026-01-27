@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 import polars._reexport as pl
 import polars.datatypes
 import polars.functions as F
-from polars._utils.deprecation import deprecated
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars._plr as plr
@@ -34,9 +33,9 @@ if TYPE_CHECKING:
     )
 
     if sys.version_info >= (3, 13):
-        from warnings import deprecated
+        pass
     else:
-        from typing_extensions import deprecated  # noqa: TC004
+        pass
 
 
 T = TypeVar("T")
@@ -1010,18 +1009,21 @@ class Enum(DataType):
         class_name = self.__class__.__name__
         return f"{class_name}(categories={self.categories.to_list()!r})"
 
-    @deprecated(
-        "`Enum.union()` is deprecated and will be removed in version 2.0. "
-        "Enums are ordered sets and union cannot preserve both orderings."
-    )
     def union(self, other: Enum) -> Enum:
         """
         Union of two Enums.
 
         .. deprecated:: X.Y.Z
-            `Enum.union()` is deprecated. Enums are ordered sets and union
-            cannot preserve both orderings.
+            `Enum.union()` is deprecated and will be removed in version 2.0.
+            Enums are ordered sets and union cannot preserve both orderings.
         """
+        from polars._utils.deprecation import issue_deprecation_warning
+
+        issue_deprecation_warning(
+            "`Enum.union()` is deprecated and will be removed in version 2.0. "
+            "Enums are ordered sets and union cannot preserve both orderings.",
+            version="X.Y.Z",
+        )
         return Enum(
             F.concat((self.categories, other.categories)).unique(maintain_order=True)
         )
