@@ -45,9 +45,14 @@ impl<
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        let null_count = self.sorted.update(start, end);
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        self.sorted.update(new_start, new_end);
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<T> {
         let mut length = self.sorted.len();
+        let null_count = self.sorted.null_count;
+
         // The min periods_issue will be taken care of when actually rolling
         if null_count == length {
             return None;

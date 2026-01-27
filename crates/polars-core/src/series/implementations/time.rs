@@ -393,6 +393,25 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         Ok(Scalar::new(self.dtype().clone(), av.as_time()))
     }
 
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let result = self.0.physical().quantiles_reduce(quantiles, method)?;
+        if let AnyValue::List(float_s) = result.value() {
+            let float_ca = float_s.f64().unwrap();
+            let int_s = float_ca
+                .iter()
+                .map(|v: Option<f64>| v.map(|f| f as i64))
+                .collect::<Int64Chunked>()
+                .into_time()
+                .into_series();
+            Ok(Scalar::new(
+                DataType::List(Box::new(self.dtype().clone())),
+                AnyValue::List(int_s),
+            ))
+        } else {
+            polars_bail!(ComputeError: "expected list scalar from quantiles_reduce")
+        }
+    }
+
     #[cfg(feature = "approx_unique")]
     fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
         Ok(ChunkApproxNUnique::approx_n_unique(self.0.physical()))
