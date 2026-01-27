@@ -365,7 +365,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.sha }}
 
@@ -394,7 +394,7 @@ jobs:
             echo "RUSTFLAGS=-C link-self-contained=no -Zemscripten-wasm-eh" >> $GITHUB_ENV
 
       - name: Check out Emscripten v4.0.9 patches for Pyodide
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: 0.29.2
           path: pyodide-patches
