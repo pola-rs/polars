@@ -14,8 +14,8 @@ pub struct SumWindow<'a, T, S> {
     pos_inf_count: usize,
     neg_inf_count: usize,
     pub(super) null_count: usize,
-    last_start: usize,
-    last_end: usize,
+    pub(super) start: usize,
+    pub(super) end: usize,
 }
 
 impl<'a, T, S> SumWindow<'a, T, S>
@@ -34,8 +34,8 @@ where
             pos_inf_count: 0,
             neg_inf_count: 0,
             null_count: 0,
-            last_start: 0,
-            last_end: 0,
+            start: 0,
+            end: 0,
         }
     }
 
@@ -95,7 +95,7 @@ where
         }
     }
 
-    fn finalize(&self) -> Option<T> {
+    fn get_sum(&self) -> Option<T> {
         if self.non_finite_count == 0 {
             NumCast::from(self.sum)
         } else if self.non_finite_count == self.pos_inf_count {
@@ -129,24 +129,27 @@ where
 
     // # Safety
     // The start, end range must be in-bounds.
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        if start >= self.last_end {
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        if new_start >= self.end {
             self.reset();
-            self.last_start = start;
-            self.last_end = start;
+            self.start = new_start;
+            self.end = new_start;
         }
 
-        for val in &self.slice[self.last_start..start] {
+        for val in &self.slice[self.start..new_start] {
             self.sub(*val);
         }
 
-        for val in &self.slice[self.last_end..end] {
+        for val in &self.slice[self.end..new_end] {
             self.add(*val);
         }
 
-        self.last_start = start;
-        self.last_end = end;
-        self.finalize()
+        self.start = new_start;
+        self.end = new_end;
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<T> {
+        self.get_sum()
     }
 
     fn slice_len(&self) -> usize {
@@ -178,16 +181,16 @@ where
 
     // # Safety
     // The start, end range must be in-bounds.
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
         let validity = unsafe { self.validity.unwrap_unchecked() };
 
-        if start >= self.last_end {
+        if new_start >= self.end {
             self.reset();
-            self.last_start = start;
-            self.last_end = start;
+            self.start = new_start;
+            self.end = new_start;
         }
 
-        for idx in self.last_start..start {
+        for idx in self.start..new_start {
             let valid = unsafe { validity.get_bit_unchecked(idx) };
             if valid {
                 self.sub(unsafe { *self.slice.get_unchecked(idx) });
@@ -196,7 +199,7 @@ where
             }
         }
 
-        for idx in self.last_end..end {
+        for idx in self.end..new_end {
             let valid = unsafe { validity.get_bit_unchecked(idx) };
             if valid {
                 self.add(unsafe { *self.slice.get_unchecked(idx) });
@@ -205,13 +208,16 @@ where
             }
         }
 
-        self.last_start = start;
-        self.last_end = end;
-        self.finalize()
+        self.start = new_start;
+        self.end = new_end;
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<T> {
+        self.get_sum()
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {
-        ((self.last_end - self.last_start) - self.null_count) >= min_periods
+        ((self.end - self.start) - self.null_count) >= min_periods
     }
 
     fn slice_len(&self) -> usize {

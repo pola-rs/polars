@@ -1889,6 +1889,12 @@ def test_dataframe_height() -> None:
     ):
         pl.DataFrame({"a": [0, 1, 2]}, height=0)
 
+    with pytest.raises(
+        pl.exceptions.ShapeError,
+        match=r"height of data \(10\) does not match specified height \(5\)",
+    ):
+        pl.DataFrame(pl.DataFrame(height=10), height=5)
+
     assert_frame_equal(pl.DataFrame(height=10), pl.DataFrame(height=10))
 
     with pytest.raises(AssertionError):

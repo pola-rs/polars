@@ -1,13 +1,12 @@
 use std::ops::Range;
 
-use bytes::Bytes;
 use futures::{StreamExt, TryStreamExt};
 use hashbrown::hash_map::RawEntryMut;
 use object_store::path::Path;
 use object_store::{ObjectMeta, ObjectStore, ObjectStoreExt};
+use polars_buffer::Buffer;
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_error::{PolarsError, PolarsResult};
-use polars_utils::mmap::MemSlice;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
 use crate::pl_async::{
@@ -150,26 +149,26 @@ impl PolarsObjectStore {
         store: &'a dyn ObjectStore,
         path: &'a Path,
         ranges: T,
-    ) -> impl StreamExt<Item = PolarsResult<Bytes>>
-    + TryStreamExt<Ok = Bytes, Error = PolarsError, Item = PolarsResult<Bytes>>
+    ) -> impl StreamExt<Item = PolarsResult<Buffer<u8>>>
+    + TryStreamExt<Ok = Buffer<u8>, Error = PolarsError, Item = PolarsResult<Buffer<u8>>>
     + use<'a, T> {
         futures::stream::iter(ranges.map(move |range| async move {
             if range.is_empty() {
-                return Ok(Bytes::new());
+                return Ok(Buffer::new());
             }
 
             let out = store
                 .get_range(path, range.start as u64..range.end as u64)
                 .await?;
-            Ok(out)
+            Ok(Buffer::from_owner(out))
         }))
         // Add a limit locally as this gets run inside a single `tune_with_concurrency_budget`.
         .buffered(get_concurrency_limit() as usize)
     }
 
-    pub async fn get_range(&self, path: &Path, range: Range<usize>) -> PolarsResult<Bytes> {
+    pub async fn get_range(&self, path: &Path, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
         if range.is_empty() {
-            return Ok(Bytes::new());
+            return Ok(Buffer::new());
         }
 
         self.try_exec_rebuild_on_err(move |store| {
@@ -182,9 +181,10 @@ impl PolarsObjectStore {
 
                 if parts.len() == 1 {
                     let out = tune_with_concurrency_budget(1, move || async move {
-                        store
+                        let bytes = store
                             .get_range(path, range.start as u64..range.end as u64)
-                            .await
+                            .await?;
+                        PolarsResult::Ok(Buffer::from_owner(bytes))
                     })
                     .await?;
 
@@ -194,7 +194,7 @@ impl PolarsObjectStore {
                         parts.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
                         || {
                             Self::get_buffered_ranges_stream(&store, path, parts)
-                                .try_collect::<Vec<Bytes>>()
+                                .try_collect::<Vec<Buffer<u8>>>()
                         },
                     )
                     .await?;
@@ -207,7 +207,7 @@ impl PolarsObjectStore {
 
                     assert_eq!(combined.len(), range.len());
 
-                    PolarsResult::Ok(Bytes::from(combined))
+                    PolarsResult::Ok(Buffer::from_vec(combined))
                 }
             }
         })
@@ -223,7 +223,7 @@ impl PolarsObjectStore {
         &self,
         path: &Path,
         ranges: &mut [Range<usize>],
-    ) -> PolarsResult<PlHashMap<usize, MemSlice>> {
+    ) -> PolarsResult<PlHashMap<usize, Buffer<u8>>> {
         if ranges.is_empty() {
             return Ok(Default::default());
         }
@@ -277,25 +277,23 @@ impl PolarsObjectStore {
                                 }
 
                                 out.extend_from_slice(&bytes);
-                                Bytes::from(out)
+                                Buffer::from(out)
                             };
 
                             assert_eq!(bytes.len(), full_range.len());
 
-                            let bytes = MemSlice::from_bytes(bytes);
-
                             for range in &ranges[current_offset..end] {
-                                let mem_slice = bytes.slice(
+                                let slice = bytes.clone().sliced(
                                     range.start - full_range.start..range.end - full_range.start,
                                 );
 
                                 match out.raw_entry_mut().from_key(&range.start) {
                                     RawEntryMut::Vacant(slot) => {
-                                        slot.insert(range.start, mem_slice);
+                                        slot.insert(range.start, slice);
                                     },
                                     RawEntryMut::Occupied(mut slot) => {
-                                        if slot.get_mut().len() < mem_slice.len() {
-                                            *slot.get_mut() = mem_slice;
+                                        if slot.get_mut().len() < slice.len() {
+                                            *slot.get_mut() = slice;
                                         }
                                     },
                                 }

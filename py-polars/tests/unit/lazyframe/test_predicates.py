@@ -1263,3 +1263,11 @@ def test_no_predicate_pushdown_unpivot() -> None:
         lf = pl.LazyFrame(data).unpivot(on="b", index=index).filter(pred)
         plan = lf.explain()
         assert plan.index("FILTER") > plan.index("UNPIVOT")
+
+
+def test_replace_strict_predicate_merging() -> None:
+    df = pl.LazyFrame({"x": [True, True, True, False]})
+    out = (
+        df.filter(pl.col("x")).filter(pl.col("x").replace_strict(True, True)).collect()
+    )
+    assert out.height == 3

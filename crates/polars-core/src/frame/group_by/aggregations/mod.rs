@@ -98,9 +98,8 @@ where
 
             // SAFETY:
             // we are in bounds
-            let agg = unsafe { agg_window.update(start as usize, end as usize) };
-
-            match agg {
+            unsafe { agg_window.update(start as usize, end as usize) };
+            match agg_window.get_agg(idx) {
                 Some(val) => val,
                 None => {
                     // SAFETY: we are in bounds
@@ -135,11 +134,13 @@ where
     let mut agg_window = Agg::new(values, 0, 0, params, None);
 
     offsets
-        .map(|(start, len)| {
+        .enumerate()
+        .map(|(idx, (start, len))| {
             let end = start + len;
 
             // SAFETY: we are in bounds.
-            unsafe { agg_window.update(start as usize, end as usize) }
+            unsafe { agg_window.update(start as usize, end as usize) };
+            agg_window.get_agg(idx)
         })
         .collect::<PrimitiveArray<Out>>()
 }

@@ -48,14 +48,15 @@ impl<
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
+    unsafe fn update(&mut self, start: usize, end: usize) {
         self.sorted.update(start, end);
-        let length = self.sorted.len();
+    }
 
+    fn get_agg(&self, _idx: usize) -> Option<T> {
+        let length = self.sorted.len();
         if length == 0 {
             return None;
-        };
-
+        }
         let idx = match self.method {
             Linear => {
                 // Maybe add a fast path for median case? They could branch depending on odd/even.

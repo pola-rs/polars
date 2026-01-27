@@ -12,6 +12,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import ParamSpec
 
+    from polars._utils.various import IdentityFunction
+
     P = ParamSpec("P")
     T = TypeVar("T")
 
@@ -44,7 +46,7 @@ def issue_unstable_warning(message: str | None = None) -> None:
     issue_warning(message, UnstableWarning)
 
 
-def unstable() -> Callable[[Callable[P, T]], Callable[P, T]]:
+def unstable() -> IdentityFunction:
     """Decorator to mark a function as unstable."""
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:

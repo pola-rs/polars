@@ -686,7 +686,18 @@ def test_scan_delta_nanosecond_timestamp(
 
     root = tmp_path / "delta"
 
-    df.write_delta(root)
+    import deltalake
+
+    df.write_delta(
+        root,
+        delta_write_options={
+            "writer_properties": deltalake.WriterProperties(
+                default_column_properties=deltalake.ColumnProperties(
+                    statistics_enabled="NONE"
+                )
+            )
+        },
+    )
 
     # Manually overwrite the file with one that has nanosecond timestamps.
     parquet_files = [x for x in root.iterdir() if x.suffix == ".parquet"]
@@ -904,6 +915,179 @@ endpoint_url = http://127.0.0.1:54321
 
     with pytest.raises((DeltaError, OSError), match=r"http://127.0.0.1:54321"):
         pl.DataFrame({"x": 1}).write_delta("s3://.../...", mode="append")
+
+
+# TODO: uncomment dtype when fixed
+@pytest.mark.parametrize(
+    "expr",
+    [
+        # Bool
+        # pl.col.bool == False,  ## see github issue #26290, to be confirmed
+        # pl.col.bool <= False,
+        # pl.col.bool < True,
+        pl.col.bool.is_null(),
+        # Integer
+        pl.col.int == 2,
+        pl.col.int <= 2,
+        pl.col.int < 3,
+        pl.col.int.is_null(),
+        (pl.col.int < 2) & (pl.col.int.is_not_null()),
+        # Float ## see github issue #26238
+        # pl.col.float == 2.0,
+        # pl.col.float <= 2.0,
+        # pl.col.float < 3.0,
+        pl.col.float.is_null(),
+        # mixed
+        (pl.col.int == 2) & (pl.col.float.is_not_null()),
+        # String
+        pl.col.string == "b",
+        pl.col.string <= "b",
+        pl.col.string.is_null(),
+        # Decimal
+        pl.col.decimal == pl.lit(2.0).cast(pl.Decimal(10, 2)),
+        pl.col.decimal <= pl.lit(2.0).cast(pl.Decimal(10, 2)),
+        pl.col.decimal < pl.lit(3.0).cast(pl.Decimal(10, 2)),
+        pl.col.decimal.is_null(),
+        # Struct # see github issue #26239
+        # pl.col.struct == {"x": 2, "y": 20},
+        # pl.col.struct.is_null(),
+        # Date & datetime
+        pl.col.date == pl.date(2020, 1, 1),
+        pl.col.datetime == pl.datetime(2020, 1, 1),
+        # on predicate
+        pl.col.p == 10,
+    ],
+)
+@pytest.mark.write_disk
+def test_parquet_filter_on_file_statistics_23780(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    expr: pl.Expr,
+) -> None:
+    df = pl.DataFrame(
+        {
+            "p": [10, 10, 20, 20, 30, 30],
+            "a": [1, 2, 3, 4, 5, None],
+            "bool": [False, False, True, True, True, None],
+            "int": [1, 2, 3, 4, 5, None],
+            "float": [1.0, 2.0, 3.0, 4.0, 5.0, None],
+            "string": ["a", "b", "c", "cc", "ccc", None],
+            "struct": [
+                {"x": 1, "y": 10},
+                {"x": 2, "y": 20},
+                {"x": 3, "y": 30},
+                {"x": 4, "y": 40},
+                {"x": 5, "y": 50},
+                None,
+            ],
+        }
+    ).with_columns(
+        decimal=pl.col.a.cast(pl.Decimal(10, 2)),
+        date=pl.date_range(pl.date(2020, 1, 1), pl.date(2020, 1, 6), closed="both"),
+        datetime=pl.datetime_range(
+            pl.datetime(2020, 1, 1), pl.datetime(2020, 1, 6), closed="both"
+        ),
+    )
+    root = tmp_path / "delta"
+
+    df.write_delta(root, delta_write_options={"partition_by": "p"})
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+
+    assert_frame_equal(
+        pl.scan_delta(root).filter(expr).collect(),
+        df.filter(expr),
+        check_column_order=False,
+        check_row_order=False,
+    )
+    assert "skipping 2 / 3 files" in capfd.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("expr", "n_cols", "expect_n_files_skipped"),
+    [
+        (pl.col.a == 2, "0", 0),
+        (pl.col.a == 2, "1", 1),
+        (pl.col.b == 2, "1", 0),
+        (pl.col.a == 2, "2", 1),
+    ],
+)
+@pytest.mark.write_disk
+def test_parquet_filter_on_file_statistics_partial_23780(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    expr: pl.Expr,
+    n_cols: str,
+    expect_n_files_skipped: int,
+) -> None:
+    df = pl.DataFrame({"p": [10, 10, 20, 20], "a": [1, 2, 3, 4], "b": [1, 2, 3, 4]})
+
+    root = tmp_path / "delta"
+    df.write_delta(
+        root,
+        delta_write_options={
+            "partition_by": "p",
+            "configuration": {
+                "delta.dataSkippingNumIndexedCols": n_cols  # Disable stats collection
+            },
+        },
+    )
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+
+    assert_frame_equal(
+        pl.scan_delta(root).filter(expr).collect(),
+        df.filter(expr),
+        check_column_order=False,
+        check_row_order=False,
+    )
+    assert f"skipping {expect_n_files_skipped} / 2 files" in capfd.readouterr().err
+
+
+@pytest.mark.write_disk
+def test_parquet_filter_on_file_statistics_delete_partition_23780(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    df = pl.DataFrame(
+        {
+            "p": [10, 10, 20, 30],
+            "a": [1, 2, 3, 4],
+        }
+    )
+    root = tmp_path / "delta"
+
+    df.write_delta(root, delta_write_options={"partition_by": "p"})
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+
+    expr = pl.col.a == 2
+    assert_frame_equal(
+        pl.scan_delta(root).filter(expr).collect(),
+        df.filter(expr),
+        check_column_order=False,
+        check_row_order=False,
+    )
+    assert "skipping 2 / 3 files" in capfd.readouterr().err
+
+    from deltalake import DeltaTable
+
+    dt = DeltaTable(root)
+    dt.delete("p = 30")
+
+    assert_frame_equal(
+        pl.scan_delta(root).filter(expr).collect(),
+        df.filter(expr),
+        check_column_order=False,
+        check_row_order=False,
+    )
+    assert "skipping 1 / 2 files" in capfd.readouterr().err
 
 
 @pytest.mark.parametrize("use_pyarrow", [True, False])

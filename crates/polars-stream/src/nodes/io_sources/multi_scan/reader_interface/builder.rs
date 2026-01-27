@@ -9,6 +9,7 @@ use polars_plan::dsl::ScanSource;
 use super::FileReader;
 use super::capabilities::ReaderCapabilities;
 use crate::execute::StreamingExecutionState;
+use crate::metrics::IOMetrics;
 
 pub trait FileReaderBuilder: Debug + Send + Sync + 'static {
     fn reader_name(&self) -> &str;
@@ -17,6 +18,8 @@ pub trait FileReaderBuilder: Debug + Send + Sync + 'static {
 
     /// Used by readers that need access to `StreamingExecutionState`.
     fn set_execution_state(&self, _execution_state: &StreamingExecutionState) {}
+
+    fn set_io_metrics(&self, _io_metrics: Arc<IOMetrics>) {}
 
     fn build_file_reader(
         &self,

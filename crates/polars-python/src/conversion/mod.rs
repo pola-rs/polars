@@ -20,6 +20,7 @@ use polars::prelude::default_values::{
 };
 use polars::prelude::deletion::DeletionFilesList;
 use polars::series::ops::NullBehavior;
+use polars_buffer::Buffer;
 use polars_compute::decimal::dec128_verify_prec_scale;
 use polars_core::datatypes::extension::get_extension_type_or_generic;
 use polars_core::schema::iceberg::IcebergSchema;
@@ -30,7 +31,6 @@ use polars_lazy::prelude::*;
 use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
 use polars_utils::compression::{BrotliLevel, GzipLevel, ZstdLevel};
-use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
@@ -655,7 +655,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ScanSources> {
         enum MutableSources {
             Paths(Vec<PlRefPath>),
             Files(Vec<File>),
-            Buffers(Vec<MemSlice>),
+            Buffers(Vec<Buffer<u8>>),
         }
 
         let num_items = list.len();

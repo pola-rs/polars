@@ -6,6 +6,7 @@ use slotmap::{SecondaryMap, SlotMap};
 use crate::LogicalPipe;
 use crate::async_executor::TaskMetrics;
 use crate::graph::{GraphNodeKey, LogicalPipeKey};
+pub use crate::metrics_io::{IOMetrics, OptIOMetrics};
 use crate::pipe::PipeMetrics;
 
 #[derive(Default, Clone)]
@@ -26,6 +27,10 @@ pub struct NodeMetrics {
     pub rows_received: u64,
     pub largest_morsel_received: u64,
 
+    pub download_total_active_ns: u64,
+    pub download_total_bytes_requested: u64,
+    pub download_total_bytes_received: u64,
+
     pub state_update_in_progress: bool,
     pub num_running_tasks: u32,
     pub done: bool,
@@ -40,6 +45,12 @@ impl NodeMetrics {
             .max_poll_time_ns
             .max(task_metrics.max_poll_time_ns.load());
         self.num_running_tasks += (!task_metrics.done.load()) as u32;
+    }
+
+    fn add_io_recv(&mut self, io_metrics: &IOMetrics) {
+        self.download_total_active_ns += io_metrics.active_io_time_metrics.active_io_total_ns();
+        self.download_total_bytes_requested += io_metrics.bytes_requested.load();
+        self.download_total_bytes_received += io_metrics.bytes_received.load();
     }
 
     fn start_state_update(&mut self) {
@@ -75,6 +86,7 @@ impl NodeMetrics {
 #[derive(Default, Clone)]
 pub struct GraphMetrics {
     node_metrics: SecondaryMap<GraphNodeKey, NodeMetrics>,
+    in_progress_download_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<IOMetrics>>>,
     in_progress_task_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<TaskMetrics>>>,
     in_progress_pipe_metrics: SecondaryMap<LogicalPipeKey, Vec<Arc<PipeMetrics>>>,
 }
@@ -117,6 +129,14 @@ impl GraphMetrics {
             }
         }
 
+        for (key, in_progress_download_metrics) in self.in_progress_download_metrics.iter_mut() {
+            let this_node_metrics = self.node_metrics.entry(key).unwrap().or_default();
+            this_node_metrics.num_running_tasks = 0;
+            for download_metrics in in_progress_download_metrics.drain(..) {
+                this_node_metrics.add_io_recv(&download_metrics);
+            }
+        }
+
         for (key, in_progress_pipe_metrics) in self.in_progress_pipe_metrics.iter_mut() {
             for pipe_metrics in in_progress_pipe_metrics.drain(..) {
                 let pipe = &pipes[key];
@@ -140,5 +160,26 @@ impl GraphMetrics {
 
     pub fn iter(&self) -> slotmap::secondary::Iter<'_, GraphNodeKey, NodeMetrics> {
         self.node_metrics.iter()
+    }
+}
+
+pub struct MetricsBuilder {
+    pub graph_key: GraphNodeKey,
+    pub graph_metrics: Arc<parking_lot::Mutex<GraphMetrics>>,
+}
+
+impl MetricsBuilder {
+    pub fn new_download_metrics(&self) -> Arc<IOMetrics> {
+        let io_metrics: Arc<IOMetrics> = Default::default();
+
+        self.graph_metrics
+            .lock()
+            .in_progress_download_metrics
+            .entry(self.graph_key)
+            .unwrap()
+            .or_default()
+            .push(Arc::clone(&io_metrics));
+
+        io_metrics
     }
 }

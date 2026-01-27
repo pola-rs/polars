@@ -39,11 +39,13 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<T> for MinMaxWind
         MinMaxWindow { inner }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        let rel: IdxSize =
-            unsafe { RollingAggWindowNulls::<T, IdxSize>::update(&mut self.inner, start, end)? };
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        unsafe { RollingAggWindowNulls::<T, IdxSize>::update(&mut self.inner, new_start, new_end) };
+    }
 
-        let abs = start + rel as usize;
+    fn get_agg(&self, idx: usize) -> Option<T> {
+        let rel = RollingAggWindowNulls::<T, IdxSize>::get_agg(&self.inner, idx)?;
+        let abs = self.inner.start + rel as usize;
         unsafe { Some(*self.inner.values.get_unchecked(abs)) }
     }
 
@@ -80,11 +82,15 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<T> for MinMaxWi
         MinMaxWindow { inner }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        let rel: IdxSize =
-            unsafe { RollingAggWindowNoNulls::<T, IdxSize>::update(&mut self.inner, start, end)? };
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        unsafe {
+            RollingAggWindowNoNulls::<T, IdxSize>::update(&mut self.inner, new_start, new_end);
+        };
+    }
 
-        let abs = start + rel as usize;
+    fn get_agg(&self, idx: usize) -> Option<T> {
+        let rel = RollingAggWindowNoNulls::<T, IdxSize>::get_agg(&self.inner, idx)?;
+        let abs = self.inner.start + rel as usize;
         unsafe { Some(*self.inner.values.get_unchecked(abs)) }
     }
 

@@ -1,25 +1,26 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
+use polars_buffer::Buffer;
 use polars_core::utils::arrow::io::ipc::read::{
     BlockReader, FileMetadata, get_row_count_from_blocks,
 };
 use polars_error::{PolarsResult, polars_err};
-use polars_io::utils::byte_source::{ByteSource, DynByteSource, MemSliceByteSource};
+use polars_io::utils::byte_source::{BufferByteSource, ByteSource, DynByteSource};
 use polars_utils::IdxSize;
-use polars_utils::mmap::MemSlice;
 use polars_utils::relaxed_cell::RelaxedCell;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::async_primitives::oneshot_channel;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use crate::metrics::OptIOMetrics;
 use crate::nodes::io_sources::ipc::ROW_COUNT_OVERFLOW_ERR;
 use crate::utils::tokio_handle_ext;
 
 /// Represents byte-data that can be transformed into a DataFrame after some computation.
 pub(super) struct RecordBatchData {
-    pub(super) fetched_bytes: MemSlice,
+    pub(super) fetched_bytes: Buffer<u8>,
     pub(super) block_index: usize,
     pub(super) num_rows: usize,
     // Lazily updated.
@@ -41,6 +42,7 @@ pub(super) struct RecordBatchDataFetcher {
     )>,
     pub(super) rb_prefetch_semaphore: Arc<Semaphore>,
     pub(super) rb_prefetch_current_all_spawned: Option<WaitToken>,
+    pub(super) io_metrics: OptIOMetrics,
 }
 
 impl RecordBatchDataFetcher {
@@ -71,6 +73,7 @@ impl RecordBatchDataFetcher {
                 let current_byte_source = self.byte_source.clone();
                 let memory_prefetch_func = self.memory_prefetch_func;
                 let io_runtime = polars_io::pl_async::get_runtime();
+                let io_metrics = self.io_metrics.clone();
 
                 let current_row_offset = current_row_offset.clone();
                 let wait_token = row_count_updated.token();
@@ -83,7 +86,7 @@ impl RecordBatchDataFetcher {
                             + block.body_length as usize;
 
                     let fetched_bytes =
-                        if let DynByteSource::MemSlice(mem_slice) = current_byte_source.as_ref() {
+                        if let DynByteSource::Buffer(mem_slice) = current_byte_source.as_ref() {
                             let slice = mem_slice.0.as_ref();
 
                             if !std::ptr::eq(
@@ -94,11 +97,12 @@ impl RecordBatchDataFetcher {
                                 memory_prefetch_func(unsafe { slice.get_unchecked(range.clone()) })
                             }
 
-                            mem_slice.0.slice(range)
+                            mem_slice.0.clone().sliced(range)
                         } else {
                             // @NOTE. Performance can be optimized by grouping requests and downloading
                             // through `get_ranges()`.
-                            current_byte_source.get_range(range).await?
+                            let fut = current_byte_source.get_range(range.clone());
+                            io_metrics.record_download(range.len() as u64, fut).await?
                         };
 
                     // We extract the length (i.e., nr of rows) at the earliest possible opportunity.
@@ -140,12 +144,18 @@ impl RecordBatchDataFetcher {
                 let io_runtime = polars_io::pl_async::get_runtime();
 
                 let byte_source = self.byte_source.clone();
+                let io_metrics = self.io_metrics.clone();
                 let file_metadata = self.metadata.clone();
                 let current_idx = self.record_batch_idx;
 
                 Some(io_runtime.spawn(async move {
-                    let out =
-                        Self::fetch_row_count(byte_source, file_metadata, Some(current_idx)).await;
+                    let out = Self::fetch_row_count(
+                        byte_source,
+                        io_metrics,
+                        file_metadata,
+                        Some(current_idx),
+                    )
+                    .await;
                     drop(rb_prefetch_current_all_spawned);
                     out
                 }))
@@ -189,13 +199,14 @@ impl RecordBatchDataFetcher {
     /// Total row count for all record batches starting at `start_offset`
     async fn fetch_row_count(
         byte_source: Arc<DynByteSource>,
+        io_metrics: OptIOMetrics,
         file_metadata: Arc<FileMetadata>,
         start_offset: Option<usize>,
     ) -> PolarsResult<IdxSize> {
         let start_offset = start_offset.unwrap_or_default();
 
         let n_rows = match &*byte_source {
-            DynByteSource::MemSlice(MemSliceByteSource(memslice)) => {
+            DynByteSource::Buffer(BufferByteSource(memslice)) => {
                 let n_rows: i64 = get_row_count_from_blocks(
                     &mut std::io::Cursor::new(memslice.as_ref()),
                     &file_metadata.blocks[start_offset..],
@@ -209,17 +220,27 @@ impl RecordBatchDataFetcher {
 
                 let mut n_rows = 0;
                 let mut message_scratch = Vec::new();
+                let mut total_bytes: u64 = 0;
                 let mut ranges: Vec<_> = file_metadata.blocks[start_offset..]
                     .iter()
                     .map(|block| {
                         block.offset as usize
                             ..block.offset as usize + block.meta_data_length as usize
                     })
+                    .inspect(|range| total_bytes += range.len() as u64)
                     .collect();
                 let ranges_len = ranges.len();
 
                 let bytes_map = io_runtime
-                    .spawn(async move { byte_source.get_ranges(&mut ranges).await })
+                    .spawn(async move {
+                        let fut = byte_source.get_ranges(&mut ranges);
+                        match byte_source.as_ref() {
+                            DynByteSource::Buffer(_) => fut.await,
+                            DynByteSource::Cloud(_) => {
+                                io_metrics.record_download(total_bytes, fut).await
+                            },
+                        }
+                    })
                     .await
                     .unwrap()?;
                 assert_eq!(bytes_map.len(), ranges_len);
