@@ -9,6 +9,7 @@ repository = { workspace = true }
 description = "Private utils for the Polars DataFrame library"
 
 [dependencies]
+argminmax = { workspace = true, features = ["float", "half"] }
 bincode = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true }
@@ -16,11 +17,14 @@ compact_str = { workspace = true }
 either = { workspace = true }
 flate2 = { workspace = true, default-features = true, optional = true }
 foldhash = { workspace = true }
+half = { workspace = true, optional = false, features = ["num-traits", "bytemuck"] }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 libc = { workspace = true }
 memmap = { workspace = true, optional = true }
+num-derive = { workspace = true }
 num-traits = { workspace = true }
+numpy = { workspace = true, optional = true, features = ["half"] }
 polars-error = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
@@ -34,10 +38,11 @@ serde_json = { workspace = true, optional = true }
 serde_stacker = { workspace = true, optional = true }
 slotmap = { workspace = true }
 stacker = { workspace = true }
-sysinfo = { version = "0.33", default-features = false, features = ["system"], optional = true }
+sysinfo = { version = "0.37", default-features = false, features = ["system"], optional = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+proptest = { workspace = true }
 rand = { workspace = true }
 
 [build-dependencies]
@@ -54,12 +59,13 @@ serde = [
   "dep:rmp-serde",
   "dep:bincode",
   "dep:flate2",
+  "half/serde",
   "dep:serde_json",
   "dep:serde_stacker",
   "uuid/serde",
 ]
-dsl-schema = ["dep:schemars"]
-python = ["pyo3", "polars-error/python"]
+dsl-schema = ["dep:schemars", "schemars/uuid1"]
+python = ["dep:pyo3", "dep:numpy", "polars-error/python"]
 
 [lints]
 workspace = true

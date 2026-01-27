@@ -294,9 +294,17 @@ def test_fast_explode_on_list_struct_6208() -> None:
 def test_flat_aggregation_to_list_conversion_6918() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [[0, 1], [2, 3], [4, 5]]})
 
-    assert df.group_by("a", maintain_order=True).agg(
-        pl.concat_list([pl.col("b").list.get(i).mean().implode() for i in range(2)])
-    ).to_dict(as_series=False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
+    q = (
+        df.lazy()
+        .group_by("a", maintain_order=True)
+        .agg(
+            pl.concat_list([pl.col("b").list.get(i).mean().implode() for i in range(2)])
+        )
+    )
+
+    out = q.collect()
+    assert out.to_dict(as_series=False) == {"a": [1, 2], "b": [[0.0, 1.0], [3.0, 4.0]]}
+    assert q.collect_schema() == out.schema
 
 
 def test_list_count_matches() -> None:
@@ -312,24 +320,55 @@ def test_list_sum_and_dtypes() -> None:
         (pl.Int16, pl.Int64),
         (pl.Int32, pl.Int32),
         (pl.Int64, pl.Int64),
+        (pl.Int128, pl.Int128),
         (pl.UInt8, pl.Int64),
         (pl.UInt16, pl.Int64),
         (pl.UInt32, pl.UInt32),
         (pl.UInt64, pl.UInt64),
+        (pl.UInt128, pl.UInt128),
+        (pl.Float16, pl.Float16),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
     ]:
         df = pl.DataFrame(
-            {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
-            schema={"a": pl.List(dt_in)},
+            {
+                "a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]],
+                "b": [[None], [1, 2, None], [1, 2, 3, None], [1, 2, 3, 4, None]],
+            },
+            schema={
+                "a": pl.List(dt_in),
+                "b": pl.List(dt_in),
+            },
         )
 
-        summed = df.explode("a").sum()
-        assert summed.dtypes == [dt_out]
-        assert summed.item() == 32
-        assert df.select(pl.col("a").list.sum()).dtypes == [dt_out]
+        assert_frame_equal(
+            df.select("a").explode("a").sum(),
+            pl.DataFrame(pl.Series("a", [32], dtype=dt_out)),
+            check_dtypes=True,
+            check_exact=True,
+        )
+        assert_series_equal(
+            df.get_column("a").list.sum(),
+            pl.Series("a", [1, 6, 10, 15], dtype=dt_out),
+            check_dtypes=True,
+            check_exact=True,
+        )
 
-    assert df.select(pl.col("a").list.sum()).to_dict(as_series=False) == {
-        "a": [1, 6, 10, 15]
-    }
+        # include nulls in the list
+        assert_frame_equal(
+            df.select("b").explode("b").sum(),
+            pl.DataFrame(pl.Series("b", [19], dtype=dt_out)),
+            check_dtypes=True,
+            check_exact=True,
+        )
+        assert_series_equal(
+            df.get_column("b").list.sum(),
+            pl.Series("b", [0, 3, 6, 10], dtype=dt_out),
+            check_dtypes=True,
+            check_exact=True,
+        )
+
+    assert df.select(pl.col("a").list.sum()).dtypes == [dt_out]
 
     # include nulls
     assert pl.DataFrame(
@@ -510,7 +549,7 @@ def test_logical_parallel_list_collect() -> None:
         .explode("Values")
         .unnest("Values")
     )
-    assert out.dtypes == [pl.String, pl.Categorical, pl.UInt32]
+    assert out.dtypes == [pl.String, pl.Categorical, pl.get_index_type()]
     assert out.to_dict(as_series=False) == {
         "Group": ["GroupA", "GroupA"],
         "Values": ["Value1", "Value2"],
@@ -851,3 +890,21 @@ def test_list_agg_temporal(inner_dtype: PolarsDataType, agg: str) -> None:
     expected = lf.select(getattr(pl.col("a").explode(), agg)())
     assert result.collect_schema() == expected.collect_schema()
     assert_frame_equal(result.collect(), expected.collect())
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_list_implode_concat_agg_schema_23974(maintain_order: bool) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "a": [1, 2, 3]})
+    q = (
+        df.lazy()
+        .group_by("g", maintain_order=maintain_order)
+        .agg(
+            pl.concat_list(
+                [pl.col("a").first().implode(), pl.col("a").last().implode()]
+            )
+        )
+    )
+    expected = pl.DataFrame({"g": [10, 20], "a": [[1, 2], [3, 3]]})
+    out = q.collect()
+    assert_frame_equal(out, expected, check_row_order=maintain_order)
+    assert q.collect_schema() == out.schema

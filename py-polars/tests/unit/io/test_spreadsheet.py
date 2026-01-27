@@ -5,7 +5,7 @@ from collections import OrderedDict
 from datetime import date, datetime, time
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -20,7 +20,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from polars._typing import (
         ExcelSpreadsheetEngine,
@@ -515,7 +515,7 @@ def test_read_mixed_dtype_columns(
         "Employee ID": pl.Utf8(),
         "Employee Name": pl.Utf8(),
         "Date": pl.Date(),
-        "Details": pl.Categorical("lexical"),
+        "Details": pl.Categorical(),
         "Asset ID": pl.Utf8(),
     }
     df = read_spreadsheet(
@@ -893,6 +893,7 @@ def test_excel_write_column_and_row_totals(engine: ExcelSpreadsheetEngine) -> No
         assert xldf.row(-1) == (None, 0.0, 0.0, 0, 0, None, 0.0, 0)
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 @pytest.mark.parametrize(
     ("engine", "list_dtype"),
     [
@@ -953,8 +954,17 @@ def test_excel_read_named_table_with_total_row(tmp_path: Path) -> None:
         column_totals=True,
     )
     for engine in ("calamine", "openpyxl"):
-        xldf = pl.read_excel(wb_path, table_name="PolarsFrameTable", engine=engine)
-        assert_frame_equal(df, xldf)
+        col_subset = ["x", "z"]
+        subset_kwarg = {"columns": col_subset}
+        base_kwargs = {"table_name": "PolarsFrameTable", "engine": engine}
+
+        for kwargs, df_expected in (
+            (base_kwargs, df),  # all cols
+            ({**base_kwargs, **subset_kwarg}, df.select(col_subset)),
+        ):
+            # read from named table
+            xldf = pl.read_excel(wb_path, **kwargs)
+            assert_frame_equal(df_expected, xldf)
 
     # xlsx2csv doesn't support reading named tables, so we see the
     # column total if we don't filter it out after reading the data
@@ -1191,7 +1201,7 @@ def test_excel_write_worksheet_object() -> None:
 
     with pytest.raises(  # noqa: SIM117
         ValueError,
-        match="the given workbook object .* is not the parent of worksheet 'frame_data'",
+        match=r"the given workbook object .* is not the parent of worksheet 'frame_data'",
     ):
         with Workbook(BytesIO()) as wb:
             df.write_excel(wb, worksheet=ws)
@@ -1444,3 +1454,20 @@ def test_excel_write_select_col_dtype() -> None:
         df.write_excel(wb, hidden_columns=cs.by_dtype(pl.String))
 
     assert get_col_widths(check) == {"B": 0}
+
+
+@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
+def test_excel_read_columns_nonlist_sequence(engine: ExcelSpreadsheetEngine) -> None:
+    df = pl.DataFrame(
+        {"colx": [1, 2, 3], "coly": ["aaa", "bbb", "ccc"], "colz": [0.5, 0.0, -1.0]}
+    )
+    xls = BytesIO()
+    df.write_excel(xls, worksheet="data")
+
+    xldf = pl.read_excel(xls, engine=engine, columns=("colx", "coly"))
+    expected = df.select("colx", "coly")
+    assert_frame_equal(xldf, expected)
+
+    xldf = pl.read_excel(xls, engine=engine, columns="colx")
+    expected = df.select("colx")
+    assert_frame_equal(xldf, expected)

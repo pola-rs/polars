@@ -22,6 +22,16 @@ impl<T: AtomicNative> RelaxedCell<T> {
     }
 
     #[inline(always)]
+    pub fn fetch_sub(&self, value: T) -> T {
+        T::fetch_sub(&self.0, value)
+    }
+
+    #[inline(always)]
+    pub fn fetch_max(&self, value: T) -> T {
+        T::fetch_max(&self.0, value)
+    }
+
+    #[inline(always)]
     pub fn get_mut(&mut self) -> &mut T {
         T::get_mut(&mut self.0)
     }
@@ -52,6 +62,8 @@ pub trait AtomicNative: Sized + Default + fmt::Debug {
     fn load(atomic: &Self::Atomic) -> Self;
     fn store(atomic: &Self::Atomic, val: Self);
     fn fetch_add(atomic: &Self::Atomic, val: Self) -> Self;
+    fn fetch_sub(atomic: &Self::Atomic, val: Self) -> Self;
+    fn fetch_max(atomic: &Self::Atomic, val: Self) -> Self;
     fn get_mut(atomic: &mut Self::Atomic) -> &mut Self;
 }
 
@@ -83,6 +95,16 @@ macro_rules! impl_relaxed_cell {
             }
 
             #[inline(always)]
+            fn fetch_sub(atomic: &Self::Atomic, val: Self) -> Self {
+                atomic.fetch_sub(val, Ordering::Relaxed)
+            }
+
+            #[inline(always)]
+            fn fetch_max(atomic: &Self::Atomic, val: Self) -> Self {
+                atomic.fetch_max(val, Ordering::Relaxed)
+            }
+
+            #[inline(always)]
             fn get_mut(atomic: &mut Self::Atomic) -> &mut Self {
                 atomic.get_mut()
             }
@@ -99,6 +121,11 @@ impl RelaxedCell<bool> {
     // Not part of the trait as it should be const.
     pub const fn new_bool(value: bool) -> Self {
         Self(AtomicBool::new(value))
+    }
+
+    #[inline(always)]
+    pub fn fetch_or(&self, val: bool) -> bool {
+        self.0.fetch_or(val, Ordering::Relaxed)
     }
 }
 
@@ -118,6 +145,16 @@ impl AtomicNative for bool {
     #[inline(always)]
     fn fetch_add(_atomic: &Self::Atomic, _val: Self) -> Self {
         unimplemented!()
+    }
+
+    #[inline(always)]
+    fn fetch_sub(_atomic: &Self::Atomic, _val: Self) -> Self {
+        unimplemented!()
+    }
+
+    #[inline(always)]
+    fn fetch_max(atomic: &Self::Atomic, val: Self) -> Self {
+        atomic.fetch_or(val, Ordering::Relaxed)
     }
 
     #[inline(always)]

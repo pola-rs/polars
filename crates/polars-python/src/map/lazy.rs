@@ -11,7 +11,7 @@ pub(crate) fn call_lambda_with_series(
     py: Python<'_>,
     s: &[Column],
     output_dtype: Option<DataType>,
-    lambda: &PyObject,
+    lambda: &Py<PyAny>,
 ) -> PolarsResult<Column> {
     // Set return_dtype in kwargs
     let dict = PyDict::new(py);
@@ -24,28 +24,23 @@ pub(crate) fn call_lambda_with_series(
     let series_objects = s
         .iter()
         .map(|c| PySeries::new(c.as_materialized_series().clone()).into_py_any(py))
-        .collect::<PyResult<Vec<PyObject>>>()?;
+        .collect::<PyResult<Vec<Py<PyAny>>>>()?;
 
     let result = lambda.call(py, (series_objects,), Some(&dict))?;
     Ok(result
         .extract::<PySeries>(py)
-        .map(|s| s.series.into_column())?)
+        .map_err(PyErr::from)
+        .map(|s| s.series.into_inner().into_column())?)
 }
 
 pub fn map_expr(
     pyexpr: &[PyExpr],
-    lambda: PyObject,
+    lambda: Py<PyAny>,
     output_type: Option<PyDataTypeExpr>,
     is_elementwise: bool,
     returns_scalar: bool,
-    is_ufunc: bool,
 ) -> PyExpr {
-    let output_type = if is_ufunc {
-        debug_assert!(output_type.is_none());
-        Some(DataTypeExpr::Literal(DataType::Unknown(UnknownKind::Ufunc)))
-    } else {
-        output_type.map(|v| v.inner)
-    };
+    let output_type = output_type.map(|v| v.inner);
     let func =
         python_dsl::PythonUdfExpression::new(lambda, output_type, is_elementwise, returns_scalar);
     let exprs = pyexpr.iter().map(|pe| pe.clone().inner).collect::<Vec<_>>();

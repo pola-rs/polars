@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use arrow::bitmap::Bitmap;
 use components::bridge::BridgeRecvPort;
 use components::row_deletions::{ExternalFilterMask, RowDeletionsInit};
 use futures::StreamExt;
@@ -10,12 +9,14 @@ use polars_core::prelude::{AnyValue, DataType};
 use polars_core::scalar::Scalar;
 use polars_core::schema::iceberg::IcebergSchema;
 use polars_error::PolarsResult;
+use polars_mem_engine::scan_predicate::skip_files_mask::SkipFilesMask;
 use polars_plan::dsl::{MissingColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
+use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
-use crate::async_primitives::connector;
+use crate::async_primitives::oneshot_channel;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::nodes::io_sources::multi_scan::components;
 use crate::nodes::io_sources::multi_scan::components::apply_extra_ops::ApplyExtraOps;
@@ -23,7 +24,6 @@ use crate::nodes::io_sources::multi_scan::components::errors::missing_column_err
 use crate::nodes::io_sources::multi_scan::components::physical_slice::PhysicalSlice;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::components::reader_operation_pushdown::ReaderOperationPushdown;
-use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_scan::pipeline::models::{
     ExtraOperations, StartReaderArgsConstant, StartReaderArgsPerFile, StartedReaderState,
 };
@@ -43,7 +43,7 @@ pub struct ReaderStarter {
         WaitToken,
     )>,
     pub max_concurrent_scans: usize,
-    pub skip_files_mask: Option<Bitmap>,
+    pub skip_files_mask: Option<SkipFilesMask>,
     pub extra_ops: ExtraOperations,
     pub constant_args: StartReaderArgsConstant,
     pub verbose: bool,
@@ -199,7 +199,7 @@ impl ReaderStarter {
             // &str that holds the reason
             let mut skip_read_reason: Option<&'static str> = skip_files_mask
                 .as_ref()
-                .is_some_and(|x| x.get_bit(scan_source_idx))
+                .is_some_and(|x| x.is_skipped_file(scan_source_idx))
                 .then_some("skip_files_mask");
 
             if skip_read_reason.is_some() {
@@ -231,6 +231,9 @@ impl ReaderStarter {
                 }
             }
 
+            let should_update_row_position =
+                extra_ops.has_row_index_or_slice() && n_sources - scan_source_idx > 1;
+
             if let Some(skip_read_reason) = skip_read_reason {
                 if verbose {
                     eprintln!(
@@ -246,7 +249,7 @@ impl ReaderStarter {
                 }
 
                 // We are tracking the row position so we need the row count from this file even if it's skipped.
-                if extra_ops.has_row_index_or_slice() {
+                if should_update_row_position {
                     let Some(current_row_position) = current_row_position.as_mut() else {
                         panic!()
                     };
@@ -284,10 +287,12 @@ impl ReaderStarter {
                         PolarsResult::Ok(file_row_count)
                     };
 
-                    if n_rows_in_file.is_none() {
+                    if let Some(n_rows_in_file) = n_rows_in_file
+                        && cfg!(debug_assertions)
+                    {
+                        assert_eq!(n_rows_in_file, get_row_count.await?)
+                    } else {
                         n_rows_in_file = Some(get_row_count.await?)
-                    } else if cfg!(debug_assertions) {
-                        assert_eq!(n_rows_in_file.unwrap(), get_row_count.await?)
                     }
 
                     *current_row_position = current_row_position.add(n_rows_in_file.unwrap());
@@ -296,20 +301,20 @@ impl ReaderStarter {
                 continue;
             }
 
-            let (row_position_on_end_tx, row_position_on_end_rx) = if n_rows_in_file.is_none()
-                && extra_ops.has_row_index_or_slice()
-                && n_sources - scan_source_idx > 1
-            {
-                let (tx, rx) = connector::connector();
-                (Some(tx), Some(rx))
-            } else {
-                (None, None)
-            };
+            let (row_position_on_end_tx, row_position_on_end_rx) =
+                if should_update_row_position && n_rows_in_file.is_none() {
+                    let (tx, rx) = oneshot_channel::channel();
+                    (Some(tx), Some(rx))
+                } else {
+                    (None, None)
+                };
 
             let callbacks = FileReaderCallbacks {
                 row_position_on_end_tx,
                 ..Default::default()
             };
+
+            reader.prepare_read()?;
 
             let start_args_this_file = StartReaderArgsPerFile {
                 scan_source,
@@ -356,7 +361,7 @@ impl ReaderStarter {
                     };
 
                     // Note, can be None on the last scan source.
-                    let Some(mut rx) = row_position_on_end_rx else {
+                    let Some(rx) = row_position_on_end_rx else {
                         break;
                     };
 
@@ -404,6 +409,7 @@ async fn start_reader_impl(
         missing_columns_policy,
         forbid_extra_columns,
         num_pipelines,
+        disable_morsel_split,
         verbose,
     } = constant_args;
 
@@ -492,7 +498,7 @@ async fn start_reader_impl(
     let file_schema_rx = if forbid_extra_columns.is_some() {
         // Upstream should not have any reason to attach this.
         assert!(callbacks.file_schema_tx.is_none());
-        let (tx, rx) = connector::connector();
+        let (tx, rx) = oneshot_channel::channel();
         callbacks.file_schema_tx = Some(tx);
         Some(rx)
     } else {
@@ -540,7 +546,7 @@ async fn start_reader_impl(
         if let Some(hp) = &hive_parts {
             external_predicate_cols.extend(
                 hp.df()
-                    .get_columns()
+                    .columns()
                     .iter()
                     .filter(|c| predicate.live_columns.contains(c.name()))
                     .map(|c| {
@@ -600,6 +606,7 @@ async fn start_reader_impl(
         predicate,
         cast_columns_policy: cast_columns_policy.clone(),
         num_pipelines,
+        disable_morsel_split,
         callbacks,
     };
 
@@ -609,8 +616,11 @@ async fn start_reader_impl(
 
     if let Some(forbid_extra_columns) = forbid_extra_columns {
         if let Ok(this_file_schema) = file_schema_rx.unwrap().recv().await {
-            forbid_extra_columns
-                .check_file_schema(&this_file_schema, file_iceberg_schema.as_ref())?;
+            forbid_extra_columns.check_file_schema(
+                &this_file_schema,
+                file_iceberg_schema.as_ref(),
+                scan_source.as_scan_source_ref().to_include_path_name(),
+            )?;
         } else {
             drop(reader_output_port);
             return Err(reader_handle.await.unwrap_err());

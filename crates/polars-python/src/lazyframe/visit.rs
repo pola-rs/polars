@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use polars::prelude::PolarsError;
 use polars::prelude::python_dsl::PythonScanSource;
-use polars_plan::plans::{ExprToIRContext, IR, to_expr_ir};
+use polars_plan::plans::{ExprToIRContext, IR, ToFieldContext, to_expr_ir};
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::{AExpr, PythonOptions};
 use polars_utils::arena::{Arena, Node};
@@ -15,7 +15,7 @@ use crate::error::PyPolarsErr;
 use crate::{PyExpr, Wrap, raise_err};
 
 #[derive(Clone)]
-#[pyclass]
+#[pyclass(frozen)]
 pub struct PyExprIR {
     #[pyo3(get)]
     node: usize,
@@ -58,7 +58,7 @@ impl NodeTraverser {
     // Increment major on breaking changes to the IR (e.g. renaming
     // fields, reordering tuples), minor on backwards compatible
     // changes (e.g. exposing a new expression node).
-    const VERSION: Version = (10, 0);
+    const VERSION: Version = (12, 0);
 
     pub fn new(root: Node, lp_arena: Arena<IR>, expr_arena: Arena<AExpr>) -> Self {
         Self {
@@ -138,7 +138,7 @@ impl NodeTraverser {
         let expr_arena = self.expr_arena.lock().unwrap();
         let field = expr_arena
             .get(expr_node)
-            .to_field(&schema, &expr_arena)
+            .to_field(&ToFieldContext::new(&expr_arena, &schema))
             .map_err(PyPolarsErr::from)?;
         Wrap(field.dtype).into_pyobject(py)
     }
@@ -154,7 +154,8 @@ impl NodeTraverser {
     }
 
     /// Set a python UDF that will replace the subtree location with this function src.
-    fn set_udf(&mut self, function: PyObject) {
+    #[pyo3(signature = (function, is_pure = false))]
+    fn set_udf(&mut self, function: Py<PyAny>, is_pure: bool) {
         let mut lp_arena = self.lp_arena.lock().unwrap();
         let schema = lp_arena.get(self.root).schema(&lp_arena).into_owned();
         let ir = IR::PythonScan {
@@ -167,18 +168,19 @@ impl NodeTraverser {
                 predicate: Default::default(),
                 n_rows: None,
                 validate_schema: false,
+                is_pure,
             },
         };
         lp_arena.replace(self.root, ir);
     }
 
-    fn view_current_node(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn view_current_node(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let lp_arena = self.lp_arena.lock().unwrap();
         let lp_node = lp_arena.get(self.root);
         nodes::into_py(py, lp_node)
     }
 
-    fn view_expression(&self, py: Python<'_>, node: usize) -> PyResult<PyObject> {
+    fn view_expression(&self, py: Python<'_>, node: usize) -> PyResult<Py<PyAny>> {
         let expr_arena = self.expr_arena.lock().unwrap();
         let n = match &self.expr_mapping {
             Some(mapping) => *mapping.get(node).unwrap(),
@@ -235,6 +237,7 @@ impl PyLazyFrame {
         let mut expr_arena = Arena::with_capacity(16);
         let root = self
             .ldf
+            .read()
             .clone()
             .optimize(&mut lp_arena, &mut expr_arena)
             .map_err(PyPolarsErr::from)?;

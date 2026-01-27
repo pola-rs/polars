@@ -507,7 +507,7 @@ def test_schema_mean_horizontal_single_column(
 
 def test_schema_boolean_sum_horizontal() -> None:
     lf = pl.LazyFrame({"a": [True, False]}).select(pl.sum_horizontal("a"))
-    assert lf.collect_schema() == OrderedDict([("a", pl.UInt32)])
+    assert lf.collect_schema() == OrderedDict([("a", pl.get_index_type())])
 
 
 def test_fold_all_schema() -> None:

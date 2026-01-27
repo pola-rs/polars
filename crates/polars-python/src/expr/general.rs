@@ -1,3 +1,4 @@
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::ops::Neg;
 
 use polars::lazy::dsl;
@@ -29,6 +30,12 @@ impl PyExpr {
             CompareOp::Ge => self.gt_eq(other),
             CompareOp::Le => self.lt_eq(other),
         }
+    }
+
+    fn __hash__(&self) -> isize {
+        let mut state = PlFixedStateQuality::with_seed(0).build_hasher();
+        Hash::hash(&self.inner, &mut state);
+        state.finish() as _
     }
 
     fn __add__(&self, rhs: Self) -> PyResult<Self> {
@@ -114,9 +121,19 @@ impl PyExpr {
     fn min(&self) -> Self {
         self.inner.clone().min().into()
     }
+
     fn max(&self) -> Self {
         self.inner.clone().max().into()
     }
+
+    fn min_by(&self, by: Self) -> Self {
+        self.inner.clone().min_by(by.inner).into()
+    }
+
+    fn max_by(&self, by: Self) -> Self {
+        self.inner.clone().max_by(by.inner).into()
+    }
+
     #[cfg(feature = "propagate_nans")]
     fn nan_max(&self) -> Self {
         self.inner.clone().nan_max().into()
@@ -146,11 +163,22 @@ impl PyExpr {
     fn unique_stable(&self) -> Self {
         self.inner.clone().unique_stable().into()
     }
-    fn first(&self) -> Self {
-        self.inner.clone().first().into()
+    fn first(&self, ignore_nulls: bool) -> Self {
+        if ignore_nulls {
+            self.inner.clone().first_non_null().into()
+        } else {
+            self.inner.clone().first().into()
+        }
     }
-    fn last(&self) -> Self {
-        self.inner.clone().last().into()
+    fn last(&self, ignore_nulls: bool) -> Self {
+        if ignore_nulls {
+            self.inner.clone().last_non_null().into()
+        } else {
+            self.inner.clone().last().into()
+        }
+    }
+    fn item(&self, allow_empty: bool) -> Self {
+        self.inner.clone().item(allow_empty).into()
     }
     fn implode(&self) -> Self {
         self.inner.clone().implode().into()
@@ -330,10 +358,10 @@ impl PyExpr {
         self.inner.clone().gather(idx.inner).into()
     }
 
-    fn get(&self, idx: Self) -> Self {
-        self.inner.clone().get(idx.inner).into()
+    #[pyo3(signature = (idx, null_on_oob=false))]
+    fn get(&self, idx: Self, null_on_oob: bool) -> Self {
+        self.inner.clone().get(idx.inner, null_on_oob).into()
     }
-
     fn sort_by(
         &self,
         by: Vec<Self>,
@@ -436,8 +464,14 @@ impl PyExpr {
         self.inner.clone().is_last_distinct().into()
     }
 
-    fn explode(&self) -> Self {
-        self.inner.clone().explode().into()
+    fn explode(&self, empty_as_null: bool, keep_nulls: bool) -> Self {
+        self.inner
+            .clone()
+            .explode(ExplodeOptions {
+                empty_as_null,
+                keep_nulls,
+            })
+            .into()
     }
 
     fn gather_every(&self, n: usize, offset: usize) -> Self {
@@ -453,10 +487,7 @@ impl PyExpr {
     }
 
     fn rechunk(&self) -> Self {
-        self.inner
-            .clone()
-            .map(|s| Ok(s.rechunk()), |_, f| Ok(f.clone()))
-            .into()
+        self.inner.clone().rechunk().into()
     }
 
     fn round(&self, decimals: u32, mode: Wrap<RoundMode>) -> Self {
@@ -618,19 +649,20 @@ impl PyExpr {
 
     fn rolling(
         &self,
-        index_column: &str,
+        index_column: PyExpr,
         period: &str,
         offset: &str,
         closed: Wrap<ClosedWindow>,
     ) -> PyResult<Self> {
-        let options = RollingGroupOptions {
-            index_column: index_column.into(),
-            period: Duration::try_parse(period).map_err(PyPolarsErr::from)?,
-            offset: Duration::try_parse(offset).map_err(PyPolarsErr::from)?,
-            closed_window: closed.0,
-        };
+        let period = Duration::try_parse(period).map_err(PyPolarsErr::from)?;
+        let offset = Duration::try_parse(offset).map_err(PyPolarsErr::from)?;
+        let closed = closed.0;
 
-        Ok(self.inner.clone().rolling(options).into())
+        Ok(self
+            .inner
+            .clone()
+            .rolling(index_column.inner, period, offset, closed)
+            .into())
     }
 
     fn and_(&self, expr: Self) -> Self {
@@ -694,10 +726,6 @@ impl PyExpr {
         self.inner.clone().product().into()
     }
 
-    fn shrink_dtype(&self) -> Self {
-        self.inner.clone().shrink_dtype().into()
-    }
-
     fn dot(&self, other: Self) -> Self {
         self.inner.clone().dot(other.inner).into()
     }
@@ -705,8 +733,8 @@ impl PyExpr {
     fn reinterpret(&self, signed: bool) -> Self {
         self.inner.clone().reinterpret(signed).into()
     }
-    fn mode(&self) -> Self {
-        self.inner.clone().mode().into()
+    fn mode(&self, maintain_order: bool) -> Self {
+        self.inner.clone().mode(maintain_order).into()
     }
     fn interpolate(&self, method: Wrap<InterpolationMethod>) -> Self {
         self.inner.clone().interpolate(method.0).into()
@@ -851,8 +879,8 @@ impl PyExpr {
         self.inner.clone().all(ignore_nulls).into()
     }
 
-    fn log(&self, base: f64) -> Self {
-        self.inner.clone().log(base).into()
+    fn log(&self, base: PyExpr) -> Self {
+        self.inner.clone().log(base.inner).into()
     }
 
     fn log1p(&self) -> Self {
@@ -954,6 +982,7 @@ impl PyExpr {
             FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
                 descending,
                 nulls_last,
+                broadcast_nulls: None,
             }),
             exprs.into_iter().map(|e| e.inner.clone()).collect(),
         )
@@ -994,6 +1023,7 @@ impl PyExpr {
                 RowEncodingVariant::Ordered {
                     descending,
                     nulls_last,
+                    broadcast_nulls: None,
                 },
             ))
             .into()

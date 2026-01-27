@@ -58,10 +58,12 @@ impl StringNameSpace {
         patterns: Expr,
         replace_with: Expr,
         ascii_case_insensitive: bool,
+        leftmost: bool,
     ) -> Expr {
         self.0.map_ternary(
             StringFunction::ReplaceMany {
                 ascii_case_insensitive,
+                leftmost,
             },
             patterns,
             replace_with,
@@ -81,11 +83,13 @@ impl StringNameSpace {
         patterns: Expr,
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     ) -> Expr {
         self.0.map_binary(
             StringFunction::ExtractMany {
                 ascii_case_insensitive,
                 overlapping,
+                leftmost,
             },
             patterns,
         )
@@ -104,11 +108,13 @@ impl StringNameSpace {
         patterns: Expr,
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     ) -> Expr {
         self.0.map_binary(
             StringFunction::FindMany {
                 ascii_case_insensitive,
                 overlapping,
+                leftmost,
             },
             patterns,
         )
@@ -303,8 +309,8 @@ impl StringNameSpace {
 
     /// Convert a String column into a Decimal column.
     #[cfg(feature = "dtype-decimal")]
-    pub fn to_decimal(self, infer_length: usize) -> Expr {
-        self.0.map_unary(StringFunction::ToDecimal(infer_length))
+    pub fn to_decimal(self, scale: usize) -> Expr {
+        self.0.map_unary(StringFunction::ToDecimal { scale })
     }
 
     /// Concat the values into a string array.
@@ -354,6 +360,31 @@ impl StringNameSpace {
     /// keeps the remainder of the string intact. The resulting dtype is [`DataType::Struct`].
     pub fn splitn(self, by: Expr, n: usize) -> Expr {
         self.0.map_binary(StringFunction::SplitN(n), by)
+    }
+
+    #[cfg(feature = "regex")]
+    /// Split the string by a regex pattern. The resulting dtype is `List<String>`.
+    pub fn split_regex(self, pat: Expr, strict: bool) -> Expr {
+        self.0.map_binary(
+            StringFunction::SplitRegex {
+                inclusive: false,
+                strict,
+            },
+            pat,
+        )
+    }
+
+    #[cfg(feature = "regex")]
+    /// Split the string by a regex pattern and keep the matched substrings.
+    /// The resulting dtype is `List<String>`.
+    pub fn split_regex_inclusive(self, pat: Expr, strict: bool) -> Expr {
+        self.0.map_binary(
+            StringFunction::SplitRegex {
+                inclusive: true,
+                strict,
+            },
+            pat,
+        )
     }
 
     #[cfg(feature = "regex")]
@@ -477,15 +508,8 @@ impl StringNameSpace {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    pub fn json_decode(
-        self,
-        dtype: Option<impl Into<DataTypeExpr>>,
-        infer_schema_len: Option<usize>,
-    ) -> Expr {
-        self.0.map_unary(StringFunction::JsonDecode {
-            dtype: dtype.map(Into::into),
-            infer_schema_len,
-        })
+    pub fn json_decode(self, dtype: impl Into<DataTypeExpr>) -> Expr {
+        self.0.map_unary(StringFunction::JsonDecode(dtype.into()))
     }
 
     #[cfg(feature = "extract_jsonpath")]

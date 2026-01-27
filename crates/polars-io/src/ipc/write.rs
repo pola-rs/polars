@@ -1,6 +1,7 @@
 use std::io::Write;
 
 use arrow::datatypes::Metadata;
+use arrow::io::ipc::IpcField;
 use arrow::io::ipc::write::{self, EncodedData, WriteOptions};
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
@@ -17,6 +18,11 @@ pub struct IpcWriterOptions {
     pub compression: Option<IpcCompression>,
     /// Compatibility level
     pub compat_level: CompatLevel,
+    /// Number of rows per record batch
+    pub record_batch_size: Option<usize>,
+    /// Write record batch StatisticsFlags as custom metadata into the record batch header.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub record_batch_statistics: bool,
     /// Size of each written chunk.
     pub chunk_size: IdxSize,
 }
@@ -26,6 +32,8 @@ impl Default for IpcWriterOptions {
         Self {
             compression: None,
             compat_level: CompatLevel::newest(),
+            record_batch_size: None,
+            record_batch_statistics: false,
             chunk_size: 1 << 18,
         }
     }
@@ -33,7 +41,10 @@ impl Default for IpcWriterOptions {
 
 impl IpcWriterOptions {
     pub fn to_writer<W: Write>(&self, writer: W) -> IpcWriter<W> {
-        IpcWriter::new(writer).with_compression(self.compression)
+        IpcWriter::new(writer)
+            .with_compression(self.compression)
+            .with_record_batch_size(self.record_batch_size)
+            .with_record_batch_statistics(self.record_batch_statistics)
     }
 }
 
@@ -69,6 +80,8 @@ pub struct IpcWriter<W> {
     pub(super) compression: Option<IpcCompression>,
     /// Polars' flavor of arrow. This might be temporary.
     pub(super) compat_level: CompatLevel,
+    pub(super) record_batch_size: Option<usize>,
+    pub(super) record_batch_statistics: bool,
     pub(super) parallel: bool,
     pub(super) custom_schema_metadata: Option<Arc<Metadata>>,
 }
@@ -85,17 +98,31 @@ impl<W: Write> IpcWriter<W> {
         self
     }
 
+    pub fn with_record_batch_size(mut self, record_batch_size: Option<usize>) -> Self {
+        self.record_batch_size = record_batch_size;
+        self
+    }
+
+    pub fn with_record_batch_statistics(mut self, record_batch_statistics: bool) -> Self {
+        self.record_batch_statistics = record_batch_statistics;
+        self
+    }
+
     pub fn with_parallel(mut self, parallel: bool) -> Self {
         self.parallel = parallel;
         self
     }
 
-    pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
+    pub fn batched(
+        self,
+        schema: &Schema,
+        ipc_fields: Vec<IpcField>,
+    ) -> PolarsResult<BatchedWriter<W>> {
         let schema = schema_to_arrow_checked(schema, self.compat_level, "ipc")?;
         let mut writer = write::FileWriter::new(
             self.writer,
             Arc::new(schema),
-            None,
+            Some(ipc_fields),
             WriteOptions {
                 compression: self.compression.map(|c| c.into()),
             },
@@ -123,6 +150,8 @@ where
             writer,
             compression: None,
             compat_level: CompatLevel::newest(),
+            record_batch_size: None,
+            record_batch_statistics: false,
             parallel: true,
             custom_schema_metadata: None,
         }
@@ -184,8 +213,14 @@ impl<W: Write> BatchedWriter<W> {
         dictionaries: &[EncodedData],
         message: &EncodedData,
     ) -> PolarsResult<()> {
-        self.writer.write_encoded(dictionaries, message)?;
-        Ok(())
+        self.writer.write_encoded(dictionaries, message)
+    }
+
+    pub fn write_encoded_dictionaries(
+        &mut self,
+        encoded_dictionaries: &[EncodedData],
+    ) -> PolarsResult<()> {
+        self.writer.write_encoded_dictionaries(encoded_dictionaries)
     }
 
     /// Writes the footer of the IPC file.
@@ -196,22 +231,27 @@ impl<W: Write> BatchedWriter<W> {
 }
 
 /// Compression codec
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum IpcCompression {
     /// LZ4 (framed)
     LZ4,
     /// ZSTD
-    #[default]
-    ZSTD,
+    ZSTD(polars_utils::compression::ZstdLevel),
+}
+
+impl Default for IpcCompression {
+    fn default() -> Self {
+        Self::ZSTD(Default::default())
+    }
 }
 
 impl From<IpcCompression> for write::Compression {
     fn from(value: IpcCompression) -> Self {
         match value {
             IpcCompression::LZ4 => write::Compression::LZ4,
-            IpcCompression::ZSTD => write::Compression::ZSTD,
+            IpcCompression::ZSTD(level) => write::Compression::ZSTD(level),
         }
     }
 }

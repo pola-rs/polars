@@ -45,7 +45,7 @@ pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 let phys = out.i128()?.as_ref().clone();
-                Ok(phys.into_decimal_unchecked(*precision, scale.unwrap()).into_series())
+                Ok(phys.into_decimal_unchecked(*precision, *scale).into_series())
             },
             dt if dt.is_logical() => out.cast(original_type),
             _ => Ok(out)
@@ -79,7 +79,7 @@ pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 let phys = out.i128()?.as_ref().clone();
-                Ok(phys.into_decimal_unchecked(*precision, scale.unwrap()).into_series())
+                Ok(phys.into_decimal_unchecked(*precision, *scale).into_series())
             },
             dt if dt.is_logical() => out.cast(original_type),
             _ => Ok(out)
@@ -113,7 +113,7 @@ pub fn clip_min(s: &Series, min: &Series) -> PolarsResult<Series> {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 let phys = out.i128()?.as_ref().clone();
-                Ok(phys.into_decimal_unchecked(*precision, scale.unwrap()).into_series())
+                Ok(phys.into_decimal_unchecked(*precision, *scale).into_series())
             },
             dt if dt.is_logical() => out.cast(original_type),
             _ => Ok(out)

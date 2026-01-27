@@ -1,10 +1,23 @@
+from __future__ import annotations
+
 from datetime import timedelta
-from typing import Any
+from functools import partial
+from typing import TYPE_CHECKING, Any
 
 import pytest
+from hypothesis import assume, given
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars._utils.constants import I64_MAX, I64_MIN
+from polars.series.datetime import DateTimeNameSpace
+from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import series
+from tests.unit.conftest import FLOAT_DTYPES
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from polars._typing import TimeUnit
 
 
 def test_duration_cum_sum() -> None:
@@ -214,3 +227,162 @@ def test_comparison_with_string_raises_9461() -> None:
 def test_duration_invalid_cast_22258() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.select(a=pl.duration(days=[1, 2, 3, 4]))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("time_unit", ["ns", "us", "ms", None])
+@pytest.mark.parametrize(
+    ("digit", "digit_scale"),
+    [
+        ("weeks", 7 * 24 * 60 * 60 * 1e9),
+        ("days", 24 * 60 * 60 * 1e9),
+        ("hours", 60 * 60 * 1e9),
+        ("minutes", 60 * 1e9),
+        ("seconds", 1e9),
+        ("milliseconds", 1e6),
+        ("microseconds", 1e3),
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [0.5, 0.0625, 0.00390625, 0.000244140625],
+)
+def test_duration_float_types_11625(
+    time_unit: TimeUnit, digit: str, digit_scale: int, value: int | float
+) -> None:
+    s = pl.select(
+        pl.duration(**{digit: value}, time_unit=time_unit).alias("a")
+    ).to_series()
+    expected = pl.Series("a", [int(value * digit_scale)], dtype=pl.Duration("ns"))
+    assert_series_equal(s, expected, check_dtypes=False)
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "time_unit_scale"),
+    [("ns", 1), ("us", 1e3), ("ms", 1e6), (None, 1e3)],
+)
+@pytest.mark.parametrize(
+    ("digit", "digit_scale"),
+    [
+        ("weeks", 7 * 24 * 60 * 60 * 1e9),
+        ("days", 24 * 60 * 60 * 1e9),
+        ("hours", 60 * 60 * 1e9),
+        ("minutes", 60 * 1e9),
+        ("seconds", 1e9),
+        ("milliseconds", 1e6),
+        ("microseconds", 1e3),
+        ("nanoseconds", 1),
+    ],
+)
+@given(
+    s=series(
+        name="a",
+        allowed_dtypes=FLOAT_DTYPES + [pl.Int64],
+        allow_null=False,
+        allow_nan=False,
+        allow_infinity=False,
+        min_size=1,
+    )
+)
+def test_duration_float_types_series_11625(
+    time_unit: TimeUnit,
+    time_unit_scale: int,
+    digit: str,
+    digit_scale: int,
+    s: pl.Series,
+) -> None:
+    # Float16 does not have enough exponent bits to represent 1_000_000
+    assume(not (s.dtype == pl.Float16 and time_unit == "ms"))
+
+    # Exclude cases that could potentially overflow Int64
+    s = s.clip(
+        0.95 * I64_MIN / digit_scale / time_unit_scale,
+        0.95 * I64_MAX / digit_scale / time_unit_scale,
+    )
+
+    # Truncate any digits below the current time unit precision
+    if digit_scale < time_unit_scale:
+        s = (s / time_unit_scale).round() * time_unit_scale
+
+    expected = s.cast(pl.Float64) * digit_scale
+    expected_ns = (expected / time_unit_scale).cast(pl.Int64) * time_unit_scale
+    actual_ns = (
+        pl.select(pl.duration(**{digit: s}, time_unit=time_unit).alias("a"))  # type: ignore[arg-type]
+        .to_series()
+        .dt.total_nanoseconds()
+    )
+    assert_series_equal(actual_ns.cast(pl.Float64), expected_ns.cast(pl.Float64))
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "time_unit_kw", "time_unit_scale"),
+    [
+        (None, "microseconds", 1e3),
+        ("ns", "nanoseconds", 1),
+        ("us", "microseconds", 1e3),
+        ("ms", "milliseconds", 1e6),
+    ],
+)
+@pytest.mark.parametrize(
+    ("total_units_fn", "total_units_scale"),
+    [
+        (partial(DateTimeNameSpace.total_days, fractional=True), 24 * 60 * 60 * 1e9),
+        (partial(DateTimeNameSpace.total_hours, fractional=True), 60 * 60 * 1e9),
+        (partial(DateTimeNameSpace.total_minutes, fractional=True), 60 * 1e9),
+        (partial(DateTimeNameSpace.total_seconds, fractional=True), 1e9),
+        (partial(DateTimeNameSpace.total_milliseconds, fractional=True), 1e6),
+        (partial(DateTimeNameSpace.total_microseconds, fractional=True), 1e3),
+        (partial(DateTimeNameSpace.total_nanoseconds, fractional=True), 1),
+    ],
+)
+@given(
+    s=series(
+        name="a",
+        allowed_dtypes=[pl.Int64],
+        allow_null=False,
+        min_size=1,
+    )
+)
+def test_duration_total_units_fractional(
+    time_unit: TimeUnit,
+    time_unit_kw: str,
+    time_unit_scale: int,
+    total_units_fn: Callable[[pl.Series], pl.Series],
+    total_units_scale: int,
+    s: pl.Series,
+) -> None:
+    expected = s.cast(pl.Float64) * time_unit_scale / total_units_scale
+
+    actual = total_units_fn(
+        pl.select(pl.duration(**{time_unit_kw: s}, time_unit=time_unit).alias("a"))  # type: ignore[arg-type]
+        .to_series()
+        .dt,
+    )
+    assert_series_equal(actual, expected)
+
+    # Check scalar case separately, since it's handled separately
+    actual = total_units_fn(
+        pl.select(pl.duration(**{time_unit_kw: s[0]}, time_unit=time_unit).alias("a"))  # type: ignore[arg-type]
+        .to_series()
+        .dt,
+    )
+    assert_series_equal(actual, expected.slice(0, 1))
+
+
+def test_scalar_i64_overflow() -> None:
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="9223372036854775808",
+    ):
+        pl.select(pl.duration(nanoseconds=2**63))
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="18446744073709551616",
+    ):
+        pl.select(pl.duration(nanoseconds=2**64))
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="-9223372036854775809",
+    ):
+        pl.select(pl.duration(nanoseconds=-(2**63) - 1))

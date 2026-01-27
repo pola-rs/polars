@@ -1,6 +1,8 @@
 # Minimal makefile for Sphinx documentation
-#
 
+ifeq ($(shell uname),Darwin)
+export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
+endif
 export BUILDING_SPHINX_DOCS = 1
 
 # You can set these variables from the command line, and also

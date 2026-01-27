@@ -72,8 +72,8 @@ def test_merge_sorted_categorical() -> None:
 
 
 def test_merge_sorted_categorical_lexical() -> None:
-    left = pl.Series("a", ["b", "a"], pl.Categorical("lexical")).sort().to_frame()
-    right = pl.Series("a", ["b", "b", "a"], pl.Categorical("lexical")).sort().to_frame()
+    left = pl.Series("a", ["b", "a"], pl.Categorical()).sort().to_frame()
+    right = pl.Series("a", ["b", "b", "a"], pl.Categorical()).sort().to_frame()
     result = left.merge_sorted(right, "a").get_column("a")
     expected = left.get_column("a").append(right.get_column("a")).sort()
     assert_series_equal(result, expected)
@@ -205,11 +205,6 @@ def test_merge_sorted_parametric_struct(lhs: pl.Series, rhs: pl.Series) -> None:
 @given(
     s=series(
         name="a",
-        excluded_dtypes=[
-            pl.Categorical(
-                ordering="lexical"
-            ),  # Bug. See https://github.com/pola-rs/polars/issues/21025
-        ],
         allow_null=False,  # See: https://github.com/pola-rs/polars/issues/20991
     ),
 )
@@ -231,17 +226,13 @@ def test_merge_time() -> None:
 
 
 def test_merge_sorted_categorical_global_lexical() -> None:
-    df1 = pl.DataFrame(
-        {"a": pl.Series(["a", "e", "f"], dtype=pl.Categorical("lexical"))}
-    )
-    df2 = pl.DataFrame(
-        {"a": pl.Series(["a", "c", "d"], dtype=pl.Categorical("lexical"))}
-    )
+    df1 = pl.DataFrame({"a": pl.Series(["a", "e", "f"], dtype=pl.Categorical())})
+    df2 = pl.DataFrame({"a": pl.Series(["a", "c", "d"], dtype=pl.Categorical())})
     expected = pl.DataFrame(
         {
             "a": pl.Series(
                 (["a", "a", "c", "d", "e", "f"]),
-                dtype=pl.Categorical("lexical"),
+                dtype=pl.Categorical(),
             )
         }
     )
@@ -250,8 +241,8 @@ def test_merge_sorted_categorical_global_lexical() -> None:
 
 
 def test_merge_sorted_categorical_21952() -> None:
-    df1 = pl.DataFrame({"a": ["a", "b", "c"]}).cast(pl.Categorical("lexical"))
-    df2 = pl.DataFrame({"a": ["a", "b", "d"]}).cast(pl.Categorical("lexical"))
+    df1 = pl.DataFrame({"a": ["a", "b", "c"]}).cast(pl.Categorical())
+    df2 = pl.DataFrame({"a": ["a", "b", "d"]}).cast(pl.Categorical())
     df = df1.merge_sorted(df2, key="a")
     assert repr(df) == (
         "shape: (6, 1)\n"

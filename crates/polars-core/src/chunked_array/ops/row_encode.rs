@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use arrow::compute::utils::combine_validities_and_many;
 use polars_row::{RowEncodingContext, RowEncodingOptions, RowsEncoded, convert_columns};
+use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::POOL;
@@ -79,11 +80,13 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
         | DataType::UInt16
         | DataType::UInt32
         | DataType::UInt64
+        | DataType::UInt128
         | DataType::Int8
         | DataType::Int16
         | DataType::Int32
         | DataType::Int64
         | DataType::Int128
+        | DataType::Float16
         | DataType::Float32
         | DataType::Float64
         | DataType::String
@@ -113,9 +116,7 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
         DataType::Object(_) => panic!("Unsupported in row encoding"),
 
         #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(precision, _) => {
-            Some(RowEncodingContext::Decimal(precision.unwrap_or(38)))
-        },
+        DataType::Decimal(precision, _) => Some(RowEncodingContext::Decimal(*precision)),
 
         #[cfg(feature = "dtype-array")]
         DataType::Array(dtype, _) => get_row_encoding_context(dtype),
@@ -145,6 +146,8 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
 
             Some(RowEncodingContext::Struct(ctxts))
         },
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(_, storage) => get_row_encoding_context(storage),
     }
 }
 
@@ -224,17 +227,36 @@ pub fn _get_rows_encoded_ca(
     by: &[Column],
     descending: &[bool],
     nulls_last: &[bool],
+    broadcast_nulls: bool,
 ) -> PolarsResult<BinaryOffsetChunked> {
-    _get_rows_encoded(by, descending, nulls_last)
-        .map(|rows| BinaryOffsetChunked::with_chunk(name, rows.into_array()))
+    let mut rows_arr = _get_rows_encoded(by, descending, nulls_last)?.into_array();
+    if broadcast_nulls {
+        let validities = by
+            .iter()
+            .map(|c| c.as_materialized_series().rechunk_validity())
+            .collect_vec();
+        let combined = combine_validities_and_many(&validities);
+        rows_arr.set_validity(combined);
+    }
+    Ok(BinaryOffsetChunked::with_chunk(name, rows_arr))
 }
 
 pub fn _get_rows_encoded_arr(
     by: &[Column],
     descending: &[bool],
     nulls_last: &[bool],
+    broadcast_nulls: bool,
 ) -> PolarsResult<BinaryArray<i64>> {
-    _get_rows_encoded(by, descending, nulls_last).map(|rows| rows.into_array())
+    let mut rows_arr = _get_rows_encoded(by, descending, nulls_last)?.into_array();
+    if broadcast_nulls {
+        let validities = by
+            .iter()
+            .map(|c| c.as_materialized_series().rechunk_validity())
+            .collect_vec();
+        let combined = combine_validities_and_many(&validities);
+        rows_arr.set_validity(combined);
+    }
+    Ok(rows_arr)
 }
 
 pub fn _get_rows_encoded_ca_unordered(

@@ -6,10 +6,16 @@ use polars_core::with_match_physical_numeric_polars_type;
 
 use super::*;
 
-pub fn new_var_std_reduction(dtype: DataType, is_std: bool, ddof: u8) -> Box<dyn GroupedReduction> {
+pub fn new_var_std_reduction(
+    dtype: DataType,
+    is_std: bool,
+    ddof: u8,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
+    // TODO: Move the error checks up and make this function infallible
     use DataType::*;
     use VecGroupedReduction as VGR;
-    match dtype {
+    let op_name = if is_std { "std" } else { "var" };
+    Ok(match dtype {
         Boolean => Box::new(VGR::new(dtype, BoolVarStdReducer { is_std, ddof })),
         _ if dtype.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
@@ -32,8 +38,13 @@ pub fn new_var_std_reduction(dtype: DataType, is_std: bool, ddof: u8) -> Box<dyn
             },
         )),
         Duration(..) => todo!(),
-        _ => unimplemented!(),
-    }
+        Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
+            DataType::Null,
+        ))),
+        _ => {
+            polars_bail!(InvalidOperation: "`{op_name}` operation not supported for dtype `{dtype}`")
+        },
+    })
 }
 
 struct VarStdReducer<T> {
@@ -91,17 +102,44 @@ impl<T: PolarsNumericType> Reducer for VarStdReducer<T> {
         &self,
         v: Vec<Self::Value>,
         m: Option<Bitmap>,
-        _dtype: &DataType,
+        dtype: &DataType,
     ) -> PolarsResult<Series> {
         assert!(m.is_none());
-        let ca: Float64Chunked = v
-            .into_iter()
-            .map(|s| {
-                let var = s.finalize(self.ddof);
-                if self.is_std { var.map(f64::sqrt) } else { var }
-            })
-            .collect_ca(PlSmallStr::EMPTY);
-        Ok(ca.into_series())
+        match dtype {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                let ca: Float16Chunked = v
+                    .into_iter()
+                    .map(|s| {
+                        let var = s.finalize(self.ddof);
+                        let out = if self.is_std { var.map(f64::sqrt) } else { var };
+                        out.map(|v| v.as_())
+                    })
+                    .collect_ca(PlSmallStr::EMPTY);
+                Ok(ca.into_series())
+            },
+            DataType::Float32 => {
+                let ca: Float32Chunked = v
+                    .into_iter()
+                    .map(|s| {
+                        let var = s.finalize(self.ddof);
+                        let out = if self.is_std { var.map(f64::sqrt) } else { var };
+                        out.map(|v| v as f32)
+                    })
+                    .collect_ca(PlSmallStr::EMPTY);
+                Ok(ca.into_series())
+            },
+            _ => {
+                let ca: Float64Chunked = v
+                    .into_iter()
+                    .map(|s| {
+                        let var = s.finalize(self.ddof);
+                        if self.is_std { var.map(f64::sqrt) } else { var }
+                    })
+                    .collect_ca(PlSmallStr::EMPTY);
+                Ok(ca.into_series())
+            },
+        }
     }
 }
 

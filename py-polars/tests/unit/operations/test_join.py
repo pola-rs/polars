@@ -3,7 +3,7 @@ from __future__ import annotations
 import typing
 import warnings
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -21,6 +21,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import time_func
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import JoinStrategy, PolarsDataType
 
 
@@ -648,13 +650,13 @@ def test_join_frame_consistency() -> None:
     df = pl.DataFrame({"A": [1, 2, 3]})
     ldf = pl.DataFrame({"A": [1, 2, 5]}).lazy()
 
-    with pytest.raises(TypeError, match="expected `other`.*LazyFrame"):
+    with pytest.raises(TypeError, match=r"expected `other`.*LazyFrame"):
         _ = ldf.join(df, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="expected `other`.*DataFrame"):
+    with pytest.raises(TypeError, match=r"expected `other`.*DataFrame"):
         _ = df.join(ldf, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="expected `other`.*LazyFrame"):
+    with pytest.raises(TypeError, match=r"expected `other`.*LazyFrame"):
         _ = ldf.join_asof(df, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="expected `other`.*DataFrame"):
+    with pytest.raises(TypeError, match=r"expected `other`.*DataFrame"):
         _ = df.join_asof(ldf, on="A")  # type: ignore[arg-type]
 
 
@@ -1004,7 +1006,9 @@ def test_cross_join() -> None:
     df2 = pl.DataFrame({"frame2": pl.arange(0, 100, eager=True)})
     out = df2.join(df1, how="cross")
     df2 = pl.DataFrame({"frame2": pl.arange(0, 101, eager=True)})
-    assert_frame_equal(df2.join(df1, how="cross").slice(0, 100), out)
+    assert_frame_equal(
+        df2.join(df1, how="cross", maintain_order="left_right").slice(0, 100), out
+    )
 
 
 @pytest.mark.release
@@ -1014,7 +1018,12 @@ def test_cross_join_slice_pushdown() -> None:
         pl.Series("x", pl.arange(0, 2**16 - 1, eager=True, dtype=pl.UInt16) % 2**15)
     ).to_frame()
 
-    result = df.lazy().join(df.lazy(), how="cross", suffix="_").slice(-5, 10).collect()
+    result = (
+        df.lazy()
+        .join(df.lazy(), how="cross", maintain_order="left_right", suffix="_")
+        .slice(-5, 10)
+        .collect()
+    )
     expected = pl.DataFrame(
         {
             "x": [32766, 32766, 32766, 32766, 32766],
@@ -1024,7 +1033,12 @@ def test_cross_join_slice_pushdown() -> None:
     )
     assert_frame_equal(result, expected)
 
-    result = df.lazy().join(df.lazy(), how="cross", suffix="_").slice(2, 10).collect()
+    result = (
+        df.lazy()
+        .join(df.lazy(), how="cross", maintain_order="left_right", suffix="_")
+        .slice(2, 10)
+        .collect()
+    )
     expected = pl.DataFrame(
         {
             "x": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -1133,6 +1147,7 @@ def test_join_empty_literal_17027() -> None:
     zip(
         [pl.col("a"), pl.col("a").sort(), [pl.col("a"), pl.col("b")]],
         [pl.col("a").slice(0, 2) * 2, pl.col("b"), [pl.col("a"), pl.col("b").head()]],
+        strict=False,
     ),
 )
 def test_join_non_elementwise_keys_raises(left_on: pl.Expr, right_on: pl.Expr) -> None:
@@ -1445,6 +1460,15 @@ def test_join_preserve_order_full() -> None:
         ["Int16", "Int16", "Int8"],
         ["Int16", "UInt8", "Int16"],
         ["Int16", "UInt8", "Int8"],
+
+        ["UInt128", "UInt128", "UInt64"],
+        ["UInt128", "UInt128", "UInt32"],
+        ["UInt128", "UInt128", "UInt16"],
+        ["UInt128", "UInt128", "UInt8"],
+        ["UInt128", "UInt64", "UInt128"],
+        ["UInt128", "UInt32", "UInt128"],
+        ["UInt128", "UInt16", "UInt128"],
+        ["UInt128", "UInt8", "UInt128"],
 
         ["UInt64", "UInt64", "UInt32"],
         ["UInt64", "UInt64", "UInt16"],
@@ -2377,6 +2401,37 @@ def test_join_filter_pushdown_inner_join() -> None:
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
+    # Duplicate filter removal - https://github.com/pola-rs/polars/issues/23243
+    q = (
+        pl.LazyFrame({"x": [1, 2, 3]})
+        .join(pl.LazyFrame({"x": [1, 2, 3]}), on="x", how="inner", coalesce=False)
+        .filter(
+            pl.col("x") == 2,
+            pl.col("x_right") == 2,
+        )
+    )
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("x", [2], dtype=pl.Int64),
+            pl.Series("x_right", [2], dtype=pl.Int64),
+        ]
+    )
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract == [
+        'LEFT PLAN ON: [col("x")]',
+        'FILTER [(col("x")) == (2)]',
+        'RIGHT PLAN ON: [col("x")]',
+        'FILTER [(col("x")) == (2)]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
 
 def test_join_filter_pushdown_left_join() -> None:
     lhs = pl.LazyFrame(
@@ -2888,6 +2943,53 @@ def test_join_filter_pushdown_cross_join() -> None:
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
+    # Avoid conversion for order maintaining cross-join
+    q = (
+        pl.LazyFrame(
+            [
+                pl.Series("a", [2, 4, 8, 9, 11], dtype=pl.Int64),
+                pl.Series("b", [1, 2, 3, 4, 5], dtype=pl.Int64),
+            ]
+        )
+        .join(
+            pl.LazyFrame(
+                {
+                    "c": [0, 1, 2, 3, 4],
+                }
+            ),
+            how="cross",
+            maintain_order="left_right",
+        )
+        .filter(pl.col("c") <= pl.col("b"))
+    )
+
+    expect = pl.DataFrame(
+        [
+            pl.Series(
+                "a",
+                [2, 2, 4, 4, 4, 8, 8, 8, 8, 9, 9, 9, 9, 9, 11, 11, 11, 11, 11],
+                dtype=pl.Int64,
+            ),
+            pl.Series(
+                "b",
+                [1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5],
+                dtype=pl.Int64,
+            ),
+            pl.Series(
+                "c",
+                [0, 1, 0, 1, 2, 0, 1, 2, 3, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4],
+                dtype=pl.Int64,
+            ),
+        ]
+    )
+
+    plan = q.explain()
+
+    assert plan.startswith('NESTED LOOP JOIN ON [(col("c")) <= (col("b"))]:')
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
 
 def test_join_filter_pushdown_iejoin() -> None:
     lhs = pl.LazyFrame(
@@ -2925,12 +3027,16 @@ def test_join_filter_pushdown_iejoin() -> None:
 
     extract = _extract_plan_joins_and_filters(plan)
 
-    assert extract == [
+    assert extract[:3] == [
         'LEFT PLAN ON: [col("a")]',
         'FILTER [(col("a")) >= (1)]',
         'RIGHT PLAN ON: [col("a")]',
-        'FILTER [(col("c")) <= ("B")]',
     ]
+
+    assert extract[3].startswith("FILTER")
+    assert 'col("c")) <= ("B")' in extract[3]
+    assert '(col("a")) >= (1)' in extract[3]
+    assert len(extract) == 4
 
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
@@ -2954,11 +3060,11 @@ def test_join_filter_pushdown_iejoin() -> None:
             pl.Series(
                 "c", ["a", "b", "b", "c", "c", "d", "d", "e", "e"], dtype=pl.String
             ),
-            pl.Series("a_right", [1, 2, 1, 2, 1, 2, 1, 2, 1], dtype=pl.Int64),
-            pl.Series("b_right", [1, 2, 1, 2, 1, 2, 1, 2, 1], dtype=pl.Int64),
+            pl.Series("a_right", [1, 1, 2, 1, 2, 1, 2, 1, 2], dtype=pl.Int64),
+            pl.Series("b_right", [1, 1, 2, 1, 2, 1, 2, 1, 2], dtype=pl.Int64),
             pl.Series(
                 "c_right",
-                ["A", "B", "A", "B", "A", "B", "A", "B", "A"],
+                ["A", "A", "B", "A", "B", "A", "B", "A", "B"],
                 dtype=pl.String,
             ),
         ]
@@ -2977,8 +3083,94 @@ def test_join_filter_pushdown_iejoin() -> None:
         'FILTER [(col("c")) <= ("B")]',
     ]
 
-    assert_frame_equal(q.collect(), expect)
-    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+    assert_frame_equal(q.collect().sort(pl.all()), expect)
+    assert_frame_equal(
+        q.collect(optimizations=pl.QueryOptFlags.none()).sort(pl.all()),
+        expect,
+    )
+
+    q = pl.LazyFrame({"x": [1, 2, 3]}).join_where(
+        pl.LazyFrame({"x": [1, 2, 3]}),
+        pl.col("x") > pl.col("x_right"),
+        pl.col("x") > 1,
+    )
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("x", [2, 3, 3], dtype=pl.Int64),
+            pl.Series("x_right", [1, 1, 2], dtype=pl.Int64),
+        ]
+    )
+
+    plan = q.explain()
+
+    assert "IEJOIN" in plan
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract == [
+        'LEFT PLAN ON: [col("x")]',
+        'FILTER [(col("x")) > (1)]',
+        'RIGHT PLAN ON: [col("x")]',
+    ]
+
+    assert_frame_equal(q.collect().sort(pl.all()), expect)
+    assert_frame_equal(
+        q.collect(optimizations=pl.QueryOptFlags.none()).sort(pl.all()),
+        expect,
+    )
+
+    # Join filter pushdown inside CSE - https://github.com/pola-rs/polars/issues/23489
+
+    lf_x = pl.LazyFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+    lf_y = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 3, 3]})
+
+    lf_xy = lf_x.join_where(lf_y, pl.col("a") > pl.col("a_right"))
+
+    q = pl.concat([lf_xy, lf_xy]).filter(
+        pl.col("b") < pl.col("b_right"), pl.col("a") > 0
+    )
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("a", [2, 2], dtype=pl.Int64),
+            pl.Series("b", [2, 2], dtype=pl.Int64),
+            pl.Series("a_right", [1, 1], dtype=pl.Int64),
+            pl.Series("b_right", [3, 3], dtype=pl.Int64),
+        ]
+    )
+
+    plan = q.explain()
+
+    assert "IEJOIN" in plan
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract[0] in {
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'LEFT PLAN ON: [col("b"), col("a")]',
+    }
+    assert extract[1] == 'FILTER [(col("a")) > (0)]'
+    assert extract[2] in {
+        'RIGHT PLAN ON: [col("a"), col("b")]',
+        'RIGHT PLAN ON: [col("b"), col("a")]',
+    }
+    assert extract[3] in {
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'LEFT PLAN ON: [col("b"), col("a")]',
+    }
+    assert extract[4] == 'FILTER [(col("a")) > (0)]'
+    assert extract[5] in {
+        'RIGHT PLAN ON: [col("a"), col("b")]',
+        'RIGHT PLAN ON: [col("b"), col("a")]',
+    }
+    assert len(extract) == 6
+
+    assert_frame_equal(q.collect().sort(pl.all()), expect)
+    assert_frame_equal(
+        q.collect(optimizations=pl.QueryOptFlags.none()).sort(pl.all()),
+        expect,
+    )
 
 
 def test_join_filter_pushdown_asof_join() -> None:
@@ -3581,6 +3773,17 @@ def test_join_rewrite_forbid_exprs(
     assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))
 
 
+def test_join_coalesce_column_order_23177() -> None:
+    df1 = pl.DataFrame({"time": ["09:00:21"], "symbol": [5253]})
+    df2 = pl.DataFrame({"symbol": [5253], "time": ["09:00:21"]})
+
+    q = df1.lazy().join(df2.lazy(), on=["time", "symbol"], how="full", coalesce=True)
+
+    expect = pl.DataFrame({"time": ["09:00:21"], "symbol": [5253]})
+
+    assert_frame_equal(q.collect(), expect)
+
+
 def test_join_filter_pushdown_iejoin_cse_23469() -> None:
     lf_x = pl.LazyFrame({"x": [1, 2, 3]})
     lf_y = pl.LazyFrame({"y": [1, 2, 3]})
@@ -3764,3 +3967,10 @@ def test_join_asof_by_i128() -> None:
             schema={"a": pl.Int128, "i": pl.Int32, "b": pl.Int128},
         ),
     )
+
+
+def test_join_lazyframe_with_itself_after_sort_25395() -> None:
+    lf = pl.LazyFrame({"a": [1]})
+    result = lf.sort("a").join(lf, on="a").collect()
+
+    assert_frame_equal(result, pl.DataFrame({"a": [1]}))

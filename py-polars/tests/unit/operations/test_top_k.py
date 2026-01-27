@@ -1,4 +1,4 @@
-from typing import Callable
+from collections.abc import Callable
 
 import pytest
 from hypothesis import given
@@ -585,3 +585,34 @@ def test_sort_head_maintain_order() -> None:
     expected = pl.DataFrame({"x": [0, 0, 0, 0], "y": [1, 3, 4, 5]})
     q = df.lazy().sort(by="x", maintain_order=True).head(4)
     assert_frame_equal(q.collect(), expected)
+
+
+def test_top_k_non_elementwise_by_24163() -> None:
+    query = pl.LazyFrame({"a": [1, 2, 3, 4, 5, 6, 7, 8]}).top_k(
+        2, by=(pl.when(pl.len() == 8).then(pl.col.a).otherwise(-pl.col.a))
+    )
+
+    expected = pl.DataFrame({"a": [7, 8]})
+    assert_frame_equal(expected, query.collect(), check_row_order=False)
+
+
+def test_top_k_by_non_uniq_name_25072() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    result = df.sort(by=[pl.col.a, pl.col.a]).head(2)
+    expected = pl.DataFrame({"a": [1, 2], "b": [4, 5]})
+    assert_frame_equal(result, expected)
+
+
+def test_top_k_union_null() -> None:
+    df1 = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.Int64})
+    df2 = pl.DataFrame({"a": [None, None, None]}, schema={"a": pl.Null})
+    out = (
+        pl.concat([df1.lazy().join(df1.lazy(), on="a"), df2.lazy()])
+        .bottom_k(5, by="a")
+        .collect(engine="streaming")
+    )
+    assert_frame_equal(
+        out,
+        pl.DataFrame({"a": [1, 2, 3, None, None]}, schema={"a": pl.Int64}),
+        check_row_order=False,
+    )

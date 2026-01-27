@@ -33,6 +33,7 @@ Manipulation/selection
     Expr.inspect
     Expr.interpolate
     Expr.interpolate_by
+    Expr.item
     Expr.limit
     Expr.lower_bound
     Expr.pipe

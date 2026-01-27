@@ -1,18 +1,18 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use arrow::bitmap::Bitmap;
 use futures::StreamExt;
 use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
-use polars_io::predicates::ScanIOPredicate;
-use polars_plan::plans::hive::HivePartitionsDf;
+use polars_mem_engine::scan_predicate::initialize_scan_predicate;
+use polars_plan::dsl::PredicateFileSkip;
+use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::async_primitives::connector::{self};
+use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sources::multi_scan::components::bridge::{BridgeRecvPort, BridgeState};
-use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_scan::components::row_deletions::{
     DeletionFilesProvider, ExternalFilterMask, RowDeletionsInit,
 };
@@ -29,7 +29,10 @@ use crate::nodes::io_sources::multi_scan::pipeline::tasks::reader_starter::{
 use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 
-pub fn initialize_multi_scan_pipeline(config: Arc<MultiScanConfig>) -> InitializedPipelineState {
+pub fn initialize_multi_scan_pipeline(
+    config: Arc<MultiScanConfig>,
+    execution_state: StreamingExecutionState,
+) -> InitializedPipelineState {
     assert!(config.num_pipelines() > 0);
 
     if config.verbose {
@@ -39,12 +42,14 @@ pub fn initialize_multi_scan_pipeline(config: Arc<MultiScanConfig>) -> Initializ
             reader name: {}, \
             {:?}, \
             n_readers_pre_init: {}, \
-            max_concurrent_scans: {}",
+            max_concurrent_scans: {}, \
+            disable_morsel_split: {}",
             config.sources.len(),
             config.file_reader_builder.reader_name(),
             config.reader_capabilities(),
             config.n_readers_pre_init(),
             config.max_concurrent_scans(),
+            config.disable_morsel_split,
         );
     }
 
@@ -54,7 +59,8 @@ pub fn initialize_multi_scan_pipeline(config: Arc<MultiScanConfig>) -> Initializ
 
     let task_handle =
         AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
-            finish_initialize_multi_scan_pipeline(config, bridge_recv_port_tx).await?;
+            finish_initialize_multi_scan_pipeline(config, bridge_recv_port_tx, execution_state)
+                .await?;
             bridge_handle.await;
             Ok(())
         }));
@@ -69,14 +75,30 @@ pub fn initialize_multi_scan_pipeline(config: Arc<MultiScanConfig>) -> Initializ
 async fn finish_initialize_multi_scan_pipeline(
     config: Arc<MultiScanConfig>,
     bridge_recv_port_tx: connector::Sender<BridgeRecvPort>,
+    execution_state: StreamingExecutionState,
 ) -> PolarsResult<()> {
     let verbose = config.verbose;
 
-    let (skip_files_mask, predicate) = initialize_predicate(
-        config.predicate.as_ref(),
-        config.hive_parts.as_deref(),
-        verbose,
-    )?;
+    let (skip_files_mask, predicate) = match config.predicate_file_skip_applied {
+        None => initialize_scan_predicate(
+            config.predicate.as_ref(),
+            config.hive_parts.as_deref(),
+            config.table_statistics.as_ref(),
+            verbose,
+        )?,
+        Some(PredicateFileSkip {
+            no_residual_predicate: false,
+            original_len: _,
+        }) => (None, config.predicate.as_ref()),
+        Some(PredicateFileSkip {
+            no_residual_predicate: true,
+            original_len: _,
+        }) => (None, None),
+    };
+
+    if let Some(skip_files_mask) = &skip_files_mask {
+        assert_eq!(skip_files_mask.len(), config.sources.len());
+    }
 
     if verbose {
         eprintln!(
@@ -94,10 +116,10 @@ async fn finish_initialize_multi_scan_pipeline(
     loop {
         if skip_files_mask
             .as_ref()
-            .is_some_and(|x| x.unset_bits() == 0)
+            .is_some_and(|x| x.num_skipped_files() == x.len())
         {
             if verbose {
-                eprintln!("[MultiScanTaskInit]: early return (skip_files_mask / predicate)")
+                eprintln!("[MultiScanTaskInit]: early return (filter excludes all files)")
             }
         } else if config.pre_slice.as_ref().is_some_and(|x| x.len() == 0) {
             if cfg!(debug_assertions) {
@@ -118,6 +140,17 @@ async fn finish_initialize_multi_scan_pipeline(
 
     let num_pipelines = config.num_pipelines();
     let reader_capabilities = config.reader_capabilities();
+
+    if config.sources.first().is_some_and(|x| x.run_async())
+        && reader_capabilities.contains(ReaderCapabilities::NEEDS_FILE_CACHE_INIT)
+    {
+        // In cloud execution the entries may not exist at this point due to DSL resolution
+        // happening on a separate machine.
+        polars_io::file_cache::init_entries_from_uri_list(
+            config.sources.as_paths().unwrap().iter().cloned(),
+            config.cloud_options.as_deref(),
+        )?;
+    }
 
     // Row index should only be pushed if we have a predicate or negative slice as there is a
     // serial synchronization cost from needing to track the row position.
@@ -162,7 +195,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 }
             }
 
-            resolve_to_positive_slice(&config).await?
+            resolve_to_positive_slice(&config, &execution_state).await?
         },
     };
 
@@ -226,9 +259,9 @@ async fn finish_initialize_multi_scan_pipeline(
         };
 
         if verbose {
-            let n_filtered = skip_files_mask
-                .clone()
-                .map_or(0, |x| x.sliced(range.start, range.len()).set_bits());
+            let n_filtered = skip_files_mask.clone().map_or(0, |x| {
+                x.sliced(range.start, range.len()).num_skipped_files()
+            });
             let n_readers_init = range.len() - n_filtered;
 
             eprintln!(
@@ -245,14 +278,14 @@ async fn finish_initialize_multi_scan_pipeline(
         if let Some(skip_files_mask) = &skip_files_mask {
             range.end = range
                 .end
-                .min(skip_files_mask.len() - skip_files_mask.trailing_ones());
+                .min(skip_files_mask.len() - skip_files_mask.trailing_skipped_files());
         }
 
         let range = range.filter(move |scan_source_idx| {
             let can_skip = !has_row_index_or_slice
                 && skip_files_mask
                     .as_ref()
-                    .is_some_and(|x| x.get_bit(*scan_source_idx));
+                    .is_some_and(|x| x.is_skipped_file(*scan_source_idx));
 
             !can_skip
         });
@@ -260,7 +293,11 @@ async fn finish_initialize_multi_scan_pipeline(
         let sources = config.sources.clone();
         let cloud_options = config.cloud_options.clone();
         let file_reader_builder = config.file_reader_builder.clone();
-        let deletion_files_provider = DeletionFilesProvider::new(config.deletion_files.clone());
+        let deletion_files_provider = DeletionFilesProvider::new(
+            config.deletion_files.clone(),
+            &execution_state,
+            config.io_metrics(),
+        );
 
         futures::stream::iter(range)
             .map(move |scan_source_idx| {
@@ -322,7 +359,7 @@ async fn finish_initialize_multi_scan_pipeline(
                     })
                 }))
             })
-            .buffered(config.n_readers_pre_init().min(config.sources.len()))
+            .buffered(config.n_readers_pre_init().max(1))
     };
 
     let sources = config.sources.clone();
@@ -331,6 +368,7 @@ async fn finish_initialize_multi_scan_pipeline(
     let final_output_schema = config.final_output_schema.clone();
     let file_projection_builder = config.file_projection_builder.clone();
     let max_concurrent_scans = config.max_concurrent_scans();
+    let disable_morsel_split = config.disable_morsel_split;
 
     let (started_reader_tx, started_reader_rx) =
         tokio::sync::mpsc::channel(max_concurrent_scans.max(2) - 1);
@@ -355,6 +393,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 missing_columns_policy,
                 forbid_extra_columns: config.forbid_extra_columns.clone(),
                 num_pipelines,
+                disable_morsel_split,
                 verbose,
             },
             verbose,
@@ -376,53 +415,4 @@ async fn finish_initialize_multi_scan_pipeline(
     reader_starter_handle.await?;
 
     Ok(())
-}
-
-/// # Returns
-/// (skip_files_mask, predicate)
-fn initialize_predicate<'a>(
-    predicate: Option<&'a ScanIOPredicate>,
-    hive_parts: Option<&HivePartitionsDf>,
-    verbose: bool,
-) -> PolarsResult<(Option<Bitmap>, Option<&'a ScanIOPredicate>)> {
-    if let Some(predicate) = predicate {
-        if let Some(hive_parts) = hive_parts {
-            let mut skip_files_mask = None;
-
-            if let Some(predicate) = &predicate.hive_predicate {
-                let mask = predicate
-                    .evaluate_io(hive_parts.df())?
-                    .bool()?
-                    .rechunk()
-                    .into_owned()
-                    .downcast_into_iter()
-                    .next()
-                    .unwrap()
-                    .values()
-                    .clone();
-
-                // TODO: Optimize to avoid doing this
-                let mask = !&mask;
-
-                if verbose {
-                    eprintln!(
-                        "[MultiScan]: Predicate pushdown allows skipping {} / {} files",
-                        mask.set_bits(),
-                        mask.len()
-                    );
-                }
-
-                skip_files_mask = Some(mask);
-            }
-
-            let need_pred_for_inner_readers = !predicate.hive_predicate_is_full_predicate;
-
-            return Ok((
-                skip_files_mask,
-                need_pred_for_inner_readers.then_some(predicate),
-            ));
-        }
-    }
-
-    Ok((None, predicate))
 }

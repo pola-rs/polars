@@ -4,6 +4,7 @@ use arrow::array::{Array, BooleanArray, PrimitiveArray};
 use arrow::bitmap::{binary_fold, intersects_with};
 use arrow::datatypes::ArrowDataType;
 use arrow::legacy::utils::CustomIterTools;
+use polars_utils::float16::pf16;
 
 pub trait BitwiseKernel {
     type Scalar;
@@ -154,8 +155,14 @@ impl_bitwise_kernel! {
     (u16, identity, identity),
     (u32, identity, identity),
     (u64, identity, identity),
+    (pf16, pf16::to_bits, pf16::from_bits),
     (f32, f32::to_bits, f32::from_bits),
     (f64, f64::to_bits, f64::from_bits),
+}
+
+#[cfg(feature = "dtype-u128")]
+impl_bitwise_kernel! {
+    (u128, identity, identity),
 }
 
 #[cfg(feature = "dtype-i128")]

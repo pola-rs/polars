@@ -82,7 +82,9 @@ impl ComputeNode for NegativeSliceNode {
                     self.state = Done;
                 } else {
                     let mut df = accumulate_dataframes_vertical_unchecked(buffer.frames.drain(..));
-                    df = df.slice(signed_start_offset, self.length);
+                    let clamped_start = signed_start_offset.max(0);
+                    let len = (signed_stop_offset - clamped_start).max(0) as usize;
+                    df = df.slice(clamped_start, len);
                     self.state =
                         Source(InMemorySourceNode::new(Arc::new(df), MorselSeq::default()));
                 }

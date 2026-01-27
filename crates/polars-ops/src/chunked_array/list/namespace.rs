@@ -246,15 +246,16 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn lst_sort(&self, options: SortOptions) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        let out = ca.try_apply_amortized(|s| s.as_ref().sort_with(options))?;
+        // SAFETY: `sort_with`` doesn't change the dtype
+        let out = unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().sort_with(options))? };
         Ok(self.same_type(out))
     }
 
     #[must_use]
     fn lst_reverse(&self) -> ListChunked {
         let ca = self.as_list();
-        let out = ca.apply_amortized(|s| s.as_ref().reverse());
-        self.same_type(out)
+        // SAFETY: `reverse` doesn't change the dtype
+        unsafe { ca.apply_amortized_same_type(|s| s.as_ref().reverse()) }
     }
 
     fn lst_n_unique(&self) -> PolarsResult<IdxCa> {
@@ -267,13 +268,15 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn lst_unique(&self) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        let out = ca.try_apply_amortized(|s| s.as_ref().unique())?;
+        // SAFETY: `unique` doesn't change the dtype
+        let out = unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().unique())? };
         Ok(self.same_type(out))
     }
 
     fn lst_unique_stable(&self) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        let out = ca.try_apply_amortized(|s| s.as_ref().unique_stable())?;
+        // SAFETY: `unique_stable` doesn't change the dtype
+        let out = unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().unique_stable())? };
         Ok(self.same_type(out))
     }
 
@@ -320,7 +323,8 @@ pub trait ListNameSpaceImpl: AsList {
         let out = match periods.len() {
             1 => {
                 if let Some(periods) = periods.get(0) {
-                    ca.apply_amortized(|s| s.as_ref().shift(periods))
+                    // SAFETY: `shift` doesn't change the dtype
+                    unsafe { ca.apply_amortized_same_type(|s| s.as_ref().shift(periods)) }
                 } else {
                     ListChunked::full_null_with_dtype(ca.name().clone(), ca.len(), ca.inner_dtype())
                 }
@@ -337,8 +341,8 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn lst_slice(&self, offset: i64, length: usize) -> ListChunked {
         let ca = self.as_list();
-        let out = ca.apply_amortized(|s| s.as_ref().slice(offset, length));
-        self.same_type(out)
+        // SAFETY: `slice` doesn't change the dtype
+        unsafe { ca.apply_amortized_same_type(|s| s.as_ref().slice(offset, length)) }
     }
 
     fn lst_lengths(&self) -> IdxCa {
@@ -389,9 +393,12 @@ pub trait ListNameSpaceImpl: AsList {
         let list_ca = self.as_list();
         let out = match (n.len(), offset.len()) {
             (1, 1) => match (n.get(0), offset.get(0)) {
-                (Some(n), Some(offset)) => list_ca.try_apply_amortized(|s| {
-                    s.as_ref().gather_every(n as usize, offset as usize)
-                })?,
+                (Some(n), Some(offset)) => unsafe {
+                    // SAFETY: `gather_every` doesn't change the dtype
+                    list_ca.try_apply_amortized_same_type(|s| {
+                        s.as_ref().gather_every(n as usize, offset as usize)
+                    })?
+                },
                 _ => ListChunked::full_null_with_dtype(
                     list_ca.name().clone(),
                     list_ca.len(),
@@ -489,7 +496,10 @@ pub trait ListNameSpaceImpl: AsList {
                         list_ca.inner_dtype(),
                     )
                 } else {
-                    let s = list_ca.explode(false)?;
+                    let s = list_ca.explode(ExplodeOptions {
+                        empty_as_null: true,
+                        keep_nulls: true,
+                    })?;
                     idx_ca
                         .into_iter()
                         .map(|opt_idx| {
@@ -503,7 +513,10 @@ pub trait ListNameSpaceImpl: AsList {
                 Ok(out.into_series())
             },
             (_, 1) => {
-                let idx_ca = idx_ca.explode(false)?;
+                let idx_ca = idx_ca.explode(ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                })?;
 
                 use DataType as D;
                 match idx_ca.dtype() {
@@ -568,7 +581,8 @@ pub trait ListNameSpaceImpl: AsList {
     fn lst_drop_nulls(&self) -> ListChunked {
         let list_ca = self.as_list();
 
-        list_ca.apply_amortized(|s| s.as_ref().drop_nulls())
+        // SAFETY: `drop_nulls` doesn't change the dtype
+        unsafe { list_ca.apply_amortized_same_type(|s| s.as_ref().drop_nulls()) }
     }
 
     #[cfg(feature = "list_sample")]
@@ -583,7 +597,7 @@ pub trait ListNameSpaceImpl: AsList {
 
         let ca = self.as_list();
 
-        let n_s = n.cast(&IDX_DTYPE)?;
+        let n_s = n.strict_cast(&IDX_DTYPE)?;
         let n = n_s.idx()?;
 
         polars_ensure!(
@@ -604,10 +618,13 @@ pub trait ListNameSpaceImpl: AsList {
         let out = match n.len() {
             1 => {
                 if let Some(n) = n.get(0) {
-                    ca.try_apply_amortized(|s| {
-                        s.as_ref()
-                            .sample_n(n as usize, with_replacement, shuffle, seed)
-                    })
+                    unsafe {
+                        // SAFETY: `sample_n` doesn't change the dtype
+                        ca.try_apply_amortized_same_type(|s| {
+                            s.as_ref()
+                                .sample_n(n as usize, with_replacement, shuffle, seed)
+                        })
+                    }
                 } else {
                     Ok(ListChunked::full_null_with_dtype(
                         ca.name().clone(),
@@ -660,10 +677,13 @@ pub trait ListNameSpaceImpl: AsList {
         let out = match fraction.len() {
             1 => {
                 if let Some(fraction) = fraction.get(0) {
-                    ca.try_apply_amortized(|s| {
-                        let n = (s.as_ref().len() as f64 * fraction) as usize;
-                        s.as_ref().sample_n(n, with_replacement, shuffle, seed)
-                    })
+                    unsafe {
+                        // SAFETY: `sample_n` doesn't change the dtype
+                        ca.try_apply_amortized_same_type(|s| {
+                            let n = (s.as_ref().len() as f64 * fraction) as usize;
+                            s.as_ref().sample_n(n, with_replacement, shuffle, seed)
+                        })
+                    }
                 } else {
                     Ok(ListChunked::full_null_with_dtype(
                         ca.name().clone(),

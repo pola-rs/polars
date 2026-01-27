@@ -10,6 +10,7 @@ from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_map_return_py_object() -> None:
     df = pl.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
 
@@ -25,6 +26,7 @@ def test_map_return_py_object() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_map_no_dtype_set_8531() -> None:
     df = pl.DataFrame({"a": [1]})
 
@@ -116,7 +118,7 @@ def test_lazy_map_schema() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="Expected 'LazyFrame.map' to return a 'DataFrame', got a",
+        match=r"Expected 'LazyFrame\.map' to return a 'DataFrame', got a",
     ):
         df.lazy().map_batches(custom).collect()  # type: ignore[arg-type]
 
@@ -128,7 +130,7 @@ def test_lazy_map_schema() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="The output schema of 'LazyFrame.map' is incorrect. Expected",
+        match=r"The output schema of 'LazyFrame\.map' is incorrect\. Expected",
     ):
         df.lazy().map_batches(custom2).collect()
 
@@ -144,3 +146,28 @@ def test_map_batches_collect_schema_17327() -> None:
     )
     expected = pl.Schema({"a": pl.Int64(), "b": pl.List(pl.Int64)})
     assert q.collect_schema() == expected
+
+
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
+@pytest.mark.parametrize(
+    ("data", "literal", "expected_data"),
+    [
+        ([0, 1, 2, 3], 10, [10, 11, 12, 13]),
+        ([0.0, 1.0, 2.0, 3.0], 10.5, [10.5, 11.5, 12.5, 13.5]),
+        (["hello", "world"], " there", ["hello there", "world there"]),
+    ],
+)
+def test_map_batches_no_return_dtype_25601(
+    data: list[object], literal: object, expected_data: list[object]
+) -> None:
+    # previously this would panic with "internal error: entered unreachable code"
+    # when trying to create default values for Unknown dtype literal inference
+    result = pl.DataFrame({"colx": data}).select(
+        pl.map_batches(
+            exprs=["colx", pl.lit(literal)],
+            function=lambda d: d[0] + d[1],
+            return_dtype=None,
+        )
+    )
+    expected = pl.DataFrame({"colx": expected_data})
+    assert_frame_equal(result, expected)

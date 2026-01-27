@@ -151,6 +151,14 @@ impl<R: Read + Seek> RowGroupReader<R> {
             Some(Filter::new_limited(self.remaining_rows)),
         )?;
 
+        let column_chunks = column_chunks
+            .into_iter()
+            .map(|mut c| {
+                assert_eq!(c.len(), 1);
+                c.pop().unwrap()
+            })
+            .collect();
+
         let result = RowGroupDeserializer::new(
             Arc::new(column_schema),
             column_chunks,

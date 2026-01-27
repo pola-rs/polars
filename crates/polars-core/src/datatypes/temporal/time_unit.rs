@@ -62,15 +62,18 @@ impl TimeUnit {
 #[cfg(any(feature = "rows", feature = "object"))]
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-duration"))]
 #[inline]
-pub(crate) fn convert_time_units(v: i64, tu_l: TimeUnit, tu_r: TimeUnit) -> i64 {
+pub fn convert_time_units<T>(v: T, tu_l: TimeUnit, tu_r: TimeUnit) -> T
+where
+    T: num_traits::Num + num_traits::NumCast,
+{
     use TimeUnit::*;
     match (tu_l, tu_r) {
-        (Nanoseconds, Microseconds) => v / 1_000,
-        (Nanoseconds, Milliseconds) => v / 1_000_000,
-        (Microseconds, Nanoseconds) => v * 1_000,
-        (Microseconds, Milliseconds) => v / 1_000,
-        (Milliseconds, Microseconds) => v * 1_000,
-        (Milliseconds, Nanoseconds) => v * 1_000_000,
+        (Nanoseconds, Microseconds) => v / T::from(1_000).unwrap(),
+        (Nanoseconds, Milliseconds) => v / T::from(1_000_000).unwrap(),
+        (Microseconds, Nanoseconds) => v * T::from(1_000).unwrap(),
+        (Microseconds, Milliseconds) => v / T::from(1_000).unwrap(),
+        (Milliseconds, Microseconds) => v * T::from(1_000).unwrap(),
+        (Milliseconds, Nanoseconds) => v * T::from(1_000_000).unwrap(),
         _ => v,
     }
 }

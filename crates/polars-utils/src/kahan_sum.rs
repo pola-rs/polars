@@ -1,14 +1,16 @@
 use std::ops::{Add, AddAssign};
 
-use num_traits::Float;
+use num_traits::Num;
+
+use crate::float::IsFloat;
 
 #[derive(Debug, Clone)]
-pub struct KahanSum<T: Float> {
+pub struct KahanSum<T> {
     sum: T,
     err: T,
 }
 
-impl<T: Float> KahanSum<T> {
+impl<T: IsFloat + Num + Copy> KahanSum<T> {
     pub fn new(v: T) -> Self {
         KahanSum {
             sum: v,
@@ -21,7 +23,7 @@ impl<T: Float> KahanSum<T> {
     }
 }
 
-impl<T: Float> Default for KahanSum<T> {
+impl<T: Num> Default for KahanSum<T> {
     fn default() -> Self {
         KahanSum {
             sum: T::zero(),
@@ -30,20 +32,20 @@ impl<T: Float> Default for KahanSum<T> {
     }
 }
 
-impl<T: Float + AddAssign> AddAssign<T> for KahanSum<T> {
+impl<T: IsFloat + Num + AddAssign + Copy> AddAssign<T> for KahanSum<T> {
     fn add_assign(&mut self, rhs: T) {
-        if rhs.is_finite() {
-            let y = rhs - self.err;
-            let new_sum = self.sum + y;
-            self.err = (new_sum - self.sum) - y;
-            self.sum = new_sum;
-        } else {
-            self.sum += rhs
+        let y = rhs - self.err;
+        let new_sum = self.sum + y;
+        let new_err = (new_sum - self.sum) - y;
+        self.sum = new_sum;
+        if new_err.is_finite() {
+            // Ensure err stays finite so we don't introduce NaNs through Inf - Inf.
+            self.err = new_err;
         }
     }
 }
 
-impl<T: Float + AddAssign> Add<T> for KahanSum<T> {
+impl<T: IsFloat + Num + AddAssign + Copy> Add<T> for KahanSum<T> {
     type Output = Self;
 
     fn add(self, rhs: T) -> Self::Output {

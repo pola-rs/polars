@@ -63,7 +63,12 @@ fn write_boolean() -> PolarsResult<()> {
     let array = BooleanArray::from([Some(true), Some(false), None, Some(true)]).boxed();
     let schema = prep_schema(array.as_ref());
     let columns = RecordBatchT::try_new(4, schema.clone(), vec![array])?;
-    round_trip(columns, schema, None, Some(Compression::ZSTD))
+    round_trip(
+        columns,
+        schema,
+        None,
+        Some(Compression::ZSTD(Default::default())),
+    )
 }
 
 #[test]
@@ -73,7 +78,12 @@ fn write_sliced_utf8() -> PolarsResult<()> {
         .boxed();
     let schema = prep_schema(array.as_ref());
     let columns = RecordBatchT::try_new(array.len(), schema.clone(), vec![array])?;
-    round_trip(columns, schema, None, Some(Compression::ZSTD))
+    round_trip(
+        columns,
+        schema,
+        None,
+        Some(Compression::ZSTD(Default::default())),
+    )
 }
 
 #[test]
@@ -81,5 +91,10 @@ fn write_binview() -> PolarsResult<()> {
     let array = Utf8ViewArray::from_slice([Some("foo"), Some("bar"), None, Some("hamlet")]).boxed();
     let schema = prep_schema(array.as_ref());
     let columns = RecordBatchT::try_new(array.len(), schema.clone(), vec![array])?;
-    round_trip(columns, schema, None, Some(Compression::ZSTD))
+    round_trip(
+        columns,
+        schema,
+        None,
+        Some(Compression::ZSTD(Default::default())),
+    )
 }

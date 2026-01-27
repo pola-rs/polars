@@ -14,7 +14,6 @@ use crate::{match_integer_type, with_match_primitive_type_full};
 mod binary;
 mod binview;
 mod boolean;
-mod dictionary;
 mod fixed_size_binary;
 mod fixed_sized_list;
 mod list;
@@ -26,7 +25,6 @@ mod union;
 use binary::*;
 use binview::*;
 use boolean::*;
-pub(super) use dictionary::*;
 use fixed_size_binary::*;
 use fixed_sized_list::*;
 use list::*;
@@ -141,16 +139,17 @@ pub fn write(
             compression,
         ),
         Dictionary(key_type) => match_integer_type!(key_type, |$T| {
-            write_dictionary::<$T>(
-                array.as_any().downcast_ref().unwrap(),
+            let array: &DictionaryArray<$T> = array.as_any().downcast_ref().unwrap();
+            let keys_array: &PrimitiveArray<$T> = array.keys().as_any().downcast_ref().unwrap();
+
+            write_primitive::<$T>(
+                keys_array,
                 buffers,
                 arrow_data,
-                nodes,
                 offset,
                 is_little_endian,
-                compression,
-                true,
-            );
+                compression
+            )
         }),
         Union => {
             write_union(
@@ -216,8 +215,8 @@ fn write_bytes(
             Compression::LZ4 => {
                 compression::compress_lz4(bytes, arrow_data).unwrap();
             },
-            Compression::ZSTD => {
-                compression::compress_zstd(bytes, arrow_data).unwrap();
+            Compression::ZSTD(level) => {
+                compression::compress_zstd(bytes, arrow_data, level).unwrap();
             },
         }
     } else {
@@ -318,8 +317,8 @@ fn _write_compressed_buffer_from_iter<T: NativeType, I: TrustedLen<Item = T>>(
         Compression::LZ4 => {
             compression::compress_lz4(&swapped, arrow_data).unwrap();
         },
-        Compression::ZSTD => {
-            compression::compress_zstd(&swapped, arrow_data).unwrap();
+        Compression::ZSTD(level) => {
+            compression::compress_zstd(&swapped, arrow_data, level).unwrap();
         },
     }
 }
@@ -347,8 +346,8 @@ fn _write_compressed_buffer<T: NativeType>(
             Compression::LZ4 => {
                 compression::compress_lz4(bytes, arrow_data).unwrap();
             },
-            Compression::ZSTD => {
-                compression::compress_zstd(bytes, arrow_data).unwrap();
+            Compression::ZSTD(level) => {
+                compression::compress_zstd(bytes, arrow_data, level).unwrap();
             },
         }
     } else {

@@ -35,6 +35,7 @@ impl ForbidExtraColumns {
         &self,
         file_schema: &Schema,
         file_iceberg_schema: Option<&IcebergSchema>,
+        file_path: &str,
     ) -> PolarsResult<()> {
         let Some(extra_column_name) = (match self {
             Self::Plain(schema) => file_schema.iter_names().find(|x| !schema.contains(x)),
@@ -46,6 +47,6 @@ impl ForbidExtraColumns {
             return Ok(());
         };
 
-        Err(extra_column_err(extra_column_name))
+        Err(extra_column_err(extra_column_name, file_path))
     }
 }

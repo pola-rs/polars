@@ -1,61 +1,57 @@
-# Configure settings
+# Workspace configuration
 
-The Workspace Settings page provides a centralized interface for managing your workspace
-configuration.
+On the workspace settings page you can set cluster defaults, create labels, add service accounts and
+change other workspace related settings.
 
-## General
+## Workspace configuration
 
-The General section contains basic information about your workspace:
-
-- **Workspace Name**: Displays the current name of your workspace. You can modify this by clicking
-  the "Edit" button.
-- **Description**: Provides space for a detailed description of your workspace's purpose. The
-  description can be modified by clicking the "Edit" button.
+Configure workspace identity through the name and description fields. Use descriptive naming
+conventions that align with your project structure or data domains for easier workspace discovery
+and management.
 
 ## Default Compute Configuration
 
-This section allows you to define the default computational resources allocated to jobs and
-processes within your workspace.
+Set default computational resources to standardize job execution without requiring explicit compute
+context configuration for each operation. Two configuration modes are available:
 
-- **Set Cluster Defaults**: Clicking this button lets you configure either a Resource based default
-  or Instance based default.
-  - With Resource based custom amount of vCPUs, RAM, Storage and cluster size can be defined.
-  - Instance based allows to select a default instance type from the cloud service provider.
+**Resource-based** configuration allows precise specification of vCPUs, RAM, storage, and cluster
+size. Use this approach when you require control over resource allocation or have specific
+performance/cost optimization requirements. When the specific configuration is not available on AWS,
+the cheapest instance with at least the specifications is selected and used.
 
-Setting default compute configurations eliminates the need to explicitly define a compute context.
-More information on configuration can be found in the section on
-[setting up compute context](../run/compute-context.md).
+**Instance-based** configuration leverages cloud provider instance types. This approach simplifies
+configuration by using pre-optimized instance configurations and is typically more cost-effective
+for standard workloads.
+
+Default compute configurations eliminate the need to explicitly define a compute context. More
+information on configuration can be found in the section on
+[setting the compute context](../context/compute-context.md).
 
 ## Query and compute labels
 
-Labels help organize and categorize queries and compute within your workspace. The labels can only
-be set from the dashboard.
+Labels help organize and categorize queries and compute within your workspace. Labels can only be
+managed through the dashboard interface.
 
 ```python
 ctx= plc.ComputeContext(
-    workspace="PolarsCloudDemo",
-    labels=["marketing", "cltv"],
+    workspace="your-workspace",
+    labels=["docs", "user-guide"],
 )
 ```
 
-- **Create New Label**: Create custom labels that can be applied to various resources for better
-  organization and insight in usage.
+## Service Account Management
 
-## Service Accounts
+Service accounts allow scripts to authenticate without human intervention. Each service account
+generates an authentication token with workspace-scoped permissions.
 
-The Service Accounts section manages programmatic access to your workspace.
-
-- **Token Description**: Displays the purpose of each service account token.
-- **Created At**: Shows when a service account was created.
-- **Action**: Provides options to delete service accounts.
-- **Create New Service Account**: Allows you to generate new service accounts for API access and
-  automation.
-
-You can find more information about using Service Accounts in your workflows in the "Use service
-accounts" section.
+Use clear and descriptive names that match your project structure or data domain to improve clarity.
+Refer to the [Use service accounts](../explain/service-accounts.md) section for implementation
+patterns and security best practices.
 
 ## Disable workspace
 
-Users have the ability to disable the entire workspace. This should be used with caution. Disabling
-the workspace will stop processes, remove access and permanently delete all data and content within
-the workspace.
+Workspace admins can disable workspaces removing all data, terminating active processes, and
+revoking all access tokens. This action cannot be reversed.
+
+Ensure data export and backup completion before disabling workspaces containing critical datasets or
+analysis artifacts.

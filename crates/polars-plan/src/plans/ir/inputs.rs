@@ -90,7 +90,7 @@ impl IR {
                 options,
                 ..
             } => match &options.options {
-                Some(JoinTypeOptionsIR::Cross { predicate }) => Exprs::Boxed(Box::new(
+                Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) => Exprs::Boxed(Box::new(
                     left_on
                         .iter()
                         .chain(right_on.iter())
@@ -101,19 +101,19 @@ impl IR {
 
             Sink { payload, .. } => match payload {
                 SinkTypeIR::Memory => Exprs::Empty,
+                SinkTypeIR::Callback(_) => Exprs::Empty,
+
                 SinkTypeIR::File(_) => Exprs::Empty,
-                SinkTypeIR::Partition(p) => {
-                    let key_iter = match &p.variant {
-                        PartitionVariantIR::Parted { key_exprs, .. }
-                        | PartitionVariantIR::ByKey { key_exprs, .. } => key_exprs.iter(),
-                        _ => [].iter(),
-                    };
-                    let sort_by_iter = match &p.per_partition_sort_by {
-                        Some(sort_by) => sort_by.iter(),
-                        _ => [].iter(),
-                    }
-                    .map(|s| &s.expr);
-                    Exprs::Boxed(Box::new(key_iter.chain(sort_by_iter)))
+
+                SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {
+                    partition_strategy, ..
+                }) => match partition_strategy {
+                    PartitionStrategyIR::Keyed {
+                        keys,
+                        include_keys: _,
+                        keys_pre_grouped: _,
+                    } => Exprs::Slice(keys.iter()),
+                    PartitionStrategyIR::FileSize => Exprs::Empty,
                 },
             },
 
@@ -162,7 +162,7 @@ impl IR {
                 options,
                 ..
             } => match Arc::make_mut(options).options.as_mut() {
-                Some(JoinTypeOptionsIR::Cross { predicate }) => ExprsMut::Boxed(Box::new(
+                Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) => ExprsMut::Boxed(Box::new(
                     left_on
                         .iter_mut()
                         .chain(right_on.iter_mut())
@@ -173,19 +173,19 @@ impl IR {
 
             Sink { payload, .. } => match payload {
                 SinkTypeIR::Memory => ExprsMut::Empty,
+                SinkTypeIR::Callback(_) => ExprsMut::Empty,
+
                 SinkTypeIR::File(_) => ExprsMut::Empty,
-                SinkTypeIR::Partition(p) => {
-                    let key_iter = match &mut p.variant {
-                        PartitionVariantIR::Parted { key_exprs, .. }
-                        | PartitionVariantIR::ByKey { key_exprs, .. } => key_exprs.iter_mut(),
-                        _ => [].iter_mut(),
-                    };
-                    let sort_by_iter = match &mut p.per_partition_sort_by {
-                        Some(sort_by) => sort_by.iter_mut(),
-                        _ => [].iter_mut(),
-                    }
-                    .map(|s| &mut s.expr);
-                    ExprsMut::Boxed(Box::new(key_iter.chain(sort_by_iter)))
+
+                SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {
+                    partition_strategy, ..
+                }) => match partition_strategy {
+                    PartitionStrategyIR::Keyed {
+                        keys,
+                        include_keys: _,
+                        keys_pre_grouped: _,
+                    } => ExprsMut::Slice(keys.iter_mut()),
+                    PartitionStrategyIR::FileSize => ExprsMut::Empty,
                 },
             },
 

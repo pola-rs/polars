@@ -25,7 +25,6 @@ use rayon::prelude::*;
 
 use super::{BufferedStream, JOIN_SAMPLE_LIMIT, LOPSIDED_SAMPLE_FACTOR};
 use crate::async_executor;
-use crate::async_primitives::connector::{Receiver, Sender};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::expression::StreamExpr;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
@@ -81,7 +80,6 @@ fn compute_payload_selector(
 ) -> PolarsResult<Vec<Option<PlSmallStr>>> {
     let should_coalesce = args.should_coalesce();
 
-    let mut coalesce_idx = 0;
     this.iter_names()
         .map(|c| {
             #[expect(clippy::never_loop)]
@@ -105,8 +103,8 @@ fn compute_payload_selector(
                     } else if args.how == JoinType::Full {
                         // We must keep the right-hand side keycols around for
                         // coalescing.
-                        let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL{coalesce_idx}");
-                        coalesce_idx += 1;
+                        let key_idx = this_key_schema.index_of(c).unwrap();
+                        let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL_{key_idx}");
                         Some(name)
                     } else {
                         None
@@ -137,17 +135,14 @@ fn compute_payload_selector(
 fn postprocess_join(df: DataFrame, params: &EquiJoinParams) -> DataFrame {
     if params.args.how == JoinType::Full && params.args.should_coalesce() {
         // TODO: don't do string-based column lookups for each dataframe, pre-compute coalesce indices.
-        let mut coalesce_idx = 0;
-        df.get_columns()
+        let new_cols = df
+            .columns()
             .iter()
             .filter_map(|c| {
-                if params.left_key_schema.contains(c.name()) {
+                if let Some(key_idx) = params.left_key_schema.index_of(c.name()) {
                     let other = df
-                        .column(&format_pl_smallstr!(
-                            "__POLARS_COALESCE_KEYCOL{coalesce_idx}"
-                        ))
+                        .column(&format_pl_smallstr!("__POLARS_COALESCE_KEYCOL_{key_idx}"))
                         .unwrap();
-                    coalesce_idx += 1;
                     return Some(coalesce_columns(&[c.clone(), other.clone()]).unwrap());
                 }
 
@@ -157,7 +152,9 @@ fn postprocess_join(df: DataFrame, params: &EquiJoinParams) -> DataFrame {
 
                 Some(c.clone())
             })
-            .collect()
+            .collect();
+
+        unsafe { DataFrame::new_unchecked(df.height(), new_cols) }
     } else {
         df
     }
@@ -181,26 +178,25 @@ async fn select_keys(
     for selector in key_selectors {
         key_columns.push(selector.evaluate(df, state).await?.into_column());
     }
-    let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
+    let keys = unsafe { DataFrame::new_unchecked_with_broadcast(df.height(), key_columns)? };
     Ok(HashKeys::from_df(
         &keys,
-        params.random_state,
+        params.random_state.clone(),
         params.args.nulls_equal,
         false,
     ))
 }
 
 fn select_payload(df: DataFrame, selector: &[Option<PlSmallStr>]) -> DataFrame {
-    // Maintain height of zero-width dataframes.
-    if df.width() == 0 {
-        return df;
-    }
-
-    df.take_columns()
+    let height = df.height();
+    let new_cols = df
+        .into_columns()
         .into_iter()
         .zip(selector)
         .filter_map(|(c, name)| Some(c.with_name(name.clone()?)))
-        .collect()
+        .collect();
+
+    unsafe { DataFrame::new_unchecked(height, new_cols) }
 }
 
 fn estimate_cardinality(
@@ -262,7 +258,7 @@ struct SampleState {
 
 impl SampleState {
     async fn sink(
-        mut recv: Receiver<Morsel>,
+        mut recv: PortReceiver,
         morsels: &mut Vec<Morsel>,
         len: &mut usize,
         this_final_len: Arc<RelaxedCell<usize>>,
@@ -449,7 +445,7 @@ impl BuildState {
     }
 
     async fn partition_and_sink(
-        mut recv: Receiver<Morsel>,
+        mut recv: PortReceiver,
         local: &mut LocalBuilder,
         partitioner: HashPartitioner,
         params: &EquiJoinParams,
@@ -744,8 +740,8 @@ struct ProbeState {
 impl ProbeState {
     /// Returns the max morsel sequence sent.
     async fn partition_and_probe(
-        mut recv: Receiver<Morsel>,
-        mut send: Sender<Morsel>,
+        mut recv: PortReceiver,
+        mut send: PortSender,
         partitions: &[ProbeTable],
         unordered_morsel_seq: &AtomicU64,
         partitioner: HashPartitioner,
@@ -811,10 +807,10 @@ impl ProbeState {
                         let mut build_df = build.freeze_reset();
                         let mut probe_df = probe.freeze_reset();
                         let out_df = if params.left_is_build.unwrap() {
-                            build_df.hstack_mut_unchecked(probe_df.get_columns());
+                            build_df.hstack_mut_unchecked(probe_df.columns());
                             build_df
                         } else {
-                            probe_df.hstack_mut_unchecked(build_df.get_columns());
+                            probe_df.hstack_mut_unchecked(build_df.columns());
                             probe_df
                         };
                         let out_df = postprocess_join(out_df, params);
@@ -1056,12 +1052,12 @@ impl ProbeState {
             let out_df = if params.left_is_build.unwrap() {
                 let probe_df =
                     DataFrame::full_null(&params.right_payload_schema, build_df.height());
-                build_df.hstack_mut_unchecked(probe_df.get_columns());
+                build_df.hstack_mut_unchecked(probe_df.columns());
                 build_df
             } else {
                 let mut probe_df =
                     DataFrame::full_null(&params.left_payload_schema, build_df.height());
-                probe_df.hstack_mut_unchecked(build_df.get_columns());
+                probe_df.hstack_mut_unchecked(build_df.columns());
                 probe_df
             };
             postprocess_join(out_df, params)
@@ -1088,7 +1084,7 @@ struct EmitUnmatchedState {
 impl EmitUnmatchedState {
     async fn emit_unmatched(
         &mut self,
-        mut send: Sender<Morsel>,
+        mut send: PortSender,
         params: &EquiJoinParams,
         num_pipelines: usize,
     ) -> PolarsResult<()> {
@@ -1122,11 +1118,11 @@ impl EmitUnmatchedState {
                     let len = build_df.height();
                     if params.left_is_build.unwrap() {
                         let probe_df = DataFrame::full_null(&params.right_payload_schema, len);
-                        build_df.hstack_mut_unchecked(probe_df.get_columns());
+                        build_df.hstack_mut_unchecked(probe_df.columns());
                         build_df
                     } else {
                         let mut probe_df = DataFrame::full_null(&params.left_payload_schema, len);
-                        probe_df.hstack_mut_unchecked(build_df.get_columns());
+                        probe_df.hstack_mut_unchecked(build_df.columns());
                         probe_df
                     }
                 };

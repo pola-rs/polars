@@ -5,6 +5,7 @@ use arrow::types::NativeType;
 use polars_compute::min_max::MinMaxKernel;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::float16::pf16;
 
 use crate::chunked_array::list::namespace::has_inner_nulls;
 
@@ -60,6 +61,8 @@ fn min_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
                 UInt16 => dispatch_min::<u16>(values, offsets, arr.validity()),
                 UInt32 => dispatch_min::<u32>(values, offsets, arr.validity()),
                 UInt64 => dispatch_min::<u64>(values, offsets, arr.validity()),
+                UInt128 => dispatch_min::<u128>(values, offsets, arr.validity()),
+                Float16 => dispatch_min::<pf16>(values, offsets, arr.validity()),
                 Float32 => dispatch_min::<f32>(values, offsets, arr.validity()),
                 Float64 => dispatch_min::<f64>(values, offsets, arr.validity()),
                 _ => unimplemented!(),
@@ -89,16 +92,21 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
                     unsafe { out.into_series().from_physical_unchecked(dt) }
                 })
             },
-            dt => ca
-                .try_apply_amortized(|s| {
+            dt => unsafe {
+                // SAFETY: `min_reduce` doesn't change the dtype
+                ca.try_apply_amortized_same_type(|s| {
                     let s = s.as_ref();
                     let sc = s.min_reduce()?;
                     Ok(sc.into_series(s.name().clone()))
                 })?
-                .explode(false)
-                .unwrap()
-                .into_series()
-                .cast(dt),
+            }
+            .explode(ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            })
+            .unwrap()
+            .into_series()
+            .cast(dt),
         }
     }
 
@@ -171,6 +179,8 @@ fn max_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
                 UInt16 => dispatch_max::<u16>(values, offsets, arr.validity()),
                 UInt32 => dispatch_max::<u32>(values, offsets, arr.validity()),
                 UInt64 => dispatch_max::<u64>(values, offsets, arr.validity()),
+                UInt128 => dispatch_max::<u128>(values, offsets, arr.validity()),
+                Float16 => dispatch_max::<pf16>(values, offsets, arr.validity()),
                 Float32 => dispatch_max::<f32>(values, offsets, arr.validity()),
                 Float64 => dispatch_max::<f64>(values, offsets, arr.validity()),
                 _ => unimplemented!(),
@@ -200,16 +210,21 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
                     unsafe { out.into_series().from_physical_unchecked(dt) }
                 })
             },
-            dt => ca
-                .try_apply_amortized(|s| {
+            dt => unsafe {
+                // SAFETY: `max_reduce` doesn't change the dtype
+                ca.try_apply_amortized_same_type(|s| {
                     let s = s.as_ref();
                     let sc = s.max_reduce()?;
                     Ok(sc.into_series(s.name().clone()))
                 })?
-                .explode(false)
-                .unwrap()
-                .into_series()
-                .cast(dt),
+            }
+            .explode(ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            })
+            .unwrap()
+            .into_series()
+            .cast(dt),
         }
     }
 

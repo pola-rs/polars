@@ -1,5 +1,6 @@
 use super::functions::convert_functions;
 use super::*;
+use crate::constants::{get_pl_element_name, get_pl_structfields_name};
 use crate::plans::iterator::ArenaExprIter;
 
 pub fn to_expr_ir(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
@@ -47,7 +48,7 @@ fn to_aexpr_impl_materialized_lit(
 }
 
 pub struct ExprToIRContext<'a> {
-    pub(super) with_fields: Option<(Node, Schema)>,
+    pub(super) with_fields: Option<Schema>,
     pub arena: &'a mut Arena<AExpr>,
     pub schema: &'a Schema,
 
@@ -60,6 +61,30 @@ impl<'a> ExprToIRContext<'a> {
     pub fn new(arena: &'a mut Arena<AExpr>, schema: &'a Schema) -> Self {
         Self {
             with_fields: None,
+            arena,
+            schema,
+            allow_unknown: false,
+            check_column_names: true,
+        }
+    }
+
+    /// If the `schema` is extended with an extra Struct schema field, use it to
+    /// populate `with_fields`.
+    pub fn new_with_fields(arena: &'a mut Arena<AExpr>, schema: &'a Schema) -> Self {
+        let with_fields = match schema.get(&get_pl_structfields_name()) {
+            #[cfg(feature = "dtype-struct")]
+            Some(dtype) => {
+                let DataType::Struct(fields) = &dtype else {
+                    unreachable!()
+                };
+                let struct_schema = Schema::from_iter(fields.iter().cloned());
+                Some(struct_schema)
+            },
+            _ => None,
+        };
+
+        Self {
+            with_fields,
             arena,
             schema,
             allow_unknown: false,
@@ -82,6 +107,10 @@ impl<'a> ExprToIRContext<'a> {
         ctx.allow_unknown = true;
         ctx.check_column_names = false;
         ctx
+    }
+
+    pub fn to_field_ctx<'b>(&'b self) -> ToFieldContext<'b> {
+        ToFieldContext::new(self.arena, self.schema)
     }
 }
 
@@ -116,13 +145,14 @@ pub(super) fn to_aexpr_impl(
     }
 
     let (v, output_name) = match expr {
-        Expr::Explode { input, skip_empty } => {
+        Expr::Element => (AExpr::Element, PlSmallStr::EMPTY),
+        Expr::Explode { input, options } => {
             let (expr, output_name) = recurse_arc!(input)?;
-            (AExpr::Explode { expr, skip_empty }, output_name)
+            (AExpr::Explode { expr, options }, output_name)
         },
         Expr::Alias(e, name) => return Ok((recurse_arc!(e)?.0, name)),
         Expr::Literal(lv) => {
-            let output_name = lv.output_column_name().clone();
+            let output_name = lv.output_column_name();
             (AExpr::Literal(lv), output_name)
         },
         Expr::Column(name) => {
@@ -162,6 +192,7 @@ pub(super) fn to_aexpr_impl(
             expr,
             idx,
             returns_scalar,
+            null_on_oob,
         } => {
             let (expr, output_name) = recurse_arc!(expr)?;
             let (idx, _) = to_aexpr_mat_lit_arc!(idx)?;
@@ -170,6 +201,7 @@ pub(super) fn to_aexpr_impl(
                     expr,
                     idx,
                     returns_scalar,
+                    null_on_oob,
                 },
                 output_name,
             )
@@ -231,6 +263,16 @@ pub(super) fn to_aexpr_impl(
                         output_name,
                     )
                 },
+                AggExpr::MinBy { input, by } => {
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    let (by, _) = to_aexpr_mat_lit_arc!(by)?;
+                    (IRAggExpr::MinBy { input, by }, output_name)
+                },
+                AggExpr::MaxBy { input, by } => {
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    let (by, _) = to_aexpr_mat_lit_arc!(by)?;
+                    (IRAggExpr::MaxBy { input, by }, output_name)
+                },
                 AggExpr::Median(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Median(input), output_name)
@@ -243,9 +285,21 @@ pub(super) fn to_aexpr_impl(
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::First(input), output_name)
                 },
+                AggExpr::FirstNonNull(input) => {
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    (IRAggExpr::FirstNonNull(input), output_name)
+                },
                 AggExpr::Last(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Last(input), output_name)
+                },
+                AggExpr::LastNonNull(input) => {
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    (IRAggExpr::LastNonNull(input), output_name)
+                },
+                AggExpr::Item { input, allow_empty } => {
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    (IRAggExpr::Item { input, allow_empty }, output_name)
                 },
                 AggExpr::Mean(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
@@ -255,9 +309,18 @@ pub(super) fn to_aexpr_impl(
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Implode(input), output_name)
                 },
-                AggExpr::Count(input, include_nulls) => {
+                AggExpr::Count {
+                    input,
+                    include_nulls,
+                } => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::Count(input, include_nulls), output_name)
+                    (
+                        IRAggExpr::Count {
+                            input,
+                            include_nulls,
+                        },
+                        output_name,
+                    )
                 },
                 AggExpr::Quantile {
                     expr,
@@ -333,26 +396,11 @@ pub(super) fn to_aexpr_impl(
             let out = function.get_field(ctx.schema, &fields)?;
             let output_dtype = out.dtype();
 
-            #[cfg(feature = "python")]
-            {
-                if output_dtype.is_unknown()
-                    && !matches!(output_dtype, DataType::Unknown(UnknownKind::Ufunc))
-                {
-                    let msg = format!(
-                        "'return_dtype' of function {fmt_str} must be set\n\nA later expression might fail because the output type is not known. Set return_dtype=pl.self_dtype() if the type is unchanged, or set the proper output data type."
-                    );
-                    if ctx.allow_unknown {
-                        polars_warn!(MapWithoutReturnDtypeWarning, "{}", msg)
-                    } else {
-                        polars_bail!(InvalidOperation: msg)
-                    }
-                }
-            }
-            #[cfg(not(feature = "python"))]
             assert!(
                 output_dtype.is_known(),
                 "output type of anonymous functions must bet set"
             );
+
             (
                 AExpr::AnonymousFunction {
                     input,
@@ -366,11 +414,32 @@ pub(super) fn to_aexpr_impl(
         Expr::Function { input, function } => {
             return convert_functions(input, function, ctx);
         },
-        Expr::Window {
+        #[cfg(feature = "dynamic_group_by")]
+        Expr::Rolling {
+            function,
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } => {
+            let (function, output_name) = recurse_arc!(function)?;
+            let (index_column, _) = to_aexpr_mat_lit_arc!(index_column)?;
+            (
+                AExpr::Rolling {
+                    function,
+                    index_column,
+                    period,
+                    offset,
+                    closed_window,
+                },
+                output_name,
+            )
+        },
+        Expr::Over {
             function,
             partition_by,
             order_by,
-            options,
+            mapping,
         } => {
             let (function, output_name) = recurse_arc!(function)?;
             let order_by = if let Some((e, options)) = order_by {
@@ -380,14 +449,14 @@ pub(super) fn to_aexpr_impl(
             };
 
             (
-                AExpr::Window {
+                AExpr::Over {
                     function,
                     partition_by: partition_by
                         .into_iter()
                         .map(|e| Ok(to_aexpr_impl_materialized_lit(e, ctx)?.0))
                         .collect::<PolarsResult<_>>()?,
                     order_by,
-                    options,
+                    mapping,
                 },
                 output_name,
             )
@@ -415,23 +484,23 @@ pub(super) fn to_aexpr_impl(
             variant,
         } => {
             let (expr, output_name) = recurse_arc!(expr)?;
-            let expr_dtype = ctx.arena.get(expr).to_dtype(ctx.schema, ctx.arena)?;
+            let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;
             let element_dtype = variant.element_dtype(&expr_dtype)?;
 
             // Perform this before schema resolution so that we can better error messages.
             for e in evaluation.as_ref().into_iter() {
-                if let Expr::Column(name) = e {
-                    polars_ensure!(
-                        name.is_empty(),
+                if matches!(e, Expr::Column(_)) {
+                    polars_bail!(
                         ComputeError:
                         "named columns are not allowed in `eval` functions; consider using `element`"
                     );
                 }
             }
 
-            let evaluation_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
+            let mut evaluation_schema = ctx.schema.clone();
+            evaluation_schema.insert(get_pl_element_name(), element_dtype.clone());
             let mut evaluation_ctx = ExprToIRContext {
-                with_fields: None,
+                with_fields: ctx.with_fields.clone(),
                 schema: &evaluation_schema,
                 arena: ctx.arena,
                 allow_unknown: ctx.allow_unknown,
@@ -440,7 +509,14 @@ pub(super) fn to_aexpr_impl(
             let (evaluation, _) = to_aexpr_impl(owned(evaluation), &mut evaluation_ctx)?;
 
             match variant {
-                EvalVariant::List => {},
+                EvalVariant::List | EvalVariant::ListAgg => {},
+                EvalVariant::Array { as_list } => {
+                    polars_ensure!(
+                        as_list || is_length_preserving_ae(evaluation, ctx.arena),
+                        InvalidOperation: "`array.eval` is not allowed with non-length preserving expressions. Enable `as_list` if you want to output a variable amount of items per row."
+                    )
+                },
+                EvalVariant::ArrayAgg => {},
                 EvalVariant::Cumulative { .. } => {
                     polars_ensure!(
                         is_scalar_ae(evaluation, ctx.arena),
@@ -454,6 +530,45 @@ pub(super) fn to_aexpr_impl(
                     expr,
                     evaluation,
                     variant,
+                },
+                output_name,
+            )
+        },
+        #[cfg(feature = "dtype-struct")]
+        Expr::StructEval { expr, evaluation } => {
+            let (expr, output_name) = recurse_arc!(expr)?;
+            let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;
+
+            let DataType::Struct(fields) = &expr_dtype else {
+                polars_bail!(op = "struct.with_fields", expr_dtype);
+            };
+
+            let struct_schema = Schema::from_iter(fields.iter().cloned());
+            let mut eval_schema = ctx.schema.clone();
+            eval_schema.insert(get_pl_structfields_name(), expr_dtype.clone());
+
+            let mut eval_ir = Vec::with_capacity(evaluation.len());
+
+            let mut field_names = PlHashSet::new();
+            for e in evaluation {
+                let mut eval_ctx = ExprToIRContext {
+                    with_fields: Some(struct_schema.clone()),
+                    arena: ctx.arena,
+                    schema: &eval_schema,
+                    allow_unknown: ctx.allow_unknown,
+                    check_column_names: ctx.check_column_names,
+                };
+                let exprir = to_expr_ir(e, &mut eval_ctx)?;
+                let field_name = exprir.output_name().clone();
+                polars_ensure!(field_names.insert(field_name.clone()),
+                    Duplicate: "field with name `{field_name}` has more than one occurrence");
+                eval_ir.push(exprir);
+            }
+
+            (
+                AExpr::StructEval {
+                    expr,
+                    evaluation: eval_ir,
                 },
                 output_name,
             )
@@ -488,7 +603,7 @@ pub(super) fn to_aexpr_impl(
             );
             let name = &name[0];
 
-            let Some((input, with_fields)) = &ctx.with_fields else {
+            let Some(with_fields) = &ctx.with_fields else {
                 polars_bail!(InvalidOperation: "`pl.field()` called outside of struct context");
             };
 
@@ -499,16 +614,7 @@ pub(super) fn to_aexpr_impl(
                 );
             }
 
-            let function = IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name.clone()));
-            let options = function.function_options();
-            (
-                AExpr::Function {
-                    input: vec![ExprIR::new(*input, OutputName::Alias(PlSmallStr::EMPTY))],
-                    function,
-                    options,
-                },
-                name.clone(),
-            )
+            (AExpr::StructField(name.clone()), name.clone())
         },
 
         e @ Expr::SubPlan { .. } | e @ Expr::Selector(_) => {

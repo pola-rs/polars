@@ -10,13 +10,13 @@ use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy, ScanSource};
 use polars_plan::plans::hive::HivePartitionsDf;
+use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
 use crate::nodes::io_sources::multi_scan::components::column_selector::ColumnSelector;
 use crate::nodes::io_sources::multi_scan::components::column_selector::builder::ColumnSelectorBuilder;
 use crate::nodes::io_sources::multi_scan::components::errors::missing_column_err;
 use crate::nodes::io_sources::multi_scan::components::projection::Projection;
-use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_scan::components::row_deletions::ExternalFilterMask;
 use crate::nodes::io_sources::multi_scan::pipeline::models::ExtraOperations;
 
@@ -292,10 +292,12 @@ impl ApplyExtraOps {
         };
 
         if let Some(column_selectors) = column_selectors.as_deref() {
-            *df = column_selectors
+            let new_cols = column_selectors
                 .iter()
-                .map(|x| x.select_from_columns(df.get_columns(), df.height()))
-                .collect::<PolarsResult<DataFrame>>()?;
+                .map(|x| x.select_from_columns(df.columns(), df.height()))
+                .collect::<PolarsResult<_>>()?;
+
+            *df = unsafe { DataFrame::new_unchecked(df.height(), new_cols) }
         }
 
         // Note: This branch is hit if we have negative slice or predicate + row index and the reader
@@ -324,17 +326,15 @@ impl ApplyExtraOps {
 
             let row_index_col = Column::new_row_index(ri.name.clone(), offset, df.height())?;
 
-            debug_assert_eq!(df.get_columns()[*col_idx].name(), &ri.name);
+            debug_assert_eq!(df.columns()[*col_idx].name(), &ri.name);
 
-            unsafe { *df.get_columns_mut().get_mut(*col_idx).unwrap() = row_index_col }
+            unsafe { *df.columns_mut().get_mut(*col_idx).unwrap() = row_index_col }
         }
 
         if let Some(predicate) = predicate {
             let mask = predicate.predicate.evaluate_io(df)?;
-            *df = df._filter_seq(mask.bool().expect("predicate not boolean"))?;
+            *df = df.filter_seq(mask.bool().expect("predicate not boolean"))?;
         }
-
-        df.clear_schema();
 
         Ok(())
     }

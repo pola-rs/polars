@@ -578,15 +578,22 @@ def test_when_then_parametric(
 
         py_mask, py_true, py_false = (
             [c[0]] * len if b else c
-            for b, c in zip(broadcast, [mask, if_true, if_false])
+            for b, c in zip(broadcast, [mask, if_true, if_false], strict=True)
         )
         pl_mask, pl_true, pl_false = (
             c.first() if b else c
-            for b, c in zip(broadcast, [pl.col.mask, pl.col.if_true, pl.col.if_false])
+            for b, c in zip(
+                broadcast, [pl.col.mask, pl.col.if_true, pl.col.if_false], strict=True
+            )
         )
 
         ref = pl.DataFrame(
-            {"if_true": [t if m else f for m, t, f in zip(py_mask, py_true, py_false)]},
+            {
+                "if_true": [
+                    t if m else f
+                    for m, t, f in zip(py_mask, py_true, py_false, strict=True)
+                ]
+            },
             schema={"if_true": dtype},
         )
         df = pl.DataFrame(
@@ -751,8 +758,8 @@ def test_when_then_to_decimal_18375() -> None:
     df = pl.DataFrame({"a": ["1.23", "4.56"]})
 
     result = df.with_columns(
-        b=pl.when(False).then(None).otherwise(pl.col("a").str.to_decimal()),
-        c=pl.when(True).then(pl.col("a").str.to_decimal()),
+        b=pl.when(False).then(None).otherwise(pl.col("a").str.to_decimal(scale=2)),
+        c=pl.when(True).then(pl.col("a").str.to_decimal(scale=2)),
     )
     expected = pl.DataFrame(
         {
@@ -760,7 +767,7 @@ def test_when_then_to_decimal_18375() -> None:
             "b": ["1.23", "4.56"],
             "c": ["1.23", "4.56"],
         },
-        schema={"a": pl.String, "b": pl.Decimal, "c": pl.Decimal},
+        schema={"a": pl.String, "b": pl.Decimal(scale=2), "c": pl.Decimal(scale=2)},
     )
     assert_frame_equal(result, expected)
 

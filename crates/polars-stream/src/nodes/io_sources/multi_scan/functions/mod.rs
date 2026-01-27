@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use polars_utils::slice_enum::Slice;
 
 pub mod resolve_projections;
@@ -9,10 +11,10 @@ pub fn calc_n_readers_pre_init(
     pre_slice: Option<&Slice>,
 ) -> usize {
     if let Ok(v) = std::env::var("POLARS_NUM_READERS_PRE_INIT").map(|x| {
-        x.parse::<usize>()
+        x.parse::<NonZeroUsize>()
             .ok()
-            .filter(|x| *x > 0)
             .unwrap_or_else(|| panic!("invalid value for POLARS_NUM_READERS_PRE_INIT: {x}"))
+            .get()
     }) {
         return v;
     }
@@ -27,19 +29,19 @@ pub fn calc_n_readers_pre_init(
     num_pipelines
         .saturating_add(3)
         .min(max_files_with_slice)
-        .min(num_sources.max(1))
-        .min(128)
+        .min(num_sources)
+        .clamp(1, 128)
 }
 
 pub fn calc_max_concurrent_scans(num_pipelines: usize, num_sources: usize) -> usize {
     if let Ok(v) = std::env::var("POLARS_MAX_CONCURRENT_SCANS").map(|x| {
-        x.parse::<usize>()
+        x.parse::<NonZeroUsize>()
             .ok()
-            .filter(|x| *x > 0)
             .unwrap_or_else(|| panic!("invalid value for POLARS_MAX_CONCURRENT_SCANS: {x}"))
+            .get()
     }) {
         return v;
     }
 
-    num_pipelines.min(num_sources.max(1)).min(128)
+    num_pipelines.min(num_sources).clamp(1, 128)
 }

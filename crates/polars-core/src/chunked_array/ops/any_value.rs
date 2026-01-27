@@ -1,11 +1,11 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
-#[cfg(feature = "object")]
-use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 use crate::utils::index_to_chunked_index;
 
+/// # Safety
+/// `idx` MUST be in-bounds for `arr` and `dtype` has to match the data stored in `arr`.
 #[inline]
 #[allow(unused_variables)]
 pub(crate) unsafe fn arr_to_any_value<'a>(
@@ -39,11 +39,13 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::UInt16 => downcast_and_pack!(UInt16Array, UInt16),
         DataType::UInt32 => downcast_and_pack!(UInt32Array, UInt32),
         DataType::UInt64 => downcast_and_pack!(UInt64Array, UInt64),
+        DataType::UInt128 => downcast_and_pack!(UInt128Array, UInt128),
         DataType::Int8 => downcast_and_pack!(Int8Array, Int8),
         DataType::Int16 => downcast_and_pack!(Int16Array, Int16),
         DataType::Int32 => downcast_and_pack!(Int32Array, Int32),
         DataType::Int64 => downcast_and_pack!(Int64Array, Int64),
         DataType::Int128 => downcast_and_pack!(Int128Array, Int128),
+        DataType::Float16 => downcast_and_pack!(Float16Array, Float16),
         DataType::Float32 => downcast_and_pack!(Float32Array, Float32),
         DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
         DataType::List(dt) => {
@@ -130,14 +132,14 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Decimal(precision, scale) => {
             let arr = &*(arr as *const dyn Array as *const Int128Array);
             let v = arr.value_unchecked(idx);
-            AnyValue::Decimal(v, scale.unwrap_or_else(|| unreachable!()))
+            AnyValue::Decimal(v, *precision, *scale)
         },
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(typ, storage) => arr_to_any_value(arr, idx, storage),
         #[cfg(feature = "object")]
         DataType::Object(_) => {
-            // We should almost never hit this. The only known exception is when we put objects in
-            // structs. Any other hit should be considered a bug.
-            let arr = arr.as_any().downcast_ref::<FixedSizeBinaryArray>().unwrap();
-            PolarsExtension::arr_to_av(arr, idx)
+            use crate::chunked_array::object::registry::get_object_array_getter;
+            get_object_array_getter()(arr, idx).unwrap()
         },
         DataType::Null => AnyValue::Null,
         DataType::BinaryOffset => downcast_and_pack!(LargeBinaryArray, Binary),
@@ -241,6 +243,19 @@ impl ChunkAnyValue for BinaryOffsetChunked {
 
     fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
+    }
+}
+
+impl ChunkAnyValueBypassValidity for BinaryOffsetChunked {
+    #[inline]
+    unsafe fn get_any_value_bypass_validity(&self, index: usize) -> AnyValue<'_> {
+        debug_assert!(index < self.len());
+        let (chunk_idx, idx) = self.index_to_chunked_index(index);
+        debug_assert!(chunk_idx < self.chunks.len());
+        let arr = &**self.chunks.get_unchecked(chunk_idx);
+        let arr = &*(arr as *const dyn Array as *const LargeBinaryArray);
+        let v = arr.value_unchecked(idx);
+        AnyValue::Binary(v)
     }
 }
 

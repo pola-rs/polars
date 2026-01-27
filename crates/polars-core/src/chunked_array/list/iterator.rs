@@ -91,11 +91,7 @@ impl<I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'_, I>
                     series_mut_inner.compute_len();
                 }
 
-                // SAFETY:
-                // inner belongs to Series.
-                unsafe {
-                    AmortSeries::new_with_chunk(self.series_container.clone(), self.inner.as_ref())
-                }
+                AmortSeries::new(self.series_container.clone())
             })
         })
     }
@@ -371,9 +367,12 @@ impl ListChunked {
         Ok(out)
     }
 
-    /// Apply a closure `F` elementwise.
+    /// Apply a closure `F` to each list elementwise.
+    ///
+    /// # Safety
+    /// The closure `F` must return the same dtype as the input.
     #[must_use]
-    pub fn apply_amortized<F>(&self, mut f: F) -> Self
+    pub unsafe fn apply_amortized_same_type<F>(&self, mut f: F) -> Self
     where
         F: FnMut(AmortSeries) -> Series,
     {
@@ -381,27 +380,26 @@ impl ListChunked {
             return self.clone();
         }
         let mut fast_explode = self.null_count() == 0;
-        let mut ca: ListChunked = {
-            self.amortized_iter()
-                .map(|opt_v| {
-                    opt_v.map(|v| {
-                        let out = f(v);
-                        if out.is_empty() {
-                            fast_explode = false;
-                        }
-                        out
-                    })
+        let mut ca: ListChunked = self
+            .amortized_iter()
+            .map(|opt_v| {
+                opt_v.map(|v| {
+                    let out = f(v);
+                    if out.is_empty() {
+                        fast_explode = false;
+                    }
+                    to_arr(&out)
                 })
-                .collect_trusted()
-        };
+            })
+            .collect_ca_with_dtype(self.name().clone(), self.dtype().clone());
 
-        ca.rename(self.name().clone());
         if fast_explode {
             ca.set_fast_explode();
         }
         ca
     }
 
+    /// Try apply a closure `F` elementwise (may change dtype).
     pub fn try_apply_amortized<F>(&self, mut f: F) -> PolarsResult<Self>
     where
         F: FnMut(AmortSeries) -> PolarsResult<Series>,
@@ -432,6 +430,48 @@ impl ListChunked {
             ca.set_fast_explode();
         }
         Ok(ca)
+    }
+
+    /// Try apply a closure `F` to each list element.
+    ///
+    /// # Safety
+    /// The closure `F` must return the same dtype as the input.
+    pub unsafe fn try_apply_amortized_same_type<F>(&self, mut f: F) -> PolarsResult<Self>
+    where
+        F: FnMut(AmortSeries) -> PolarsResult<Series>,
+    {
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
+        let mut fast_explode = self.null_count() == 0;
+        let mut ca: ListChunked = self
+            .amortized_iter()
+            .map(|opt_v| {
+                opt_v
+                    .map(|v| {
+                        let out = f(v)?;
+                        if out.is_empty() {
+                            fast_explode = false;
+                        }
+                        PolarsResult::Ok(to_arr(&out))
+                    })
+                    .transpose()
+            })
+            .try_collect_ca_with_dtype(self.name().clone(), self.dtype().clone())?;
+
+        if fast_explode {
+            ca.set_fast_explode();
+        }
+        Ok(ca)
+    }
+}
+
+fn to_arr(s: &Series) -> ArrayRef {
+    if s.chunks().len() > 1 {
+        let s = s.rechunk();
+        s.chunks()[0].clone()
+    } else {
+        s.chunks()[0].clone()
     }
 }
 

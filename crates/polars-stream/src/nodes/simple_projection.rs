@@ -51,14 +51,9 @@ impl ComputeNode for SimpleProjectionNode {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Ok(morsel) = recv.recv().await {
-                    let morsel = morsel.try_map(|df| {
-                        // TODO: can this be unchecked?
-                        let check_duplicates = true;
-                        df._select_with_schema_impl(
-                            slf.columns.as_slice(),
-                            &slf.input_schema,
-                            check_duplicates,
-                        )
+                    let morsel = morsel.try_map(|df| unsafe {
+                        df.with_schema(slf.input_schema.clone())
+                            .select_unchecked(slf.columns.as_slice())
                     })?;
 
                     if send.send(morsel).await.is_err() {

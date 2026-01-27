@@ -4,12 +4,12 @@ use crate::async_executor;
 use crate::async_executor::{JoinHandle, TaskPriority};
 use crate::async_primitives::connector;
 use crate::async_primitives::wait_group::WaitToken;
-use crate::morsel::{Morsel, MorselSeq, SourceToken};
+use crate::morsel::{MorselSeq, SourceToken};
 use crate::nodes::io_sources::multi_scan::components::bridge::{
     BridgeRecvPort, BridgeState, StopReason,
 };
+use crate::pipe::PortSender;
 
-#[expect(clippy::type_complexity)]
 pub fn spawn_bridge(
     bridge_state: Arc<Mutex<BridgeState>>,
 ) -> (
@@ -17,7 +17,7 @@ pub fn spawn_bridge(
     // For attaching file reader output port
     connector::Sender<BridgeRecvPort>,
     // For attaching the multi scan node output port
-    connector::Sender<(connector::Sender<Morsel>, WaitToken)>,
+    connector::Sender<(PortSender, WaitToken)>,
 ) {
     let (incoming_tx, incoming) = connector::connector();
     let (outgoing_tx, outgoing) = connector::connector();
@@ -40,7 +40,7 @@ pub fn spawn_bridge(
 /// switching on both sides (i.e. file changes on incoming, phase changes on outgoing).
 struct Bridge {
     incoming: connector::Receiver<BridgeRecvPort>,
-    outgoing: connector::Receiver<(connector::Sender<Morsel>, WaitToken)>,
+    outgoing: connector::Receiver<(PortSender, WaitToken)>,
     bridge_state: Arc<Mutex<BridgeState>>,
     source_token: SourceToken,
 }
@@ -72,7 +72,7 @@ impl Bridge {
     async fn run_impl(
         &mut self,
         mut rx: BridgeRecvPort,
-        mut tx: connector::Sender<Morsel>,
+        mut tx: PortSender,
         mut current_phase_wait_token: WaitToken,
     ) -> (StopReason, Option<WaitToken>) {
         let mut morsel_seq: u64 = 0;

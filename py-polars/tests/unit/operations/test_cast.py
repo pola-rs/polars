@@ -3,7 +3,7 @@ from __future__ import annotations
 import operator
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -15,6 +15,8 @@ from polars.testing.asserts.series import assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType, PythonDataType
 
 
@@ -623,16 +625,16 @@ def test_invalid_cast_float_to_decimal(value: float) -> None:
     s = pl.Series([value], dtype=pl.Float64)
     with pytest.raises(
         InvalidOperationError,
-        match=r"conversion from `f64` to `decimal\[\*,0\]` failed",
+        match=r"conversion from `f64` to `decimal\[10,2\]` failed",
     ):
-        s.cast(pl.Decimal)
+        s.cast(pl.Decimal(10, 2))
 
 
 def test_err_on_time_datetime_cast() -> None:
     s = pl.Series([time(10, 0, 0), time(11, 30, 59)])
     with pytest.raises(
         InvalidOperationError,
-        match="casting from Time to Datetime\\(Microseconds, None\\) not supported; consider using `dt.combine`",
+        match=r"casting from Time to Datetime\('μs'\) not supported; consider using `dt\.combine`",
     ):
         s.cast(pl.Datetime)
 
@@ -1036,14 +1038,25 @@ def test_lit_cast_arithmetic_23677() -> None:
     assert q.collect().schema == expected
 
 
-@pytest.mark.parametrize("col_dtype", NUMERIC_DTYPES)
-@pytest.mark.parametrize("lit_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("col_dtype", NUMERIC_DTYPES + [pl.Unknown])
+@pytest.mark.parametrize("lit_dtype", NUMERIC_DTYPES + [pl.Unknown])
 @pytest.mark.parametrize("op", [operator.mul, operator.truediv])
 def test_lit_cast_arithmetic_matrix_schema(
     col_dtype: PolarsDataType,
     lit_dtype: PolarsDataType,
     op: Callable[[pl.Expr, pl.Expr], pl.Expr],
 ) -> None:
-    df = pl.DataFrame({"a": [1]}, schema={"a": col_dtype})
-    q = df.lazy().select(op(pl.col("a"), pl.lit(1, lit_dtype)))
+    # Note (hacky): simply casting to 'pl.Unknown' would create
+    # `Unknown(UnknownKind::Any())` which is not what we want: the
+    # default maps to `Unknown(UnknownKind::Int(_)))` so we adjust
+    df = (
+        pl.DataFrame({"a": [1]})
+        if col_dtype == pl.Unknown
+        else pl.DataFrame({"a": [1]}, schema={"a": col_dtype})
+    )
+    q = (
+        df.lazy().select(op(pl.col("a"), pl.lit(1)))
+        if lit_dtype == pl.Unknown
+        else df.lazy().select(op(pl.col("a"), pl.lit(1, lit_dtype)))
+    )
     assert q.collect_schema() == q.collect().schema

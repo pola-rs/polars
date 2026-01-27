@@ -140,10 +140,11 @@ impl StructChunked {
 
         let field_series = self.fields_as_series();
         for (i, s) in field_series.iter().enumerate() {
-            if let Cow::Owned(physical) = s.to_physical_repr() {
+            let phys = s.to_physical_repr();
+            if phys.dtype() != s.dtype() {
                 physicals.reserve(field_series.len());
                 physicals.extend(field_series[..i].iter().cloned());
-                physicals.push(physical);
+                physicals.push(phys.into_owned());
                 break;
             }
         }
@@ -264,15 +265,15 @@ impl StructChunked {
                 Ok(out.into_series())
             },
             DataType::String => {
-                let ca = self.rechunk();
-                let fields = ca.fields_as_series();
+                let len = self.len();
+                let name = self.name().clone();
+                let fields = self.fields_as_series();
                 let mut iters = fields.iter().map(|s| s.iter()).collect::<Vec<_>>();
-                let cap = ca.len();
 
-                let mut builder = MutablePlString::with_capacity(cap);
+                let mut builder = MutablePlString::with_capacity(len);
                 let mut scratch = String::new();
 
-                for _ in 0..ca.len() {
+                for _ in 0..len {
                     let mut row_has_nulls = false;
 
                     write!(scratch, "{{").unwrap();
@@ -297,7 +298,7 @@ impl StructChunked {
                     scratch.clear();
                 }
                 let array = builder.freeze().boxed();
-                Series::try_from((ca.name().clone(), array))
+                Series::try_from((name, array))
             },
             _ => {
                 let fields = self
@@ -357,13 +358,27 @@ impl StructChunked {
             .map(func)
             .collect::<PolarsResult<Vec<_>>>()?;
         Self::from_series(self.name().clone(), self.len(), fields.iter()).map(|mut ca| {
+            assert_eq!(ca.len(), self.len());
             if self.null_count > 0 {
-                // SAFETY: we don't change types/ lengths.
-                unsafe {
-                    for (new, this) in ca.downcast_iter_mut().zip(self.downcast_iter()) {
+                if ca
+                    .chunk_lengths()
+                    .zip(self.chunk_lengths())
+                    .all(|(l, r)| l == r)
+                {
+                    // SAFETY: only null_count adjusted, recalculated afterwards.
+                    for (new, this) in unsafe { ca.downcast_iter_mut() }.zip(self.downcast_iter()) {
                         new.set_validity(this.validity().cloned())
                     }
+                } else {
+                    let mut slf_validity = self.rechunk_validity().unwrap();
+                    // SAFETY: only null_count adjusted, recalculated afterwards.
+                    for new in unsafe { ca.downcast_iter_mut() } {
+                        let this_validity;
+                        (this_validity, slf_validity) = slf_validity.split_at(new.len());
+                        new.set_validity((this_validity.unset_bits() > 0).then_some(this_validity));
+                    }
                 }
+                ca.compute_len();
             }
             ca
         })
@@ -371,7 +386,7 @@ impl StructChunked {
 
     pub fn get_row_encoded_array(&self, options: SortOptions) -> PolarsResult<BinaryArray<i64>> {
         let c = self.clone().into_column();
-        _get_rows_encoded_arr(&[c], &[options.descending], &[options.nulls_last])
+        _get_rows_encoded_arr(&[c], &[options.descending], &[options.nulls_last], false)
     }
 
     pub fn get_row_encoded(&self, options: SortOptions) -> PolarsResult<BinaryOffsetChunked> {
@@ -381,6 +396,7 @@ impl StructChunked {
             &[c],
             &[options.descending],
             &[options.nulls_last],
+            false,
         )
     }
 
@@ -435,7 +451,7 @@ impl StructChunked {
             .collect::<Vec<_>>();
 
         // SAFETY: invariants for struct are the same
-        unsafe { DataFrame::new_no_checks(self.len(), columns) }
+        unsafe { DataFrame::new_unchecked(self.len(), columns) }
     }
 
     /// Get access to one of this [`StructChunked`]'s fields

@@ -106,7 +106,12 @@ impl Series {
             InvalidOperation: "at least one dimension must be specified"
         );
 
-        let leaf_array = self.get_leaf_array().rechunk();
+        let leaf_array = self
+            .trim_lists_to_normalized_offsets()
+            .as_ref()
+            .unwrap_or(self)
+            .get_leaf_array()
+            .rechunk();
         let size = leaf_array.len();
 
         let mut total_dim_size = 1;
@@ -173,7 +178,7 @@ impl Series {
         );
 
         polars_ensure!(
-            size % total_dim_size == 0,
+            size.is_multiple_of(total_dim_size),
             InvalidOperation: "cannot reshape array of size {} into shape {}", size, format_tuple!(dimensions)
         );
 
@@ -184,11 +189,13 @@ impl Series {
             .to_arrow(CompatLevel::newest());
         let mut prev_dtype = leaf_array.dtype().clone();
         let mut prev_array = leaf_array.chunks()[0].clone();
+        let inferred_size = (size / total_dim_size) as u64;
+        let outer_dimension = dimensions[0].get_or_infer(inferred_size);
 
         // We pop the outer dimension as that is the height of the series.
         for dim in dimensions[1..].iter().rev() {
             // Infer dimension if needed
-            let dim = dim.get_or_infer((size / total_dim_size) as u64);
+            let dim = dim.get_or_infer(inferred_size);
             prev_arrow_dtype = prev_arrow_dtype.to_fixed_size_list(dim as usize, true);
             prev_dtype = DataType::Array(Box::new(prev_dtype), dim as usize);
 
@@ -200,6 +207,12 @@ impl Series {
             )
             .boxed();
         }
+
+        polars_ensure!(
+            prev_array.len() as u64 == outer_dimension,
+            InvalidOperation: "cannot reshape array of size {} into shape {}", size, format_tuple!(dimensions)
+        );
+
         Ok(unsafe {
             Series::from_chunks_and_dtype_unchecked(
                 leaf_array.name().clone(),
@@ -217,7 +230,10 @@ impl Series {
 
         let s = self;
         let s = if let DataType::List(_) = s.dtype() {
-            Cow::Owned(s.explode(true)?)
+            Cow::Owned(s.explode(ExplodeOptions {
+                empty_as_null: false,
+                keep_nulls: true,
+            })?)
         } else {
             Cow::Borrowed(s)
         };
@@ -328,7 +344,14 @@ mod test {
             let out = s.reshape_list(&dims)?;
             assert_eq!(out.len(), list_len);
             assert!(matches!(out.dtype(), DataType::List(_)));
-            assert_eq!(out.explode(false)?.len(), 4);
+            assert_eq!(
+                out.explode(ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                })?
+                .len(),
+                4
+            );
         }
 
         Ok(())

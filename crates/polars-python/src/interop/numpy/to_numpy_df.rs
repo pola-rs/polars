@@ -6,7 +6,7 @@ use polars_core::utils::dtypes_to_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
+use pyo3::types::{PyList, PyTuple};
 use pyo3::{IntoPyObjectExt, intern};
 
 use super::to_numpy_series::series_to_numpy;
@@ -25,8 +25,8 @@ impl PyDataFrame {
         order: Wrap<IndexOrder>,
         writable: bool,
         allow_copy: bool,
-    ) -> PyResult<PyObject> {
-        df_to_numpy(py, &self.df, order.0, writable, allow_copy)
+    ) -> PyResult<Py<PyAny>> {
+        df_to_numpy(py, &self.df.read(), order.0, writable, allow_copy)
     }
 }
 
@@ -36,8 +36,19 @@ pub(super) fn df_to_numpy(
     order: IndexOrder,
     writable: bool,
     allow_copy: bool,
-) -> PyResult<PyObject> {
-    if df.is_empty() {
+) -> PyResult<Py<PyAny>> {
+    if df.shape_has_zero() {
+        if df.width() == 0 {
+            let shape = PyTuple::new(py, [df.height(), df.width()])?;
+            let numpy = super::utils::get_numpy_module(py)?;
+
+            return Ok(numpy
+                .call_method1(
+                    intern!(py, "zeros"),
+                    (shape, numpy.getattr(intern!(py, "int8"))?),
+                )?
+                .unbind());
+        }
         // Take this path to ensure a writable array.
         // This does not actually copy data for an empty DataFrame.
         return df_to_numpy_with_copy(py, df, order, true);
@@ -67,11 +78,11 @@ pub(super) fn df_to_numpy(
 }
 
 /// Create a NumPy view of the given DataFrame.
-fn try_df_to_numpy_view(py: Python<'_>, df: &DataFrame, allow_nulls: bool) -> Option<PyObject> {
+fn try_df_to_numpy_view(py: Python<'_>, df: &DataFrame, allow_nulls: bool) -> Option<Py<PyAny>> {
     let first_dtype = check_df_dtypes_support_view(df)?;
 
     // TODO: Check for nested nulls using `series_contains_null` util when we support Array types.
-    if !allow_nulls && df.get_columns().iter().any(|s| s.null_count() > 0) {
+    if !allow_nulls && df.columns().iter().any(|s| s.null_count() > 0) {
         return None;
     }
     if !check_df_columns_contiguous(df) {
@@ -97,7 +108,7 @@ fn try_df_to_numpy_view(py: Python<'_>, df: &DataFrame, allow_nulls: bool) -> Op
 ///
 /// Returns the common data type if it is supported, otherwise returns `None`.
 fn check_df_dtypes_support_view(df: &DataFrame) -> Option<&DataType> {
-    let columns = df.get_columns();
+    let columns = df.columns();
     let first_dtype = columns.first()?.dtype();
 
     // TODO: Support viewing Array types
@@ -111,7 +122,7 @@ fn check_df_dtypes_support_view(df: &DataFrame) -> Option<&DataType> {
 }
 /// Returns whether all columns of the dataframe are contiguous in memory.
 fn check_df_columns_contiguous(df: &DataFrame) -> bool {
-    let columns = df.get_columns();
+    let columns = df.columns();
 
     if columns
         .iter()
@@ -172,13 +183,13 @@ where
 }
 
 /// Create a NumPy view of a numeric DataFrame.
-fn numeric_df_to_numpy_view<T>(py: Python<'_>, df: &DataFrame, owner: PyObject) -> PyObject
+fn numeric_df_to_numpy_view<T>(py: Python<'_>, df: &DataFrame, owner: Py<PyAny>) -> Py<PyAny>
 where
     T: PolarsNumericType,
     T::Native: Element,
 {
     let ca: &ChunkedArray<T> = df
-        .get_columns()
+        .columns()
         .first()
         .unwrap()
         .as_materialized_series()
@@ -202,8 +213,8 @@ where
     }
 }
 /// Create a NumPy view of a Datetime or Duration DataFrame.
-fn temporal_df_to_numpy_view(py: Python<'_>, df: &DataFrame, owner: PyObject) -> PyObject {
-    let s = df.get_columns().first().unwrap();
+fn temporal_df_to_numpy_view(py: Python<'_>, df: &DataFrame, owner: Py<PyAny>) -> Py<PyAny> {
+    let s = df.columns().first().unwrap();
     let phys = s.to_physical_repr();
     let ca = phys.i64().unwrap();
     let first_slice = ca.data_views().next().unwrap();
@@ -229,7 +240,7 @@ fn df_to_numpy_with_copy(
     df: &DataFrame,
     order: IndexOrder,
     writable: bool,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     if let Some(arr) = try_df_to_numpy_numeric_supertype(py, df, order) {
         Ok(arr)
     } else {
@@ -240,8 +251,8 @@ fn try_df_to_numpy_numeric_supertype(
     py: Python<'_>,
     df: &DataFrame,
     order: IndexOrder,
-) -> Option<PyObject> {
-    let st = dtypes_to_supertype(df.iter().map(|s| s.dtype())).ok()?;
+) -> Option<Py<PyAny>> {
+    let st = dtypes_to_supertype(df.columns().iter().map(|s| s.dtype())).ok()?;
 
     let np_array = match st {
         dt if dt.is_primitive_numeric() => with_match_physical_numpy_polars_type!(dt, |$T| {
@@ -257,9 +268,9 @@ fn df_columns_to_numpy(
     df: &DataFrame,
     order: IndexOrder,
     writable: bool,
-) -> PyResult<PyObject> {
-    let np_arrays = df.iter().map(|s| {
-        let mut arr = series_to_numpy(py, s, writable, true).unwrap();
+) -> PyResult<Py<PyAny>> {
+    let np_arrays = df.columns().iter().map(|c| {
+        let mut arr = series_to_numpy(py, c.as_materialized_series(), writable, true).unwrap();
 
         // Convert multidimensional arrays to 1D object arrays.
         let shape: Vec<usize> = arr
@@ -278,7 +289,7 @@ fn df_columns_to_numpy(
         arr
     });
 
-    let numpy = PyModule::import(py, intern!(py, "numpy"))?;
+    let numpy = super::utils::get_numpy_module(py)?;
     let np_array = match order {
         IndexOrder::C => numpy
             .getattr(intern!(py, "column_stack"))?

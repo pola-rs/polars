@@ -4,26 +4,6 @@ use arrow::record_batch::RecordBatchT;
 
 use crate::prelude::*;
 
-impl FromIterator<Series> for DataFrame {
-    /// # Panics
-    ///
-    /// Panics if Series have different lengths.
-    fn from_iter<T: IntoIterator<Item = Series>>(iter: T) -> Self {
-        let v = iter.into_iter().map(Column::from).collect();
-        DataFrame::new(v).expect("could not create DataFrame from iterator")
-    }
-}
-
-impl FromIterator<Column> for DataFrame {
-    /// # Panics
-    ///
-    /// Panics if Column have different lengths.
-    fn from_iter<T: IntoIterator<Item = Column>>(iter: T) -> Self {
-        let v = iter.into_iter().collect();
-        DataFrame::new(v).expect("could not create DataFrame from iterator")
-    }
-}
-
 impl TryExtend<RecordBatchT<Box<dyn Array>>> for DataFrame {
     fn try_extend<I: IntoIterator<Item = RecordBatchT<Box<dyn Array>>>>(
         &mut self,
@@ -54,7 +34,7 @@ impl Index<usize> for DataFrame {
     type Output = Column;
 
     fn index(&self, index: usize) -> &Self::Output {
-        &self.columns[index]
+        &self.columns()[index]
     }
 }
 
@@ -64,7 +44,7 @@ macro_rules! impl_ranges {
             type Output = [Column];
 
             fn index(&self, index: $range_type) -> &Self::Output {
-                &self.columns[index]
+                &self.columns()[index]
             }
         }
     };
@@ -82,7 +62,6 @@ impl Index<&str> for DataFrame {
     type Output = Column;
 
     fn index(&self, index: &str) -> &Self::Output {
-        let idx = self.check_name_to_idx(index).unwrap();
-        &self.columns[idx]
+        self.column(index).unwrap()
     }
 }

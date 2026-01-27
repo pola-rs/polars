@@ -33,6 +33,7 @@ pub enum DslFunction {
     OpaquePython(OpaquePythonUdf),
     Explode {
         columns: Selector,
+        options: ExplodeOptions,
         allow_empty: bool,
     },
     #[cfg(feature = "pivot")]
@@ -44,13 +45,17 @@ pub enum DslFunction {
         new: Arc<[PlSmallStr]>,
         strict: bool,
     },
-    Unnest(Selector),
+    Unnest {
+        columns: Selector,
+        separator: Option<PlSmallStr>,
+    },
     Stats(StatsFunction),
     /// FillValue
     FillNan(Expr),
     // Function that is already converted to IR.
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     FunctionIR(FunctionIR),
+    Hint(HintIR),
 }
 
 #[derive(Clone)]
@@ -91,15 +96,37 @@ impl DslFunction {
         let function = match self {
             #[cfg(feature = "pivot")]
             DslFunction::Unpivot { args } => {
-                let on = args.on.into_columns(input_schema, &Default::default())?;
-                let index = args.index.into_columns(input_schema, &Default::default())?;
+                polars_ensure!(
+                    !input_schema.contains("variable"),
+                    Duplicate: "duplicate column name variable"
+                );
 
-                let args = UnpivotArgsIR {
-                    on: on.into_iter().collect(),
-                    index: index.into_iter().collect(),
-                    variable_name: args.variable_name.clone(),
-                    value_name: args.value_name,
+                polars_ensure!(
+                    !input_schema.contains("value"),
+                    Duplicate: "duplicate column name value"
+                );
+
+                let on = match args.on {
+                    None => None,
+                    Some(on) => Some(
+                        on.into_columns(input_schema, &Default::default())?
+                            .into_iter()
+                            .collect::<Vec<_>>(),
+                    ),
                 };
+
+                let index = args
+                    .index
+                    .into_columns(input_schema, &Default::default())?
+                    .into_vec();
+
+                let args = UnpivotArgsIR::new(
+                    input_schema.iter().map(|(name, _)| name.clone()).collect(),
+                    on,
+                    index,
+                    args.value_name,
+                    args.variable_name,
+                );
 
                 FunctionIR::Unpivot {
                     args: Arc::new(args),
@@ -107,16 +134,31 @@ impl DslFunction {
                 }
             },
             DslFunction::FunctionIR(func) => func,
-            DslFunction::RowIndex { name, offset } => FunctionIR::RowIndex {
-                name,
-                offset,
-                schema: Default::default(),
+            DslFunction::RowIndex { name, offset } => {
+                polars_ensure!(
+                    !input_schema.contains(&name),
+                    Duplicate: "duplicate column name {name}"
+                );
+
+                FunctionIR::RowIndex {
+                    name,
+                    offset,
+                    schema: Default::default(),
+                }
             },
-            DslFunction::Unnest(selector) => {
-                let columns = selector.into_columns(input_schema, &Default::default())?;
-                let columns = columns.into_iter().collect();
-                FunctionIR::Unnest { columns }
+            DslFunction::Unnest { columns, separator } => {
+                let columns = columns.into_columns(input_schema, &Default::default())?;
+                let columns: Arc<[PlSmallStr]> = columns.into_iter().collect();
+                for col in columns.iter() {
+                    let dtype = input_schema.try_get(col.as_str())?;
+                    polars_ensure!(
+                        dtype.is_struct(),
+                        InvalidOperation: "invalid dtype: expected 'Struct', got '{:?}' for '{}'", dtype, col
+                    );
+                }
+                FunctionIR::Unnest { columns, separator }
             },
+            DslFunction::Hint(h) => FunctionIR::Hint(h),
             #[cfg(feature = "python")]
             DslFunction::OpaquePython(inner) => FunctionIR::OpaquePython(inner),
             DslFunction::Stats(_)

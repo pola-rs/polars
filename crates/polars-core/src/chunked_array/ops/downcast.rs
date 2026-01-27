@@ -109,6 +109,8 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         unsafe { Some(&*(arr as *const dyn Array as *const T::Array)) }
     }
 
+    /// # Panics
+    /// Panics if `self.chunks().len() != 1`.
     #[inline]
     pub fn downcast_as_array(&self) -> &T::Array {
         assert_eq!(self.chunks.len(), 1);

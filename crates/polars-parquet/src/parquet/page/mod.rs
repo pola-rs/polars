@@ -92,6 +92,10 @@ impl CompressedDataPage {
         self.num_rows
     }
 
+    pub fn null_count(&self) -> Option<usize> {
+        self.header().null_count()
+    }
+
     /// Decodes the raw statistics into a statistics
     pub fn statistics(&self) -> Option<ParquetResult<Statistics>> {
         match &self.header {

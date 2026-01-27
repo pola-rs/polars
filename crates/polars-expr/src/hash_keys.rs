@@ -61,6 +61,10 @@ macro_rules! downcast_single_key_ca {
             DataType::UInt64 => { let $ca = $self.u64().unwrap(); $($body)* },
             #[cfg(feature = "dtype-i128")]
             DataType::Int128 => { let $ca = $self.i128().unwrap(); $($body)* },
+            #[cfg(feature = "dtype-u128")]
+            DataType::UInt128 => { let $ca = $self.u128().unwrap(); $($body)* },
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => { let $ca = $self.f16().unwrap(); $($body)* },
             DataType::Float32 => { let $ca = $self.f32().unwrap(); $($body)* },
             DataType::Float64 => { let $ca = $self.f64().unwrap(); $($body)* },
 
@@ -88,7 +92,6 @@ macro_rules! downcast_single_key_ca {
         }
     }}
 }
-pub(crate) use downcast_single_key_ca;
 
 /// Represents a DataFrame plus a hash per row, intended for keys in grouping
 /// or joining. The hashes may or may not actually be physically pre-computed,
@@ -112,7 +115,7 @@ impl HashKeys {
             || df.width() > 1
             || first_col_variant == HashKeysVariant::RowEncoded;
         if use_row_encoding {
-            let keys = df.get_columns();
+            let keys = df.columns();
             let mut keys_encoded = _get_rows_encoded_unordered(keys).unwrap().into_array();
 
             if !null_is_valid {
@@ -126,7 +129,7 @@ impl HashKeys {
 
             // TODO: use vechash? Not supported yet for lists.
             // let mut hashes = Vec::with_capacity(df.height());
-            // columns_to_hashes(df.get_columns(), Some(random_state), &mut hashes).unwrap();
+            // columns_to_hashes(df.columns(), Some(random_state), &mut hashes).unwrap();
 
             let hashes = keys_encoded
                 .values_iter()
@@ -398,7 +401,7 @@ impl SingleKeys {
     /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
         Self {
-            random_state: self.random_state,
+            random_state: self.random_state.clone(),
             keys: self.keys.take_slice_unchecked(idxs),
             null_is_valid: self.null_is_valid,
         }

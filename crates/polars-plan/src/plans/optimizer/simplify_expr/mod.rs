@@ -1,5 +1,6 @@
 mod simplify_functions;
 
+use polars_utils::float16::pf16;
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
 use simplify_functions::optimize_functions;
@@ -8,10 +9,12 @@ mod arity;
 use crate::plans::*;
 
 fn new_null_count(input: &[ExprIR]) -> AExpr {
+    let function = IRFunctionExpr::NullCount;
+    let options = function.function_options();
     AExpr::Function {
         input: input.to_vec(),
-        function: IRFunctionExpr::NullCount,
-        options: FunctionOptions::aggregation(),
+        function,
+        options,
     }
 }
 
@@ -21,6 +24,9 @@ macro_rules! eval_binary_same_type {
             match (lit_left, lit_right) {
                 (LiteralValue::Scalar(l), LiteralValue::Scalar(r)) => {
                     match (l.as_any_value(), r.as_any_value()) {
+                        (AnyValue::Float16($l), AnyValue::Float16($r)) => {
+                            Some(AExpr::Literal(Scalar::from($ret).into()))
+                        },
                         (AnyValue::Float32($l), AnyValue::Float32($r)) => {
                             Some(AExpr::Literal(<Scalar as From<f32>>::from($ret).into()))
                         },
@@ -55,6 +61,9 @@ macro_rules! eval_binary_same_type {
                         },
                         (AnyValue::UInt64($l), AnyValue::UInt64($r)) => {
                             Some(AExpr::Literal(<Scalar as From<u64>>::from($ret).into()))
+                        },
+                        (AnyValue::UInt128($l), AnyValue::UInt128($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<u128>>::from($ret).into()))
                         },
 
                         _ => None,
@@ -94,6 +103,7 @@ macro_rules! eval_binary_cmp_same_type {
     if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = ($lhs, $rhs) {
         match (lit_left, lit_right) {
             (LiteralValue::Scalar(l), LiteralValue::Scalar(r)) => match (l.as_any_value(), r.as_any_value()) {
+                (AnyValue::Float16(l), AnyValue::Float16(r)) => Some(AExpr::Literal({ let x: bool = l.to_total_ord() $operand r.to_total_ord(); Scalar::from(x) }.into())),
                 (AnyValue::Float32(l), AnyValue::Float32(r)) => Some(AExpr::Literal({ let x: bool = l.to_total_ord() $operand r.to_total_ord(); Scalar::from(x) }.into())),
                 (AnyValue::Float64(l), AnyValue::Float64(r)) => Some(AExpr::Literal({ let x: bool = l.to_total_ord() $operand r.to_total_ord(); Scalar::from(x) }.into())),
 
@@ -109,6 +119,7 @@ macro_rules! eval_binary_cmp_same_type {
                 (AnyValue::UInt16(l), AnyValue::UInt16(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
                 (AnyValue::UInt32(l), AnyValue::UInt32(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
                 (AnyValue::UInt64(l), AnyValue::UInt64(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
+                (AnyValue::UInt128(l), AnyValue::UInt128(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
 
                 _ => None,
             }.into(),
@@ -179,6 +190,8 @@ fn eval_negate(ae: &AExpr) -> Option<AExpr> {
                 AnyValue::Int16(v) => Scalar::from(v.checked_neg()?),
                 AnyValue::Int32(v) => Scalar::from(v.checked_neg()?),
                 AnyValue::Int64(v) => Scalar::from(v.checked_neg()?),
+                AnyValue::Int128(v) => Scalar::from(v.checked_neg()?),
+                AnyValue::Float16(v) => Scalar::from(v.neg()),
                 AnyValue::Float32(v) => Scalar::from(v.neg()),
                 AnyValue::Float64(v) => Scalar::from(v.neg()),
                 _ => return None,
@@ -222,7 +235,10 @@ fn string_addition_to_linear_concat(
         let left_e = ExprIR::from_node(left_node, expr_arena);
         let right_e = ExprIR::from_node(right_node, expr_arena);
 
-        let get_type = |ae: &AExpr| ae.get_dtype(input_schema, expr_arena).ok();
+        let get_type = |ae: &AExpr| {
+            ae.to_dtype(&ToFieldContext::new(expr_arena, input_schema))
+                .ok()
+        };
         let type_a = get_type(left_aexpr).or_else(|| get_type(right_aexpr))?;
         let type_b = get_type(right_aexpr).or_else(|| get_type(right_aexpr))?;
 
@@ -353,7 +369,10 @@ impl OptimizationRule for SimplifyExprRule {
             AExpr::SortBy { expr, by, .. } if by.is_empty() => Some(expr_arena.get(*expr).clone()),
             // drop_nulls().len() -> len() - null_count()
             // drop_nulls().count() -> len() - null_count()
-            AExpr::Agg(IRAggExpr::Count(input, _)) => {
+            AExpr::Agg(IRAggExpr::Count {
+                input,
+                include_nulls: _,
+            }) => {
                 let input_expr = expr_arena.get(*input);
                 match input_expr {
                     AExpr::Function {
@@ -369,10 +388,10 @@ impl OptimizationRule for SimplifyExprRule {
                                 AExpr::Column(_) => Some(AExpr::BinaryExpr {
                                     op: Operator::Minus,
                                     right: expr_arena.add(new_null_count(input)),
-                                    left: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
-                                        drop_nulls_input_node,
-                                        true,
-                                    ))),
+                                    left: expr_arena.add(AExpr::Agg(IRAggExpr::Count {
+                                        input: drop_nulls_input_node,
+                                        include_nulls: true,
+                                    })),
                                 }),
                                 _ => None,
                             }
@@ -406,10 +425,10 @@ impl OptimizationRule for SimplifyExprRule {
                                 AExpr::Column(_) => Some(AExpr::BinaryExpr {
                                     op: Operator::Minus,
                                     right: expr_arena.add(new_null_count(input)),
-                                    left: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
-                                        is_not_null_input_node,
-                                        true,
-                                    ))),
+                                    left: expr_arena.add(AExpr::Agg(IRAggExpr::Count {
+                                        input: is_not_null_input_node,
+                                        include_nulls: true,
+                                    })),
                                 }),
                                 _ => None,
                             }
@@ -462,6 +481,11 @@ impl OptimizationRule for SimplifyExprRule {
                             match (lit_left, lit_right) {
                                 (LiteralValue::Scalar(l), LiteralValue::Scalar(r)) => {
                                     match (l.as_any_value(), r.as_any_value()) {
+                                        (AnyValue::Float16(x), AnyValue::Float16(y)) => {
+                                            Some(AExpr::Literal(
+                                                <Scalar as From<pf16>>::from(x / y).into(),
+                                            ))
+                                        },
                                         (AnyValue::Float32(x), AnyValue::Float32(y)) => {
                                             Some(AExpr::Literal(
                                                 <Scalar as From<f32>>::from(x / y).into(),
@@ -534,6 +558,11 @@ impl OptimizationRule for SimplifyExprRule {
                                                 <Scalar as From<u64>>::from(x / y).into(),
                                             ))
                                         },
+                                        (AnyValue::UInt128(x), AnyValue::UInt128(y)) => {
+                                            Some(AExpr::Literal(
+                                                <Scalar as From<u128>>::from(x / y).into(),
+                                            ))
+                                        },
 
                                         _ => None,
                                     }
@@ -564,6 +593,10 @@ impl OptimizationRule for SimplifyExprRule {
                             match (lit_left, lit_right) {
                                 (LiteralValue::Scalar(l), LiteralValue::Scalar(r)) => {
                                     match (l.as_any_value(), r.as_any_value()) {
+                                        #[cfg(feature = "dtype-f16")]
+                                        (AnyValue::Float16(x), AnyValue::Float16(y)) => {
+                                            Some(AExpr::Literal(Scalar::from(x / y).into()))
+                                        },
                                         (AnyValue::Float32(x), AnyValue::Float32(y)) => {
                                             Some(AExpr::Literal(Scalar::from(x / y).into()))
                                         },

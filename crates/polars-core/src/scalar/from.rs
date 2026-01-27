@@ -1,3 +1,4 @@
+use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{AnyValue, DataType, Scalar};
@@ -26,6 +27,8 @@ impl_from! {
     (u16, UInt16, UInt16)
     (u32, UInt32, UInt32)
     (u64, UInt64, UInt64)
+    (u128, UInt128, UInt128)
+    (pf16, Float16, Float16)
     (f32, Float32, Float32)
     (f64, Float64, Float64)
     (PlSmallStr, StringOwned, String)

@@ -4,6 +4,7 @@ import io
 import tempfile
 from collections import OrderedDict
 from pathlib import Path
+from typing import IO
 
 import numpy as np
 import pytest
@@ -179,7 +180,7 @@ def test_scan_csv_schema_new_columns_dtypes(
         ).collect()
 
     # cannot set both 'new_columns' and 'with_column_names'
-    with pytest.raises(ValueError, match="mutually.exclusive"):
+    with pytest.raises(ValueError, match=r"mutually.exclusive"):
         pl.scan_csv(
             file_path,
             schema_overrides=[pl.String, pl.String],
@@ -204,17 +205,33 @@ def test_lazy_n_rows(foods_file_path: Path) -> None:
 
 
 def test_lazy_row_index_no_push_down(foods_file_path: Path) -> None:
-    plan = (
+    q = (
         pl.scan_csv(foods_file_path)
         .with_row_index()
-        .filter(pl.col("index") == 1)
+        .filter(pl.col("index") > 13)
         .filter(pl.col("category") == pl.lit("vegetables"))
-        .explain(optimizations=pl.QueryOptFlags(predicate_pushdown=True))
     )
-    # related to row count is not pushed.
-    assert 'FILTER [(col("index")) == (1)]\nFROM' in plan
-    # unrelated to row count is pushed.
-    assert 'SELECTION: [(col("category")) == ("vegetables")]' in plan
+
+    plan = q.explain()
+
+    assert "FILTER" not in plan
+
+    assert_frame_equal(
+        q,
+        pl.LazyFrame(
+            [
+                pl.Series("index", [14, 20, 25], dtype=pl.get_index_type()),
+                pl.Series(
+                    "category",
+                    ["vegetables", "vegetables", "vegetables"],
+                    dtype=pl.String,
+                ),
+                pl.Series("calories", [25, 25, 30], dtype=pl.Int64),
+                pl.Series("fats_g", [0.0, 0.0, 0.0], dtype=pl.Float64),
+                pl.Series("sugars_g", [4, 3, 5], dtype=pl.Int64),
+            ]
+        ),
+    )
 
 
 @pytest.mark.write_disk
@@ -266,7 +283,7 @@ def test_scan_csv_schema_overwrite_not_projected_8483(foods_file_path: Path) -> 
         .select(pl.len())
         .collect()
     )
-    expected = pl.DataFrame({"len": 27}, schema={"len": pl.UInt32})
+    expected = pl.DataFrame({"len": 27}, schema={"len": pl.get_index_type()})
     assert_frame_equal(df, expected)
 
 
@@ -290,7 +307,7 @@ def test_scan_csv_slice_offset_zero(io_files_path: Path) -> None:
 @pytest.mark.write_disk
 def test_scan_empty_csv_with_row_index(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
-    file_path = tmp_path / "small.parquet"
+    file_path = tmp_path / "small.csv"
     df = pl.DataFrame({"a": []})
     df.write_csv(file_path)
 
@@ -364,7 +381,7 @@ def test_file_list_schema_mismatch(
 
     paths = [f"{tmp_path}/{i}.csv" for i in range(len(dfs))]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_csv(path)
 
     lf = pl.scan_csv(paths)
@@ -403,7 +420,7 @@ c
 
     paths = [f"{tmp_path}/{i}.csv" for i in range(len(data_lst))]
 
-    for data, path in zip(data_lst, paths):
+    for data, path in zip(data_lst, paths, strict=True):
         with Path(path).open("w") as f:
             f.write(data)
 
@@ -433,7 +450,7 @@ c
 
     paths = [f"{tmp_path}/{i}.csv" for i in range(len(data_lst))]
 
-    for data, path in zip(data_lst, paths):
+    for data, path in zip(data_lst, paths, strict=True):
         with Path(path).open("w") as f:
             f.write(data)
 
@@ -474,7 +491,7 @@ a,b,c
 a,b,c
 """
 
-    schema = {x: pl.String for x in ["a", "b", "c", "d", "e"]}
+    schema = dict.fromkeys(["a", "b", "c", "d", "e"], pl.String)
 
     assert_frame_equal(
         pl.scan_csv(data, schema=schema).collect(),
@@ -522,3 +539,17 @@ def test_csv_io_object_utf8_23629() -> None:
         f_str.seek(0)
         df_str = pl.read_csv(f_str)
         assert_frame_equal(df, df_str)
+
+
+def test_scan_csv_multiple_files_skip_rows_overflow_26127() -> None:
+    files: list[IO[bytes]] = [
+        io.BytesIO(b"foo,bar,baz\n1,2,3\n4,5,6") for _ in range(2)
+    ]
+    assert_frame_equal(
+        pl.scan_csv(
+            files,
+            n_rows=4,
+            skip_rows=2,
+        ).collect(),
+        pl.DataFrame(schema={"4": pl.String, "5": pl.String, "6": pl.String}),
+    )

@@ -25,7 +25,7 @@ impl<'a> Decoder<'a> {
         }
 
         let values_size = values.len();
-        if values_size % element_size != 0 {
+        if !values_size.is_multiple_of(element_size) {
             return Err(ParquetError::oos(format!(
                 "Values array length ({values_size}) is not a multiple of the element size ({element_size})"
             )));

@@ -2,7 +2,6 @@
 //! Domain specific language for the Lazy API.
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
-
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
 #[cfg(feature = "rolling_window_by")]
@@ -21,6 +20,8 @@ mod datatype_expr;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;
+#[cfg(feature = "dtype-extension")]
+mod extension;
 mod format;
 mod from;
 pub mod function_expr;
@@ -37,6 +38,8 @@ pub mod python_dsl;
 mod random;
 mod scan_sources;
 mod selector;
+#[cfg(feature = "serde")]
+mod serializable_plan;
 mod statistics;
 #[cfg(feature = "strings")]
 pub mod string;
@@ -53,8 +56,9 @@ pub use arity::*;
 pub use array::*;
 pub use datatype_expr::DataTypeExpr;
 pub use expr::*;
+#[cfg(feature = "dtype-extension")]
+pub use extension::*;
 pub use function_expr::*;
-pub use functions::*;
 pub use list::*;
 pub use match_to_schema::*;
 #[cfg(feature = "meta")]
@@ -77,9 +81,9 @@ pub use struct_::*;
 pub use udf::UserDefinedFunction;
 mod file_scan;
 pub use file_scan::*;
+use functions::lit;
 pub use scan_sources::{ScanSource, ScanSourceIter, ScanSourceRef, ScanSources};
 
-pub use crate::plans::lit;
 use crate::prelude::*;
 
 impl Expr {
@@ -169,9 +173,28 @@ impl Expr {
         AggExpr::First(Arc::new(self)).into()
     }
 
+    /// Get the first non-nullvalue in the group.
+    pub fn first_non_null(self) -> Self {
+        AggExpr::FirstNonNull(Arc::new(self)).into()
+    }
+
     /// Get the last value in the group.
     pub fn last(self) -> Self {
         AggExpr::Last(Arc::new(self)).into()
+    }
+
+    /// Get the last non-null value in the group.
+    pub fn last_non_null(self) -> Self {
+        AggExpr::LastNonNull(Arc::new(self)).into()
+    }
+
+    /// Get the single value in the group. If there are multiple values, an error is returned.
+    pub fn item(self, allow_empty: bool) -> Self {
+        AggExpr::Item {
+            input: Arc::new(self),
+            allow_empty,
+        }
+        .into()
     }
 
     /// GroupBy the group to a Series.
@@ -196,14 +219,17 @@ impl Expr {
 
     /// Alias for `explode`.
     pub fn flatten(self) -> Self {
-        self.explode()
+        self.explode(ExplodeOptions {
+            empty_as_null: true,
+            keep_nulls: true,
+        })
     }
 
     /// Explode the String/List column.
-    pub fn explode(self) -> Self {
+    pub fn explode(self, options: ExplodeOptions) -> Self {
         Expr::Explode {
             input: Arc::new(self),
-            skip_empty: false,
+            options,
         }
     }
 
@@ -220,6 +246,11 @@ impl Expr {
     /// Append expressions. This is done by adding the chunks of `other` to this [`Series`].
     pub fn append<E: Into<Expr>>(self, other: E, upcast: bool) -> Self {
         self.map_binary(FunctionExpr::Append { upcast }, other.into())
+    }
+
+    /// Collect all chunks into a single chunk before continuing.
+    pub fn rechunk(self) -> Self {
+        self.map_unary(FunctionExpr::Rechunk)
     }
 
     /// Get the first `n` elements of the Expr result.
@@ -258,7 +289,6 @@ impl Expr {
     pub fn arg_max(self) -> Self {
         self.map_unary(FunctionExpr::ArgMax)
     }
-
     /// Get the index values that would sort this expression.
     pub fn arg_sort(self, descending: bool, nulls_last: bool) -> Self {
         self.map_unary(FunctionExpr::ArgSort {
@@ -326,15 +356,17 @@ impl Expr {
             expr: Arc::new(self),
             idx: Arc::new(idx.into()),
             returns_scalar: false,
+            null_on_oob: false,
         }
     }
 
     /// Take the values by a single index.
-    pub fn get<E: Into<Expr>>(self, idx: E) -> Self {
+    pub fn get<E: Into<Expr>>(self, idx: E, null_on_oob: bool) -> Self {
         Expr::Gather {
             expr: Arc::new(self),
             idx: Arc::new(idx.into()),
             returns_scalar: true,
+            null_on_oob,
         }
     }
 
@@ -795,7 +827,7 @@ impl Expr {
         self,
         partition_by: Option<E>,
         order_by: Option<(E, SortOptions)>,
-        options: WindowMapping,
+        mapping: WindowMapping,
     ) -> PolarsResult<Self> {
         polars_ensure!(partition_by.is_some() || order_by.is_some(), InvalidOperation: "At least one of `partition_by` and `order_by` must be specified in `over`");
         let partition_by = if let Some(partition_by) = partition_by {
@@ -815,30 +847,34 @@ impl Expr {
             } else {
                 feature_gated!["dtype-struct", {
                     let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
-                    Arc::new(as_struct(e))
+                    Arc::new(functions::as_struct(e))
                 }]
             };
             (e, options)
         });
 
-        Ok(Expr::Window {
+        Ok(Expr::Over {
             function: Arc::new(self),
             partition_by,
             order_by,
-            options: options.into(),
+            mapping,
         })
     }
 
     #[cfg(feature = "dynamic_group_by")]
-    pub fn rolling(self, options: RollingGroupOptions) -> Self {
-        // We add the index column as `partition expr` so that the optimizer will
-        // not ignore it.
-        let index_col = col(options.index_column.clone());
-        Expr::Window {
+    pub fn rolling(
+        self,
+        index_column: impl Into<Expr>,
+        period: Duration,
+        offset: Duration,
+        closed_window: ClosedWindow,
+    ) -> Self {
+        Expr::Rolling {
             function: Arc::new(self),
-            partition_by: vec![index_col],
-            order_by: None,
-            options: WindowType::Rolling(options),
+            index_column: Arc::new(index_column.into()),
+            period,
+            offset,
+            closed_window,
         }
     }
 
@@ -868,11 +904,19 @@ impl Expr {
     /// or
     /// Get counts of the group by operation.
     pub fn count(self) -> Self {
-        AggExpr::Count(Arc::new(self), false).into()
+        AggExpr::Count {
+            input: Arc::new(self),
+            include_nulls: false,
+        }
+        .into()
     }
 
     pub fn len(self) -> Self {
-        AggExpr::Count(Arc::new(self), true).into()
+        AggExpr::Count {
+            input: Arc::new(self),
+            include_nulls: true,
+        }
+        .into()
     }
 
     /// Get a mask of duplicated values.
@@ -1045,8 +1089,8 @@ impl Expr {
 
     #[cfg(feature = "mode")]
     /// Compute the mode(s) of this column. This is the most occurring value.
-    pub fn mode(self) -> Expr {
-        self.map_unary(FunctionExpr::Mode)
+    pub fn mode(self, maintain_order: bool) -> Expr {
+        self.map_unary(FunctionExpr::Mode { maintain_order })
     }
 
     #[cfg(feature = "interpolate")]
@@ -1154,6 +1198,11 @@ impl Expr {
         self.rolling_quantile_by(by, QuantileMethod::Linear, 0.5, options)
     }
 
+    #[cfg(feature = "rolling_window_by")]
+    pub fn rolling_rank_by(self, by: Expr, options: RollingOptionsDynamicWindow) -> Expr {
+        self.finish_rolling_by(by, options, RollingFunctionBy::RankBy)
+    }
+
     /// Apply a rolling minimum.
     ///
     /// See: [`RollingAgg::rolling_min`]
@@ -1224,6 +1273,11 @@ impl Expr {
     #[cfg(feature = "rolling_window")]
     pub fn rolling_std(self, options: RollingOptionsFixedWindow) -> Expr {
         self.finish_rolling(options, RollingFunction::Std)
+    }
+
+    #[cfg(feature = "rolling_window")]
+    pub fn rolling_rank(self, options: RollingOptionsFixedWindow) -> Expr {
+        self.finish_rolling(options, RollingFunction::Rank)
     }
 
     /// Apply a rolling skew.
@@ -1467,13 +1521,6 @@ impl Expr {
         self.map_unary(BooleanFunction::All { ignore_nulls })
     }
 
-    /// Shrink numeric columns to the minimal required datatype
-    /// needed to fit the extrema of this [`Series`].
-    /// This can be used to reduce memory pressure.
-    pub fn shrink_dtype(self) -> Self {
-        self.map_unary(FunctionExpr::ShrinkType)
-    }
-
     #[cfg(feature = "dtype-struct")]
     /// Count all unique values and create a struct mapping value to count.
     /// (Note that it is better to turn parallel off in the aggregation context).
@@ -1497,8 +1544,8 @@ impl Expr {
 
     #[cfg(feature = "log")]
     /// Compute the logarithm to a given base.
-    pub fn log(self, base: f64) -> Self {
-        self.map_unary(FunctionExpr::Log { base })
+    pub fn log(self, base: Expr) -> Self {
+        self.map_binary(FunctionExpr::Log, base)
     }
 
     #[cfg(feature = "log")]
@@ -1514,7 +1561,7 @@ impl Expr {
     }
 
     #[cfg(feature = "log")]
-    /// Compute the entropy as `-sum(pk * log(pk)`.
+    /// Compute the entropy as `-sum(pk * log(pk))`.
     /// where `pk` are discrete probabilities.
     pub fn entropy(self, base: f64, normalize: bool) -> Self {
         self.map_unary(FunctionExpr::Entropy { base, normalize })
@@ -1596,6 +1643,12 @@ impl Expr {
         cat::CategoricalNameSpace(self)
     }
 
+    /// Get the [`extension::ExtensionNameSpace`].
+    #[cfg(feature = "dtype-extension")]
+    pub fn ext(self) -> extension::ExtensionNameSpace {
+        extension::ExtensionNameSpace(self)
+    }
+
     /// Get the [`struct_::StructNameSpace`].
     #[cfg(feature = "dtype-struct")]
     pub fn struct_(self) -> struct_::StructNameSpace {
@@ -1663,28 +1716,5 @@ where
         function: new_column_udf(function),
         options,
         fmt_str: Box::new(PlSmallStr::EMPTY),
-    }
-}
-
-/// Return the number of rows in the context.
-pub fn len() -> Expr {
-    Expr::Len
-}
-
-/// First column in a DataFrame.
-pub fn first() -> Selector {
-    nth(0)
-}
-
-/// Last column in a DataFrame.
-pub fn last() -> Selector {
-    nth(-1)
-}
-
-/// Nth column in a DataFrame.
-pub fn nth(n: i64) -> Selector {
-    Selector::ByIndex {
-        indices: [n].into(),
-        strict: true,
     }
 }

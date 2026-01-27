@@ -14,9 +14,6 @@ use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::utils::{check_input_node, has_aexpr};
 
-pub type ExprEval<'a> =
-    Option<&'a dyn Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> Option<Arc<dyn PhysicalIoExpr>>>;
-
 /// The struct is wrapped in a mod to prevent direct member access of `nodes_scratch`
 mod inner {
     use polars_core::config::verbose;
@@ -24,28 +21,24 @@ mod inner {
     use polars_utils::idx_vec::UnitVec;
     use polars_utils::unitvec;
 
-    use super::ExprEval;
-
-    pub struct PredicatePushDown<'a> {
+    pub struct PredicatePushDown {
         // TODO: Remove unused
         #[expect(unused)]
-        pub(super) expr_eval: ExprEval<'a>,
-        #[expect(unused)]
         pub(super) verbose: bool,
-        pub(super) block_at_cache: bool,
+        // How many cache nodes a predicate may be pushed down to.
+        // Normally this is 0. Only needed for CSPE.
+        pub(super) caches_pass_allowance: u32,
         nodes_scratch: UnitVec<Node>,
-        #[expect(unused)]
         pub(super) new_streaming: bool,
         // Controls pushing filters past fallible projections
         pub(super) maintain_errors: bool,
     }
 
-    impl<'a> PredicatePushDown<'a> {
-        pub fn new(expr_eval: ExprEval<'a>, maintain_errors: bool, new_streaming: bool) -> Self {
+    impl PredicatePushDown {
+        pub fn new(maintain_errors: bool, new_streaming: bool) -> Self {
             Self {
-                expr_eval,
                 verbose: verbose(),
-                block_at_cache: true,
+                caches_pass_allowance: 0,
                 nodes_scratch: unitvec![],
                 new_streaming,
                 maintain_errors,
@@ -62,9 +55,9 @@ mod inner {
 
 pub use inner::PredicatePushDown;
 
-impl PredicatePushDown<'_> {
-    pub(crate) fn block_at_cache(mut self, toggle: bool) -> Self {
-        self.block_at_cache = toggle;
+impl PredicatePushDown {
+    pub(crate) fn block_at_cache(mut self, count: u32) -> Self {
+        self.caches_pass_allowance = count;
         self
     }
 
@@ -172,11 +165,7 @@ impl PredicatePushDown<'_> {
                     for (_, predicate) in acc_predicates.iter() {
                         // we can pushdown the predicate
                         if check_input_node(predicate.node(), &input_schema, expr_arena) {
-                            insert_and_combine_predicate(
-                                &mut pushdown_predicates,
-                                predicate,
-                                expr_arena,
-                            )
+                            insert_predicate_dedup(&mut pushdown_predicates, predicate, expr_arena)
                         }
                         // we cannot pushdown the predicate we do it here
                         else {
@@ -310,7 +299,7 @@ impl PredicatePushDown<'_> {
                 };
 
                 if let Some(predicate) = acc_predicates.remove(&tmp_key) {
-                    insert_and_combine_predicate(&mut acc_predicates, &predicate, expr_arena);
+                    insert_predicate_dedup(&mut acc_predicates, &predicate, expr_arena);
                 }
 
                 let alp = lp_arena.take(input);
@@ -355,6 +344,7 @@ impl PredicatePushDown<'_> {
                 file_info,
                 hive_parts: scan_hive_parts,
                 ref predicate,
+                predicate_file_skip_applied,
                 scan_type,
                 unified_scan_args,
                 output_schema,
@@ -365,21 +355,6 @@ impl PredicatePushDown<'_> {
                 if let Some(col) = unified_scan_args.include_file_paths.as_deref() {
                     blocked_names.push(col);
                 }
-
-                match &*scan_type {
-                    #[cfg(feature = "parquet")]
-                    FileScanIR::Parquet { .. } => {},
-                    #[cfg(feature = "ipc")]
-                    FileScanIR::Ipc { .. } => {},
-                    _ => {
-                        // Disallow row index pushdown of other scans as they may
-                        // not update the row index properly before applying the
-                        // predicate (e.g. FileScan::Csv doesn't).
-                        if let Some(ref row_index) = unified_scan_args.row_index {
-                            blocked_names.push(row_index.name.as_ref());
-                        };
-                    },
-                };
 
                 let local_predicates = if blocked_names.is_empty() {
                     vec![]
@@ -409,6 +384,7 @@ impl PredicatePushDown<'_> {
                         file_info,
                         hive_parts,
                         predicate,
+                        predicate_file_skip_applied,
                         unified_scan_args,
                         output_schema,
                         scan_type,
@@ -419,6 +395,7 @@ impl PredicatePushDown<'_> {
                         file_info,
                         hive_parts,
                         predicate: None,
+                        predicate_file_skip_applied,
                         unified_scan_args,
                         output_schema,
                         scan_type,
@@ -484,6 +461,7 @@ impl PredicatePushDown<'_> {
                 schema,
                 options,
                 acc_predicates,
+                self.new_streaming,
             ),
             MapFunction { ref function, .. } => {
                 if function.allow_predicate_pd() {
@@ -514,20 +492,9 @@ impl PredicatePushDown<'_> {
                         },
                         #[cfg(feature = "pivot")]
                         FunctionIR::Unpivot { args, .. } => {
-                            let variable_name = &args
-                                .variable_name
-                                .clone()
-                                .unwrap_or_else(|| PlSmallStr::from_static("variable"));
-                            let value_name = &args
-                                .value_name
-                                .clone()
-                                .unwrap_or_else(|| PlSmallStr::from_static("value"));
-
                             // predicates that will be done at this level
                             let condition = |name: &PlSmallStr| {
-                                name == variable_name
-                                    || name == value_name
-                                    || args.on.iter().any(|s| s == name)
+                                name == &args.variable_name || name == &args.value_name
                             };
                             let local_predicates = transfer_to_local_by_name(
                                 expr_arena,
@@ -549,7 +516,10 @@ impl PredicatePushDown<'_> {
                                 expr_arena,
                             ))
                         },
-                        FunctionIR::Unnest { columns } => {
+                        FunctionIR::Unnest {
+                            columns,
+                            separator: _,
+                        } => {
                             let exclude = columns.iter().cloned().collect::<PlHashSet<_>>();
 
                             let local_predicates =
@@ -630,9 +600,10 @@ impl PredicatePushDown<'_> {
             },
             // Caches will run predicate push-down in the `cache_states` run.
             Cache { .. } => {
-                if self.block_at_cache {
+                if self.caches_pass_allowance == 0 {
                     self.no_pushdown(lp, acc_predicates, lp_arena, expr_arena)
                 } else {
+                    self.caches_pass_allowance = self.caches_pass_allowance.saturating_sub(1);
                     self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
                 }
             },

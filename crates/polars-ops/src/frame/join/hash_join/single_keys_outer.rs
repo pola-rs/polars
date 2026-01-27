@@ -56,7 +56,7 @@ where
             .map(|partition_no| {
                 let hashes_and_keys = &hashes_and_keys;
                 let mut hash_tbl: PlHashMap<T::TotalOrdItem, (bool, IdxVec)> =
-                    PlHashMap::with_hasher(build_hasher);
+                    PlHashMap::with_hasher(build_hasher.clone());
 
                 let mut offset = 0;
                 for hashes_and_keys in hashes_and_keys {
@@ -229,7 +229,8 @@ where
     let random_state = hash_tbls[0].hasher();
 
     // we pre hash the probing values
-    let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(probe, Some(*random_state));
+    let (probe_hashes, _) =
+        create_hash_and_keys_threaded_vectorized(probe, Some(random_state.clone()));
 
     let n_tables = hash_tbls.len();
     try_raise_keyboard_interrupt();

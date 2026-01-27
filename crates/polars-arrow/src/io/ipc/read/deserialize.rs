@@ -9,6 +9,7 @@ use super::{Dictionaries, IpcBuffer, Node};
 use crate::array::*;
 use crate::datatypes::{ArrowDataType, Field, PhysicalType};
 use crate::io::ipc::IpcField;
+use crate::types::{PrimitiveType, months_days_ns};
 use crate::{match_integer_type, with_match_primitive_type_full};
 
 #[allow(clippy::too_many_arguments)]
@@ -33,6 +34,18 @@ pub fn read<R: Read + Seek>(
     match dtype.to_physical_type() {
         Null => read_null(field_nodes, dtype, limit).map(|x| x.boxed()),
         Boolean => read_boolean(
+            field_nodes,
+            dtype,
+            buffers,
+            reader,
+            block_offset,
+            is_little_endian,
+            compression,
+            limit,
+            scratch,
+        )
+        .map(|x| x.boxed()),
+        Primitive(PrimitiveType::MonthDayNano) => read_primitive::<months_days_ns, _>(
             field_nodes,
             dtype,
             buffers,

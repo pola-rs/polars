@@ -1,11 +1,10 @@
-use std::path::Path;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, LazyLock, RwLock};
 
 use polars_core::config;
 use polars_error::PolarsResult;
 use polars_utils::aliases::PlHashMap;
-use polars_utils::plpath::PlPathRef;
+use polars_utils::pl_path::PlRefPath;
 
 use super::entry::{DATA_PREFIX, FileCacheEntry, METADATA_PREFIX};
 use super::eviction::EvictionManager;
@@ -14,38 +13,29 @@ use super::utils::FILE_CACHE_PREFIX;
 use crate::path_utils::ensure_directory_init;
 
 pub static FILE_CACHE: LazyLock<FileCache> = LazyLock::new(|| {
-    let prefix = FILE_CACHE_PREFIX.as_ref();
-    let prefix = Arc::<Path>::from(prefix);
+    let prefix = FILE_CACHE_PREFIX.clone();
 
     if config::verbose() {
-        eprintln!("file cache prefix: {}", prefix.to_str().unwrap());
+        eprintln!("file cache prefix: {}", prefix);
     }
 
     let min_ttl = Arc::new(AtomicU64::from(get_env_file_cache_ttl()));
     let notify_ttl_updated = Arc::new(tokio::sync::Notify::new());
 
-    let metadata_dir = prefix
-        .as_ref()
-        .join(std::str::from_utf8(&[METADATA_PREFIX]).unwrap())
-        .into_boxed_path();
-    if let Err(err) = ensure_directory_init(&metadata_dir) {
+    let metadata_dir = prefix.join(std::str::from_utf8(&[METADATA_PREFIX]).unwrap());
+    if let Err(err) = ensure_directory_init(metadata_dir.as_std_path()) {
         panic!(
             "failed to create file cache metadata directory: path = {}, err = {}",
-            metadata_dir.to_str().unwrap(),
-            err
+            metadata_dir, err
         )
     }
 
-    let data_dir = prefix
-        .as_ref()
-        .join(std::str::from_utf8(&[DATA_PREFIX]).unwrap())
-        .into_boxed_path();
+    let data_dir = prefix.join(std::str::from_utf8(&[DATA_PREFIX]).unwrap());
 
-    if let Err(err) = ensure_directory_init(&data_dir) {
+    if let Err(err) = ensure_directory_init(data_dir.as_std_path()) {
         panic!(
             "failed to create file cache data directory: path = {}, err = {}",
-            data_dir.to_str().unwrap(),
-            err
+            data_dir, err
         )
     }
 
@@ -63,8 +53,8 @@ pub static FILE_CACHE: LazyLock<FileCache> = LazyLock::new(|| {
 });
 
 pub struct FileCache {
-    prefix: Arc<Path>,
-    entries: Arc<RwLock<PlHashMap<Arc<str>, Arc<FileCacheEntry>>>>,
+    prefix: PlRefPath,
+    entries: Arc<RwLock<PlHashMap<PlRefPath, Arc<FileCacheEntry>>>>,
     min_ttl: Arc<AtomicU64>,
     notify_ttl_updated: Arc<tokio::sync::Notify>,
 }
@@ -75,7 +65,7 @@ impl FileCache {
     /// * `{prefix}/{METADATA_PREFIX}/`
     /// * `{prefix}/{DATA_PREFIX}/`
     unsafe fn new_unchecked(
-        prefix: Arc<Path>,
+        prefix: PlRefPath,
         min_ttl: Arc<AtomicU64>,
         notify_ttl_updated: Arc<tokio::sync::Notify>,
     ) -> Self {
@@ -89,21 +79,23 @@ impl FileCache {
 
     /// If `uri` is a local path, it must be an absolute path. This is not exposed
     /// for now - initialize entries using `init_entries_from_uri_list` instead.
-    pub(super) fn init_entry<F: Fn() -> PolarsResult<Arc<dyn FileFetcher>>>(
+    pub(super) fn init_entry(
         &self,
-        uri: Arc<str>,
-        get_file_fetcher: F,
+        uri: PlRefPath,
+        get_file_fetcher: &dyn Fn() -> PolarsResult<Arc<dyn FileFetcher>>,
         ttl: u64,
     ) -> PolarsResult<Arc<FileCacheEntry>> {
         let verbose = config::verbose();
 
-        #[cfg(debug_assertions)]
-        {
-            // Local paths must be absolute or else the cache would be wrong.
-            if !PlPathRef::new(uri.as_ref()).is_cloud_url() {
-                let path = Path::new(uri.as_ref());
-                assert_eq!(path, std::fs::canonicalize(path).unwrap().as_path());
-            }
+        // Local paths must be absolute or else the cache would be wrong.
+        if !uri.has_scheme() {
+            debug_assert_eq!(
+                std::fs::canonicalize(uri.as_str())
+                    .ok()
+                    .and_then(|x| PlRefPath::try_from_pathbuf(x).ok())
+                    .as_ref(),
+                Some(&uri)
+            )
         }
 
         if self
@@ -117,7 +109,7 @@ impl FileCache {
         {
             let entries = self.entries.read().unwrap();
 
-            if let Some(entry) = entries.get(uri.as_ref()) {
+            if let Some(entry) = entries.get(&uri) {
                 if verbose {
                     eprintln!(
                         "[file_cache] init_entry: return existing entry for uri = {}",
@@ -135,7 +127,7 @@ impl FileCache {
             let mut entries = self.entries.write().unwrap();
 
             // May have been raced
-            if let Some(entry) = entries.get(uri.as_ref()) {
+            if let Some(entry) = entries.get(&uri) {
                 if verbose {
                     eprintln!(
                         "[file_cache] init_entry: return existing entry for uri = {} (lost init race)",
@@ -159,23 +151,19 @@ impl FileCache {
                 get_file_fetcher()?,
                 ttl,
             ));
-            entries.insert(uri, entry.clone());
+            entries.insert(uri.clone(), entry.clone());
             Ok(entry)
         }
     }
 
     /// This function can accept relative local paths.
-    pub fn get_entry(&self, addr: PlPathRef<'_>) -> Option<Arc<FileCacheEntry>> {
-        match addr {
-            PlPathRef::Local(p) => {
-                let p = std::fs::canonicalize(p).unwrap();
-                self.entries
-                    .read()
-                    .unwrap()
-                    .get(p.to_str().unwrap())
-                    .map(Arc::clone)
-            },
-            PlPathRef::Cloud(p) => self.entries.read().unwrap().get(p.uri()).map(Arc::clone),
+    pub fn get_entry(&self, path: PlRefPath) -> Option<Arc<FileCacheEntry>> {
+        if path.has_scheme() {
+            self.entries.read().unwrap().get(&path).cloned()
+        } else {
+            let p =
+                PlRefPath::try_from_pathbuf(std::fs::canonicalize(path.as_str()).unwrap()).unwrap();
+            self.entries.read().unwrap().get(&p).cloned()
         }
     }
 }

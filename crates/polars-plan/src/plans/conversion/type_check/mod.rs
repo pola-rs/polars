@@ -6,7 +6,7 @@ use polars_core::schema::Schema;
 use polars_utils::arena::{Arena, Node};
 
 use super::{AExpr, IR, OptimizationRule};
-use crate::dsl::{FileSinkType, FileType, PartitionSinkTypeIR, PartitionVariantIR, SinkTypeIR};
+use crate::dsl::{FileWriteFormat, PartitionedSinkOptionsIR, SinkTypeIR};
 use crate::plans::conversion::get_input_schema;
 
 pub struct TypeCheckRule;
@@ -50,6 +50,8 @@ impl OptimizationRule for TypeCheckRule {
                 use polars_io::prelude::{
                     ChildFieldOverwrites, ParquetFieldOverwrites, ParquetWriteOptions,
                 };
+
+                use crate::dsl::FileSinkOptions;
 
                 fn type_check_parquet_field_overwrites(
                     field_overwrites: &[ParquetFieldOverwrites],
@@ -142,42 +144,35 @@ impl OptimizationRule for TypeCheckRule {
                     Ok(())
                 }
 
-                match payload {
-                    SinkTypeIR::File(FileSinkType {
-                        file_type: FileType::Parquet(write_options @ ParquetWriteOptions { .. }),
-                        ..
-                    }) if !write_options.field_overwrites.is_empty() => {
-                        let input_schema = get_input_schema(ir_arena, node);
-                        type_check_parquet_field_overwrites(
-                            &write_options.field_overwrites,
-                            &input_schema,
-                        )?;
-                    },
-                    SinkTypeIR::Partition(PartitionSinkTypeIR {
-                        file_type: FileType::Parquet(write_options @ ParquetWriteOptions { .. }),
-                        variant,
-                        ..
-                    }) if !write_options.field_overwrites.is_empty() => {
+                if let SinkTypeIR::File(FileSinkOptions { file_format, .. })
+                | SinkTypeIR::Partitioned(PartitionedSinkOptionsIR { file_format, .. }) = payload
+                {
+                    if let FileWriteFormat::Parquet(write_options) = file_format
+                        && let write_options @ ParquetWriteOptions { .. } = write_options.as_ref()
+                        && !write_options.field_overwrites.is_empty()
+                    {
+                        use crate::dsl::sink::PartitionStrategyIR;
+
                         let mut input_schema = get_input_schema(ir_arena, node);
 
-                        if let PartitionVariantIR::ByKey {
-                            key_exprs,
-                            include_key,
-                        }
-                        | PartitionVariantIR::Parted {
-                            key_exprs,
-                            include_key,
-                        } = variant
+                        if let SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {
+                            partition_strategy:
+                                PartitionStrategyIR::Keyed {
+                                    keys, include_keys, ..
+                                },
+                            ..
+                        }) = payload
                         {
                             let mut input_schema_mut = input_schema.as_ref().as_ref().clone();
-                            for e in key_exprs {
+                            for e in keys {
                                 let field = e.field(&input_schema_mut, expr_arena)?;
-                                if *include_key {
+                                if *include_keys {
                                     input_schema_mut.insert(field.name, field.dtype);
                                 } else {
                                     input_schema_mut.remove(&field.name);
                                 }
                             }
+
                             input_schema = std::borrow::Cow::Owned(Arc::new(input_schema_mut));
                         }
 
@@ -185,9 +180,9 @@ impl OptimizationRule for TypeCheckRule {
                             &write_options.field_overwrites,
                             &input_schema,
                         )?;
-                    },
-                    _ => {},
+                    }
                 }
+
                 Ok(None)
             },
             _ => Ok(None),

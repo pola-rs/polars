@@ -11,8 +11,8 @@ use super::{Filter, PredicateFilter, dictionary_encoded};
 use crate::parquet::encoding::{Encoding, delta_byte_array, delta_length_byte_array, hybrid_rle};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage, split_buffer};
-use crate::read::deserialize::utils::{self};
-use crate::read::expr::SpecializedParquetColumnExpr;
+use crate::read::deserialize::utils::{self, Decoded};
+use crate::read::expr::{ParquetScalar, SpecializedParquetColumnExpr};
 
 mod optional;
 mod optional_masked;
@@ -20,7 +20,14 @@ mod predicate;
 mod required;
 mod required_masked;
 
-type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, BitmapBuilder);
+pub struct DecodedState {
+    binview: MutableBinaryViewArray<[u8]>,
+    validity: BitmapBuilder,
+
+    // Used to store the needles for EqualsOneOf::Set that were inserted
+    // into the buffers (but not the views).
+    needle_views: Vec<View>,
+}
 
 impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
     type PlainDecoder = BinaryIter<'a>;
@@ -70,13 +77,89 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
     }
 }
 
+enum EqualsOneOf {
+    Empty,
+    Inlinable([View; 4]),
+    Set(PlIndexSet<Box<[u8]>>),
+}
+
 pub(crate) struct BinViewDecoder {
-    pub is_string: bool,
+    is_string: bool,
+    equals_one_of: Option<Box<EqualsOneOf>>,
 }
 
 impl BinViewDecoder {
+    pub fn new(is_string: bool) -> Self {
+        Self {
+            is_string,
+            equals_one_of: None,
+        }
+    }
+
     pub fn new_string() -> Self {
-        Self { is_string: true }
+        Self::new(true)
+    }
+
+    fn initialize_predicate_equals_one_of(&mut self, needles: &[ParquetScalar]) -> &EqualsOneOf {
+        self.equals_one_of.get_or_insert_with(|| {
+            if needles.is_empty() {
+                return Box::new(EqualsOneOf::Empty);
+            }
+
+            let is_inlinable = needles.len() <= 4
+                && needles.iter().all(|needle| {
+                    let needle = if self.is_string {
+                        needle.as_str().unwrap().as_bytes()
+                    } else {
+                        needle.as_binary().unwrap()
+                    };
+                    needle.len() < View::MAX_INLINE_SIZE as usize
+                });
+
+            Box::new(if is_inlinable {
+                let mut views = [View::default(); 4];
+                for (i, needle) in needles.iter().enumerate() {
+                    let needle = if self.is_string {
+                        needle.as_str().unwrap().as_bytes()
+                    } else {
+                        needle.as_binary().unwrap()
+                    };
+                    views[i] = View::new_inline(needle);
+                }
+                for i in needles.len()..4 {
+                    views[i] = views[0];
+                }
+                EqualsOneOf::Inlinable(views)
+            } else {
+                let mut needle_set = PlIndexSet::<Box<_>>::default();
+                needle_set.extend(needles.iter().map(|needle| {
+                    assert!(!needle.is_null());
+                    let needle = if self.is_string {
+                        needle.as_str().unwrap().as_bytes()
+                    } else {
+                        needle.as_binary().unwrap()
+                    };
+                    needle.into()
+                }));
+                EqualsOneOf::Set(needle_set)
+            })
+        })
+    }
+
+    fn initialize_decode_equals_one_of_state(
+        &mut self,
+        target: &mut DecodedState,
+    ) -> Option<&EqualsOneOf> {
+        if let Some(EqualsOneOf::Set(needles)) = self.equals_one_of.as_deref_mut() {
+            if target.needle_views.is_empty() {
+                target.needle_views.extend(
+                    needles
+                        .iter()
+                        .map(|needle| target.binview.push_value_into_buffer(needle)),
+                );
+            }
+        }
+        self.equals_one_of.as_deref()
     }
 }
 
@@ -89,193 +172,124 @@ pub(crate) enum StateTranslation<'a> {
     DeltaBytes(delta_byte_array::Decoder<'a>),
 }
 
-impl utils::Decoded for DecodedStateTuple {
+impl utils::Decoded for DecodedState {
     fn len(&self) -> usize {
-        self.0.len()
+        self.binview.len()
     }
 
     fn extend_nulls(&mut self, n: usize) {
-        self.0.extend_constant(n, Some(&[]));
-        self.1.extend_constant(n, false);
+        self.binview.extend_constant(n, Some(&[]));
+        self.validity.extend_constant(n, false);
+    }
+
+    fn remaining_capacity(&self) -> usize {
+        (self.binview.capacity() - self.binview.len())
+            .min(self.validity.capacity() - self.validity.len())
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn decode_plain(
+fn decode_plain(
     values: &[u8],
     max_num_values: usize,
-    target: &mut MutableBinaryViewArray<[u8]>,
-
+    state: &mut DecodedState,
     is_optional: bool,
-    validity: &mut BitmapBuilder,
 
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
 
-    pred_true_mask: &mut BitmapBuilder,
-
+    equals_one_of_state: Option<&EqualsOneOf>,
     verify_utf8: bool,
 ) -> ParquetResult<()> {
-    if let Some(Filter::Predicate(p)) = filter.as_ref() {
-        assert!(page_validity.is_none());
-        let start_pred_true_num = pred_true_mask.set_bits();
+    if is_optional {
+        append_validity(
+            page_validity,
+            filter.as_ref(),
+            &mut state.validity,
+            max_num_values,
+        );
+    }
 
-        match p.predicate.as_specialized().unwrap() {
-            SpecializedParquetColumnExpr::Equal(needle) => {
-                assert!(!needle.is_null());
-
-                let needle = if verify_utf8 {
-                    needle.as_str().unwrap().as_bytes()
-                } else {
-                    needle.as_binary().unwrap()
-                };
-
-                predicate::decode_equals(max_num_values, values, needle, pred_true_mask)?;
-
-                if p.include_values {
-                    let pred_true_num = pred_true_mask.set_bits() - start_pred_true_num;
-
-                    if pred_true_num > 0 {
-                        let new_target_len = target.len() + pred_true_num;
-                        let new_total_bytes_len =
-                            target.total_bytes_len() + pred_true_num * needle.len();
-
-                        target.push_value(needle);
-                        let view = *target.views().last().unwrap();
-
-                        // SAFETY: We know that the view is valid since we added it safely and we
-                        // update the total_bytes_len afterwards. The total_buffer_len is not affected.
-                        unsafe {
-                            target.views_mut().resize(new_target_len, view);
-                            target.set_total_bytes_len(new_total_bytes_len);
-                        }
-                    }
-                }
+    if let Some(equals_one_of_state) = equals_one_of_state
+        && page_validity.is_none()
+    {
+        let mut total_bytes_len = 0;
+        match equals_one_of_state {
+            EqualsOneOf::Empty => {},
+            EqualsOneOf::Inlinable(views) => {
+                predicate::decode_is_in_inlinable(
+                    max_num_values,
+                    values,
+                    views,
+                    unsafe { state.binview.views_mut() },
+                    &mut total_bytes_len,
+                )?;
             },
-            SpecializedParquetColumnExpr::EqualOneOf(needles) if needles.is_empty() => {
-                pred_true_mask.extend_constant(max_num_values, false);
+            EqualsOneOf::Set(needles) => {
+                predicate::decode_is_in_non_inlinable(
+                    max_num_values,
+                    values,
+                    needles,
+                    &state.needle_views,
+                    unsafe { state.binview.views_mut() },
+                    &mut total_bytes_len,
+                )?;
             },
-            SpecializedParquetColumnExpr::EqualOneOf(needles) => {
-                let mut inline_idx = 0;
-                let mut inlinable_views = [View::default(); 4];
-                let mut needle_views = Vec::new();
-                let mut needle_set = PlIndexSet::default();
-
-                for (i, needle) in needles.iter().enumerate() {
-                    assert!(!needle.is_null());
-
-                    let needle = if verify_utf8 {
-                        needle.as_str().unwrap().as_bytes()
-                    } else {
-                        needle.as_binary().unwrap()
-                    };
-
-                    let view = target.push_value_into_buffer(needle);
-                    if view.is_inline() && inline_idx < 4 && needle_views.is_empty() {
-                        inlinable_views[inline_idx] = view;
-                        inline_idx += 1;
-                    } else {
-                        needle_views.reserve(needles.len() - i);
-                        needle_set.reserve(needles.len() - i);
-
-                        // If there are duplicates we should only push one.
-                        if needle_set.insert(needle) {
-                            needle_views.push(view);
-                        }
-                    }
-                }
-
-                if needle_views.is_empty() {
-                    for i in inline_idx..4 {
-                        inlinable_views[i] = inlinable_views[0];
-                    }
-                }
-
-                let mut total_bytes_len = 0;
-                match (p.include_values, needle_views.is_empty()) {
-                    (false, false) => predicate::decode_is_in_no_values_non_inlinable(
-                        max_num_values,
-                        values,
-                        &needle_set,
-                        pred_true_mask,
-                        &mut total_bytes_len,
-                    )?,
-                    (true, false) => predicate::decode_is_in_non_inlinable(
-                        max_num_values,
-                        values,
-                        &needle_set,
-                        &needle_views,
-                        unsafe { target.views_mut() },
-                        pred_true_mask,
-                        &mut total_bytes_len,
-                    )?,
-                    (false, true) => predicate::decode_is_in_no_values_inlinable(
-                        max_num_values,
-                        values,
-                        &inlinable_views,
-                        pred_true_mask,
-                        &mut total_bytes_len,
-                    )?,
-                    (true, true) => predicate::decode_is_in_inlinable(
-                        max_num_values,
-                        values,
-                        &inlinable_views,
-                        unsafe { target.views_mut() },
-                        pred_true_mask,
-                        &mut total_bytes_len,
-                    )?,
-                }
-
-                let new_total_bytes_len = target.total_bytes_len() + total_bytes_len;
-
-                // SAFETY: We know that the view is valid since we added it safely and we
-                // update the total_bytes_len afterwards. The total_buffer_len is not affected.
-                unsafe {
-                    target.set_total_bytes_len(new_total_bytes_len);
-                }
-            },
-            _ => unreachable!(),
         }
 
-        if is_optional && p.include_values {
-            let num_pred_true = pred_true_mask.set_bits() - start_pred_true_num;
-            validity.extend_constant(num_pred_true, true);
+        let new_total_bytes_len = state.binview.total_bytes_len() + total_bytes_len;
+
+        // SAFETY: We know that the view is valid since we added it safely and we
+        // update the total_bytes_len afterwards. The total_buffer_len is not affected.
+        unsafe {
+            state.binview.set_total_bytes_len(new_total_bytes_len);
         }
 
         return Ok(());
     }
 
-    if is_optional {
-        append_validity(page_validity, filter.as_ref(), validity, max_num_values);
-    }
     let page_validity = constrain_page_validity(max_num_values, page_validity, filter.as_ref());
 
     match (filter, page_validity) {
-        (None, None) => required::decode(max_num_values, values, None, target, verify_utf8),
-        (Some(Filter::Range(rng)), None) if rng.start == 0 => {
-            required::decode(max_num_values, values, Some(rng.end), target, verify_utf8)
-        },
+        (None, None) => required::decode(
+            max_num_values,
+            values,
+            None,
+            &mut state.binview,
+            verify_utf8,
+        ),
+        (Some(Filter::Range(rng)), None) if rng.start == 0 => required::decode(
+            max_num_values,
+            values,
+            Some(rng.end),
+            &mut state.binview,
+            verify_utf8,
+        ),
         (None, Some(page_validity)) => optional::decode(
             page_validity.set_bits(),
             values,
-            target,
+            &mut state.binview,
             &page_validity,
             verify_utf8,
         ),
         (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => optional::decode(
             page_validity.set_bits(),
             values,
-            target,
+            &mut state.binview,
             &page_validity,
             verify_utf8,
         ),
-        (Some(Filter::Mask(mask)), None) => {
-            required_masked::decode(max_num_values, values, target, &mask, verify_utf8)
-        },
+        (Some(Filter::Mask(mask)), None) => required_masked::decode(
+            max_num_values,
+            values,
+            &mut state.binview,
+            &mask,
+            verify_utf8,
+        ),
         (Some(Filter::Mask(mask)), Some(page_validity)) => optional_masked::decode(
             page_validity.set_bits(),
             values,
-            target,
+            &mut state.binview,
             &page_validity,
             &mask,
             verify_utf8,
@@ -283,14 +297,14 @@ pub fn decode_plain(
         (Some(Filter::Range(rng)), None) => required_masked::decode(
             max_num_values,
             values,
-            target,
+            &mut state.binview,
             &filter_from_range(rng),
             verify_utf8,
         ),
         (Some(Filter::Range(rng)), Some(page_validity)) => optional_masked::decode(
             page_validity.set_bits(),
             values,
-            target,
+            &mut state.binview,
             &page_validity,
             &filter_from_range(rng),
             verify_utf8,
@@ -469,14 +483,15 @@ pub fn decode_plain_generic(
 impl utils::Decoder for BinViewDecoder {
     type Translation<'a> = StateTranslation<'a>;
     type Dict = BinaryViewArray;
-    type DecodedState = DecodedStateTuple;
+    type DecodedState = DecodedState;
     type Output = Box<dyn Array>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
-        (
-            MutableBinaryViewArray::with_capacity(capacity),
-            BitmapBuilder::with_capacity(capacity),
-        )
+        DecodedState {
+            binview: MutableBinaryViewArray::with_capacity(capacity),
+            validity: BitmapBuilder::with_capacity(capacity),
+            needle_views: Vec::new(),
+        }
     }
 
     fn evaluate_dict_predicate(
@@ -495,42 +510,105 @@ impl utils::Decoder for BinViewDecoder {
         Ok(predicate.predicate.evaluate(dict_arr))
     }
 
-    fn has_predicate_specialization(
-        &self,
+    fn evaluate_predicate(
+        &mut self,
         state: &utils::State<'_, Self>,
-        predicate: &PredicateFilter,
+        predicate: Option<&SpecializedParquetColumnExpr>,
+        pred_true_mask: &mut BitmapBuilder,
+        dict_mask: Option<&Bitmap>,
     ) -> ParquetResult<bool> {
-        let mut has_predicate_specialization = false;
+        if state.page_validity.is_some() {
+            // @Performance. This should be implemented.
+            return Ok(false);
+        }
 
-        has_predicate_specialization |=
-            matches!(state.translation, StateTranslation::Dictionary(_));
-        has_predicate_specialization |= matches!(state.translation, StateTranslation::Plain(_))
-            && matches!(
-                predicate.predicate.as_specialized(),
-                Some(
-                    SpecializedParquetColumnExpr::Equal(_)
-                        | SpecializedParquetColumnExpr::EqualOneOf(_)
-                )
-            );
+        if let StateTranslation::Dictionary(values) = &state.translation {
+            let dict_mask = dict_mask.unwrap();
+            super::dictionary_encoded::predicate::decode(
+                values.clone(),
+                dict_mask,
+                pred_true_mask,
+            )?;
+            return Ok(true);
+        }
 
-        // @TODO: This should be implemented
-        has_predicate_specialization &= state.page_validity.is_none();
+        let Some(predicate) = predicate else {
+            return Ok(false);
+        };
 
-        Ok(has_predicate_specialization)
+        use {SpecializedParquetColumnExpr as Spce, StateTranslation as St};
+        match (&state.translation, predicate) {
+            (St::Plain(iter), Spce::Equal(needle)) => {
+                assert!(!needle.is_null());
+
+                let needle = if self.is_string {
+                    needle.as_str().unwrap().as_bytes()
+                } else {
+                    needle.as_binary().unwrap()
+                };
+                predicate::decode_equals(iter.max_num_values, iter.values, needle, pred_true_mask)?;
+            },
+            (St::Plain(iter), Spce::EqualOneOf(needles)) => {
+                let e = self.initialize_predicate_equals_one_of(needles);
+
+                match e {
+                    EqualsOneOf::Empty => {
+                        pred_true_mask.extend_constant(iter.max_num_values, false)
+                    },
+                    EqualsOneOf::Inlinable(views) => {
+                        predicate::decode_is_in_no_values_inlinable(
+                            iter.max_num_values,
+                            iter.values,
+                            views,
+                            pred_true_mask,
+                        )?;
+                    },
+                    EqualsOneOf::Set(needle_set) => {
+                        predicate::decode_is_in_no_values_non_inlinable(
+                            iter.max_num_values,
+                            iter.values,
+                            needle_set,
+                            pred_true_mask,
+                        )?;
+                    },
+                }
+            },
+            (St::Plain(iter), Spce::StartsWith(pattern)) => predicate::decode_matches(
+                iter.max_num_values,
+                iter.values,
+                |v| v.starts_with(pattern),
+                pred_true_mask,
+            )?,
+            (St::Plain(iter), Spce::EndsWith(pattern)) => predicate::decode_matches(
+                iter.max_num_values,
+                iter.values,
+                |v| v.ends_with(pattern),
+                pred_true_mask,
+            )?,
+            (St::Plain(iter), Spce::RegexMatch(regex)) => predicate::decode_matches(
+                iter.max_num_values,
+                iter.values,
+                |v| regex.is_match(v),
+                pred_true_mask,
+            )?,
+            _ => return Ok(false),
+        }
+
+        Ok(true)
     }
 
     fn apply_dictionary(
         &mut self,
-        (values, _): &mut Self::DecodedState,
+        state: &mut Self::DecodedState,
         dict: &Self::Dict,
     ) -> ParquetResult<()> {
-        if values.completed_buffers().len() < dict.data_buffers().len() {
+        if state.binview.completed_buffers().len() < dict.data_buffers().len() {
             for buffer in dict.data_buffers().as_ref() {
-                values.push_buffer(buffer.clone());
+                state.binview.push_buffer(buffer.clone());
             }
         }
 
-        assert!(values.completed_buffers().len() == dict.data_buffers().len());
+        assert!(state.binview.completed_buffers().len() == dict.data_buffers().len());
 
         Ok(())
     }
@@ -557,12 +635,12 @@ impl utils::Decoder for BinViewDecoder {
             let mut array = array.to_binview();
 
             if let Some(validity) = array.take_validity() {
-                decoded.0.extend_from_array(&array);
-                decoded.1.extend_from_bitmap(&validity);
+                decoded.binview.extend_from_array(&array);
+                decoded.validity.extend_from_bitmap(&validity);
             } else {
-                decoded.0.extend_from_array(&array);
+                decoded.binview.extend_from_array(&array);
                 if is_optional {
-                    decoded.1.extend_constant(array.len(), true);
+                    decoded.validity.extend_constant(array.len(), true);
                 }
             }
         } else {
@@ -573,12 +651,12 @@ impl utils::Decoder for BinViewDecoder {
             let mut array = array.clone();
 
             if let Some(validity) = array.take_validity() {
-                decoded.0.extend_from_array(&array);
-                decoded.1.extend_from_bitmap(&validity);
+                decoded.binview.extend_from_array(&array);
+                decoded.validity.extend_from_bitmap(&validity);
             } else {
-                decoded.0.extend_from_array(&array);
+                decoded.binview.extend_from_array(&array);
                 if is_optional {
-                    decoded.1.extend_constant(array.len(), true);
+                    decoded.validity.extend_constant(array.len(), true);
                 }
             }
         }
@@ -590,40 +668,39 @@ impl utils::Decoder for BinViewDecoder {
         &mut self,
         mut state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
-        pred_true_mask: &mut BitmapBuilder,
         filter: Option<super::Filter>,
+        _chunks: &mut Vec<Self::Output>,
     ) -> ParquetResult<()> {
+        let is_string = self.is_string;
+        let equals_one_of_state = self.initialize_decode_equals_one_of_state(decoded);
         match state.translation {
             StateTranslation::Plain(iter) => decode_plain(
                 iter.values,
                 iter.max_num_values,
-                &mut decoded.0,
+                decoded,
                 state.is_optional,
-                &mut decoded.1,
                 state.page_validity.as_ref(),
                 filter,
-                pred_true_mask,
-                self.is_string,
+                equals_one_of_state,
+                is_string,
             ),
             StateTranslation::Dictionary(ref mut indexes) => {
                 let dict = state.dict.unwrap();
 
-                let start_length = decoded.0.views().len();
+                let start_length = decoded.binview.views().len();
 
                 dictionary_encoded::decode_dict(
                     indexes.clone(),
                     dict.views().as_slice(),
-                    state.dict_mask,
                     state.is_optional,
                     state.page_validity.as_ref(),
                     filter,
-                    &mut decoded.1,
-                    unsafe { decoded.0.views_mut() },
-                    pred_true_mask,
+                    &mut decoded.validity,
+                    unsafe { decoded.binview.views_mut() },
                 )?;
 
                 let total_length: usize = decoded
-                    .0
+                    .binview
                     .views()
                     .iter()
                     .skip(start_length)
@@ -631,8 +708,8 @@ impl utils::Decoder for BinViewDecoder {
                     .sum();
                 unsafe {
                     decoded
-                        .0
-                        .set_total_bytes_len(decoded.0.total_bytes_len() + total_length);
+                        .binview
+                        .set_total_bytes_len(decoded.binview.total_bytes_len() + total_length);
                 }
 
                 Ok(())
@@ -676,8 +753,8 @@ impl utils::Decoder for BinViewDecoder {
                     filter,
                     state.page_validity,
                     state.is_optional,
-                    &mut decoded.1,
-                    &mut decoded.0,
+                    &mut decoded.validity,
+                    &mut decoded.binview,
                 )
             },
             StateTranslation::DeltaBytes(mut decoder) => {
@@ -697,22 +774,45 @@ impl utils::Decoder for BinViewDecoder {
                     filter,
                     state.page_validity,
                     state.is_optional,
-                    &mut decoded.1,
-                    &mut decoded.0,
+                    &mut decoded.validity,
+                    &mut decoded.binview,
                 )
             },
         }
+    }
+
+    fn extend_constant(
+        &mut self,
+        decoded: &mut Self::DecodedState,
+        length: usize,
+        value: &ParquetScalar,
+    ) -> ParquetResult<()> {
+        if value.is_null() {
+            decoded.extend_nulls(length);
+            return Ok(());
+        }
+
+        let value = match value {
+            ParquetScalar::String(v) => v.as_bytes(),
+            ParquetScalar::Binary(v) => v.as_ref(),
+            _ => unreachable!(),
+        };
+
+        decoded.binview.extend_constant(length, Some(value));
+        decoded.validity.extend_constant(length, true);
+
+        Ok(())
     }
 
     fn finalize(
         &self,
         dtype: ArrowDataType,
         _dict: Option<Self::Dict>,
-        (values, validity): Self::DecodedState,
+        state: Self::DecodedState,
     ) -> ParquetResult<Box<dyn Array>> {
-        let mut array: BinaryViewArray = values.freeze();
+        let mut array: BinaryViewArray = state.binview.freeze();
 
-        let validity = freeze_validity(validity);
+        let validity = freeze_validity(state.validity);
         array = array.with_validity(validity);
 
         match dtype.to_physical_type() {

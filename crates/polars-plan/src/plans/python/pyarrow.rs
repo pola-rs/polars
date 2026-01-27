@@ -17,7 +17,20 @@ fn to_py_datetime(v: i64, tu: &TimeUnit, tz: Option<&TimeZone>) -> String {
     // dtype have to be in-scope on the python side
     match tz {
         None => format!("to_py_datetime({},'{}')", v, tu.to_ascii()),
-        Some(tz) => format!("to_py_datetime({},'{}',{})", v, tu.to_ascii(), tz),
+        Some(tz) => format!("to_py_datetime({},'{}','{}')", v, tu.to_ascii(), tz),
+    }
+}
+
+fn sanitize(name: &str) -> Option<&str> {
+    if name.chars().all(|c| match c {
+        ' ' => true,
+        '-' => true,
+        '_' => true,
+        c => c.is_alphanumeric(),
+    }) {
+        Some(name)
+    } else {
+        None
     }
 }
 
@@ -37,14 +50,17 @@ pub fn predicate_to_pa(
                 None
             }
         },
-        AExpr::Column(name) => Some(format!("pa.compute.field('{name}')")),
+        AExpr::Column(name) => {
+            let name = sanitize(name)?;
+            Some(format!("pa.compute.field('{name}')"))
+        },
         AExpr::Literal(LiteralValue::Series(s)) => {
             if !args.allow_literal_series || s.is_empty() || s.len() > 100 {
                 None
             } else {
                 let mut list_repr = String::with_capacity(s.len() * 5);
                 list_repr.push('[');
-                for av in s.rechunk().iter() {
+                for av in s.iter() {
                     match av {
                         AnyValue::Boolean(v) => {
                             let s = if v { "True" } else { "False" };
@@ -59,6 +75,16 @@ pub fn predicate_to_pa(
                         AnyValue::Date(v) => {
                             write!(list_repr, "to_py_date({v}),").unwrap();
                         },
+                        AnyValue::String(s) => {
+                            let _ = sanitize(s)?;
+                            write!(list_repr, "{av},").unwrap();
+                        },
+                        // Hard to sanitize
+                        AnyValue::Binary(_) | AnyValue::List(_) => return None,
+                        #[cfg(feature = "dtype-array")]
+                        AnyValue::Array(_, _) => return None,
+                        #[cfg(feature = "dtype-struct")]
+                        AnyValue::Struct(_, _, _) => return None,
                         _ => {
                             write!(list_repr, "{av},").unwrap();
                         },
@@ -74,7 +100,10 @@ pub fn predicate_to_pa(
             let av = lv.to_any_value()?;
             let dtype = av.dtype();
             match av.as_borrowed() {
-                AnyValue::String(s) => Some(format!("'{s}'")),
+                AnyValue::String(s) => {
+                    let s = sanitize(s)?;
+                    Some(format!("'{s}'"))
+                },
                 AnyValue::Boolean(val) => {
                     // python bools are capitalized
                     if val {
@@ -91,6 +120,12 @@ pub fn predicate_to_pa(
                 },
                 #[cfg(feature = "dtype-datetime")]
                 AnyValue::Datetime(v, tu, tz) => Some(to_py_datetime(v, &tu, tz)),
+                // Hard to sanitize
+                AnyValue::Binary(_) | AnyValue::List(_) => None,
+                #[cfg(feature = "dtype-array")]
+                AnyValue::Array(_, _) => None,
+                #[cfg(feature = "dtype-struct")]
+                AnyValue::Struct(_, _, _) => None,
                 // Activate once pyarrow supports them
                 // #[cfg(feature = "dtype-time")]
                 // AnyValue::Time(v) => {

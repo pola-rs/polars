@@ -97,7 +97,7 @@ impl ComputeNode for RleIdNode {
                     column
                 };
 
-                *df = unsafe { DataFrame::new_no_checks(column.len(), vec![column]) };
+                *df = unsafe { DataFrame::new_unchecked(column.len(), vec![column]) };
 
                 if send.send(m).await.is_err() {
                     break;

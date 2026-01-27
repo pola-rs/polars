@@ -20,6 +20,20 @@ def test_arr_min_max() -> None:
     assert s_with_null.arr.min().to_list() == [2, None, 3]
 
 
+def test_arr_mean_median_var_std() -> None:
+    s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+    assert s.arr.mean().to_list() == [1.5, 3.5]
+    assert s.arr.median().to_list() == [1.5, 3.5]
+    assert s.arr.var().to_list() == [0.5, 0.5]
+    assert round(s.arr.std().to_list()[0], 5) == 0.70711
+
+    s_with_null = pl.Series("a", [[3, 4], None, [None, 2]], dtype=pl.Array(pl.Int64, 2))
+    assert s_with_null.arr.mean().to_list() == [3.5, None, 2.0]
+    assert s_with_null.arr.median().to_list() == [3.5, None, 2.0]
+    assert s_with_null.arr.var().to_list() == [0.5, None, None]
+    assert round(s_with_null.arr.std().to_list()[0], 5) == 0.70711
+
+
 def test_array_min_max_dtype_12123() -> None:
     df = pl.LazyFrame(
         [pl.Series("a", [[1.0, 3.0], [2.0, 5.0]]), pl.Series("b", [1.0, 2.0])],
@@ -63,6 +77,18 @@ def test_arr_sum(
     assert s.arr.sum().to_list() == expected_sum
 
 
+@pytest.mark.may_fail_cloud
+def test_array_lengths_zwa() -> None:
+    assert pl.Series("a", [[], []], pl.Array(pl.Null, 0)).arr.len().to_list() == [0, 0]
+    assert pl.Series("a", [None, []], pl.Array(pl.Null, 0)).arr.len().to_list() == [
+        None,
+        0,
+    ]
+    assert pl.Series("a", [None], pl.Array(pl.Null, 0)).arr.len().to_list() == [None]
+
+    assert pl.Series("a", [], pl.Array(pl.Null, 0)).arr.len().to_list() == []
+
+
 def test_array_lengths() -> None:
     df = pl.DataFrame(
         [
@@ -72,21 +98,14 @@ def test_array_lengths() -> None:
     )
     out = df.select(pl.col("a").arr.len(), pl.col("b").arr.len())
     expected_df = pl.DataFrame(
-        {"a": [3], "b": [2]}, schema={"a": pl.UInt32, "b": pl.UInt32}
+        {"a": [3], "b": [2]},
+        schema={"a": pl.get_index_type(), "b": pl.get_index_type()},
     )
     assert_frame_equal(out, expected_df)
 
-    assert pl.Series("a", [[], []], pl.Array(pl.Null, 0)).arr.len().to_list() == [0, 0]
-    assert pl.Series("a", [None, []], pl.Array(pl.Null, 0)).arr.len().to_list() == [
-        None,
-        0,
-    ]
-    assert pl.Series("a", [None], pl.Array(pl.Null, 0)).arr.len().to_list() == [None]
-
-    assert pl.Series("a", [], pl.Array(pl.Null, 0)).arr.len().to_list() == []
     assert pl.Series("a", [], pl.Array(pl.Null, 1)).arr.len().to_list() == []
     assert pl.Series(
-        "a", [[1, 2, 3], None, [7, 8, 9]], pl.Array(pl.Int32, 3)
+        "a", [[1, 2, 3], None, [7, 8, 9]], pl.Array(pl.get_index_type(), 3)
     ).arr.len().to_list() == [3, None, 3]
 
 
@@ -205,9 +224,9 @@ def test_array_reverse() -> None:
 
 def test_array_arg_min_max() -> None:
     s = pl.Series("a", [[1, 2, 4], [3, 2, 1]], dtype=pl.Array(pl.UInt32, 3))
-    expected = pl.Series("a", [0, 2], dtype=pl.UInt32)
+    expected = pl.Series("a", [0, 2], dtype=pl.get_index_type())
     assert_series_equal(s.arr.arg_min(), expected)
-    expected = pl.Series("a", [2, 0], dtype=pl.UInt32)
+    expected = pl.Series("a", [2, 0], dtype=pl.get_index_type())
     assert_series_equal(s.arr.arg_max(), expected)
 
 
@@ -537,7 +556,7 @@ def test_array_n_unique() -> None:
 
     out = df.select(n_unique=pl.col("a").arr.n_unique())
     expected = pl.DataFrame(
-        {"n_unique": [2, 1, 1, None]}, schema={"n_unique": pl.UInt32}
+        {"n_unique": [2, 1, 1, None]}, schema={"n_unique": pl.get_index_type()}
     )
     assert_frame_equal(out, expected)
 
@@ -549,7 +568,10 @@ def test_explode_19049() -> None:
     assert_frame_equal(result_df, expected_df)
 
     df = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.Int64})
-    with pytest.raises(InvalidOperationError, match="expected Array type, got: i64"):
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected Array datatype for array operation, got: Int64",
+    ):
         df.select(pl.col.a.arr.explode())
 
 
@@ -623,3 +645,53 @@ def test_arr_contains() -> None:
         s.arr.contains(1, nulls_equal=True),
         pl.Series([True, False, None], dtype=pl.Boolean),
     )
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("a").arr.contains("z"),
+        pl.col("a").arr.explode(),
+        pl.col("a").arr.sum(),
+        pl.col("a").arr.to_list(),
+        pl.col("a").arr.to_struct(),
+        pl.col("a").arr.unique(),
+        pl.col("a").arr.all(),
+        pl.col("a").arr.any(),
+        pl.col("a").arr.arg_max(),
+        pl.col("a").arr.arg_min(),
+        pl.col("a").arr.count_matches("z"),
+        pl.col("a").arr.first(),
+        pl.col("a").arr.get(0),
+        pl.col("a").arr.join(""),
+        pl.col("a").arr.last(),
+        pl.col("a").arr.len(),
+        pl.col("a").arr.max(),
+        pl.col("a").arr.mean(),
+        pl.col("a").arr.median(),
+        pl.col("a").arr.min(),
+        pl.col("a").arr.n_unique(),
+        pl.col("a").arr.reverse(),
+        pl.col("a").arr.shift(1),
+        pl.col("a").arr.sort(),
+        pl.col("a").arr.std(),
+        pl.col("a").arr.var(),
+    ],
+)
+def test_schema_non_array(expr: pl.Expr) -> None:
+    lf = pl.LazyFrame({"a": ["a", "b", "c"]})
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected Array datatype for array operation, got: String",
+    ):
+        lf.select(expr).collect_schema()
+
+
+def test_array_get_broadcast_26217() -> None:
+    df = pl.DataFrame({"idx": [0, 1, 2, 1, 2, 0, 1]})
+    out = df.select(pl.lit([42, 13, 37], pl.Array(pl.UInt8, 3)).arr.get(pl.col.idx))
+    expected = pl.DataFrame(
+        {"literal": [42, 13, 37, 13, 37, 42, 13]}, schema={"literal": pl.UInt8}
+    )
+    assert_frame_equal(out, expected)

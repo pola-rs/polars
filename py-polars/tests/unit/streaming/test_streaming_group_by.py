@@ -60,8 +60,6 @@ def test_streaming_group_by_types() -> None:
                     [
                         pl.col("person_name").first().alias("str_first"),
                         pl.col("person_name").last().alias("str_last"),
-                        pl.col("person_name").mean().alias("str_mean"),
-                        pl.col("person_name").sum().alias("str_sum"),
                         pl.col("bool").first().alias("bool_first"),
                         pl.col("bool").last().alias("bool_last"),
                         pl.col("bool").mean().alias("bool_mean"),
@@ -82,12 +80,10 @@ def test_streaming_group_by_types() -> None:
         assert out.schema == {
             "str_first": pl.String,
             "str_last": pl.String,
-            "str_mean": pl.String,
-            "str_sum": pl.String,
             "bool_first": pl.Boolean,
             "bool_last": pl.Boolean,
             "bool_mean": pl.Float64,
-            "bool_sum": pl.UInt32,
+            "bool_sum": pl.get_index_type(),
             # "date_sum": pl.Date,
             # "date_mean": pl.Date,
             "date_first": pl.Date,
@@ -99,8 +95,6 @@ def test_streaming_group_by_types() -> None:
         assert out.to_dict(as_series=False) == {
             "str_first": ["bob"],
             "str_last": ["foo"],
-            "str_mean": [None],
-            "str_sum": [None],
             "bool_first": [True],
             "bool_last": [False],
             "bool_mean": [0.5],
@@ -123,7 +117,6 @@ def test_streaming_group_by_types() -> None:
                     pl.col("person_name").first().alias("str_first"),
                     pl.col("person_name").last().alias("str_last"),
                     pl.col("person_name").mean().alias("str_mean"),
-                    pl.col("person_name").sum().alias("str_sum"),
                     pl.col("bool").first().alias("bool_first"),
                     pl.col("bool").last().alias("bool_first"),
                 ]

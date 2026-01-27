@@ -18,6 +18,7 @@ To create a new Service Account:
 <!-- dprint-ignore-start -->
 
 !!! info "Client ID and Secret visible once"
+
     If you lose the Client ID or Client Secret, you will need to generate a new service account.
 
 <!-- dprint-ignore-end -->

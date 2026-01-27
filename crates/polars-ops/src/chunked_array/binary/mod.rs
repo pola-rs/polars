@@ -1,4 +1,5 @@
 mod namespace;
+mod slice;
 
 pub use namespace::*;
 use polars_core::prelude::*;

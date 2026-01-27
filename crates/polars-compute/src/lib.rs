@@ -1,10 +1,4 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
-// TODO: Remove the allow and cfg_attr once Rust 1.89 is stable
-#![allow(stable_features)]
-#![cfg_attr(
-    all(feature = "simd", target_arch = "x86_64"),
-    feature(stdarch_x86_avx512)
-)]
 
 use arrow::types::NativeType;
 
@@ -17,6 +11,9 @@ pub mod cardinality;
 #[cfg(feature = "cast")]
 pub mod cast;
 pub mod comparisons;
+#[cfg(feature = "dtype-decimal")]
+pub mod decimal;
+pub mod ewm;
 pub mod filter;
 #[cfg(feature = "cast")]
 pub mod find_validity_mismatch;
@@ -29,6 +26,7 @@ pub mod hyperloglogplus;
 pub mod if_then_else;
 pub mod min_max;
 pub mod moment;
+pub mod nan;
 pub mod propagate_dictionary;
 pub mod propagate_nulls;
 pub mod rolling;
@@ -47,6 +45,8 @@ impl<T: NativeType> NotSimdPrimitive for T {}
 impl NotSimdPrimitive for u128 {}
 #[cfg(feature = "simd")]
 impl NotSimdPrimitive for i128 {}
+#[cfg(feature = "simd")]
+impl NotSimdPrimitive for pf16 {}
 
 // Trait to allow blanket impl for all SIMD types when simd is enabled.
 #[cfg(feature = "simd")]
@@ -69,3 +69,5 @@ mod _simd_primitive {
 
 #[cfg(feature = "simd")]
 pub use _simd_primitive::SimdPrimitive;
+#[cfg(feature = "simd")]
+use polars_utils::float16::pf16;

@@ -196,3 +196,17 @@ def test_transpose_multiple_chunks() -> None:
 def test_nested_struct_transpose_21923() -> None:
     df = pl.DataFrame({"x": [{"a": {"b": 1, "c": 2}}]})
     assert df.transpose().item() == df.item()
+
+
+def test_transpose_duplicate_names_24907() -> None:
+    df = pl.DataFrame({"x": ["a", "a", "b"]}).with_row_index()
+
+    with pytest.raises(
+        pl.exceptions.DuplicateError, match="name 'a' has more than one"
+    ):
+        df.transpose(column_names="x")
+
+    with pytest.raises(
+        pl.exceptions.DuplicateError, match="name 'x' has more than one"
+    ):
+        df.transpose(column_names=["x", "x", "x"])

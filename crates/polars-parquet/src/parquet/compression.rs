@@ -61,7 +61,10 @@ pub fn compress(
         CompressionOptions::Gzip(level) => {
             use std::io::Write;
             let level = level.unwrap_or_default();
-            let mut encoder = flate2::write::GzEncoder::new(output_buf, level.into());
+            let mut encoder = flate2::write::GzEncoder::new(
+                output_buf,
+                flate2::Compression::new(level.compression_level() as _),
+            );
             encoder.write_all(input_buf)?;
             encoder.try_finish().map_err(|e| e.into())
         },

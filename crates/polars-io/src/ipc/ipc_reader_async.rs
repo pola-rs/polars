@@ -8,6 +8,7 @@ use polars_core::frame::DataFrame;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_error::{PolarsResult, polars_bail, polars_err, to_compute_err};
 use polars_utils::mmap::MMapSemaphore;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::RowIndex;
@@ -65,10 +66,11 @@ impl IpcReadOptions {
 
 impl IpcReaderAsync {
     pub async fn from_uri(
-        uri: &str,
+        uri: PlRefPath,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<IpcReaderAsync> {
-        let cache_entry = init_entries_from_uri_list(&[Arc::from(uri)], cloud_options)?[0].clone();
+        let cache_entry =
+            init_entries_from_uri_list([uri.clone()].into_iter(), cloud_options)?[0].clone();
         let (CloudLocation { prefix, .. }, store) =
             build_object_store(uri, cloud_options, false).await?;
 

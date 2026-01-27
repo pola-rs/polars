@@ -17,7 +17,7 @@ use crate::async_primitives::connector;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
-use crate::morsel::Morsel;
+use crate::metrics::MetricsBuilder;
 use crate::nodes::ComputeNode;
 use crate::nodes::io_sources::multi_scan::components::bridge::BridgeState;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
@@ -25,10 +25,12 @@ use crate::nodes::io_sources::multi_scan::functions::{
     calc_max_concurrent_scans, calc_n_readers_pre_init,
 };
 use crate::nodes::io_sources::multi_scan::pipeline::models::InitializedPipelineState;
+use crate::pipe::PortSender;
 
 pub struct MultiScan {
     name: PlSmallStr,
     state: MultiScanState,
+    metrics_builder: Option<MetricsBuilder>,
     verbose: bool,
 }
 
@@ -40,6 +42,7 @@ impl MultiScan {
         MultiScan {
             name,
             state: MultiScanState::Uninitialized { config },
+            metrics_builder: None,
             verbose,
         }
     }
@@ -48,6 +51,10 @@ impl MultiScan {
 impl ComputeNode for MultiScan {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn set_metrics_builder(&mut self, metrics_builder: MetricsBuilder) {
+        self.metrics_builder = Some(metrics_builder);
     }
 
     fn update_state(
@@ -97,7 +104,8 @@ impl ComputeNode for MultiScan {
         join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
             use MultiScanState::*;
 
-            self.state.initialize(state);
+            self.state
+                .initialize(state.clone(), self.metrics_builder.as_ref());
             self.state.refresh(verbose).await?;
 
             match &mut self.state {
@@ -150,7 +158,7 @@ enum MultiScanState {
     },
 
     Initialized {
-        phase_channel_tx: connector::Sender<(connector::Sender<Morsel>, WaitToken)>,
+        phase_channel_tx: connector::Sender<(PortSender, WaitToken)>,
         /// Wait group sent to the bridge, only dropped when a disconnect happens at the bridge.
         wait_group: WaitGroup,
         bridge_state: Arc<Mutex<BridgeState>>,
@@ -163,7 +171,11 @@ enum MultiScanState {
 
 impl MultiScanState {
     /// Initialize state if not yet initialized.
-    fn initialize(&mut self, execution_state: &StreamingExecutionState) {
+    fn initialize(
+        &mut self,
+        execution_state: StreamingExecutionState,
+        metrics_builder: Option<&MetricsBuilder>,
+    ) {
         use MultiScanState::*;
 
         let slf = std::mem::replace(self, Finished);
@@ -175,7 +187,14 @@ impl MultiScanState {
 
         config
             .file_reader_builder
-            .set_execution_state(execution_state);
+            .set_execution_state(&execution_state);
+
+        if let Some(metrics_builder) = metrics_builder {
+            let io_metrics = metrics_builder.new_download_metrics();
+
+            config.io_metrics.get_or_init(|| io_metrics.clone());
+            config.file_reader_builder.set_io_metrics(io_metrics);
+        }
 
         let num_pipelines = execution_state.num_pipelines;
 
@@ -196,7 +215,7 @@ impl MultiScanState {
             task_handle,
             phase_channel_tx,
             bridge_state,
-        } = initialize_multi_scan_pipeline(config);
+        } = initialize_multi_scan_pipeline(config, execution_state);
 
         let wait_group = WaitGroup::default();
 

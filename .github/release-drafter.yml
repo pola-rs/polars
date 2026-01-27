@@ -48,15 +48,79 @@ autolabeler:
   - label: fix
     title:
       - '/^fix/'
-  - label: sql
-    title:
-      - '/\bsql\b/i'
   - label: performance
     title:
       - '/^perf/'
+  - label: regression
+    title:
+      - '/regression/'
   - label: release
     title:
       - '/^release/'
+  - label: A-sql
+    title:
+      - '/\bsql\b|sqlcontext/i'
+  - label: A-dtype-categorical
+    title:
+      - '/categorical|categories/i'
+  - label: A-dtype-decimal
+    title:
+      - '/decimal/i'
+  - label: A-dtype-object
+    title:
+      - '/Object/'
+  - label: A-dtype-struct
+    title:
+      - '/struct/i'
+  - label: A-gpu
+    title:
+      - '/\bgpu\b/i'
+  - label: A-ide
+    title:
+      - '/\bide\b/i'
+  - label: A-io-avro
+    title:
+      - '/\bavro\b/i'
+  - label: A-io-catalog
+    title:
+      - '/catalog/i'
+  - label: A-io-cloud
+    title:
+      - '/azure|\baws\b|cloud|\bgcs\b|hugging|s3/i'
+  - label: A-io-csv
+    title:
+      - '/\bcsv\b/i'
+  - label: A-io-database
+    title:
+      - '/database/i'
+  - label: A-io-iceberg
+    title:
+      - '/iceberg/i'
+  - label: A-io-ipc
+    title:
+      - '/\bipc\b/i'
+  - label: A-io-json
+    title:
+      - '/json/i'
+  - label: A-io-parquet
+    title:
+      - '/parquet/i'
+  - label: A-io-spreadsheet
+    title:
+      - '/spreadsheet|excel/i'
+  - label: A-interop-numpy
+    title:
+      - '/numpy/i'
+  - label: A-interop-pandas
+    title:
+      - '/pandas/i'
+  - label: A-plugin
+    title:
+      - '/plugin/i'
+  - label: A-streaming
+    title:
+      - '/streaming/i'
+
 
 template: |
   $CHANGES

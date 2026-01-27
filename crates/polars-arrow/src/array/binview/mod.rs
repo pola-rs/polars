@@ -14,14 +14,13 @@ mod view;
 use std::any::Any;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::sync::Arc;
 
+use polars_buffer::Buffer;
 use polars_error::*;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::array::Array;
 use crate::bitmap::Bitmap;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 
 mod private {
@@ -132,7 +131,7 @@ impl ViewType for [u8] {
 pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
     dtype: ArrowDataType,
     views: Buffer<View>,
-    buffers: Arc<[Buffer<u8>]>,
+    buffers: Buffer<Buffer<u8>>,
     validity: Option<Bitmap>,
     phantom: PhantomData<T>,
     /// Total bytes length if we would concatenate them all.
@@ -174,7 +173,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     pub unsafe fn new_unchecked(
         dtype: ArrowDataType,
         views: Buffer<View>,
-        buffers: Arc<[Buffer<u8>]>,
+        buffers: Buffer<Buffer<u8>>,
         validity: Option<Bitmap>,
         total_bytes_len: usize,
         total_buffer_len: usize,
@@ -235,7 +234,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     pub unsafe fn new_unchecked_unknown_md(
         dtype: ArrowDataType,
         views: Buffer<View>,
-        buffers: Arc<[Buffer<u8>]>,
+        buffers: Buffer<Buffer<u8>>,
         validity: Option<Bitmap>,
         total_buffer_len: Option<usize>,
     ) -> Self {
@@ -252,8 +251,12 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         )
     }
 
-    pub fn data_buffers(&self) -> &Arc<[Buffer<u8>]> {
+    pub fn data_buffers(&self) -> &Buffer<Buffer<u8>> {
         &self.buffers
+    }
+
+    pub fn data_buffers_mut(&mut self) -> &mut Buffer<Buffer<u8>> {
+        &mut self.buffers
     }
 
     pub fn variadic_buffer_lengths(&self) -> Vec<i64> {
@@ -265,14 +268,14 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     pub fn into_views(self) -> Vec<View> {
-        self.views.make_mut()
+        self.views.to_vec()
     }
 
     pub fn into_inner(
         self,
     ) -> (
         Buffer<View>,
-        Arc<[Buffer<u8>]>,
+        Buffer<Buffer<u8>>,
         Option<Bitmap>,
         usize,
         usize,
@@ -298,7 +301,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         let arr = self.clone();
         let (views, buffers, validity, total_bytes_len, total_buffer_len) = arr.into_inner();
 
-        let mut views = views.make_mut();
+        let mut views = views.to_vec();
         for v in views.iter_mut() {
             let str_slice = T::from_bytes_unchecked(v.get_slice_unchecked(&buffers));
             *v = update_view(*v, str_slice);
@@ -313,10 +316,24 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         )
     }
 
+    /// Apply a function to the views as a mutable slice.
+    ///
+    /// # Safety
+    /// All invariants of the views must be maintained.
+    pub unsafe fn with_views_mut<F: FnOnce(&mut [View])>(&mut self, f: F) {
+        if let Some(views) = self.views.get_mut_slice() {
+            f(views)
+        } else {
+            let mut views = self.views.as_slice().to_vec();
+            f(&mut views);
+            self.views = Buffer::from(views);
+        }
+    }
+
     pub fn try_new(
         dtype: ArrowDataType,
         views: Buffer<View>,
-        buffers: Arc<[Buffer<u8>]>,
+        buffers: Buffer<Buffer<u8>>,
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
         if T::IS_UTF8 {
@@ -339,14 +356,14 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// Creates an empty [`BinaryViewArrayGeneric`], i.e. whose `.len` is zero.
     #[inline]
     pub fn new_empty(dtype: ArrowDataType) -> Self {
-        unsafe { Self::new_unchecked(dtype, Buffer::new(), Arc::from([]), None, 0, 0) }
+        unsafe { Self::new_unchecked(dtype, Buffer::new(), Buffer::new(), None, 0, 0) }
     }
 
     /// Returns a new null [`BinaryViewArrayGeneric`] of `length`.
     #[inline]
     pub fn new_null(dtype: ArrowDataType, length: usize) -> Self {
         let validity = Some(Bitmap::new_zeroed(length));
-        unsafe { Self::new_unchecked(dtype, Buffer::zeroed(length), Arc::from([]), validity, 0, 0) }
+        unsafe { Self::new_unchecked(dtype, Buffer::zeroed(length), Buffer::new(), validity, 0, 0) }
     }
 
     /// Returns the element at index `i`
@@ -491,7 +508,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     pub fn deshare(&self) -> Self {
-        if Arc::strong_count(&self.buffers) == 1
+        if self.buffers.storage_refcount() == 1
             && self.buffers.iter().all(|b| b.storage_refcount() == 1)
         {
             return self.clone();
@@ -510,7 +527,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             return self;
         }
 
-        if Arc::strong_count(&self.buffers) != 1 {
+        if self.buffers.storage_refcount() != 1 {
             // There are multiple holders of this `buffers`.
             // If we allow gc in this case,
             // it may end up copying the same content multiple times.
@@ -537,7 +554,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     pub fn make_mut(self) -> MutableBinaryViewArray<T> {
-        let views = self.views.make_mut();
+        let views = self.views.to_vec();
         let completed_buffers = self.buffers.to_vec();
         let validity = self.validity.map(|bitmap| bitmap.make_mut());
 
@@ -620,8 +637,14 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
         BinaryViewArrayGeneric::len(self)
     }
 
+    #[inline(always)]
     fn dtype(&self) -> &ArrowDataType {
-        T::dtype()
+        &self.dtype
+    }
+
+    #[inline(always)]
+    fn dtype_mut(&mut self) -> &mut ArrowDataType {
+        &mut self.dtype
     }
 
     fn validity(&self) -> Option<&Bitmap> {
@@ -653,7 +676,7 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
             .take()
             .map(|bitmap| bitmap.sliced_unchecked(offset, length))
             .filter(|bitmap| bitmap.unset_bits() > 0);
-        self.views.slice_unchecked(offset, length);
+        self.views.slice_in_place_unchecked(offset..offset + length);
         self.total_bytes_len.store(UNKNOWN_LEN)
     }
 

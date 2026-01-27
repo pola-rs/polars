@@ -4,6 +4,7 @@ import io
 import subprocess
 import sys
 from collections import OrderedDict
+from datetime import datetime
 from pathlib import Path
 from threading import Thread
 from typing import TYPE_CHECKING, Any
@@ -209,9 +210,10 @@ def test_row_index_schema_parquet(parquet_file_path: Path) -> None:
         pl.scan_parquet(str(parquet_file_path), row_index_name="id")
         .select(["id", "b"])
         .collect()
-    ).dtypes == [pl.UInt32, pl.String]
+    ).dtypes == [pl.get_index_type(), pl.String]
 
 
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 @pytest.mark.write_disk
 def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -242,6 +244,7 @@ def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) 
     assert "Predicate pushdown: reading 0 / 1 row groups" in captured
 
 
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 @pytest.mark.write_disk
 def test_parquet_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -457,7 +460,7 @@ def test_predicate_push_down_categorical_17744(tmp_path: Path) -> None:
             "n": [1, 2, 3],
             "ccy": ["USD", "JPY", "EUR"],
         },
-        schema_overrides={"ccy": pl.Categorical("lexical")},
+        schema_overrides={"ccy": pl.Categorical()},
     )
     df.write_parquet(path)
     expect = df.head(1).with_columns(pl.col(pl.Categorical).cast(pl.String))
@@ -481,7 +484,7 @@ def test_parquet_slice_pushdown_non_zero_offset(
     paths = [tmp_path / "1", tmp_path / "2", tmp_path / "3"]
     dfs = [pl.DataFrame({"x": i}) for i in range(len(paths))]
 
-    for df, p in zip(dfs, paths):
+    for df, p in zip(dfs, paths, strict=True):
         df.write_parquet(p)
 
     # Parquet files containing only the metadata - i.e. the data parts are removed.
@@ -645,7 +648,7 @@ def test_parquet_unaligned_schema_read(tmp_path: Path) -> None:
 
     paths = [tmp_path / "1", tmp_path / "2", tmp_path / "3"]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_parquet(path)
 
     lf = pl.scan_parquet(paths, extra_columns="ignore")
@@ -691,7 +694,7 @@ def test_parquet_unaligned_schema_read_dtype_mismatch(
 
     paths = [tmp_path / "1", tmp_path / "2"]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_parquet(path)
 
     lf = pl.scan_parquet(paths)
@@ -712,7 +715,7 @@ def test_parquet_unaligned_schema_read_missing_cols_from_first(
 
     paths = [tmp_path / "1", tmp_path / "2"]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_parquet(path)
 
     lf = pl.scan_parquet(paths)
@@ -735,7 +738,7 @@ def test_parquet_schema_arg(
     dfs = [pl.DataFrame({"a": 1, "b": 1}), pl.DataFrame({"a": 2, "b": 2})]
     paths = [tmp_path / "1", tmp_path / "2"]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_parquet(path)
 
     schema: dict[str, pl.DataType] = {
@@ -818,9 +821,18 @@ def test_parquet_schema_arg(
         lf.collect(engine="streaming" if streaming else "in-memory")
 
 
-def test_scan_parquet_schema_specified_with_empty_files_list(tmp_path: Path) -> None:
+def test_scan_parquet_empty_path_expansion(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
+    with pytest.raises(
+        ComputeError,
+        match=r"failed to retrieve first file schema \(parquet\): "
+        r"expanded paths were empty \(path expansion input: "
+        ".*Hint: passing a schema can allow this scan to succeed with an empty DataFrame",
+    ):
+        pl.scan_parquet(tmp_path).collect()
+
+    # Scan succeeds when schema is provided
     assert_frame_equal(
         pl.scan_parquet(tmp_path, schema={"x": pl.Int64}).collect(),
         pl.DataFrame(schema={"x": pl.Int64}),
@@ -884,7 +896,7 @@ def test_scan_parquet_streaming_row_index_19606(
 
     dfs = [pl.DataFrame({"x": i}) for i in range(len(paths))]
 
-    for df, p in zip(dfs, paths):
+    for df, p in zip(dfs, paths, strict=True):
         df.write_parquet(p)
 
     assert_frame_equal(
@@ -936,6 +948,7 @@ print("OK", end="")
     assert out == b"OK"
 
 
+@pytest.mark.slow
 def test_scan_parquet_in_mem_to_streaming_dispatch_deadlock_22641() -> None:
     out = subprocess.check_output(
         [
@@ -1047,9 +1060,9 @@ def test_parquet_prefiltering_inserted_column_23268() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4]}, schema={"a": pl.Int8})
 
     f = io.BytesIO()
-
     df.write_parquet(f)
 
+    f.seek(0)
     assert_frame_equal(
         (
             pl.scan_parquet(
@@ -1065,6 +1078,7 @@ def test_parquet_prefiltering_inserted_column_23268() -> None:
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_scan_parquet_prefilter_with_cast(
     monkeypatch: pytest.MonkeyPatch,
     capfd: pytest.CaptureFixture[str],
@@ -1129,10 +1143,13 @@ def test_prefilter_with_n_rows_23790() -> None:
 
     df.write_parquet(f, row_group_size=2)
 
+    f.seek(0)
+
     md = pq.read_metadata(f)
 
     assert [md.row_group(i).num_rows for i in range(md.num_row_groups)] == [2, 2, 2]
 
+    f.seek(0)
     q = pl.scan_parquet(f, n_rows=3).filter(pl.col("b").is_in([1, 3]))
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": ["A", "C"], "b": [1, 3]}))
@@ -1150,10 +1167,12 @@ def test_prefilter_with_n_rows_23790() -> None:
 
     df.write_parquet(f, row_group_size=2)
 
+    f.seek(0)
     md = pq.read_metadata(f)
 
     assert [md.row_group(i).num_rows for i in range(md.num_row_groups)] == [2, 2, 2]
 
+    f.seek(0)
     q = pl.scan_parquet(
         f,
         n_rows=3,
@@ -1189,3 +1208,53 @@ def test_scan_parquet_filter_index_panic_23849(monkeypatch: pytest.MonkeyPatch) 
         pl.scan_parquet(f, parallel=parallel).filter(  # type: ignore[arg-type]
             pl.col("col_0").ge(0) & pl.col("col_0").lt(num_rows + 1)
         ).collect()
+
+
+@pytest.mark.write_disk
+def test_sink_large_rows_25834(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_BYTES", "1")
+    df = pl.select(idx=pl.repeat(1, 20_000), bytes=pl.lit(b"AAAAA"))
+
+    df.write_parquet(tmp_path / "single.parquet")
+    assert_frame_equal(pl.scan_parquet(tmp_path / "single.parquet").collect(), df)
+
+    md = pq.read_metadata(tmp_path / "single.parquet")
+    assert [md.row_group(i).num_rows for i in range(md.num_row_groups)] == [
+        16384,
+        3616,
+    ]
+
+    df.write_parquet(
+        tmp_path / "partitioned",
+        partition_by="idx",
+    )
+    assert_frame_equal(pl.scan_parquet(tmp_path / "partitioned").collect(), df)
+
+
+def test_scan_parquet_prefilter_is_between_non_column_input_26283() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame(
+        {
+            "timestamp": pl.datetime_range(
+                start=datetime(2026, 1, 1),
+                end=datetime(2026, 1, 1, 0, 5, 0),
+                interval="1s",
+                eager=True,
+            ),
+        },
+        schema={"timestamp": pl.Datetime("us")},
+        height=301,
+    )
+
+    df.write_parquet(f)
+    f.seek(0)
+
+    q = pl.scan_parquet(f).filter(
+        pl.col("timestamp")
+        .dt.date()
+        .cast(pl.Datetime("us"))
+        .is_between(datetime(2026, 1, 1), datetime(2026, 1, 1))
+    )
+
+    assert_frame_equal(q.collect(), df)

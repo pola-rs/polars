@@ -15,7 +15,7 @@ impl PySeries {
     /// Convert this Series to a Python list.
     /// This operation copies data.
     pub fn to_list<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let series = &self.series;
+        let series = &self.series.read();
 
         fn to_list_recursive<'py>(py: Python<'py>, series: &Series) -> PyResult<Bound<'py, PyAny>> {
             let pylist = match series.dtype() {
@@ -24,11 +24,13 @@ impl PySeries {
                 DataType::UInt16 => PyList::new(py, series.u16().map_err(PyPolarsErr::from)?)?,
                 DataType::UInt32 => PyList::new(py, series.u32().map_err(PyPolarsErr::from)?)?,
                 DataType::UInt64 => PyList::new(py, series.u64().map_err(PyPolarsErr::from)?)?,
+                DataType::UInt128 => PyList::new(py, series.u128().map_err(PyPolarsErr::from)?)?,
                 DataType::Int8 => PyList::new(py, series.i8().map_err(PyPolarsErr::from)?)?,
                 DataType::Int16 => PyList::new(py, series.i16().map_err(PyPolarsErr::from)?)?,
                 DataType::Int32 => PyList::new(py, series.i32().map_err(PyPolarsErr::from)?)?,
                 DataType::Int64 => PyList::new(py, series.i64().map_err(PyPolarsErr::from)?)?,
                 DataType::Int128 => PyList::new(py, series.i128().map_err(PyPolarsErr::from)?)?,
+                DataType::Float16 => PyList::new(py, series.f16().map_err(PyPolarsErr::from)?)?,
                 DataType::Float32 => PyList::new(py, series.f32().map_err(PyPolarsErr::from)?)?,
                 DataType::Float64 => PyList::new(py, series.f64().map_err(PyPolarsErr::from)?)?,
                 DataType::Categorical(_, _) | DataType::Enum(_, _) => {
@@ -138,6 +140,9 @@ impl PySeries {
                 DataType::BinaryOffset => {
                     unreachable!()
                 },
+                DataType::Extension(_, _) => {
+                    return to_list_recursive(py, series.ext().unwrap().storage());
+                },
             };
             Ok(pylist.into_any())
         }
@@ -147,13 +152,14 @@ impl PySeries {
 
     /// Return the underlying Arrow array.
     #[allow(clippy::wrong_self_convention)]
-    fn to_arrow(&mut self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<PyObject> {
+    fn to_arrow(&self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<Py<PyAny>> {
         self.rechunk(py, true)?;
         let pyarrow = py.import("pyarrow")?;
 
+        let s = self.series.read();
         interop::arrow::to_py::to_py_array(
-            self.series.to_arrow(0, compat_level.0),
-            &self.series.field().to_arrow(compat_level.0),
+            s.to_arrow(0, compat_level.0),
+            &s.field().to_arrow(compat_level.0),
             &pyarrow,
         )
     }
@@ -163,13 +169,13 @@ impl PySeries {
     fn __arrow_c_stream__<'py>(
         &self,
         py: Python<'py>,
-        requested_schema: Option<PyObject>,
+        requested_schema: Option<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
-        series_to_stream(&self.series, py)
+        series_to_stream(&self.series.read(), py)
     }
 
-    pub fn _export(&mut self, _py: Python<'_>, location: usize) {
-        let export = polars_ffi::version_0::export_series(&self.series);
+    pub fn _export(&self, _py: Python<'_>, location: usize) {
+        let export = polars_ffi::version_0::export_series(&self.series.read());
         unsafe {
             (location as *mut SeriesExport).write(export);
         }

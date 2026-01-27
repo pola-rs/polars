@@ -1,6 +1,4 @@
-use std::fmt::Debug;
-#[cfg(feature = "cse")]
-use std::fmt::Formatter;
+use std::fmt::{Debug, Formatter};
 
 use polars_core::prelude::{Field, Schema};
 use polars_utils::unitvec;
@@ -53,40 +51,58 @@ impl TreeWalker for Expr {
             },
             Cast { expr, dtype, options: strict } => Cast { expr: am(expr, f)?, dtype, options: strict },
             Sort { expr, options } => Sort { expr: am(expr, f)?, options },
-            Gather { expr, idx, returns_scalar } => Gather { expr: am(expr, &mut f)?, idx: am(idx, f)?, returns_scalar },
+            Gather { expr, idx, returns_scalar, null_on_oob } => Gather {
+                expr: am(expr, &mut f)?,
+                idx: am(idx, f)?,
+                returns_scalar,
+                null_on_oob,
+            },
             SortBy { expr, by, sort_options } => SortBy { expr: am(expr, &mut f)?, by: by.into_iter().map(f).collect::<Result<_, _>>()?, sort_options },
             Agg(agg_expr) => Agg(match agg_expr {
                 Min { input, propagate_nans } => Min { input: am(input, f)?, propagate_nans },
                 Max { input, propagate_nans } => Max { input: am(input, f)?, propagate_nans },
+                MinBy { input, by } => MinBy { input: am(input, &mut f)?, by: am(by, f)? },
+                MaxBy { input, by } =>  MaxBy { input: am(input, &mut f)?, by: am(by, f)? },
                 Median(x) => Median(am(x, f)?),
                 NUnique(x) => NUnique(am(x, f)?),
                 First(x) => First(am(x, f)?),
+                FirstNonNull(x) => FirstNonNull(am(x, f)?),
                 Last(x) => Last(am(x, f)?),
+                LastNonNull(x) => LastNonNull(am(x, f)?),
+                Item { input, allow_empty } => Item { input: am(input, f)?, allow_empty },
                 Mean(x) => Mean(am(x, f)?),
                 Implode(x) => Implode(am(x, f)?),
-                Count(x, nulls) => Count(am(x, f)?, nulls),
+                Count { input, include_nulls } => Count { input: am(input, f)?, include_nulls },
                 Quantile { expr, quantile, method: interpol } => Quantile { expr: am(expr, &mut f)?, quantile: am(quantile, f)?, method: interpol },
                 Sum(x) => Sum(am(x, f)?),
                 AggGroups(x) => AggGroups(am(x, f)?),
                 Std(x, ddf) => Std(am(x, f)?, ddf),
                 Var(x, ddf) => Var(am(x, f)?, ddf),
+
             }),
             Ternary { predicate, truthy, falsy } => Ternary { predicate: am(predicate, &mut f)?, truthy: am(truthy, &mut f)?, falsy: am(falsy, f)? },
             Function { input, function } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function },
-            Explode { input, skip_empty } => Explode { input: am(input, f)?, skip_empty },
+            Explode { input, options } => Explode { input: am(input, f)?, options },
             Filter { input, by } => Filter { input: am(input, &mut f)?, by: am(by, f)? },
-            Window { function, partition_by, order_by, options } => {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling { function, index_column, period, offset, closed_window  } => Rolling { function: am(function, &mut f)?, index_column: am(index_column, &mut f)?, period, offset, closed_window  },
+            Over { function, partition_by, order_by, mapping } => {
                 let partition_by = partition_by.into_iter().map(&mut f).collect::<Result<_, _>>()?;
-                Window { function: am(function, f)?, partition_by, order_by, options }
+                Over { function: am(function, f)?, partition_by, order_by, mapping }
             },
             Slice { input, offset, length } => Slice { input: am(input, &mut f)?, offset: am(offset, &mut f)?, length: am(length, f)? },
             KeepName(expr) => KeepName(am(expr, f)?),
+            Element => Element,
             Len => Len,
             RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
             AnonymousFunction { input, function, options, fmt_str } => {
                 AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options, fmt_str }
             },
             Eval { expr: input, evaluation, variant } => Eval { expr: am(input, &mut f)?, evaluation: am(evaluation, f)?, variant },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr: input, evaluation } => {
+                StructEval { expr: am(input, &mut f)?, evaluation: evaluation.into_iter().map(f).collect::<Result<_, _>>()?  }
+            },
             SubPlan(_, _) => self,
             Selector(_) => self,
         };
@@ -119,7 +135,7 @@ impl AexprNode {
 
     pub fn to_field(&self, schema: &Schema, arena: &Arena<AExpr>) -> PolarsResult<Field> {
         let aexpr = arena.get(self.node);
-        aexpr.to_field(schema, arena)
+        aexpr.to_field(&ToFieldContext::new(arena, schema))
     }
 
     pub fn assign(&mut self, ae: AExpr, arena: &mut Arena<AExpr>) {
@@ -127,12 +143,10 @@ impl AexprNode {
         self.node = node;
     }
 
-    #[cfg(feature = "cse")]
     pub(crate) fn is_leaf(&self, arena: &Arena<AExpr>) -> bool {
         matches!(self.to_aexpr(arena), AExpr::Column(_) | AExpr::Literal(_))
     }
 
-    #[cfg(feature = "cse")]
     pub(crate) fn hashable_and_cmp<'a>(&self, arena: &'a Arena<AExpr>) -> AExprArena<'a> {
         AExprArena {
             node: self.node,
@@ -141,13 +155,11 @@ impl AexprNode {
     }
 }
 
-#[cfg(feature = "cse")]
 pub struct AExprArena<'a> {
     node: Node,
     arena: &'a Arena<AExpr>,
 }
 
-#[cfg(feature = "cse")]
 impl Debug for AExprArena<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "AexprArena: {}", self.node.0)
@@ -155,13 +167,29 @@ impl Debug for AExprArena<'_> {
 }
 
 impl AExpr {
-    #[cfg(feature = "cse")]
     fn is_equal_node(&self, other: &Self) -> bool {
         use AExpr::*;
         match (self, other) {
             (Column(l), Column(r)) => l == r,
             (Literal(l), Literal(r)) => l == r,
-            (Window { options: l, .. }, Window { options: r, .. }) => l == r,
+            #[cfg(feature = "dynamic_group_by")]
+            (
+                Rolling {
+                    function: _,
+                    index_column: _,
+                    period: l_period,
+                    offset: l_offset,
+                    closed_window: l_closed_window,
+                },
+                Rolling {
+                    function: _,
+                    index_column: _,
+                    period: r_period,
+                    offset: r_offset,
+                    closed_window: r_closed_window,
+                },
+            ) => l_period == r_period && l_offset == r_offset && l_closed_window == r_closed_window,
+            (Over { mapping: l, .. }, Over { mapping: r, .. }) => l == r,
             (
                 Cast {
                     options: strict_l,
@@ -183,13 +211,13 @@ impl AExpr {
             (
                 Explode {
                     expr: _,
-                    skip_empty: l_skip_empty,
+                    options: l_options,
                 },
                 Explode {
                     expr: _,
-                    skip_empty: r_skip_empty,
+                    options: r_options,
                 },
-            ) => l_skip_empty == r_skip_empty,
+            ) => l_options == r_options,
             (
                 SortBy {
                     sort_options: l_sort_options,
@@ -222,14 +250,49 @@ impl AExpr {
                     all_same_name
                 }
             },
-            (AnonymousFunction { .. }, AnonymousFunction { .. }) => false,
+            (
+                AnonymousFunction {
+                    function: l1,
+                    options: l2,
+                    fmt_str: l3,
+                    input: _,
+                },
+                AnonymousFunction {
+                    function: r1,
+                    options: r2,
+                    fmt_str: r3,
+                    input: _,
+                },
+            ) => {
+                l2 == r2 && l3 == r3 && {
+                    use LazySerde as L;
+                    match (l1, r1) {
+                        // We only check the pointers, so this works for python
+                        // functions that are on the same address.
+                        (L::Deserialized(l0), L::Deserialized(r0)) => l0 == r0,
+                        (L::Bytes(l0), L::Bytes(r0)) => l0 == r0,
+                        (
+                            L::Named {
+                                name: l_name,
+                                payload: l_payload,
+                                value: l_value,
+                            },
+                            L::Named {
+                                name: r_name,
+                                payload: r_payload,
+                                value: r_value,
+                            },
+                        ) => l_name == r_name && l_payload == r_payload && l_value == r_value,
+                        _ => false,
+                    }
+                }
+            },
             (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
             _ => false,
         }
     }
 }
 
-#[cfg(feature = "cse")]
 impl<'a> AExprArena<'a> {
     pub fn new(node: Node, arena: &'a Arena<AExpr>) -> Self {
         Self { node, arena }
@@ -246,7 +309,6 @@ impl<'a> AExprArena<'a> {
     }
 }
 
-#[cfg(feature = "cse")]
 impl PartialEq for AExprArena<'_> {
     fn eq(&self, other: &Self) -> bool {
         let mut scratch1 = unitvec![];
@@ -259,7 +321,7 @@ impl PartialEq for AExprArena<'_> {
             match (scratch1.pop(), scratch2.pop()) {
                 (Some(l), Some(r)) => {
                     let l = Self::new(l, self.arena);
-                    let r = Self::new(r, self.arena);
+                    let r = Self::new(r, other.arena);
 
                     if !l.is_equal_single(&r) {
                         return false;

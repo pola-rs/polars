@@ -160,7 +160,7 @@ macro_rules! format_array {
         )?;
 
         let ellipsis = get_ellipsis();
-        let truncate = match $a.dtype() {
+        let truncate = match $a.dtype().to_storage() {
             DataType::String => true,
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) | DataType::Enum(_, _) => true,
@@ -347,6 +347,12 @@ impl Debug for Series {
             DataType::UInt64 => {
                 format_array!(f, self.u64().unwrap(), "u64", self.name(), "Series")
             },
+            DataType::UInt128 => {
+                feature_gated!(
+                    "dtype-u128",
+                    format_array!(f, self.u128().unwrap(), "u128", self.name(), "Series")
+                )
+            },
             DataType::Int8 => {
                 format_array!(f, self.i8().unwrap(), "i8", self.name(), "Series")
             },
@@ -364,6 +370,10 @@ impl Debug for Series {
                     "dtype-i128",
                     format_array!(f, self.i128().unwrap(), "i128", self.name(), "Series")
                 )
+            },
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                format_array!(f, self.f16().unwrap(), "f16", self.name(), "Series")
             },
             DataType::Float32 => {
                 format_array!(f, self.f32().unwrap(), "f32", self.name(), "Series")
@@ -436,6 +446,11 @@ impl Debug for Series {
                     self.name(),
                     "Series"
                 )
+            },
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(_, _) => {
+                let dt = format!("{}", self.dtype());
+                format_array!(f, self.ext().unwrap(), &dt, self.name(), "Series")
             },
             dt => panic!("{dt:?} not impl"),
         }
@@ -575,7 +590,7 @@ impl Display for DataFrame {
         {
             let height = self.height();
             assert!(
-                self.columns.iter().all(|s| s.len() == height),
+                self.columns().iter().all(|s| s.len() == height),
                 "The column lengths in the DataFrame are not equal."
             );
 
@@ -651,7 +666,7 @@ impl Display for DataFrame {
 
                     for i in 0..(half + rest) {
                         let row = self
-                            .get_columns()
+                            .columns()
                             .iter()
                             .map(|c| c.str_value(i).unwrap())
                             .collect();
@@ -672,7 +687,7 @@ impl Display for DataFrame {
 
                     for i in (height - half)..height {
                         let row = self
-                            .get_columns()
+                            .columns()
                             .iter()
                             .map(|c| c.str_value(i).unwrap())
                             .collect();
@@ -713,7 +728,7 @@ impl Display for DataFrame {
                     }
                 }
             } else if height > 0 {
-                let dots: Vec<String> = vec![ellipsis; self.columns.len()];
+                let dots: Vec<String> = vec![ellipsis; self.width()];
                 table.add_row(dots);
             }
             let tbl_fallback_width = 100;
@@ -1154,11 +1169,13 @@ impl Display for AnyValue<'_> {
             AnyValue::UInt16(v) => fmt_integer(f, width, *v),
             AnyValue::UInt32(v) => fmt_integer(f, width, *v),
             AnyValue::UInt64(v) => fmt_integer(f, width, *v),
+            AnyValue::UInt128(v) => feature_gated!("dtype-u128", fmt_integer(f, width, *v)),
             AnyValue::Int8(v) => fmt_integer(f, width, *v),
             AnyValue::Int16(v) => fmt_integer(f, width, *v),
             AnyValue::Int32(v) => fmt_integer(f, width, *v),
             AnyValue::Int64(v) => fmt_integer(f, width, *v),
             AnyValue::Int128(v) => feature_gated!("dtype-i128", fmt_integer(f, width, *v)),
+            AnyValue::Float16(v) => feature_gated!("dtype-f16", fmt_float(f, width, *v)),
             AnyValue::Float32(v) => fmt_float(f, width, *v),
             AnyValue::Float64(v) => fmt_float(f, width, *v),
             AnyValue::Boolean(v) => write!(f, "{}", *v),
@@ -1205,7 +1222,7 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-struct")]
             AnyValue::StructOwned(payload) => fmt_struct(f, &payload.0),
             #[cfg(feature = "dtype-decimal")]
-            AnyValue::Decimal(v, scale) => fmt_decimal(f, *v, *scale),
+            AnyValue::Decimal(v, _prec, scale) => fmt_decimal(f, *v, *scale),
         }
     }
 }
@@ -1283,7 +1300,7 @@ impl Series {
                 result.push(']');
             },
             _ => {
-                let s = self.slice(0, max_items).rechunk();
+                let s = self.slice(0, max_items);
                 for (i, item) in s.iter().enumerate() {
                     if i == max_items.saturating_sub(1) {
                         write!(result, "{ellipsis} {}", self.get(self.len() - 1).unwrap()).unwrap();
@@ -1302,9 +1319,9 @@ impl Series {
 #[inline]
 #[cfg(feature = "dtype-decimal")]
 fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
-    let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
+    let mut fmt_buf = polars_compute::decimal::DecimalFmtBuffer::new();
     let trim_zeros = get_trim_decimal_zeros();
-    f.write_str(fmt_float_string(fmt_buf.format(v, scale, trim_zeros)).as_str())
+    f.write_str(fmt_float_string(fmt_buf.format_dec128(v, scale, trim_zeros, false)).as_str())
 }
 
 #[cfg(all(

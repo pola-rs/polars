@@ -1,6 +1,7 @@
+use polars_buffer::Buffer;
+
 use super::{Array, Splitable};
 use crate::bitmap::Bitmap;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 
 mod builder;
@@ -27,8 +28,8 @@ impl FixedSizeBinaryArray {
     ///
     /// # Errors
     /// This function returns an error iff:
-    /// * The `dtype`'s physical type is not [`crate::datatypes::PhysicalType::FixedSizeBinary`]
-    /// * The length of `values` is not a multiple of `size` in `dtype`
+    /// * The `dtype`'s logical type is not in [`FixedSizeBinary`, `Float16`], or
+    /// * The length of `values` is not a multiple of `size` in `dtype`, or
     /// * the validity's length is not equal to `values.len() / size`.
     pub fn try_new(
         dtype: ArrowDataType,
@@ -37,7 +38,7 @@ impl FixedSizeBinaryArray {
     ) -> PolarsResult<Self> {
         let size = Self::maybe_get_size(&dtype)?;
 
-        if values.len() % size != 0 {
+        if !values.len().is_multiple_of(size) {
             polars_bail!(ComputeError:
                 "values (of len {}) must be a multiple of size ({}) in FixedSizeBinaryArray.",
                 values.len(),
@@ -118,8 +119,9 @@ impl FixedSizeBinaryArray {
             .take()
             .map(|bitmap| bitmap.sliced_unchecked(offset, length))
             .filter(|bitmap| bitmap.unset_bits() > 0);
+        let start = offset * self.size;
         self.values
-            .slice_unchecked(offset * self.size, length * self.size);
+            .slice_in_place_unchecked(start..start + length * self.size);
     }
 
     impl_sliced!();
@@ -185,7 +187,7 @@ impl FixedSizeBinaryArray {
     /// Panics iff the dtype is not supported for the physical type.
     #[inline]
     pub fn to(self, dtype: ArrowDataType) -> Self {
-        match (dtype.to_logical_type(), self.dtype().to_logical_type()) {
+        match (dtype.to_storage(), self.dtype().to_storage()) {
             (ArrowDataType::FixedSizeBinary(size_a), ArrowDataType::FixedSizeBinary(size_b))
                 if size_a == size_b => {},
             _ => panic!("Wrong DataType"),
@@ -207,7 +209,8 @@ impl FixedSizeBinaryArray {
 
 impl FixedSizeBinaryArray {
     pub(crate) fn maybe_get_size(dtype: &ArrowDataType) -> PolarsResult<usize> {
-        match dtype.to_logical_type() {
+        match dtype.to_storage() {
+            ArrowDataType::Float16 => Ok(2),
             ArrowDataType::FixedSizeBinary(size) => {
                 polars_ensure!(*size != 0, ComputeError: "FixedSizeBinaryArray expects a positive size");
                 Ok(*size)

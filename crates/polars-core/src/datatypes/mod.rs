@@ -11,6 +11,8 @@ mod _serde;
 mod aliases;
 mod any_value;
 mod dtype;
+#[cfg(feature = "dtype-extension")]
+pub mod extension;
 mod field;
 mod into_scalar;
 #[cfg(feature = "object")]
@@ -49,12 +51,11 @@ pub use polars_dtype::categorical::{
 };
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::float::IsFloat;
+use polars_utils::float16::pf16;
 use polars_utils::min_max::MinMax;
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::TotalHash;
 pub use schema::SchemaExtPl;
-#[cfg(feature = "serde")]
-use serde::de::Visitor;
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
@@ -212,12 +213,16 @@ impl_polars_num_datatype!(PolarsIntegerType, UInt8Type, UInt8, u8, u8);
 impl_polars_num_datatype!(PolarsIntegerType, UInt16Type, UInt16, u16, u16);
 impl_polars_num_datatype!(PolarsIntegerType, UInt32Type, UInt32, u32, u32);
 impl_polars_num_datatype!(PolarsIntegerType, UInt64Type, UInt64, u64, u64);
+#[cfg(feature = "dtype-u128")]
+impl_polars_num_datatype!(PolarsIntegerType, UInt128Type, UInt128, u128, u128);
 impl_polars_num_datatype!(PolarsIntegerType, Int8Type, Int8, i8, i8);
 impl_polars_num_datatype!(PolarsIntegerType, Int16Type, Int16, i16, i16);
 impl_polars_num_datatype!(PolarsIntegerType, Int32Type, Int32, i32, i32);
 impl_polars_num_datatype!(PolarsIntegerType, Int64Type, Int64, i64, i64);
 #[cfg(feature = "dtype-i128")]
 impl_polars_num_datatype!(PolarsIntegerType, Int128Type, Int128, i128, i128);
+#[cfg(feature = "dtype-f16")]
+impl_polars_num_datatype!(PolarsFloatType, Float16Type, Float16, pf16, pf16);
 impl_polars_num_datatype!(PolarsFloatType, Float32Type, Float32, f32, f32);
 impl_polars_num_datatype!(PolarsFloatType, Float64Type, Float64, f64, f64);
 
@@ -363,6 +368,8 @@ impl_phys_dtype!(Int32Type);
 impl_phys_dtype!(Int64Type);
 impl_phys_dtype!(UInt32Type);
 impl_phys_dtype!(UInt64Type);
+#[cfg(feature = "dtype-f16")]
+impl_phys_dtype!(Float16Type);
 impl_phys_dtype!(Float32Type);
 impl_phys_dtype!(Float64Type);
 
@@ -371,6 +378,8 @@ impl_phys_dtype!(BinaryType);
 impl_phys_dtype!(BinaryOffsetType);
 impl_phys_dtype!(BooleanType);
 
+#[cfg(feature = "dtype-u128")]
+impl_phys_dtype!(UInt128Type);
 #[cfg(feature = "dtype-i128")]
 impl_phys_dtype!(Int128Type);
 
@@ -395,12 +404,16 @@ pub type UInt8Chunked = ChunkedArray<UInt8Type>;
 pub type UInt16Chunked = ChunkedArray<UInt16Type>;
 pub type UInt32Chunked = ChunkedArray<UInt32Type>;
 pub type UInt64Chunked = ChunkedArray<UInt64Type>;
+#[cfg(feature = "dtype-u128")]
+pub type UInt128Chunked = ChunkedArray<UInt128Type>;
 pub type Int8Chunked = ChunkedArray<Int8Type>;
 pub type Int16Chunked = ChunkedArray<Int16Type>;
 pub type Int32Chunked = ChunkedArray<Int32Type>;
 pub type Int64Chunked = ChunkedArray<Int64Type>;
 #[cfg(feature = "dtype-i128")]
 pub type Int128Chunked = ChunkedArray<Int128Type>;
+#[cfg(feature = "dtype-f16")]
+pub type Float16Chunked = ChunkedArray<Float16Type>;
 pub type Float32Chunked = ChunkedArray<Float32Type>;
 pub type Float64Chunked = ChunkedArray<Float64Type>;
 pub type StringChunked = ChunkedArray<StringType>;
@@ -478,6 +491,16 @@ impl NumericNative for u32 {
 impl NumericNative for u64 {
     type PolarsType = UInt64Type;
     type TrueDivPolarsType = Float64Type;
+}
+#[cfg(feature = "dtype-u128")]
+impl NumericNative for u128 {
+    type PolarsType = UInt128Type;
+    type TrueDivPolarsType = Float64Type;
+}
+#[cfg(feature = "dtype-f16")]
+impl NumericNative for pf16 {
+    type PolarsType = Float16Type;
+    type TrueDivPolarsType = Float16Type;
 }
 impl NumericNative for f32 {
     type PolarsType = Float32Type;

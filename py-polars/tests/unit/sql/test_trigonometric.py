@@ -8,7 +8,7 @@ from polars.testing import assert_frame_equal
 
 def test_arctan2() -> None:
     twoRootTwo = math.sqrt(2) / 2.0
-    df = pl.DataFrame(  # noqa: F841
+    df = pl.DataFrame(
         {
             "y": [twoRootTwo, -twoRootTwo, twoRootTwo, -twoRootTwo],
             "x": [twoRootTwo, twoRootTwo, -twoRootTwo, -twoRootTwo],

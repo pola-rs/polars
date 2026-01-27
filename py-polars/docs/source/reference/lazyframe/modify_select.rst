@@ -34,6 +34,7 @@ Manipulation/selection
     LazyFrame.match_to_schema
     LazyFrame.melt
     LazyFrame.merge_sorted
+    LazyFrame.pivot
     LazyFrame.remove
     LazyFrame.rename
     LazyFrame.reverse

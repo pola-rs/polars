@@ -1,14 +1,16 @@
 use std::marker::PhantomData;
 
+use arrow::temporal_conversions::MICROSECONDS_IN_DAY;
 use num_traits::{AsPrimitive, Zero};
 use polars_core::with_match_physical_numeric_polars_type;
 
 use super::*;
 
-pub fn new_mean_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
+pub fn new_mean_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
+    // TODO: Move the error checks up and make this function infallible
     use DataType::*;
     use VecGroupedReduction as VGR;
-    match dtype {
+    Ok(match dtype {
         Boolean => Box::new(VGR::new(dtype, BoolMeanReducer)),
         _ if dtype.is_primitive_numeric() || dtype.is_temporal() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
@@ -17,16 +19,23 @@ pub fn new_mean_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
         },
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VGR::new(dtype, NumMeanReducer::<Int128Type>(PhantomData))),
-
-        // For compatibility with the current engine, should probably be an error.
-        String | Binary => Box::new(super::NullGroupedReduction::new(dtype)),
-
-        _ => unimplemented!("{dtype:?} is not supported by mean reduction"),
-    }
+        Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
+            DataType::Null,
+        ))),
+        _ => polars_bail!(InvalidOperation: "`mean` operation not supported for dtype `{dtype}`"),
+    })
 }
 
 fn finish_output(values: Vec<(f64, usize)>, dtype: &DataType) -> Series {
     match dtype {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca: Float16Chunked = values
+                .into_iter()
+                .map(|(s, c)| (c != 0).then(|| (s / c as f64).as_()))
+                .collect_ca(PlSmallStr::EMPTY);
+            ca.into_series()
+        },
         DataType::Float32 => {
             let ca: Float32Chunked = values
                 .into_iter()
@@ -43,7 +52,7 @@ fn finish_output(values: Vec<(f64, usize)>, dtype: &DataType) -> Series {
         },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_prec, scale) => {
-            let inv_scale_factor = 1.0 / 10u128.pow(scale.unwrap() as u32) as f64;
+            let inv_scale_factor = 1.0 / 10u128.pow(*scale as u32) as f64;
             let ca: Float64Chunked = values
                 .into_iter()
                 .map(|(s, c)| (c != 0).then(|| s / c as f64 * inv_scale_factor))
@@ -52,12 +61,12 @@ fn finish_output(values: Vec<(f64, usize)>, dtype: &DataType) -> Series {
         },
         #[cfg(feature = "dtype-datetime")]
         DataType::Date => {
-            const MS_IN_DAY: i64 = 86_400_000;
+            const US_IN_DAY: f64 = MICROSECONDS_IN_DAY as f64;
             let ca: Int64Chunked = values
                 .into_iter()
-                .map(|(s, c)| (c != 0).then(|| (s / c as f64 * MS_IN_DAY as f64) as i64))
+                .map(|(s, c)| (c != 0).then(|| (s * US_IN_DAY / c as f64) as i64))
                 .collect_ca(PlSmallStr::EMPTY);
-            ca.into_datetime(TimeUnit::Milliseconds, None).into_series()
+            ca.into_datetime(TimeUnit::Microseconds, None).into_series()
         },
         DataType::Datetime(_, _) | DataType::Duration(_) | DataType::Time => {
             let ca: Int64Chunked = values

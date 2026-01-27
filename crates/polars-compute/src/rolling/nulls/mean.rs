@@ -1,49 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+use super::super::mean::MeanWindow;
 use super::*;
-
-pub struct MeanWindow<'a, T> {
-    sum: SumWindow<'a, T, f64>,
-}
-
-impl<
-    'a,
-    T: NativeType
-        + IsFloat
-        + Add<Output = T>
-        + Sub<Output = T>
-        + NumCast
-        + Div<Output = T>
-        + AddAssign
-        + SubAssign
-        + PartialOrd,
-> RollingAggWindowNulls<'a, T> for MeanWindow<'a, T>
-{
-    unsafe fn new(
-        slice: &'a [T],
-        validity: &'a Bitmap,
-        start: usize,
-        end: usize,
-        params: Option<RollingFnParams>,
-        window_size: Option<usize>,
-    ) -> Self {
-        Self {
-            sum: SumWindow::new(slice, validity, start, end, params, window_size),
-        }
-    }
-
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        let sum = self.sum.update(start, end);
-        let len = end - start;
-        if self.sum.null_count == len {
-            None
-        } else {
-            sum.map(|sum| sum / NumCast::from(end - start - self.sum.null_count).unwrap())
-        }
-    }
-    fn is_valid(&self, min_periods: usize) -> bool {
-        self.sum.is_valid(min_periods)
-    }
-}
 
 pub fn rolling_mean<T>(
     arr: &PrimitiveArray<T>,
@@ -68,7 +25,7 @@ where
         panic!("weights not yet supported on array with null values")
     }
     if center {
-        rolling_apply_agg_window::<MeanWindow<_>, _, _>(
+        rolling_apply_agg_window::<MeanWindow<T>, _, _, _>(
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             window_size,
@@ -77,7 +34,7 @@ where
             None,
         )
     } else {
-        rolling_apply_agg_window::<MeanWindow<_>, _, _>(
+        rolling_apply_agg_window::<MeanWindow<T>, _, _, _>(
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             window_size,

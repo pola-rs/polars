@@ -3,6 +3,7 @@ use std::future::Future;
 use std::ops::Deref;
 use std::sync::LazyLock;
 
+use polars_buffer::Buffer;
 use polars_core::POOL;
 use polars_core::config::{self, verbose};
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -31,28 +32,11 @@ pub(super) fn get_download_chunk_size() -> usize {
     *DOWNLOAD_CHUNK_SIZE
 }
 
-static UPLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
-    let v: usize = std::env::var("POLARS_UPLOAD_CHUNK_SIZE")
-        .as_deref()
-        .map(|x| x.parse().expect("integer"))
-        .unwrap_or(64 * 1024 * 1024);
-
-    if config::verbose() {
-        eprintln!("async upload_chunk_size: {v}")
-    }
-
-    v
-});
-
-pub(super) fn get_upload_chunk_size() -> usize {
-    *UPLOAD_CHUNK_SIZE
-}
-
 pub trait GetSize {
     fn size(&self) -> u64;
 }
 
-impl GetSize for bytes::Bytes {
+impl GetSize for Buffer<u8> {
     fn size(&self) -> u64 {
         self.len() as u64
     }
@@ -235,7 +219,7 @@ where
     drop(tuner);
 
     // Reduce locking by letting only 1 in 5 tasks lock the tuner
-    if (INCR.fetch_add(1) % 5) != 0 {
+    if !INCR.fetch_add(1).is_multiple_of(5) {
         return res;
     }
     // Never lock as we will deadlock. This can run under rayon
@@ -279,12 +263,17 @@ impl RuntimeManager {
             .map(|x| x.parse::<usize>().expect("integer"))
             .unwrap_or(POOL.current_num_threads().clamp(1, 4));
 
+        let max_blocking = std::env::var("POLARS_MAX_BLOCKING_THREAD_COUNT")
+            .map(|x| x.parse::<usize>().expect("integer"))
+            .unwrap_or(512);
+
         if polars_core::config::verbose() {
             eprintln!("async thread count: {n_threads}");
         }
 
         let rt = Builder::new_multi_thread()
             .worker_threads(n_threads)
+            .max_blocking_threads(max_blocking)
             .enable_io()
             .enable_time()
             .build()

@@ -142,9 +142,10 @@ if __name__ == "__main__":
 
     doctest.OutputChecker = IgnoreResultOutputChecker  # type: ignore[misc]
 
-    # We want to be relaxed about whitespace, but strict on True vs 1
+    # Want to be relaxed about whitespace, strict on True vs 1, and allow '...' pattern
     doctest.NORMALIZE_WHITESPACE = True
     doctest.DONT_ACCEPT_TRUE_FOR_1 = True
+    doctest.ELLIPSIS = True
 
     # If REPORT_NDIFF is turned on, it will report on line by line, character by
     # character, differences. The disadvantage is that you cannot just copy the output

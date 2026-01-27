@@ -34,7 +34,9 @@ def test_hist_empty_data_no_inputs() -> None:
                 ],
                 dtype=pl.Categorical,
             ),
-            "count": pl.Series([0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=pl.UInt32),
+            "count": pl.Series(
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=pl.get_index_type()
+            ),
         }
     )
     result = s.hist()
@@ -49,7 +51,7 @@ def test_hist_empty_data_empty_bins() -> None:
         {
             "breakpoint": pl.Series([], dtype=pl.Float64),
             "category": pl.Series([], dtype=pl.Categorical),
-            "count": pl.Series([], dtype=pl.UInt32),
+            "count": pl.Series([], dtype=pl.get_index_type()),
         }
     )
     result = s.hist(bins=[])
@@ -64,7 +66,7 @@ def test_hist_empty_data_single_bin_edge() -> None:
         {
             "breakpoint": pl.Series([], dtype=pl.Float64),
             "category": pl.Series([], dtype=pl.Categorical),
-            "count": pl.Series([], dtype=pl.UInt32),
+            "count": pl.Series([], dtype=pl.get_index_type()),
         }
     )
     result = s.hist(bins=[2])
@@ -79,7 +81,7 @@ def test_hist_empty_data_valid_edges() -> None:
         {
             "breakpoint": pl.Series([2.0, 3.0], dtype=pl.Float64),
             "category": pl.Series(["[1.0, 2.0]", "(2.0, 3.0]"], dtype=pl.Categorical),
-            "count": pl.Series([0, 0], dtype=pl.UInt32),
+            "count": pl.Series([0, 0], dtype=pl.get_index_type()),
         }
     )
     result = s.hist(bins=[1, 2, 3])
@@ -104,7 +106,7 @@ def test_hist_empty_data_zero_bin_count() -> None:
         {
             "breakpoint": pl.Series([], dtype=pl.Float64),
             "category": pl.Series([], dtype=pl.Categorical),
-            "count": pl.Series([], dtype=pl.UInt32),
+            "count": pl.Series([], dtype=pl.get_index_type()),
         }
     )
     result = s.hist(bin_count=0)
@@ -117,7 +119,7 @@ def test_hist_empty_data_single_bin_count() -> None:
         {
             "breakpoint": pl.Series([1.0], dtype=pl.Float64),
             "category": pl.Series(["[0.0, 1.0]"], dtype=pl.Categorical),
-            "count": pl.Series([0], dtype=pl.UInt32),
+            "count": pl.Series([0], dtype=pl.get_index_type()),
         }
     )
     result = s.hist(bin_count=1)
@@ -139,7 +141,7 @@ def test_hist_empty_data_valid_bin_count() -> None:
                 ],
                 dtype=pl.Categorical,
             ),
-            "count": pl.Series([0, 0, 0, 0, 0], dtype=pl.UInt32),
+            "count": pl.Series([0, 0, 0, 0, 0], dtype=pl.get_index_type()),
         }
     )
     result = s.hist(bin_count=5)
@@ -165,7 +167,7 @@ def test_hist_bin_outside_data() -> None:
         {
             "breakpoint": pl.Series([-9.0], dtype=pl.Float64),
             "category": pl.Series(["[-10.0, -9.0]"], dtype=pl.Categorical),
-            "count": pl.Series([0], dtype=pl.UInt32),
+            "count": pl.Series([0], dtype=pl.get_index_type()),
         }
     )
     assert_frame_equal(result, expected)
@@ -178,7 +180,7 @@ def test_hist_bins_between_data() -> None:
         {
             "breakpoint": pl.Series([10.5], dtype=pl.Float64),
             "category": pl.Series(["[4.5, 10.5]"], dtype=pl.Categorical),
-            "count": pl.Series([0], dtype=pl.UInt32),
+            "count": pl.Series([0], dtype=pl.get_index_type()),
         }
     )
     assert_frame_equal(result, expected)
@@ -191,7 +193,7 @@ def test_hist_bins_first_edge() -> None:
         {
             "breakpoint": pl.Series([3.0, 4.0], dtype=pl.Float64),
             "category": pl.Series(["[2.0, 3.0]", "(3.0, 4.0]"], dtype=pl.Categorical),
-            "count": pl.Series([1, 0], dtype=pl.UInt32),
+            "count": pl.Series([1, 0], dtype=pl.get_index_type()),
         }
     )
     assert_frame_equal(result, expected)
@@ -211,7 +213,7 @@ def test_hist_bins_last_edge() -> None:
                 ],
                 dtype=pl.Categorical,
             ),
-            "count": pl.Series([1, 3, 0], dtype=pl.UInt32),
+            "count": pl.Series([1, 3, 0], dtype=pl.get_index_type()),
         }
     )
     assert_frame_equal(result, expected)
@@ -224,7 +226,7 @@ def test_hist_single_value_single_bin_count() -> None:
         {
             "breakpoint": pl.Series([1.5], dtype=pl.Float64),
             "category": pl.Series(["[0.5, 1.5]"], dtype=pl.Categorical),
-            "count": pl.Series([1], dtype=pl.UInt32),
+            "count": pl.Series([1], dtype=pl.get_index_type()),
         }
     )
     assert_frame_equal(result, expected)
@@ -237,7 +239,7 @@ def test_hist_single_bin_count() -> None:
         {
             "breakpoint": pl.Series([99.0], dtype=pl.Float64),
             "category": pl.Series(["[-5.0, 99.0]"], dtype=pl.Categorical),
-            "count": pl.Series([5], dtype=pl.UInt32),
+            "count": pl.Series([5], dtype=pl.get_index_type()),
         }
     )
     assert_frame_equal(result, expected)
@@ -252,7 +254,7 @@ def test_hist_partial_covering() -> None:
             "category": pl.Series(
                 ["[-1.5, 2.5]", "(2.5, 50.0]", "(50.0, 105.0]"], dtype=pl.Categorical
             ),
-            "count": pl.Series([3, 0, 1], dtype=pl.UInt32),
+            "count": pl.Series([3, 0, 1], dtype=pl.get_index_type()),
         }
     )
     assert_frame_equal(result, expected)
@@ -267,7 +269,7 @@ def test_hist_full_covering() -> None:
             "category": pl.Series(
                 ["[-5.5, 2.5]", "(2.5, 50.0]", "(50.0, 105.0]"], dtype=pl.Categorical
             ),
-            "count": pl.Series([4, 0, 1], dtype=pl.UInt32),
+            "count": pl.Series([4, 0, 1], dtype=pl.get_index_type()),
         }
     )
     assert_frame_equal(result, expected)
@@ -288,7 +290,7 @@ def test_hist_more_bins_than_data() -> None:
         {
             "breakpoint": pl.Series(breaks[1:], dtype=pl.Float64),
             "category": pl.Series(categories, dtype=pl.Categorical),
-            "count": pl.Series([4, 0, 0, 0, 0, 0, 0, 1], dtype=pl.UInt32),
+            "count": pl.Series([4, 0, 0, 0, 0, 0, 0, 1], dtype=pl.get_index_type()),
         }
     )
     assert_frame_equal(result, expected)

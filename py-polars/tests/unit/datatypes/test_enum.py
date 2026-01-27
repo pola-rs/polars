@@ -8,7 +8,7 @@ import re
 import sys
 from datetime import date
 from textwrap import dedent
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -19,6 +19,9 @@ from polars.exceptions import (
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 if sys.version_info >= (3, 11):
     from enum import StrEnum

@@ -7,19 +7,19 @@ use crate::utils::EnterPolarsExt;
 #[pymethods]
 impl PySeries {
     fn add(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &self.series + &other.series)
+        py.enter_polars_series(|| &*self.series.read() + &*other.series.read())
     }
     fn sub(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &self.series - &other.series)
+        py.enter_polars_series(|| &*self.series.read() - &*other.series.read())
     }
     fn mul(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &self.series * &other.series)
+        py.enter_polars_series(|| &*self.series.read() * &*other.series.read())
     }
     fn div(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &self.series / &other.series)
+        py.enter_polars_series(|| &*self.series.read() / &*other.series.read())
     }
     fn rem(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &self.series % &other.series)
+        py.enter_polars_series(|| &*self.series.read() % &*other.series.read())
     }
 }
 
@@ -28,7 +28,7 @@ macro_rules! impl_arithmetic {
         #[pymethods]
         impl PySeries {
             fn $name(&self, py: Python<'_>, other: $type) -> PyResult<Self> {
-                py.enter_polars_series(|| Ok({&self.series $operand other}))
+                py.enter_polars_series(|| Ok({&*self.series.read() $operand other}))
             }
         }
     };
@@ -44,6 +44,7 @@ impl_arithmetic!(add_i32, i32, +);
 impl_arithmetic!(add_i64, i64, +);
 impl_arithmetic!(add_datetime, i64, +);
 impl_arithmetic!(add_duration, i64, +);
+impl_arithmetic!(add_f16, pf16, +);
 impl_arithmetic!(add_f32, f32, +);
 impl_arithmetic!(add_f64, f64, +);
 impl_arithmetic!(sub_u8, u8, -);
@@ -56,6 +57,7 @@ impl_arithmetic!(sub_i32, i32, -);
 impl_arithmetic!(sub_i64, i64, -);
 impl_arithmetic!(sub_datetime, i64, -);
 impl_arithmetic!(sub_duration, i64, -);
+impl_arithmetic!(sub_f16, pf16, -);
 impl_arithmetic!(sub_f32, f32, -);
 impl_arithmetic!(sub_f64, f64, -);
 impl_arithmetic!(div_u8, u8, /);
@@ -66,6 +68,7 @@ impl_arithmetic!(div_i8, i8, /);
 impl_arithmetic!(div_i16, i16, /);
 impl_arithmetic!(div_i32, i32, /);
 impl_arithmetic!(div_i64, i64, /);
+impl_arithmetic!(div_f16, pf16, /);
 impl_arithmetic!(div_f32, f32, /);
 impl_arithmetic!(div_f64, f64, /);
 impl_arithmetic!(mul_u8, u8, *);
@@ -76,6 +79,7 @@ impl_arithmetic!(mul_i8, i8, *);
 impl_arithmetic!(mul_i16, i16, *);
 impl_arithmetic!(mul_i32, i32, *);
 impl_arithmetic!(mul_i64, i64, *);
+impl_arithmetic!(mul_f16, pf16, *);
 impl_arithmetic!(mul_f32, f32, *);
 impl_arithmetic!(mul_f64, f64, *);
 impl_arithmetic!(rem_u8, u8, %);
@@ -86,6 +90,7 @@ impl_arithmetic!(rem_i8, i8, %);
 impl_arithmetic!(rem_i16, i16, %);
 impl_arithmetic!(rem_i32, i32, %);
 impl_arithmetic!(rem_i64, i64, %);
+impl_arithmetic!(rem_f16, pf16, %);
 impl_arithmetic!(rem_f32, f32, %);
 impl_arithmetic!(rem_f64, f64, %);
 
@@ -94,7 +99,7 @@ macro_rules! impl_rhs_arithmetic {
         #[pymethods]
         impl PySeries {
             fn $name(&self, py: Python<'_>, other: $type) -> PyResult<Self> {
-                py.enter_polars_series(|| Ok(other.$operand(&self.series)))
+                py.enter_polars_series(|| Ok(other.$operand(&self.series.read())))
             }
         }
     };
@@ -108,6 +113,7 @@ impl_rhs_arithmetic!(add_i8_rhs, i8, add);
 impl_rhs_arithmetic!(add_i16_rhs, i16, add);
 impl_rhs_arithmetic!(add_i32_rhs, i32, add);
 impl_rhs_arithmetic!(add_i64_rhs, i64, add);
+impl_rhs_arithmetic!(add_f16_rhs, pf16, add);
 impl_rhs_arithmetic!(add_f32_rhs, f32, add);
 impl_rhs_arithmetic!(add_f64_rhs, f64, add);
 impl_rhs_arithmetic!(sub_u8_rhs, u8, sub);
@@ -118,6 +124,7 @@ impl_rhs_arithmetic!(sub_i8_rhs, i8, sub);
 impl_rhs_arithmetic!(sub_i16_rhs, i16, sub);
 impl_rhs_arithmetic!(sub_i32_rhs, i32, sub);
 impl_rhs_arithmetic!(sub_i64_rhs, i64, sub);
+impl_rhs_arithmetic!(sub_f16_rhs, pf16, sub);
 impl_rhs_arithmetic!(sub_f32_rhs, f32, sub);
 impl_rhs_arithmetic!(sub_f64_rhs, f64, sub);
 impl_rhs_arithmetic!(div_u8_rhs, u8, div);
@@ -128,6 +135,7 @@ impl_rhs_arithmetic!(div_i8_rhs, i8, div);
 impl_rhs_arithmetic!(div_i16_rhs, i16, div);
 impl_rhs_arithmetic!(div_i32_rhs, i32, div);
 impl_rhs_arithmetic!(div_i64_rhs, i64, div);
+impl_rhs_arithmetic!(div_f16_rhs, pf16, div);
 impl_rhs_arithmetic!(div_f32_rhs, f32, div);
 impl_rhs_arithmetic!(div_f64_rhs, f64, div);
 impl_rhs_arithmetic!(mul_u8_rhs, u8, mul);
@@ -138,6 +146,7 @@ impl_rhs_arithmetic!(mul_i8_rhs, i8, mul);
 impl_rhs_arithmetic!(mul_i16_rhs, i16, mul);
 impl_rhs_arithmetic!(mul_i32_rhs, i32, mul);
 impl_rhs_arithmetic!(mul_i64_rhs, i64, mul);
+impl_rhs_arithmetic!(mul_f16_rhs, pf16, mul);
 impl_rhs_arithmetic!(mul_f32_rhs, f32, mul);
 impl_rhs_arithmetic!(mul_f64_rhs, f64, mul);
 impl_rhs_arithmetic!(rem_u8_rhs, u8, rem);
@@ -148,5 +157,6 @@ impl_rhs_arithmetic!(rem_i8_rhs, i8, rem);
 impl_rhs_arithmetic!(rem_i16_rhs, i16, rem);
 impl_rhs_arithmetic!(rem_i32_rhs, i32, rem);
 impl_rhs_arithmetic!(rem_i64_rhs, i64, rem);
+impl_rhs_arithmetic!(rem_f16_rhs, pf16, rem);
 impl_rhs_arithmetic!(rem_f32_rhs, f32, rem);
 impl_rhs_arithmetic!(rem_f64_rhs, f64, rem);

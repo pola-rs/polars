@@ -6,7 +6,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.dependencies import _lazy_import
+from polars._dependencies import _lazy_import
 
 # don't import jax until an actual test is triggered (the decorator already
 # ensures the tests aren't run locally; this avoids premature local import)
@@ -138,6 +138,7 @@ def test_to_jax_dict(df: pl.DataFrame) -> None:
     for a, expected_data in zip(
         arr_dict.values(),
         ([1.0, 2.0, 2.0, 3.0], [1.0, 0.0, 1.0, 0.0], [1.5, -0.5, 0.0, -2.0]),
+        strict=False,
     ):
         assert_array_equal(a, jxn.array(expected_data, dtype=jxn.float32))
 

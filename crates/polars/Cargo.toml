@@ -12,8 +12,11 @@ description = "DataFrame library based on Apache Arrow"
 
 [dependencies]
 arrow = { workspace = true }
+polars-buffer = { workspace = true }
+polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by"] }
 polars-error = { workspace = true }
+polars-expr = { workspace = true, optional = true }
 polars-io = { workspace = true, optional = true }
 polars-lazy = { workspace = true, optional = true }
 polars-ops = { workspace = true, optional = true }
@@ -36,7 +39,6 @@ proptest = { workspace = true }
 rand = { workspace = true }
 # used to test async readers
 tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }
-tokio-util = { workspace = true, features = ["compat"] }
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -49,9 +51,16 @@ old_getrandom = { version = "0.2", features = ["js"], package = "getrandom" }
 [features]
 sql = ["polars-sql"]
 rows = ["polars-core/rows"]
-simd = ["polars-core/simd", "polars-io/simd", "polars-ops?/simd"]
+simd = ["polars-core/simd", "polars-compute/simd", "polars-io/simd", "polars-ops?/simd"]
 avx512 = ["polars-core/avx512"]
-nightly = ["polars-core/nightly", "polars-ops?/nightly", "simd", "polars-lazy?/nightly", "polars-sql?/nightly"]
+nightly = [
+  "polars-core/nightly",
+  "polars-ops?/nightly",
+  "simd",
+  "polars-lazy?/nightly",
+  "polars-sql?/nightly",
+  "polars-expr/nightly",
+]
 docs = ["polars-core/docs"]
 temporal = ["polars-core/temporal", "polars-lazy?/temporal", "polars-io/temporal", "polars-time"]
 random = ["polars-core/random", "polars-lazy?/random", "polars-ops/random"]
@@ -66,7 +75,7 @@ default = [
 ]
 ndarray = ["polars-core/ndarray"]
 # serde support for dataframes and series
-serde = ["polars-core/serde", "polars-utils/serde"]
+serde = ["polars-buffer/serde", "polars-core/serde", "polars-utils/serde"]
 serde-lazy = [
   "polars-core/serde-lazy",
   "polars-lazy?/serde",
@@ -97,10 +106,12 @@ lazy = ["polars-core/lazy", "polars-lazy"]
 strings = ["polars-core/strings", "polars-lazy?/strings", "polars-ops/strings"]
 
 # support for ObjectChunked<T> (downcastable Series of any type)
-object = ["polars-core/object", "polars-lazy?/object", "polars-io/object"]
+object = ["polars-core/object", "polars-lazy?/object", "polars-io/object", "polars-expr/object"]
 
 # support for arrows json parsing
 json = ["polars-io", "polars-io/json", "polars-lazy?/json", "polars-sql?/json", "dtype-struct", "new_streaming"]
+
+scan_lines = ["polars-io", "polars-io/scan_lines", "polars-lazy?/scan_lines", "new_streaming"]
 
 # support for arrows ipc file parsing
 ipc = ["polars-io", "polars-io/ipc", "polars-lazy?/ipc", "polars-sql?/ipc", "new_streaming"]
@@ -120,6 +131,7 @@ performant = [
   "chunked_ids",
   "dtype-u8",
   "dtype-u16",
+  "dtype-f16",
   "dtype-struct",
   "cse",
   "polars-ops/performant",
@@ -166,7 +178,7 @@ diagonal_concat = ["polars-core/diagonal_concat", "polars-lazy?/diagonal_concat"
 diff = ["polars-ops/diff", "polars-lazy?/diff"]
 dot_diagram = ["polars-lazy?/dot_diagram"]
 dot_product = ["polars-core/dot_product"]
-dynamic_group_by = ["polars-core/dynamic_group_by", "polars-lazy?/dynamic_group_by"]
+dynamic_group_by = ["polars-core/dynamic_group_by", "polars-lazy?/dynamic_group_by", "polars-sql?/dynamic_group_by"]
 ewma = ["polars-ops/ewma", "polars-lazy?/ewma"]
 ewma_by = ["polars-ops/ewma_by", "polars-lazy?/ewma_by"]
 extract_groups = ["polars-lazy?/extract_groups"]
@@ -176,7 +188,7 @@ extract_jsonpath = [
   "polars-ops/strings",
   "polars-lazy?/extract_jsonpath",
 ]
-find_many = ["polars-plan/find_many"]
+find_many = ["polars-expr/find_many", "polars-lazy?/find_many"]
 fused = ["polars-ops/fused", "polars-lazy?/fused"]
 interpolate = ["polars-ops/interpolate", "polars-lazy?/interpolate"]
 interpolate_by = ["polars-ops/interpolate_by", "polars-lazy?/interpolate_by"]
@@ -205,7 +217,7 @@ merge_sorted = ["polars-lazy?/merge_sorted"]
 meta = ["polars-lazy?/meta"]
 mode = ["polars-ops/mode", "polars-lazy?/mode"]
 moment = ["polars-ops/moment", "polars-lazy?/moment"]
-new_streaming = ["polars-lazy?/new_streaming", "polars-core/dtype-categorical"]
+new_streaming = ["polars-lazy?/new_streaming", "dtype-categorical"]
 partition_by = ["polars-core/partition_by"]
 pct_change = ["polars-ops/pct_change", "polars-lazy?/pct_change"]
 peaks = ["polars-lazy/peaks"]
@@ -213,7 +225,7 @@ pivot = ["polars-lazy?/pivot", "polars-ops/pivot", "dtype-struct", "rows"]
 product = ["polars-core/product"]
 propagate_nans = ["polars-lazy?/propagate_nans"]
 range = ["polars-lazy?/range"]
-rank = ["polars-lazy?/rank", "polars-ops/rank"]
+rank = ["polars-lazy?/rank", "polars-ops/rank", "polars-sql?/rank"]
 reinterpret = ["polars-core/reinterpret", "polars-lazy?/reinterpret", "polars-ops/reinterpret"]
 repeat_by = ["polars-ops/repeat_by", "polars-lazy?/repeat_by"]
 replace = ["polars-ops/replace", "polars-lazy?/replace"]
@@ -281,6 +293,8 @@ dtype-full = [
   "dtype-decimal",
   "dtype-u8",
   "dtype-u16",
+  "dtype-u128",
+  "dtype-f16",
   "dtype-categorical",
   "dtype-struct",
 ]
@@ -369,6 +383,20 @@ dtype-u16 = [
   "polars-ops/dtype-u16",
   "polars-time?/dtype-u16",
 ]
+dtype-u128 = [
+  "polars-core/dtype-u128",
+  "polars-io/dtype-u128",
+  "polars-lazy?/dtype-u128",
+  "polars-ops/dtype-u128",
+  "polars-time?/dtype-u128",
+]
+dtype-f16 = [
+  "polars-core/dtype-f16",
+  "polars-io/dtype-f16",
+  "polars-lazy?/dtype-f16",
+  "polars-ops/dtype-f16",
+  "polars-time?/dtype-f16",
+]
 dtype-categorical = [
   "polars-core/dtype-categorical",
   "polars-io/dtype-categorical",
@@ -380,6 +408,13 @@ dtype-struct = [
   "polars-io/dtype-struct",
   "polars-lazy?/dtype-struct",
   "polars-ops/dtype-struct",
+]
+dtype-extension = [
+  "polars-core/dtype-extension",
+  "polars-expr/dtype-extension",
+  "polars-lazy?/dtype-extension",
+  "polars-ops/dtype-extension",
+  "polars-plan/dtype-extension",
 ]
 hist = ["polars-ops/hist", "polars-lazy/hist"]
 

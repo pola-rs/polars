@@ -1,5 +1,3 @@
-use polars::prelude::*;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:write]
     let mut df = df!(
@@ -32,13 +30,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{df}");
 
     // --8<-- [start:readnd]
-    let mut file = std::fs::File::open("docs/assets/data/path.json").unwrap();
-    let df = JsonLineReader::new(&mut file).finish().unwrap();
+    let df = LazyJsonLineReader::new(PlRefPath::new("docs/assets/data/path.json"))
+        .finish()
+        .unwrap()
+        .collect()
+        .unwrap();
     // --8<-- [end:readnd]
-    println!("{df}");
+    println!("{}", df);
 
     // --8<-- [start:scan]
-    let lf = LazyJsonLineReader::new(PlPath::new("docs/assets/data/path.json"))
+    let lf = LazyJsonLineReader::new(PlRefPath::new("docs/assets/data/path.json"))
         .finish()
         .unwrap();
     // --8<-- [end:scan]

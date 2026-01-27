@@ -41,7 +41,7 @@ def test_fill_null_non_lit() -> None:
             "a": pl.Series([1, None], dtype=pl.Int32),
             "b": pl.Series([None, 2], dtype=pl.UInt32),
             "c": pl.Series([None, 2], dtype=pl.Int64),
-            "d": pl.Series([None, 2], dtype=pl.Decimal),
+            "d": pl.Series([None, 2], dtype=pl.Decimal(10, 2)),
         }
     )
     assert df.fill_null(0).select(pl.all().null_count()).transpose().sum().item() == 0
@@ -120,4 +120,33 @@ def test_self_broadcast() -> None:
     assert_series_equal(
         pl.Series([None]).fill_null(pl.Series(range(3))),
         pl.Series(range(3)),
+    )
+
+
+def test_forward_fill_chunking_25273() -> None:
+    df = pl.DataFrame(
+        {
+            "key": [0, 1, 1],
+            "a": [None, None, 0],
+        }
+    )
+
+    df = df.with_columns(a=pl.concat([pl.col.a.head(1), pl.col.a.tail(2)]))
+    df = df.select(pl.col.a.filter(pl.col.key == 1))
+    df = df.with_columns(ff=pl.col.a.forward_fill())
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "a": [None, 0],
+                "ff": [None, 0],
+            }
+        ),
+    )
+
+
+def test_forward_fill_is_length_preserving() -> None:
+    assert_series_equal(
+        pl.Series([[1]]).list.agg(pl.element().first().forward_fill()),
+        pl.Series([1]),
     )

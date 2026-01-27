@@ -29,7 +29,7 @@ impl DataFrame {
             },
         };
 
-        let cols = &self.columns;
+        let cols = self.columns();
         match dtype {
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => numeric_transpose::<Int8Type>(cols, names_out, &mut cols_t),
@@ -67,14 +67,17 @@ impl DataFrame {
 
                 // this is very expensive. A lot of cache misses here.
                 // This is the part that is performance critical.
-                for s in columns {
-                    polars_ensure!(s.dtype() == &phys_dtype, ComputeError: "cannot transpose with supertype: {}", dtype);
-                    s.iter().zip(buffers.iter_mut()).for_each(|(av, buf)| {
+                for series in &columns {
+                    polars_ensure!(
+                        series.dtype() == &phys_dtype,
+                        ComputeError: "cannot transpose with supertype: {}", dtype
+                    );
+                    for (av, buf) in series.iter().zip(buffers.iter_mut()) {
                         // SAFETY: we checked the type and we borrow
                         unsafe {
                             buf.add_unchecked_borrowed_physical(&av);
                         }
-                    });
+                    }
                 }
                 cols_t.extend(buffers.into_iter().zip(names_out).map(|(buf, name)| {
                     // SAFETY: we are casting back to the supertype
@@ -84,7 +87,8 @@ impl DataFrame {
                 }));
             },
         };
-        Ok(unsafe { DataFrame::new_no_checks(new_height, cols_t) })
+
+        DataFrame::new(new_height, cols_t)
     }
 
     pub fn transpose(
@@ -109,7 +113,7 @@ impl DataFrame {
         new_col_names: Option<Either<PlSmallStr, Vec<PlSmallStr>>>,
     ) -> PolarsResult<DataFrame> {
         // We must iterate columns as [`AnyValue`], so we must be contiguous.
-        self.as_single_chunk_par();
+        self.rechunk_mut_par();
 
         let mut df = Cow::Borrowed(self); // Can't use self because we might drop a name column
         let names_out = match new_col_names {

@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use polars_utils::arena::Node;
 #[cfg(feature = "serde")]
 use polars_utils::pl_serialize;
+use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -16,11 +17,12 @@ use super::*;
 // It is no longer needed to increment this. We use the schema hashes to check for compatibility.
 //
 // Only increment if you need to make a breaking change that doesn't change the schema hashes.
-pub const DSL_VERSION: (u16, u16) = (22, 0);
+pub const DSL_VERSION: (u16, u16) = (24, 0);
 const DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 const DSL_SCHEMA_HASH: SchemaHash<'static> = SchemaHash::from_hash_file();
 
+#[derive(Debug, strum_macros::IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DslPlan {
@@ -36,6 +38,7 @@ pub enum DslPlan {
     /// Cache the input at this point in the LP
     Cache {
         input: Arc<DslPlan>,
+        id: UniqueId,
     },
     Scan {
         sources: ScanSources,
@@ -63,6 +66,7 @@ pub enum DslPlan {
     GroupBy {
         input: Arc<DslPlan>,
         keys: Vec<Expr>,
+        predicates: Vec<Expr>,
         aggs: Vec<Expr>,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
@@ -96,6 +100,21 @@ pub enum DslPlan {
         per_column: Arc<[MatchToSchemaPerColumn]>,
 
         extra_columns: ExtraColumnsPolicy,
+    },
+    PipeWithSchema {
+        input: Arc<[DslPlan]>,
+        callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
+    },
+    #[cfg(feature = "pivot")]
+    Pivot {
+        input: Arc<DslPlan>,
+        on: Selector,
+        on_columns: Arc<DataFrame>,
+        index: Selector,
+        values: Selector,
+        agg: Expr,
+        maintain_order: bool,
+        separator: PlSmallStr,
     },
     /// Remove duplicates from the table
     Distinct {
@@ -168,14 +187,15 @@ impl Clone for DslPlan {
             #[cfg(feature = "python")]
             Self::PythonScan { options } => Self::PythonScan { options: options.clone() },
             Self::Filter { input, predicate } => Self::Filter { input: input.clone(), predicate: predicate.clone() },
-            Self::Cache { input } => Self::Cache { input: input.clone() },
+            Self::Cache { input, id } => Self::Cache { input: input.clone(), id: *id },
             Self::Scan { sources,  unified_scan_args, scan_type, cached_ir } => Self::Scan { sources: sources.clone(), unified_scan_args: unified_scan_args.clone(), scan_type: scan_type.clone(), cached_ir: cached_ir.clone() },
             Self::DataFrameScan { df, schema, } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(),  },
             Self::Select { expr, input, options } => Self::Select { expr: expr.clone(), input: input.clone(), options: options.clone() },
-            Self::GroupBy { input, keys, aggs,  apply, maintain_order, options } => Self::GroupBy { input: input.clone(), keys: keys.clone(), aggs: aggs.clone(), apply: apply.clone(), maintain_order: maintain_order.clone(), options: options.clone() },
+            Self::GroupBy { input, keys, predicates, aggs, apply, maintain_order, options } => Self::GroupBy { input: input.clone(), keys: keys.clone(), predicates: predicates.clone(), aggs: aggs.clone(), apply: apply.clone(), maintain_order: maintain_order.clone(), options: options.clone() },
             Self::Join { input_left, input_right, left_on, right_on, predicates, options } => Self::Join { input_left: input_left.clone(), input_right: input_right.clone(), left_on: left_on.clone(), right_on: right_on.clone(), options: options.clone(), predicates: predicates.clone() },
             Self::HStack { input, exprs, options } => Self::HStack { input: input.clone(), exprs: exprs.clone(),  options: options.clone() },
             Self::MatchToSchema { input, match_schema, per_column, extra_columns } => Self::MatchToSchema { input: input.clone(), match_schema: match_schema.clone(), per_column: per_column.clone(), extra_columns: *extra_columns },
+            Self::PipeWithSchema { input, callback } => Self::PipeWithSchema { input: input.clone(), callback: callback.clone() },
             Self::Distinct { input, options } => Self::Distinct { input: input.clone(), options: options.clone() },
             Self::Sort {input,by_column, slice, sort_options } => Self::Sort { input: input.clone(), by_column: by_column.clone(), slice: slice.clone(), sort_options: sort_options.clone() },
             Self::Slice { input, offset, len } => Self::Slice { input: input.clone(), offset: offset.clone(), len: len.clone() },
@@ -185,6 +205,8 @@ impl Clone for DslPlan {
             Self::ExtContext { input, contexts, } => Self::ExtContext { input: input.clone(), contexts: contexts.clone() },
             Self::Sink { input, payload } => Self::Sink { input: input.clone(), payload: payload.clone() },
             Self::SinkMultiple { inputs } => Self::SinkMultiple { inputs: inputs.clone() },
+            #[cfg(feature = "pivot")]
+            Self::Pivot { input, on, on_columns, index, values, agg, separator, maintain_order }  => Self::Pivot { input: input.clone(), on: on.clone(), on_columns: on_columns.clone(), index: index.clone(), values: values.clone(), agg: agg.clone(), separator: separator.clone(), maintain_order: *maintain_order },
             #[cfg(feature = "merge_sorted")]
             Self::MergeSorted { input_left, input_right, key } => Self::MergeSorted { input_left: input_left.clone(), input_right: input_right.clone(), key: key.clone() },
             Self::IR {node, dsl, version} => Self::IR {node: *node, dsl: dsl.clone(), version: *version},
@@ -260,7 +282,9 @@ impl DslPlan {
         writer.write_all(&le_major)?;
         writer.write_all(&le_minor)?;
         writer.write_all(DSL_SCHEMA_HASH.as_bytes())?;
-        pl_serialize::serialize_dsl(writer, self)
+        let serializable_plan = serializable_plan::SerializableDslPlan::from(self);
+        pl_serialize::serialize_dsl(writer, &serializable_plan)
+            .map_err(|e| polars_err!(ComputeError: "serialization failed\n\nerror: {e}"))
     }
 
     #[cfg(feature = "serde")]
@@ -309,6 +333,7 @@ impl DslPlan {
         reader.read_exact(&mut schema_hash).map_err(
             |e| polars_err!(ComputeError: "failed to read incoming DSL_SCHEMA_HASH: {e}"),
         )?;
+
         let incoming_hash = SchemaHash::new(&schema_hash).ok_or_else(
             || polars_err!(ComputeError: "failed to read incoming DSL schema hash, not a valid hex string")
         )?;
@@ -319,47 +344,46 @@ impl DslPlan {
             );
         }
 
-        if incoming_hash != DSL_SCHEMA_HASH {
+        if std::env::var("POLARS_SKIP_DSL_HASH_VERIFICATION").as_deref() != Ok("1")
+            && incoming_hash != DSL_SCHEMA_HASH
+        {
             polars_bail!(ComputeError:
                 "deserialization failed\n\ngiven DSL_SCHEMA_HASH: {incoming_hash} is not compatible with this Polars version which uses DSL_SCHEMA_HASH: {DSL_SCHEMA_HASH}\n{}",
                 "error: can't deserialize DSL with incompatible schema"
             );
         }
 
-        pl_serialize::deserialize_dsl(reader)
-            .map_err(|e| polars_err!(ComputeError: "deserialization failed\n\nerror: {e}"))
+        let serializable_plan: serializable_plan::SerializableDslPlan =
+            pl_serialize::deserialize_dsl(reader)
+                .map_err(|e| polars_err!(ComputeError: "deserialization failed\n\nerror: {e}"))?;
+        (&serializable_plan).try_into()
     }
 
     #[cfg(feature = "dsl-schema")]
-    pub fn dsl_schema() -> schemars::schema::RootSchema {
-        use schemars::r#gen::SchemaSettings;
-        use schemars::schema::SchemaObject;
-        use schemars::visit::{Visitor, visit_schema_object};
+    pub fn dsl_schema() -> schemars::Schema {
+        use schemars::Schema;
+        use schemars::generate::SchemaSettings;
+        use schemars::transform::{Transform, transform_subschemas};
 
         #[derive(Clone, Copy, Debug)]
-        struct MyVisitor;
+        struct MyTransform;
 
-        impl Visitor for MyVisitor {
-            fn visit_schema_object(&mut self, schema: &mut SchemaObject) {
+        impl Transform for MyTransform {
+            fn transform(&mut self, schema: &mut Schema) {
                 // Remove descriptions auto-generated from doc comments
-                if schema.metadata.is_some() {
-                    schema.metadata().description = None;
-                }
+                schema.remove("description");
 
-                visit_schema_object(self, schema);
+                transform_subschemas(self, schema);
             }
         }
 
         let mut schema = SchemaSettings::default()
-            .with_visitor(MyVisitor)
+            .with_transform(MyTransform)
             .into_generator()
             .into_root_schema_for::<DslPlan>();
 
         // Add the DSL schema hash as a top level field
-        schema
-            .schema
-            .extensions
-            .insert("hash".into(), DSL_SCHEMA_HASH.to_string().into());
+        schema.insert("hash".into(), DSL_SCHEMA_HASH.to_string().into());
 
         schema
     }

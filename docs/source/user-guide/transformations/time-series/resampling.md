@@ -16,7 +16,7 @@ Polars views downsampling as a special case of the **group_by** operation and yo
 
 Let's go through an example where we generate data at 30 minute intervals:
 
-{{code_block('user-guide/transformations/time-series/resampling','df',['DataFrame','date_range'])}}
+{{code_block('user-guide/transformations/time-series/resampling','df',['DataFrame','datetime_range'])}}
 
 ```python exec="on" result="text" session="user-guide/transformations/ts/resampling"
 --8<-- "python/user-guide/transformations/time-series/resampling.py:setup"

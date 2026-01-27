@@ -118,6 +118,10 @@ unsafe impl DictionaryKey for u64 {
         true
     }
 }
+unsafe impl DictionaryKey for u128 {
+    const KEY_TYPE: IntegerType = IntegerType::UInt128;
+    const MAX_USIZE_VALUE: usize = u128::MAX as usize;
+}
 
 /// An [`Array`] whose values are stored as indices. This [`Array`] is useful when the cardinality of
 /// values is low compared to the length of the [`Array`].
@@ -138,11 +142,11 @@ fn check_dtype(
     dtype: &ArrowDataType,
     values_dtype: &ArrowDataType,
 ) -> PolarsResult<()> {
-    if let ArrowDataType::Dictionary(key, value, _) = dtype.to_logical_type() {
+    if let ArrowDataType::Dictionary(key, value, _) = dtype.to_storage() {
         if *key != key_type {
             polars_bail!(ComputeError: "DictionaryArray must be initialized with a DataType::Dictionary whose integer is compatible to its keys")
         }
-        if value.as_ref().to_logical_type() != values_dtype.to_logical_type() {
+        if value.as_ref().to_storage() != values_dtype.to_storage() {
             polars_bail!(ComputeError: "DictionaryArray must be initialized with a DataType::Dictionary whose value is equal to its values")
         }
     } else {
@@ -295,7 +299,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// Returns whether the values of this [`DictionaryArray`] are ordered
     #[inline]
     pub fn is_ordered(&self) -> bool {
-        match self.dtype.to_logical_type() {
+        match self.dtype.to_storage() {
             ArrowDataType::Dictionary(_, _, is_ordered) => *is_ordered,
             _ => unreachable!(),
         }
@@ -402,7 +406,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     }
 
     pub(crate) fn try_get_child(dtype: &ArrowDataType) -> PolarsResult<&ArrowDataType> {
-        Ok(match dtype.to_logical_type() {
+        Ok(match dtype.to_storage() {
             ArrowDataType::Dictionary(_, values, _) => values.as_ref(),
             _ => {
                 polars_bail!(ComputeError: "Dictionaries must be initialized with DataType::Dictionary")

@@ -2,7 +2,7 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 use polars_ops::prelude::lst_get;
-use polars_ops::series::convert_to_unsigned_index;
+use polars_ops::series::convert_and_bound_index;
 use polars_utils::index::ToIdx;
 
 use super::*;
@@ -13,6 +13,7 @@ pub struct GatherExpr {
     pub(crate) idx: Arc<dyn PhysicalExpr>,
     pub(crate) expr: Expr,
     pub(crate) returns_scalar: bool,
+    pub(crate) null_on_oob: bool,
 }
 
 impl PhysicalExpr for GatherExpr {
@@ -23,7 +24,8 @@ impl PhysicalExpr for GatherExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series = self.phys_expr.evaluate(df, state)?;
         let idx = self.idx.evaluate(df, state)?;
-        let idx = convert_to_unsigned_index(idx.as_materialized_series(), series.len())?;
+        let idx =
+            convert_and_bound_index(idx.as_materialized_series(), series.len(), self.null_on_oob)?;
         series.take(&idx)
     }
 
@@ -77,7 +79,11 @@ impl PhysicalExpr for GatherExpr {
                     s.cast_with_options(&IDX_DTYPE, CastOptions::Overflowing)
                 }
             },
-            _ => unreachable!(),
+            _ => polars_bail!(
+                op = "gather/get",
+                got = s.dtype(),
+                expected = "integer type"
+            ),
         })?;
 
         let taken = if idx.inner_dtype() == &IDX_DTYPE {
@@ -110,7 +116,7 @@ impl PhysicalExpr for GatherExpr {
                 .with_name(ac.get_values().name().clone())
         };
 
-        ac.with_values(taken.into_column(), true, Some(&self.expr))?;
+        ac.with_agg_state(AggState::AggregatedList(taken.into_column()));
         ac.with_update_groups(UpdateGroups::WithSeriesLen);
         Ok(ac)
     }

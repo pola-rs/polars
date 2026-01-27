@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import CsvQuoteStyle, TimeUnit
-    from tests.unit.conftest import MemoryUsage
 
 
 @pytest.fixture
@@ -113,7 +112,8 @@ def test_normalize_filepath(io_files_path: Path) -> None:
     )
 
 
-def test_infer_schema_false() -> None:
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_infer_schema_false(read_fn: str) -> None:
     csv = textwrap.dedent(
         """\
         a,b,c
@@ -121,8 +121,7 @@ def test_infer_schema_false() -> None:
         1,2,3
         """
     )
-    f = io.StringIO(csv)
-    df = pl.read_csv(f, infer_schema=False)
+    df = getattr(pl, read_fn)(io.StringIO(csv), infer_schema=False).lazy().collect()
     assert df.dtypes == [pl.String, pl.String, pl.String]
 
 
@@ -258,12 +257,12 @@ def test_csv_missing_utf8_is_empty_string() -> None:
 
 def test_csv_int_types() -> None:
     f = io.StringIO(
-        "u8,i8,u16,i16,u32,i32,u64,i64,i128\n"
-        "0,0,0,0,0,0,0,0,0\n"
-        "0,-128,0,-32768,0,-2147483648,0,-9223372036854775808,-170141183460469231731687303715884105728\n"
-        "255,127,65535,32767,4294967295,2147483647,18446744073709551615,9223372036854775807,170141183460469231731687303715884105727\n"
-        "01,01,01,01,01,01,01,01,01\n"
-        "01,-01,01,-01,01,-01,01,-01,01\n"
+        "u8,i8,u16,i16,u32,i32,u64,i64,u128,i128\n"
+        "0,0,0,0,0,0,0,0,0,0\n"
+        "0,-128,0,-32768,0,-2147483648,0,-9223372036854775808,0,-170141183460469231731687303715884105728\n"
+        "255,127,65535,32767,4294967295,2147483647,18446744073709551615,9223372036854775807,340282366920938463463374607431768211455,170141183460469231731687303715884105727\n"
+        "01,01,01,01,01,01,01,01,01,01\n"
+        "01,-01,01,-01,01,-01,01,-01,01,-01\n"
     )
     df = pl.read_csv(
         f,
@@ -276,6 +275,7 @@ def test_csv_int_types() -> None:
             "i32": pl.Int32,
             "u64": pl.UInt64,
             "i64": pl.Int64,
+            "u128": pl.UInt128,
             "i128": pl.Int128,
         },
     )
@@ -295,13 +295,23 @@ def test_csv_int_types() -> None:
                     [0, -9223372036854775808, 9223372036854775807, 1, -1],
                     dtype=pl.Int64,
                 ),
+                "u128": pl.Series(
+                    [
+                        0,
+                        0,
+                        340282366920938463463374607431768211455,
+                        1,
+                        1,
+                    ],
+                    dtype=pl.UInt128,
+                ),
                 "i128": pl.Series(
                     [
                         0,
                         -170141183460469231731687303715884105728,
                         170141183460469231731687303715884105727,
                         1,
-                        1,
+                        -1,
                     ],
                     dtype=pl.Int128,
                 ),
@@ -1541,80 +1551,79 @@ def test_csv_categorical_categorical_merge() -> None:
 
 @pytest.mark.write_disk
 def test_batched_csv_reader(foods_file_path: Path) -> None:
-    reader = pl.read_csv_batched(foods_file_path, batch_size=4)
-    assert isinstance(reader, BatchedCsvReader)
+    with pytest.deprecated_call():
+        reader = pl.read_csv_batched(foods_file_path, batch_size=4)
+        assert isinstance(reader, BatchedCsvReader)
 
-    batches = reader.next_batches(5)
-    assert batches is not None
-    out = pl.concat(batches)
-    assert_frame_equal(out, pl.read_csv(foods_file_path).head(out.height))
-
-    # the final batch of the low-memory variant is different
-    reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
-    batches = reader.next_batches(10)
-    assert batches is not None
-
-    assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
-
-    reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
-    batches = reader.next_batches(10)
-    assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))  # type: ignore[arg-type]
-
-    # ragged lines
-    with NamedTemporaryFile() as tmp:
-        data = b"A\nB,ragged\nC"
-        tmp.write(data)
-        tmp.seek(0)
-
-        expected = pl.DataFrame({"A": ["B", "C"]})
-        batches = pl.read_csv_batched(
-            tmp.name,
-            has_header=True,
-            truncate_ragged_lines=True,
-        ).next_batches(1)
-
+        batches = reader.next_batches(5)
         assert batches is not None
-        assert_frame_equal(pl.concat(batches), expected)
+        out = pl.concat(batches)
+        assert_frame_equal(out, pl.read_csv(foods_file_path).head(out.height))
+
+        # the final batch of the low-memory variant is different
+        reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
+        batches = reader.next_batches(10)
+        assert batches is not None
+
+        assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
+
+        reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
+        batches = reader.next_batches(10)
+        assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))  # type: ignore[arg-type]
+
+        # ragged lines
+        with NamedTemporaryFile() as tmp:
+            data = b"A\nB,ragged\nC"
+            tmp.write(data)
+            tmp.seek(0)
+
+            expected = pl.DataFrame({"A": ["B", "C"]})
+            batches = pl.read_csv_batched(
+                tmp.name,
+                has_header=True,
+                truncate_ragged_lines=True,
+            ).next_batches(1)
+
+            assert batches is not None
+            assert_frame_equal(pl.concat(batches), expected)
 
 
 def test_batched_csv_reader_empty(io_files_path: Path) -> None:
-    empty_csv = io_files_path / "empty.csv"
-    with pytest.raises(NoDataError, match="empty CSV"):
-        pl.read_csv_batched(source=empty_csv)
+    with pytest.deprecated_call():
+        empty_csv = io_files_path / "empty.csv"
+        with pytest.raises(NoDataError, match="empty CSV"):
+            pl.read_csv_batched(source=empty_csv)
 
-    reader = pl.read_csv_batched(source=empty_csv, raise_if_empty=False)
-    assert reader.next_batches(1) is None
+        reader = pl.read_csv_batched(source=empty_csv, raise_if_empty=False)
+        assert reader.next_batches(1) is None
 
 
 def test_batched_csv_reader_all_batches(foods_file_path: Path) -> None:
-    for new_columns in [None, ["Category", "Calories", "Fats_g", "Sugars_g"]]:
-        out = pl.read_csv(foods_file_path, new_columns=new_columns)
-        reader = pl.read_csv_batched(
-            foods_file_path, new_columns=new_columns, batch_size=4
-        )
-        batches = reader.next_batches(5)
-        batched_dfs = []
-
-        while batches:
-            batched_dfs.extend(batches)
+    with pytest.deprecated_call():
+        for new_columns in [None, ["Category", "Calories", "Fats_g", "Sugars_g"]]:
+            out = pl.read_csv(foods_file_path, new_columns=new_columns)
+            reader = pl.read_csv_batched(
+                foods_file_path, new_columns=new_columns, batch_size=4
+            )
             batches = reader.next_batches(5)
+            batched_dfs = []
 
-        assert all(x.height > 0 for x in batched_dfs)
+            while batches:
+                batched_dfs.extend(batches)
+                batches = reader.next_batches(5)
 
-        batched_concat_df = pl.concat(batched_dfs, rechunk=True)
-        assert_frame_equal(out, batched_concat_df)
+            assert all(x.height > 0 for x in batched_dfs)
+
+            batched_concat_df = pl.concat(batched_dfs, rechunk=True)
+            assert_frame_equal(out, batched_concat_df)
 
 
 def test_batched_csv_reader_no_batches(foods_file_path: Path) -> None:
-    reader = pl.read_csv_batched(foods_file_path, batch_size=4)
-    batches = reader.next_batches(0)
+    with pytest.deprecated_call():
+        reader = pl.read_csv_batched(foods_file_path, batch_size=4)
+        batches = reader.next_batches(0)
 
-    assert batches is None
-
-
-def test_read_csv_batched_invalid_source() -> None:
-    with pytest.raises(TypeError):
-        pl.read_csv_batched(source=5)  # type: ignore[arg-type]
+        assert batches is None
 
 
 def test_csv_single_categorical_null() -> None:
@@ -2113,6 +2122,36 @@ def test_read_csv_invalid_schema_overrides_length() -> None:
         pl.read_csv(f, schema_overrides=[pl.Int64, pl.String, pl.Boolean])
 
 
+def test_schema_overrides_dict_with_nonexistent_columns() -> None:
+    """Test for issue #20903: schema_overrides should work consistently.
+
+    When schema_overrides is a dict with the same length as the number of columns
+    but contains non-existent column names, it should still work by name (not position).
+    Currently this fails because Polars incorrectly applies the overrides positionally
+    when the dict length matches the column count.
+    """
+    csv = textwrap.dedent(
+        """\
+        a,b
+        1,hi
+        """
+    )
+
+    # This should work: override 'a' to Int64, 'c' doesn't exist so should be ignored
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, schema_overrides={"a": pl.Int64, "c": pl.Int64})
+
+    # Expected: column 'a' is Int64, column 'b' is inferred as String
+    assert df.schema == {"a": pl.Int64, "b": pl.String}
+    assert df.to_dict(as_series=False) == {"a": [1], "b": ["hi"]}
+
+    # Sanity check: this works when we have a different number of overrides
+    f = io.StringIO(csv)
+    df2 = pl.read_csv(f, schema_overrides={"a": pl.Int64, "c": pl.Int64, "d": pl.Int64})
+    assert df2.schema == {"a": pl.Int64, "b": pl.String}
+    assert df2.to_dict(as_series=False) == {"a": [1], "b": ["hi"]}
+
+
 @pytest.mark.parametrize("columns", [["b"], "b"])
 def test_read_csv_single_column(columns: list[str] | str) -> None:
     csv = textwrap.dedent(
@@ -2136,65 +2175,6 @@ def test_csv_invalid_escape_utf8_14960() -> None:
 def test_csv_invalid_escape() -> None:
     with pytest.raises(ComputeError):
         pl.read_csv(b'col1,col2\n"a,b')
-
-
-@pytest.mark.slow
-@pytest.mark.write_disk
-def test_read_csv_only_loads_selected_columns(
-    memory_usage_without_pyarrow: MemoryUsage,
-    tmp_path: Path,
-) -> None:
-    """Only requested columns are loaded by ``read_csv()``."""
-    tmp_path.mkdir(exist_ok=True)
-
-    # Each column will be about 8MB of RAM
-    series = pl.arange(0, 1_000_000, dtype=pl.Int64, eager=True)
-
-    file_path = tmp_path / "multicolumn.csv"
-    df = pl.DataFrame(
-        {
-            "a": series,
-            "b": series,
-        }
-    )
-    df.write_csv(file_path)
-    del df, series
-
-    memory_usage_without_pyarrow.reset_tracking()
-
-    # Only load one column:
-    df = pl.read_csv(str(file_path), columns=["b"], rechunk=False)
-    del df
-    # Only one column's worth of memory should be used; 2 columns would be
-    # 16_000_000 at least, but there's some overhead.
-    # assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
-
-    # Globs use a different code path for reading
-    memory_usage_without_pyarrow.reset_tracking()
-    df = pl.read_csv(str(tmp_path / "*.csv"), columns=["b"], rechunk=False)
-    del df
-    # Only one column's worth of memory should be used; 2 columns would be
-    # 16_000_000 at least, but there's some overhead.
-    # assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
-
-    # read_csv_batched() test:
-    memory_usage_without_pyarrow.reset_tracking()
-    result: list[pl.DataFrame] = []
-    batched = pl.read_csv_batched(
-        str(file_path),
-        columns=["b"],
-        rechunk=False,
-        n_threads=1,
-        low_memory=True,
-        batch_size=10_000,
-    )
-    while sum(df.height for df in result) < 1_000_000:
-        next_batch = batched.next_batches(1)
-        if next_batch is None:
-            break
-        result += next_batch
-    del result
-    # assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 20_000_000
 
 
 def test_csv_escape_cf_15349() -> None:
@@ -2239,11 +2219,30 @@ def test_skip_rows_after_header_pyarrow(use_pyarrow: bool) -> None:
     assert_frame_equal(df, expected)
 
 
-def test_csv_float_decimal() -> None:
+def test_read_csv_float_type_decimal_comma() -> None:
     floats = b"a;b\n12,239;1,233\n13,908;87,32"
     read = pl.read_csv(floats, decimal_comma=True, separator=";")
     assert read.dtypes == [pl.Float64] * 2
     assert read.to_dict(as_series=False) == {"a": [12.239, 13.908], "b": [1.233, 87.32]}
+
+
+def test_read_csv_decimal_type_decimal_comma_24414() -> None:
+    schema = pl.Schema({"a": pl.Decimal(scale=3), "b": pl.Decimal(scale=2)})
+
+    csv_dot = b"a,b\n12.239,1.233\n13.908,87.32"
+    out_dot = pl.read_csv(csv_dot, schema=schema)
+
+    csv = b"a;b\n12,239;1,233\n13,908;87,32"
+    out = pl.read_csv(csv, decimal_comma=True, separator=";", schema=schema)
+    assert_frame_equal(out_dot, out)
+
+    csv = b"a;b\n 12,239;1,233\n   13,908;87,32"
+    out = pl.read_csv(csv, decimal_comma=True, separator=";", schema=schema)
+    assert_frame_equal(out_dot, out)
+
+    csv = b'a,b\n"12,239","1,233"\n"13,908","87,32"'
+    out = pl.read_csv(csv, decimal_comma=True, schema=schema)
+    assert_frame_equal(out_dot, out)
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
@@ -2446,13 +2445,14 @@ time
 
 
 def test_batched_csv_schema_overrides(io_files_path: Path) -> None:
-    foods = io_files_path / "foods1.csv"
-    batched = pl.read_csv_batched(foods, schema_overrides={"calories": pl.String})
-    res = batched.next_batches(1)
-    assert res is not None
-    b = res[0]
-    assert b["calories"].dtype == pl.String
-    assert b.width == 4
+    with pytest.deprecated_call():
+        foods = io_files_path / "foods1.csv"
+        batched = pl.read_csv_batched(foods, schema_overrides={"calories": pl.String})
+        res = batched.next_batches(1)
+        assert res is not None
+        b = res[0]
+        assert b["calories"].dtype == pl.String
+        assert b.width == 4
 
 
 def test_csv_ragged_lines_20062() -> None:
@@ -2460,6 +2460,7 @@ def test_csv_ragged_lines_20062() -> None:
 ,"B",,,,,,,,,A,,,,,,,,
 a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,0.0,1.0,2.0,3.0
 """)
+
     assert pl.read_csv(buf, truncate_ragged_lines=True).to_dict(as_series=False) == {
         "A": [None, "a"],
         "B": ["B", "a"],
@@ -2624,7 +2625,7 @@ x"y,b,c
         pl.read_csv(malformed, has_header=False)
     with pytest.raises(pl.exceptions.ComputeError):
         pl.scan_csv(malformed, has_header=False).collect()
-    with pytest.warns(UserWarning):
+    with pytest.warns(UserWarning, match="CSV malformed:"):
         pl.read_csv(malformed, has_header=False, ignore_errors=True)
 
     # long: trigger SIMD code path (> 64 bytes)
@@ -2677,7 +2678,7 @@ x"y,b,c
         (";", "never", None, None, True, b"123,75;60,0;9\n"),
     ],
 )
-def test_write_csv_decimal_comma(
+def test_write_csv_float_type_decimal_comma(
     separator: str,
     quote_style: CsvQuoteStyle | None,
     scientific: bool | None,
@@ -2759,6 +2760,93 @@ def test_write_csv_decimal_comma(
         assert_frame_equal(df, out)
 
 
+@pytest.mark.parametrize(
+    (
+        "separator",
+        "quote_style",
+        "decimal_comma",
+        "expected",
+    ),
+    [
+        (",", None, False, b"123.75,60.0,9\n"),
+        (",", None, True, b'"123,75","60,0",9\n'),
+        (";", None, False, b"123.75;60.0;9\n"),
+        (";", None, True, b"123,75;60,0;9\n"),
+        (",", "always", True, b'"123,75","60,0","9"\n'),
+        (",", "necessary", True, b'"123,75","60,0",9\n'),
+        (",", "non_numeric", True, b'"123,75","60,0",9\n'),
+        (",", "never", True, b"123,75,60,0,9\n"),  # mal-formed
+        (";", "always", True, b'"123,75";"60,0";"9"\n'),
+        (";", "necessary", True, b"123,75;60,0;9\n"),
+    ],
+)
+def test_write_csv_decimal_type_decimal_comma(
+    separator: str,
+    quote_style: CsvQuoteStyle | None,
+    decimal_comma: bool,
+    expected: bytes,
+) -> None:
+    schema = {
+        "a": pl.Decimal(scale=2),
+        "b": pl.Decimal(scale=1),
+        "c": pl.Decimal(scale=0),
+    }
+
+    df = pl.DataFrame(
+        data={
+            "a": [123.75],
+            "b": [60.0],
+            "c": [9],
+        },
+        schema=schema,
+    )
+
+    buf = io.BytesIO()
+    df.write_csv(
+        buf,
+        separator=separator,
+        quote_style=quote_style,
+        decimal_comma=decimal_comma,
+        include_header=False,
+    )
+    buf.seek(0)
+    assert buf.read() == expected
+
+    # Round-trip testing: assert df == read_csv(write_csv(df))
+    # eager
+    round_trip = not (quote_style == "never" and decimal_comma and separator == ",")
+    if round_trip:
+        print("BOO")
+        buf.seek(0)
+        df.write_csv(
+            buf,
+            separator=separator,
+            quote_style=quote_style,
+            decimal_comma=decimal_comma,
+            include_header=True,
+        )
+        buf.seek(0)
+        out = pl.read_csv(
+            buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
+        )
+        assert_frame_equal(df, out)
+
+        # lazy
+        buf.seek(0)
+        df.lazy().sink_csv(
+            buf,
+            separator=separator,
+            quote_style=quote_style,
+            decimal_comma=decimal_comma,
+            include_header=True,
+        )
+        buf.seek(0)
+        out = pl.scan_csv(
+            buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
+        ).collect()
+        assert_frame_equal(df, out)
+
+
 def test_write_csv_large_number_autoformat_decimal_comma() -> None:
     df = pl.DataFrame(
         {
@@ -2774,7 +2862,7 @@ def test_write_csv_large_number_autoformat_decimal_comma() -> None:
         include_header=False,
     )
     buf.seek(0)
-    expected = b'"1,2345678901234567e19","1e24"\n'  # note, excessive quoting when fractional is all-zero, ok to relax
+    expected = b'"1,2345678901234567e+19","1e+24"\n'  # note, excessive quoting when fractional is all-zero, ok to relax
     assert buf.read() == expected
 
 
@@ -2819,3 +2907,175 @@ def test_write_csv_categorical_23939(dt: pl.DataType) -> None:
     )
     expected = "b\n" + "a\n" * n_rows
     assert df.write_csv() == expected
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+@pytest.mark.parametrize(
+    "csv_str", [b"A,B\n1,x\n2,y\n3,z", b"A,B\n1,x\n2,y\n3,z\n", b"\n\n\n\n2,u"]
+)
+def test_skip_more_lines_than_empty_25852(read_fn: str, csv_str: bytes) -> None:
+    with pytest.raises(pl.exceptions.NoDataError):
+        getattr(pl, read_fn)(csv_str, skip_lines=5).lazy().collect()
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_skip_more_lines_no_raise_25852(read_fn: str) -> None:
+    # When skip_lines exceeds total lines and raise_if_empty=False,
+    # should return empty DataFrame with provided schema
+    csv_str = b"A,B\n1,x\n2,y"
+    result = (
+        getattr(pl, read_fn)(
+            csv_str,
+            skip_lines=100,
+            schema={"col1": pl.String, "col2": pl.String},
+            has_header=False,
+            raise_if_empty=False,
+        )
+        .lazy()
+        .collect()
+    )
+    expected = pl.DataFrame(schema={"col1": pl.String, "col2": pl.String})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_skip_crlf(read_fn: str) -> None:
+    csv_str = b"\r\n\r\nline before <3a>\r\nA,B\r\n1,2"
+    df = getattr(pl, read_fn)(csv_str, skip_rows=1).lazy().collect()
+    expected = pl.DataFrame(
+        [
+            pl.Series("A", [1], pl.Int64),
+            pl.Series("B", [2], pl.Int64),
+        ]
+    )
+    assert_frame_equal(df, expected)
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_only_empty_quote_string(read_fn: str) -> None:
+    csv_str = b'""'
+    df = getattr(pl, read_fn)(csv_str).lazy().collect()
+    expected = pl.DataFrame({"": []}, schema={"": pl.String})
+    assert_frame_equal(df, expected)
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_only_header_with_newline(read_fn: str) -> None:
+    csv_str = b"xx\n"
+    df = getattr(pl, read_fn)(csv_str).lazy().collect()
+    expected = pl.DataFrame([pl.Series("xx", [], pl.String)])
+    assert_frame_equal(df, expected)
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_single_char_input_25908(read_fn: str) -> None:
+    csv_str = b"x"
+    df = getattr(pl, read_fn)(csv_str).lazy().collect()
+    expected = pl.DataFrame([pl.Series("x", [], pl.String)])
+    assert_frame_equal(df, expected)
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_csv_skip_rows_with_interleaved_comments_25840(read_fn: str) -> None:
+    # skip_rows should only count non-comment lines
+    csv_data = b"// x//\na,b\n//a, b\n,\nu\n2"
+    result = (
+        getattr(pl, read_fn)(csv_data, comment_prefix="//", skip_rows=2)
+        .lazy()
+        .collect()
+    )
+    expected = pl.DataFrame([pl.Series("u", [2], dtype=pl.Int64)])
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_csv_comment_after_header_25841(read_fn: str) -> None:
+    # Test that comment lines after header are properly skipped
+    csv_data = b"RowA,RowB,RowC\n// Comment line\na,b,c"
+    result = getattr(pl, read_fn)(csv_data, comment_prefix="//").lazy().collect()
+    expected = pl.DataFrame({"RowA": ["a"], "RowB": ["b"], "RowC": ["c"]})
+    assert_frame_equal(result, expected)
+
+    # Test with multiple comments after header
+    csv_data2 = b"A,B\n# Comment 1\n# Comment 2\n1,2\n3,4"
+    result2 = getattr(pl, read_fn)(csv_data2, comment_prefix="#").lazy().collect()
+    expected2 = pl.DataFrame({"A": [1, 3], "B": [2, 4]})
+    assert_frame_equal(result2, expected2)
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_empty_csv(read_fn: str) -> None:
+    csv_str = b""
+    df = getattr(pl, read_fn)(csv_str, raise_if_empty=False).lazy().collect()
+    expected = pl.DataFrame([])
+    assert_frame_equal(df, expected)
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_empty_csv_raise(read_fn: str) -> None:
+    csv_str = b""
+    with pytest.raises(pl.exceptions.NoDataError):
+        getattr(pl, read_fn)(csv_str, raise_if_empty=True).lazy().collect()
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_skip_lines_and_rows_raise(read_fn: str) -> None:
+    csv_str = b"A,1,2,3"
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        getattr(pl, read_fn)(csv_str, skip_lines=1, skip_rows=2).lazy().collect()
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+@pytest.mark.parametrize(
+    ("csv_str", "expected"),
+    [
+        (b"", []),
+        (b"A", [pl.Series("A", [], pl.String)]),
+        (b"A\n1\n2\n3", [pl.Series("A", [1, 2, 3])]),
+    ],
+)
+def test_utf8_bom(read_fn: str, csv_str: bytes, expected: list[pl.Series]) -> None:
+    csv_str = b"\xef\xbb\xbf" + csv_str
+    df = getattr(pl, read_fn)(csv_str, raise_if_empty=False).lazy().collect()
+    assert_frame_equal(df, pl.DataFrame(expected))
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_invalid_utf8_bom(read_fn: str) -> None:
+    csv_str = b"\xef\xaa\xbdA\n3"
+    df = getattr(pl, read_fn)(csv_str, raise_if_empty=False).lazy().collect()
+    expected = [pl.Series("諾A", [3])]
+    assert_frame_equal(df, pl.DataFrame(expected))
+
+
+def test_invalid_utf8_in_schema() -> None:
+    csv_str = b"\xef\xff\xbdA,B\n3,\xe0\x80\x80\n-6,x3"
+    lf = pl.scan_csv(csv_str)
+
+    # Schema inference should not fail because of invalid utf-8.
+    assert lf.collect_schema() == {"���A": pl.Int64, "B": pl.String}
+
+    # But actual execution should.
+    with pytest.raises(pl.exceptions.ComputeError):
+        lf.collect()
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_provided_schema_mismatch_raise(read_fn: str) -> None:
+    csv_str = b"A,B\n1,2"
+    schema = {"A": pl.Int64}
+    with pytest.raises(pl.exceptions.SchemaError):
+        getattr(pl, read_fn)(csv_str, schema=schema).lazy().collect()
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_provided_schema_mismatch_truncate(read_fn: str) -> None:
+    csv_str = b"A,B\n1,2"
+    schema = {"A": pl.Int64}
+    df = (
+        getattr(pl, read_fn)(csv_str, schema=schema, truncate_ragged_lines=True)
+        .lazy()
+        .collect()
+    )
+    expected = [pl.Series("A", [1])]
+    assert_frame_equal(df, pl.DataFrame(expected))

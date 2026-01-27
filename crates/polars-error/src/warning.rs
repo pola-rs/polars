@@ -27,20 +27,17 @@ pub enum PolarsWarning {
 
 #[macro_export]
 macro_rules! polars_warn {
-    ($variant:ident, $fmt:literal $(, $arg:tt)*) => {
+    ($variant:ident, $fmt:literal $(, $arg:expr)* $(,)?) => {
         {{
         let func = $crate::get_warning_function();
         let warn = $crate::PolarsWarning::$variant;
         func(format!($fmt, $($arg)*).as_ref(), warn)
         }}
     };
-    ($fmt:literal, $($arg:tt)+) => {
+    ($fmt:literal $(, $arg:expr)*) => {
         {{
         let func = $crate::get_warning_function();
-        func(format!($fmt, $($arg)+).as_ref(), $crate::PolarsWarning::UserWarning)
+        func(format!($fmt, $($arg),*).as_ref(), $crate::PolarsWarning::UserWarning)
         }}
-    };
-    ($($arg:tt)+) => {
-        polars_warn!("{}", $($arg)+);
     };
 }

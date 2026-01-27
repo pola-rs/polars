@@ -4,70 +4,41 @@ use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float, NumCast};
 use polars_error::PolarsResult;
 
-#[inline]
-fn decimal_to_decimal_impl<F: Fn(i128) -> Option<i128>>(
-    from: &PrimitiveArray<i128>,
-    op: F,
-    to_precision: usize,
-    to_scale: usize,
-) -> PrimitiveArray<i128> {
-    let upper_bound_for_precision = 10_i128.saturating_pow(to_precision as u32);
-    let lower_bound_for_precision = upper_bound_for_precision.saturating_neg();
+use crate::decimal::{dec128_fits, dec128_rescale, dec128_to_f64, dec128_to_i128};
 
-    let values = from.iter().map(|x| {
-        x.and_then(|x| {
-            op(*x).and_then(|x| {
-                if x >= upper_bound_for_precision || x <= lower_bound_for_precision {
-                    None
-                } else {
-                    Some(x)
-                }
-            })
-        })
-    });
-    PrimitiveArray::<i128>::from_trusted_len_iter(values)
-        .to(ArrowDataType::Decimal(to_precision, to_scale))
-}
-
-/// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow
+/// Returns a [`PrimitiveArray<i128>`] with the cast values. Values become null on overflow.
 pub fn decimal_to_decimal(
     from: &PrimitiveArray<i128>,
     to_precision: usize,
     to_scale: usize,
 ) -> PrimitiveArray<i128> {
     let (from_precision, from_scale) =
-        if let ArrowDataType::Decimal(p, s) = from.dtype().to_logical_type() {
+        if let ArrowDataType::Decimal(p, s) = from.dtype().to_storage() {
             (*p, *s)
         } else {
             panic!("internal error: i128 is always a decimal")
         };
 
-    if to_scale == from_scale && to_precision >= from_precision {
-        // fast path
-        return from
-            .clone()
-            .to(ArrowDataType::Decimal(to_precision, to_scale));
+    if to_scale == from_scale {
+        if to_precision >= from_precision {
+            // Increasing precision is always allowed.
+            return from
+                .clone()
+                .to(ArrowDataType::Decimal(to_precision, to_scale));
+        } else {
+            let it = from
+                .iter()
+                .map(|opt_x| opt_x.copied().filter(|x| dec128_fits(*x, to_precision)));
+            return PrimitiveArray::<i128>::from_trusted_len_iter(it)
+                .to(ArrowDataType::Decimal(to_precision, to_scale));
+        }
     }
-    // todo: other fast paths include increasing scale and precision by so that
-    // a number will never overflow (validity is preserved)
 
-    if from_scale > to_scale {
-        let factor = 10_i128.pow((from_scale - to_scale) as u32);
-        decimal_to_decimal_impl(
-            from,
-            |x: i128| x.checked_div(factor),
-            to_precision,
-            to_scale,
-        )
-    } else {
-        let factor = 10_i128.pow((to_scale - from_scale) as u32);
-        decimal_to_decimal_impl(
-            from,
-            |x: i128| x.checked_mul(factor),
-            to_precision,
-            to_scale,
-        )
-    }
+    let it = from
+        .iter()
+        .map(|opt_x| dec128_rescale(*(opt_x?), from_scale, to_precision, to_scale));
+    PrimitiveArray::<i128>::from_trusted_len_iter(it)
+        .to(ArrowDataType::Decimal(to_precision, to_scale))
 }
 
 pub(super) fn decimal_to_decimal_dyn(
@@ -85,20 +56,16 @@ where
     T: NativeType + Float,
     f64: AsPrimitive<T>,
 {
-    let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.dtype().to_logical_type() {
+    let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.dtype().to_storage() {
         (*p, *s)
     } else {
-        panic!("internal error: i128 is always a decimal")
+        unreachable!()
     };
 
-    let div = 10_f64.powi(from_scale as i32);
-    let values = from
-        .values()
+    let it = from
         .iter()
-        .map(|x| (*x as f64 / div).as_())
-        .collect();
-
-    PrimitiveArray::<T>::new(T::PRIMITIVE.into(), values, from.validity().cloned())
+        .map(|opt_x| Some(dec128_to_f64(*(opt_x?), from_scale).as_()));
+    PrimitiveArray::<T>::from_trusted_len_iter(it)
 }
 
 pub(super) fn decimal_to_float_dyn<T>(from: &dyn Array) -> PolarsResult<Box<dyn Array>>
@@ -115,16 +82,16 @@ pub fn decimal_to_integer<T>(from: &PrimitiveArray<i128>) -> PrimitiveArray<T>
 where
     T: NativeType + NumCast,
 {
-    let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.dtype().to_logical_type() {
+    let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.dtype().to_storage() {
         (*p, *s)
     } else {
-        panic!("internal error: i128 is always a decimal")
+        unreachable!()
     };
 
-    let factor = 10_i128.pow(from_scale as u32);
-    let values = from.iter().map(|x| x.and_then(|x| T::from(*x / factor)));
-
-    PrimitiveArray::from_trusted_len_iter(values)
+    let it = from
+        .iter()
+        .map(|opt_x| T::from(dec128_to_i128(*(opt_x?), from_scale)));
+    PrimitiveArray::<T>::from_trusted_len_iter(it)
 }
 
 pub(super) fn decimal_to_integer_dyn<T>(from: &dyn Array) -> PolarsResult<Box<dyn Array>>
@@ -138,18 +105,18 @@ where
 /// Returns a [`Utf8Array`] where every element is the utf8 representation of the decimal.
 #[cfg(feature = "dtype-decimal")]
 pub(super) fn decimal_to_utf8view(from: &PrimitiveArray<i128>) -> Utf8ViewArray {
-    use arrow::compute::decimal::DecimalFmtBuffer;
+    use crate::decimal::DecimalFmtBuffer;
 
-    let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.dtype().to_logical_type() {
+    let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.dtype().to_storage() {
         (*p, *s)
     } else {
-        panic!("internal error: i128 is always a decimal")
+        unreachable!()
     };
 
     let mut mutable = MutableBinaryViewArray::with_capacity(from.len());
     let mut fmt_buf = DecimalFmtBuffer::new();
     for &x in from.values().iter() {
-        mutable.push_value_ignore_validity(fmt_buf.format(x, from_scale, false))
+        mutable.push_value_ignore_validity(fmt_buf.format_dec128(x, from_scale, false, false))
     }
 
     mutable.freeze().with_validity(from.validity().cloned())

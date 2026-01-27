@@ -2,6 +2,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 
+use crate::dsl::functions::lit;
 use crate::prelude::function_expr::ListFunction;
 use crate::prelude::*;
 
@@ -243,8 +244,8 @@ impl ListNameSpace {
     /// an `upper_bound` of struct fields that will be set.
     /// If this is incorrectly downstream operation may fail. For instance an `all().sum()` expression
     /// will look in the current schema to determine which columns to select.
-    pub fn to_struct(self, args: ListToStruct) -> Expr {
-        self.0.map_unary(ListFunction::ToStruct(args))
+    pub fn to_struct(self, names: Arc<[PlSmallStr]>) -> Expr {
+        self.0.map_unary(ListFunction::ToStruct(names))
     }
 
     #[cfg(feature = "is_in")]
@@ -302,6 +303,14 @@ impl ListNameSpace {
             expr: Arc::new(self.0),
             evaluation: Arc::new(other.into()),
             variant: EvalVariant::List,
+        }
+    }
+
+    pub fn agg<E: Into<Expr>>(self, other: E) -> Expr {
+        Expr::Eval {
+            expr: Arc::new(self.0),
+            evaluation: Arc::new(other.into()),
+            variant: EvalVariant::ListAgg,
         }
     }
 }

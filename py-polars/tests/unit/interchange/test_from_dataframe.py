@@ -329,7 +329,7 @@ def test_column_to_series_use_sentinel_invalid_value() -> None:
 
     with pytest.raises(
         TypeError,
-        match="invalid sentinel value for column of type Datetime\\(time_unit='ns', time_zone=None\\): 'invalid'",
+        match=r"invalid sentinel value for column of type Datetime\(time_unit='ns', time_zone=None\): 'invalid'",
     ):
         _column_to_series(col, dtype, allow_copy=True)
 

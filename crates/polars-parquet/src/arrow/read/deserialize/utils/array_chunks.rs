@@ -16,7 +16,7 @@ impl<'a, B: AlignedBytes> ArrayChunks<'a, B> {
     ///
     /// This returns null if the `bytes` slice's length is not a multiple of the size of `P::Bytes`.
     pub(crate) fn new(bytes: &'a [u8]) -> Option<Self> {
-        if bytes.len() % B::SIZE != 0 {
+        if !bytes.len().is_multiple_of(B::SIZE) {
             return None;
         }
 

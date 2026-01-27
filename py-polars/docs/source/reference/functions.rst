@@ -25,6 +25,7 @@ Miscellaneous
 
     align_frames
     concat
+    union
     defer
     escape_regex
 
@@ -43,6 +44,15 @@ Random
    :toctree: api/
 
    set_random_seed
+   
+Extension Types
+~~~~~~~~~~~~~~~
+.. autosummary::
+   :toctree: api/
+   
+   register_extension_type
+   unregister_extension_type
+   get_extension_type
 
 StringCache
 ~~~~~~~~~~~

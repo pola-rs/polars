@@ -1,8 +1,11 @@
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
+use polars_utils::unitvec;
 
 use super::keys::*;
-use crate::plans::visitor::{AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker};
+use crate::plans::visitor::{
+    AExprArena, AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker,
+};
 use crate::prelude::*;
 fn combine_by_and(left: Node, right: Node, arena: &mut Arena<AExpr>) -> Node {
     arena.add(AExpr::BinaryExpr {
@@ -12,19 +15,48 @@ fn combine_by_and(left: Node, right: Node, arena: &mut Arena<AExpr>) -> Node {
     })
 }
 
-/// Don't overwrite predicates but combine them.
-pub(super) fn insert_and_combine_predicate(
+/// Inserts a predicate into the map, with some basic de-duplication.
+///
+/// The map is keyed in a way that may cause some predicates to fall into the same bucket. In that
+/// case the predicate is AND'ed with the existing node in that bucket.
+pub(super) fn insert_predicate_dedup(
     acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
     predicate: &ExprIR,
-    arena: &mut Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
 ) {
-    let name = predicate_to_key(predicate.node(), arena);
+    let name = predicate_to_key(predicate.node(), expr_arena);
+
+    let mut new_min_terms = unitvec![];
 
     acc_predicates
         .entry(name)
         .and_modify(|existing_predicate| {
-            let node = combine_by_and(predicate.node(), existing_predicate.node(), arena);
-            existing_predicate.set_node(node)
+            let mut out_node = existing_predicate.node();
+
+            new_min_terms.clear();
+            new_min_terms.extend(MintermIter::new(predicate.node(), expr_arena));
+
+            // Limit the number of existing min-terms that we check against so that we have linear-time performance.
+            // Without this limit the loop below will be quadratic. The side effect is that we may not perfectly
+            // identify duplicates when there are large amounts of filter expressions.
+            const CHECK_LIMIT: usize = 32;
+
+            'next_new_min_term: for new_predicate in new_min_terms {
+                let new_min_term_eq_wrap = AExprArena::new(new_predicate, expr_arena);
+
+                if MintermIter::new(existing_predicate.node(), expr_arena)
+                    .take(CHECK_LIMIT)
+                    .any(|existing_min_term| {
+                        new_min_term_eq_wrap == AExprArena::new(existing_min_term, expr_arena)
+                    })
+                {
+                    continue 'next_new_min_term;
+                }
+
+                out_node = combine_by_and(new_predicate, out_node, expr_arena);
+            }
+
+            existing_predicate.set_node(out_node)
         })
         .or_insert_with(|| predicate.clone());
 }
@@ -103,7 +135,7 @@ where
     }
     let mut local_predicates = Vec::with_capacity(remove_keys.len());
     for key in remove_keys {
-        if let Some(pred) = acc_predicates.remove(&*key) {
+        if let Some(pred) = acc_predicates.remove(key) {
             local_predicates.push(pred)
         }
     }
@@ -126,7 +158,7 @@ where
     for (key, predicate) in &*acc_predicates {
         let root_names = aexpr_to_leaf_names_iter(predicate.node(), expr_arena);
         for name in root_names {
-            if condition(&name) {
+            if condition(name) {
                 remove_keys.push(key.clone());
                 break;
             }
@@ -209,19 +241,14 @@ pub fn pushdown_eligibility(
             let ae = expr_arena.get(node);
 
             match ae {
-                AExpr::Window {
+                #[cfg(feature = "dynamic_group_by")]
+                AExpr::Rolling { .. } => return ExprPushdownGroup::Barrier,
+                AExpr::Over {
+                    function: _,
                     partition_by,
-                    #[cfg(feature = "dynamic_group_by")]
-                    options,
-                    // The function is not checked for groups-sensitivity because
-                    // it is applied over the windows.
-                    ..
+                    order_by: _,
+                    mapping: _,
                 } => {
-                    #[cfg(feature = "dynamic_group_by")]
-                    if matches!(options, WindowType::Rolling(..)) {
-                        return ExprPushdownGroup::Barrier;
-                    };
-
                     partition_by_names.clear();
                     partition_by_names.reserve(partition_by.len());
 

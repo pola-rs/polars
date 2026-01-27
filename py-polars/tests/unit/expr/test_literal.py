@@ -122,3 +122,15 @@ def test_literal_datetime_timezone_utc_error() -> None:
     ):
         # the offset does not correspond to the offset of the declared timezone
         pl.select(dt=pl.lit(value, dtype=pl.Datetime(time_zone="Pacific/Galapagos")))
+
+
+def test_literal_object_25679() -> None:
+    df = pl.DataFrame(
+        data={"colx": [0, 0, 1, 2, None, 3, 3, None]},
+        schema={"colx": pl.Object},
+    )
+    obj_zero = pl.lit(0, dtype=pl.Object())
+    res = df.select(pl.col("colx").fill_null(obj_zero))
+
+    assert res.schema == {"colx": pl.Object()}
+    assert res["colx"].to_list() == [0, 0, 1, 2, 0, 3, 3, 0]

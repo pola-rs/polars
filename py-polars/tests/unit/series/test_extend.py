@@ -32,13 +32,13 @@ def test_extend_bad_input() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'Series'.* not 'DataFrame'",
+        match=r"expected `other` .*to be a 'Series'.* not 'DataFrame'",
     ):
         a.extend(b)  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'Series'.* not 'LazyFrame'",
+        match=r"expected `other` .*to be a 'Series'.* not 'LazyFrame'",
     ):
         a.extend(b.lazy())  # type: ignore[arg-type]
 

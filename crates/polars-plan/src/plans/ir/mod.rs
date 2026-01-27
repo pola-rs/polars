@@ -1,6 +1,6 @@
 mod dot;
 mod format;
-mod inputs;
+pub mod inputs;
 mod schema;
 pub(crate) mod tree_format;
 
@@ -57,6 +57,9 @@ pub enum IR {
         file_info: FileInfo,
         hive_parts: Option<HivePartitionsDf>,
         predicate: Option<ExprIR>,
+        /// * None: No skipping
+        /// * Some(v): Files were skipped (filtered out)
+        predicate_file_skip_applied: Option<PredicateFileSkip>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,
         scan_type: Box<FileScanIR>,

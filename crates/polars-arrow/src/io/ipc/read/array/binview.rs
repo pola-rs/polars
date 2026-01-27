@@ -1,12 +1,11 @@
 use std::io::{Read, Seek};
-use std::sync::Arc;
 
+use polars_buffer::Buffer;
 use polars_error::polars_err;
 
 use super::super::read_basic::*;
 use super::*;
 use crate::array::{ArrayRef, BinaryViewArrayGeneric, View, ViewType};
-use crate::buffer::Buffer;
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_binview<T: ViewType + ?Sized, R: Read + Seek>(
@@ -62,7 +61,7 @@ pub fn read_binview<T: ViewType + ?Sized, R: Read + Seek>(
         })
         .collect::<PolarsResult<Vec<Buffer<u8>>>>()?;
 
-    BinaryViewArrayGeneric::<T>::try_new(dtype, views, Arc::from(variadic_buffers), validity)
+    BinaryViewArrayGeneric::<T>::try_new(dtype, views, Buffer::from(variadic_buffers), validity)
         .map(|arr| arr.boxed())
 }
 

@@ -601,10 +601,10 @@ mod tests {
     #[should_panic(expected = "exact value mismatch")]
     fn test_series_decimal_values_mismatch() {
         let s1 = Series::new("".into(), &[1, 2])
-            .cast(&DataType::Decimal(Some(10), Some(2)))
+            .cast(&DataType::Decimal(10, 2))
             .unwrap();
         let s2 = Series::new("".into(), &[1, 3])
-            .cast(&DataType::Decimal(Some(10), Some(2)))
+            .cast(&DataType::Decimal(10, 2))
             .unwrap();
 
         assert_series_equal!(&s1, &s2);
@@ -613,10 +613,10 @@ mod tests {
     #[test]
     fn test_series_decimal_values_match() {
         let s1 = Series::new("".into(), &[1, 2])
-            .cast(&DataType::Decimal(Some(10), Some(2)))
+            .cast(&DataType::Decimal(10, 2))
             .unwrap();
         let s2 = Series::new("".into(), &[1, 2])
-            .cast(&DataType::Decimal(Some(10), Some(2)))
+            .cast(&DataType::Decimal(10, 2))
             .unwrap();
 
         assert_series_equal!(&s1, &s2);

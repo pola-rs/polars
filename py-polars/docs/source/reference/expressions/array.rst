@@ -9,6 +9,7 @@ The following methods are available under the `expr.arr` attribute.
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
+    Expr.arr.agg
     Expr.arr.all
     Expr.arr.any
     Expr.arr.arg_max
@@ -16,6 +17,7 @@ The following methods are available under the `expr.arr` attribute.
     Expr.arr.contains
     Expr.arr.count_matches
     Expr.arr.explode
+    Expr.arr.eval
     Expr.arr.first
     Expr.arr.get
     Expr.arr.join

@@ -166,6 +166,10 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         self.0.take_unchecked(indices).into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0.deposit(validity).into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -216,6 +220,10 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
     #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         ChunkUnique::arg_unique(&self.0)
+    }
+
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        ChunkUnique::unique_id(&self.0)
     }
 
     #[cfg(feature = "approx_unique")]

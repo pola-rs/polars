@@ -9,20 +9,23 @@ use polars_core::prelude::*;
 use rayon::prelude::*;
 
 use super::*;
-use crate::expressions::{
-    AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
-};
+use crate::dispatch::GroupsUdf;
+use crate::expressions::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
 
 #[derive(Clone)]
 pub struct ApplyExpr {
     inputs: Vec<Arc<dyn PhysicalExpr>>,
     function: SpecialEq<Arc<dyn ColumnsUdf>>,
+    groups_function: Option<SpecialEq<Arc<dyn GroupsUdf>>>,
     expr: Expr,
     flags: FunctionFlags,
     function_operates_on_scalar: bool,
     input_schema: SchemaRef,
     allow_threading: bool,
     check_lengths: bool,
+    is_fallible: bool,
+
+    /// Output field of the expression excluding potential aggregation.
     output_field: Field,
 }
 
@@ -31,12 +34,14 @@ impl ApplyExpr {
     pub(crate) fn new(
         inputs: Vec<Arc<dyn PhysicalExpr>>,
         function: SpecialEq<Arc<dyn ColumnsUdf>>,
+        groups_function: Option<SpecialEq<Arc<dyn GroupsUdf>>>,
         expr: Expr,
         options: FunctionOptions,
         allow_threading: bool,
         input_schema: SchemaRef,
-        output_field: Field,
+        non_aggregated_output_field: Field,
         function_operates_on_scalar: bool,
+        is_fallible: bool,
     ) -> Self {
         debug_assert!(
             !options.is_length_preserving()
@@ -47,13 +52,15 @@ impl ApplyExpr {
         Self {
             inputs,
             function,
+            groups_function,
             expr,
             flags: options.flags,
             function_operates_on_scalar,
             input_schema,
             allow_threading,
             check_lengths: options.check_lengths(),
-            output_field,
+            output_field: non_aggregated_output_field,
+            is_fallible,
         }
     }
 
@@ -77,8 +84,13 @@ impl ApplyExpr {
         mut ac: AggregationContext<'a>,
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let c = if self.flags.returns_scalar() {
-            let out = ca.explode(false).unwrap();
+        let c = if self.is_scalar() {
+            let out = ca
+                .explode(ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                })
+                .unwrap();
             // if the explode doesn't return the same len, it wasn't scalar.
             polars_ensure!(out.len() == ca.len(), InvalidOperation: "expected scalar for expr: {}, got {}", self.expr, &out);
             ac.update_groups = UpdateGroups::No;
@@ -88,7 +100,7 @@ impl ApplyExpr {
             ca.into_series().into()
         };
 
-        ac.with_values_and_args(c, true, None, false, self.flags.returns_scalar())?;
+        ac.with_values_and_args(c, true, None, false, self.is_scalar())?;
 
         Ok(ac)
     }
@@ -101,35 +113,15 @@ impl ApplyExpr {
     fn eval_and_flatten(&self, inputs: &mut [Column]) -> PolarsResult<Column> {
         self.function.call_udf(inputs)
     }
+
     fn apply_single_group_aware<'a>(
         &self,
         mut ac: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let s = ac.get_values();
+        // Fix up groups for AggregatedScalar, so that we can pretend they are just normal groups.
+        ac.set_groups_for_undefined_agg_states();
 
-        #[allow(clippy::nonminimal_bool)]
-        {
-            polars_ensure!(
-                !(matches!(ac.agg_state(), AggState::AggregatedScalar(_)) && !s.dtype().is_list() ) ,
-                expr = self.expr,
-                ComputeError: "cannot aggregate, the column is already aggregated",
-            );
-        }
-
-        let name = s.name().clone();
-        let agg = ac.aggregated();
-        // Collection of empty list leads to a null dtype. See: #3687.
-        if agg.is_empty() {
-            // Create input for the function to determine the output dtype, see #3946.
-            let agg = agg.list().unwrap();
-            let input_dtype = agg.inner_dtype();
-            let input = Column::full_null(PlSmallStr::EMPTY, 0, input_dtype);
-
-            let output = self.eval_and_flatten(&mut [input])?;
-            let ca = ListChunked::full(name, output.as_materialized_series(), 0);
-            return self.finish_apply_groups(ac, ca);
-        }
-
+        let name = ac.get_values().name().clone();
         let f = |opt_s: Option<Series>| match opt_s {
             None => Ok(None),
             Some(mut s) => {
@@ -144,30 +136,48 @@ impl ApplyExpr {
             },
         };
 
-        let ca: ListChunked = if self.allow_threading {
-            let dtype = if self.output_field.dtype.is_known() && !self.output_field.dtype.is_null()
-            {
-                Some(self.output_field.dtype.clone())
+        // In case of overlapping (rolling) groups, we build groups in a lazy manner to avoid
+        // memory explosion.
+        // TODO: support Idx GroupsType.
+        if matches!(ac.agg_state(), AggState::NotAggregated(_)) && ac.groups.is_overlapping() {
+            let ca: ChunkedArray<_> = if self.allow_threading {
+                ac.par_iter_groups_lazy()
+                    .map(f)
+                    .collect::<PolarsResult<_>>()?
             } else {
-                None
+                ac.iter_groups_lazy().map(f).collect::<PolarsResult<_>>()?
             };
+            return self.finish_apply_groups(ac, ca.with_name(name));
+        }
 
+        // At this point, calling aggregated() will not lead to memory explosion.
+        let agg = match ac.agg_state() {
+            AggState::AggregatedScalar(s) => s.as_list().into_column(),
+            _ => ac.aggregated(),
+        };
+
+        // Collection of empty list leads to a null dtype. See: #3687.
+        if agg.is_empty() {
+            // Create input for the function to determine the output dtype, see #3946.
+            let agg = agg.list().unwrap();
+            let input_dtype = agg.inner_dtype();
+            let input = Column::full_null(name.clone(), 0, input_dtype);
+
+            let output = self.eval_and_flatten(&mut [input])?;
+            let ca = ListChunked::full(name, output.as_materialized_series(), 0);
+            return self.finish_apply_groups(ac, ca);
+        }
+
+        let ca: ListChunked = if self.allow_threading {
             let lst = agg.list().unwrap();
             let iter = lst.par_iter().map(f);
 
-            if let Some(dtype) = dtype {
-                // @NOTE: Since the output type for scalars does an implicit explode, we need to
-                // patch up the type here to also be a list.
-                let out_dtype = if self.is_scalar() {
-                    DataType::List(Box::new(dtype))
-                } else {
-                    dtype
-                };
-
-                let out: ListChunked = POOL.install(|| {
-                    iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, out_dtype)
-                })?;
-                out
+            if self.output_field.dtype.is_known() {
+                let dtype = self.output_field.dtype.clone();
+                let dtype = dtype.implode();
+                POOL.install(|| {
+                    iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, dtype)
+                })?
             } else {
                 POOL.install(|| try_list_from_par_iter(iter, PlSmallStr::EMPTY))?
             }
@@ -211,6 +221,125 @@ impl ApplyExpr {
         ac.with_values_and_args(c, aggregated, Some(&self.expr), true, self.is_scalar())?;
         Ok(ac)
     }
+
+    // Fast-path when every AggState is a LiteralScalar. This path avoids calling aggregated() or
+    // groups(), and returns a LiteralScalar, on the implicit condition that the function is pure.
+    fn apply_all_literal_elementwise<'a>(
+        &self,
+        mut acs: Vec<AggregationContext<'a>>,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        let mut cols = acs
+            .iter()
+            .map(|ac| ac.get_values().clone())
+            .collect::<Vec<_>>();
+        let out = self.function.call_udf(&mut cols)?;
+        polars_ensure!(
+            out.len() == 1,
+            ComputeError: "elementwise expression {:?} must return exactly 1 value on literals, got {}",
+                &self.expr, out.len()
+        );
+        let mut ac = acs.pop().unwrap();
+        ac.with_literal(out);
+        Ok(ac)
+    }
+
+    fn apply_multiple_elementwise<'a>(
+        &self,
+        mut acs: Vec<AggregationContext<'a>>,
+        must_aggregate: bool,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        // At this stage, we either have (with or without LiteralScalars):
+        // - one or more AggregatedList or NotAggregated ACs
+        // - one or more AggregatedScalar ACs
+
+        let mut previous = None;
+        for ac in acs.iter_mut() {
+            // TBD: If we want to be strict, we would check all groups
+            if matches!(
+                ac.state,
+                AggState::LiteralScalar(_) | AggState::AggregatedScalar(_)
+            ) {
+                continue;
+            }
+
+            if must_aggregate {
+                ac.aggregated();
+            }
+
+            if matches!(ac.state, AggState::AggregatedList(_)) {
+                if let Some(p) = previous {
+                    ac.groups().check_lengths(p)?;
+                }
+                previous = Some(ac.groups());
+            }
+        }
+
+        // At this stage, we do not have both AggregatedList and NotAggregated ACs
+
+        // The first non-LiteralScalar AC will be used as the base AC to retain the context
+        let base_ac_idx = acs.iter().position(|ac| !ac.is_literal()).unwrap();
+
+        match acs[base_ac_idx].agg_state() {
+            AggState::AggregatedList(s) => {
+                let aggregated = acs.iter().any(|ac| ac.is_aggregated());
+                let ca = s.list().unwrap();
+                let input_len = s.len();
+
+                let out = ca.apply_to_inner(&|_| {
+                    let mut cols = acs
+                        .iter()
+                        .map(|ac| ac.flat_naive().into_owned())
+                        .collect::<Vec<_>>();
+                    Ok(self
+                        .function
+                        .call_udf(&mut cols)?
+                        .as_materialized_series()
+                        .clone())
+                })?;
+
+                let out = out.into_column();
+                if self.check_lengths {
+                    check_map_output_len(input_len, out.len(), &self.expr)?;
+                }
+
+                let mut ac = acs.swap_remove(base_ac_idx);
+                ac.with_values_and_args(
+                    out,
+                    aggregated,
+                    Some(&self.expr),
+                    false,
+                    self.is_scalar(),
+                )?;
+                Ok(ac)
+            },
+            _ => {
+                let aggregated = acs.iter().any(|ac| ac.is_aggregated());
+                debug_assert!(aggregated == self.is_scalar());
+
+                let mut cols = acs
+                    .iter()
+                    .map(|ac| ac.flat_naive().into_owned())
+                    .collect::<Vec<_>>();
+
+                let input_len = cols[base_ac_idx].len();
+                let out = self.function.call_udf(&mut cols)?;
+                if self.check_lengths {
+                    check_map_output_len(input_len, out.len(), &self.expr)?;
+                }
+
+                let mut ac = acs.swap_remove(base_ac_idx);
+                ac.with_values_and_args(
+                    out,
+                    aggregated,
+                    Some(&self.expr),
+                    false,
+                    self.is_scalar(),
+                )?;
+                Ok(ac)
+            },
+        }
+    }
+
     fn apply_multiple_group_aware<'a>(
         &self,
         mut acs: Vec<AggregationContext<'a>>,
@@ -230,7 +359,7 @@ impl ApplyExpr {
         // Length of the items to iterate over.
         let len = iters[0].size_hint().0;
 
-        let ca = if len == 0 {
+        let ca = if field.dtype().is_known() {
             let mut builder = get_list_builder(&field.dtype, len * 5, len, field.name);
             for _ in 0..len {
                 container.clear();
@@ -328,149 +457,162 @@ impl PhysicalExpr for ApplyExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        if self.inputs.len() == 1 {
-            let ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
+        // Some function have specialized implementation.
+        if let Some(groups_function) = self.groups_function.as_ref() {
+            return groups_function.evaluate_on_groups(&self.inputs, df, groups, state);
+        }
 
-            match self.flags.is_elementwise() {
-                false => self.apply_single_group_aware(ac),
-                true => self.apply_single_elementwise(ac),
+        if self.inputs.len() == 1 {
+            let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
+
+            if self.flags.is_elementwise() && (!self.is_fallible || ac.groups_cover_all_values()) {
+                self.apply_single_elementwise(ac)
+            } else {
+                self.apply_single_group_aware(ac)
             }
         } else {
-            let acs = self.prepare_multiple_inputs(df, groups, state)?;
+            let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
 
             match self.flags.is_elementwise() {
                 false => self.apply_multiple_group_aware(acs, df),
                 true => {
+                    // Implementation dispatch:
+                    // The current implementation of `apply_multiple_elementwise` requires the
+                    // multiple inputs to have a compatible data layout as it invokes `flat_naive()`.
+                    // Compatible means matching as-is, or possibly matching after aggregation,
+                    // or matching after an implicit broadcast by the function.
+
+                    // The dispatch logic between the implementations depends on the combination of aggstates:
+                    // - Any presence of LiteralScalar is immaterial as it gets broadcasted in the UDF.
+                    // - Combination of AggregatedScalar and AggregatedList => NOT compatible.
+                    // - Combination of AggregatedScalar and NotAggregated => NOT compatible.
+                    // - Any other combination => comptable, and thereforee allowed for elementwise.
+                    //   In this case, aggregated() on NotAggregated may be required; however, it can be
+                    //   prohibitively memory expensive when dealing with overlapping (e.g., rolling) groups,
+                    //   in which case we fall-back to group_aware.
+
+                    // Consequently, these may follow the elementwise path (not exhaustive):
+                    // - All AggregatedScalar
+                    // - A combination of AggregatedList(s) and NotAggregated(s) without expensive aggregation.
+                    // - Either of the above with or without LiteralScalar
+
+                    // Visually, in the case of 2 aggstates:
+                    // Legend:
+                    // - el = elementwise, no need to aggregate() NotAgg
+                    // - el + agg = elementwise, but must aggregate() NotAgg
+                    // - ga = group_aware
+                    // - alit = all_literal
+                    // - * = broadcast falls back to group_aware
+                    // - ~ = same a smirror pair (symmetric)
+                    //
+                    //              | AggList | NotAgg   | AggScalar | LitScalar
+                    //   --------------------------------------------------------
+                    //    AggList   |   el*   | depends* |    ga     |     el
+                    //    NotAgg    |    ~    | depends* |    ga     |     el
+                    //    AggScalar |    ~    |    ~     |    el     |     el
+                    //    LitScalar |    ~    |    ~     |     ~     |    alit
+                    //
+                    // In case it depends, extending to any combination of multiple aggstates
+                    // (a) Multiple NotAggs, w/o AggList
+                    //
+                    //                   | !has_rolling | has_rolling
+                    //   -------------------------------------------------
+                    //    groups match   |      el      |     el
+                    //    groups_diverge |    el+agg    |     ga
+                    //
+                    // (b) Multiple NotAggs, with at least 1 AggList
+                    //
+                    //                   | !has_rolling | has_rolling
+                    //   -------------------------------------------------
+                    //    groups match   |    el+agg    |     ga
+                    //    groups diverge |    el+agg    |     ga
+                    //
+                    //  * Finally, when broadcast is required in non-scalar we switch to group_aware
+
+                    // Collect statistics on input aggstates
                     let mut has_agg_list = false;
                     let mut has_agg_scalar = false;
                     let mut has_not_agg = false;
+                    let mut has_not_agg_with_overlapping_groups = false;
+                    let mut not_agg_groups_may_diverge = false;
+
+                    let mut previous: Option<&AggregationContext<'_>> = None;
                     for ac in &acs {
                         match ac.state {
-                            AggState::AggregatedList(_) => has_agg_list = true,
+                            AggState::AggregatedList(_) => {
+                                has_agg_list = true;
+                            },
                             AggState::AggregatedScalar(_) => has_agg_scalar = true,
-                            AggState::NotAggregated(_) => has_not_agg = true,
+                            AggState::NotAggregated(_) => {
+                                has_not_agg = true;
+                                if let Some(p) = previous {
+                                    not_agg_groups_may_diverge |=
+                                        !std::ptr::eq(p.groups.as_ref(), ac.groups.as_ref());
+                                }
+                                previous = Some(ac);
+                                if ac.groups.is_overlapping() {
+                                    has_not_agg_with_overlapping_groups = true;
+                                }
+                            },
                             _ => {},
                         }
                     }
-                    if has_agg_list || (has_agg_scalar && has_not_agg) {
+
+                    let all_literal = !(has_agg_list || has_agg_scalar || has_not_agg);
+                    let elementwise_must_aggregate =
+                        has_not_agg && (has_agg_list || not_agg_groups_may_diverge);
+
+                    if all_literal {
+                        // Fast path
+                        self.apply_all_literal_elementwise(acs)
+                    } else if has_agg_scalar && (has_agg_list || has_not_agg) {
+                        // Not compatible
+                        self.apply_multiple_group_aware(acs, df)
+                    } else if elementwise_must_aggregate && has_not_agg_with_overlapping_groups {
+                        // Compatible but calling aggregated() is too expensive
+                        self.apply_multiple_group_aware(acs, df)
+                    } else if self.is_fallible
+                        && acs.iter_mut().any(|ac| !ac.groups_cover_all_values())
+                    {
+                        // Fallible expression and there are elements that are masked out.
                         self.apply_multiple_group_aware(acs, df)
                     } else {
-                        apply_multiple_elementwise(
-                            acs,
-                            self.function.as_ref(),
-                            &self.expr,
-                            self.check_lengths,
-                            self.is_scalar(),
-                        )
+                        // Broadcast in NotAgg or AggList requires group_aware
+                        acs.iter_mut().filter(|ac| !ac.is_literal()).for_each(|ac| {
+                            ac.groups();
+                        });
+                        let has_broadcast =
+                            if let Some(base_ac_idx) = acs.iter().position(|ac| !ac.is_literal()) {
+                                acs.iter()
+                                    .enumerate()
+                                    .filter(|(i, ac)| *i != base_ac_idx && !ac.is_literal())
+                                    .any(|(_, ac)| {
+                                        acs[base_ac_idx].groups.iter().zip(ac.groups.iter()).any(
+                                            |(l, r)| {
+                                                l.len() != r.len() && (l.len() == 1 || r.len() == 1)
+                                            },
+                                        )
+                                    })
+                            } else {
+                                false
+                            };
+                        if has_broadcast {
+                            //  Broadcast fall-back.
+                            self.apply_multiple_group_aware(acs, df)
+                        } else {
+                            self.apply_multiple_elementwise(acs, elementwise_must_aggregate)
+                        }
                     }
                 },
             }
         }
     }
 
-    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.expr.to_field(input_schema)
-    }
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        if self.inputs.len() == 1 && self.flags.is_elementwise() {
-            Some(self)
-        } else {
-            None
-        }
+    fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
+        Ok(self.output_field.clone())
     }
     fn is_scalar(&self) -> bool {
         self.flags.returns_scalar()
             || (self.function_operates_on_scalar && self.flags.is_length_preserving())
-    }
-}
-
-fn apply_multiple_elementwise<'a>(
-    mut acs: Vec<AggregationContext<'a>>,
-    function: &dyn ColumnsUdf,
-    expr: &Expr,
-    check_lengths: bool,
-    returns_scalar: bool,
-) -> PolarsResult<AggregationContext<'a>> {
-    match acs.first().unwrap().agg_state() {
-        // A fast path that doesn't drop groups of the first arg.
-        // This doesn't require group re-computation.
-        AggState::AggregatedList(s) => {
-            let ca = s.list().unwrap();
-
-            let other = acs[1..]
-                .iter()
-                .map(|ac| ac.flat_naive().into_owned())
-                .collect::<Vec<_>>();
-
-            let out = ca.apply_to_inner(&|s| {
-                let mut args = Vec::with_capacity(other.len() + 1);
-                args.push(s.into());
-                args.extend_from_slice(&other);
-                Ok(function
-                    .call_udf(&mut args)?
-                    .as_materialized_series()
-                    .clone())
-            })?;
-            let mut ac = acs.swap_remove(0);
-            ac.with_values(out.into_column(), true, None)?;
-            Ok(ac)
-        },
-        first_as => {
-            let check_lengths = check_lengths && !matches!(first_as, AggState::LiteralScalar(_));
-            let aggregated = acs.iter().all(|ac| ac.is_aggregated() | ac.is_literal())
-                && acs.iter().any(|ac| ac.is_aggregated());
-            let mut c = acs
-                .iter_mut()
-                .enumerate()
-                .map(|(i, ac)| {
-                    // Make sure the groups are updated because we are about to throw away
-                    // the series length information, only on the first iteration.
-                    if let (0, UpdateGroups::WithSeriesLen) = (i, &ac.update_groups) {
-                        ac.groups();
-                    }
-
-                    ac.flat_naive().into_owned()
-                })
-                .collect::<Vec<_>>();
-
-            let input_len = c[0].len();
-            let c = function.call_udf(&mut c)?;
-            if check_lengths {
-                check_map_output_len(input_len, c.len(), expr)?;
-            }
-
-            // Take the first aggregation context that as that is the input series.
-            let mut ac = acs.swap_remove(0);
-            ac.with_values_and_args(c, aggregated, None, true, returns_scalar)?;
-            Ok(ac)
-        },
-    }
-}
-
-impl PartitionedAggregation for ApplyExpr {
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        let a = self.inputs[0].as_partitioned_aggregator().unwrap();
-        let s = a.evaluate_partitioned(df, groups, state)?;
-
-        if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
-            self.eval_and_flatten(&mut [s])
-        } else {
-            let in_name = s.name().clone();
-            Ok(self.eval_and_flatten(&mut [s])?.with_name(in_name))
-        }
-    }
-
-    fn finalize(
-        &self,
-        partitioned: Column,
-        _groups: &GroupPositions,
-        _state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        Ok(partitioned)
     }
 }

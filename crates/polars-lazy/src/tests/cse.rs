@@ -211,7 +211,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
             use IR::*;
             match lp {
                 Cache { id, input, .. } => {
-                    assert!(matches!(lp_arena.get(*input), IR::SimpleProjection { .. }));
+                    assert!(matches!(lp_arena.get(*input), IR::DataFrameScan { .. }));
 
                     Some(*id)
                 },

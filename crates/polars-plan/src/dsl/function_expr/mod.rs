@@ -12,6 +12,8 @@ mod cat;
 mod correlation;
 #[cfg(feature = "temporal")]
 mod datetime;
+#[cfg(feature = "dtype-extension")]
+mod extension;
 mod list;
 mod pow;
 #[cfg(feature = "random")]
@@ -37,8 +39,6 @@ pub use array::ArrayFunction;
 #[cfg(feature = "cov")]
 pub use correlation::CorrelationMethod;
 pub use list::ListFunction;
-#[cfg(feature = "list_to_struct")]
-pub use list::ListToStruct;
 pub use polars_core::datatypes::ReshapeDimension;
 use polars_core::prelude::*;
 #[cfg(feature = "random")]
@@ -56,9 +56,11 @@ pub use self::business::BusinessFunction;
 pub use self::cat::CategoricalFunction;
 #[cfg(feature = "temporal")]
 pub use self::datetime::TemporalFunction;
+#[cfg(feature = "dtype-extension")]
+pub use self::extension::ExtensionFunction;
 pub use self::pow::PowFunction;
 #[cfg(feature = "range")]
-pub use self::range::RangeFunction;
+pub use self::range::{DateRangeArgs, RangeFunction};
 #[cfg(feature = "rolling_window")]
 pub use self::rolling::RollingFunction;
 #[cfg(feature = "rolling_window_by")]
@@ -81,6 +83,8 @@ pub enum FunctionExpr {
     BinaryExpr(BinaryFunction),
     #[cfg(feature = "dtype-categorical")]
     Categorical(CategoricalFunction),
+    #[cfg(feature = "dtype-extension")]
+    Extension(ExtensionFunction),
     ListExpr(ListFunction),
     #[cfg(feature = "strings")]
     StringExpr(StringFunction),
@@ -137,6 +141,7 @@ pub enum FunctionExpr {
         function_by: RollingFunctionBy,
         options: RollingOptionsDynamicWindow,
     },
+    Rechunk,
     Append {
         upcast: bool,
     },
@@ -145,7 +150,9 @@ pub enum FunctionExpr {
     DropNans,
     DropNulls,
     #[cfg(feature = "mode")]
-    Mode,
+    Mode {
+        maintain_order: bool,
+    },
     #[cfg(feature = "moment")]
     Skew(bool),
     #[cfg(feature = "moment")]
@@ -216,7 +223,6 @@ pub enum FunctionExpr {
     #[cfg(feature = "approx_unique")]
     ApproxNUnique,
     Coalesce,
-    ShrinkType,
     #[cfg(feature = "diff")]
     Diff(NullBehavior),
     #[cfg(feature = "pct_change")]
@@ -231,9 +237,7 @@ pub enum FunctionExpr {
         normalize: bool,
     },
     #[cfg(feature = "log")]
-    Log {
-        base: f64,
-    },
+    Log,
     #[cfg(feature = "log")]
     Log1p,
     #[cfg(feature = "log")]
@@ -380,6 +384,8 @@ impl Hash for FunctionExpr {
             BinaryExpr(f) => f.hash(state),
             #[cfg(feature = "dtype-categorical")]
             Categorical(f) => f.hash(state),
+            #[cfg(feature = "dtype-extension")]
+            Extension(f) => f.hash(state),
             ListExpr(f) => f.hash(state),
             #[cfg(feature = "strings")]
             StringExpr(f) => f.hash(state),
@@ -468,7 +474,7 @@ impl Hash for FunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill => {},
+            | ArgMax | Product | Shift | ShiftAndFill | Rechunk => {},
             Append { upcast } => upcast.hash(state),
             ArgSort {
                 descending,
@@ -478,7 +484,7 @@ impl Hash for FunctionExpr {
                 nulls_last.hash(state);
             },
             #[cfg(feature = "mode")]
-            Mode => {},
+            Mode { maintain_order } => maintain_order.hash(state),
             #[cfg(feature = "abs")]
             Abs => {},
             Negate => {},
@@ -554,7 +560,6 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => {},
             Coalesce => {},
-            ShrinkType => {},
             #[cfg(feature = "pct_change")]
             PctChange => {},
             #[cfg(feature = "log")]
@@ -563,7 +568,7 @@ impl Hash for FunctionExpr {
                 normalize.hash(state);
             },
             #[cfg(feature = "log")]
-            Log { base } => base.to_bits().hash(state),
+            Log => {},
             #[cfg(feature = "log")]
             Log1p => {},
             #[cfg(feature = "log")]
@@ -675,6 +680,8 @@ impl Display for FunctionExpr {
             BinaryExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-categorical")]
             Categorical(func) => return write!(f, "{func}"),
+            #[cfg(feature = "dtype-extension")]
+            Extension(func) => return write!(f, "{func}"),
             ListExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "strings")]
             StringExpr(func) => return write!(f, "{func}"),
@@ -715,12 +722,19 @@ impl Display for FunctionExpr {
             RollingExpr { function, .. } => return write!(f, "{function}"),
             #[cfg(feature = "rolling_window_by")]
             RollingExprBy { function_by, .. } => return write!(f, "{function_by}"),
+            Rechunk => "rechunk",
             Append { .. } => "upcast",
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
             #[cfg(feature = "mode")]
-            Mode => "mode",
+            Mode { maintain_order } => {
+                if *maintain_order {
+                    "mode_stable"
+                } else {
+                    "mode"
+                }
+            },
             #[cfg(feature = "moment")]
             Skew(_) => "skew",
             #[cfg(feature = "moment")]
@@ -771,7 +785,6 @@ impl Display for FunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => "approx_n_unique",
             Coalesce => "coalesce",
-            ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
             Diff(_) => "diff",
             #[cfg(feature = "pct_change")]
@@ -783,7 +796,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
             #[cfg(feature = "log")]
-            Log { .. } => "log",
+            Log => "log",
             #[cfg(feature = "log")]
             Log1p => "log1p",
             #[cfg(feature = "log")]

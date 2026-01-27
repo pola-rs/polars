@@ -14,10 +14,10 @@
 
 use arrow::array::{Array, BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::Bitmap;
-use arrow::buffer::Buffer;
 use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
 use polars::prelude::*;
+use polars_buffer::Buffer;
 use polars_core::{with_match_physical_numeric_polars_type, with_match_physical_numeric_type};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -43,8 +43,10 @@ impl<'py> IntoPyObject<'py> for BufferInfo {
         (self.pointer, self.offset, self.length).into_pyobject(py)
     }
 }
-impl<'py> FromPyObject<'py> for BufferInfo {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for BufferInfo {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let (pointer, offset, length) = ob.extract()?;
         Ok(Self {
             pointer,
@@ -58,7 +60,8 @@ impl<'py> FromPyObject<'py> for BufferInfo {
 impl PySeries {
     /// Return pointer, offset, and length information about the underlying buffer.
     fn _get_buffer_info(&self) -> PyResult<BufferInfo> {
-        let s = self.series.to_physical_repr();
+        let lock = self.series.read();
+        let s = lock.to_physical_repr();
         let arrays = s.chunks();
         if arrays.len() != 1 {
             let msg = "cannot get buffer info for Series consisting of multiple chunks";
@@ -92,7 +95,7 @@ impl PySeries {
 
     /// Return the underlying values, validity, and offsets buffers as Series.
     fn _get_buffers(&self, py: Python) -> PyResult<(Self, Option<Self>, Option<Self>)> {
-        let s = &self.series;
+        let s = &self.series.read();
         py.enter_polars(|| match s.dtype().to_physical() {
             dt if dt.is_primitive_numeric() => get_buffers_from_primitive(s),
             DataType::Boolean => get_buffers_from_primitive(s),
@@ -279,13 +282,14 @@ impl PySeries {
         }
 
         let validity = match validity {
-            Some(s) => {
-                let dtype = s.series.dtype();
+            Some(ps) => {
+                let s = ps.series.into_inner();
+                let dtype = s.dtype();
                 if !dtype.is_bool() {
                     let msg = format!("validity buffer must have data type Boolean, got {dtype:?}");
                     return Err(PyTypeError::new_err(msg));
                 }
-                Some(series_to_bitmap(s.series).unwrap())
+                Some(series_to_bitmap(s).unwrap())
             },
             None => None,
         };

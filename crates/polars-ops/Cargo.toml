@@ -9,6 +9,7 @@ repository = { workspace = true }
 description = "More operations on Polars data structures"
 
 [dependencies]
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by", "zip_with"] }
 polars-error = { workspace = true }
@@ -17,7 +18,7 @@ polars-schema = { workspace = true }
 polars-utils = { workspace = true }
 
 aho-corasick = { workspace = true, optional = true }
-argminmax = { version = "0.6.3", default-features = false, features = ["float"] }
+argminmax = { workspace = true }
 arrow = { workspace = true }
 base64 = { workspace = true, optional = true }
 bytemuck = { workspace = true }
@@ -64,11 +65,14 @@ dtype-duration = ["polars-core/dtype-duration", "polars-core/temporal"]
 dtype-struct = ["polars-core/dtype-struct", "polars-core/temporal"]
 dtype-u8 = ["polars-core/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16"]
+dtype-u128 = ["polars-core/dtype-u128"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i128 = ["polars-core/dtype-i128"]
 dtype-i16 = ["polars-core/dtype-i16"]
+dtype-f16 = ["polars-core/dtype-f16"]
 dtype-array = ["polars-core/dtype-array"]
 dtype-decimal = ["polars-core/dtype-decimal", "dtype-i128"]
+dtype-extension = ["polars-core/dtype-extension"]
 object = ["polars-core/object"]
 propagate_nans = []
 performant = ["polars-core/performant", "fused"]
@@ -89,7 +93,14 @@ timezones = ["chrono", "chrono-tz", "polars-core/temporal", "polars-core/timezon
 random = ["rand", "rand_distr"]
 rank = ["rand"]
 find_many = ["aho-corasick"]
-serde = ["dep:serde", "polars-core/serde", "polars-utils/serde", "polars-schema/serde", "polars-compute/serde"]
+serde = [
+  "dep:serde",
+  "polars-buffer/serde",
+  "polars-core/serde",
+  "polars-utils/serde",
+  "polars-schema/serde",
+  "polars-compute/serde",
+]
 dsl-schema = [
   "dep:schemars",
   "polars-core/dsl-schema",

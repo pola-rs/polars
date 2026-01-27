@@ -41,6 +41,7 @@ macro_rules! call {
         use arrow::datatypes::{PhysicalType as PH, PrimitiveType as PR};
         use PrimitiveArray as PArr;
         use PrimitiveScalar as PScalar;
+        use polars_utils::float16::pf16;
         match arr.dtype().to_physical_type() {
             PH::Boolean => call_op!(BooleanArray, BooleanScalar, arr, $op$(, $variant)?),
             PH::Primitive(PR::Int8) => call_op!(dt: PArr<i8>, PScalar<i8>, arr, $op$(, $variant)?),
@@ -54,6 +55,7 @@ macro_rules! call {
             PH::Primitive(PR::UInt64) => call_op!(dt: PArr<u64>, PScalar<u64>, arr, $op$(, $variant)?),
             PH::Primitive(PR::UInt128) => call_op!(dt: PArr<u128>, PScalar<u128>, arr, $op$(, $variant)?),
             PH::Primitive(PR::Float32) => call_op!(dt: PArr<f32>, PScalar<f32>, arr, $op$(, $variant)?),
+            PH::Primitive(PR::Float16) => call_op!(dt: PArr<pf16>, PScalar<pf16>, arr, $op$(, $variant)?),
             PH::Primitive(PR::Float64) => call_op!(dt: PArr<f64>, PScalar<f64>, arr, $op$(, $variant)?),
 
             PH::BinaryView => call_op!(BinaryViewArray, BinaryViewScalar<[u8]>, arr, $op$(, $variant)?),

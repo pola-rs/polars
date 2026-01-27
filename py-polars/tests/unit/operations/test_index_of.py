@@ -15,7 +15,8 @@ from polars.testing import assert_frame_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
-    from polars._typing import IntoExpr
+    from polars._typing import IntoExpr, PolarsDataType
+    from polars.datatypes import IntegerType
 
 
 def isnan(value: object) -> bool:
@@ -60,6 +61,10 @@ def assert_index_of(
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
 def test_float(dtype: pl.DataType) -> None:
     values = [1.5, np.nan, np.inf, 3.0, None, -np.inf, 0.0, -0.0, -np.nan]
+    if dtype == pl.Float32:
+        # Can't pass Python literals to index_of() for Float32
+        values = [(None if v is None else np.float32(v)) for v in values]  # type: ignore[misc]
+
     series = pl.Series(values, dtype=dtype)
     sorted_series_asc = series.sort(descending=False)
     sorted_series_desc = series.sort(descending=True)
@@ -67,12 +72,11 @@ def test_float(dtype: pl.DataType) -> None:
 
     extra_values = [
         np.int8(3),
-        np.int64(2**42),
-        np.float64(1.5),
         np.float32(1.5),
-        np.float32(2**37),
-        np.float64(2**100),
+        np.float32(2**10),
     ]
+    if dtype == pl.Float64:
+        extra_values.extend([np.int32(2**10), np.float64(2**10), np.float64(1.5)])
     for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
         for value in values:
             assert_index_of(s, value, convert_to_literal=True)
@@ -80,9 +84,10 @@ def test_float(dtype: pl.DataType) -> None:
         for value in extra_values:  # type: ignore[assignment]
             assert_index_of(s, value)
 
-    # Explicitly check some extra-tricky edge cases:
-    assert series.index_of(-np.nan) == 1  # -np.nan should match np.nan
-    assert series.index_of(-0.0) == 6  # -0.0 should match 0.0
+    # -np.nan should match np.nan:
+    assert series.index_of(-np.float32("nan")) == 1  # type: ignore[arg-type]
+    # -0.0 should match 0.0:
+    assert series.index_of(-np.float32(0.0)) == 6  # type: ignore[arg-type]
 
 
 def test_null() -> None:
@@ -107,21 +112,26 @@ def test_empty() -> None:
         pl.Int16,
         pl.Int32,
         pl.Int64,
+        pl.Int128,
         pl.UInt8,
         pl.UInt16,
         pl.UInt32,
         pl.UInt64,
-        pl.Int128,
+        pl.UInt128,
     ],
 )
-def test_integer(dtype: pl.DataType) -> None:
+def test_integer(dtype: IntegerType) -> None:
+    print(dtype)
+    dtype_min = dtype.min()
+    dtype_max = pl.Int128.max() if dtype == pl.UInt128 else dtype.max()
+
     values = [
         51,
         3,
         None,
         4,
-        pl.select(dtype.max()).item(),  # type: ignore[attr-defined]
-        pl.select(dtype.min()).item(),  # type: ignore[attr-defined]
+        pl.select(dtype_max).item(),
+        pl.select(dtype_min).item(),
     ]
     series = pl.Series(values, dtype=dtype)
     sorted_series_asc = series.sort(descending=False)
@@ -130,7 +140,7 @@ def test_integer(dtype: pl.DataType) -> None:
         [pl.Series([100, 7], dtype=dtype), series], rechunk=False
     )
 
-    extra_values = [pl.select(v).item() for v in [dtype.max() - 1, dtype.min() + 1]]  # type: ignore[attr-defined]
+    extra_values = [pl.select(v).item() for v in [dtype_max - 1, dtype_min + 1]]
     for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
         value: IntoExpr
         for value in values:
@@ -142,8 +152,14 @@ def test_integer(dtype: pl.DataType) -> None:
 
         # Can't cast floats:
         for f in [np.float32(3.1), np.float64(3.1), 50.9]:
-            with pytest.raises(InvalidOperationError, match="cannot cast lossless"):
+            with pytest.raises(InvalidOperationError, match=r"cannot cast.*"):
                 s.index_of(f)  # type: ignore[arg-type]
+
+
+def test_integer_upcast() -> None:
+    series = pl.Series([0, 123, 456, 789], dtype=pl.Int64)
+    for should_work in [pl.Int8, pl.UInt8, pl.Int16, pl.UInt16, pl.Int32, pl.UInt32]:
+        assert series.index_of(pl.lit(123, dtype=should_work)) == 1
 
 
 def test_groupby() -> None:
@@ -152,7 +168,7 @@ def test_groupby() -> None:
     )
     expected = pl.DataFrame(
         {"label": ["a", "b"], "value": [1, 2]},
-        schema={"label": pl.String, "value": pl.UInt32},
+        schema={"label": pl.String, "value": pl.get_index_type()},
     )
     assert_frame_equal(
         df.group_by("label", maintain_order=True).agg(pl.col("value").index_of(20)),
@@ -255,7 +271,14 @@ ENUM = pl.Enum(["a", "b", "c"])
             False,
         ),
         (pl.Series([b"abc", None, b"xxx"]), [b"\x0025"], True),
-        (pl.Series([Decimal(12), None, Decimal(3)]), [Decimal(4)], True),
+        (
+            pl.Series(
+                [Decimal(12), None, Decimal(3), Decimal(-12), Decimal(1) / Decimal(10)],
+                dtype=pl.Decimal(20, 4),
+            ),
+            [Decimal(4), Decimal(-2), Decimal(1) / Decimal(4), Decimal(1) / Decimal(8)],
+            True,
+        ),
     ],
 )
 def test_other_types(
@@ -344,7 +367,7 @@ def test_categorical(convert_to_literal: bool) -> None:
 @pytest.mark.parametrize("value", [0, 0.1])
 def test_categorical_wrong_type_keys_dont_work(value: int | float) -> None:
     series = pl.Series(["a", "c", None, "b"], dtype=pl.Categorical)
-    msg = "cannot cast lossless"
+    msg = "cannot cast.*losslessly.*"
     with pytest.raises(InvalidOperationError, match=msg):
         series.index_of(value)
     df = pl.DataFrame({"s": series})
@@ -361,3 +384,132 @@ def test_index_of_null_parametric(s: pl.Series) -> None:
         assert idx_null is None
     elif s.null_count() == len(s):
         assert idx_null == 0
+
+
+def test_out_of_range_integers() -> None:
+    series = pl.Series([0, 100, None, 1, 2], dtype=pl.Int8)
+    with pytest.raises(InvalidOperationError, match="cannot cast 128 losslessly to i8"):
+        assert series.index_of(128)
+    with pytest.raises(
+        InvalidOperationError, match="cannot cast -200 losslessly to i8"
+    ):
+        assert series.index_of(-200)
+
+
+def test_out_of_range_decimal() -> None:
+    # Up to 34 digits of integers:
+    series = pl.Series([1, None], dtype=pl.Decimal(36, 2))
+    assert series.index_of(10**34 - 1) is None
+    assert series.index_of(-(10**34 - 1)) is None
+    out_of_range = 10**34
+    with pytest.raises(
+        InvalidOperationError, match=f"cannot cast {out_of_range} losslessly"
+    ):
+        assert series.index_of(out_of_range)
+    with pytest.raises(
+        InvalidOperationError, match=f"cannot cast {-out_of_range} losslessly"
+    ):
+        assert series.index_of(-out_of_range)
+
+
+def test_out_of_range_float64() -> None:
+    series = pl.Series([0, 255, None], dtype=pl.Float64)
+    # Small numbers are fine:
+    assert series.index_of(1_000_000) is None
+    assert series.index_of(-1_000_000) is None
+    with pytest.raises(
+        InvalidOperationError, match=f"cannot cast {2**53} losslessly to f64"
+    ):
+        assert series.index_of(2**53)
+    with pytest.raises(
+        InvalidOperationError, match=f"cannot cast {-(2**53)} losslessly to f64"
+    ):
+        assert series.index_of(-(2**53))
+
+
+def test_out_of_range_float32() -> None:
+    series = pl.Series([0, 255, None], dtype=pl.Float32)
+    # Small numbers are fine:
+    assert series.index_of(1_000_000) is None
+    assert series.index_of(-1_000_000) is None
+    with pytest.raises(
+        InvalidOperationError, match=f"cannot cast {2**24} losslessly to f32"
+    ):
+        assert series.index_of(2**24)
+    with pytest.raises(
+        InvalidOperationError, match=f"cannot cast {-(2**24)} losslessly to f32"
+    ):
+        assert series.index_of(-(2**24))
+
+
+def assert_lossy_cast_rejected(
+    series_dtype: PolarsDataType, value: Any, value_dtype: PolarsDataType
+) -> None:
+    # We create a Series with a null because previously lossless casts would
+    # sometimes get turned into nulls and you'd get an answer.
+    series = pl.Series([None], dtype=series_dtype)
+    with pytest.raises(InvalidOperationError, match="cannot cast losslessly"):
+        series.index_of(pl.lit(value, dtype=value_dtype))
+
+
+@pytest.mark.parametrize(
+    ("series_dtype", "value", "value_dtype"),
+    [
+        # Completely incompatible:
+        (pl.String, 1, pl.UInt8),
+        (pl.UInt8, "1", pl.String),
+        # Larger integer doesn't fit in smaller integer:
+        (pl.UInt8, 17, pl.UInt16),
+        # Can't find negative numbers in unsigned integers:
+        (pl.UInt16, -1, pl.Int8),
+        # Values after the decimal point that can't be represented:
+        (pl.Decimal(3, 1), 1, pl.Decimal(4, 2)),
+        # Can't fit in Decimal:
+        (pl.Decimal(3, 0), 1, pl.Decimal(4, 0)),
+        (pl.Decimal(5, 2), 1, pl.Decimal(5, 1)),
+        (pl.Decimal(5, 2), 1, pl.UInt16),
+        # Can't fit nanoseconds in milliseconds:
+        (pl.Duration("ms"), 1, pl.Duration("ns")),
+        # Arrays that are the wrong length:
+        (pl.Array(pl.Int64, 2), [1], pl.Array(pl.Int64, 1)),
+        # Struct with wrong number of fields:
+        (
+            pl.Struct({"a": pl.Int64, "b": pl.Int64}),
+            {"a": 1},
+            pl.Struct({"a": pl.Int64}),
+        ),
+        # Struct with different field name:
+        (pl.Struct({"a": pl.Int64}), {"x": 1}, pl.Struct({"x": pl.Int64})),
+    ],
+)
+def test_lossy_casts_are_rejected(
+    series_dtype: PolarsDataType, value: Any, value_dtype: PolarsDataType
+) -> None:
+    assert_lossy_cast_rejected(series_dtype, value, value_dtype)
+
+
+def test_lossy_casts_are_rejected_nested_dtypes() -> None:
+    # Make sure casting rules are applied recursively for Lists, Arrays,
+    # Struct:
+    series_dtype, value, value_dtype = pl.UInt8, 17, pl.UInt16
+    assert_lossy_cast_rejected(pl.List(series_dtype), [value], pl.List(value_dtype))
+    assert_lossy_cast_rejected(
+        pl.Array(series_dtype, 1), [value], pl.Array(value_dtype, 1)
+    )
+    assert_lossy_cast_rejected(
+        pl.Struct({"key": series_dtype}),
+        {"key": value},
+        pl.Struct({"key": value_dtype}),
+    )
+
+
+def test_decimal_search_for_int() -> None:
+    values = [Decimal(-12), Decimal(12), Decimal(30)]
+    series = pl.Series(values, dtype=pl.Decimal(4, 1))
+    for i, value in enumerate(values):
+        assert series.index_of(value) == i
+        assert series.index_of(int(value)) == i
+        assert series.index_of(np.int8(value)) == i  # type: ignore[arg-type]
+    # Decimal's integer range is 3 digits (3 == 4 - 1), so int8 fits:
+    assert series.index_of(np.int8(127)) is None  # type: ignore[arg-type]
+    assert series.index_of(np.int8(-128)) is None  # type: ignore[arg-type]

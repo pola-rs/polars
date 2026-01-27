@@ -1,18 +1,18 @@
 //! APIs to write to Arrow's IPC format.
 pub(crate) mod common;
-mod schema;
+pub mod schema;
 mod serialize;
 mod stream;
 pub(crate) mod writer;
 
+pub use arrow_format::ipc::{KeyValue, KeyValueRef};
 pub use common::{
     Compression, DictionaryTracker, EncodedData, Record, WriteOptions, commit_encoded_arrays,
-    dictionaries_to_encode, encode_array, encode_dictionary, encode_new_dictionaries,
+    dictionaries_to_encode, encode_array, encode_dictionary_values, encode_new_dictionaries,
     encode_record_batch,
 };
 pub use schema::schema_to_bytes;
 pub use serialize::write;
-use serialize::write_dictionary;
 pub use stream::StreamWriter;
 pub use writer::FileWriter;
 
@@ -23,7 +23,7 @@ use crate::datatypes::{ArrowDataType, Field};
 
 fn default_ipc_field(dtype: &ArrowDataType, current_id: &mut i64) -> IpcField {
     use crate::datatypes::ArrowDataType::*;
-    match dtype.to_logical_type() {
+    match dtype.to_storage() {
         // single child => recurse
         Map(inner, ..) | FixedSizeList(inner, _) | LargeList(inner) | List(inner) => IpcField {
             fields: vec![default_ipc_field(inner.dtype(), current_id)],
@@ -67,6 +67,6 @@ fn default_ipc_field(dtype: &ArrowDataType, current_id: &mut i64) -> IpcField {
 pub fn default_ipc_fields<'a>(fields: impl ExactSizeIterator<Item = &'a Field>) -> Vec<IpcField> {
     let mut dictionary_id = 0i64;
     fields
-        .map(|field| default_ipc_field(field.dtype().to_logical_type(), &mut dictionary_id))
+        .map(|field| default_ipc_field(field.dtype().to_storage(), &mut dictionary_id))
         .collect()
 }

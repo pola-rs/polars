@@ -61,4 +61,22 @@ impl BinaryNameSpace {
                 is_little_endian,
             )))
     }
+
+    pub fn slice(self, offset: Expr, length: Expr) -> Expr {
+        self.0.map_ternary(
+            FunctionExpr::BinaryExpr(BinaryFunction::Slice),
+            offset,
+            length,
+        )
+    }
+
+    pub fn head(self, n: Expr) -> Expr {
+        self.0
+            .map_binary(FunctionExpr::BinaryExpr(BinaryFunction::Head), n)
+    }
+
+    pub fn tail(self, n: Expr) -> Expr {
+        self.0
+            .map_binary(FunctionExpr::BinaryExpr(BinaryFunction::Tail), n)
+    }
 }

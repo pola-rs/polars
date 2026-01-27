@@ -1,12 +1,12 @@
 mod basic;
 mod nested;
 
-use arrow::array::{Array, FixedSizeBinaryArray, PrimitiveArray};
-use arrow::types::i256;
+use arrow::array::{Array, FixedSizeBinaryArray, Float16Array, PrimitiveArray};
+use arrow::types::{NativeType, i256};
 pub use basic::array_to_page;
 pub use nested::array_to_page as nested_array_to_page;
+use polars_compute::min_max::MinMaxKernel;
 
-use super::binary::ord_binary;
 use super::{EncodeNullability, StatisticsOptions};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::FixedLenStatistics;
@@ -40,32 +40,57 @@ pub(super) fn build_statistics(
         max_value: options
             .max_value
             .then(|| {
+                #[expect(clippy::filter_map_identity)]
+                array.iter().filter_map(|x| x).max().map(|x| x.to_vec())
+            })
+            .flatten(),
+        min_value: options
+            .min_value
+            .then(|| {
+                #[expect(clippy::filter_map_identity)]
+                array.iter().filter_map(|x| x).min().map(|x| x.to_vec())
+            })
+            .flatten(),
+    }
+}
+
+pub(super) fn build_statistics_float16(
+    array: &Float16Array,
+    primitive_type: PrimitiveType,
+    options: &StatisticsOptions,
+) -> FixedLenStatistics {
+    FixedLenStatistics {
+        primitive_type,
+        null_count: options.null_count.then_some(array.null_count() as i64),
+        distinct_count: None,
+        max_value: options
+            .max_value
+            .then(|| {
                 array
-                    .iter()
-                    .flatten()
-                    .max_by(|x, y| ord_binary(x, y))
-                    .map(|x| x.to_vec())
+                    .max_propagate_nan_kernel()
+                    .map(|x| x.to_le_bytes().as_ref().to_vec())
             })
             .flatten(),
         min_value: options
             .min_value
             .then(|| {
                 array
-                    .iter()
-                    .flatten()
-                    .min_by(|x, y| ord_binary(x, y))
-                    .map(|x| x.to_vec())
+                    .min_propagate_nan_kernel()
+                    .map(|x| x.to_le_bytes().as_ref().to_vec())
             })
             .flatten(),
     }
 }
 
-pub(super) fn build_statistics_decimal(
-    array: &PrimitiveArray<i128>,
+pub(super) fn build_statistics_decimal<T>(
+    array: &PrimitiveArray<T>,
     primitive_type: PrimitiveType,
     size: usize,
     options: &StatisticsOptions,
-) -> FixedLenStatistics {
+) -> FixedLenStatistics
+where
+    T: NativeType + Ord,
+{
     FixedLenStatistics {
         primitive_type,
         null_count: options.null_count.then_some(array.null_count() as i64),
@@ -77,7 +102,7 @@ pub(super) fn build_statistics_decimal(
                     .iter()
                     .flatten()
                     .max()
-                    .map(|x| x.to_be_bytes()[16 - size..].to_vec())
+                    .map(|x| x.to_be_bytes().as_ref()[16 - size..].to_vec())
             })
             .flatten(),
         min_value: options
@@ -87,7 +112,7 @@ pub(super) fn build_statistics_decimal(
                     .iter()
                     .flatten()
                     .min()
-                    .map(|x| x.to_be_bytes()[16 - size..].to_vec())
+                    .map(|x| x.to_be_bytes().as_ref()[16 - size..].to_vec())
             })
             .flatten(),
     }

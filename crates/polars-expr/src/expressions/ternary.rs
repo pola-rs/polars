@@ -67,7 +67,10 @@ fn finish_as_iters<'a>(
         // Exploded list should be equal to groups length.
         list_vals_len == ac_truthy.groups.len()
     {
-        out = out.explode(false)?
+        out = out.explode(ExplodeOptions {
+            empty_as_null: true,
+            keep_nulls: true,
+        })?
     }
 
     ac_truthy.with_agg_state(AggState::AggregatedList(out));
@@ -326,40 +329,8 @@ impl PhysicalExpr for TernaryExpr {
             original_len: ac_target.original_len,
         })
     }
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        Some(self)
-    }
 
     fn is_scalar(&self) -> bool {
         self.returns_scalar
-    }
-}
-
-impl PartitionedAggregation for TernaryExpr {
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        let truthy = self.truthy.as_partitioned_aggregator().unwrap();
-        let falsy = self.falsy.as_partitioned_aggregator().unwrap();
-        let mask = self.predicate.as_partitioned_aggregator().unwrap();
-
-        let truthy = truthy.evaluate_partitioned(df, groups, state)?;
-        let falsy = falsy.evaluate_partitioned(df, groups, state)?;
-        let mask = mask.evaluate_partitioned(df, groups, state)?;
-        let mask = mask.bool()?.clone();
-
-        truthy.zip_with(&mask, &falsy)
-    }
-
-    fn finalize(
-        &self,
-        partitioned: Column,
-        _groups: &GroupPositions,
-        _state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        Ok(partitioned)
     }
 }

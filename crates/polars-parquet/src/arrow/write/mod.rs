@@ -26,10 +26,12 @@ mod schema;
 mod utils;
 
 use arrow::array::*;
+use arrow::bitmap::Bitmap;
 use arrow::datatypes::*;
 use arrow::types::{NativeType, days_ms, i256};
 pub use nested::{num_values, write_rep_and_def};
 pub use pages::{to_leaves, to_nested, to_parquet_leaves};
+use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
 pub use utils::write_def_levels;
 
@@ -49,6 +51,7 @@ pub use crate::parquet::write::{
     write_metadata_sidecar,
 };
 pub use crate::parquet::{FallibleStreamingIterator, fallible_streaming_iterator};
+use crate::write::fixed_size_binary::build_statistics_float16;
 
 /// The statistics to write
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -355,7 +358,7 @@ pub fn array_to_pages(
     field_options: &FieldWriteOptions,
 ) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
     let mut encoding = field_options.encoding;
-    if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.dtype().to_logical_type() {
+    if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.dtype().to_storage() {
         return match_integer_type!(key_type, |$T| {
             dictionary::array_to_pages::<$T>(
                 primitive_array.as_any().downcast_ref().unwrap(),
@@ -455,7 +458,19 @@ pub fn array_to_page_simple(
         polars_bail!(InvalidOperation: "writing a missing value to required parquet column '{}'", type_.field_info.name);
     }
 
-    match dtype.to_logical_type() {
+    match dtype {
+        // Map empty struct to boolean array with same validity.
+        ArrowDataType::Struct(fs) if fs.is_empty() => boolean::array_to_page(
+            &BooleanArray::new(
+                ArrowDataType::Boolean,
+                Bitmap::new_zeroed(array.len()),
+                array.validity().cloned(),
+            ),
+            options,
+            type_,
+            encoding,
+        ),
+
         ArrowDataType::Boolean => boolean::array_to_page(
             array.as_any().downcast_ref().unwrap(),
             options,
@@ -530,6 +545,18 @@ pub fn array_to_page_simple(
                 type_,
                 encoding,
             );
+        },
+        ArrowDataType::Float16 => {
+            let array: &PrimitiveArray<pf16> = array.as_any().downcast_ref().unwrap();
+            let statistics = options
+                .has_statistics()
+                .then(|| build_statistics_float16(array, type_.clone(), &options.statistics));
+            let array = FixedSizeBinaryArray::new(
+                ArrowDataType::FixedSizeBinary(2),
+                array.values().clone().try_transmute().unwrap(),
+                array.validity().cloned(),
+            );
+            fixed_size_binary::array_to_page(&array, options, type_, statistics)
         },
         ArrowDataType::Float32 => primitive::array_to_page_plain::<f32, f32>(
             array.as_any().downcast_ref().unwrap(),
@@ -811,6 +838,26 @@ pub fn array_to_page_simple(
                 fixed_size_binary::array_to_page(&array, options, type_, statistics)
             }
         },
+        ArrowDataType::UInt128 => {
+            let array: &PrimitiveArray<u128> = array.as_any().downcast_ref().unwrap();
+            let statistics = if options.has_statistics() {
+                let stats = fixed_size_binary::build_statistics_decimal(
+                    array,
+                    type_.clone(),
+                    16,
+                    &options.statistics,
+                );
+                Some(stats)
+            } else {
+                None
+            };
+            let array = FixedSizeBinaryArray::new(
+                ArrowDataType::FixedSizeBinary(16),
+                array.values().clone().try_transmute().unwrap(),
+                array.validity().cloned(),
+            );
+            fixed_size_binary::array_to_page(&array, options, type_, statistics)
+        },
         ArrowDataType::Int128 => {
             let array: &PrimitiveArray<i128> = array.as_any().downcast_ref().unwrap();
             let statistics = if options.has_statistics() {
@@ -831,6 +878,12 @@ pub fn array_to_page_simple(
             );
             fixed_size_binary::array_to_page(&array, options, type_, statistics)
         },
+        ArrowDataType::Extension(ext) => {
+            let mut boxed = array.to_boxed();
+            assert!(matches!(boxed.dtype(), ArrowDataType::Extension(ext2) if ext2 == ext));
+            *boxed.dtype_mut() = ext.inner.clone();
+            return array_to_page_simple(boxed.as_ref(), type_, options, encoding);
+        },
         other => polars_bail!(nyi = "Writing parquet pages for data type {other:?}"),
     }
     .map(Page::Data)
@@ -850,10 +903,19 @@ fn array_to_page_nested(
     }
 
     use ArrowDataType::*;
-    match array.dtype().to_logical_type() {
+    match array.dtype().to_storage() {
         Null => {
             let array = Int32Array::new_null(ArrowDataType::Int32, array.len());
             primitive::nested_array_to_page::<i32, i32>(&array, options, type_, nested)
+        },
+        // Map empty struct to boolean array with same validity.
+        Struct(fs) if fs.is_empty() => {
+            let array = BooleanArray::new(
+                ArrowDataType::Boolean,
+                Bitmap::new_zeroed(array.len()),
+                array.validity().cloned(),
+            );
+            boolean::nested_array_to_page(&array, options, type_, nested)
         },
         Boolean => {
             let array = array.as_any().downcast_ref().unwrap();
@@ -909,6 +971,18 @@ fn array_to_page_nested(
         Int64 | Date64 | Time64(_) | Timestamp(_, _) | Duration(_) => {
             let array = array.as_any().downcast_ref().unwrap();
             primitive::nested_array_to_page::<i64, i64>(array, options, type_, nested)
+        },
+        Float16 => {
+            let array: &PrimitiveArray<pf16> = array.as_any().downcast_ref().unwrap();
+            let statistics = options
+                .has_statistics()
+                .then(|| build_statistics_float16(array, type_.clone(), &options.statistics));
+            let array = FixedSizeBinaryArray::new(
+                ArrowDataType::FixedSizeBinary(2),
+                array.values().clone().try_transmute().unwrap(),
+                array.validity().cloned(),
+            );
+            fixed_size_binary::nested_array_to_page(&array, options, type_, nested, statistics)
         },
         Float32 => {
             let array = array.as_any().downcast_ref().unwrap();
@@ -1072,6 +1146,36 @@ fn array_to_page_nested(
         },
         Int128 => {
             let array: &PrimitiveArray<i128> = array.as_any().downcast_ref().unwrap();
+            // Can't write min/max statistics for signed 128-bit integer, see #25965.
+            let mut no_mm_options = options;
+            no_mm_options.statistics.min_value = false;
+            no_mm_options.statistics.max_value = false;
+            let statistics = if no_mm_options.has_statistics() {
+                let stats = fixed_size_binary::build_statistics_decimal(
+                    array,
+                    type_.clone(),
+                    16,
+                    &no_mm_options.statistics,
+                );
+                Some(stats)
+            } else {
+                None
+            };
+            let array = FixedSizeBinaryArray::new(
+                ArrowDataType::FixedSizeBinary(16),
+                array.values().clone().try_transmute().unwrap(),
+                array.validity().cloned(),
+            );
+            fixed_size_binary::nested_array_to_page(
+                &array,
+                no_mm_options,
+                type_,
+                nested,
+                statistics,
+            )
+        },
+        UInt128 => {
+            let array: &PrimitiveArray<u128> = array.as_any().downcast_ref().unwrap();
             let statistics = if options.has_statistics() {
                 let stats = fixed_size_binary::build_statistics_decimal(
                     array,
@@ -1105,7 +1209,7 @@ fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
         Null | Boolean | Primitive(_) | Binary | FixedSizeBinary | LargeBinary | Utf8
         | Dictionary(_) | LargeUtf8 | BinaryView | Utf8View => encodings.push(map(dtype)),
         List | FixedSizeList | LargeList => {
-            let a = dtype.to_logical_type();
+            let a = dtype.to_storage();
             if let ArrowDataType::List(inner) = a {
                 transverse_recursive(&inner.dtype, map, encodings)
             } else if let ArrowDataType::LargeList(inner) = a {
@@ -1117,7 +1221,7 @@ fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
             }
         },
         Struct => {
-            if let ArrowDataType::Struct(fields) = dtype.to_logical_type() {
+            if let ArrowDataType::Struct(fields) = dtype.to_storage() {
                 for field in fields {
                     transverse_recursive(&field.dtype, map.clone(), encodings)
                 }
@@ -1126,8 +1230,8 @@ fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
             }
         },
         Map => {
-            if let ArrowDataType::Map(field, _) = dtype.to_logical_type() {
-                if let ArrowDataType::Struct(fields) = field.dtype.to_logical_type() {
+            if let ArrowDataType::Map(field, _) = dtype.to_storage() {
+                if let ArrowDataType::Struct(fields) = field.dtype.to_storage() {
                     for field in fields {
                         transverse_recursive(&field.dtype, map.clone(), encodings)
                     }

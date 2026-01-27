@@ -3,9 +3,11 @@
 //! It also provides utility functions for working with SQL datatypes.
 use polars_core::datatypes::{DataType, TimeUnit};
 use polars_error::{PolarsResult, polars_bail};
-use polars_plan::dsl::{Expr, lit};
+use polars_plan::dsl::Expr;
+use polars_plan::dsl::functions::lit;
 use sqlparser::ast::{
-    ArrayElemTypeDef, DataType as SQLDataType, ExactNumberInfo, Ident, ObjectName, TimezoneInfo,
+    ArrayElemTypeDef, DataType as SQLDataType, ExactNumberInfo, Ident, ObjectName, ObjectNamePart,
+    TimezoneInfo,
 };
 
 polars_utils::regex_cache::cached_regex! {
@@ -83,44 +85,52 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         // ---------------------------------
         // signed integer
         // ---------------------------------
-        SQLDataType::Int16 | SQLDataType::Int2(_) => DataType::Int16,
-        SQLDataType::Int32 | SQLDataType::Int4(_) => DataType::Int32,
-        SQLDataType::Int64 | SQLDataType::Int8(_) => DataType::Int64,
-        SQLDataType::Int128 => DataType::Int128,
-        SQLDataType::Integer(_) | SQLDataType::Int(_) => DataType::Int32,
-        SQLDataType::SmallInt(_) => DataType::Int16,
-        SQLDataType::MediumInt(_) => DataType::Int32,
-        SQLDataType::BigInt(_) => DataType::Int64,
         SQLDataType::TinyInt(_) => DataType::Int8,
+        SQLDataType::Int16 | SQLDataType::Int2(_) | SQLDataType::SmallInt(_) => DataType::Int16,
+        SQLDataType::Int32
+        | SQLDataType::Int4(_)
+        | SQLDataType::MediumInt(_)
+        | SQLDataType::Integer(_)
+        | SQLDataType::Int(_) => DataType::Int32,
+        SQLDataType::Int64 | SQLDataType::Int8(_) | SQLDataType::BigInt(_) => DataType::Int64,
+        SQLDataType::Int128 | SQLDataType::HugeInt => DataType::Int128,
 
         // ---------------------------------
         // unsigned integer
         // ---------------------------------
-        SQLDataType::UInt16 => DataType::UInt16,
-        SQLDataType::UInt32 => DataType::UInt32,
-        SQLDataType::UInt64 => DataType::UInt64,
-        SQLDataType::UnsignedTinyInt(_) => DataType::UInt8,
-        SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) => DataType::UInt32,
-        SQLDataType::UnsignedInt2(_) | SQLDataType::UnsignedSmallInt(_) => DataType::UInt16,
-        SQLDataType::UnsignedInt4(_) | SQLDataType::UnsignedMediumInt(_) => DataType::UInt32,
-        SQLDataType::UnsignedInt8(_) | SQLDataType::UnsignedBigInt(_) | SQLDataType::UInt8 => {
-            DataType::UInt64
+        SQLDataType::UTinyInt | SQLDataType::TinyIntUnsigned(_) => DataType::UInt8,
+        SQLDataType::Int2Unsigned(_)
+        | SQLDataType::SmallIntUnsigned(_)
+        | SQLDataType::USmallInt
+        | SQLDataType::UInt16 => DataType::UInt16,
+        SQLDataType::Int4Unsigned(_) | SQLDataType::MediumIntUnsigned(_) | SQLDataType::UInt32 => {
+            DataType::UInt32
         },
+        SQLDataType::Int8Unsigned(_)
+        | SQLDataType::BigIntUnsigned(_)
+        | SQLDataType::UBigInt
+        | SQLDataType::UInt64
+        | SQLDataType::UInt8 => DataType::UInt64,
+        SQLDataType::IntUnsigned(_) | SQLDataType::UnsignedInteger => DataType::UInt32,
+        SQLDataType::UHugeInt => DataType::UInt128,
 
         // ---------------------------------
         // float
         // ---------------------------------
         SQLDataType::Float4 | SQLDataType::Real => DataType::Float32,
-        SQLDataType::Double | SQLDataType::DoublePrecision | SQLDataType::Float8 => {
+        SQLDataType::Double(_) | SQLDataType::DoublePrecision | SQLDataType::Float8 => {
             DataType::Float64
         },
         SQLDataType::Float(n_bytes) => match n_bytes {
-            Some(n) if (1u64..=24u64).contains(n) => DataType::Float32,
-            Some(n) if (25u64..=53u64).contains(n) => DataType::Float64,
-            Some(n) => {
+            ExactNumberInfo::Precision(n) if (1u64..=24u64).contains(n) => DataType::Float32,
+            ExactNumberInfo::Precision(n) if (25u64..=53u64).contains(n) => DataType::Float64,
+            ExactNumberInfo::Precision(n) => {
                 polars_bail!(SQLSyntax: "unsupported `float` size (expected a value between 1 and 53, found {})", n)
             },
-            None => DataType::Float64,
+            ExactNumberInfo::None => DataType::Float64,
+            ExactNumberInfo::PrecisionAndScale(_, _) => {
+                polars_bail!(SQLSyntax: "FLOAT does not support scale parameter")
+            },
         },
 
         // ---------------------------------
@@ -131,18 +141,31 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         | SQLDataType::Decimal(info)
         | SQLDataType::BigDecimal(info)
         | SQLDataType::Numeric(info) => match *info {
-            ExactNumberInfo::PrecisionAndScale(p, s) => {
-                DataType::Decimal(Some(p as usize), Some(s as usize))
-            },
-            ExactNumberInfo::Precision(p) => DataType::Decimal(Some(p as usize), Some(0)),
-            ExactNumberInfo::None => DataType::Decimal(Some(38), Some(9)),
+            ExactNumberInfo::PrecisionAndScale(p, s) => DataType::Decimal(p as usize, s as usize),
+            ExactNumberInfo::Precision(p) => DataType::Decimal(p as usize, 0),
+            ExactNumberInfo::None => DataType::Decimal(38, 9),
         },
 
         // ---------------------------------
         // temporal
         // ---------------------------------
         SQLDataType::Date => DataType::Date,
-        SQLDataType::Interval => DataType::Duration(TimeUnit::Microseconds),
+        SQLDataType::Interval { fields, precision } => {
+            if !fields.is_none() {
+                // eg: "YEARS TO MONTH"
+                polars_bail!(SQLInterface: "`interval` definition with fields={:?} is not supported", fields)
+            }
+            let time_unit = match precision {
+                Some(p) if (1u64..=3u64).contains(p) => TimeUnit::Milliseconds,
+                Some(p) if (4u64..=6u64).contains(p) => TimeUnit::Microseconds,
+                Some(p) if (7u64..=9u64).contains(p) => TimeUnit::Nanoseconds,
+                Some(p) => {
+                    polars_bail!(SQLSyntax: "invalid `interval` precision (expected 1-9, found {})", p)
+                },
+                None => TimeUnit::Microseconds,
+            };
+            DataType::Duration(time_unit)
+        },
         SQLDataType::Time(_, tz) => match tz {
             TimezoneInfo::None => DataType::Time,
             _ => {
@@ -174,19 +197,20 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         // custom
         // ---------------------------------
         SQLDataType::Custom(ObjectName(idents), _) => match idents.as_slice() {
-            [Ident { value, .. }] => match value.to_lowercase().as_str() {
-                // these integer types are not supported by the PostgreSQL core distribution,
-                // but they ARE available via `pguint` (https://github.com/petere/pguint), an
-                // extension maintained by one of the PostgreSQL core developers, and/or DuckDB.
-                "hugeint" => DataType::Int128,
-                "int1" => DataType::Int8,
-                "uint1" | "utinyint" => DataType::UInt8,
-                "uint2" | "usmallint" => DataType::UInt16,
-                "uint4" | "uinteger" | "uint" => DataType::UInt32,
-                "uint8" | "ubigint" => DataType::UInt64,
-                _ => {
-                    polars_bail!(SQLInterface: "datatype {:?} is not currently supported", value)
-                },
+            [ObjectNamePart::Identifier(Ident { value, .. })] => {
+                match value.to_lowercase().as_str() {
+                    // these integer types are not supported by the PostgreSQL core distribution,
+                    // but they ARE available via `pguint` (https://github.com/petere/pguint), an
+                    // extension maintained by one of the PostgreSQL core developers, and/or DuckDB.
+                    "int1" => DataType::Int8,
+                    "uint1" | "utinyint" => DataType::UInt8,
+                    "uint2" | "usmallint" => DataType::UInt16,
+                    "uint4" | "uinteger" | "uint" => DataType::UInt32,
+                    "uint8" | "ubigint" => DataType::UInt64,
+                    _ => {
+                        polars_bail!(SQLInterface: "datatype {:?} is not currently supported", value)
+                    },
+                }
             },
             _ => {
                 polars_bail!(SQLInterface: "datatype {:?} is not currently supported", idents)

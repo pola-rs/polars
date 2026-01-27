@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use arrow::bitmap::MutableBitmap;
+use polars_core::prelude::PlHashSet;
 use polars_core::schema::Schema;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::arena::{Arena, Node};
@@ -41,13 +42,22 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
     let mut current_liveset = MutableBitmap::with_capacity(16);
     let mut pushable = MutableBitmap::with_capacity(16);
     let mut potential_pushable = Vec::with_capacity(4);
+    let mut visited_caches = PlHashSet::new();
 
     while let Some(current) = ir_stack.pop() {
         let current_ir = lp_arena.get(current);
+
+        if let IR::Cache { id, .. } = current_ir {
+            if !visited_caches.insert(*id) {
+                continue;
+            }
+        }
+
         current_ir.copy_inputs(&mut ir_stack);
         let IR::HStack { input, .. } = current_ir else {
             continue;
         };
+
         let input = *input;
 
         let [current_ir, input_ir] = lp_arena.get_many_mut([current, input]);
@@ -222,10 +232,6 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             // `current`. Essentially, we move the input node to the current node.
             *current_input = *input_input;
             *current_options = current_options.merge_options(input_options);
-
-            // Let us just make this node invalid so we can detect when someone tries to
-            // mention it later.
-            lp_arena.take(input);
 
             // Since we merged the current and input nodes and the input node might have
             // optimizations with their input, we loop again on this node.

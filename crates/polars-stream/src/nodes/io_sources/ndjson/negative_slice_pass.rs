@@ -12,6 +12,7 @@ use polars_utils::priority::Priority;
 use crate::async_executor;
 use crate::async_executor::AbortOnDropHandle;
 use crate::async_primitives::linearizer::Linearizer;
+use crate::async_primitives::oneshot_channel;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 
@@ -26,7 +27,7 @@ pub struct MorselStreamReverser {
     pub morsel_senders: Vec<FileReaderOutputSend>,
     /// Slice from right to left.
     pub offset_len_rtl: (usize, usize),
-    pub row_index: Option<(RowIndex, tokio::sync::oneshot::Receiver<usize>)>,
+    pub row_index: Option<(RowIndex, oneshot_channel::Receiver<usize>)>,
     pub verbose: bool,
 }
 
@@ -101,7 +102,7 @@ impl MorselStreamReverser {
                 eprintln!("MorselStreamReverser: wait for total row count");
             }
 
-            let Ok(total_count) = total_row_count_rx.await else {
+            let Ok(total_count) = total_row_count_rx.recv().await else {
                 // Errored, or empty file.
                 if verbose {
                     eprintln!("MorselStreamReverser: did not receive total row count, returning");
@@ -155,8 +156,7 @@ impl MorselStreamReverser {
                 chunk_size: {}, \
                 num_pipelines: {}, \
                 n_tasks: {}, \
-                row_index: {:?} \
-                ",
+                row_index: {:?}",
                 combined_df.height(),
                 n_chunks,
                 chunk_size,

@@ -1,14 +1,5 @@
 use std::sync::LazyLock;
 
-/// # Safety
-/// This may break aliasing rules, make sure you are the only owner.
-#[allow(clippy::mut_from_ref)]
-pub unsafe fn to_mutable_slice<T: Copy>(s: &[T]) -> &mut [T] {
-    let ptr = s.as_ptr() as *mut T;
-    let len = s.len();
-    unsafe { std::slice::from_raw_parts_mut(ptr, len) }
-}
-
 pub static PAGE_SIZE: LazyLock<usize> = LazyLock::new(|| {
     #[cfg(target_family = "unix")]
     unsafe {
@@ -164,12 +155,12 @@ pub mod prefetch {
 
         if verbose {
             let func_name = match memory_prefetch_func as usize {
-                v if v == no_prefetch as usize => "no_prefetch",
-                v if v == prefetch_l2 as usize => "prefetch_l2",
-                v if v == madvise_sequential as usize => "madvise_sequential",
-                v if v == madvise_willneed as usize => "madvise_willneed",
-                v if v == madvise_populate_read as usize => "madvise_populate_read",
-                v if v == force_populate_read as usize => "force_populate_read",
+                v if v == no_prefetch as *const () as usize => "no_prefetch",
+                v if v == prefetch_l2 as *const () as usize => "prefetch_l2",
+                v if v == madvise_sequential as *const () as usize => "madvise_sequential",
+                v if v == madvise_willneed as *const () as usize => "madvise_willneed",
+                v if v == madvise_populate_read as *const () as usize => "madvise_populate_read",
+                v if v == force_populate_read as *const () as usize => "force_populate_read",
                 _ => unreachable!(),
             };
 

@@ -1,4 +1,4 @@
-use std::fmt::{self, Display, Formatter};
+use std::fmt::{self, Display, Formatter, Write};
 
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
@@ -71,6 +71,7 @@ fn write_scan(
     indent: usize,
     n_columns: i64,
     total_columns: usize,
+    row_estimation: Option<usize>,
     predicate: &Option<ExprIRDisplay<'_>>,
     pre_slice: Option<Slice>,
     row_index: Option<&RowIndex>,
@@ -107,6 +108,9 @@ fn write_scan(
     }
     if let Some(deletion_files) = deletion_files {
         write!(f, "\n{deletion_files}")?;
+    }
+    if let Some(row_estimation) = row_estimation {
+        write!(f, "\n{:indent$}ESTIMATED ROWS: {row_estimation}", "")?;
     }
     Ok(())
 }
@@ -200,7 +204,7 @@ impl<'a> IRDisplay<'a> {
                 let right_on = self.display_expr_slice(right_on);
 
                 // Fused cross + filter (show as nested loop join)
-                if let Some(JoinTypeOptionsIR::Cross { predicate }) = &options.options {
+                if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) = &options.options {
                     let predicate = self.display_expr(predicate);
                     let name = "NESTED LOOP";
                     write!(f, "{:indent$}{name} JOIN ON {predicate}:", "")?;
@@ -338,46 +342,55 @@ impl Display for ExprIRDisplay<'_> {
 
         use AExpr::*;
         match root {
-            Window {
+            Element => f.write_str("element()"),
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window: _,
+            } => {
+                let function = self.with_root(function);
+                let index_column = self.with_root(index_column);
+                write!(
+                    f,
+                    "{function}.rolling(by='{index_column}', offset={offset}, period={period})",
+                )
+            },
+            Over {
                 function,
                 partition_by,
                 order_by,
-                options,
+                mapping: _,
             } => {
                 let function = self.with_root(function);
                 let partition_by = self.with_slice(partition_by);
-                match options {
-                    #[cfg(feature = "dynamic_group_by")]
-                    WindowType::Rolling(options) => {
-                        write!(
-                            f,
-                            "{function}.rolling(by='{}', offset={}, period={})",
-                            options.index_column, options.offset, options.period
-                        )
-                    },
-                    _ => {
-                        if let Some((order_by, _)) = order_by {
-                            let order_by = self.with_root(order_by);
-                            write!(
-                                f,
-                                "{function}.over(partition_by: {partition_by}, order_by: {order_by})"
-                            )
-                        } else {
-                            write!(f, "{function}.over({partition_by})")
-                        }
-                    },
+                if let Some((order_by, _)) = order_by {
+                    let order_by = self.with_root(order_by);
+                    write!(
+                        f,
+                        "{function}.over(partition_by: {partition_by}, order_by: {order_by})"
+                    )
+                } else {
+                    write!(f, "{function}.over({partition_by})")
                 }
             },
             Len => write!(f, "len()"),
-            Explode { expr, skip_empty } => {
+            Explode { expr, options } => {
                 let expr = self.with_root(expr);
-                if *skip_empty {
-                    write!(f, "{expr}.explode(skip_empty)")
-                } else {
-                    write!(f, "{expr}.explode()")
+                write!(f, "{expr}.explode(")?;
+                match (options.empty_as_null, options.keep_nulls) {
+                    (true, true) => {},
+                    (true, false) => f.write_str("keep_nulls=false")?,
+                    (false, true) => f.write_str("empty_as_null=false")?,
+                    (false, false) => f.write_str("empty_as_null=false, keep_nulls=false")?,
                 }
+                f.write_char(')')
             },
             Column(name) => write!(f, "col(\"{name}\")"),
+            #[cfg(feature = "dtype-struct")]
+            StructField(name) => write!(f, "field(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),
             BinaryExpr { left, op, right } => {
                 let left = self.with_root(left);
@@ -411,6 +424,7 @@ impl Display for ExprIRDisplay<'_> {
                 expr,
                 idx,
                 returns_scalar,
+                null_on_oob: _,
             } => {
                 let expr = self.with_root(expr);
                 let idx = self.with_root(idx);
@@ -447,16 +461,42 @@ impl Display for ExprIRDisplay<'_> {
                             write!(f, ".max()")
                         }
                     },
+                    MinBy { input, by } => {
+                        let input = self.with_root(input);
+                        let by = self.with_root(by);
+                        write!(f, "{input}.min_by({by})",)
+                    },
+                    MaxBy { input, by } => {
+                        let input = self.with_root(input);
+                        let by = self.with_root(by);
+                        write!(f, "{input}.max_by({by})",)
+                    },
                     Median(expr) => write!(f, "{}.median()", self.with_root(expr)),
                     Mean(expr) => write!(f, "{}.mean()", self.with_root(expr)),
                     First(expr) => write!(f, "{}.first()", self.with_root(expr)),
+                    FirstNonNull(expr) => write!(f, "{}.first_non_null()", self.with_root(expr)),
                     Last(expr) => write!(f, "{}.last()", self.with_root(expr)),
+                    LastNonNull(expr) => write!(f, "{}.last_non_null()", self.with_root(expr)),
+                    Item { input, allow_empty } => {
+                        self.with_root(input).fmt(f)?;
+                        if *allow_empty {
+                            write!(f, ".item(allow_empty=true)")
+                        } else {
+                            write!(f, ".item()")
+                        }
+                    },
                     Implode(expr) => write!(f, "{}.implode()", self.with_root(expr)),
                     NUnique(expr) => write!(f, "{}.n_unique()", self.with_root(expr)),
                     Sum(expr) => write!(f, "{}.sum()", self.with_root(expr)),
                     AggGroups(expr) => write!(f, "{}.groups()", self.with_root(expr)),
-                    Count(expr, false) => write!(f, "{}.count()", self.with_root(expr)),
-                    Count(expr, true) => write!(f, "{}.len()", self.with_root(expr)),
+                    Count {
+                        input,
+                        include_nulls: false,
+                    } => write!(f, "{}.count()", self.with_root(input)),
+                    Count {
+                        input,
+                        include_nulls: true,
+                    } => write!(f, "{}.len()", self.with_root(input)),
                     Var(expr, _) => write!(f, "{}.var()", self.with_root(expr)),
                     Std(expr, _) => write!(f, "{}.std()", self.with_root(expr)),
                     Quantile {
@@ -505,7 +545,8 @@ impl Display for ExprIRDisplay<'_> {
                     write!(f, ".{function}()")
                 }
             },
-            AnonymousFunction { input, fmt_str, .. } => {
+            AnonymousFunction { input, fmt_str, .. }
+            | AnonymousStreamingAgg { input, fmt_str, .. } => {
                 let fst = self.with_root(&input[0]);
                 fst.fmt(f)?;
                 if input.len() >= 2 {
@@ -523,11 +564,25 @@ impl Display for ExprIRDisplay<'_> {
                 let evaluation = self.with_root(evaluation);
                 match variant {
                     EvalVariant::List => write!(f, "{expr}.list.eval({evaluation})"),
+                    EvalVariant::ListAgg => write!(f, "{expr}.list.agg({evaluation})"),
+                    EvalVariant::Array { as_list: false } => {
+                        write!(f, "{expr}.array.eval({evaluation})")
+                    },
+                    EvalVariant::Array { as_list: true } => {
+                        write!(f, "{expr}.array.eval({evaluation}, as_list=true)")
+                    },
+                    EvalVariant::ArrayAgg => write!(f, "{expr}.array.agg({evaluation})"),
                     EvalVariant::Cumulative { min_samples } => write!(
                         f,
                         "{expr}.cumulative_eval({evaluation}, min_samples={min_samples})"
                     ),
                 }
+            },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, evaluation } => {
+                let expr = self.with_root(expr);
+                let evaluation = self.with_slice(evaluation);
+                write!(f, "{expr}.struct.with_fields({evaluation})")
             },
             Slice {
                 input,
@@ -677,6 +732,7 @@ pub fn write_ir_non_recursive(
                 indent,
                 n_columns,
                 total_columns,
+                None,
                 &predicate,
                 options
                     .n_rows
@@ -705,6 +761,7 @@ pub fn write_ir_non_recursive(
             sources,
             file_info,
             predicate,
+            predicate_file_skip_applied: _,
             scan_type,
             unified_scan_args,
             hive_parts: _,
@@ -716,6 +773,12 @@ pub fn write_ir_non_recursive(
                 .map(|columns| columns.len() as i64)
                 .unwrap_or(-1);
 
+            let row_estimation = if file_info.row_estimation.1 != usize::MAX {
+                Some(file_info.row_estimation.1)
+            } else {
+                None
+            };
+
             let predicate = predicate.as_ref().map(|p| p.display(expr_arena));
 
             write_scan(
@@ -725,6 +788,7 @@ pub fn write_ir_non_recursive(
                 indent,
                 n_columns,
                 file_info.schema.len(),
+                row_estimation,
                 &predicate,
                 unified_scan_args.pre_slice.clone(),
                 unified_scan_args.row_index.as_ref(),
@@ -783,14 +847,57 @@ pub fn write_ir_non_recursive(
         IR::Sort {
             input: _,
             by_column,
-            slice: _,
-            sort_options: _,
+            slice,
+            sort_options,
         } => {
-            let by_column = ExprIRSliceDisplay {
-                exprs: by_column,
-                expr_arena,
-            };
-            write!(f, "{:indent$}SORT BY {by_column}", "")
+            write!(f, "{:indent$}", "")?;
+
+            f.write_str("SORT BY ")?;
+
+            if slice.is_some()
+                || sort_options.maintain_order
+                || sort_options.descending.iter().any(|v| *v)
+                || sort_options.nulls_last.iter().any(|v| *v)
+            {
+                f.write_char('[')?;
+
+                let mut comma = false;
+                if let Some((o, l)) = slice {
+                    write!(f, "slice: ({o}, {l})")?;
+                    comma = true;
+                }
+                if sort_options.maintain_order {
+                    if comma {
+                        f.write_str(", ")?;
+                    }
+                    f.write_str("maintain_order: true")?;
+                    comma = true;
+                }
+                if sort_options.descending.iter().any(|v| *v) {
+                    if comma {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "descending: {:?}", sort_options.descending.as_slice())?;
+                    comma = true;
+                }
+                if sort_options.nulls_last.iter().any(|v| *v) {
+                    if comma {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "nulls_last: {:?}", sort_options.nulls_last.as_slice())?;
+                }
+
+                f.write_str("] ")?;
+            }
+
+            write!(
+                f,
+                "{}",
+                ExprIRSliceDisplay {
+                    exprs: by_column,
+                    expr_arena,
+                }
+            )
         },
         IR::Cache { input: _, id } => write!(f, "{:indent$}CACHE[id: {id}]", ""),
         IR::GroupBy {
@@ -828,7 +935,7 @@ pub fn write_ir_non_recursive(
             };
 
             // Fused cross + filter (show as nested loop join)
-            if let Some(JoinTypeOptionsIR::Cross { predicate }) = &options.options {
+            if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) = &options.options {
                 let predicate = predicate.display(expr_arena);
                 write!(f, "{:indent$}NESTED_LOOP JOIN ON {predicate}", "")?;
             } else {
@@ -881,8 +988,9 @@ pub fn write_ir_non_recursive(
         IR::Sink { input: _, payload } => {
             let name = match payload {
                 SinkTypeIR::Memory => "SINK (memory)",
+                SinkTypeIR::Callback { .. } => "SINK (callback)",
                 SinkTypeIR::File { .. } => "SINK (file)",
-                SinkTypeIR::Partition { .. } => "SINK (partition)",
+                SinkTypeIR::Partitioned { .. } => "SINK (partition)",
             };
             write!(f, "{:indent$}{name}", "")
         },

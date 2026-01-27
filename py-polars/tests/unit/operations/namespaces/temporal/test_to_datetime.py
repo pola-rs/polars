@@ -185,6 +185,20 @@ def test_to_datetime_aware_values_aware_dtype() -> None:
 
 
 @pytest.mark.parametrize(
+    ("time_zone", "suggestion"),
+    [
+        ("Europe/Parts", "Europe/Paris"),
+        ("Europ/londn", "Europe/London"),
+        ("Africa/Kathmandu", "Asia/Kathmandu"),
+    ],
+)
+def test_to_datetime_tz_suggestion(time_zone: str, suggestion: str) -> None:
+    msg = f"Hint: did you mean '{suggestion}' instead?"
+    with pytest.raises(ComputeError, match=msg):
+        _ = pl.Series(["2020-01-01T00:00:00+00"]).str.to_datetime(time_zone=time_zone)
+
+
+@pytest.mark.parametrize(
     ("inputs", "format", "expected"),
     [
         ("01-01-69", "%d-%m-%y", date(2069, 1, 1)),  # Polars' parser
@@ -289,3 +303,29 @@ def test_to_datetime_fallible_predicate_pushdown() -> None:
         assert_frame_equal(
             q.collect(), q.collect(optimizations=pl.QueryOptFlags.none())
         )
+
+
+def test_to_date_inexact_overlong_24263() -> None:
+    df = pl.DataFrame({"a": ["15/03/2024", "2024-02-29 00:00:00"]})
+    out = df.with_columns(
+        pl.col("a").str.to_date("%d/%m/%Y", strict=False, exact=False)
+    )
+    assert_frame_equal(out, pl.DataFrame({"a": [date(2024, 3, 15), None]}))
+
+
+def test_to_date_inexact_unicode_multibyte() -> None:
+    df = pl.DataFrame({"a": ["你好15/03/2024你好", "你好"]})
+    out = df.with_columns(
+        pl.col("a").str.to_date("%d/%m/%Y", strict=False, exact=False)
+    )
+    assert_frame_equal(out, pl.DataFrame({"a": [date(2024, 3, 15), None]}))
+
+
+def test_to_datetime_inexact_unicode_multibyte() -> None:
+    df = pl.DataFrame({"a": ["你好2020-02-03 12:53:11你好", "你好"]})
+    out = df.with_columns(
+        pl.col("a").str.to_datetime("%Y-%m-%d %H:%M:%S", strict=False, exact=False)
+    )
+    assert_frame_equal(
+        out, pl.DataFrame({"a": [datetime(2020, 2, 3, 12, 53, 11), None]})
+    )

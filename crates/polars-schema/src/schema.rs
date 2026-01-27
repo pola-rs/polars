@@ -462,18 +462,26 @@ where
         I: IntoIterator<Item = F>,
         F: Into<(PlSmallStr, D)>,
     {
+        Self::try_from_iter_check_duplicates(
+            iter.into_iter().map(PolarsResult::Ok),
+            |name: &str| polars_err!(Duplicate: "duplicate name when building schema '{}'", &name),
+        )
+    }
+
+    pub fn try_from_iter_check_duplicates<I, F, E>(iter: I, err_func: E) -> PolarsResult<Self>
+    where
+        I: IntoIterator<Item = PolarsResult<F>>,
+        F: Into<(PlSmallStr, D)>,
+        E: Fn(&str) -> PolarsError,
+    {
         let iter = iter.into_iter();
         let mut slf = Self::with_capacity(iter.size_hint().1.unwrap_or(0));
 
         for v in iter {
-            let (name, d) = v.into();
+            let (name, d) = v?.into();
 
             if slf.contains(&name) {
-                return Err(err_msg(&name));
-
-                fn err_msg(name: &str) -> PolarsError {
-                    polars_err!(Duplicate: "duplicate name when building schema '{}'", &name)
-                }
+                return Err(err_func(&name));
             }
 
             slf.fields.insert(name, d);
@@ -481,21 +489,6 @@ where
 
         Ok(slf)
     }
-}
-
-pub fn ensure_matching_schema_names<D>(lhs: &Schema<D>, rhs: &Schema<D>) -> PolarsResult<()> {
-    let lhs_names = lhs.iter_names();
-    let rhs_names = rhs.iter_names();
-
-    if !(lhs_names.len() == rhs_names.len() && lhs_names.zip(rhs_names).all(|(l, r)| l == r)) {
-        polars_bail!(
-            SchemaMismatch:
-            "lhs: {:?} rhs: {:?}",
-            lhs.iter_names().collect::<Vec<_>>(), rhs.iter_names().collect::<Vec<_>>()
-        )
-    }
-
-    Ok(())
 }
 
 impl<D: Debug> Debug for Schema<D> {

@@ -1,19 +1,5 @@
 use super::*;
 
-#[cfg(feature = "list_to_struct")]
-#[derive(Clone, Eq, PartialEq, Hash, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub enum ListToStruct {
-    FixedWidth(Arc<[PlSmallStr]>),
-    InferWidth {
-        infer_field_strategy: ListToStructWidthStrategy,
-        get_index_name: Option<DslNameGenerator>,
-        /// If this is None, it means unbounded.
-        max_fields: Option<usize>,
-    },
-}
-
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -70,7 +56,7 @@ pub enum ListFunction {
     #[cfg(feature = "dtype-array")]
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
-    ToStruct(ListToStruct),
+    ToStruct(Arc<[PlSmallStr]>),
 }
 
 impl Display for ListFunction {

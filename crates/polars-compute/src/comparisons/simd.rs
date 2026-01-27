@@ -42,7 +42,7 @@ where
         }
     }
 
-    if n % N > 0 {
+    if !n.is_multiple_of(N) {
         let mut l: [T; N] = [T::zeroed(); N];
         let mut r: [T; N] = [T::zeroed(); N];
         unsafe {
@@ -82,7 +82,7 @@ where
         }
     }
 
-    if n % N > 0 {
+    if !n.is_multiple_of(N) {
         let mut a: [T; N] = [T::zeroed(); N];
         unsafe {
             ptr::copy_nonoverlapping(arg_rest.as_ptr(), a.as_mut_ptr(), n % N);

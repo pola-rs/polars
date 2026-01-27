@@ -2,6 +2,7 @@
     feature = "allow_unused",
     allow(unused, dead_code, irrefutable_let_patterns)
 )] // Maybe be caused by some feature
+pub mod dispatch;
 mod expressions;
 pub mod groups;
 pub mod hash_keys;
@@ -17,6 +18,8 @@ use polars_utils::IdxSize;
 pub use crate::planner::{ExpressionConversionState, create_physical_expr};
 
 /// An index where the top bit indicates whether a value should be evicted.
+#[derive(Copy, Clone, Debug)]
+#[repr(transparent)]
 pub struct EvictIdx(IdxSize);
 
 impl EvictIdx {
@@ -28,11 +31,16 @@ impl EvictIdx {
 
     #[inline(always)]
     pub fn idx(&self) -> usize {
-        (self.0 & ((1 << (IdxSize::BITS - 1)) - 1)) as usize
+        (self.0 & (IdxSize::MAX >> 1)) as usize
     }
 
     #[inline(always)]
     pub fn should_evict(&self) -> bool {
         (self.0 >> (IdxSize::BITS - 1)) != 0
+    }
+
+    pub fn cast_slice(idxs: &[IdxSize]) -> &[EvictIdx] {
+        // SAFETY: same size and align, repr(transparent).
+        unsafe { std::slice::from_raw_parts(idxs.as_ptr() as *const EvictIdx, idxs.len()) }
     }
 }

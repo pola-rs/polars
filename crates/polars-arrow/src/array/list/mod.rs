@@ -105,6 +105,17 @@ impl<O: Offset> ListArray<O> {
             Some(Bitmap::new_zeroed(length)),
         )
     }
+
+    pub fn into_inner(
+        self,
+    ) -> (
+        ArrowDataType,
+        Box<dyn Array>,
+        OffsetsBuffer<O>,
+        Option<Bitmap>,
+    ) {
+        (self.dtype, self.values, self.offsets, self.validity)
+    }
 }
 
 impl<O: Offset> ListArray<O> {
@@ -211,12 +222,12 @@ impl<O: Offset> ListArray<O> {
     /// Panics iff the logical type is not consistent with this struct.
     pub fn try_get_child(dtype: &ArrowDataType) -> PolarsResult<&Field> {
         if O::IS_LARGE {
-            match dtype.to_logical_type() {
+            match dtype.to_storage() {
                 ArrowDataType::LargeList(child) => Ok(child.as_ref()),
                 _ => polars_bail!(ComputeError: "ListArray<i64> expects DataType::LargeList"),
             }
         } else {
-            match dtype.to_logical_type() {
+            match dtype.to_storage() {
                 ArrowDataType::List(child) => Ok(child.as_ref()),
                 _ => polars_bail!(ComputeError: "ListArray<i32> expects DataType::List"),
             }

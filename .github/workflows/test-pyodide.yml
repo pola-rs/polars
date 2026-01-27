@@ -37,21 +37,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Disable incompatible features
         env:
           # Note: If you change this line, you must also copy the change to `release-python.yml`.
-          FEATURES: csv|ipc|ipc_streaming|parquet|async|json|extract_jsonpath|catalog|cloud|polars_cloud|tokio|clipboard|decompress|new_streaming
+          FEATURES: csv|ipc|ipc_streaming|parquet|async|scan_lines|json|extract_jsonpath|catalog|cloud|polars_cloud|tokio|clipboard|decompress|new_streaming
         run: |
           sed -i 's/serde_json = { workspace = true, optional = true }/serde_json = { workspace = true }/' crates/polars-python/Cargo.toml
-          sed -i 's/"serde_json", //' crates/polars-python/Cargo.toml
-          sed -E -i "/^  \"(${FEATURES})\",$/d" crates/polars-python/Cargo.toml py-polars/Cargo.toml
+          sed -i 's/"serde_json",//' crates/polars-python/Cargo.toml
+          sed -E -i "/^  \"(${FEATURES})\",$/d" crates/polars-python/Cargo.toml py-polars/runtime/polars-runtime-32/Cargo.toml
 
       - name: Check out Emscripten v4.0.9 patches for Pyodide
         uses: actions/checkout@v4
         with:
-          ref: 0.28.1
+          ref: 0.29.2
           path: pyodide-patches
           repository: pyodide/pyodide
           sparse-checkout: |
@@ -67,11 +67,10 @@ jobs:
           sudo swapon --show
 
       - name: Build Pyodide wheel
-        uses: pypa/cibuildwheel@v3.1.4
+        uses: pypa/cibuildwheel@9a15d0851eda6787ba362104ce414974f89201bf # brings v0.29.2, todo update with release
         with:
           package-dir: py-polars
           output-dir: wasm-dist
-          # TODO: Add back cp312-pyodide_wasm32?
           only: cp313-pyodide_wasm32
         env:
           CIBW_BEFORE_BUILD: |

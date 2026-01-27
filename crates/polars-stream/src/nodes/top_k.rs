@@ -65,7 +65,7 @@ pub struct BottomKWithPayload<P> {
     heap: BinaryHeap<Priority<P, (DfsKey, RowIdxKey)>>,
     df_subsets: SlotMap<DfsKey, DfSubset>,
     row_idxs: SlotMap<RowIdxKey, IdxSize>,
-    to_prune: Vec<DfsKey>,
+    to_prune: SecondaryMap<DfsKey, ()>,
     gather_idxs: Vec<IdxSize>,
 }
 
@@ -76,7 +76,7 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
             heap: BinaryHeap::with_capacity(k + 1),
             df_subsets: SlotMap::with_key(),
             row_idxs: SlotMap::with_key(),
-            to_prune: Vec::new(),
+            to_prune: SecondaryMap::new(),
             gather_idxs: Vec::new(),
         }
     }
@@ -131,13 +131,13 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
             let df_subset = &mut self.df_subsets[dfs_key];
             df_subset.subset_len -= 1;
             if df_subset.subset_len == self.df_subsets.len() / 2 {
-                self.to_prune.push(dfs_key);
+                self.to_prune.insert(dfs_key, ());
             }
         }
     }
 
     pub fn prune(&mut self) {
-        for dfs_key in self.to_prune.drain(..) {
+        for (dfs_key, ()) in self.to_prune.drain() {
             if self.df_subsets[dfs_key].subset_len == 0 {
                 let df_subset = self.df_subsets.remove(dfs_key).unwrap();
                 for row_idx in df_subset.rows {
@@ -225,7 +225,7 @@ impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> DfByKeyR
 
     fn add(&mut self, df: DataFrame, keys: DataFrame) {
         assert!(keys.width() == 1);
-        let keys = keys.get_columns()[0].as_materialized_series();
+        let keys = keys.columns()[0].as_materialized_series();
         let key_ca: &ChunkedArray<T> = keys.as_phys_any().downcast_ref().unwrap();
         self.inner.add_df(
             df,
@@ -321,7 +321,7 @@ impl DfByKeyReducer for RowEncodedBottomK {
     }
 
     fn add(&mut self, df: DataFrame, keys: DataFrame) {
-        let keys_encoded = _get_rows_encoded(keys.get_columns(), &self.reverse, &self.nulls_last)
+        let keys_encoded = _get_rows_encoded(keys.columns(), &self.reverse, &self.nulls_last)
             .unwrap()
             .into_array();
         self.inner.add_df(
@@ -446,7 +446,7 @@ impl ComputeNode for TopKNode {
             TopKState::WaitingForK(inner) if recv[1] == PortState::Done => {
                 let k_frame = inner.get_output()?.unwrap();
                 polars_ensure!(k_frame.height() == 1, ComputeError: "got more than one value for 'k' in top_k");
-                let k_item = k_frame.get_columns()[0].get(0)?;
+                let k_item = k_frame.columns()[0].get(0)?;
                 let k = k_item.extract::<usize>().ok_or_else(
                     || polars_err!(ComputeError: "invalid value of 'k' in top_k: {:?}", k_item),
                 )?;
@@ -543,7 +543,9 @@ impl ComputeNode for TopKNode {
                                 let s = selector.evaluate(&df, &state.in_memory_exec_state).await?;
                                 key_columns.push(s.into_column());
                             }
-                            let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
+                            let keys = unsafe {
+                                DataFrame::new_unchecked_with_broadcast(df.height(), key_columns)?
+                            };
 
                             reducer.add(df, keys);
                         }

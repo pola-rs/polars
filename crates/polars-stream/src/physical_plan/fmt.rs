@@ -1,17 +1,21 @@
 use std::fmt::Write;
 
-use polars_plan::dsl::PartitionVariantIR;
+use polars_plan::dsl::PartitionStrategyIR;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
-use polars_plan::prelude::FileType;
+use polars_plan::prelude::FileWriteFormat;
+use polars_time::ClosedWindow;
+#[cfg(feature = "dynamic_group_by")]
+use polars_time::DynamicGroupOptions;
 use polars_utils::arena::Arena;
 use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
+use crate::physical_plan::ZipBehavior;
 
 /// A style of a graph node.
-enum NodeStyle {
+pub enum NodeStyle {
     InMemoryFallback,
     MemoryIntensive,
     Generic,
@@ -25,7 +29,7 @@ impl NodeStyle {
     pub fn for_node_kind(kind: &PhysNodeKind) -> Self {
         use PhysNodeKind as K;
         match kind {
-            K::InMemoryMap { .. } => Self::InMemoryFallback,
+            K::InMemoryMap { .. } | K::InMemoryJoin { .. } => Self::InMemoryFallback,
             K::InMemorySource { .. }
             | K::InputIndependentSelect { .. }
             | K::NegativeSlice { .. }
@@ -34,7 +38,6 @@ impl NodeStyle {
             | K::GroupBy { .. }
             | K::EquiJoin { .. }
             | K::SemiAntiJoin { .. }
-            | K::InMemoryJoin { .. }
             | K::Multiplexer { .. } => Self::MemoryIntensive,
             #[cfg(feature = "merge_sorted")]
             K::MergeSorted { .. } => Self::MemoryIntensive,
@@ -129,7 +132,7 @@ pub fn fmt_exprs(
         }
 
         for (name, expr) in formatted {
-            write!(f, "{name:>max_name_width$} = {expr:<max_expr_width$}\\n").unwrap();
+            writeln!(f, "{name:>max_name_width$} = {expr:<max_expr_width$}").unwrap();
         }
     } else {
         let Some(e) = exprs.first() else {
@@ -139,7 +142,7 @@ pub fn fmt_exprs(
         fmt_expr(f, e, expr_arena).unwrap();
 
         for e in &exprs[1..] {
-            f.write_str("\\n").unwrap();
+            f.write_str("\n").unwrap();
             fmt_expr(f, e, expr_arena).unwrap();
         }
     }
@@ -162,7 +165,10 @@ fn visualize_plan_rec(
 
     use std::slice::from_ref;
     let (label, inputs) = match kind {
-        PhysNodeKind::InMemorySource { df } => (
+        PhysNodeKind::InMemorySource {
+            df,
+            disable_morsel_split: _,
+        } => (
             format!(
                 "in-memory-source\\ncols: {}",
                 df.get_column_names_owned().join(", ")
@@ -238,6 +244,16 @@ fn visualize_plan_rec(
             offset,
             length,
         } => ("slice".to_owned(), &[*input, *offset, *length][..]),
+        PhysNodeKind::Shift {
+            input,
+            offset,
+            fill: Some(fill),
+        } => ("shift".to_owned(), &[*input, *offset, *fill][..]),
+        PhysNodeKind::Shift {
+            input,
+            offset,
+            fill: None,
+        } => ("shift".to_owned(), &[*input, *offset][..]),
         PhysNodeKind::Filter { input, predicate } => (
             format!(
                 "filter\\n{}",
@@ -250,41 +266,34 @@ fn visualize_plan_rec(
             from_ref(input),
         ),
         PhysNodeKind::InMemorySink { input } => ("in-memory-sink".to_string(), from_ref(input)),
-        PhysNodeKind::FileSink {
-            input, file_type, ..
-        } => match file_type {
+        PhysNodeKind::CallbackSink { input, .. } => ("callback-sink".to_string(), from_ref(input)),
+        PhysNodeKind::FileSink { input, options } => match options.file_format {
             #[cfg(feature = "parquet")]
-            FileType::Parquet(_) => ("parquet-sink".to_string(), from_ref(input)),
+            FileWriteFormat::Parquet(_) => ("parquet-sink".to_string(), from_ref(input)),
             #[cfg(feature = "ipc")]
-            FileType::Ipc(_) => ("ipc-sink".to_string(), from_ref(input)),
+            FileWriteFormat::Ipc(_) => ("ipc-sink".to_string(), from_ref(input)),
             #[cfg(feature = "csv")]
-            FileType::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
+            FileWriteFormat::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
             #[cfg(feature = "json")]
-            FileType::Json(_) => ("ndjson-sink".to_string(), from_ref(input)),
+            FileWriteFormat::NDJson(_) => ("ndjson-sink".to_string(), from_ref(input)),
             #[allow(unreachable_patterns)]
             _ => todo!(),
         },
-        PhysNodeKind::PartitionSink {
-            input,
-            file_type,
-            variant,
-            ..
-        } => {
-            let variant = match variant {
-                PartitionVariantIR::ByKey { .. } => "partition-by-key-sink",
-                PartitionVariantIR::MaxSize { .. } => "partition-max-size-sink",
-                PartitionVariantIR::Parted { .. } => "partition-parted-sink",
+        PhysNodeKind::PartitionedSink { input, options } => {
+            let variant = match options.partition_strategy {
+                PartitionStrategyIR::Keyed { .. } => "partition-keyed",
+                PartitionStrategyIR::FileSize => "partition-file-size",
             };
 
-            match file_type {
+            match options.file_format {
                 #[cfg(feature = "parquet")]
-                FileType::Parquet(_) => (format!("{variant}[parquet]"), from_ref(input)),
+                FileWriteFormat::Parquet(_) => (format!("{variant}[parquet]"), from_ref(input)),
                 #[cfg(feature = "ipc")]
-                FileType::Ipc(_) => (format!("{variant}[ipc]"), from_ref(input)),
+                FileWriteFormat::Ipc(_) => (format!("{variant}[ipc]"), from_ref(input)),
                 #[cfg(feature = "csv")]
-                FileType::Csv(_) => (format!("{variant}[csv]"), from_ref(input)),
+                FileWriteFormat::Csv(_) => (format!("{variant}[csv]"), from_ref(input)),
                 #[cfg(feature = "json")]
-                FileType::Json(_) => (format!("{variant}[ndjson]"), from_ref(input)),
+                FileWriteFormat::NDJson(_) => (format!("{variant}[ndjson]"), from_ref(input)),
                 #[allow(unreachable_patterns)]
                 _ => todo!(),
             }
@@ -297,14 +306,50 @@ fn visualize_plan_rec(
             let mut label = String::new();
             label.push_str("in-memory-map");
             if let Some(format_str) = format_str {
-                label.push('\n');
+                label.write_str("\\n").unwrap();
 
                 let mut f = EscapeLabel(&mut label);
-                write!(f, "{format_str}").unwrap();
+                f.write_str(format_str).unwrap();
             }
             (label, from_ref(input))
         },
-        PhysNodeKind::Map { input, map: _ } => ("map".to_string(), from_ref(input)),
+        PhysNodeKind::Map {
+            input,
+            map: _,
+            format_str,
+        } => {
+            let mut label = String::new();
+            label.push_str("map");
+            if let Some(format_str) = format_str {
+                label.push_str("\\n");
+
+                let mut f = EscapeLabel(&mut label);
+                f.write_str(format_str).unwrap();
+            }
+            (label, from_ref(input))
+        },
+        PhysNodeKind::SortedGroupBy {
+            input,
+            key,
+            aggs,
+            slice,
+        } => {
+            let mut s = String::new();
+            s.push_str("sorted-group-by\\n");
+            let f = &mut s;
+            write!(f, "key: {key}\\n").unwrap();
+            if let Some((offset, length)) = slice {
+                write!(f, "slice: {offset}, {length}\\n").unwrap();
+            }
+            write!(
+                f,
+                "aggs:\\n{}",
+                fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
+            )
+            .unwrap();
+
+            (s, from_ref(input))
+        },
         PhysNodeKind::Sort {
             input,
             by_column,
@@ -338,17 +383,46 @@ fn visualize_plan_rec(
             )
         },
         PhysNodeKind::Repeat { value, repeats } => ("repeat".to_owned(), &[*value, *repeats][..]),
+        #[cfg(feature = "cum_agg")]
+        PhysNodeKind::CumAgg { input, kind } => {
+            use crate::nodes::cum_agg::CumAggKind;
+
+            (
+                format!(
+                    "cum_{}",
+                    match kind {
+                        CumAggKind::Min => "min",
+                        CumAggKind::Max => "max",
+                        CumAggKind::Sum => "sum",
+                        CumAggKind::Count => "count",
+                        CumAggKind::Prod => "prod",
+                    }
+                ),
+                &[*input][..],
+            )
+        },
+        PhysNodeKind::GatherEvery { input, n, offset } => (
+            format!("gather_every\\nn: {n}, offset: {offset}"),
+            &[*input][..],
+        ),
         PhysNodeKind::Rle(input) => ("rle".to_owned(), &[*input][..]),
         PhysNodeKind::RleId(input) => ("rle_id".to_owned(), &[*input][..]),
+        PhysNodeKind::PeakMinMax { input, is_peak_max } => (
+            if *is_peak_max { "peak_max" } else { "peak_min" }.to_owned(),
+            &[*input][..],
+        ),
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
+        PhysNodeKind::UnorderedUnion { inputs } => {
+            ("unordered-union".to_string(), inputs.as_slice())
+        },
         PhysNodeKind::Zip {
             inputs,
-            null_extend,
+            zip_behavior,
         } => {
-            let label = if *null_extend {
-                "zip-null-extend"
-            } else {
-                "zip"
+            let label = match zip_behavior {
+                ZipBehavior::NullExtend => "zip-null-extend",
+                ZipBehavior::Broadcast => "zip-broadcast",
+                ZipBehavior::Strict => "zip-strict",
             };
             (label.to_string(), inputs.as_slice())
         },
@@ -362,13 +436,16 @@ fn visualize_plan_rec(
             row_index,
             pre_slice,
             predicate,
+            predicate_file_skip_applied: _,
             hive_parts,
             include_file_paths,
             cast_columns_policy: _,
             missing_columns_policy: _,
             forbid_extra_columns: _,
             deletion_files,
+            table_statistics: _,
             file_schema: _,
+            disable_morsel_split: _,
         } => {
             let mut out = format!("multi-scan[{}]", file_reader_builder.reader_name());
             let mut f = EscapeLabel(&mut out);
@@ -428,14 +505,147 @@ fn visualize_plan_rec(
 
             (out, &[][..])
         },
-        PhysNodeKind::GroupBy { input, key, aggs } => (
-            format!(
-                "group-by\\nkey:\\n{}\\naggs:\\n{}",
-                fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
+        PhysNodeKind::GroupBy {
+            inputs,
+            key_per_input,
+            aggs_per_input,
+        } => {
+            let mut out = String::from("group-by");
+            for (key, aggs) in key_per_input.iter().zip(aggs_per_input) {
+                write!(
+                    &mut out,
+                    "\\nkey:\\n{}\\naggs:\\n{}",
+                    fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
+                    fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
+                )
+                .ok();
+            }
+            (out, inputs.as_slice())
+        },
+        #[cfg(feature = "dynamic_group_by")]
+        PhysNodeKind::DynamicGroupBy {
+            input,
+            options,
+            aggs,
+            slice,
+        } => {
+            use polars_time::prelude::{Label, StartBy};
+
+            let DynamicGroupOptions {
+                index_column,
+                every,
+                period,
+                offset,
+                label,
+                include_boundaries,
+                closed_window,
+                start_by,
+            } = options;
+            let mut s = String::new();
+            let f = &mut s;
+            f.write_str("dynamic-group-by\\n").unwrap();
+            write!(f, "index column: {index_column}\\n").unwrap();
+            write!(f, "every: {every}").unwrap();
+            if every != period {
+                write!(f, ", period: {period}").unwrap();
+            }
+            if !offset.is_zero() {
+                write!(f, ", offset: {offset}").unwrap();
+            }
+            f.write_str("\\n").unwrap();
+            if *label != Label::Left {
+                write!(f, "label: {}\\n", <&'static str>::from(label)).unwrap();
+            }
+            if *include_boundaries {
+                write!(f, "include_boundaries: true\\n").unwrap();
+            }
+            if *start_by != StartBy::WindowBound {
+                write!(f, "start_by: {}\\n", <&'static str>::from(start_by)).unwrap();
+            }
+            if *closed_window != ClosedWindow::Left {
+                write!(
+                    f,
+                    "closed_window: {}\\n",
+                    <&'static str>::from(closed_window)
+                )
+                .unwrap();
+            }
+            if let Some((offset, length)) = slice {
+                write!(f, "slice: {offset}, {length}\\n").unwrap();
+            }
+            write!(
+                f,
+                "aggs:\\n{}",
                 fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
-            ),
-            from_ref(input),
-        ),
+            )
+            .unwrap();
+
+            (s, from_ref(input))
+        },
+        #[cfg(feature = "dynamic_group_by")]
+        PhysNodeKind::RollingGroupBy {
+            input,
+            index_column,
+            period,
+            offset,
+            closed,
+            slice,
+            aggs,
+        } => {
+            let mut s = String::new();
+            let f = &mut s;
+            f.write_str("rolling-group-by\\n").unwrap();
+            write!(f, "index column: {index_column}\\n").unwrap();
+            write!(f, "period: {period}, offset: {offset}\\n").unwrap();
+            write!(f, "closed: {}\\n", <&'static str>::from(*closed)).unwrap();
+            if let Some((offset, length)) = slice {
+                write!(f, "slice: {offset}, {length}\\n").unwrap();
+            }
+            write!(
+                f,
+                "aggs:\\n{}",
+                fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
+            )
+            .unwrap();
+
+            (s, from_ref(input))
+        },
+        PhysNodeKind::MergeJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+            ..
+        } => {
+            let mut label = "merge-join".to_string();
+            let how: &'static str = (&args.how).into();
+            write!(
+                label,
+                r"\nleft_on:\n{}",
+                left_on
+                    .iter()
+                    .map(|s| escape_graphviz(&s[..]))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+            .unwrap();
+            write!(
+                label,
+                r"\nright_on:\n{}",
+                right_on
+                    .iter()
+                    .map(|s| escape_graphviz(&s[..]))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+            .unwrap();
+            write!(label, r"\nhow: {}", escape_graphviz(how)).unwrap();
+            if args.nulls_equal {
+                write!(label, r"\njoin-nulls").unwrap();
+            }
+            (label, &[*input_left, *input_right][..])
+        },
         PhysNodeKind::InMemoryJoin {
             input_left,
             input_right,
@@ -460,6 +670,7 @@ fn visualize_plan_rec(
             output_bool: _,
         } => {
             let label = match phys_sm[node_key].kind {
+                PhysNodeKind::MergeJoin { .. } => "merge-join",
                 PhysNodeKind::EquiJoin { .. } => "equi-join",
                 PhysNodeKind::InMemoryJoin { .. } => "in-memory-join",
                 PhysNodeKind::CrossJoin { .. } => "cross-join",
@@ -512,15 +723,13 @@ fn visualize_plan_rec(
         PhysNodeKind::MergeSorted {
             input_left,
             input_right,
-            key,
-        } => {
-            let mut out = "merge-sorted".to_string();
-            let mut f = EscapeLabel(&mut out);
-
-            write!(f, "\nkey: {key}").unwrap();
-
-            (out, &[*input_left, *input_right][..])
-        },
+        } => ("merge-sorted".to_string(), &[*input_left, *input_right][..]),
+        #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmMean { input, options: _ } => ("ewm-mean".to_string(), &[*input][..]),
+        #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmVar { input, options: _ } => ("ewm-var".to_string(), &[*input][..]),
+        #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmStd { input, options: _ } => ("ewm-std".to_string(), &[*input][..]),
     };
 
     let node_id = node_key.data().as_ffi();

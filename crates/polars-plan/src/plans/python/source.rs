@@ -28,6 +28,8 @@ pub struct PythonOptions {
     pub predicate: PythonPredicate,
     /// Validate if the source gives the proper schema.
     pub validate_schema: bool,
+    /// Whether this scan is free of side effects (allows for CSE when that is the case).
+    pub is_pure: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]

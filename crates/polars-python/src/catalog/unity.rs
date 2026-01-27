@@ -1,20 +1,20 @@
 use std::str::FromStr;
 
-use polars::prelude::{LazyFrame, PlHashMap, PlSmallStr, Schema};
+use polars::prelude::{CloudScheme, LazyFrame, PlHashMap, PlSmallStr, Schema};
 use polars_io::catalog::unity::client::{CatalogClient, CatalogClientBuilder};
 use polars_io::catalog::unity::models::{
     CatalogInfo, ColumnInfo, DataSourceFormat, NamespaceInfo, TableInfo, TableType,
 };
 use polars_io::catalog::unity::schema::parse_type_json_str;
-use polars_io::cloud::credential_provider::PlCredentialProvider;
 use polars_io::pl_async;
 use pyo3::exceptions::PyValueError;
-use pyo3::sync::GILOnceCell;
+use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyAnyMethods, PyDict, PyList, PyNone, PyTuple};
-use pyo3::{Bound, IntoPyObject, Py, PyAny, PyObject, PyResult, Python, pyclass, pymethods};
+use pyo3::{Bound, IntoPyObject, Py, PyAny, PyResult, Python, pyclass, pymethods};
 
+use crate::io::cloud_options::OptPyCloudOptions;
 use crate::lazyframe::PyLazyFrame;
-use crate::prelude::{Wrap, parse_cloud_options};
+use crate::prelude::Wrap;
 use crate::utils::{EnterPolarsExt, to_py_err};
 
 macro_rules! pydict_insert_keys {
@@ -34,12 +34,12 @@ macro_rules! pydict_insert_keys {
 
 // Result dataclasses. These are initialized from Python by calling [`PyCatalogClient::init_classes`].
 
-static CATALOG_INFO_CLS: GILOnceCell<Py<PyAny>> = GILOnceCell::new();
-static NAMESPACE_INFO_CLS: GILOnceCell<Py<PyAny>> = GILOnceCell::new();
-static TABLE_INFO_CLS: GILOnceCell<Py<PyAny>> = GILOnceCell::new();
-static COLUMN_INFO_CLS: GILOnceCell<Py<PyAny>> = GILOnceCell::new();
+static CATALOG_INFO_CLS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+static NAMESPACE_INFO_CLS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+static TABLE_INFO_CLS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+static COLUMN_INFO_CLS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct PyCatalogClient(CatalogClient);
 
 #[pymethods]
@@ -58,7 +58,7 @@ impl PyCatalogClient {
         builder.build().map(PyCatalogClient).map_err(to_py_err)
     }
 
-    pub fn list_catalogs(&self, py: Python) -> PyResult<PyObject> {
+    pub fn list_catalogs(&self, py: Python) -> PyResult<Py<PyAny>> {
         let v = py.enter_polars(|| {
             pl_async::get_runtime().block_in_place_on(self.client().list_catalogs())
         })?;
@@ -84,7 +84,7 @@ impl PyCatalogClient {
     }
 
     #[pyo3(signature = (catalog_name))]
-    pub fn list_namespaces(&self, py: Python<'_>, catalog_name: &str) -> PyResult<PyObject> {
+    pub fn list_namespaces(&self, py: Python<'_>, catalog_name: &str) -> PyResult<Py<PyAny>> {
         let v = py.enter_polars(|| {
             pl_async::get_runtime().block_in_place_on(self.client().list_namespaces(catalog_name))
         })?;
@@ -116,7 +116,7 @@ impl PyCatalogClient {
         py: Python<'_>,
         catalog_name: &str,
         namespace: &str,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let v = py.enter_polars(|| {
             pl_async::get_runtime()
                 .block_in_place_on(self.client().list_tables(catalog_name, namespace))
@@ -151,7 +151,7 @@ impl PyCatalogClient {
         table_name: &str,
         catalog_name: &str,
         namespace: &str,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let table_info = py
             .enter_polars(|| {
                 pl_async::get_runtime().block_in_place_on(self.client().get_table_info(
@@ -171,7 +171,7 @@ impl PyCatalogClient {
         py: Python<'_>,
         table_id: &str,
         write: bool,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let table_credentials = py
             .enter_polars(|| {
                 pl_async::get_runtime()
@@ -232,16 +232,15 @@ impl PyCatalogClient {
         Ok(PyTuple::new(py, [credentials, storage_update_options, expiry])?.into())
     }
 
-    #[pyo3(signature = (catalog_name, namespace, table_name, cloud_options, credential_provider, retries))]
+    #[pyo3(signature = (catalog_name, namespace, table_name, cloud_options, credential_provider))]
     pub fn scan_table(
         &self,
         py: Python<'_>,
         catalog_name: &str,
         namespace: &str,
         table_name: &str,
-        cloud_options: Option<Vec<(String, String)>>,
-        credential_provider: Option<PyObject>,
-        retries: usize,
+        cloud_options: OptPyCloudOptions,
+        credential_provider: Option<Py<PyAny>>,
     ) -> PyResult<PyLazyFrame> {
         let table_info = py.enter_polars(|| {
             pl_async::get_runtime().block_in_place_on(self.client().get_table_info(
@@ -257,18 +256,14 @@ impl PyCatalogClient {
             ));
         };
 
-        let cloud_options =
-            parse_cloud_options(storage_location, cloud_options.unwrap_or_default())?
-                .with_max_retries(retries)
-                .with_credential_provider(
-                    credential_provider.map(PlCredentialProvider::from_python_builder),
-                );
+        let cloud_options = cloud_options.extract_opt_cloud_options(
+            CloudScheme::from_path(storage_location),
+            credential_provider,
+        )?;
 
-        Ok(
-            LazyFrame::scan_catalog_table(&table_info, Some(cloud_options))
-                .map_err(to_py_err)?
-                .into(),
-        )
+        Ok(LazyFrame::scan_catalog_table(&table_info, cloud_options)
+            .map_err(to_py_err)?
+            .into())
     }
 
     #[pyo3(signature = (catalog_name, comment, storage_root))]
@@ -278,9 +273,9 @@ impl PyCatalogClient {
         catalog_name: &str,
         comment: Option<&str>,
         storage_root: Option<&str>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let catalog_info = py
-            .allow_threads(|| {
+            .detach(|| {
                 pl_async::get_runtime().block_in_place_on(self.client().create_catalog(
                     catalog_name,
                     comment,
@@ -294,7 +289,7 @@ impl PyCatalogClient {
 
     #[pyo3(signature = (catalog_name, force))]
     pub fn delete_catalog(&self, py: Python<'_>, catalog_name: &str, force: bool) -> PyResult<()> {
-        py.allow_threads(|| {
+        py.detach(|| {
             pl_async::get_runtime()
                 .block_in_place_on(self.client().delete_catalog(catalog_name, force))
         })
@@ -309,9 +304,9 @@ impl PyCatalogClient {
         namespace: &str,
         comment: Option<&str>,
         storage_root: Option<&str>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let namespace_info = py
-            .allow_threads(|| {
+            .detach(|| {
                 pl_async::get_runtime().block_in_place_on(self.client().create_namespace(
                     catalog_name,
                     namespace,
@@ -332,7 +327,7 @@ impl PyCatalogClient {
         namespace: &str,
         force: bool,
     ) -> PyResult<()> {
-        py.allow_threads(|| {
+        py.detach(|| {
             pl_async::get_runtime().block_in_place_on(self.client().delete_namespace(
                 catalog_name,
                 namespace,
@@ -358,8 +353,8 @@ impl PyCatalogClient {
         comment: Option<&str>,
         storage_root: Option<&str>,
         properties: Vec<(String, String)>,
-    ) -> PyResult<PyObject> {
-        let table_info = py.allow_threads(|| {
+    ) -> PyResult<Py<PyAny>> {
+        let table_info = py.detach(|| {
             pl_async::get_runtime()
                 .block_in_place_on(
                     self.client().create_table(
@@ -393,7 +388,7 @@ impl PyCatalogClient {
         namespace: &str,
         table_name: &str,
     ) -> PyResult<()> {
-        py.allow_threads(|| {
+        py.detach(|| {
             pl_async::get_runtime().block_in_place_on(self.client().delete_table(
                 catalog_name,
                 namespace,
@@ -405,7 +400,7 @@ impl PyCatalogClient {
 
     #[pyo3(signature = (type_json))]
     #[staticmethod]
-    pub fn type_json_to_polars_type(py: Python<'_>, type_json: &str) -> PyResult<PyObject> {
+    pub fn type_json_to_polars_type(py: Python<'_>, type_json: &str) -> PyResult<Py<PyAny>> {
         Ok(Wrap(parse_type_json_str(type_json).map_err(to_py_err)?)
             .into_pyobject(py)?
             .unbind())

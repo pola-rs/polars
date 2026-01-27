@@ -138,19 +138,19 @@ impl PyDataFrame {
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
 
         py.enter_polars_df(move || {
-            let mut builder = JsonReader::new(mmap_bytes_r)
+            let mut reader = JsonReader::new(mmap_bytes_r)
                 .with_json_format(JsonFormat::Json)
                 .infer_schema_len(infer_schema_length.and_then(NonZeroUsize::new));
 
             if let Some(schema) = schema {
-                builder = builder.with_schema(Arc::new(schema.0));
+                reader = reader.with_schema(Arc::new(schema.0));
             }
 
             if let Some(schema) = schema_overrides.as_ref() {
-                builder = builder.with_schema_overwrite(&schema.0);
+                reader = reader.with_schema_overwrite(&schema.0);
             }
 
-            builder.finish()
+            reader.finish()
         })
     }
 
@@ -217,7 +217,7 @@ impl PyDataFrame {
     #[pyo3(signature = (py_f, columns, projection, n_rows))]
     pub fn read_avro(
         py: Python<'_>,
-        py_f: PyObject,
+        py_f: Py<PyAny>,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
@@ -235,22 +235,22 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "json")]
-    pub fn write_json(&mut self, py: Python<'_>, py_f: PyObject) -> PyResult<()> {
+    pub fn write_json(&self, py: Python<'_>, py_f: Py<PyAny>) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
         py.enter_polars(|| {
             // TODO: Cloud support
 
             JsonWriter::new(file)
                 .with_json_format(JsonFormat::Json)
-                .finish(&mut self.df)
+                .finish(&mut self.df.write())
         })
     }
 
     #[cfg(feature = "ipc_streaming")]
     pub fn write_ipc_stream(
-        &mut self,
+        &self,
         py: Python<'_>,
-        py_f: PyObject,
+        py_f: Py<PyAny>,
         compression: Wrap<Option<IpcCompression>>,
         compat_level: PyCompatLevel,
     ) -> PyResult<()> {
@@ -259,16 +259,16 @@ impl PyDataFrame {
             IpcStreamWriter::new(&mut buf)
                 .with_compression(compression.0)
                 .with_compat_level(compat_level.0)
-                .finish(&mut self.df)
+                .finish(&mut self.df.write())
         })
     }
 
     #[cfg(feature = "avro")]
     #[pyo3(signature = (py_f, compression, name))]
     pub fn write_avro(
-        &mut self,
+        &self,
         py: Python<'_>,
-        py_f: PyObject,
+        py_f: Py<PyAny>,
         compression: Wrap<Option<AvroCompression>>,
         name: String,
     ) -> PyResult<()> {
@@ -278,7 +278,7 @@ impl PyDataFrame {
             AvroWriter::new(&mut buf)
                 .with_compression(compression.0)
                 .with_name(name)
-                .finish(&mut self.df)
+                .finish(&mut self.df.write())
         })
     }
 }

@@ -45,6 +45,7 @@ impl<T> From<T> for ErrString
 where
     T: Into<Cow<'static, str>>,
 {
+    #[track_caller]
     fn from(msg: T) -> Self {
         match &*ERROR_STRATEGY {
             ErrorStrategy::Panic => panic!("{}", msg.into()),
@@ -265,7 +266,7 @@ impl PolarsError {
             SQLSyntax(msg) => SQLSyntax(func(msg).into()),
             Context { error, .. } => error.wrap_msg(func),
             #[cfg(feature = "python")]
-            Python { error } => pyo3::Python::with_gil(|py| {
+            Python { error } => pyo3::Python::attach(|py| {
                 use pyo3::types::{PyAnyMethods, PyStringMethods};
                 use pyo3::{IntoPyObject, PyErr};
 
@@ -409,8 +410,8 @@ macro_rules! polars_err {
     };
     (bigidx, ctx = $ctx:expr, size = $size:expr) => {
         $crate::polars_err!(ComputeError: "\
-{} produces {} rows which is more than maximum allowed pow(2, 32) rows; \
-consider compiling with bigidx feature (polars-u64-idx package on python)",
+{} produces {} rows which is more than maximum allowed pow(2, 32)-1 rows; \
+consider compiling with bigidx feature (pip install polars[rt64])",
             $ctx,
             $size,
         )
@@ -490,11 +491,50 @@ on startup."#.trim_start())
             $argument_idx, $argument, $operation, $lhs, $rhs
         )
     };
+    (invalid_element_use) => {
+        $crate::polars_err!(InvalidOperation: "`element` is not allowed in this context")
+    };
+    (invalid_field_use) => {
+        $crate::polars_err!(InvalidOperation: "`field` is not allowed in this context")
+    };
+    (non_utf8_path) => {
+        $crate::polars_err!(ComputeError: "encountered non UTF-8 path characters")
+    };
     (assertion_error = $objects:expr, $detail:expr, $lhs:expr, $rhs:expr) => {
         $crate::polars_err!(
             AssertionError: "{} are different ({})\n[left]: {}\n[right]: {}",
             $objects, $detail, $lhs, $rhs
         )
+    };
+    (to_datetime_tz_mismatch) => {
+        $crate::polars_err!(
+            ComputeError: "`strptime` / `to_datetime` was called with no format and no time zone, but a time zone is part of the data.\n\nThis was previously allowed but led to unpredictable and erroneous results. Give a format string, set a time zone or perform the operation eagerly on a Series instead of on an Expr."
+        )
+    };
+    (item_agg_count_not_one = $n:expr, allow_empty = $allow_empty:expr) => {
+        if $n == 0 && !$allow_empty {
+            polars_err!(ComputeError:
+                "aggregation 'item' expected a single value, got none"
+            )
+        } else if $n > 100 {
+            if $allow_empty {
+                polars_err!(ComputeError: "aggregation 'item' expected no or a single value, got 100+ values")
+            } else {
+                polars_err!(ComputeError: "aggregation 'item' expected a single value, got 100+ values")
+            }
+        } else if $n > 1 {
+            if $allow_empty {
+                polars_err!(ComputeError:
+                    "aggregation 'item' expected no or a single value, got {} values", $n
+                )
+            } else {
+                polars_err!(ComputeError:
+                    "aggregation 'item' expected a single value, got {} values", $n
+                )
+            }
+        } else {
+            unreachable!()
+        }
     };
 }
 

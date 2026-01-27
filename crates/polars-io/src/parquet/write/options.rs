@@ -1,7 +1,5 @@
-use polars_error::PolarsResult;
 use polars_parquet::write::{
-    BrotliLevel as BrotliLevelParquet, CompressionOptions, GzipLevel as GzipLevelParquet,
-    StatisticsOptions, ZstdLevel as ZstdLevelParquet,
+    BrotliLevel, CompressionOptions, GzipLevel, StatisticsOptions, ZstdLevel,
 };
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
@@ -67,7 +65,6 @@ pub enum ParquetCompression {
     Uncompressed,
     Snappy,
     Gzip(Option<GzipLevel>),
-    Lzo,
     Brotli(Option<BrotliLevel>),
     Zstd(Option<ZstdLevel>),
     Lz4Raw,
@@ -79,62 +76,16 @@ impl Default for ParquetCompression {
     }
 }
 
-/// A valid Gzip compression level.
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct GzipLevel(u8);
-
-impl GzipLevel {
-    pub fn try_new(level: u8) -> PolarsResult<Self> {
-        GzipLevelParquet::try_new(level)?;
-        Ok(GzipLevel(level))
-    }
-}
-
-/// A valid Brotli compression level.
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct BrotliLevel(u32);
-
-impl BrotliLevel {
-    pub fn try_new(level: u32) -> PolarsResult<Self> {
-        BrotliLevelParquet::try_new(level)?;
-        Ok(BrotliLevel(level))
-    }
-}
-
-/// A valid Zstandard compression level.
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct ZstdLevel(i32);
-
-impl ZstdLevel {
-    pub fn try_new(level: i32) -> PolarsResult<Self> {
-        ZstdLevelParquet::try_new(level)?;
-        Ok(ZstdLevel(level))
-    }
-}
-
 impl From<ParquetCompression> for CompressionOptions {
     fn from(value: ParquetCompression) -> Self {
         use ParquetCompression::*;
         match value {
             Uncompressed => CompressionOptions::Uncompressed,
             Snappy => CompressionOptions::Snappy,
-            Gzip(level) => {
-                CompressionOptions::Gzip(level.map(|v| GzipLevelParquet::try_new(v.0).unwrap()))
-            },
-            Lzo => CompressionOptions::Lzo,
-            Brotli(level) => {
-                CompressionOptions::Brotli(level.map(|v| BrotliLevelParquet::try_new(v.0).unwrap()))
-            },
+            Gzip(level) => CompressionOptions::Gzip(level),
+            Brotli(level) => CompressionOptions::Brotli(level),
             Lz4Raw => CompressionOptions::Lz4Raw,
-            Zstd(level) => {
-                CompressionOptions::Zstd(level.map(|v| ZstdLevelParquet::try_new(v.0).unwrap()))
-            },
+            Zstd(level) => CompressionOptions::Zstd(level),
         }
     }
 }

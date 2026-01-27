@@ -9,7 +9,7 @@ impl ListChunked {
         values: ArrayRef,
         offsets: &[i64],
         offsets_buf: OffsetsBuffer<i64>,
-        skip_empty: bool,
+        options: ExplodeOptions,
     ) -> (Series, OffsetsBuffer<i64>) {
         // SAFETY: inner_dtype should be correct
         let values = unsafe {
@@ -25,16 +25,16 @@ impl ListChunked {
         let mut values = match values.dtype() {
             DataType::Boolean => {
                 let t = values.bool().unwrap();
-                ExplodeByOffsets::explode_by_offsets(t, offsets, skip_empty).into_series()
+                ExplodeByOffsets::explode_by_offsets(t, offsets, options).into_series()
             },
             DataType::Null => {
                 let t = values.null().unwrap();
-                ExplodeByOffsets::explode_by_offsets(t, offsets, skip_empty).into_series()
+                ExplodeByOffsets::explode_by_offsets(t, offsets, options).into_series()
             },
             dtype => {
                 with_match_physical_numeric_polars_type!(dtype, |$T| {
                     let t: &ChunkedArray<$T> = values.as_ref().as_ref();
-                    ExplodeByOffsets::explode_by_offsets(t, offsets, skip_empty).into_series()
+                    ExplodeByOffsets::explode_by_offsets(t, offsets, options).into_series()
                 })
             },
         };
@@ -55,7 +55,10 @@ impl ChunkExplode for ListChunked {
         Ok(offsets)
     }
 
-    fn explode_and_offsets(&self, skip_empty: bool) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
+    fn explode_and_offsets(
+        &self,
+        options: ExplodeOptions,
+    ) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
         // A list array's memory layout is actually already 'exploded', so we can just take the
         // values array of the list. And we also return a slice of the offsets. This slice can be
         // used to find the old list layout or indexes to expand a DataFrame in the same manner as
@@ -66,7 +69,10 @@ impl ChunkExplode for ListChunked {
         let offsets = listarr.offsets().as_slice();
         let mut values = listarr.values().clone();
 
-        let (mut s, offsets) = if ca._can_fast_explode() {
+        let (mut s, offsets) = if ca._can_fast_explode()
+            && (!options.keep_nulls || !ca.has_nulls())
+            && (!options.empty_as_null || !ca.has_empty_lists())
+        {
             // ensure that the value array is sliced
             // as a list only slices its offsets on a slice operation
 
@@ -112,7 +118,7 @@ impl ChunkExplode for ListChunked {
                 let inner_phys = self.inner_dtype().to_physical();
                 if inner_phys.is_primitive_numeric() || inner_phys.is_null() || inner_phys.is_bool()
                 {
-                    return Ok(self.explode_specialized(values, offsets, offsets_buf, skip_empty));
+                    return Ok(self.explode_specialized(values, offsets, offsets_buf, options));
                 }
                 // Use gather
                 let mut indices =
@@ -127,7 +133,7 @@ impl ChunkExplode for ListChunked {
                         let start = previous as IdxSize;
                         let end = offset as IdxSize;
 
-                        if !skip_empty && len == 0 {
+                        if options.empty_as_null && len == 0 {
                             indices.push_null();
                         } else {
                             indices.extend_trusted_len_values(start..end);
@@ -156,13 +162,13 @@ impl ChunkExplode for ListChunked {
                         // SAFETY: we are within bounds
                         if unsafe { validity.get_bit_unchecked(i) } {
                             // explode expects null value if sublist is empty.
-                            if !skip_empty && len == 0 {
+                            if options.empty_as_null && len == 0 {
                                 indices.push_null();
                             } else {
                                 indices.extend_trusted_len_values(start..end);
                             }
                             current_offset += len;
-                        } else {
+                        } else if options.keep_nulls {
                             indices.push_null();
                         }
                         previous = offset;
@@ -236,7 +242,31 @@ impl ChunkExplode for ArrayChunked {
         Ok(offsets)
     }
 
-    fn explode_and_offsets(&self, _skip_empty: bool) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
+    fn explode_and_offsets(
+        &self,
+        options: ExplodeOptions,
+    ) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
+        if self.width() == 0 {
+            let mut num_nulls = 0;
+            if options.empty_as_null {
+                num_nulls += self.len() - self.null_count();
+            }
+            if options.keep_nulls {
+                num_nulls += self.null_count();
+            }
+            let offsets = (0..num_nulls as i64 + 1).collect::<Vec<i64>>();
+            // SAFETY: monotonically increasing
+            let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
+            let s = Column::new_scalar(
+                self.name().clone(),
+                Scalar::null(self.inner_dtype().clone()),
+                num_nulls,
+            )
+            .take_materialized_series();
+
+            return Ok((s, offsets));
+        }
+
         let ca = self.rechunk();
         let arr = ca.downcast_iter().next().unwrap();
         // fast-path for non-null array.
@@ -278,7 +308,7 @@ impl ChunkExplode for ArrayChunked {
                 let end = start + width as IdxSize;
                 indices.extend_trusted_len_values(start..end);
                 current_offset += width as i64;
-            } else {
+            } else if options.keep_nulls {
                 indices.push_null();
             }
             offsets.push(current_offset);

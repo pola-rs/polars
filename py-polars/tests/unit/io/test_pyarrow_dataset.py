@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
-from typing import TYPE_CHECKING, Callable
+from datetime import date, datetime, time, timezone
+from typing import TYPE_CHECKING
 
+import pyarrow as pa
 import pyarrow.dataset as ds
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 
@@ -92,7 +95,9 @@ def test_pyarrow_dataset_source(df: pl.DataFrame, tmp_path: Path) -> None:
         check_predicate_pushdown=True,
     )
 
-    for closed, n_expected in zip(["both", "left", "right", "none"], [3, 2, 2, 1]):
+    for closed, n_expected in zip(
+        ["both", "left", "right", "none"], [3, 2, 2, 1], strict=True
+    ):
         helper_dataset_test(
             file_path,
             lambda lf, closed=closed: lf.filter(  # type: ignore[misc]
@@ -222,6 +227,184 @@ def test_pyarrow_dataset_comm_subplan_elim(tmp_path: Path) -> None:
     lf0 = pl.scan_pyarrow_dataset(ds0)
     lf1 = pl.scan_pyarrow_dataset(ds1)
 
-    assert lf0.join(lf1, on="a", how="inner").collect().to_dict(as_series=False) == {
-        "a": [1, 2]
-    }
+    assert_frame_equal(
+        lf0.join(lf1, on="a", how="inner").collect(),
+        pl.DataFrame({"a": [1, 2]}),
+        check_row_order=False,
+    )
+
+
+def test_pyarrow_dataset_predicate_verbose_log(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    file_path_0 = tmp_path / "0"
+
+    df.write_parquet(file_path_0)
+    dset = ds.dataset(file_path_0, format="parquet")
+
+    q = pl.scan_pyarrow_dataset(dset).filter(pl.col("a") < 3)
+
+    capfd.readouterr()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 2]}))
+    capture = capfd.readouterr().err
+
+    assert (
+        "[SENSITIVE]: python_scan_predicate: "
+        'predicate node: [(col("a")) < (3)], '
+        "converted pyarrow predicate: (pa.compute.field('a') < 3)"
+    ) in capture
+
+    q = pl.scan_pyarrow_dataset(dset).filter(pl.col("a").cast(pl.String) < "3")
+
+    capfd.readouterr()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 2]}))
+    capture = capfd.readouterr().err
+
+    assert (
+        "[SENSITIVE]: python_scan_predicate: "
+        'predicate node: [(col("a").strict_cast(String)) < ("3")], '
+        "converted pyarrow predicate: <conversion failed>\n"
+    ) in capture
+
+
+@pytest.mark.write_disk
+def test_pyarrow_dataset_python_scan(tmp_path: Path) -> None:
+    df = pl.DataFrame({"x": [0, 1, 2, 3]})
+    file_path = tmp_path / "0.parquet"
+    df.write_parquet(file_path)
+
+    dataset = ds.dataset(file_path)
+    lf = pl.scan_pyarrow_dataset(dataset)
+    out = lf.collect(engine="streaming")
+
+    assert_frame_equal(df, out)
+
+
+@pytest.mark.write_disk
+def test_pyarrow_dataset_allow_pyarrow_filter_false(tmp_path: Path) -> None:
+    df = pl.DataFrame({"item": ["foo", "bar", "baz"], "price": [10.0, 20.0, 30.0]})
+    file_path = tmp_path / "data.parquet"
+    df.write_parquet(file_path)
+
+    dataset = ds.dataset(file_path)
+
+    # basic scan without filter
+    result = pl.scan_pyarrow_dataset(dataset, allow_pyarrow_filter=False).collect()
+    assert_frame_equal(result, df)
+
+    # with filter (predicate should be applied by Polars, not PyArrow)
+    result = (
+        pl.scan_pyarrow_dataset(dataset, allow_pyarrow_filter=False)
+        .filter(pl.col("price") > 15)
+        .collect()
+    )
+
+    expected = pl.DataFrame({"item": ["bar", "baz"], "price": [20.0, 30.0]})
+    assert_frame_equal(result, expected)
+
+    # check user-specified `batch_size` doesn't error (ref: #25316)
+    result = (
+        pl.scan_pyarrow_dataset(dataset, allow_pyarrow_filter=False, batch_size=1000)
+        .filter(pl.col("price") > 15)
+        .collect()
+    )
+    assert_frame_equal(result, expected)
+
+    # check `allow_pyarrow_filter=True` still works
+    result = (
+        pl.scan_pyarrow_dataset(dataset, allow_pyarrow_filter=True)
+        .filter(pl.col("price") > 15)
+        .collect()
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_scan_pyarrow_dataset_filter_with_timezone_26029() -> None:
+    table = pa.table(
+        {
+            "valid_from": [
+                datetime(2025, 8, 26, 10, 0, 0, tzinfo=timezone.utc),
+                datetime(2025, 8, 26, 11, 0, 0, tzinfo=timezone.utc),
+            ],
+            "valid_to": [
+                datetime(2025, 8, 26, 12, 0, 0, tzinfo=timezone.utc),
+                datetime(2025, 8, 26, 13, 0, 0, tzinfo=timezone.utc),
+            ],
+            "value": [1, 2],
+        }
+    )
+    dataset = ds.dataset(table)
+
+    lower_bound_time = datetime(2025, 8, 26, 11, 30, 0, tzinfo=timezone.utc)
+    lf = pl.scan_pyarrow_dataset(dataset).filter(
+        (pl.col("valid_from") <= lower_bound_time)
+        & (pl.col("valid_to") > lower_bound_time)
+    )
+
+    assert_frame_equal(lf.collect(), pl.DataFrame(table))
+
+
+def test_scan_pyarrow_dataset_filter_slice_order() -> None:
+    table = pa.table(
+        {
+            "index": [0, 1, 2],
+            "year": [2025, 2026, 2026],
+            "month": [0, 0, 0],
+        }
+    )
+    dataset = ds.dataset(table)
+
+    q = pl.scan_pyarrow_dataset(dataset).head(2).filter(pl.col("year") == 2026)
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"index": 1, "year": 2026, "month": 0}),
+    )
+
+    import polars.io.pyarrow_dataset.anonymous_scan
+
+    assert_frame_equal(
+        polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
+            dataset,
+            n_rows=2,
+            predicate="pa.compute.field('year') == 2026",
+            with_columns=None,
+        ),
+        pl.DataFrame({"index": 1, "year": 2026, "month": 0}),
+    )
+
+    assert_frame_equal(
+        polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
+            dataset,
+            n_rows=0,
+            predicate="pa.compute.field('year') == 2026",
+            with_columns=None,
+        ),
+        pl.DataFrame(schema={"index": pl.Int64, "year": pl.Int64, "month": pl.Int64}),
+    )
+
+    assert_frame_equal(
+        pl.concat(
+            polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
+                dataset,
+                n_rows=1,
+                predicate=None,
+                with_columns=None,
+                allow_pyarrow_filter=False,
+            )[0]
+        ),
+        pl.DataFrame({"index": 0, "year": 2025, "month": 0}),
+    )
+
+    assert not polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
+        dataset,
+        n_rows=0,
+        predicate="pa.compute.field('year') == 2026",
+        with_columns=None,
+        allow_pyarrow_filter=False,
+    )[1]

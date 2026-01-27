@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 import typing
 
 import pytest
@@ -82,7 +81,6 @@ def trailing_ones(v: int | None) -> int | None:
     ],
 )
 @pytest.mark.parametrize("dtype", [*INTEGER_DTYPES, pl.Boolean])
-@pytest.mark.skipif(sys.version_info < (3, 10), reason="bit_count introduced in 3.10")
 @typing.no_type_check
 def test_bit_counts(value: int, dtype: pl.DataType) -> None:
     bitsize = 8
@@ -362,3 +360,36 @@ def test_bitwise_boolean_evict_path(monkeypatch: pytest.MonkeyPatch) -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_bitwise_in_group_by() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [
+                111,
+                222,
+                111,
+                222,
+                333,
+                333,
+                999,
+                888,
+                999,
+            ],
+        }
+    )
+
+    assert_frame_equal(
+        df.group_by(pl.lit(1))
+        .agg(
+            bwand=pl.col.a.bitwise_and(),
+            bwor=pl.col.a.bitwise_or(),
+            bwxor=pl.col.a.bitwise_xor(),
+        )
+        .drop("literal"),
+        df.select(
+            bwand=pl.col.a.bitwise_and(),
+            bwor=pl.col.a.bitwise_or(),
+            bwxor=pl.col.a.bitwise_xor(),
+        ),
+    )

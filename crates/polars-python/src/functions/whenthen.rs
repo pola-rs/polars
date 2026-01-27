@@ -10,25 +10,25 @@ pub fn when(condition: PyExpr) -> PyWhen {
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PyWhen {
     inner: dsl::When,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PyThen {
     inner: dsl::Then,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PyChainedWhen {
     inner: dsl::ChainedWhen,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PyChainedThen {
     inner: dsl::ChainedThen,
