@@ -32,7 +32,7 @@ struct IOSession<'a> {
 }
 
 impl IOSession<'_> {
-    fn finish(mut self, ns_since_base_instant: u64) -> bool {
+    fn finish(&mut self, ns_since_base_instant: u64) -> bool {
         assert!(!self.decremented);
         self.decremented = true;
 
@@ -58,7 +58,11 @@ impl IOSession<'_> {
 impl Drop for IOSession<'_> {
     fn drop(&mut self) {
         if !self.decremented {
-            self.active_io_metrics.active_io_count.fetch_sub(1);
+            self.finish(
+                Instant::now()
+                    .saturating_duration_since(self.active_io_metrics.base_instant)
+                    .as_nanos() as _,
+            );
         }
     }
 }
@@ -90,7 +94,7 @@ impl ActiveIOMetrics {
         // time to the `active_io_total_ns` counter.
         // For us to do so we need to ensure no other threads will concurrently
         // update the counter - we do this by starting a session here.
-        let (session_ref, started_by_this_call) = self.start_io_session();
+        let (mut session_ref, started_by_this_call) = self.start_io_session();
 
         let active_io_total_ns = self.active_io_total_ns.load();
 
@@ -119,7 +123,7 @@ impl ActiveIOMetrics {
     where
         F: Future<Output = O>,
     {
-        let (session_ref, _) = self.start_io_session();
+        let (mut session_ref, _) = self.start_io_session();
 
         let out = AssertUnwindSafe(fut).catch_unwind().await;
 
