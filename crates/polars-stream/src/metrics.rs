@@ -27,9 +27,9 @@ pub struct NodeMetrics {
     pub rows_received: u64,
     pub largest_morsel_received: u64,
 
-    pub io_total_active_recv_ns: u64,
-    pub io_total_bytes_requested: u64,
-    pub io_total_bytes_received: u64,
+    pub download_total_active_ns: u64,
+    pub download_total_bytes_requested: u64,
+    pub download_total_bytes_received: u64,
 
     pub state_update_in_progress: bool,
     pub num_running_tasks: u32,
@@ -48,9 +48,9 @@ impl NodeMetrics {
     }
 
     fn add_io_recv(&mut self, io_metrics: &IOMetrics) {
-        self.io_total_active_recv_ns += io_metrics.active_io_time_metrics.active_io_total_ns();
-        self.io_total_bytes_requested += io_metrics.bytes_requested.load();
-        self.io_total_bytes_received += io_metrics.bytes_received.load();
+        self.download_total_active_ns += io_metrics.active_io_time_metrics.active_io_total_ns();
+        self.download_total_bytes_requested += io_metrics.bytes_requested.load();
+        self.download_total_bytes_received += io_metrics.bytes_received.load();
     }
 
     fn start_state_update(&mut self) {
