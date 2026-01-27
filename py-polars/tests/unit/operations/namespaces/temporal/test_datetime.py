@@ -1450,10 +1450,10 @@ def test_dt_mean_deprecated() -> None:
 @pytest.mark.parametrize(
     "value",
     [
-        # date(1677, 9, 22), # See test_literal_from_datetime.
+        date(1677, 9, 22),
         date(1970, 1, 1),
         date(2024, 2, 29),
-        date(2262, 4, 11),
+        date(2262, 2, 11),
     ],
 )
 def test_literal_from_date(
