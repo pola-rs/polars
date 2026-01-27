@@ -456,6 +456,8 @@ impl AExpr {
                     IRArrayFunction::Get(false) => true,
                     _ => false,
                 },
+                #[cfg(feature = "replace")]
+                IRFunctionExpr::ReplaceStrict { .. } => true,
                 #[cfg(all(feature = "strings", feature = "temporal"))]
                 IRFunctionExpr::StringExpr(f) => match f {
                     IRStringFunction::Strptime(_, strptime_options) => {
