@@ -360,8 +360,6 @@ fn try_lower_elementwise_scalar_agg_expr(
             match agg {
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }
-                // | IRAggExpr::MinBy { .. }
-                // | IRAggExpr::MaxBy { .. }
                 | IRAggExpr::First(_)
                 | IRAggExpr::FirstNonNull(_)
                 | IRAggExpr::Last(_)
