@@ -1,4 +1,6 @@
 use std::sync::Arc;
+#[cfg(feature = "parquet")]
+use std::sync::OnceLock;
 
 use parking_lot::Mutex;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
@@ -644,6 +646,7 @@ pub fn lower_ir(
                             prefetch_limit: RelaxedCell::new_usize(0),
                             prefetch_semaphore: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
+                            io_metrics: OnceLock::default(),
                         },
                     ) as _,
 
@@ -657,6 +660,7 @@ pub fn lower_ir(
                         prefetch_limit: RelaxedCell::new_usize(0),
                         prefetch_semaphore: std::sync::OnceLock::new(),
                         shared_prefetch_wait_group_slot: Default::default(),
+                        io_metrics: OnceLock::default(),
                     }) as _,
 
                     #[cfg(feature = "csv")]

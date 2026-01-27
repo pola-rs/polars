@@ -4,21 +4,20 @@ use std::sync::Arc;
 
 use arrow::io::ipc::read::{Dictionaries, read_dictionary_block};
 use async_trait::async_trait;
-use polars_core::config;
 use polars_core::prelude::DataType;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::utils::arrow::io::ipc::read::{
     BlockReader, FileMetadata, ProjectionInfo, prepare_projection, read_file_metadata,
 };
-use polars_error::{ErrString, PolarsError, PolarsResult, feature_gated};
+use polars_error::{ErrString, PolarsError, PolarsResult};
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
 use polars_io::pl_async;
-#[cfg(feature = "cloud")]
-use polars_io::pl_async::get_runtime;
-use polars_io::utils::byte_source::{ByteSource, DynByteSource, DynByteSourceBuilder};
+use polars_io::utils::byte_source::{
+    BufferByteSource, ByteSource, DynByteSource, DynByteSourceBuilder,
+};
 use polars_io::utils::slice::SplitSlicePosition;
-use polars_plan::dsl::{ScanSource, ScanSourceRef};
+use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::slice_enum::Slice;
@@ -29,7 +28,9 @@ use super::multi_scan::reader_interface::BeginReadArgs;
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
 use crate::async_executor::{self, JoinHandle, TaskPriority};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use crate::metrics::OptIOMetrics;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
+use crate::nodes::io_sources::ipc::metadata::read_ipc_metadata_bytes;
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::multi_scan::reader_interface::{
     FileReader, FileReaderCallbacks, Projection,
@@ -38,6 +39,7 @@ use crate::nodes::io_sources::parquet::init::split_to_morsels;
 use crate::utils::tokio_handle_ext::AbortOnDropHandle;
 
 pub mod builder;
+mod metadata;
 mod record_batch_data_fetch;
 mod record_batch_decode;
 
@@ -54,6 +56,7 @@ struct IpcFileReader {
     metadata: Option<Arc<FileMetadata>>,
     byte_source_builder: DynByteSourceBuilder,
     record_batch_prefetch_sync: RecordBatchPrefetchSync,
+    io_metrics: OptIOMetrics,
     verbose: bool,
     init_data: Option<InitializedState>,
 }
@@ -98,12 +101,21 @@ impl FileReader for IpcFileReader {
             .await
             .unwrap()?;
 
-        let byte_source = Arc::new(byte_source);
+        let mut byte_source = Arc::new(byte_source);
 
         let file_metadata = if let Some(v) = self.metadata.clone() {
             v
         } else {
-            self.fetch_file_metadata().await?
+            let (metadata_bytes, opt_full_bytes) =
+                read_ipc_metadata_bytes(&byte_source, verbose, &self.io_metrics).await?;
+
+            if let Some(full_bytes) = opt_full_bytes {
+                byte_source = Arc::new(DynByteSource::Buffer(BufferByteSource(full_bytes)));
+            }
+
+            Arc::new(read_file_metadata(&mut std::io::Cursor::new(
+                metadata_bytes,
+            ))?)
         };
 
         let dictionaries = {
@@ -306,6 +318,7 @@ impl FileReader for IpcFileReader {
             Option::take(&mut self.record_batch_prefetch_sync.prev_all_spawned);
         let rb_prefetch_current_all_spawned =
             Option::take(&mut self.record_batch_prefetch_sync.current_all_spawned);
+        let io_metrics = self.io_metrics.clone();
 
         // Task: Prefetch.
         let byte_source = byte_source.clone();
@@ -323,6 +336,7 @@ impl FileReader for IpcFileReader {
                 prefetch_send,
                 rb_prefetch_semaphore,
                 rb_prefetch_current_all_spawned,
+                io_metrics,
             };
 
             if let Some(rb_prefetch_prev_all_spawned) = rb_prefetch_prev_all_spawned {
@@ -467,51 +481,6 @@ impl FileReader for IpcFileReader {
             morsel_recv,
             async_executor::spawn(TaskPriority::Low, async move { handle.await.unwrap() }),
         ))
-    }
-}
-
-impl IpcFileReader {
-    /// Retrieve file metadata from the source.
-    async fn fetch_file_metadata(&self) -> PolarsResult<Arc<FileMetadata>> {
-        if self.verbose {
-            eprintln!("[IpcFileReader]: fetching file metadata");
-        }
-
-        let metadata = match self.scan_source.as_scan_source_ref() {
-            ScanSourceRef::Path(path) => {
-                if path.has_scheme() || config::force_async() {
-                    feature_gated!("cloud", {
-                        get_runtime().block_in_place_on(async {
-                            let metadata: PolarsResult<_> = {
-                                let reader = polars_io::ipc::IpcReaderAsync::from_uri(
-                                    path.clone(),
-                                    self.cloud_options.as_deref(),
-                                )
-                                .await?;
-
-                                Ok(reader.metadata().await?)
-                            };
-                            metadata
-                        })?
-                    })
-                } else {
-                    // Local file I/O is typically synchronous in Arrow-rs
-                    let mut reader =
-                        std::io::BufReader::new(polars_utils::open_file(path.as_std_path())?);
-                    read_file_metadata(&mut reader)?
-                }
-            },
-            ScanSourceRef::File(file) => {
-                let mut reader = std::io::BufReader::new(file);
-                read_file_metadata(&mut reader)?
-            },
-            ScanSourceRef::Buffer(buff) => {
-                let mut reader = std::io::Cursor::new(buff);
-                read_file_metadata(&mut reader)?
-            },
-        };
-
-        Ok(Arc::new(metadata))
     }
 }
 

@@ -14,7 +14,7 @@ use tokio::task::JoinHandle;
 
 use crate::async_executor;
 use crate::graph::{Graph, GraphNode, GraphNodeKey, LogicalPipeKey, PortState};
-use crate::metrics::GraphMetrics;
+use crate::metrics::{ActiveIOMetrics, GraphMetrics, MetricsBuilder};
 use crate::pipe::PhysicalPipe;
 
 #[derive(Clone)]
@@ -143,6 +143,7 @@ fn run_subgraph(
     pipe_seq_offsets: &mut SecondaryMap<LogicalPipeKey, Arc<RelaxedCell<u64>>>,
     state: &StreamingExecutionState,
     metrics: Option<Arc<Mutex<GraphMetrics>>>,
+    global_active_io_metrics: Option<Arc<ActiveIOMetrics>>,
 ) -> PolarsResult<()> {
     // Construct physical pipes for the logical pipes we'll use.
     let mut physical_pipes = SecondaryMap::new();
@@ -212,6 +213,15 @@ fn run_subgraph(
 
             // Spawn the tasks.
             let pre_spawn_offset = join_handles.len();
+
+            if let Some(active_io_metrics) = global_active_io_metrics.clone() {
+                node.compute.set_metrics_builder(MetricsBuilder {
+                    graph_key: node_key,
+                    graph_metrics: metrics.clone().unwrap(),
+                    active_io_metrics,
+                })
+            }
+
             node.compute.spawn(
                 scope,
                 &mut recv_ports[..],
@@ -313,6 +323,9 @@ pub fn execute_graph(
         }
     }
 
+    let global_active_io_metrics: Option<Arc<ActiveIOMetrics>> =
+        metrics.is_some().then(|| Default::default());
+
     let mut pipe_seq_offsets = SecondaryMap::new();
     loop {
         // Update the states.
@@ -351,6 +364,7 @@ pub fn execute_graph(
             &mut pipe_seq_offsets,
             &state,
             metrics.clone(),
+            global_active_io_metrics.clone(),
         )?;
         polars_io::pl_async::get_runtime().block_on(async {
             // TODO: track this in metrics.

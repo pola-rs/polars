@@ -14,6 +14,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::async_primitives::oneshot_channel;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use crate::metrics::OptIOMetrics;
 use crate::nodes::io_sources::ipc::ROW_COUNT_OVERFLOW_ERR;
 use crate::utils::tokio_handle_ext;
 
@@ -41,6 +42,7 @@ pub(super) struct RecordBatchDataFetcher {
     )>,
     pub(super) rb_prefetch_semaphore: Arc<Semaphore>,
     pub(super) rb_prefetch_current_all_spawned: Option<WaitToken>,
+    pub(super) io_metrics: OptIOMetrics,
 }
 
 impl RecordBatchDataFetcher {
@@ -71,6 +73,7 @@ impl RecordBatchDataFetcher {
                 let current_byte_source = self.byte_source.clone();
                 let memory_prefetch_func = self.memory_prefetch_func;
                 let io_runtime = polars_io::pl_async::get_runtime();
+                let io_metrics = self.io_metrics.clone();
 
                 let current_row_offset = current_row_offset.clone();
                 let wait_token = row_count_updated.token();
@@ -98,7 +101,8 @@ impl RecordBatchDataFetcher {
                         } else {
                             // @NOTE. Performance can be optimized by grouping requests and downloading
                             // through `get_ranges()`.
-                            current_byte_source.get_range(range).await?
+                            let fut = current_byte_source.get_range(range.clone());
+                            io_metrics.record_download(range.len() as u64, fut).await?
                         };
 
                     // We extract the length (i.e., nr of rows) at the earliest possible opportunity.
