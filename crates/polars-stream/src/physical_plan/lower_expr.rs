@@ -1995,7 +1995,7 @@ fn lower_exprs_with_ctx(
             },
 
             AExpr::Function {
-                function: IRFunctionExpr::MinBy { .. } | IRFunctionExpr::MaxBy { .. },
+                function: IRFunctionExpr::MinBy | IRFunctionExpr::MaxBy,
                 ..
             } => {
                 let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
