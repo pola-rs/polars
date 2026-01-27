@@ -304,8 +304,8 @@ fn try_lower_elementwise_scalar_agg_expr(
         AExpr::Function {
             function:
                 IRFunctionExpr::Boolean(IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. })
-                | IRFunctionExpr::MinBy { .. }
-                | IRFunctionExpr::MaxBy { .. }
+                | IRFunctionExpr::MinBy
+                | IRFunctionExpr::MaxBy
                 | IRFunctionExpr::NullCount,
             ..
         } => Some(replace_agg_uniq!(expr)),
