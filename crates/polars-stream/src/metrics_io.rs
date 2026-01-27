@@ -68,16 +68,18 @@ impl Drop for IOSession<'_> {
 }
 
 impl ActiveIOMetrics {
+    fn ns_since_base_instant(&self) -> u64 {
+        Instant::now()
+            .saturating_duration_since(self.base_instant)
+            .as_nanos() as _
+    }
+
     fn start_io_session(&self) -> (IOSession<'_>, bool) {
         let started_by_this_call = self.active_io_count.fetch_add(1) == 0;
 
         if started_by_this_call {
-            self.active_io_offset_ns.store(
-                Instant::now()
-                    .saturating_duration_since(self.base_instant)
-                    .as_nanos() as _,
-                atomic::Ordering::Release,
-            );
+            self.active_io_offset_ns
+                .store(self.ns_since_base_instant(), atomic::Ordering::Release);
         }
 
         (
@@ -98,9 +100,7 @@ impl ActiveIOMetrics {
 
         let active_io_total_ns = self.active_io_total_ns.load();
 
-        let ns_since_base_instant = Instant::now()
-            .saturating_duration_since(self.base_instant)
-            .as_nanos() as _;
+        let ns_since_base_instant = self.ns_since_base_instant();
         let elapsed = u64::saturating_sub(
             ns_since_base_instant,
             self.active_io_offset_ns.load(atomic::Ordering::Acquire),
@@ -127,11 +127,7 @@ impl ActiveIOMetrics {
 
         let out = AssertUnwindSafe(fut).catch_unwind().await;
 
-        session_ref.finish(
-            Instant::now()
-                .saturating_duration_since(self.base_instant)
-                .as_nanos() as _,
-        );
+        session_ref.finish(self.ns_since_base_instant());
 
         match out {
             Ok(v) => v,
