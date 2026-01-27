@@ -211,4 +211,14 @@ impl ArrayNameSpace {
             variant: EvalVariant::ArrayAgg,
         }
     }
+
+    /// Take every n-th value starting from offset in the sub-arrays.
+    #[cfg(feature = "list_gather")]
+    pub fn gather_every(self, n: Expr, offset: Expr) -> Expr {
+        self.0.map_ternary(
+            FunctionExpr::ArrayExpr(ArrayFunction::GatherEvery),
+            n,
+            offset,
+        )
+    }
 }

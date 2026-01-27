@@ -856,3 +856,44 @@ class ArrayNameSpace:
             []
         ]
         """
+
+    def gather_every(
+        self, n: int | IntoExprColumn, offset: int | IntoExprColumn = 0
+    ) -> Series:
+        """
+        Take every n-th value starting from offset in sub-arrays.
+
+        Parameters
+        ----------
+        n
+            Gather every n-th element.
+        offset
+            Starting index.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`List`.
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     "a",
+        ...     [[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]],
+        ...     dtype=pl.Array(pl.Int64, 5),
+        ... )
+        >>> s.arr.gather_every(2, 0)
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+            [1, 3, 5]
+            [6, 8, 10]
+        ]
+        >>> s.arr.gather_every(2, 1)
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+            [2, 4]
+            [7, 9]
+        ]
+        """
