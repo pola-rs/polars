@@ -21,6 +21,7 @@ pub struct IpcWriterOptions {
     /// Number of rows per record batch
     pub record_batch_size: Option<usize>,
     /// Write record batch StatisticsFlags as custom metadata into the record batch header.
+    #[cfg_attr(feature = "serde", serde(default))]
     pub record_batch_statistics: bool,
     /// Size of each written chunk.
     pub chunk_size: IdxSize,
