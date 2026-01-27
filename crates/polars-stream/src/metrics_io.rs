@@ -25,9 +25,47 @@ impl Default for ActiveIOMetrics {
     }
 }
 
+/// Has Drop impl that ensures atomic counter is decremented.
+struct IOSessionRef<'a> {
+    active_io_metrics: &'a ActiveIOMetrics,
+    decremented: bool,
+}
+
+impl IOSessionRef<'_> {
+    fn finish(mut self, ns_since_base_instant: u64) -> bool {
+        assert!(!self.decremented);
+        self.decremented = true;
+
+        let active_io_metrics = self.active_io_metrics;
+
+        let elapsed = u64::saturating_sub(
+            ns_since_base_instant,
+            active_io_metrics
+                .active_io_offset_ns
+                .load(atomic::Ordering::Acquire),
+        );
+
+        let ended_by_this_call = active_io_metrics.active_io_count.fetch_sub(1) == 1;
+
+        if ended_by_this_call {
+            active_io_metrics.active_io_total_ns.fetch_add(elapsed);
+        }
+
+        ended_by_this_call
+    }
+}
+
+impl Drop for IOSessionRef<'_> {
+    fn drop(&mut self) {
+        if !self.decremented {
+            self.active_io_metrics.active_io_count.fetch_sub(1);
+        }
+    }
+}
+
 impl ActiveIOMetrics {
     /// MUST have an associated `end_io_session()`.
-    fn start_io_session(&self) -> bool {
+    fn start_io_session(&self) -> (IOSessionRef<'_>, bool) {
         let started_by_this_call = self.active_io_count.fetch_add(1) == 0;
 
         if started_by_this_call {
@@ -39,31 +77,21 @@ impl ActiveIOMetrics {
             );
         }
 
-        started_by_this_call
-    }
-
-    /// MUST have an associated `start_io_session()`.
-    fn end_io_session(&self, ns_since_base_instant: u64) -> bool {
-        let elapsed = u64::saturating_sub(
-            ns_since_base_instant,
-            self.active_io_offset_ns.load(atomic::Ordering::Acquire),
-        );
-
-        let ended_by_this_call = self.active_io_count.fetch_sub(1) == 1;
-
-        if ended_by_this_call {
-            self.active_io_total_ns.fetch_add(elapsed);
-        }
-
-        ended_by_this_call
+        (
+            IOSessionRef {
+                active_io_metrics: self,
+                decremented: false,
+            },
+            started_by_this_call,
+        )
     }
 
     pub fn active_io_total_ns(&self) -> u64 {
         // If there are active I/O tasks, we would like to add the current elapsed
         // time to the `active_io_total_ns` counter.
-        // To do this, we `start_io_session()` to hold a refcount to ensure
-        // `active_io_total_ns` isn't updated by another thread.
-        let started_by_this_call = self.start_io_session();
+        // For us to do so we need to ensure no other threads will concurrently
+        // update the counter - we do this by starting a session here.
+        let (session_ref, started_by_this_call) = self.start_io_session();
 
         let active_io_total_ns = self.active_io_total_ns.load();
 
@@ -75,7 +103,7 @@ impl ActiveIOMetrics {
             self.active_io_offset_ns.load(atomic::Ordering::Acquire),
         );
 
-        self.end_io_session(if started_by_this_call {
+        session_ref.finish(if started_by_this_call {
             0
         } else {
             ns_since_base_instant
@@ -92,11 +120,11 @@ impl ActiveIOMetrics {
     where
         F: Future<Output = O>,
     {
-        self.start_io_session();
+        let (session_ref, _) = self.start_io_session();
 
         let out = AssertUnwindSafe(fut).catch_unwind().await;
 
-        self.end_io_session(
+        session_ref.finish(
             Instant::now()
                 .saturating_duration_since(self.base_instant)
                 .as_nanos() as _,
