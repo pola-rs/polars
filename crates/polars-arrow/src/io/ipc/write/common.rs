@@ -68,9 +68,7 @@ pub fn dictionaries_to_encode(
             let array = array.as_any().downcast_ref::<StructArray>().unwrap();
             let fields = field.fields.as_slice();
             if array.fields().len() != fields.len() {
-                polars_bail!(InvalidOperation:
-                    "The number of fields in a struct must equal the number of children in IpcField".to_string(),
-                );
+                polars_bail!(InvalidOperation: "The number of fields in a struct must equal the number of children in IpcField");
             }
             fields
                 .iter()
@@ -117,7 +115,7 @@ pub fn dictionaries_to_encode(
                 .downcast_ref::<UnionArray>()
                 .unwrap()
                 .fields();
-            let fields = field.fields.as_slice(); // todo: error instead
+            let fields = field.fields.as_slice();
             if values.len() != fields.len() {
                 polars_bail!(InvalidOperation:
                     "The number of fields in a union must equal the number of children in IpcField"
