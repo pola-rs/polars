@@ -55,6 +55,7 @@ use crate::shared::{ArrowReader, finish_reader};
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct IpcScanOptions {
     /// Read StatisticsFlags from the record batch custom metadata.
+    #[cfg_attr(feature = "serde", serde(default))]
     pub record_batch_statistics: bool,
 }
 
