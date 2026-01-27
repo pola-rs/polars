@@ -35,6 +35,8 @@ pub enum IRArrayFunction {
     Slice(i64, i64),
     #[cfg(feature = "array_to_struct")]
     ToStruct(Option<DslNameGenerator>),
+    #[cfg(feature = "list_gather")]
+    GatherEvery,
 }
 
 impl<'a> FieldsMapper<'a> {
@@ -113,6 +115,10 @@ impl IRArrayFunction {
                     .collect::<PolarsResult<Vec<Field>>>()
                     .map(DataType::Struct)
             }),
+            #[cfg(feature = "list_gather")]
+            GatherEvery => mapper
+                .ensure_is_array()?
+                .try_map_dtype(map_array_dtype_to_list_dtype),
         }
     }
 
@@ -147,6 +153,8 @@ impl IRArrayFunction {
             A::Explode { .. } => FunctionOptions::row_separable(),
             #[cfg(feature = "array_to_struct")]
             A::ToStruct(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_gather")]
+            A::GatherEvery => FunctionOptions::elementwise(),
         }
     }
 }
@@ -211,6 +219,8 @@ impl Display for IRArrayFunction {
             Explode { .. } => "explode",
             #[cfg(feature = "array_to_struct")]
             ToStruct(_) => "to_struct",
+            #[cfg(feature = "list_gather")]
+            GatherEvery => "gather_every",
         };
         write!(f, "arr.{name}")
     }
