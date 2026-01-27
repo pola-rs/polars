@@ -1,6 +1,5 @@
 use std::ops::RangeInclusive;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use arrow::bitmap::bitmask::nth_set_bit_u32;
