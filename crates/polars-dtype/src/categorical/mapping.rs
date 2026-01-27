@@ -20,7 +20,7 @@ pub struct CategoricalMapping {
 }
 
 impl CategoricalMapping {
-    pub fn new(max_categories: usize) -> Self {
+    pub(crate) fn new(max_categories: usize) -> Self {
         Self::with_hasher(max_categories, PlSeedableRandomStateQuality::default())
     }
 
