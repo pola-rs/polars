@@ -1252,6 +1252,7 @@ def test_qualified_wildcard_multiway_join() -> None:
         FROM df1
         INNER JOIN df2 ON df1.id = df2.id
         INNER JOIN df3 ON df1.id = df3.id
+        ORDER BY id
     """).collect()
     expected = pl.DataFrame(
         {
@@ -1296,7 +1297,7 @@ def test_qualified_wildcard_self_join() -> None:
 
 
 @pytest.mark.parametrize(
-    ("join_type", "expected"),
+    ("join_type", "result"),
     [
         (
             "INNER",
@@ -1312,18 +1313,23 @@ def test_qualified_wildcard_self_join() -> None:
         ),
     ],
 )
-def test_qualified_wildcard_join_types(
-    join_type: str, expected: dict[str, Any]
-) -> None:
+def test_qualified_wildcard_join_types(join_type: str, result: dict[str, Any]) -> None:
     df1 = pl.DataFrame({"k": [1, 2], "v": ["a", "b"]})
     df2 = pl.DataFrame({"k": [1, 3], "v": ["x", "y"]})
-    res = pl.sql(
-        f"""
+
+    actual = pl.sql(
+        query=f"""
         SELECT df1.*, df2.*
         FROM df1 {join_type} JOIN df2 ON df1.k = df2.k
-        """
-    ).collect()
-    assert_frame_equal(res, pl.DataFrame(expected), check_row_order=False)
+        """,
+        eager=True,
+    )
+    expected = pl.DataFrame(result)
+    assert_frame_equal(
+        left=expected,
+        right=actual,
+        check_row_order=False,
+    )
 
 
 @pytest.mark.parametrize(
@@ -1363,4 +1369,5 @@ def test_qualified_wildcard_combinations(query: str, expected: dict[str, Any]) -
     assert_frame_equal(
         left=pl.DataFrame(expected),
         right=pl.sql(query).collect(),
+        check_row_order=False,
     )
