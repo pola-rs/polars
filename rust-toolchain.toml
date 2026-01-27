@@ -1,4 +1,2 @@
 [toolchain]
-# When updating, also update the [tool.pyodide.build] section in py-polars/pyproject.toml
-# to match the version of the Emscripten sysroot.
 channel = "nightly-2026-01-09"

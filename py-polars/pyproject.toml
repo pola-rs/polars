@@ -91,9 +91,6 @@ all = [
   "polars[async,cloudpickle,database,deltalake,excel,fsspec,graph,iceberg,numpy,pandas,plot,pyarrow,pydantic,style,timezone]",
 ]
 
-[tool.maturin]
-include = [{ path = "rust-toolchain.toml", format = "sdist" }]
-
 [tool.mypy]
 files = ["src/polars", "tests"]
 strict = true

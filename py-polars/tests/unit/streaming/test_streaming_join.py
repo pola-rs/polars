@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
     from polars._typing import JoinStrategy, MaintainOrderJoin
 
-# pytestmark = pytest.mark.xdist_group("streaming")
+pytestmark = pytest.mark.xdist_group("streaming")
 
 
 def test_streaming_full_outer_joins() -> None:
