@@ -86,7 +86,7 @@ impl NodeMetrics {
 #[derive(Default, Clone)]
 pub struct GraphMetrics {
     node_metrics: SecondaryMap<GraphNodeKey, NodeMetrics>,
-    in_progress_io_recv_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<IOMetrics>>>,
+    in_progress_download_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<IOMetrics>>>,
     in_progress_task_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<TaskMetrics>>>,
     in_progress_pipe_metrics: SecondaryMap<LogicalPipeKey, Vec<Arc<PipeMetrics>>>,
 }
@@ -129,11 +129,11 @@ impl GraphMetrics {
             }
         }
 
-        for (key, in_progress_io_recv_metrics) in self.in_progress_io_recv_metrics.iter_mut() {
+        for (key, in_progress_download_metrics) in self.in_progress_download_metrics.iter_mut() {
             let this_node_metrics = self.node_metrics.entry(key).unwrap().or_default();
             this_node_metrics.num_running_tasks = 0;
-            for io_recv_metrics in in_progress_io_recv_metrics.drain(..) {
-                this_node_metrics.add_io_recv(&io_recv_metrics);
+            for download_metrics in in_progress_download_metrics.drain(..) {
+                this_node_metrics.add_io_recv(&download_metrics);
             }
         }
 
@@ -170,7 +170,7 @@ pub struct MetricsBuilder {
 }
 
 impl MetricsBuilder {
-    pub fn new_io_recv_metrics(&self) -> Arc<IOMetrics> {
+    pub fn new_download_metrics(&self) -> Arc<IOMetrics> {
         let io_metrics: Arc<IOMetrics> = Arc::new(IOMetrics {
             active_io_time_metrics: Arc::clone(&self.active_io_time_metrics),
             ..Default::default()
@@ -178,7 +178,7 @@ impl MetricsBuilder {
 
         self.graph_metrics
             .lock()
-            .in_progress_io_recv_metrics
+            .in_progress_download_metrics
             .entry(self.graph_key)
             .unwrap()
             .or_default()

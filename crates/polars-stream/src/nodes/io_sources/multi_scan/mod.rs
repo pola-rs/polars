@@ -190,7 +190,7 @@ impl MultiScanState {
             .set_execution_state(&execution_state);
 
         if let Some(metrics_builder) = metrics_builder {
-            let io_metrics = metrics_builder.new_io_recv_metrics();
+            let io_metrics = metrics_builder.new_download_metrics();
 
             config.io_metrics.get_or_init(|| io_metrics.clone());
             config.file_reader_builder.set_io_metrics(io_metrics);
