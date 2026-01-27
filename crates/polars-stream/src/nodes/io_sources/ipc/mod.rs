@@ -129,10 +129,11 @@ impl FileReader for IpcFileReader {
 
         let dictionaries = {
             let byte_source_async = byte_source.clone();
+            let io_metrics = self.io_metrics.clone();
             let metadata_async = file_metadata.clone();
             let dictionaries = pl_async::get_runtime()
                 .spawn(async move {
-                    read_dictionaries(&byte_source_async, metadata_async, verbose).await
+                    read_dictionaries(&byte_source_async, io_metrics, metadata_async, verbose).await
                 })
                 .await
                 .unwrap()?;
@@ -495,6 +496,7 @@ impl FileReader for IpcFileReader {
 
 async fn read_dictionaries(
     byte_source: &DynByteSource,
+    io_metrics: OptIOMetrics,
     file_metadata: Arc<FileMetadata>,
     verbose: bool,
 ) -> PolarsResult<Dictionaries> {
@@ -516,7 +518,11 @@ async fn read_dictionaries(
     for block in blocks {
         let range = block.offset as usize
             ..block.offset as usize + block.meta_data_length as usize + block.body_length as usize;
-        let bytes = byte_source.get_range(range).await?;
+        let fut = byte_source.get_range(range.clone());
+        let bytes = match byte_source {
+            DynByteSource::Buffer(_) => fut.await?,
+            DynByteSource::Cloud(_) => io_metrics.record_download(range.len() as u64, fut).await?,
+        };
 
         let mut reader = BlockReader::new(Cursor::new(bytes.as_ref()));
 

@@ -144,12 +144,18 @@ impl RecordBatchDataFetcher {
                 let io_runtime = polars_io::pl_async::get_runtime();
 
                 let byte_source = self.byte_source.clone();
+                let io_metrics = self.io_metrics.clone();
                 let file_metadata = self.metadata.clone();
                 let current_idx = self.record_batch_idx;
 
                 Some(io_runtime.spawn(async move {
-                    let out =
-                        Self::fetch_row_count(byte_source, file_metadata, Some(current_idx)).await;
+                    let out = Self::fetch_row_count(
+                        byte_source,
+                        io_metrics,
+                        file_metadata,
+                        Some(current_idx),
+                    )
+                    .await;
                     drop(rb_prefetch_current_all_spawned);
                     out
                 }))
@@ -193,6 +199,7 @@ impl RecordBatchDataFetcher {
     /// Total row count for all record batches starting at `start_offset`
     async fn fetch_row_count(
         byte_source: Arc<DynByteSource>,
+        io_metrics: OptIOMetrics,
         file_metadata: Arc<FileMetadata>,
         start_offset: Option<usize>,
     ) -> PolarsResult<IdxSize> {
@@ -213,17 +220,27 @@ impl RecordBatchDataFetcher {
 
                 let mut n_rows = 0;
                 let mut message_scratch = Vec::new();
+                let mut total_bytes: u64 = 0;
                 let mut ranges: Vec<_> = file_metadata.blocks[start_offset..]
                     .iter()
                     .map(|block| {
                         block.offset as usize
                             ..block.offset as usize + block.meta_data_length as usize
                     })
+                    .inspect(|range| total_bytes += range.len() as u64)
                     .collect();
                 let ranges_len = ranges.len();
 
                 let bytes_map = io_runtime
-                    .spawn(async move { byte_source.get_ranges(&mut ranges).await })
+                    .spawn(async move {
+                        let fut = byte_source.get_ranges(&mut ranges);
+                        match byte_source.as_ref() {
+                            DynByteSource::Buffer(_) => fut.await,
+                            DynByteSource::Cloud(_) => {
+                                io_metrics.record_download(total_bytes, fut).await
+                            },
+                        }
+                    })
                     .await
                     .unwrap()?;
                 assert_eq!(bytes_map.len(), ranges_len);
