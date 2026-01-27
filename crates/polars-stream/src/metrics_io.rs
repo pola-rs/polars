@@ -30,7 +30,7 @@ impl ActiveIOMetrics {
         self.active_io_total_ns.load()
     }
 
-    pub async fn record_io<F, O>(&self, fut: F) -> O
+    pub async fn record_active_io_time<F, O>(&self, fut: F) -> O
     where
         F: Future<Output = O>,
     {
@@ -77,7 +77,7 @@ impl IOMetrics {
     {
         self.bytes_requested.fetch_add(num_bytes);
 
-        let out = self.active_io_time_metrics.record_io(fut).await;
+        let out = self.active_io_time_metrics.record_active_io_time(fut).await;
 
         self.bytes_received.fetch_add(num_bytes);
 
