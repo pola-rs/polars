@@ -1,5 +1,3 @@
-import pytest
-
 import polars as pl
 
 # pytestmark = pytest.mark.xdist_group("streaming")

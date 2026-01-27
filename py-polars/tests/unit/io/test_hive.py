@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 import urllib.parse
-import warnings
 from collections import OrderedDict
 from datetime import date, datetime
 from functools import partial
