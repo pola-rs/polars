@@ -851,17 +851,10 @@ pub fn accumulate_schema_dataframes_vertical_unchecked<I>(schema: SchemaRef, dfs
 where
     I: IntoIterator<Item = DataFrame>,
 {
-    let iter = dfs.into_iter();
-    let mut acc_df = DataFrame::empty_with_arc_schema(schema);
-    acc_df.reserve_chunks(iter.size_hint().0);
-    for df in iter {
-        if acc_df.width() != df.width() {
-            panic!("{}", width_mismatch(&acc_df, &df));
-        }
-
-        acc_df.vstack_mut_owned_unchecked(df);
-    }
-    acc_df
+    let iter = dfs
+        .into_iter()
+        .inspect(|df| assert!(*df.schema() == schema));
+    accumulate_dataframes_vertical_unchecked(iter)
 }
 
 /// Vertically accumulate DataFrames from an iterator of DataFrames
@@ -878,28 +871,29 @@ pub fn accumulate_schema_dataframes_vertical<I>(
 where
     I: IntoIterator<Item = DataFrame>,
 {
-    let iter = dfs.into_iter();
-    let mut acc_df = DataFrame::empty_with_arc_schema(schema);
-    acc_df.reserve_chunks(iter.size_hint().0);
-    for df in iter {
-        if acc_df.width() != df.width() {
-            return Err(width_mismatch(&acc_df, &df));
-        }
-
-        acc_df.vstack_mut_owned(df)?;
-    }
-    Ok(acc_df)
+    let iter = dfs
+        .into_iter()
+        .inspect(|df| assert!(*df.schema() == schema));
+    accumulate_dataframes_vertical(iter)
 }
 
 pub fn accumulate_dataframes_vertical_unchecked_optional<I>(dfs: I) -> Option<DataFrame>
 where
     I: IntoIterator<Item = DataFrame>,
 {
-    let mut iter = dfs.into_iter().peekable();
-    let schema = iter.peek().map(|df| df.schema().clone())?;
-    Some(accumulate_schema_dataframes_vertical_unchecked(
-        schema, iter,
-    ))
+    let mut iter = dfs.into_iter();
+    let additional = iter.size_hint().0;
+    let mut acc_df = iter.next()?;
+    acc_df.reserve_chunks(additional);
+
+    for df in iter {
+        if acc_df.width() != df.width() {
+            panic!("{}", width_mismatch(&acc_df, &df));
+        }
+
+        acc_df.vstack_mut_owned_unchecked(df);
+    }
+    Some(acc_df)
 }
 
 /// This takes ownership of the DataFrame so that drop is called earlier.
@@ -908,9 +902,19 @@ pub fn accumulate_dataframes_vertical_unchecked<I>(dfs: I) -> DataFrame
 where
     I: IntoIterator<Item = DataFrame>,
 {
-    let mut iter = dfs.into_iter().peekable();
-    let schema = iter.peek().map(|df| df.schema().clone()).unwrap();
-    accumulate_schema_dataframes_vertical_unchecked(schema, iter)
+    let mut iter = dfs.into_iter();
+    let additional = iter.size_hint().0;
+    let mut acc_df = iter.next().unwrap();
+    acc_df.reserve_chunks(additional);
+
+    for df in iter {
+        if acc_df.width() != df.width() {
+            panic!("{}", width_mismatch(&acc_df, &df));
+        }
+
+        acc_df.vstack_mut_owned_unchecked(df);
+    }
+    acc_df
 }
 
 /// This takes ownership of the DataFrame so that drop is called earlier.
@@ -920,9 +924,19 @@ pub fn accumulate_dataframes_vertical<I>(dfs: I) -> PolarsResult<DataFrame>
 where
     I: IntoIterator<Item = DataFrame>,
 {
-    let mut iter = dfs.into_iter().peekable();
-    let schema = iter.peek().unwrap().schema().clone();
-    accumulate_schema_dataframes_vertical(schema, iter)
+    let mut iter = dfs.into_iter();
+    let additional = iter.size_hint().0;
+    let mut acc_df = iter.next().unwrap();
+    acc_df.reserve_chunks(additional);
+    for df in iter {
+        if acc_df.width() != df.width() {
+            return Err(width_mismatch(&acc_df, &df));
+        }
+
+        acc_df.vstack_mut_owned(df)?;
+    }
+
+    Ok(acc_df)
 }
 
 /// Concat the DataFrames to a single DataFrame.
