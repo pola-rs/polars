@@ -597,7 +597,7 @@ def test_selector_temporal_13665() -> None:
         idx=pl.int_range(0, 2),
         utc=pl.col("utc").dt.replace_time_zone(None),
         tokyo=pl.col("utc").dt.convert_time_zone("Asia/Tokyo"),
-        hawaii=pl.col("utc").dt.convert_time_zone("US/Hawaii"),
+        hawaii=pl.col("utc").dt.convert_time_zone("Pacific/Honolulu"),
     )
     for selector in (cs.datetime(), cs.datetime("us"), cs.temporal()):
         assert df.select(selector).to_dict(as_series=False) == {
@@ -610,8 +610,8 @@ def test_selector_temporal_13665() -> None:
                 datetime(2099, 12, 31, 9, 0, tzinfo=ZoneInfo(key="Asia/Tokyo")),
             ],
             "hawaii": [
-                datetime(1950, 7, 4, 14, 0, tzinfo=ZoneInfo(key="US/Hawaii")),
-                datetime(2099, 12, 30, 14, 0, tzinfo=ZoneInfo(key="US/Hawaii")),
+                datetime(1950, 7, 4, 14, 0, tzinfo=ZoneInfo(key="Pacific/Honolulu")),
+                datetime(2099, 12, 30, 14, 0, tzinfo=ZoneInfo(key="Pacific/Honolulu")),
             ],
         }
 
