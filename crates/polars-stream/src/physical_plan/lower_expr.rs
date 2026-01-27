@@ -569,9 +569,6 @@ fn lower_reduce_node(
 
     let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &agg_input, ctx)?;
     let trans_agg_node = ctx.expr_arena.add(agg_aexpr.replace_inputs(&trans_exprs));
-    // dbg!(ctx.expr_arena.get(trans_agg_node));
-    // [amber] LEFT HERE. Suspecting that one of the inputs is lost here ^
-    // Not lost here. Maybe later?
 
     let out_name = unique_column_name();
     let expr_ir = ExprIR::new(trans_agg_node, OutputName::Alias(out_name.clone()));

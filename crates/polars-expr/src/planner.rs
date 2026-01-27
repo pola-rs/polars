@@ -381,29 +381,12 @@ fn create_physical_expr_inner(
 
             // Special case: Quantile supports multiple inputs.
             // TODO refactor to FunctionExpr.
-            match agg {
-                IRAggExpr::Quantile {
-                    quantile,
-                    method: interpol,
-                    ..
-                } => {
-                    let quantile = create_physical_expr_inner(quantile, expr_arena, schema, state)?;
-                    return Ok(Arc::new(AggQuantileExpr::new(input, quantile, interpol)));
-                },
-                // IRAggExpr::MinBy { input, by } => {
-                //     let input = create_physical_expr_inner(input, expr_arena, schema, state)?;
-                //     let by = create_physical_expr_inner(by, expr_arena, schema, state)?;
-                //     return Ok(Arc::new(AggMinMaxByExpr::new_min_by(input, by)));
-                // },
-
-                // IRAggExpr::MaxBy { input, by } => {
-                //     let input = create_physical_expr_inner(input, expr_arena, schema, state)?;
-                //     let by = create_physical_expr_inner(by, expr_arena, schema, state)?;
-                //     return Ok(Arc::new(AggMinMaxByExpr::new_max_by(input, by)));
-                // },
-                ref x => {
-                    dbg!(x);
-                },
+            if let IRAggExpr::Quantile {
+                quantile, method, ..
+            } = agg
+            {
+                let quantile = create_physical_expr_inner(quantile, expr_arena, schema, state)?;
+                return Ok(Arc::new(AggQuantileExpr::new(input, quantile, method)));
             }
 
             let groupby = GroupByMethod::from(agg.clone());

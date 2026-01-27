@@ -166,7 +166,7 @@ pub fn into_reduction(
             let input = inner_exprs[0].node();
             let by = inner_exprs[1].node();
             let gr = new_min_by_reduction(get_dt(input)?, get_dt(by)?)?;
-            (gr, input)
+            return Ok((gr, vec![input, by]));
         },
 
         AExpr::Function {
@@ -178,7 +178,7 @@ pub fn into_reduction(
             let input = inner_exprs[0].node();
             let by = inner_exprs[1].node();
             let gr = new_max_by_reduction(get_dt(input)?, get_dt(by)?)?;
-            (gr, input)
+            return Ok((gr, vec![input, by]));
         },
 
         AExpr::AnonymousAgg {
