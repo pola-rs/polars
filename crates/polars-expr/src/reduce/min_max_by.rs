@@ -581,6 +581,7 @@ where
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        dbg!(&values);
         assert!(values.len() == 2);
         let payload_values = values[0];
         let ord_values = values[1];

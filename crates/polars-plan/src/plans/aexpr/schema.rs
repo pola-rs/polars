@@ -166,8 +166,6 @@ impl AExpr {
                 match agg {
                     Max { input: expr, .. }
                     | Min { input: expr, .. }
-                    | MinBy { input: expr, .. }
-                    | MaxBy { input: expr, .. }
                     | First(expr)
                     | FirstNonNull(expr)
                     | Last(expr)
@@ -423,8 +421,6 @@ impl AExpr {
             | Slice { input: expr, .. }
             | Agg(Min { input: expr, .. })
             | Agg(Max { input: expr, .. })
-            | Agg(MinBy { input: expr, .. })
-            | Agg(MaxBy { input: expr, .. })
             | Agg(First(expr))
             | Agg(FirstNonNull(expr))
             | Agg(Last(expr))

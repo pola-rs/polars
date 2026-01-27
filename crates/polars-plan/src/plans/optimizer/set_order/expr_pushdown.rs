@@ -3,7 +3,7 @@ use std::ops::{BitOr, BitOrAssign};
 use polars_utils::arena::Arena;
 
 use crate::dsl::EvalVariant;
-use crate::plans::{AExpr, IRAggExpr};
+use crate::plans::{AExpr, IRAggExpr, IRFunctionExpr};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColumnOrderObserved;
@@ -236,12 +236,6 @@ impl<'a> ObservableOrdersResolver<'a> {
                     _ = rec!(*node);
                     O::None
                 },
-                IRAggExpr::MinBy { input, by } | IRAggExpr::MaxBy { input, by } => {
-                    // Input and 'by' order is disregarded, but must not observe order.
-                    _ = rec!(*input);
-                    _ = rec!(*by);
-                    O::None
-                },
                 IRAggExpr::Quantile { expr, quantile, .. } => {
                     // Input and quantile order is disregarded, but must not observe order.
                     _ = rec!(*expr);
@@ -270,6 +264,17 @@ impl<'a> ObservableOrdersResolver<'a> {
 
                     O::Independent
                 },
+            },
+
+            AExpr::Function {
+                input,
+                function: IRFunctionExpr::MinBy | IRFunctionExpr::MaxBy,
+                ..
+            } => {
+                // Input and 'by' order is disregarded, but must not observe order.
+                _ = rec!(input[0].node());
+                _ = rec!(input[1].node());
+                O::None
             },
 
             AExpr::Gather {
