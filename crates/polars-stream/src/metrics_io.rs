@@ -26,28 +26,11 @@ impl Default for ActiveIOMetrics {
 }
 
 impl ActiveIOMetrics {
-    pub fn active_io_total_ns(&self) -> u64 {
-        let mut out = self.active_io_total_ns.load();
+    /// MUST have an associated `end_io_session()`.
+    fn start_io_session(&self) -> bool {
+        let started_by_this_call = self.active_io_count.fetch_add(1) == 0;
 
-        let elapsed = u64::saturating_sub(
-            Instant::now()
-                .saturating_duration_since(self.base_instant)
-                .as_nanos() as _,
-            self.active_io_offset_ns.load(atomic::Ordering::Acquire),
-        );
-
-        if self.active_io_count.load() > 0 {
-            out += elapsed
-        }
-
-        out
-    }
-
-    pub async fn record_active_io_time<F, O>(&self, fut: F) -> O
-    where
-        F: Future<Output = O>,
-    {
-        if self.active_io_count.fetch_add(1) == 0 {
+        if started_by_this_call {
             self.active_io_offset_ns.store(
                 Instant::now()
                     .saturating_duration_since(self.base_instant)
@@ -56,18 +39,68 @@ impl ActiveIOMetrics {
             );
         }
 
-        let out = AssertUnwindSafe(fut).catch_unwind().await;
+        started_by_this_call
+    }
 
+    /// MUST have an associated `start_io_session()`.
+    fn end_io_session(&self, ns_since_base_instant: u64) -> bool {
         let elapsed = u64::saturating_sub(
-            Instant::now()
-                .saturating_duration_since(self.base_instant)
-                .as_nanos() as _,
+            ns_since_base_instant,
             self.active_io_offset_ns.load(atomic::Ordering::Acquire),
         );
 
-        if self.active_io_count.fetch_sub(1) == 1 {
+        let ended_by_this_call = self.active_io_count.fetch_sub(1) == 1;
+
+        if ended_by_this_call {
             self.active_io_total_ns.fetch_add(elapsed);
         }
+
+        ended_by_this_call
+    }
+
+    pub fn active_io_total_ns(&self) -> u64 {
+        // If there are active I/O tasks, we would like to add the current elapsed
+        // time to the `active_io_total_ns` counter.
+        // To do this, we `start_io_session()` to hold a refcount to ensure
+        // `active_io_total_ns` isn't updated by another thread.
+        let started_by_this_call = self.start_io_session();
+
+        let active_io_total_ns = self.active_io_total_ns.load();
+
+        let ns_since_base_instant = Instant::now()
+            .saturating_duration_since(self.base_instant)
+            .as_nanos() as _;
+        let elapsed = u64::saturating_sub(
+            ns_since_base_instant,
+            self.active_io_offset_ns.load(atomic::Ordering::Acquire),
+        );
+
+        self.end_io_session(if started_by_this_call {
+            0
+        } else {
+            ns_since_base_instant
+        });
+
+        if started_by_this_call {
+            active_io_total_ns
+        } else {
+            active_io_total_ns + elapsed
+        }
+    }
+
+    pub async fn record_active_io_time<F, O>(&self, fut: F) -> O
+    where
+        F: Future<Output = O>,
+    {
+        self.start_io_session();
+
+        let out = AssertUnwindSafe(fut).catch_unwind().await;
+
+        self.end_io_session(
+            Instant::now()
+                .saturating_duration_since(self.base_instant)
+                .as_nanos() as _,
+        );
 
         match out {
             Ok(v) => v,
