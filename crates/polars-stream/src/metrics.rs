@@ -6,7 +6,7 @@ use slotmap::{SecondaryMap, SlotMap};
 use crate::LogicalPipe;
 use crate::async_executor::TaskMetrics;
 use crate::graph::{GraphNodeKey, LogicalPipeKey};
-pub use crate::metrics_io::{ActiveIOMetrics, IOMetrics, OptIOMetrics};
+pub use crate::metrics_io::{IOMetrics, OptIOMetrics};
 use crate::pipe::PipeMetrics;
 
 #[derive(Default, Clone)]
@@ -166,15 +166,11 @@ impl GraphMetrics {
 pub struct MetricsBuilder {
     pub graph_key: GraphNodeKey,
     pub graph_metrics: Arc<parking_lot::Mutex<GraphMetrics>>,
-    pub active_io_time_metrics: Arc<ActiveIOMetrics>,
 }
 
 impl MetricsBuilder {
     pub fn new_download_metrics(&self) -> Arc<IOMetrics> {
-        let io_metrics: Arc<IOMetrics> = Arc::new(IOMetrics {
-            active_io_time_metrics: Arc::clone(&self.active_io_time_metrics),
-            ..Default::default()
-        });
+        let io_metrics: Arc<IOMetrics> = Default::default();
 
         self.graph_metrics
             .lock()
