@@ -26,12 +26,12 @@ impl Default for ActiveIOMetrics {
 }
 
 /// Has Drop impl that ensures atomic counter is decremented.
-struct IOSessionRef<'a> {
+struct IOSession<'a> {
     active_io_metrics: &'a ActiveIOMetrics,
     decremented: bool,
 }
 
-impl IOSessionRef<'_> {
+impl IOSession<'_> {
     fn finish(mut self, ns_since_base_instant: u64) -> bool {
         assert!(!self.decremented);
         self.decremented = true;
@@ -55,7 +55,7 @@ impl IOSessionRef<'_> {
     }
 }
 
-impl Drop for IOSessionRef<'_> {
+impl Drop for IOSession<'_> {
     fn drop(&mut self) {
         if !self.decremented {
             self.active_io_metrics.active_io_count.fetch_sub(1);
@@ -65,7 +65,7 @@ impl Drop for IOSessionRef<'_> {
 
 impl ActiveIOMetrics {
     /// MUST have an associated `end_io_session()`.
-    fn start_io_session(&self) -> (IOSessionRef<'_>, bool) {
+    fn start_io_session(&self) -> (IOSession<'_>, bool) {
         let started_by_this_call = self.active_io_count.fetch_add(1) == 0;
 
         if started_by_this_call {
@@ -78,7 +78,7 @@ impl ActiveIOMetrics {
         }
 
         (
-            IOSessionRef {
+            IOSession {
                 active_io_metrics: self,
                 decremented: false,
             },
