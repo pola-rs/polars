@@ -27,7 +27,20 @@ impl Default for ActiveIOMetrics {
 
 impl ActiveIOMetrics {
     pub fn active_io_total_ns(&self) -> u64 {
-        self.active_io_total_ns.load()
+        let mut out = self.active_io_total_ns.load();
+
+        let elapsed = u64::saturating_sub(
+            Instant::now()
+                .saturating_duration_since(self.base_instant)
+                .as_nanos() as _,
+            self.active_io_offset_ns.load(atomic::Ordering::Acquire),
+        );
+
+        if self.active_io_count.load() > 0 {
+            out += elapsed
+        }
+
+        out
     }
 
     pub async fn record_active_io_time<F, O>(&self, fut: F) -> O
