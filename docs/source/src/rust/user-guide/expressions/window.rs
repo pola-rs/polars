@@ -138,7 +138,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("Type 1")
                 .head(Some(3))
                 .over_with_options(Some(["Type 1"]), None, WindowMapping::Explode)?
-                .list()
                 .explode(ExplodeOptions {
                     empty_as_null: false,
                     keep_nulls: false,
@@ -150,7 +149,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .head(Some(3))
                 .over_with_options(Some(["Type 1"]), None, WindowMapping::Explode)?
-                .list()
                 .explode(ExplodeOptions {
                     empty_as_null: false,
                     keep_nulls: false,
@@ -163,7 +161,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .head(Some(3))
                 .over_with_options(Some(["Type 1"]), None, WindowMapping::Explode)?
-                .list()
                 .explode(ExplodeOptions {
                     empty_as_null: false,
                     keep_nulls: false,
@@ -173,7 +170,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .sort(Default::default())
                 .head(Some(3))
                 .over_with_options(Some(["Type 1"]), None, WindowMapping::Explode)?
-                .list()
                 .explode(ExplodeOptions {
                     empty_as_null: false,
                     keep_nulls: false,
