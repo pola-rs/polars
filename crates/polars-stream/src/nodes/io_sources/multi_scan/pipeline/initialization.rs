@@ -293,8 +293,11 @@ async fn finish_initialize_multi_scan_pipeline(
         let sources = config.sources.clone();
         let cloud_options = config.cloud_options.clone();
         let file_reader_builder = config.file_reader_builder.clone();
-        let deletion_files_provider =
-            DeletionFilesProvider::new(config.deletion_files.clone(), &execution_state);
+        let deletion_files_provider = DeletionFilesProvider::new(
+            config.deletion_files.clone(),
+            &execution_state,
+            config.io_metrics(),
+        );
 
         futures::stream::iter(range)
             .map(move |scan_source_idx| {

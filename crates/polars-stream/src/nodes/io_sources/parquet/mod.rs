@@ -22,6 +22,7 @@ use super::multi_scan::reader_interface::{
 };
 use crate::async_executor::{self};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use crate::metrics::OptIOMetrics;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::parquet::projection::{
@@ -46,6 +47,7 @@ pub struct ParquetFileReader {
     metadata: Option<Arc<FileMetadata>>,
     byte_source_builder: DynByteSourceBuilder,
     row_group_prefetch_sync: RowGroupPrefetchSync,
+    io_metrics: OptIOMetrics,
     verbose: bool,
 
     /// Set during initialize()
@@ -101,10 +103,16 @@ impl FileReader for ParquetFileReader {
         } else {
             let (metadata_bytes, opt_full_bytes) = {
                 let byte_source = byte_source.clone();
+                let io_metrics = self.io_metrics.clone();
 
                 pl_async::get_runtime()
                     .spawn(async move {
-                        metadata_utils::read_parquet_metadata_bytes(&byte_source, verbose).await
+                        metadata_utils::read_parquet_metadata_bytes(
+                            &byte_source,
+                            verbose,
+                            &io_metrics,
+                        )
+                        .await
                     })
                     .await
                     .unwrap()?
@@ -341,6 +349,7 @@ impl FileReader for ParquetFileReader {
             rg_prefetch_current_all_spawned: Option::take(
                 &mut self.row_group_prefetch_sync.current_all_spawned,
             ),
+            io_metrics: self.io_metrics.clone(),
             disable_morsel_split,
         }
         .run();
@@ -430,6 +439,7 @@ struct ParquetReadImpl {
     rg_prefetch_semaphore: Arc<tokio::sync::Semaphore>,
     rg_prefetch_prev_all_spawned: Option<WaitGroup>,
     rg_prefetch_current_all_spawned: Option<WaitToken>,
+    io_metrics: OptIOMetrics,
     disable_morsel_split: bool,
 }
 

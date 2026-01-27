@@ -17,6 +17,7 @@ use crate::async_primitives::connector;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
+use crate::metrics::MetricsBuilder;
 use crate::nodes::ComputeNode;
 use crate::nodes::io_sources::multi_scan::components::bridge::BridgeState;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
@@ -29,6 +30,7 @@ use crate::pipe::PortSender;
 pub struct MultiScan {
     name: PlSmallStr,
     state: MultiScanState,
+    metrics_builder: Option<MetricsBuilder>,
     verbose: bool,
 }
 
@@ -40,6 +42,7 @@ impl MultiScan {
         MultiScan {
             name,
             state: MultiScanState::Uninitialized { config },
+            metrics_builder: None,
             verbose,
         }
     }
@@ -48,6 +51,10 @@ impl MultiScan {
 impl ComputeNode for MultiScan {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn set_metrics_builder(&mut self, metrics_builder: MetricsBuilder) {
+        self.metrics_builder = Some(metrics_builder);
     }
 
     fn update_state(
@@ -97,7 +104,8 @@ impl ComputeNode for MultiScan {
         join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
             use MultiScanState::*;
 
-            self.state.initialize(state.clone());
+            self.state
+                .initialize(state.clone(), self.metrics_builder.as_ref());
             self.state.refresh(verbose).await?;
 
             match &mut self.state {
@@ -163,7 +171,11 @@ enum MultiScanState {
 
 impl MultiScanState {
     /// Initialize state if not yet initialized.
-    fn initialize(&mut self, execution_state: StreamingExecutionState) {
+    fn initialize(
+        &mut self,
+        execution_state: StreamingExecutionState,
+        metrics_builder: Option<&MetricsBuilder>,
+    ) {
         use MultiScanState::*;
 
         let slf = std::mem::replace(self, Finished);
@@ -176,6 +188,13 @@ impl MultiScanState {
         config
             .file_reader_builder
             .set_execution_state(&execution_state);
+
+        if let Some(metrics_builder) = metrics_builder {
+            let io_metrics = metrics_builder.new_download_metrics();
+
+            config.io_metrics.get_or_init(|| io_metrics.clone());
+            config.file_reader_builder.set_io_metrics(io_metrics);
+        }
 
         let num_pipelines = execution_state.num_pipelines;
 
