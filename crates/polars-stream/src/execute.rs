@@ -213,10 +213,12 @@ fn run_subgraph(
             // Spawn the tasks.
             let pre_spawn_offset = join_handles.len();
 
-            node.compute.set_metrics_builder(MetricsBuilder {
-                graph_key: node_key,
-                graph_metrics: metrics.clone().unwrap(),
-            });
+            if let Some(graph_metrics) = metrics.clone() {
+                node.compute.set_metrics_builder(MetricsBuilder {
+                    graph_key: node_key,
+                    graph_metrics,
+                });
+            }
 
             node.compute.spawn(
                 scope,
