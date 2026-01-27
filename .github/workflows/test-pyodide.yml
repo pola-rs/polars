@@ -69,7 +69,7 @@ jobs:
       - name: Build Pyodide wheel
         uses: pypa/cibuildwheel@9a15d0851eda6787ba362104ce414974f89201bf # brings v0.29.2, todo update with release
         with:
-          package-dir: py-polars
+          package-dir: py-polars/runtime/polars-runtime-32
           output-dir: wasm-dist
           only: cp313-pyodide_wasm32
         env:
