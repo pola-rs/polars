@@ -1,6 +1,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use polars_buffer::Buffer;
 use polars_core::prelude::PlHashMap;
 use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::Bitmap;
@@ -9,9 +10,9 @@ use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, create_sorting_map};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 use polars_parquet::read::RowGroupMetadata;
-use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 
+use crate::metrics::OptIOMetrics;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 use crate::utils::tokio_handle_ext;
 
@@ -33,6 +34,7 @@ pub(super) struct RowGroupDataFetcher {
     pub(super) memory_prefetch_func: fn(&[u8]) -> (),
     pub(super) metadata: Arc<FileMetadata>,
     pub(super) byte_source: Arc<DynByteSource>,
+    pub(super) io_metrics: OptIOMetrics,
 
     pub(super) row_group_slice: Range<usize>,
     pub(super) row_group_mask: Option<Bitmap>,
@@ -79,6 +81,7 @@ impl RowGroupDataFetcher {
 
             let metadata = self.metadata.clone();
             let current_byte_source = self.byte_source.clone();
+            let io_metrics = self.io_metrics.clone();
             let projection = self.projection.clone();
             let is_full_projection = self.is_full_projection;
             let memory_prefetch_func = self.memory_prefetch_func;
@@ -86,70 +89,79 @@ impl RowGroupDataFetcher {
 
             let handle = io_runtime.spawn(async move {
                 let row_group_metadata = &metadata.row_groups[idx];
-                let fetched_bytes =
-                    if let DynByteSource::MemSlice(mem_slice) = current_byte_source.as_ref() {
-                        // Skip byte range calculation for `no_prefetch`.
-                        if memory_prefetch_func as usize
-                            != polars_utils::mem::prefetch::no_prefetch as *const () as usize
-                        {
-                            let slice = mem_slice.0.as_ref();
+                let fetched_bytes = if let DynByteSource::Buffer(mem_slice) =
+                    current_byte_source.as_ref()
+                {
+                    // Skip byte range calculation for `no_prefetch`.
+                    if memory_prefetch_func as usize
+                        != polars_utils::mem::prefetch::no_prefetch as *const () as usize
+                    {
+                        let slice = mem_slice.0.as_ref();
 
-                            if !is_full_projection {
-                                for range in get_row_group_byte_ranges_for_projection(
-                                    row_group_metadata,
-                                    &mut projection.iter().map(|x| &x.arrow_field().name),
-                                ) {
-                                    memory_prefetch_func(unsafe { slice.get_unchecked(range) })
-                                }
-                            } else {
-                                let range = row_group_metadata.full_byte_range();
-                                let range = range.start as usize..range.end as usize;
-
+                        if !is_full_projection {
+                            for range in get_row_group_byte_ranges_for_projection(
+                                row_group_metadata,
+                                &mut projection.iter().map(|x| &x.arrow_field().name),
+                            ) {
                                 memory_prefetch_func(unsafe { slice.get_unchecked(range) })
-                            };
-                        }
+                            }
+                        } else {
+                            let range = row_group_metadata.full_byte_range();
+                            let range = range.start as usize..range.end as usize;
 
-                        // We have a mmapped or in-memory slice representing the entire
-                        // file that can be sliced directly, so we can skip the byte-range
-                        // calculations and HashMap allocation.
-                        let mem_slice = mem_slice.0.clone();
-                        FetchedBytes::MemSlice {
-                            offset: 0,
-                            mem_slice,
-                        }
-                    } else if !is_full_projection {
-                        let mut ranges = get_row_group_byte_ranges_for_projection(
-                            row_group_metadata,
-                            &mut projection.iter().map(|x| &x.arrow_field().name),
-                        )
+                            memory_prefetch_func(unsafe { slice.get_unchecked(range) })
+                        };
+                    }
+
+                    // We have a mmapped or in-memory slice representing the entire
+                    // file that can be sliced directly, so we can skip the byte-range
+                    // calculations and HashMap allocation.
+                    let mem_slice = mem_slice.0.clone();
+                    FetchedBytes::Buffer {
+                        offset: 0,
+                        buffer: mem_slice,
+                    }
+                } else if !is_full_projection {
+                    let mut total_bytes: u64 = 0;
+                    let mut ranges = get_row_group_byte_ranges_for_projection(
+                        row_group_metadata,
+                        &mut projection.iter().map(|x| &x.arrow_field().name),
+                    )
+                    .inspect(|range| total_bytes += range.len() as u64)
+                    .collect::<Vec<_>>();
+
+                    let n_ranges = ranges.len();
+
+                    let bytes_map = io_metrics
+                        .record_download(total_bytes, current_byte_source.get_ranges(&mut ranges))
+                        .await?;
+
+                    assert_eq!(bytes_map.len(), n_ranges);
+
+                    FetchedBytes::BytesMap(bytes_map)
+                } else {
+                    // We still prefer `get_ranges()` over a single `get_range()` for downloading
+                    // the entire row group, as it can have less memory-copying. A single `get_range()`
+                    // would naively concatenate the memory blocks of the entire row group, while
+                    // `get_ranges()` can skip concatenation since the downloaded blocks are
+                    // aligned to the columns.
+                    let mut total_bytes: u64 = 0;
+                    let mut ranges = row_group_metadata
+                        .byte_ranges_iter()
+                        .map(|x| x.start as usize..x.end as usize)
+                        .inspect(|range| total_bytes += range.len() as u64)
                         .collect::<Vec<_>>();
 
-                        let n_ranges = ranges.len();
+                    let n_ranges = ranges.len();
 
-                        let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
+                    let bytes_map = io_metrics
+                        .record_download(total_bytes, current_byte_source.get_ranges(&mut ranges))
+                        .await?;
 
-                        assert_eq!(bytes_map.len(), n_ranges);
+                    assert_eq!(bytes_map.len(), n_ranges);
 
-                        FetchedBytes::BytesMap(bytes_map)
-                    } else {
-                        // We still prefer `get_ranges()` over a single `get_range()` for downloading
-                        // the entire row group, as it can have less memory-copying. A single `get_range()`
-                        // would naively concatenate the memory blocks of the entire row group, while
-                        // `get_ranges()` can skip concatenation since the downloaded blocks are
-                        // aligned to the columns.
-                        let mut ranges = row_group_metadata
-                            .byte_ranges_iter()
-                            .map(|x| x.start as usize..x.end as usize)
-                            .collect::<Vec<_>>();
-
-                        let n_ranges = ranges.len();
-
-                        let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
-
-                        assert_eq!(bytes_map.len(), n_ranges);
-
-                        FetchedBytes::BytesMap(bytes_map)
-                    };
+                    FetchedBytes::BytesMap(bytes_map)
+                };
 
                 PolarsResult::Ok(RowGroupData {
                     fetched_bytes,
@@ -170,17 +182,19 @@ impl RowGroupDataFetcher {
 }
 
 pub(super) enum FetchedBytes {
-    MemSlice { mem_slice: MemSlice, offset: usize },
-    BytesMap(PlHashMap<usize, MemSlice>),
+    Buffer { buffer: Buffer<u8>, offset: usize },
+    BytesMap(PlHashMap<usize, Buffer<u8>>),
 }
 
 impl FetchedBytes {
-    pub(super) fn get_range(&self, range: std::ops::Range<usize>) -> MemSlice {
+    pub(super) fn get_range(&self, range: std::ops::Range<usize>) -> Buffer<u8> {
         match self {
-            Self::MemSlice { mem_slice, offset } => {
+            Self::Buffer { buffer, offset } => {
                 let offset = *offset;
                 debug_assert!(range.start >= offset);
-                mem_slice.slice(range.start - offset..range.end - offset)
+                buffer
+                    .clone()
+                    .sliced(range.start - offset..range.end - offset)
             },
             Self::BytesMap(v) => {
                 let v = v.get(&range.start).unwrap();

@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowSchemaRef;
+use polars_buffer::Buffer;
 use polars_core::chunked_array::builder::NullChunkedBuilder;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -447,34 +448,33 @@ pub fn read_parquet<R: MmapBytesReader>(
     }
 
     let reader = ReaderBytes::from(&mut reader);
-    let store = mmap::ColumnStore::Local(unsafe {
-        std::mem::transmute::<ReaderBytes<'_>, ReaderBytes<'static>>(reader).to_memslice()
-    });
-
-    let dfs = rg_to_dfs(
-        &store,
-        &mut 0,
-        0,
-        n_row_groups,
-        pre_slice,
-        &file_metadata,
-        reader_schema,
-        row_index.clone(),
-        parallel,
-        &materialized_projection,
-        hive_partition_columns,
-    )?;
-
-    if dfs.is_empty() {
-        Ok(materialize_empty_df(
-            projection,
+    Buffer::with_slice(&reader, |buf| {
+        let store = mmap::ColumnStore::Local(buf);
+        let dfs = rg_to_dfs(
+            &store,
+            &mut 0,
+            0,
+            n_row_groups,
+            pre_slice,
+            &file_metadata,
             reader_schema,
+            row_index.clone(),
+            parallel,
+            &materialized_projection,
             hive_partition_columns,
-            row_index.as_ref(),
-        ))
-    } else {
-        accumulate_dataframes_vertical(dfs)
-    }
+        )?;
+
+        if dfs.is_empty() {
+            Ok(materialize_empty_df(
+                projection,
+                reader_schema,
+                hive_partition_columns,
+                row_index.as_ref(),
+            ))
+        } else {
+            accumulate_dataframes_vertical(dfs)
+        }
+    })
 }
 
 pub fn calc_prefilter_cost(mask: &arrow::bitmap::Bitmap) -> f64 {

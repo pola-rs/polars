@@ -10,6 +10,7 @@ pub(crate) struct GroupByDynamicExec {
     #[cfg(feature = "dynamic_group_by")]
     pub(crate) options: DynamicGroupOptions,
     pub(crate) input_schema: SchemaRef,
+    pub(crate) output_schema: SchemaRef,
     pub(crate) slice: Option<(i64, usize)>,
     pub(crate) apply: Option<PlanCallback<DataFrame, DataFrame>>,
 }
@@ -47,7 +48,7 @@ impl GroupByDynamicExec {
 
         if let Some(f) = &self.apply {
             let gb = GroupBy::new(&df, vec![], groups, None);
-            return gb.apply_sliced(self.slice, move |df| f.call(df));
+            return gb.apply_sliced(self.slice, move |df| f.call(df), Some(&self.output_schema));
         }
 
         let mut groups = &groups;

@@ -4,6 +4,7 @@ import io
 import subprocess
 import sys
 from collections import OrderedDict
+from datetime import datetime
 from pathlib import Path
 from threading import Thread
 from typing import TYPE_CHECKING, Any
@@ -1228,3 +1229,32 @@ def test_sink_large_rows_25834(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         partition_by="idx",
     )
     assert_frame_equal(pl.scan_parquet(tmp_path / "partitioned").collect(), df)
+
+
+def test_scan_parquet_prefilter_is_between_non_column_input_26283() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame(
+        {
+            "timestamp": pl.datetime_range(
+                start=datetime(2026, 1, 1),
+                end=datetime(2026, 1, 1, 0, 5, 0),
+                interval="1s",
+                eager=True,
+            ),
+        },
+        schema={"timestamp": pl.Datetime("us")},
+        height=301,
+    )
+
+    df.write_parquet(f)
+    f.seek(0)
+
+    q = pl.scan_parquet(f).filter(
+        pl.col("timestamp")
+        .dt.date()
+        .cast(pl.Datetime("us"))
+        .is_between(datetime(2026, 1, 1), datetime(2026, 1, 1))
+    )
+
+    assert_frame_equal(q.collect(), df)

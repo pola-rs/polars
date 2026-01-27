@@ -1,7 +1,7 @@
 use std::cmp::Reverse;
 
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
-use polars_utils::mmap::MemSlice;
 use polars_utils::priority::Priority;
 
 use super::chunk_reader::ChunkReader;
@@ -93,8 +93,8 @@ impl LineBatchProcessor {
 
 /// Represents a complete chunk of NDJSON data (i.e. no partial lines).
 pub(super) struct LineBatch {
-    /// Safety: This is sent between 2 places that both hold a reference to the underlying MemSlice.
-    pub(super) bytes: MemSlice,
+    /// Safety: This is sent between 2 places that both hold a reference to the underlying Buffer.
+    pub(super) bytes: Buffer<u8>,
     pub(super) chunk_idx: usize,
 }
 

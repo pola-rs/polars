@@ -83,6 +83,7 @@ impl SinkTarget {
         cloud_options: Option<&CloudOptions>,
         mkdir: bool,
         cloud_upload_chunk_size: usize,
+        cloud_upload_max_concurrency: usize,
     ) -> PolarsResult<Writeable> {
         match self {
             SinkTarget::Path(path) => {
@@ -94,6 +95,7 @@ impl SinkTarget {
                     path.clone(),
                     cloud_options,
                     cloud_upload_chunk_size,
+                    cloud_upload_max_concurrency,
                 )
             },
             SinkTarget::Dyn(memory_writer) => Ok(memory_writer.lock().unwrap().take().unwrap()),
@@ -105,6 +107,7 @@ impl SinkTarget {
         cloud_options: Option<&CloudOptions>,
         mkdir: bool,
         cloud_upload_chunk_size: usize,
+        cloud_upload_max_concurrency: usize,
     ) -> PolarsResult<Writeable> {
         #[cfg(feature = "cloud")]
         {
@@ -118,6 +121,7 @@ impl SinkTarget {
                         path.clone(),
                         cloud_options,
                         cloud_upload_chunk_size,
+                        cloud_upload_max_concurrency,
                     )
                 },
                 SinkTarget::Dyn(memory_writer) => Ok(memory_writer.lock().unwrap().take().unwrap()),
@@ -126,7 +130,12 @@ impl SinkTarget {
 
         #[cfg(not(feature = "cloud"))]
         {
-            self.open_into_writeable(cloud_options, mkdir, cloud_upload_chunk_size)
+            self.open_into_writeable(
+                cloud_options,
+                mkdir,
+                cloud_upload_chunk_size,
+                cloud_upload_max_concurrency,
+            )
         }
     }
 

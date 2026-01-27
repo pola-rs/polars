@@ -11,7 +11,7 @@ use polars_io::file_cache::FileCacheEntry;
 #[cfg(feature = "cloud")]
 use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};
 use polars_io::{expand_paths, expand_paths_hive, expanded_from_single_directory};
-use polars_utils::mmap::MemSlice;
+use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
@@ -50,7 +50,7 @@ pub enum ScanSources {
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Files(Arc<[File]>),
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
-    Buffers(Arc<[MemSlice]>),
+    Buffers(Arc<[Buffer<u8>]>),
 }
 
 impl Debug for ScanSources {
@@ -68,7 +68,7 @@ impl Debug for ScanSources {
 pub enum ScanSourceRef<'a> {
     Path(&'a PlRefPath),
     File(&'a File),
-    Buffer(&'a MemSlice),
+    Buffer(&'a Buffer<u8>),
 }
 
 /// A single source to scan from
@@ -76,7 +76,7 @@ pub enum ScanSourceRef<'a> {
 pub enum ScanSource {
     Path(PlRefPath),
     File(Arc<File>),
-    Buffer(MemSlice),
+    Buffer(Buffer<u8>),
 }
 
 impl ScanSource {
@@ -382,17 +382,17 @@ impl ScanSourceRef<'_> {
     }
 
     /// Turn the scan source into a memory slice
-    pub fn to_memslice(&self) -> PolarsResult<MemSlice> {
-        self.to_memslice_possibly_async(false, None, 0)
+    pub fn to_memslice(&self) -> PolarsResult<Buffer<u8>> {
+        self.to_buffer_possibly_async(false, None, 0)
     }
 
     #[allow(clippy::wrong_self_convention)]
     #[cfg(feature = "cloud")]
-    fn to_memslice_async<F: Fn(Arc<FileCacheEntry>) -> PolarsResult<std::fs::File>>(
+    fn to_buffer_async<F: Fn(Arc<FileCacheEntry>) -> PolarsResult<std::fs::File>>(
         &self,
         open_cache_entry: F,
         run_async: bool,
-    ) -> PolarsResult<MemSlice> {
+    ) -> PolarsResult<Buffer<u8>> {
         match self {
             ScanSourceRef::Path(path) => {
                 let file = if run_async {
@@ -405,47 +405,51 @@ impl ScanSourceRef<'_> {
                     polars_utils::open_file(path.as_std_path())?
                 };
 
-                MemSlice::from_file(&file)
+                Ok(Buffer::from_owner(MMapSemaphore::new_from_file(&file)?))
             },
-            ScanSourceRef::File(file) => MemSlice::from_file(file),
+            ScanSourceRef::File(file) => {
+                Ok(Buffer::from_owner(MMapSemaphore::new_from_file(file)?))
+            },
             ScanSourceRef::Buffer(buff) => Ok((*buff).clone()),
         }
     }
 
     #[cfg(feature = "cloud")]
-    pub fn to_memslice_async_assume_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
-        self.to_memslice_async(|entry| entry.try_open_assume_latest(), run_async)
+    pub fn to_buffer_async_assume_latest(&self, run_async: bool) -> PolarsResult<Buffer<u8>> {
+        self.to_buffer_async(|entry| entry.try_open_assume_latest(), run_async)
     }
 
     #[cfg(feature = "cloud")]
-    pub fn to_memslice_async_check_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
-        self.to_memslice_async(|entry| entry.try_open_check_latest(), run_async)
+    pub fn to_buffer_async_check_latest(&self, run_async: bool) -> PolarsResult<Buffer<u8>> {
+        self.to_buffer_async(|entry| entry.try_open_check_latest(), run_async)
     }
 
     #[cfg(not(feature = "cloud"))]
     #[allow(clippy::wrong_self_convention)]
-    fn to_memslice_async(&self, run_async: bool) -> PolarsResult<MemSlice> {
+    fn to_buffer_async(&self, run_async: bool) -> PolarsResult<Buffer<u8>> {
         match self {
             ScanSourceRef::Path(path) => {
                 let file = polars_utils::open_file(path.as_std_path())?;
-                MemSlice::from_file(&file)
+                Ok(Buffer::from_owner(MMapSemaphore::new_from_file(&file)?))
             },
-            ScanSourceRef::File(file) => MemSlice::from_file(file),
+            ScanSourceRef::File(file) => {
+                Ok(Buffer::from_owner(MMapSemaphore::new_from_file(file)?))
+            },
             ScanSourceRef::Buffer(buff) => Ok((*buff).clone()),
         }
     }
 
     #[cfg(not(feature = "cloud"))]
-    pub fn to_memslice_async_assume_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
-        self.to_memslice_async(run_async)
+    pub fn to_buffer_async_assume_latest(&self, run_async: bool) -> PolarsResult<Buffer<u8>> {
+        self.to_buffer_async(run_async)
     }
 
     #[cfg(not(feature = "cloud"))]
-    pub fn to_memslice_async_check_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
-        self.to_memslice_async(run_async)
+    pub fn to_buffer_async_check_latest(&self, run_async: bool) -> PolarsResult<Buffer<u8>> {
+        self.to_buffer_async(run_async)
     }
 
-    pub fn to_memslice_possibly_async(
+    pub fn to_buffer_possibly_async(
         &self,
         run_async: bool,
         #[cfg(feature = "cloud")] cache_entries: Option<
@@ -453,7 +457,7 @@ impl ScanSourceRef<'_> {
         >,
         #[cfg(not(feature = "cloud"))] cache_entries: Option<&()>,
         index: usize,
-    ) -> PolarsResult<MemSlice> {
+    ) -> PolarsResult<Buffer<u8>> {
         match self {
             Self::Path(path) => {
                 let file = if run_async {
@@ -464,9 +468,9 @@ impl ScanSourceRef<'_> {
                     polars_utils::open_file(path.as_std_path())?
                 };
 
-                MemSlice::from_file(&file)
+                Ok(Buffer::from_owner(MMapSemaphore::new_from_file(&file)?))
             },
-            Self::File(file) => MemSlice::from_file(file),
+            Self::File(file) => Ok(Buffer::from_owner(MMapSemaphore::new_from_file(file)?)),
             Self::Buffer(buff) => Ok((*buff).clone()),
         }
     }
@@ -483,7 +487,9 @@ impl ScanSourceRef<'_> {
                     .try_build_from_path((*path).clone(), cloud_options)
                     .await
             },
-            Self::File(file) => Ok(DynByteSource::from(MemSlice::from_file(file)?)),
+            Self::File(file) => Ok(DynByteSource::from(Buffer::from_owner(
+                MMapSemaphore::new_from_file(file)?,
+            ))),
             Self::Buffer(buff) => Ok(DynByteSource::from((*buff).clone())),
         }
     }

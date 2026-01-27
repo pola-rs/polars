@@ -1,31 +1,29 @@
+use arrow::io::ipc::read::OutOfSpecKind;
 use polars_buffer::Buffer;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 
 use crate::metrics::OptIOMetrics;
 
 /// Read the metadata bytes of a parquet file, does not decode the bytes. If during metadata fetch
 /// the bytes of the entire file are loaded, it is returned in the second return value.
-pub async fn read_parquet_metadata_bytes(
+pub async fn read_ipc_metadata_bytes(
     byte_source: &DynByteSource,
     verbose: bool,
     io_metrics: &OptIOMetrics,
 ) -> PolarsResult<(Buffer<u8>, Option<Buffer<u8>>)> {
-    use polars_parquet::parquet::PARQUET_MAGIC;
-    use polars_parquet::parquet::error::ParquetError;
-
-    const FOOTER_HEADER_SIZE: usize = polars_parquet::parquet::FOOTER_SIZE as usize;
+    const FOOTER_HEADER_SIZE: usize = 10;
+    const ARROW_MAGIC_V1: [u8; 4] = [b'F', b'E', b'A', b'1'];
+    const ARROW_MAGIC_V2: [u8; 6] = [b'A', b'R', b'R', b'O', b'W', b'1'];
 
     let file_size = io_metrics
         .record_download(1, byte_source.get_size())
         .await?;
 
-    if file_size < FOOTER_HEADER_SIZE {
-        return Err(ParquetError::OutOfSpec(format!(
-            "file size ({file_size}) is less than minimum size required to store parquet footer ({FOOTER_HEADER_SIZE})"
-        ))
-        .into());
-    }
+    polars_ensure!(
+        file_size >= FOOTER_HEADER_SIZE,
+        ComputeError: "ipc file size is smaller than the minimum"
+    );
 
     let estimated_metadata_size = if let DynByteSource::Buffer(_) = byte_source {
         // Mmapped or in-memory, reads are free.
@@ -43,32 +41,27 @@ pub async fn read_parquet_metadata_bytes(
 
     let footer_header_bytes = bytes.clone().sliced((bytes.len() - FOOTER_HEADER_SIZE)..);
 
-    let (v, remaining) = footer_header_bytes.split_at(4);
-    let footer_size = u32::from_le_bytes(v.try_into().unwrap());
-
-    if remaining != PARQUET_MAGIC {
-        return Err(ParquetError::OutOfSpec(format!(
-            r#"expected parquet magic bytes "{}" in footer, got "{}" instead"#,
-            std::str::from_utf8(&PARQUET_MAGIC).unwrap(),
-            String::from_utf8_lossy(remaining)
-        ))
-        .into());
+    if footer_header_bytes[4..] != ARROW_MAGIC_V2 {
+        if footer_header_bytes[..4] == ARROW_MAGIC_V1 {
+            polars_bail!(ComputeError: "feather v1 not supported");
+        }
+        return Err(polars_err!(oos = OutOfSpecKind::InvalidFooter));
     }
 
+    let footer_size = u32::from_le_bytes(footer_header_bytes[..4].try_into().unwrap());
     let footer_size = footer_size as usize + FOOTER_HEADER_SIZE;
 
-    if file_size < footer_size {
-        return Err(ParquetError::OutOfSpec(format!(
-            "file size ({file_size}) is less than the indicated footer size ({footer_size})"
-        ))
-        .into());
-    }
+    polars_ensure!(
+        file_size >= footer_size,
+        ComputeError:
+        "file size ({file_size}) is less than the indicated footer size ({footer_size})",
+    );
 
     if bytes.len() < footer_size {
         debug_assert!(!matches!(byte_source, DynByteSource::Buffer(_)));
         if verbose {
             eprintln!(
-                "[ParquetFileReader]: Extra {} bytes need to be fetched for metadata \
+                "[IpcFileReader]: Extra {} bytes need to be fetched for metadata \
                 (initial estimate = {}, actual size = {})",
                 footer_size - estimated_metadata_size,
                 bytes.len(),
@@ -82,6 +75,7 @@ pub async fn read_parquet_metadata_bytes(
 
         let range = offset..(offset + len);
         let fut = byte_source.get_range(range.clone());
+
         let delta_bytes = match byte_source {
             DynByteSource::Buffer(_) => fut.await?,
             DynByteSource::Cloud(_) => io_metrics.record_download(range.len() as u64, fut).await?,
@@ -96,7 +90,7 @@ pub async fn read_parquet_metadata_bytes(
     } else {
         if verbose && !matches!(byte_source, DynByteSource::Buffer(_)) {
             eprintln!(
-                "[ParquetFileReader]: Fetched all bytes for metadata on first try \
+                "[IpcFileReader]: Fetched all bytes for metadata on first try \
                 (initial estimate = {}, actual size = {}, excess = {}, total file size = {})",
                 bytes.len(),
                 footer_size,

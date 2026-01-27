@@ -549,9 +549,17 @@ pub trait SeriesTrait:
     fn std_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {
         polars_bail!(opq = std, self._dtype());
     }
-    /// Get the quantile of the ChunkedArray as a new Series of length 1.
+    /// Get the quantile of the Series as a new Series of length 1.
     fn quantile_reduce(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Scalar> {
         polars_bail!(opq = quantile, self._dtype());
+    }
+    /// Get multiple quantiles of the ChunkedArray as a new `List` Scalar
+    fn quantiles_reduce(
+        &self,
+        _quantiles: &[f64],
+        _method: QuantileMethod,
+    ) -> PolarsResult<Scalar> {
+        polars_bail!(opq = quantiles, self._dtype());
     }
     /// Get the bitwise AND of the Series as a new Series of length 1,
     fn and_reduce(&self) -> PolarsResult<Scalar> {
