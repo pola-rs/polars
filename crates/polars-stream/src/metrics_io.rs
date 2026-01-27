@@ -98,13 +98,13 @@ impl ActiveIOMetrics {
         // update the counter - we do this by starting a session here.
         let (mut session_ref, started_by_this_call) = self.start_io_session();
 
-        let active_io_total_ns = self.active_io_total_ns.load();
-
         let ns_since_base_instant = self.ns_since_base_instant();
         let elapsed = u64::saturating_sub(
             ns_since_base_instant,
             self.active_io_offset_ns.load(atomic::Ordering::Acquire),
         );
+
+        let active_io_total_ns = self.active_io_total_ns.load();
 
         session_ref.finish(if started_by_this_call {
             0
