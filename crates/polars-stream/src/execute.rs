@@ -324,7 +324,7 @@ pub fn execute_graph(
     }
 
     let global_active_io_time_metrics: Option<Arc<ActiveIOMetrics>> =
-        metrics.is_some().then(|| Default::default());
+        metrics.is_some().then(Default::default);
 
     let mut pipe_seq_offsets = SecondaryMap::new();
     loop {
