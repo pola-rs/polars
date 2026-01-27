@@ -266,7 +266,7 @@ def test_rolling_kurtosis() -> None:
     )
 
 
-@pytest.mark.parametrize("time_zone", [None, "US/Central"])
+@pytest.mark.parametrize("time_zone", [None, "America/Chicago"])
 @pytest.mark.parametrize(
     ("rolling_fn", "expected_values", "expected_dtype"),
     [
