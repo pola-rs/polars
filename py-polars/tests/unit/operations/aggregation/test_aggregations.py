@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, cast
+from typing import TYPE_CHECKING, cast
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -13,6 +13,9 @@ from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from typing import Any
+
     import numpy.typing as npt
 
     from polars._typing import PolarsDataType, TimeUnit
