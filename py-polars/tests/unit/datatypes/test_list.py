@@ -640,7 +640,7 @@ def test_list_amortized_iter_clear_settings_10126() -> None:
         pl.DataFrame({"a": [[1], [1], [2]], "b": [[1, 2], [1, 3], [4]]})
         .explode("a")
         .group_by("a")
-        .agg(pl.col("b").flatten())
+        .agg(pl.concat_list("b").list.explode())
         .with_columns(pl.col("b").list.unique())
         .sort("a")
     )
