@@ -72,16 +72,16 @@ impl IOSinkNodeConfig {
         6 * 1024 * 1024
     }
 
-    pub fn cloud_upload_max_concurrency(&self) -> usize {
-        polars_io::get_upload_max_concurrency()
+    pub fn upload_concurrency(&self) -> usize {
+        polars_io::get_upload_concurrency()
     }
 
-    pub fn partitioned_cloud_upload_max_concurrency(&self) -> usize {
-        if let Ok(v) = std::env::var("POLARS_PARTITIONED_UPLOAD_MAX_CONCURRENCY").map(|x| {
+    pub fn partitioned_upload_concurrency(&self) -> usize {
+        if let Ok(v) = std::env::var("POLARS_PARTITIONED_UPLOAD_CONCURRENCY").map(|x| {
             x.parse::<NonZeroUsize>()
                 .ok()
                 .unwrap_or_else(|| {
-                    panic!("invalid value for POLARS_PARTITIONED_UPLOAD_MAX_CONCURRENCY: {x}")
+                    panic!("invalid value for POLARS_PARTITIONED_UPLOAD_CONCURRENCY: {x}")
                 })
                 .get()
         }) {

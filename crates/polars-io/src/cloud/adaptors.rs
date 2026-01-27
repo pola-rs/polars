@@ -158,7 +158,7 @@ mod tests {
     use polars_core::df;
     use polars_core::prelude::DataFrame;
 
-    use crate::{get_upload_chunk_size, get_upload_max_concurrency};
+    use crate::{get_upload_chunk_size, get_upload_concurrency};
 
     fn example_dataframe() -> DataFrame {
         df!(
@@ -188,7 +188,7 @@ mod tests {
             object_store,
             path,
             get_upload_chunk_size(),
-            get_upload_max_concurrency(),
+            get_upload_concurrency(),
         )
         .unwrap();
         CsvWriter::new(&mut cloud_writer)
@@ -206,7 +206,7 @@ mod tests {
         use super::*;
         use crate::csv::write::CsvWriter;
         use crate::prelude::{CsvReadOptions, SerWriter};
-        use crate::{SerReader, get_upload_max_concurrency};
+        use crate::{SerReader, get_upload_concurrency};
 
         let mut df = example_dataframe();
 
@@ -219,7 +219,7 @@ mod tests {
                 format_file_uri(path),
                 None,
                 get_upload_chunk_size(),
-                get_upload_max_concurrency(),
+                get_upload_concurrency(),
             ))
             .unwrap();
 

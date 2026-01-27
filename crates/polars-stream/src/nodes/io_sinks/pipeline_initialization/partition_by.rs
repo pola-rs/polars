@@ -33,7 +33,7 @@ pub fn start_partition_sink_pipeline(
     let num_pipelines_per_sink = config.num_pipelines_per_sink(num_pipelines);
     let max_open_sinks = config.max_open_sinks().get();
     let upload_chunk_size = config.partitioned_cloud_upload_chunk_size();
-    let upload_max_concurrency = config.partitioned_cloud_upload_max_concurrency();
+    let upload_max_concurrency = config.partitioned_upload_concurrency();
 
     let IOSinkNodeConfig {
         file_format,

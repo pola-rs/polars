@@ -67,27 +67,25 @@ pub fn get_upload_chunk_size() -> usize {
     });
 }
 
-pub fn get_upload_max_concurrency() -> usize {
+pub fn get_upload_concurrency() -> usize {
     use std::sync::LazyLock;
 
-    return *UPLOAD_MAX_CONCURRENCY;
+    return *UPLOAD_CONCURRENCY;
 
-    static UPLOAD_MAX_CONCURRENCY: LazyLock<usize> = LazyLock::new(|| {
+    static UPLOAD_CONCURRENCY: LazyLock<usize> = LazyLock::new(|| {
         // Max number of parts concurrently uploaded per Writer.
         // @NOTE. The object_store::BufWriter uses 8 as default.
-        let v = std::env::var("POLARS_UPLOAD_MAX_CONCURRENCY")
+        let v = std::env::var("POLARS_UPLOAD_CONCURRENCY")
             .map(|x| {
                 x.parse::<usize>()
                     .ok()
                     .filter(|x| *x > 0)
-                    .unwrap_or_else(|| {
-                        panic!("invalid value for POLARS_UPLOAD_MAX_CONCURRENCY: {x}")
-                    })
+                    .unwrap_or_else(|| panic!("invalid value for POLARS_UPLOAD_CONCURRENCY: {x}"))
             })
             .unwrap_or(8);
 
         if polars_core::config::verbose() {
-            eprintln!("async upload_max_concurrency: {v}")
+            eprintln!("async upload_concurrency: {v}")
         }
 
         v

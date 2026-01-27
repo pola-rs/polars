@@ -28,7 +28,7 @@ pub fn start_single_file_sink_pipeline(
     let inflight_morsel_limit = config.inflight_morsel_limit(num_pipelines);
     let num_pipelines_per_sink = config.num_pipelines_per_sink(num_pipelines);
     let upload_chunk_size = config.cloud_upload_chunk_size();
-    let upload_max_concurrency = config.cloud_upload_max_concurrency();
+    let upload_max_concurrency = config.upload_concurrency();
 
     let IOSinkNodeConfig {
         file_format,
