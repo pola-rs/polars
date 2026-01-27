@@ -1312,7 +1312,7 @@ class Series:
 
         if not isinstance(other, pl.Expr):
             other = F.lit(other)
-        return self.to_frame().select_seq(F.col(self.name) // other).to_series()
+        return F.select(F.lit(self) // other).to_series()
 
     def __invert__(self) -> Series:
         return self.not_()
