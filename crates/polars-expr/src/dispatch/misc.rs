@@ -247,6 +247,24 @@ pub(super) fn arg_sort(s: &Column, descending: bool, nulls_last: bool) -> Polars
         .into_column())
 }
 
+pub(super) fn min_by(s: &[Column]) -> PolarsResult<Column> {
+    assert!(s.len() == 2);
+    assert!(s[0].len() == s[1].len());
+    match s[1].as_materialized_series().arg_min() {
+        Some(idx) => Ok(s[0].new_from_index(idx, 1)),
+        None => Ok(Series::new_null(s[0].name().clone(), 1).into_column()),
+    }
+}
+
+pub(super) fn max_by(s: &[Column]) -> PolarsResult<Column> {
+    assert!(s.len() == 2);
+    assert!(s[0].len() == s[1].len());
+    match s[1].as_materialized_series().arg_max() {
+        Some(idx) => Ok(s[0].new_from_index(idx, 1)),
+        None => Ok(Series::new_null(s[0].name().clone(), 1).into_column()),
+    }
+}
+
 pub(super) fn product(s: &Column) -> PolarsResult<Column> {
     // @scalar-opt
     s.as_materialized_series()

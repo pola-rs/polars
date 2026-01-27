@@ -209,9 +209,10 @@ pub fn lower_ir(
             }
 
             let phys_input = lower_ir!(*input)?;
-            return build_select_stream(
-                phys_input, &selectors, expr_arena, phys_sm, expr_cache, ctx,
-            );
+            let stream =
+                build_select_stream(phys_input, &selectors, expr_arena, phys_sm, expr_cache, ctx)?;
+            dbg!(&phys_sm[stream.node]);
+            return Ok(stream);
         },
 
         IR::HStack { input, exprs, .. } => {

@@ -296,8 +296,10 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             descending,
             nulls_last,
         } => map!(misc::arg_sort, descending, nulls_last),
-        F::MinBy => map!(misc::min_by),
-        F::MaxBy => map!(misc::max_by),
+        F::MinBy => {
+            map_as_slice!(misc::min_by)
+        },
+        F::MaxBy => map_as_slice!(misc::max_by),
         F::Product => map!(misc::product),
         F::Repeat => map_as_slice!(misc::repeat),
         #[cfg(feature = "rank")]

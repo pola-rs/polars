@@ -162,21 +162,19 @@ impl AExprBuilder {
     }
 
     pub fn min_by(self, by: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
-        Self::agg(
-            IRAggExpr::MinBy {
-                input: self.node(),
-                by: by.into_aexpr_builder().node(),
-            },
+        let by = by.into_aexpr_builder().expr_ir_retain_name(arena);
+        Self::function(
+            vec![self.expr_ir_retain_name(arena), by],
+            IRFunctionExpr::MinBy,
             arena,
         )
     }
 
     pub fn max_by(self, by: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
-        Self::agg(
-            IRAggExpr::MaxBy {
-                input: self.node(),
-                by: by.into_aexpr_builder().node(),
-            },
+        let by = by.into_aexpr_builder().expr_ir_retain_name(arena);
+        Self::function(
+            vec![self.expr_ir_retain_name(arena), by],
+            IRFunctionExpr::MaxBy,
             arena,
         )
     }

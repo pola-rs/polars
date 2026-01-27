@@ -29,14 +29,6 @@ pub enum AggExpr {
         input: Arc<Expr>,
         propagate_nans: bool,
     },
-    MinBy {
-        input: Arc<Expr>,
-        by: Arc<Expr>,
-    },
-    MaxBy {
-        input: Arc<Expr>,
-        by: Arc<Expr>,
-    },
     Median(Arc<Expr>),
     NUnique(Arc<Expr>),
     First(Arc<Expr>),
@@ -69,8 +61,8 @@ impl AsRef<Expr> for AggExpr {
     fn as_ref(&self) -> &Expr {
         use AggExpr::*;
         match self {
-            Min { input, .. } | MinBy { input, .. } => input,
-            Max { input, .. } | MaxBy { input, .. } => input,
+            Min { input, .. } => input,
+            Max { input, .. } => input,
             Median(e) => e,
             NUnique(e) => e,
             First(e) => e,

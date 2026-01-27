@@ -43,14 +43,6 @@ macro_rules! push_expr {
                 match agg_e {
                     Max { input, .. } => $push($c, input),
                     Min { input, .. } => $push($c, input),
-                    MinBy { input, by } => {
-                        $push($c, by);
-                        $push($c, input);
-                    },
-                    MaxBy { input, by } => {
-                        $push($c, by);
-                        $push($c, input);
-                    },
                     Mean(e) => $push($c, e),
                     Median(e) => $push($c, e),
                     NUnique(e) => $push($c, e),
