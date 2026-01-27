@@ -5038,11 +5038,20 @@ Consider using {self}.implode() instead"""
             msg = f"strategy {strategy!r} is not supported"
             raise ValueError(msg)
 
+    @deprecated(
+        "`Expr.flatten()` is deprecated and will be removed in version 2.0. "
+        "Use `Expr.list.explode(keep_nulls=False, empty_as_null=False)` instead."
+    )
     def flatten(self) -> Expr:
         """
         Flatten a list or string column.
 
         Alias for :func:`Expr.list.explode`.
+
+        .. deprecated:: X.Y.Z
+            `Expr.flatten()` is deprecated and will be removed in version 2.0.
+            Use `Expr.list.explode(keep_nulls=False, empty_as_null=False)` instead,
+            which provides the behavior you likely expect.
 
         Examples
         --------
