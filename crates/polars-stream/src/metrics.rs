@@ -48,7 +48,7 @@ impl NodeMetrics {
     }
 
     fn add_io_recv(&mut self, io_metrics: &IOMetrics) {
-        self.io_total_active_recv_ns += io_metrics.active_io_metrics.active_io_total_ns();
+        self.io_total_active_recv_ns += io_metrics.active_io_time_metrics.active_io_total_ns();
         self.io_total_bytes_requested += io_metrics.bytes_requested.load();
         self.io_total_bytes_received += io_metrics.bytes_received.load();
     }
@@ -166,13 +166,13 @@ impl GraphMetrics {
 pub struct MetricsBuilder {
     pub graph_key: GraphNodeKey,
     pub graph_metrics: Arc<parking_lot::Mutex<GraphMetrics>>,
-    pub active_io_metrics: Arc<ActiveIOMetrics>,
+    pub active_io_time_metrics: Arc<ActiveIOMetrics>,
 }
 
 impl MetricsBuilder {
     pub fn new_io_recv_metrics(&self) -> Arc<IOMetrics> {
         let io_metrics: Arc<IOMetrics> = Arc::new(IOMetrics {
-            active_io_metrics: Arc::clone(&self.active_io_metrics),
+            active_io_time_metrics: Arc::clone(&self.active_io_time_metrics),
             ..Default::default()
         });
 

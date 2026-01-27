@@ -65,7 +65,7 @@ impl ActiveIOMetrics {
 
 #[derive(Default, Clone)]
 pub struct IOMetrics {
-    pub(super) active_io_metrics: Arc<ActiveIOMetrics>,
+    pub(super) active_io_time_metrics: Arc<ActiveIOMetrics>,
     pub(super) bytes_requested: RelaxedCell<u64>,
     pub(super) bytes_received: RelaxedCell<u64>,
 }
@@ -77,7 +77,7 @@ impl IOMetrics {
     {
         self.bytes_requested.fetch_add(num_bytes);
 
-        let out = self.active_io_metrics.record_io(fut).await;
+        let out = self.active_io_time_metrics.record_io(fut).await;
 
         self.bytes_received.fetch_add(num_bytes);
 
