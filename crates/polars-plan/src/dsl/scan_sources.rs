@@ -180,14 +180,17 @@ impl PartialEq for ScanSources {
 impl Eq for ScanSources {}
 
 impl ScanSources {
-    pub fn expand_paths(&self, scan_args: &mut UnifiedScanArgs) -> PolarsResult<Self> {
+    pub async fn expand_paths(&self, scan_args: &mut UnifiedScanArgs) -> PolarsResult<Self> {
         match self {
-            Self::Paths(paths) => Ok(Self::Paths(expand_paths(
-                paths,
-                scan_args.glob,
-                scan_args.hidden_file_prefix.as_deref().unwrap_or_default(),
-                &mut scan_args.cloud_options,
-            )?)),
+            Self::Paths(paths) => Ok(Self::Paths(
+                expand_paths(
+                    paths,
+                    scan_args.glob,
+                    scan_args.hidden_file_prefix.as_deref().unwrap_or_default(),
+                    &mut scan_args.cloud_options,
+                )
+                .await?,
+            )),
             v => Ok(v.clone()),
         }
     }
@@ -207,7 +210,8 @@ impl ScanSources {
                     scan_args.hidden_file_prefix.as_deref().unwrap_or_default(),
                     &mut scan_args.cloud_options,
                     scan_args.hive_options.enabled.unwrap_or(false),
-                )?;
+                )
+                .await?;
 
                 if scan_args.hive_options.enabled.is_none()
                     && expanded_from_single_directory(paths, expanded_paths.as_ref())

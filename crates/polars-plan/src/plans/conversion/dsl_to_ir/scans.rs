@@ -58,9 +58,9 @@ pub(super) async fn dsl_to_ir(
                     .await?
             },
             #[cfg(feature = "csv")]
-            FileScanDsl::Csv { .. } => sources.expand_paths(unified_scan_args)?,
+            FileScanDsl::Csv { .. } => sources.expand_paths(unified_scan_args).await?,
             #[cfg(feature = "json")]
-            FileScanDsl::NDJson { .. } => sources.expand_paths(unified_scan_args)?,
+            FileScanDsl::NDJson { .. } => sources.expand_paths(unified_scan_args).await?,
             #[cfg(feature = "python")]
             FileScanDsl::PythonDataset { .. } => {
                 // There are a lot of places that short-circuit if the paths is empty,
@@ -68,7 +68,7 @@ pub(super) async fn dsl_to_ir(
                 ScanSources::Paths(Buffer::from_iter([PlRefPath::new("PL_PY_DSET")]))
             },
             #[cfg(feature = "scan_lines")]
-            FileScanDsl::Lines { .. } => sources.expand_paths(unified_scan_args)?,
+            FileScanDsl::Lines { .. } => sources.expand_paths(unified_scan_args).await?,
             FileScanDsl::Anonymous { .. } => sources.clone(),
         };
 
