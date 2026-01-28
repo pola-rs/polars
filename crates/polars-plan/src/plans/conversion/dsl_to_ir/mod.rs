@@ -1,5 +1,3 @@
-use std::sync::RwLock;
-
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::rewrite_projections;
@@ -110,7 +108,8 @@ fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> Polars
 pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult<Node> {
     let owned = Arc::unwrap_or_clone;
 
-    let ctxt = {
+    // First do a pass to collect all scans and fetch all metadata concurrently.
+    {
         let scans = lp
             .into_iter()
             .filter(|dsl| {
@@ -123,7 +122,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             .collect::<Vec<_>>();
 
         use rayon::prelude::*;
-        let ctxt = Arc::new(RwLock::new(ctxt));
+        let verbose = ctxt.verbose;
+        let cache_file_info = ctxt.cache_file_info.clone();
 
         scans.par_iter().try_for_each(|dsl| {
             let DslPlan::Scan {
@@ -140,14 +140,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 unified_scan_args.clone(),
                 scan_type.clone(),
                 cached_ir.clone(),
-                Some(ctxt.clone()),
+                cache_file_info.clone(),
+                verbose,
             )
             .map(|_| ())
         })?;
-
-        let ctxt = Arc::into_inner(ctxt).unwrap();
-        ctxt.into_inner().unwrap()
-    };
+    }
 
     let v = match lp {
         DslPlan::Scan {

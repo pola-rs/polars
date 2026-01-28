@@ -17,14 +17,14 @@ pub(super) fn dsl_to_ir(
     mut unified_scan_args_box: Box<UnifiedScanArgs>,
     scan_type: Box<FileScanDsl>,
     cached_ir: Arc<Mutex<Option<IR>>>,
-    ctxt: Option<Arc<RwLock<&mut DslConversionContext>>>,
+    cache_file_info: SourcesToFileInfo,
+    verbose: bool,
 ) -> PolarsResult<IR> {
     // Note that the first metadata can still end up being `None` later if the files were
     // filtered from predicate pushdown.
     let mut cached_ir = cached_ir.lock().unwrap();
 
     if cached_ir.is_none() {
-        let ctxt = ctxt.as_ref().expect("should be set if cache is empty");
         let unified_scan_args = unified_scan_args_box.as_mut();
 
         if let Some(hive_schema) = unified_scan_args.hive_options.schema.as_deref() {
@@ -69,11 +69,6 @@ pub(super) fn dsl_to_ir(
         // For cloud we must deduplicate files. Serialization/deserialization leads to Arc's losing there
         // sharing.
         let (mut file_info, scan_type_ir) = {
-            let (verbose, cache_file_info) = {
-                let ctxt_lock = ctxt.read().unwrap();
-                let verbose = ctxt_lock.verbose;
-                (verbose, ctxt_lock.cache_file_info.clone())
-            };
             cache_file_info.get_or_insert(
                 &scan_type,
                 &sources,
