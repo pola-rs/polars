@@ -1,10 +1,12 @@
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::rewrite_projections;
+use futures::stream::FuturesUnordered;
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
 use polars_io::ExternalCompression;
+use polars_io::pl_async::get_runtime;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_path::PlRefPath;
@@ -110,34 +112,59 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
     // First do a pass to collect all scans and fetch all metadata concurrently.
     {
-        let scans = lp
-            .into_iter()
-            .filter(|dsl| matches!(dsl, DslPlan::Scan { .. }))
-            .collect::<Vec<_>>();
-
-        use rayon::prelude::*;
         let verbose = ctxt.verbose;
         let cache_file_info = ctxt.cache_file_info.clone();
 
-        scans.par_iter().try_for_each(|dsl| {
-            let DslPlan::Scan {
-                sources,
-                unified_scan_args,
-                scan_type,
-                cached_ir,
-            } = dsl
-            else {
-                unreachable!()
-            };
-            scans::dsl_to_ir(
-                sources.clone(),
-                unified_scan_args.clone(),
-                scan_type.clone(),
-                cached_ir.clone(),
-                cache_file_info.clone(),
-                verbose,
-            )
+        get_runtime().block_on(async {
+            use futures::stream::StreamExt;
+            let mut futures = lp
+                .into_iter()
+                .filter_map(|dsl| {
+                    let DslPlan::Scan {
+                        sources,
+                        unified_scan_args,
+                        scan_type,
+                        cached_ir,
+                    } = dsl
+                    else {
+                        return None;
+                    };
+                    Some(scans::dsl_to_ir(
+                        sources.clone(),
+                        unified_scan_args.clone(),
+                        scan_type.clone(),
+                        cached_ir.clone(),
+                        cache_file_info.clone(),
+                        verbose,
+                    ))
+                })
+                .collect::<FuturesUnordered<_>>();
+
+            while let Some(result) = futures.next().await {
+                result?
+            }
+            Ok::<(), PolarsError>(())
         })?;
+
+        // scans.par_iter().try_for_each(|dsl| {
+        //     let DslPlan::Scan {
+        //         sources,
+        //         unified_scan_args,
+        //         scan_type,
+        //         cached_ir,
+        //     } = dsl
+        //     else {
+        //         unreachable!()
+        //     };
+        //     scans::dsl_to_ir(
+        //         sources.clone(),
+        //         unified_scan_args.clone(),
+        //         scan_type.clone(),
+        //         cached_ir.clone(),
+        //         cache_file_info.clone(),
+        //         verbose,
+        //     )
+        // })?;
     }
 
     let v = match lp {

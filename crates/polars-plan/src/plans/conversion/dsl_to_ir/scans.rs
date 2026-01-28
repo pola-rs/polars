@@ -12,7 +12,7 @@ use polars_io::utils::compression::CompressedReader;
 
 use super::*;
 
-pub(super) fn dsl_to_ir(
+pub(super) async fn dsl_to_ir(
     sources: ScanSources,
     mut unified_scan_args_box: Box<UnifiedScanArgs>,
     scan_type: Box<FileScanDsl>,
