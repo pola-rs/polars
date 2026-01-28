@@ -9,7 +9,6 @@ use super::entry::FileCacheEntry;
 use super::file_fetcher::{CloudFileFetcher, LocalFileFetcher};
 use crate::cloud::{CloudLocation, CloudOptions, build_object_store, object_path_from_str};
 use crate::path_utils::{POLARS_TEMP_DIR_BASE_PATH, ensure_directory_init};
-use crate::pl_async;
 
 pub static FILE_CACHE_PREFIX: LazyLock<PlRefPath> = LazyLock::new(|| {
     let path = PlRefPath::try_from_path(&POLARS_TEMP_DIR_BASE_PATH.join("file-cache/")).unwrap();
