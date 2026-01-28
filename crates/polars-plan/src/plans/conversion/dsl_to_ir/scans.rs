@@ -22,9 +22,13 @@ pub(super) async fn dsl_to_ir(
 ) -> PolarsResult<()> {
     // Note that the first metadata can still end up being `None` later if the files were
     // filtered from predicate pushdown.
-    let mut cached_ir = cached_ir.lock().unwrap();
+    // Check and drop the lock in its own scope
+    let is_not_cached = {
+        let cached_ir_guard = cached_ir.lock().unwrap();
+        cached_ir_guard.is_none()
+    };
 
-    if cached_ir.is_none() {
+    if is_not_cached {
         let unified_scan_args = unified_scan_args_box.as_mut();
 
         if let Some(hive_schema) = unified_scan_args.hive_options.schema.as_deref() {
@@ -177,6 +181,7 @@ pub(super) async fn dsl_to_ir(
             }
         };
 
+        let mut cached_ir = cached_ir.lock().unwrap();
         cached_ir.replace(ir);
     }
 
