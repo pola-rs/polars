@@ -51,7 +51,6 @@ parquet = [
   "polars-stream?/parquet",
 ]
 async = [
-  "polars-plan/async",
   "polars-io/cloud",
   "polars-mem-engine/async",
 ]

@@ -168,13 +168,15 @@ pub fn expanded_from_single_directory(paths: &[PlRefPath], expanded_paths: &[PlR
 }
 
 /// Recursively traverses directories and expands globs if `glob` is `true`.
-pub fn expand_paths(
+pub async fn expand_paths(
     paths: &[PlRefPath],
     glob: bool,
     hidden_file_prefix: &[PlSmallStr],
     #[allow(unused_variables)] cloud_options: &mut Option<CloudOptions>,
 ) -> PolarsResult<Buffer<PlRefPath>> {
-    expand_paths_hive(paths, glob, hidden_file_prefix, cloud_options, false).map(|x| x.0)
+    expand_paths_hive(paths, glob, hidden_file_prefix, cloud_options, false)
+        .await
+        .map(|x| x.0)
 }
 
 struct HiveIdxTracker<'a> {
@@ -207,10 +209,115 @@ impl HiveIdxTracker<'_> {
     }
 }
 
+#[cfg(feature = "cloud")]
+async fn expand_path_cloud(
+    path: PlRefPath,
+    cloud_options: Option<&CloudOptions>,
+    glob: bool,
+    first_path_has_scheme: bool,
+) -> PolarsResult<(usize, Vec<PlRefPath>)> {
+    let format_path = |scheme: &str, bucket: &str, location: &str| {
+        if first_path_has_scheme {
+            format!("{scheme}://{bucket}/{location}")
+        } else {
+            format!("/{location}")
+        }
+    };
+
+    use polars_utils::_limit_path_len_io_err;
+
+    use crate::cloud::object_path_from_str;
+    let path_str = path.as_str();
+
+    let (cloud_location, store) =
+        crate::cloud::build_object_store(path.clone(), cloud_options, glob).await?;
+    let prefix = object_path_from_str(&cloud_location.prefix)?;
+
+    let out = if !path_str.ends_with("/") && (!glob || cloud_location.expansion.is_none()) && {
+        // We need to check if it is a directory for local paths (we can be here due
+        // to FORCE_ASYNC). For cloud paths the convention is that the user must add
+        // a trailing slash `/` to scan directories. We don't infer it as that would
+        // mean sending one network request per path serially (very slow).
+        path.has_scheme() || path.as_std_path().is_file()
+    } {
+        (
+            0,
+            vec![PlRefPath::new(format_path(
+                cloud_location.scheme,
+                &cloud_location.bucket,
+                prefix.as_ref(),
+            ))],
+        )
+    } else {
+        use futures::TryStreamExt;
+
+        if !path.has_scheme() {
+            // FORCE_ASYNC in the test suite wants us to raise a proper error message
+            // for non-existent file paths. Note we can't do this for cloud paths as
+            // there is no concept of a "directory" - a non-existent path is
+            // indistinguishable from an empty directory.
+            path.as_std_path()
+                .metadata()
+                .map_err(|err| _limit_path_len_io_err(path.as_std_path(), err))?;
+        }
+
+        let cloud_location = &cloud_location;
+
+        let mut paths = store
+            .try_exec_rebuild_on_err(|store| {
+                let st = store.clone();
+
+                async {
+                    let store = st;
+                    let out = store
+                        .list(Some(&prefix))
+                        .try_filter_map(|x| async move {
+                            let out = (x.size > 0).then(|| {
+                                PlRefPath::new({
+                                    format_path(
+                                        cloud_location.scheme,
+                                        &cloud_location.bucket,
+                                        x.location.as_ref(),
+                                    )
+                                })
+                            });
+                            Ok(out)
+                        })
+                        .try_collect::<Vec<_>>()
+                        .await?;
+
+                    Ok(out)
+                }
+            })
+            .await?;
+
+        // Since Path::parse() removes any trailing slash ('/'), we may need to restore it
+        // to calculate the right byte offset
+        let mut prefix = prefix.to_string();
+        if path_str.ends_with('/') && !prefix.ends_with('/') {
+            prefix.push('/')
+        };
+
+        paths.sort_unstable();
+
+        (
+            format_path(
+                cloud_location.scheme,
+                &cloud_location.bucket,
+                prefix.as_ref(),
+            )
+            .len(),
+            paths,
+        )
+    };
+
+    PolarsResult::Ok(out)
+}
+
 /// Recursively traverses directories and expands globs if `glob` is `true`.
 /// Returns the expanded paths and the index at which to start parsing hive
 /// partitions from the path.
-pub fn expand_paths_hive(
+pub async fn expand_paths_hive(
     paths: &[PlRefPath],
     glob: bool,
     hidden_file_prefix: &[PlSmallStr],
@@ -248,124 +355,17 @@ pub fn expand_paths_hive(
     if first_path_has_scheme || { cfg!(not(target_family = "windows")) && config::force_async() } {
         #[cfg(feature = "cloud")]
         {
-            use polars_utils::_limit_path_len_io_err;
-
-            use crate::cloud::object_path_from_str;
-
             if first_path.scheme() == Some(CloudScheme::Hf) {
-                let (expand_start_idx, paths) = crate::pl_async::get_runtime().block_in_place_on(
-                    hugging_face::expand_paths_hf(
-                        paths,
-                        check_directory_level,
-                        cloud_options,
-                        glob,
-                    ),
-                )?;
+                let (expand_start_idx, paths) = hugging_face::expand_paths_hf(
+                    paths,
+                    check_directory_level,
+                    cloud_options,
+                    glob,
+                )
+                .await?;
 
                 return Ok((paths.into(), expand_start_idx));
             }
-
-            let format_path = |scheme: &str, bucket: &str, location: &str| {
-                if first_path_has_scheme {
-                    format!("{scheme}://{bucket}/{location}")
-                } else {
-                    format!("/{location}")
-                }
-            };
-
-            let expand_path_cloud = |path: PlRefPath,
-                                     cloud_options: Option<&CloudOptions>|
-             -> PolarsResult<(usize, Vec<PlRefPath>)> {
-                crate::pl_async::get_runtime().block_in_place_on(async {
-                    let path_str = path.as_str();
-
-                    let (cloud_location, store) =
-                        crate::cloud::build_object_store(path.clone(), cloud_options, glob).await?;
-                    let prefix = object_path_from_str(&cloud_location.prefix)?;
-
-                    let out = if !path_str.ends_with("/")
-                        && (!glob || cloud_location.expansion.is_none())
-                        && {
-                            // We need to check if it is a directory for local paths (we can be here due
-                            // to FORCE_ASYNC). For cloud paths the convention is that the user must add
-                            // a trailing slash `/` to scan directories. We don't infer it as that would
-                            // mean sending one network request per path serially (very slow).
-                            path.has_scheme() || path.as_std_path().is_file()
-                        } {
-                        (
-                            0,
-                            vec![PlRefPath::new(format_path(
-                                cloud_location.scheme,
-                                &cloud_location.bucket,
-                                prefix.as_ref(),
-                            ))],
-                        )
-                    } else {
-                        use futures::TryStreamExt;
-
-                        if !path.has_scheme() {
-                            // FORCE_ASYNC in the test suite wants us to raise a proper error message
-                            // for non-existent file paths. Note we can't do this for cloud paths as
-                            // there is no concept of a "directory" - a non-existent path is
-                            // indistinguishable from an empty directory.
-                            path.as_std_path()
-                                .metadata()
-                                .map_err(|err| _limit_path_len_io_err(path.as_std_path(), err))?;
-                        }
-
-                        let cloud_location = &cloud_location;
-
-                        let mut paths = store
-                            .try_exec_rebuild_on_err(|store| {
-                                let st = store.clone();
-
-                                async {
-                                    let store = st;
-                                    let out = store
-                                        .list(Some(&prefix))
-                                        .try_filter_map(|x| async move {
-                                            let out = (x.size > 0).then(|| {
-                                                PlRefPath::new({
-                                                    format_path(
-                                                        cloud_location.scheme,
-                                                        &cloud_location.bucket,
-                                                        x.location.as_ref(),
-                                                    )
-                                                })
-                                            });
-                                            Ok(out)
-                                        })
-                                        .try_collect::<Vec<_>>()
-                                        .await?;
-
-                                    Ok(out)
-                                }
-                            })
-                            .await?;
-
-                        // Since Path::parse() removes any trailing slash ('/'), we may need to restore it
-                        // to calculate the right byte offset
-                        let mut prefix = prefix.to_string();
-                        if path_str.ends_with('/') && !prefix.ends_with('/') {
-                            prefix.push('/')
-                        };
-
-                        paths.sort_unstable();
-
-                        (
-                            format_path(
-                                cloud_location.scheme,
-                                &cloud_location.bucket,
-                                prefix.as_ref(),
-                            )
-                            .len(),
-                            paths,
-                        )
-                    };
-
-                    PolarsResult::Ok(out)
-                })
-            };
 
             for (path_idx, path) in paths.iter().enumerate() {
                 use std::borrow::Cow;
@@ -439,8 +439,13 @@ pub fn expand_paths_hive(
                         out_paths.extend(iter.iter().map(|x| &x[7..]).map(PlRefPath::new))
                     };
                 } else {
-                    let (expand_start_idx, paths) =
-                        expand_path_cloud(path.into_owned(), cloud_options.as_ref())?;
+                    let (expand_start_idx, paths) = expand_path_cloud(
+                        path.into_owned(),
+                        cloud_options.as_ref(),
+                        glob,
+                        first_path_has_scheme,
+                    )
+                    .await?;
                     out_paths.extend_from_slice(&paths);
                     hive_idx_tracker.update(expand_start_idx, path_idx)?;
                 };
@@ -600,6 +605,7 @@ mod tests {
     use polars_utils::pl_path::PlRefPath;
 
     use super::resolve_homedir;
+    use crate::pl_async::get_runtime;
 
     #[cfg(not(target_os = "windows"))]
     #[test]
@@ -656,7 +662,9 @@ mod tests {
 
         let path = "https://pola.rs/test.csv?token=bear";
         let paths = &[PlRefPath::new(path)];
-        let out = expand_paths(paths, true, &[], &mut None).unwrap();
+        let out = get_runtime()
+            .block_on(expand_paths(paths, true, &[], &mut None))
+            .unwrap();
         assert_eq!(out.as_ref(), paths);
     }
 }
