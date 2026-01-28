@@ -123,10 +123,10 @@ with contextlib.suppress(OSError):
 """,
         ],
         stderr=subprocess.STDOUT,
-    )
+    ).decode()
 
     assert (
-        b"""\
+        """\
 init_backoff: 2ms, \
 max_backoff: 10.373s, \
 base: 6.28 }, \
