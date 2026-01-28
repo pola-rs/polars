@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 import subprocess
 import sys
@@ -1285,18 +1286,32 @@ def test_sink_parquet_arrow_schema() -> None:
         == b"custom_field_md_value"
     )
 
-    # TODO: Support schema-level metadata
-    with pytest.raises(
-        ComputeError,
-        match=r"not implemented.*schema-level metadata",
-    ):
-        df.lazy().sink_parquet(
-            io.BytesIO(),
-            arrow_schema=pa.schema(
-                [pa.field("x", pa.int64())],
-                metadata={"custom_schema_md_key": "custom_schema_md_value"},
-            ),
-        )
+    f = io.BytesIO()
+
+    df.lazy().sink_parquet(
+        f,
+        arrow_schema=pa.schema(
+            [pa.field("x", pa.int64())],
+            metadata={"custom_schema_md_key": "custom_schema_md_value"},
+        ),
+        metadata={"custom_footer_md_key": "custom_footer_md_value"},
+    )
+
+    f.seek(0)
+
+    assert pq.read_schema(f).metadata == {
+        b"custom_schema_md_key": b"custom_schema_md_value"
+    }
+    assert (
+        pq.read_metadata(f).metadata[b"custom_footer_md_key"]
+        == b"custom_footer_md_value"
+    )
+    assert (
+        pl.read_parquet_metadata(f)["custom_footer_md_key"] == "custom_footer_md_value"
+    )
+    assert pa.ipc.read_schema(
+        pa.BufferReader(base64.b64decode(pq.read_metadata(f).metadata[b"ARROW:schema"]))
+    ).metadata == {b"custom_schema_md_key": b"custom_schema_md_value"}
 
     with pytest.raises(
         SchemaError,
