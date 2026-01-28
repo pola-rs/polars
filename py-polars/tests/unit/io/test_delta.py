@@ -107,6 +107,7 @@ def test_scan_delta_polars_storage_options_keys(
             "retry_max_backoff_ms": 9875,
             "retry_base_multiplier": 3.14159,
         },
+        credential_provider=None,
     ).select("name")
 
     lf.collect()

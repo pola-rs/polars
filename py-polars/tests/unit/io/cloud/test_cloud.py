@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import contextlib
+import subprocess
+import sys
 from functools import partial
 
 import pytest
@@ -92,27 +94,39 @@ def test_storage_options_retry_config(
 ) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
-    monkeypatch.setenv("POLARS_CLOUD_MAX_RETRIES", "1")
-    monkeypatch.setenv("POLARS_CLOUD_RETRY_TIMEOUT_MS", "1")
-    monkeypatch.setenv("POLARS_CLOUD_RETRY_INIT_BACKOFF_MS", "2")
-    monkeypatch.setenv("POLARS_CLOUD_RETRY_MAX_BACKOFF_MS", "10373")
-    monkeypatch.setenv("POLARS_CLOUD_RETRY_BASE_MULTIPLIER", "6.28")
+    capture = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
+import contextlib
+import os
 
-    q = pl.scan_parquet(
-        "s3://.../...",
-        storage_options={"aws_endpoint_url": "https://localhost:333"},
-        credential_provider=None,
+import polars as pl
+
+os.environ["POLARS_VERBOSE"] = "1"
+os.environ["POLARS_CLOUD_MAX_RETRIES"] = "1"
+os.environ["POLARS_CLOUD_RETRY_TIMEOUT_MS"] = "1"
+os.environ["POLARS_CLOUD_RETRY_INIT_BACKOFF_MS"] = "2"
+os.environ["POLARS_CLOUD_RETRY_MAX_BACKOFF_MS"] = "10373"
+os.environ["POLARS_CLOUD_RETRY_BASE_MULTIPLIER"] = "6.28"
+
+q = pl.scan_parquet(
+    "s3://.../...",
+    storage_options={"aws_endpoint_url": "https://localhost:333"},
+    credential_provider=None,
+)
+
+with contextlib.suppress(OSError):
+    q.collect()
+
+""",
+        ],
+        stderr=subprocess.STDOUT,
     )
 
-    capfd.readouterr()
-
-    with pytest.raises(OSError):
-        q.collect()
-
-    capture = capfd.readouterr().err
-
     assert (
-        """\
+        b"""\
 init_backoff: 2ms, \
 max_backoff: 10.373s, \
 base: 6.28 }, \
