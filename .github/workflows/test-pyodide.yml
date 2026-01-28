@@ -24,9 +24,8 @@ concurrency:
 
 env:
   CARGO_BUILD_JOBS: 1
-  RUSTFLAGS: -C link-self-contained=no -C debuginfo=0 -Zemscripten-wasm-eh -C codegen-units=1
+  RUSTFLAGS: -C link-self-contained=no -C debuginfo=0 -C codegen-units=1
   CFLAGS: -fPIC -fwasm-exceptions
-  RUST_TOOLCHAIN: nightly-2025-06-27
 
 defaults:
   run:

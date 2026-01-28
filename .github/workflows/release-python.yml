@@ -382,7 +382,8 @@ jobs:
 
       - name: Disable incompatible features
         env:
-            FEATURES: csv|ipc|ipc_streaming|parquet|async|json|extract_jsonpath|catalog|cloud|polars_cloud|tokio|clipboard|decompress|new_streaming
+          # Note: If you change this line, you must also copy the change to `test-pyodide.yml`.
+          FEATURES: csv|ipc|ipc_streaming|parquet|async|json|extract_jsonpath|catalog|cloud|polars_cloud|tokio|clipboard|decompress|new_streaming
         run: |
           sed -i 's/serde_json = { workspace = true, optional = true }/serde_json = { workspace = true }/' crates/polars-python/Cargo.toml
           sed -i 's/"serde_json", //' crates/polars-python/Cargo.toml
@@ -391,7 +392,7 @@ jobs:
       - name: Set CFLAGS and RUSTFLAGS for wasm32
         run: |
             echo "CFLAGS=-fPIC -fwasm-exceptions" >> $GITHUB_ENV
-            echo "RUSTFLAGS=-C link-self-contained=no -Zemscripten-wasm-eh" >> $GITHUB_ENV
+            echo "RUSTFLAGS=-C link-self-contained=no -C codegen-units=1" >> $GITHUB_ENV
 
       - name: Check out Emscripten v4.0.9 patches for Pyodide
         uses: actions/checkout@v6
@@ -461,12 +462,18 @@ jobs:
           verbose: true
 
   publish-to-github:
-    needs: [publish-to-pypi]
+    needs: [publish-to-pypi, build-wheel-pyodide]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.sha }}
+
+      - name: Download Pyodide wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: wheel-polars-emscripten-wasm32
+          path: wasm-dist
 
       - name: Get version from Cargo.toml
         id: version
