@@ -297,6 +297,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             nulls_last,
         } => map!(misc::arg_sort, descending, nulls_last),
         F::MinBy => {
+            dbg!("MinBy called");
             map_as_slice!(misc::min_by)
         },
         F::MaxBy => map_as_slice!(misc::max_by),
@@ -554,6 +555,7 @@ pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Ar
                     groups: &'a GroupPositions,
                     state: &ExecutionState,
                 ) -> PolarsResult<AggregationContext<'a>> {
+                    dbg!("evaluate_on_groups");
                     let Wrap($($n),*) = self;
                     $f(inputs, df, groups, state$(, *$n)*)
                 }
@@ -563,8 +565,10 @@ pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Ar
         }};
     }
     use IRFunctionExpr as F;
-    Some(match func {
+    Some(match dbg!(func) {
         F::NullCount => wrap_groups!(groups_dispatch::null_count),
+        F::MinBy => dbg!(wrap_groups!(groups_dispatch::min_by)),
+        // F::MaxBy => wrap_groups!(groups_dispatch::max_by), // TODO: [amber]
         F::Reverse => wrap_groups!(groups_dispatch::reverse),
         F::Boolean(IRBooleanFunction::Any { ignore_nulls }) => {
             let ignore_nulls = *ignore_nulls;
