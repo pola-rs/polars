@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 import subprocess
 import sys
@@ -1308,6 +1309,9 @@ def test_sink_parquet_arrow_schema() -> None:
     assert (
         pl.read_parquet_metadata(f)["custom_footer_md_key"] == "custom_footer_md_value"
     )
+    assert pa.ipc.read_schema(
+        pa.BufferReader(base64.b64decode(pq.read_metadata(f).metadata[b"ARROW:schema"]))
+    ).metadata == {b"custom_schema_md_key": b"custom_schema_md_value"}
 
     with pytest.raises(
         SchemaError,
