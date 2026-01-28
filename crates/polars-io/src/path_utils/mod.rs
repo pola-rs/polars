@@ -209,6 +209,7 @@ impl HiveIdxTracker<'_> {
     }
 }
 
+#[cfg(feature = "cloud")]
 async fn expand_path_cloud(
     path: PlRefPath,
     cloud_options: Option<&CloudOptions>,
