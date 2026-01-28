@@ -113,7 +113,13 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
     let ctxt = {
         let scans = lp
             .into_iter()
-            .filter(|dsl| matches!(dsl, DslPlan::Scan { .. }))
+            .filter(|dsl| {
+                if let DslPlan::Scan { cached_ir, .. } = dsl {
+                    cached_ir.lock().unwrap().is_none()
+                } else {
+                    false
+                }
+            })
             .collect::<Vec<_>>();
 
         use rayon::prelude::*;
@@ -145,11 +151,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
     let v = match lp {
         DslPlan::Scan {
-            sources,
-            unified_scan_args,
-            scan_type,
+            sources: _,
+            unified_scan_args: _,
+            scan_type: _,
             cached_ir,
-        } => scans::dsl_to_ir(sources, unified_scan_args, scan_type, cached_ir, None)?,
+        } => cached_ir.lock().unwrap().clone().unwrap(),
         #[cfg(feature = "python")]
         DslPlan::PythonScan { options } => {
             use crate::dsl::python_dsl::PythonOptionsDsl;
