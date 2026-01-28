@@ -4,15 +4,15 @@ import typing
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
-import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
 import pytest
 from hypothesis import given, settings
+from hypothesis import strategies as st
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.testing.parametric.strategies.core import dataframes
+from polars.testing.parametric.strategies.core import column, dataframes
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -596,3 +596,29 @@ def test_merge_join_applicable(
     else:
         assert "merge-join" not in typing.cast("str", dot)
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@given(
+    left=dataframes(
+        cols=[column("ts", dtype=pl.Int16)],
+    ),
+    right=dataframes(
+        cols=[column("ts", dtype=pl.Int16)],
+    ),
+)
+def test_streaming_asof_join(left: pl.DataFrame, right: pl.DataFrame) -> None:
+    left = left.sort("ts").with_row_index().lazy()
+    right = right.sort("ts").with_row_index().lazy()
+
+    q = left.join_asof(right, on="ts", strategy="backward")
+    expected = q.collect(engine="in-memory")
+    actual = q.collect(engine="streaming")
+
+    import sys
+
+    print(f"{left.collect() = }", file=sys.stderr)
+    print(f"{right.collect() = }", file=sys.stderr)
+    print(f"{actual = }", file=sys.stderr)
+    print(f"{expected = }", file=sys.stderr)
+
+    assert_frame_equal(actual, expected)

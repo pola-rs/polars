@@ -746,49 +746,24 @@ fn find_mergeable_search(
     Ok(Ok((build_split, probe_split)))
 }
 
-/// Computes the first point on where `predicate` is true, assuming it is first
-/// always false and then always true.
-fn binary_search<P>(
-    vec: &DataFrameBuffer,
-    predicate: P,
-    params: &MergeJoinParams,
-    sp: &MergeJoinSideParams,
-) -> usize
-where
-    P: Fn(&AnyValue<'_>) -> bool,
-{
-    let mut lower = 0;
-    let mut upper = vec.height();
-    while lower < upper {
-        let mid = (lower + upper) / 2;
-        let mid_val = unsafe { vec.get_bypass_validity(&sp.key_col, mid, params.keys_row_encoded) };
-        if predicate(&mid_val) {
-            upper = mid;
-        } else {
-            lower = mid + 1;
-        }
-    }
-    lower
-}
-
 fn binary_search_lower(
-    vec: &DataFrameBuffer,
+    dfb: &DataFrameBuffer,
     sv: &AnyValue,
     params: &MergeJoinParams,
     sp: &MergeJoinSideParams,
 ) -> usize {
     let predicate = |x: &AnyValue<'_>| keys_cmp(sv, x, params).is_le();
-    binary_search(vec, predicate, params, sp)
+    dfb.binary_search(predicate, &sp.key_col, params.keys_row_encoded)
 }
 
 fn binary_search_upper(
-    vec: &DataFrameBuffer,
+    dfb: &DataFrameBuffer,
     sv: &AnyValue,
     params: &MergeJoinParams,
     sp: &MergeJoinSideParams,
 ) -> usize {
     let predicate = |x: &AnyValue<'_>| keys_cmp(sv, x, params).is_lt();
-    binary_search(vec, predicate, params, sp)
+    dfb.binary_search(predicate, &sp.key_col, params.keys_row_encoded)
 }
 
 fn keys_cmp(lhs: &AnyValue, rhs: &AnyValue, params: &MergeJoinParams) -> Ordering {

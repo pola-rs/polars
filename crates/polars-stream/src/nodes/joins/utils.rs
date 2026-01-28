@@ -102,6 +102,33 @@ impl DataFrameBuffer {
     pub(super) fn is_empty(&self) -> bool {
         self.total_rows == 0
     }
+
+    /// Computes the first point on where `predicate` is true, assuming it is first
+    /// always false and then always true.
+    pub(super) fn binary_search<P>(
+        &self,
+        predicate: P,
+        key_col_name: &str,
+        binary_offset_bypass_validity: bool,
+    ) -> usize
+    where
+        P: Fn(&AnyValue<'_>) -> bool,
+    {
+        let mut lower = 0;
+        let mut upper = self.height();
+        while lower < upper {
+            let mid = (lower + upper) / 2;
+            let mid_val = unsafe {
+                self.get_bypass_validity(key_col_name, mid, binary_offset_bypass_validity)
+            };
+            if predicate(&mid_val) {
+                upper = mid;
+            } else {
+                lower = mid + 1;
+            }
+        }
+        lower
+    }
 }
 
 /// Get value from series bypassing the validity bitmap.
