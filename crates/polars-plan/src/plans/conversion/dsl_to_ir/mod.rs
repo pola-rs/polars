@@ -112,13 +112,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
     {
         let scans = lp
             .into_iter()
-            .filter(|dsl| {
-                if let DslPlan::Scan { cached_ir, .. } = dsl {
-                    cached_ir.lock().unwrap().is_none()
-                } else {
-                    false
-                }
-            })
+            .filter(|dsl| matches!(dsl, DslPlan::Scan { .. }))
             .collect::<Vec<_>>();
 
         use rayon::prelude::*;
@@ -143,7 +137,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 cache_file_info.clone(),
                 verbose,
             )
-            .map(|_| ())
         })?;
     }
 

@@ -19,7 +19,7 @@ pub(super) fn dsl_to_ir(
     cached_ir: Arc<Mutex<Option<IR>>>,
     cache_file_info: SourcesToFileInfo,
     verbose: bool,
-) -> PolarsResult<IR> {
+) -> PolarsResult<()> {
     // Note that the first metadata can still end up being `None` later if the files were
     // filtered from predicate pushdown.
     let mut cached_ir = cached_ir.lock().unwrap();
@@ -174,7 +174,7 @@ pub(super) fn dsl_to_ir(
         cached_ir.replace(ir);
     }
 
-    Ok(cached_ir.clone().unwrap())
+    Ok(())
 }
 
 pub(super) fn insert_row_index_to_schema(
