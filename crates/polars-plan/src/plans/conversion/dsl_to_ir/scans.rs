@@ -47,10 +47,16 @@ pub(super) async fn dsl_to_ir(
         let sources = match &*scan_type {
             #[cfg(feature = "parquet")]
             FileScanDsl::Parquet { .. } => {
-                sources.expand_paths_with_hive_update(unified_scan_args)?
+                sources
+                    .expand_paths_with_hive_update(unified_scan_args)
+                    .await?
             },
             #[cfg(feature = "ipc")]
-            FileScanDsl::Ipc { .. } => sources.expand_paths_with_hive_update(unified_scan_args)?,
+            FileScanDsl::Ipc { .. } => {
+                sources
+                    .expand_paths_with_hive_update(unified_scan_args)
+                    .await?
+            },
             #[cfg(feature = "csv")]
             FileScanDsl::Csv { .. } => sources.expand_paths(unified_scan_args)?,
             #[cfg(feature = "json")]

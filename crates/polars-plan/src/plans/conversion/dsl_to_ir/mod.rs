@@ -145,26 +145,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
             Ok::<(), PolarsError>(())
         })?;
-
-        // scans.par_iter().try_for_each(|dsl| {
-        //     let DslPlan::Scan {
-        //         sources,
-        //         unified_scan_args,
-        //         scan_type,
-        //         cached_ir,
-        //     } = dsl
-        //     else {
-        //         unreachable!()
-        //     };
-        //     scans::dsl_to_ir(
-        //         sources.clone(),
-        //         unified_scan_args.clone(),
-        //         scan_type.clone(),
-        //         cached_ir.clone(),
-        //         cache_file_info.clone(),
-        //         verbose,
-        //     )
-        // })?;
     }
 
     let v = match lp {

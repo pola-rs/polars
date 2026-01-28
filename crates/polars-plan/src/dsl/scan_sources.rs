@@ -195,7 +195,7 @@ impl ScanSources {
     /// This will update `scan_args.hive_options.enabled` to `true` if the existing value is `None`
     /// and the paths are expanded from a single directory. Otherwise the existing value is maintained.
     #[cfg(any(feature = "ipc", feature = "parquet"))]
-    pub fn expand_paths_with_hive_update(
+    pub async fn expand_paths_with_hive_update(
         &self,
         scan_args: &mut UnifiedScanArgs,
     ) -> PolarsResult<Self> {
