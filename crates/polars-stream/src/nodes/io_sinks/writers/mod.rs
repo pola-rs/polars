@@ -29,11 +29,15 @@ pub fn create_file_writer_starter(
 
             use crate::nodes::io_sinks::writers::parquet::ParquetWriterStarter;
 
-            let arrow_schema = Arc::new(schema_to_arrow_checked(
-                file_schema.as_ref(),
-                CompatLevel::newest(),
-                "",
-            )?);
+            let arrow_schema = if let Some(arrow_schema) = options.arrow_schema.clone() {
+                arrow_schema
+            } else {
+                Arc::new(schema_to_arrow_checked(
+                    file_schema.as_ref(),
+                    CompatLevel::newest(),
+                    "",
+                )?)
+            };
 
             Arc::new(ParquetWriterStarter {
                 options: Arc::clone(options),
