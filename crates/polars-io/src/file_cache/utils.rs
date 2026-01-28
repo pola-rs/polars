@@ -9,6 +9,7 @@ use super::entry::FileCacheEntry;
 use super::file_fetcher::{CloudFileFetcher, LocalFileFetcher};
 use crate::cloud::{CloudLocation, CloudOptions, build_object_store, object_path_from_str};
 use crate::path_utils::{POLARS_TEMP_DIR_BASE_PATH, ensure_directory_init};
+use crate::pl_async;
 
 pub static FILE_CACHE_PREFIX: LazyLock<PlRefPath> = LazyLock::new(|| {
     let path = PlRefPath::try_from_path(&POLARS_TEMP_DIR_BASE_PATH.join("file-cache/")).unwrap();
@@ -48,14 +49,14 @@ pub(super) fn update_last_accessed(file: &std::fs::File) {
 }
 
 pub async fn init_entries_from_uri_list(
-    mut uri_list: impl ExactSizeIterator<Item = PlRefPath> + Send,
+    mut uri_list: impl ExactSizeIterator<Item = PlRefPath>,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<Vec<Arc<FileCacheEntry>>> {
     init_entries_from_uri_list_impl(&mut uri_list, cloud_options).await
 }
 
 async fn init_entries_from_uri_list_impl(
-    uri_list: &mut (dyn ExactSizeIterator<Item = PlRefPath> + Send),
+    uri_list: &mut dyn ExactSizeIterator<Item = PlRefPath>,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<Vec<Arc<FileCacheEntry>>> {
     #[allow(clippy::len_zero)]
