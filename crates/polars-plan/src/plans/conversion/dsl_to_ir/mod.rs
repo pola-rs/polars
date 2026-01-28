@@ -1,3 +1,5 @@
+use std::sync::RwLock;
+
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::rewrite_projections;
@@ -108,13 +110,46 @@ fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> Polars
 pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult<Node> {
     let owned = Arc::unwrap_or_clone;
 
+    let ctxt = {
+        let scans = lp
+            .into_iter()
+            .filter(|dsl| matches!(dsl, DslPlan::Scan { .. }))
+            .collect::<Vec<_>>();
+
+        use rayon::prelude::*;
+        let ctxt = Arc::new(RwLock::new(ctxt));
+
+        scans.par_iter().try_for_each(|dsl| {
+            let DslPlan::Scan {
+                sources,
+                unified_scan_args,
+                scan_type,
+                cached_ir,
+            } = dsl
+            else {
+                unreachable!()
+            };
+            scans::dsl_to_ir(
+                sources.clone(),
+                unified_scan_args.clone(),
+                scan_type.clone(),
+                cached_ir.clone(),
+                Some(ctxt.clone()),
+            )
+            .map(|_| ())
+        })?;
+
+        let ctxt = Arc::into_inner(ctxt).unwrap();
+        ctxt.into_inner().unwrap()
+    };
+
     let v = match lp {
         DslPlan::Scan {
             sources,
             unified_scan_args,
             scan_type,
             cached_ir,
-        } => scans::dsl_to_ir(sources, unified_scan_args, scan_type, cached_ir, ctxt)?,
+        } => scans::dsl_to_ir(sources, unified_scan_args, scan_type, cached_ir, None)?,
         #[cfg(feature = "python")]
         DslPlan::PythonScan { options } => {
             use crate::dsl::python_dsl::PythonOptionsDsl;

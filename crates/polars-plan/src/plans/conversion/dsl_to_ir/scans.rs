@@ -1,5 +1,5 @@
 use std::io::BufReader;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, RwLock};
 
 use either::Either;
 use polars_buffer::Buffer;
@@ -17,13 +17,14 @@ pub(super) fn dsl_to_ir(
     mut unified_scan_args_box: Box<UnifiedScanArgs>,
     scan_type: Box<FileScanDsl>,
     cached_ir: Arc<Mutex<Option<IR>>>,
-    ctxt: &mut DslConversionContext,
+    ctxt: Option<Arc<RwLock<&mut DslConversionContext>>>,
 ) -> PolarsResult<IR> {
     // Note that the first metadata can still end up being `None` later if the files were
     // filtered from predicate pushdown.
     let mut cached_ir = cached_ir.lock().unwrap();
 
     if cached_ir.is_none() {
+        let ctxt = ctxt.as_ref().expect("should be set if cache is empty");
         let unified_scan_args = unified_scan_args_box.as_mut();
 
         if let Some(hive_schema) = unified_scan_args.hive_options.schema.as_deref() {
@@ -67,13 +68,20 @@ pub(super) fn dsl_to_ir(
 
         // For cloud we must deduplicate files. Serialization/deserialization leads to Arc's losing there
         // sharing.
-        let (mut file_info, scan_type_ir) = ctxt.cache_file_info.get_or_insert(
-            &scan_type,
-            &sources,
-            sources_before_expansion,
-            unified_scan_args,
-            ctxt.verbose,
-        )?;
+        let (mut file_info, scan_type_ir) = {
+            let (verbose, cache_file_info) = {
+                let ctxt_lock = ctxt.read().unwrap();
+                let verbose = ctxt_lock.verbose;
+                (verbose, ctxt_lock.cache_file_info.clone())
+            };
+            cache_file_info.get_or_insert(
+                &scan_type,
+                &sources,
+                sources_before_expansion,
+                unified_scan_args,
+                verbose,
+            )?
+        };
 
         if unified_scan_args.hive_options.enabled.is_none() {
             // We expect this to be `Some(_)` after this point. If it hasn't been auto-enabled
@@ -504,14 +512,14 @@ enum CachedSourceKey {
     },
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(super) struct SourcesToFileInfo {
-    inner: PlHashMap<CachedSourceKey, (FileInfo, FileScanIR)>,
+    inner: Arc<RwLock<PlHashMap<CachedSourceKey, (FileInfo, FileScanIR)>>>,
 }
 
 impl SourcesToFileInfo {
     fn infer_or_parse(
-        &mut self,
+        &self,
         scan_type: FileScanDsl,
         sources: &ScanSources,
         sources_before_expansion: &ScanSources,
@@ -577,7 +585,7 @@ this scan to succeed with an empty DataFrame.",
                             file_info.row_estimation = (Some(size), size);
                         }
 
-                        if self.inner.len() > max_metadata_scan_cached() {
+                        if self.inner.read().unwrap().len() > max_metadata_scan_cached() {
                             _ = metadata.take();
                         }
 
@@ -734,7 +742,7 @@ this scan to succeed with an empty DataFrame.",
     }
 
     pub(super) fn get_or_insert(
-        &mut self,
+        &self,
         scan_type: &FileScanDsl,
         sources: &ScanSources,
         sources_before_expansion: &ScanSources,
@@ -755,6 +763,7 @@ this scan to succeed with an empty DataFrame.",
             },
         };
 
+        let guard = self.inner.read().unwrap();
         let (k, v): (CachedSourceKey, Option<&(FileInfo, FileScanIR)>) = match scan_type {
             #[cfg(feature = "parquet")]
             FileScanDsl::Parquet { options } => {
@@ -763,7 +772,7 @@ this scan to succeed with an empty DataFrame.",
                     schema_overwrite: options.schema.clone(),
                 };
 
-                let v = self.inner.get(&key);
+                let v = guard.get(&key);
                 (key, v)
             },
             #[cfg(feature = "ipc")]
@@ -773,7 +782,7 @@ this scan to succeed with an empty DataFrame.",
                     schema_overwrite: None,
                 };
 
-                let v = self.inner.get(&key);
+                let v = guard.get(&key);
                 (key, v)
             },
             #[cfg(feature = "csv")]
@@ -783,7 +792,7 @@ this scan to succeed with an empty DataFrame.",
                     schema: options.schema.clone(),
                     schema_overwrite: options.schema_overwrite.clone(),
                 };
-                let v = self.inner.get(&key);
+                let v = guard.get(&key);
                 (key, v)
             },
             #[cfg(feature = "json")]
@@ -793,10 +802,11 @@ this scan to succeed with an empty DataFrame.",
                     schema: options.schema.clone(),
                     schema_overwrite: options.schema_overwrite.clone(),
                 };
-                let v = self.inner.get(&key);
+                let v = guard.get(&key);
                 (key, v)
             },
             _ => {
+                drop(guard);
                 return self.infer_or_parse(
                     scan_type.clone(),
                     sources,
@@ -812,13 +822,14 @@ this scan to succeed with an empty DataFrame.",
             }
             Ok(out.clone())
         } else {
+            drop(guard);
             let v = self.infer_or_parse(
                 scan_type.clone(),
                 sources,
                 sources_before_expansion,
                 unified_scan_args,
             )?;
-            self.inner.insert(k, v.clone());
+            self.inner.write().unwrap().insert(k, v.clone());
             Ok(v)
         }
     }
