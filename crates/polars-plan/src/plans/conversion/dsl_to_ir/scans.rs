@@ -5,8 +5,6 @@ use either::Either;
 use polars_buffer::Buffer;
 use polars_io::RowIndex;
 use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
-#[cfg(feature = "cloud")]
-use polars_io::pl_async::get_runtime;
 use polars_io::prelude::*;
 use polars_io::utils::compression::CompressedReader;
 
@@ -79,13 +77,15 @@ pub(super) async fn dsl_to_ir(
         // For cloud we must deduplicate files. Serialization/deserialization leads to Arc's losing there
         // sharing.
         let (mut file_info, scan_type_ir) = {
-            cache_file_info.get_or_insert(
-                &scan_type,
-                &sources,
-                sources_before_expansion,
-                unified_scan_args,
-                verbose,
-            )?
+            cache_file_info
+                .get_or_insert(
+                    &scan_type,
+                    &sources,
+                    sources_before_expansion,
+                    unified_scan_args,
+                    verbose,
+                )
+                .await?
         };
 
         if unified_scan_args.hive_options.enabled.is_none() {
@@ -233,7 +233,7 @@ fn prepare_schemas(
 }
 
 #[cfg(feature = "parquet")]
-pub(super) fn parquet_file_info(
+pub(super) async fn parquet_file_info(
     first_scan_source: ScanSourceRef<'_>,
     row_index: Option<&RowIndex>,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
@@ -245,17 +245,14 @@ pub(super) fn parquet_file_info(
         if first_scan_source.is_cloud_url() {
             let first_path = first_scan_source.as_path().unwrap();
             feature_gated!("cloud", {
-                get_runtime().block_in_place_on(async {
-                    let mut reader =
-                        ParquetObjectStore::from_uri(first_path.clone(), cloud_options, None)
-                            .await?;
+                let mut reader =
+                    ParquetObjectStore::from_uri(first_path.clone(), cloud_options, None).await?;
 
-                    PolarsResult::Ok((
-                        reader.schema().await?,
-                        reader.num_rows().await?,
-                        reader.get_metadata().await?.clone(),
-                    ))
-                })?
+                (
+                    reader.schema().await?,
+                    reader.num_rows().await?,
+                    reader.get_metadata().await?.clone(),
+                )
             })
         } else {
             let memslice = first_scan_source.to_memslice()?;
@@ -298,7 +295,7 @@ pub fn max_metadata_scan_cached() -> usize {
 
 // TODO! return metadata arced
 #[cfg(feature = "ipc")]
-pub(super) fn ipc_file_info(
+pub(super) async fn ipc_file_info(
     first_scan_source: ScanSourceRef<'_>,
     row_index: Option<&RowIndex>,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
@@ -309,12 +306,10 @@ pub(super) fn ipc_file_info(
         ScanSourceRef::Path(path) => {
             if path.has_scheme() {
                 feature_gated!("cloud", {
-                    get_runtime().block_on(async {
-                        polars_io::ipc::IpcReaderAsync::from_uri(path.clone(), cloud_options)
-                            .await?
-                            .metadata()
-                            .await
-                    })?
+                    polars_io::ipc::IpcReaderAsync::from_uri(path.clone(), cloud_options)
+                        .await?
+                        .metadata()
+                        .await?
                 })
             } else {
                 arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(
@@ -524,7 +519,7 @@ pub(super) struct SourcesToFileInfo {
 }
 
 impl SourcesToFileInfo {
-    fn infer_or_parse(
+    async fn infer_or_parse(
         &self,
         scan_type: FileScanDsl,
         sources: &ScanSources,
@@ -564,7 +559,7 @@ impl SourcesToFileInfo {
                         },
                     )
                 } else {
-                    (|| {
+                    {
                         let first_scan_source = require_first_source(
                             "failed to retrieve first file schema (parquet)",
                             "\
@@ -584,7 +579,8 @@ this scan to succeed with an empty DataFrame.",
                             unified_scan_args.row_index.as_ref(),
                             cloud_options,
                             n_sources,
-                        )?;
+                        )
+                        .await?;
 
                         if let Some((total, deleted)) = unified_scan_args.row_count {
                             let size = (total - deleted) as usize;
@@ -596,12 +592,12 @@ this scan to succeed with an empty DataFrame.",
                         }
 
                         PolarsResult::Ok((file_info, FileScanIR::Parquet { options, metadata }))
-                    })()
+                    }
                     .map_err(|e| e.context(failed_here!(parquet scan)))?
                 }
             },
             #[cfg(feature = "ipc")]
-            FileScanDsl::Ipc { options } => (|| {
+            FileScanDsl::Ipc { options } => {
                 let first_scan_source =
                     require_first_source("failed to retrieve first file schema (ipc)", "")?;
 
@@ -616,7 +612,8 @@ this scan to succeed with an empty DataFrame.",
                     first_scan_source,
                     unified_scan_args.row_index.as_ref(),
                     cloud_options,
-                )?;
+                )
+                .await?;
 
                 PolarsResult::Ok((
                     file_info,
@@ -625,7 +622,7 @@ this scan to succeed with an empty DataFrame.",
                         metadata: Some(Arc::new(md)),
                     },
                 ))
-            })()
+            }
             .map_err(|e| e.context(failed_here!(ipc scan)))?,
             #[cfg(feature = "csv")]
             FileScanDsl::Csv { mut options } => {
@@ -747,7 +744,7 @@ this scan to succeed with an empty DataFrame.",
         })
     }
 
-    pub(super) fn get_or_insert(
+    pub(super) async fn get_or_insert(
         &self,
         scan_type: &FileScanDsl,
         sources: &ScanSources,
@@ -760,17 +757,18 @@ this scan to succeed with an empty DataFrame.",
             ScanSources::Paths(paths) if !paths.is_empty() => paths.clone(),
 
             _ => {
-                return self.infer_or_parse(
-                    scan_type.clone(),
-                    sources,
-                    sources_before_expansion,
-                    unified_scan_args,
-                );
+                return self
+                    .infer_or_parse(
+                        scan_type.clone(),
+                        sources,
+                        sources_before_expansion,
+                        unified_scan_args,
+                    )
+                    .await;
             },
         };
 
-        let guard = self.inner.read().unwrap();
-        let (k, v): (CachedSourceKey, Option<&(FileInfo, FileScanIR)>) = match scan_type {
+        let (k, v): (CachedSourceKey, Option<(FileInfo, FileScanIR)>) = match scan_type {
             #[cfg(feature = "parquet")]
             FileScanDsl::Parquet { options } => {
                 let key = CachedSourceKey::ParquetIpc {
@@ -778,8 +776,9 @@ this scan to succeed with an empty DataFrame.",
                     schema_overwrite: options.schema.clone(),
                 };
 
+                let guard = self.inner.read().unwrap();
                 let v = guard.get(&key);
-                (key, v)
+                (key, v.cloned())
             },
             #[cfg(feature = "ipc")]
             FileScanDsl::Ipc { options: _ } => {
@@ -788,8 +787,9 @@ this scan to succeed with an empty DataFrame.",
                     schema_overwrite: None,
                 };
 
+                let guard = self.inner.read().unwrap();
                 let v = guard.get(&key);
-                (key, v)
+                (key, v.cloned())
             },
             #[cfg(feature = "csv")]
             FileScanDsl::Csv { options } => {
@@ -798,8 +798,9 @@ this scan to succeed with an empty DataFrame.",
                     schema: options.schema.clone(),
                     schema_overwrite: options.schema_overwrite.clone(),
                 };
+                let guard = self.inner.read().unwrap();
                 let v = guard.get(&key);
-                (key, v)
+                (key, v.cloned())
             },
             #[cfg(feature = "json")]
             FileScanDsl::NDJson { options } => {
@@ -808,17 +809,19 @@ this scan to succeed with an empty DataFrame.",
                     schema: options.schema.clone(),
                     schema_overwrite: options.schema_overwrite.clone(),
                 };
+                let guard = self.inner.read().unwrap();
                 let v = guard.get(&key);
-                (key, v)
+                (key, v.cloned())
             },
             _ => {
-                drop(guard);
-                return self.infer_or_parse(
-                    scan_type.clone(),
-                    sources,
-                    sources_before_expansion,
-                    unified_scan_args,
-                );
+                return self
+                    .infer_or_parse(
+                        scan_type.clone(),
+                        sources,
+                        sources_before_expansion,
+                        unified_scan_args,
+                    )
+                    .await;
             },
         };
 
@@ -826,15 +829,16 @@ this scan to succeed with an empty DataFrame.",
             if verbose {
                 eprintln!("FILE_INFO CACHE HIT")
             }
-            Ok(out.clone())
+            Ok(out)
         } else {
-            drop(guard);
-            let v = self.infer_or_parse(
-                scan_type.clone(),
-                sources,
-                sources_before_expansion,
-                unified_scan_args,
-            )?;
+            let v = self
+                .infer_or_parse(
+                    scan_type.clone(),
+                    sources,
+                    sources_before_expansion,
+                    unified_scan_args,
+                )
+                .await?;
             self.inner.write().unwrap().insert(k, v.clone());
             Ok(v)
         }
