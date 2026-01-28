@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use polars::prelude::CloudScheme;
+use polars_core::config::verbose_print_sensitive;
 use polars_io::cloud::{CloudOptions, CloudRetryConfig};
 use polars_utils::total_ord::TotalOrdWrap;
 use pyo3::exceptions::PyValueError;
@@ -126,6 +127,7 @@ impl OptPyCloudOptions<'_> {
         if file_cache_ttl > 0 {
             cloud_options.file_cache_ttl = file_cache_ttl;
         }
+        verbose_print_sensitive(|| format!("extracted cloud_options: {:?}", &cloud_options));
 
         Ok(Some(cloud_options))
     }
