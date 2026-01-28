@@ -638,28 +638,6 @@ def _re_string(string: str | Collection[str], *, escape: bool = True) -> str:
     return f"({rx})"
 
 
-def empty() -> Selector:
-    """
-    Select no columns.
-
-    This is useful for composition with other selectors.
-
-    See Also
-    --------
-    all : Select all columns in the current scope.
-
-    Examples
-    --------
-    >>> import polars.selectors as cs
-    >>> pl.DataFrame({"a": 1, "b": 2}).select(cs.empty())
-    shape: (0, 0)
-    ┌┐
-    ╞╡
-    └┘
-    """
-    return Selector._from_pyselector(PySelector.empty())
-
-
 def all() -> Selector:
     """
     Select all columns.
@@ -1291,6 +1269,28 @@ def by_name(*names: str | Collection[str], require_all: bool = True) -> Selector
     return Selector._by_name(all_names, strict=require_all)
 
 
+def empty() -> Selector:
+    """
+    Select no columns.
+
+    This is useful for composition with other selectors.
+
+    See Also
+    --------
+    all : Select all columns in the current scope.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> pl.DataFrame({"a": 1, "b": 2}).select(cs.empty())
+    shape: (0, 0)
+    ┌┐
+    ╞╡
+    └┘
+    """
+    return Selector._from_pyselector(PySelector.empty())
+
+
 @unstable()
 def enum() -> Selector:
     """
@@ -1742,10 +1742,8 @@ def contains(*substring: str) -> Selector:
     │ y   ┆ true  │
     └─────┴───────┘
     """
-    escaped_substring = _re_string(substring)
-    raw_params = f"^.*{escaped_substring}.*$"
-
-    return Selector._from_pyselector(PySelector.matches(raw_params))
+    pattern = _re_string(substring)
+    return Selector._from_pyselector(PySelector.matches(pattern))
 
 
 def date() -> Selector:
@@ -2275,10 +2273,8 @@ def ends_with(*suffix: str) -> Selector:
     │ y   ┆ 456 ┆ true  │
     └─────┴─────┴───────┘
     """
-    escaped_suffix = _re_string(suffix)
-    raw_params = f"^.*{escaped_suffix}$"
-
-    return Selector._from_pyselector(PySelector.matches(raw_params))
+    pattern = f"{_re_string(suffix)}$"
+    return Selector._from_pyselector(PySelector.matches(pattern))
 
 
 def exclude(
@@ -2748,11 +2744,7 @@ def matches(pattern: str) -> Selector:
         elif pattern.endswith(".*"):
             pattern = pattern[:-2]
 
-        pfx = "^.*" if not pattern.startswith("^") else ""
-        sfx = ".*$" if not pattern.endswith("$") else ""
-        raw_params = f"{pfx}{pattern}{sfx}"
-
-        return Selector._from_pyselector(PySelector.matches(raw_params))
+        return Selector._from_pyselector(PySelector.matches(pattern))
 
 
 def numeric() -> Selector:
@@ -2931,10 +2923,8 @@ def starts_with(*prefix: str) -> Selector:
     │ 2.0 ┆ 8   │
     └─────┴─────┘
     """
-    escaped_prefix = _re_string(prefix)
-    raw_params = f"^{escaped_prefix}.*$"
-
-    return Selector._from_pyselector(PySelector.matches(raw_params))
+    starts_with_pattern = f"^{_re_string(prefix)}"
+    return Selector._from_pyselector(PySelector.matches(starts_with_pattern))
 
 
 def string(*, include_categorical: bool = False) -> Selector:
