@@ -19,6 +19,7 @@ use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::ComputeNode;
 use crate::nodes::in_memory_source::InMemorySourceNode;
+use crate::nodes::joins::utils::DataFrameBuffer;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
 pub const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY_TMP";
@@ -641,8 +642,12 @@ fn find_mergeable_search(
     let probe_params = params.probe_params();
     let build_empty_buf = || DataFrameBuffer::empty_with_schema(build_params.input_schema.clone());
     let probe_empty_buf = || DataFrameBuffer::empty_with_schema(probe_params.input_schema.clone());
-    let build_get = |idx| unsafe { build.get_bypass_validity(&build_params.key_col, idx, params) };
-    let probe_get = |idx| unsafe { probe.get_bypass_validity(&probe_params.key_col, idx, params) };
+    let build_get = |idx| unsafe {
+        build.get_bypass_validity(&build_params.key_col, idx, params.keys_row_encoded)
+    };
+    let probe_get = |idx| unsafe {
+        probe.get_bypass_validity(&probe_params.key_col, idx, params.keys_row_encoded)
+    };
 
     if build_done && build.is_empty() && !probe_done && probe.is_empty() {
         return Ok(Err(NeedMore::Probe));
@@ -741,23 +746,6 @@ fn find_mergeable_search(
     Ok(Ok((build_split, probe_split)))
 }
 
-/// Get value from series bypassing the validity bitmap.
-///
-/// SAFETY: Caller must ensure that `index` is within bounds of `s`.
-unsafe fn series_get_bypass_validity<'a>(
-    s: &'a Series,
-    index: usize,
-    params: &MergeJoinParams,
-) -> AnyValue<'a> {
-    debug_assert!(index < s.len());
-    if params.keys_row_encoded {
-        let arr = s.binary_offset().unwrap();
-        unsafe { arr.get_any_value_bypass_validity(index) }
-    } else {
-        unsafe { s.get_unchecked(index) }
-    }
-}
-
 /// Computes the first point on where `predicate` is true, assuming it is first
 /// always false and then always true.
 fn binary_search<P>(
@@ -773,7 +761,7 @@ where
     let mut upper = vec.height();
     while lower < upper {
         let mid = (lower + upper) / 2;
-        let mid_val = unsafe { vec.get_bypass_validity(&sp.key_col, mid, params) };
+        let mid_val = unsafe { vec.get_bypass_validity(&sp.key_col, mid, params.keys_row_encoded) };
         if predicate(&mid_val) {
             upper = mid;
         } else {
@@ -812,104 +800,5 @@ fn keys_cmp(lhs: &AnyValue, rhs: &AnyValue, params: &MergeJoinParams) -> Orderin
         _ if rhs.is_null() => Ordering::Greater,
         ord if params.key_descending => ord.reverse(),
         ord => ord,
-    }
-}
-
-#[derive(Clone, Debug)]
-struct DataFrameBuffer {
-    schema: SchemaRef,
-    dfs_at_offsets: BTreeMap<usize, DataFrame>,
-    total_rows: usize,
-    skip_rows: usize,
-    frozen: bool,
-}
-
-impl DataFrameBuffer {
-    fn empty_with_schema(schema: SchemaRef) -> Self {
-        DataFrameBuffer {
-            schema,
-            dfs_at_offsets: BTreeMap::new(),
-            total_rows: 0,
-            skip_rows: 0,
-            frozen: false,
-        }
-    }
-
-    fn height(&self) -> usize {
-        self.total_rows
-    }
-
-    /// Get the `row_index`th value from the `column` bypassing its validity bitmap.
-    ///
-    /// SAFETY: Caller must ensure that `row_index` is within bounds.
-    unsafe fn get_bypass_validity(
-        &self,
-        column: &str,
-        row_index: usize,
-        params: &MergeJoinParams,
-    ) -> AnyValue<'_> {
-        debug_assert!(row_index < self.total_rows);
-        let first_offset = match self.dfs_at_offsets.first_key_value() {
-            Some((offset, _)) => *offset,
-            None => 0,
-        };
-        let buf_index = self.skip_rows + first_offset + row_index;
-        let (df_offset, df) = self.dfs_at_offsets.range(..=buf_index).next_back().unwrap();
-        let series_index = buf_index - df_offset;
-        let series = df.column(column).unwrap().as_materialized_series();
-        unsafe { series_get_bypass_validity(series, series_index, params) }
-    }
-
-    fn push_df(&mut self, df: DataFrame) {
-        assert!(!self.frozen);
-        let added_rows = df.height();
-        let offset = match self.dfs_at_offsets.last_key_value() {
-            Some((last_key, last_df)) => last_key + last_df.height(),
-            None => 0,
-        };
-        self.dfs_at_offsets.insert(offset, df);
-        self.total_rows += added_rows;
-    }
-
-    fn split_at(&mut self, mut at: usize) -> Self {
-        at = at.clamp(0, self.total_rows);
-        let mut top = self.clone();
-        top.total_rows = at;
-        top.frozen = true;
-        self.skip_rows += at;
-        self.total_rows -= at;
-        self.gc();
-        top
-    }
-
-    fn slice(mut self, offset: usize, len: usize) -> Self {
-        self.skip_rows += offset;
-        self.total_rows -= offset;
-        self.total_rows = usize::min(self.total_rows, len);
-        self.frozen = true;
-        self
-    }
-
-    fn into_df(self) -> DataFrame {
-        let mut acc = DataFrame::empty_with_schema(&self.schema);
-        for df in self.dfs_at_offsets.into_values() {
-            acc.vstack_mut_owned(df).unwrap();
-        }
-        acc.slice(self.skip_rows as i64, self.total_rows)
-    }
-
-    fn gc(&mut self) {
-        while let Some((_, df)) = self.dfs_at_offsets.first_key_value() {
-            if self.skip_rows > df.height() {
-                let (_, df) = self.dfs_at_offsets.pop_first().unwrap();
-                self.skip_rows -= df.height();
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.total_rows == 0
     }
 }

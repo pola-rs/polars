@@ -18,6 +18,7 @@ pub mod in_memory;
 pub mod merge_join;
 #[cfg(feature = "semi_anti_join")]
 pub mod semi_anti_join;
+mod utils;
 
 static JOIN_SAMPLE_LIMIT: LazyLock<usize> = LazyLock::new(|| {
     std::env::var("POLARS_JOIN_SAMPLE_LIMIT")
