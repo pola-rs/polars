@@ -644,6 +644,7 @@ pub fn lower_ir(
                             prefetch_limit: RelaxedCell::new_usize(0),
                             prefetch_semaphore: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
+                            io_metrics: std::sync::OnceLock::new(),
                         },
                     ) as _,
 
@@ -657,6 +658,7 @@ pub fn lower_ir(
                         prefetch_limit: RelaxedCell::new_usize(0),
                         prefetch_semaphore: std::sync::OnceLock::new(),
                         shared_prefetch_wait_group_slot: Default::default(),
+                        io_metrics: std::sync::OnceLock::new(),
                     }) as _,
 
                     #[cfg(feature = "csv")]

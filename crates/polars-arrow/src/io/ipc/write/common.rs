@@ -68,9 +68,7 @@ pub fn dictionaries_to_encode(
             let array = array.as_any().downcast_ref::<StructArray>().unwrap();
             let fields = field.fields.as_slice();
             if array.fields().len() != fields.len() {
-                polars_bail!(InvalidOperation:
-                    "The number of fields in a struct must equal the number of children in IpcField".to_string(),
-                );
+                polars_bail!(InvalidOperation: "The number of fields in a struct must equal the number of children in IpcField");
             }
             fields
                 .iter()
@@ -90,7 +88,7 @@ pub fn dictionaries_to_encode(
                 .downcast_ref::<ListArray<i32>>()
                 .unwrap()
                 .values();
-            let field = &field.fields[0]; // todo: error instead
+            let field = field.fields.first().ok_or_else(|| polars_err!(ComputeError: "Invalid IPC field structure: expected nested field but fields vector is empty"))?;
             dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
         LargeList => {
@@ -99,7 +97,7 @@ pub fn dictionaries_to_encode(
                 .downcast_ref::<ListArray<i64>>()
                 .unwrap()
                 .values();
-            let field = &field.fields[0]; // todo: error instead
+            let field = field.fields.first().ok_or_else(|| polars_err!(ComputeError: "Invalid IPC field structure: expected nested field but fields vector is empty"))?;
             dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
         FixedSizeList => {
@@ -108,7 +106,7 @@ pub fn dictionaries_to_encode(
                 .downcast_ref::<FixedSizeListArray>()
                 .unwrap()
                 .values();
-            let field = &field.fields[0]; // todo: error instead
+            let field = field.fields.first().ok_or_else(|| polars_err!(ComputeError: "Invalid IPC field structure: expected nested field but fields vector is empty"))?;
             dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
         Union => {
@@ -117,7 +115,7 @@ pub fn dictionaries_to_encode(
                 .downcast_ref::<UnionArray>()
                 .unwrap()
                 .fields();
-            let fields = &field.fields[..]; // todo: error instead
+            let fields = field.fields.as_slice();
             if values.len() != fields.len() {
                 polars_bail!(InvalidOperation:
                     "The number of fields in a union must equal the number of children in IpcField"
@@ -137,7 +135,7 @@ pub fn dictionaries_to_encode(
         },
         Map => {
             let values = array.as_any().downcast_ref::<MapArray>().unwrap().field();
-            let field = &field.fields[0]; // todo: error instead
+            let field = field.fields.first().ok_or_else(|| polars_err!(ComputeError: "Invalid IPC field structure: expected nested field but fields vector is empty"))?;
             dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
     }

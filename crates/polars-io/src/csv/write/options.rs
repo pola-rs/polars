@@ -15,6 +15,7 @@ pub struct CsvWriterOptions {
     pub include_bom: bool,
     #[cfg_attr(feature = "serde", serde(default))]
     pub compression: ExternalCompression,
+    #[cfg_attr(feature = "serde", serde(default))]
     pub check_extension: bool,
     pub include_header: bool,
     pub batch_size: NonZeroUsize,

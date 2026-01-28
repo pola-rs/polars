@@ -38,8 +38,10 @@ impl BlockingCloudWriter {
         object_store: Arc<dyn ObjectStore>,
         path: Path,
         cloud_upload_chunk_size: usize,
+        cloud_upload_max_concurrency: usize,
     ) -> PolarsResult<Self> {
-        let writer = BufWriter::with_capacity(object_store, path, cloud_upload_chunk_size);
+        let writer = BufWriter::with_capacity(object_store, path, cloud_upload_chunk_size)
+            .with_max_concurrency(cloud_upload_max_concurrency);
         Ok(BlockingCloudWriter { state: Ok(writer) })
     }
 
@@ -51,6 +53,7 @@ impl BlockingCloudWriter {
         uri: PlRefPath,
         cloud_options: Option<&CloudOptions>,
         cloud_upload_chunk_size: usize,
+        cloud_upload_max_concurrency: usize,
     ) -> PolarsResult<Self> {
         let (cloud_location, object_store) =
             crate::cloud::build_object_store(uri, cloud_options, false).await?;
@@ -58,6 +61,7 @@ impl BlockingCloudWriter {
             object_store.to_dyn_object_store().await,
             object_path_from_str(&cloud_location.prefix)?,
             cloud_upload_chunk_size,
+            cloud_upload_max_concurrency,
         )
     }
 
@@ -154,7 +158,7 @@ mod tests {
     use polars_core::df;
     use polars_core::prelude::DataFrame;
 
-    use crate::get_upload_chunk_size;
+    use crate::{get_upload_chunk_size, get_upload_concurrency};
 
     fn example_dataframe() -> DataFrame {
         df!(
@@ -180,9 +184,13 @@ mod tests {
 
         let path: object_store::path::Path = "cloud_writer_example.csv".into();
 
-        let mut cloud_writer =
-            BlockingCloudWriter::new_with_object_store(object_store, path, get_upload_chunk_size())
-                .unwrap();
+        let mut cloud_writer = BlockingCloudWriter::new_with_object_store(
+            object_store,
+            path,
+            get_upload_chunk_size(),
+            get_upload_concurrency(),
+        )
+        .unwrap();
         CsvWriter::new(&mut cloud_writer)
             .finish(&mut df)
             .expect("Could not write DataFrame as CSV to remote location");
@@ -196,9 +204,9 @@ mod tests {
         use polars_utils::pl_path::format_file_uri;
 
         use super::*;
-        use crate::SerReader;
         use crate::csv::write::CsvWriter;
         use crate::prelude::{CsvReadOptions, SerWriter};
+        use crate::{SerReader, get_upload_concurrency};
 
         let mut df = example_dataframe();
 
@@ -211,6 +219,7 @@ mod tests {
                 format_file_uri(path),
                 None,
                 get_upload_chunk_size(),
+                get_upload_concurrency(),
             ))
             .unwrap();
 

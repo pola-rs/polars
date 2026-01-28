@@ -16,6 +16,7 @@ pub mod core;
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct NDJsonWriterOptions {
     pub compression: ExternalCompression,
+    #[cfg_attr(feature = "serde", serde(default))]
     pub check_extension: bool,
 }
 
