@@ -9,6 +9,7 @@ use polars_core::{SchemaExtPl, config};
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
+use polars_ops::frame::JoinType;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
@@ -36,7 +37,7 @@ use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
-use crate::nodes::joins::merge_join;
+use crate::nodes::joins::{asof_join, merge_join};
 use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_expr::{ExprCache, build_select_stream, lower_exprs};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
@@ -1016,6 +1017,121 @@ pub fn lower_ir(
                 ctx,
                 are_keys_sorted,
             );
+        },
+        IR::Join {
+            input_left,
+            input_right,
+            schema: _,
+            left_on,
+            right_on,
+            options,
+        } if matches!(options.args.how, JoinType::AsOf(_)) => {
+            assert_eq!(left_on.len(), 1);
+            assert_eq!(right_on.len(), 1);
+
+            let JoinType::AsOf(asof_options) = options.args.how.clone() else {
+                unreachable!()
+            };
+            let input_left = *input_left;
+            let input_right = *input_right;
+            let left_on = left_on[0].clone();
+            let right_on = right_on[0].clone();
+            let left_on_name = left_on.output_name();
+            let right_on_name = right_on.output_name();
+            let args = options.args.clone();
+            let options = options.options.clone();
+
+            let phys_left = lower_ir!(input_left)?;
+            let phys_right = lower_ir!(input_right)?;
+
+            if asof_options.left_by.is_none() && asof_options.right_by.is_none() {
+                // When lowering the expressions for the keys we need to ensure we keep around the
+                // payload columns, otherwise the input nodes can get replaced by input-independent
+                // nodes since the lowering code does not see we access any non-literal expressions.
+                // So we add dummy expressions before lowering and remove them afterwards.
+
+                let mut aug_left_on = Vec::new();
+                for name in phys_sm[phys_left.node].output_schema.iter_names() {
+                    let col_expr = expr_arena.add(AExpr::Column(name.clone()));
+                    aug_left_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
+                }
+                aug_left_on.push(left_on.clone());
+                let mut aug_right_on = Vec::new();
+                for name in phys_sm[phys_right.node].output_schema.iter_names() {
+                    let col_expr = expr_arena.add(AExpr::Column(name.clone()));
+                    aug_right_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
+                }
+                aug_right_on.push(right_on.clone());
+
+                let (mut trans_input_left, mut trans_left_on) = lower_exprs(
+                    phys_left,
+                    &aug_left_on,
+                    expr_arena,
+                    phys_sm,
+                    expr_cache,
+                    ctx,
+                )?;
+                let (mut trans_input_right, mut trans_right_on) = lower_exprs(
+                    phys_right,
+                    &aug_right_on,
+                    expr_arena,
+                    phys_sm,
+                    expr_cache,
+                    ctx,
+                )?;
+                let mut trans_left_on = trans_left_on.pop().unwrap();
+                let mut trans_right_on = trans_right_on.pop().unwrap();
+
+                if !matches!(expr_arena.get(left_on.node()), AExpr::Column(..)) {
+                    trans_left_on =
+                        trans_left_on.with_alias(PlSmallStr::from_str(asof_join::KEY_COL_NAME));
+                    trans_input_left = build_hstack_stream(
+                        phys_left,
+                        &[trans_left_on.clone()],
+                        expr_arena,
+                        phys_sm,
+                        expr_cache,
+                        ctx,
+                    )?;
+                }
+                if !matches!(expr_arena.get(right_on.node()), AExpr::Column(..)) {
+                    trans_right_on =
+                        trans_right_on.with_alias(PlSmallStr::from_str(asof_join::KEY_COL_NAME));
+                    trans_input_right = build_hstack_stream(
+                        phys_right,
+                        &[trans_right_on.clone()],
+                        expr_arena,
+                        phys_sm,
+                        expr_cache,
+                        ctx,
+                    )?;
+                }
+
+                let node = phys_sm.insert(PhysNode::new(
+                    output_schema,
+                    PhysNodeKind::AsOfJoin {
+                        input_left: trans_input_left,
+                        input_right: trans_input_right,
+                        left_on: left_on_name.clone(),
+                        right_on: right_on_name.clone(),
+                        args: args.clone(),
+                    },
+                ));
+                let mut stream = PhysStream::first(node);
+                if let Some((offset, len)) = args.slice {
+                    stream = build_slice_stream(stream, offset, len, phys_sm);
+                }
+                return Ok(stream);
+            } else {
+                PhysNodeKind::InMemoryJoin {
+                    input_left: phys_left,
+                    input_right: phys_right,
+                    left_on: vec![left_on],
+                    right_on: vec![right_on],
+                    args,
+                    options,
+                }
+            }
         },
         IR::Join {
             input_left,

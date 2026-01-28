@@ -379,6 +379,14 @@ pub enum PhysNodeKind {
         args: JoinArgs,
     },
 
+    AsOfJoin {
+        input_left: PhysStream,
+        input_right: PhysStream,
+        left_on: PlSmallStr,
+        right_on: PlSmallStr,
+        args: JoinArgs,
+    },
+
     /// Generic fallback for (as-of-yet) unsupported streaming joins.
     /// Fully sinks all data to in-memory data frames and uses the in-memory
     /// engine to perform the join.
@@ -501,6 +509,11 @@ fn visit_node_inputs_mut(
                 ..
             }
             | PhysNodeKind::CrossJoin {
+                input_left,
+                input_right,
+                ..
+            }
+            | PhysNodeKind::AsOfJoin {
                 input_left,
                 input_right,
                 ..

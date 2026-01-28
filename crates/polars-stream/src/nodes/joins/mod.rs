@@ -11,6 +11,7 @@ use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::pipe::{PortReceiver, RecvPort, port_channel};
 
+pub mod asof_join;
 pub mod cross_join;
 pub mod equi_join;
 pub mod in_memory;
