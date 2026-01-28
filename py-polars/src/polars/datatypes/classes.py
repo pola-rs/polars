@@ -20,7 +20,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 import polars.datatypes.classes as pldt
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
     from polars import Series
@@ -31,11 +30,6 @@ if TYPE_CHECKING:
         SchemaDict,
         TimeUnit,
     )
-
-    if sys.version_info >= (3, 13):
-        pass
-    else:
-        pass
 
 
 T = TypeVar("T")
