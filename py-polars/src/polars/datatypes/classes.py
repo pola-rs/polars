@@ -1013,7 +1013,7 @@ class Enum(DataType):
         """
         Union of two Enums.
 
-        .. deprecated:: X.Y.Z
+        .. deprecated:: 1.38
             `Enum.union()` is deprecated and will be removed in version 2.0.
             Enums are ordered sets and union cannot preserve both orderings.
         """
@@ -1022,7 +1022,7 @@ class Enum(DataType):
         issue_deprecation_warning(
             "`Enum.union()` is deprecated and will be removed in version 2.0. "
             "Enums are ordered sets and union cannot preserve both orderings.",
-            version="X.Y.Z",
+            version="1.38",
         )
         return Enum(
             F.concat((self.categories, other.categories)).unique(maintain_order=True)

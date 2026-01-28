@@ -5048,7 +5048,7 @@ Consider using {self}.implode() instead"""
 
         Alias for :func:`Expr.list.explode`.
 
-        .. deprecated:: X.Y.Z
+        .. deprecated:: 1.38
             `Expr.flatten()` is deprecated and will be removed in version 2.0.
             Use `Expr.list.explode(keep_nulls=False, empty_as_null=False)` instead,
             which provides the behavior you likely expect.
