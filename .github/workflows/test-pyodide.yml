@@ -84,8 +84,15 @@ jobs:
             # Build py-polars wheel for later testing
             pipx run build py-polars --wheel --outdir wasm-dist
           CIBW_CONFIG_SETTINGS_PYODIDE: "build-args=--profile=dist-release build-args=--manifest-path=Cargo.toml"
-          # CIBW_TEST_REQUIRES: pytest numpy pandas hypothesis matplotlib
-          # CIBW_TEST_COMMAND: pytest {project}/py-polars/tests
+          # This is a subset of the testing + optional dependencies for polars for which
+          # the test suite runs reliably. We exclude some dependencies based on missing
+          # features in the wasm build and other known issues. Note that pytest-xdist
+          # is included to allow recognising xdist group markers in tests, but it will
+          # serve no effect as we run with -n 0 as it is not really supported on WASM.
+          CIBW_TEST_REQUIRES: pytest hypothesis numpy pandas matplotlib pytest-xdist altair
+          CIBW_TEST_COMMAND: |
+            pip install {project}/wasm-dist/polars-*.whl
+            pytest -n 0 {project}/py-polars/tests
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
