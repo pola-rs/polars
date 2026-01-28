@@ -69,8 +69,9 @@ impl RecordBatchEncoder {
                         let rechunked = column.take_materialized_series().rechunk();
                         let dtype = rechunked.dtype();
 
-                        let array: Box<dyn Array> =
-                            arrow_converter.array_to_arrow(rechunked.chunks()[0].as_ref(), dtype);
+                        let array: Box<dyn Array> = arrow_converter
+                            .array_to_arrow(rechunked.chunks()[0].as_ref(), dtype, None)
+                            .unwrap();
 
                         (array, arrow_converter)
                     },

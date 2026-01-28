@@ -75,6 +75,10 @@ impl Field {
         }
     }
 
+    pub fn name(&self) -> &PlSmallStr {
+        &self.name
+    }
+
     /// Returns the [`Field`]'s [`ArrowDataType`].
     #[inline]
     pub fn dtype(&self) -> &ArrowDataType {

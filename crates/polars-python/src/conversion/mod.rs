@@ -44,12 +44,11 @@ use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
 use crate::error::PyPolarsErr;
 use crate::expr::PyExpr;
 use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
-use crate::interop::arrow::to_rust::field_to_rust_arrow;
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
 use crate::py_modules::{pl_series, polars};
-use crate::series::PySeries;
+use crate::series::{PySeries, import_schema_pycapsule};
 use crate::utils::to_py_err;
 use crate::{PyDataFrame, PyLazyFrame};
 
@@ -600,43 +599,31 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Schema> {
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ArrowSchema> {
     type Error = PyErr;
 
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let py = ob.py();
+    fn extract(schema_object: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let py = schema_object.py();
 
-        let pyarrow_schema_cls = py
-            .import(intern!(py, "pyarrow"))?
-            .getattr(intern!(py, "Schema"))?;
+        let schema_capsule = schema_object
+            .getattr(intern!(py, "__arrow_c_schema__"))?
+            .call0()?;
 
-        if ob.is_none() {
-            return Err(PyValueError::new_err("arrow_schema() returned None").into());
-        }
+        let field = import_schema_pycapsule(&schema_capsule.extract()?)?;
 
-        let schema_cls = ob.getattr(intern!(py, "__class__"))?;
+        let ArrowDataType::Struct(fields) = field.dtype else {
+            return Err(PyValueError::new_err(format!(
+                "__arrow_c_schema__ of object did not return struct dtype: \
+                object: {:?}, dtype: {:?}",
+                schema_object, &field.dtype
+            )));
+        };
 
-        if !schema_cls.is(&pyarrow_schema_cls) {
-            return Err(PyTypeError::new_err(format!(
-                "expected pyarrow.Schema, got: {schema_cls}"
+        if field.metadata.is_some_and(|x| !x.is_empty()) {
+            return Err(to_py_err(polars_err!(
+                ComputeError:
+                "not implemented: arrow schema contained schema-level metadata"
             )));
         }
 
-        let mut iter = ob.try_iter()?.map(|x| x.and_then(field_to_rust_arrow));
-
-        let mut last_err = None;
-
-        let schema =
-            ArrowSchema::from_iter_check_duplicates(std::iter::from_fn(|| match iter.next() {
-                Some(Ok(v)) => Some(v),
-                Some(Err(e)) => {
-                    last_err = Some(e);
-                    None
-                },
-                None => None,
-            }))
-            .map_err(to_py_err)?;
-
-        if let Some(last_err) = last_err {
-            return Err(last_err.into());
-        }
+        let schema = ArrowSchema::from_iter_check_duplicates(fields).map_err(to_py_err)?;
 
         Ok(Wrap(schema))
     }

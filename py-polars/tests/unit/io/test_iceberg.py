@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+from dataclasses import dataclass
 import io
 import itertools
 import os
@@ -50,6 +51,7 @@ from pyiceberg.types import (
 
 import polars as pl
 from polars._utils.various import parse_version
+from polars.exceptions import SchemaFieldNotFoundError
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.iceberg._dataset import IcebergDataset, _NativeIcebergScanData
 from polars.io.iceberg._utils import (
@@ -469,6 +471,39 @@ retry_max_backoff: 9.875s, \
 retry_base_multiplier: TotalOrdWrap(3.14159)"""
         in capture
     )
+
+
+@pytest.mark.write_disk
+def test_write_parquet_iceberg_field_ids(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("namespace")
+
+    data = IcebergAllPrimitiveTypes.new(
+        exclude_time=True, exclude_decimal_and_fixed=True
+    )
+
+    table = catalog.create_table("namespace.table", data.iceberg_schema)
+
+    df = data.polars_df
+
+    data_file_path = tmp_path / "data.parquet"
+
+    df.write_parquet(data_file_path)
+
+    table.add_files([str(data_file_path)])
+
+    with pytest.raises(
+        SchemaFieldNotFoundError, match="failed to load 'PARQUET:field_id'"
+    ):
+        pl.scan_iceberg(table).collect()
+
+    df.write_parquet(data_file_path, arrow_schema=schema_to_pyarrow(table.schema()))
+
+    assert_frame_equal(pl.scan_iceberg(table).collect(), df)
 
 
 @pytest.mark.write_disk
@@ -1381,14 +1416,122 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
     )
 
 
+@dataclass(kw_only=True)
+class IcebergAllPrimitiveTypes:
+    iceberg_schema: IcebergSchema
+    arrow_table: pa.Table
+    polars_df: pl.DataFrame
+
+    @staticmethod
+    def new(
+        *,
+        test_uuid: bool = False,
+        exclude_time: bool = False,
+        exclude_decimal_and_fixed: bool = False,
+    ) -> IcebergAllPrimitiveTypes:
+        from datetime import time
+
+        min_version = parse_version(pyiceberg.__version__) >= (0, 10, 0)
+
+        test_decimal_and_fixed = min_version and not exclude_decimal_and_fixed
+        test_uuid = test_uuid and min_version
+
+        next_field_id = partial(next, itertools.count(1))
+
+        iceberg_schema = IcebergSchema(
+            NestedField(next_field_id(), "height_provider", IntegerType()),
+            NestedField(next_field_id(), "BooleanType", BooleanType()),
+            NestedField(next_field_id(), "IntegerType", IntegerType()),
+            NestedField(next_field_id(), "LongType", LongType()),
+            NestedField(next_field_id(), "FloatType", FloatType()),
+            NestedField(next_field_id(), "DoubleType", DoubleType()),
+            NestedField(next_field_id(), "DateType", DateType()),
+            *(
+                [NestedField(next_field_id(), "TimeType", TimeType())]
+                if not exclude_time
+                else []
+            ),
+            NestedField(next_field_id(), "TimestampType", TimestampType()),
+            NestedField(next_field_id(), "TimestamptzType", TimestamptzType()),
+            NestedField(next_field_id(), "StringType", StringType()),
+            NestedField(next_field_id(), "BinaryType", BinaryType()),
+            *(
+                [
+                    NestedField(next_field_id(), "DecimalType", DecimalType(18, 2)),
+                    NestedField(next_field_id(), "FixedType", FixedType(1)),
+                ]
+                if test_decimal_and_fixed
+                else []
+            ),
+            *(
+                [NestedField(next_field_id(), "UUIDType", UUIDType())]
+                if test_uuid
+                else []
+            ),
+        )
+
+        arrow_table = pa.Table.from_pydict(
+            {
+                "height_provider": [1],
+                "BooleanType": [True],
+                "IntegerType": [1],
+                "LongType": [1],
+                "FloatType": [1.0],
+                "DoubleType": [1.0],
+                "DateType": [date(2025, 1, 1)],
+                **({"TimeType": [time(11, 30)]} if not exclude_time else {}),
+                "TimestampType": [datetime(2025, 1, 1)],
+                "TimestamptzType": [datetime(2025, 1, 1)],
+                "StringType": ["A"],
+                "BinaryType": [b"A"],
+                **(
+                    {"DecimalType": [D("1.0")], "FixedType": [b"A"]}
+                    if test_decimal_and_fixed
+                    else {}
+                ),
+                **({"UUIDType": [b"0000111100001111"]} if test_uuid else {}),
+            },
+            schema=schema_to_pyarrow(iceberg_schema, include_field_ids=False),
+        )
+
+        polars_df  = pl.DataFrame(
+            [
+                pl.Series('height_provider', [1], dtype=pl.Int32),
+                pl.Series('BooleanType', [True], dtype=pl.Boolean),
+                pl.Series('IntegerType', [1], dtype=pl.Int32),
+                pl.Series('LongType', [1], dtype=pl.Int64),
+                pl.Series('FloatType', [1.0], dtype=pl.Float32),
+                pl.Series('DoubleType', [1.0], dtype=pl.Float64),
+                pl.Series('DateType', [date(2025, 1, 1)], dtype=pl.Date),
+                *([pl.Series('TimeType', [time(11, 30)], dtype=pl.Time)] if not exclude_time else []),
+                pl.Series('TimestampType', [datetime(2025, 1, 1, 0, 0)], dtype=pl.Datetime(time_unit='us', time_zone=None)),
+                pl.Series('TimestamptzType', [datetime(2025, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key='UTC'))], dtype=pl.Datetime(time_unit='us', time_zone='UTC')),
+                pl.Series('StringType', ['A'], dtype=pl.String),
+                pl.Series('BinaryType', [b'A'], dtype=pl.Binary),
+                *(
+                    [
+                        pl.Series('DecimalType', [D('1.00')], dtype=pl.Decimal(precision=18, scale=2)),
+                        pl.Series('FixedType', [b'A'], dtype=pl.Binary),
+                    ]
+                    if test_decimal_and_fixed
+                    else []
+                ),
+            ]
+        )  # fmt: skip
+
+        return IcebergAllPrimitiveTypes(
+            iceberg_schema=iceberg_schema,
+            arrow_table=arrow_table,
+            polars_df=polars_df,
+        )
+
+
 # Note: This test also generally covers primitive type round-tripping.
 @pytest.mark.parametrize("test_uuid", [True, False])
 @pytest.mark.write_disk
 def test_fill_missing_fields_with_identity_partition_values(
     test_uuid: bool, tmp_path: Path
 ) -> None:
-    from datetime import time
-
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
@@ -1396,60 +1539,10 @@ def test_fill_missing_fields_with_identity_partition_values(
     )
     catalog.create_namespace("namespace")
 
-    min_version = parse_version(pyiceberg.__version__) >= (0, 10, 0)
-
-    test_decimal_and_fixed = min_version
-    test_uuid = test_uuid and min_version
-
-    next_field_id = partial(next, itertools.count(1))
-
-    iceberg_schema = IcebergSchema(
-        NestedField(next_field_id(), "height_provider", IntegerType()),
-        NestedField(next_field_id(), "BooleanType", BooleanType()),
-        NestedField(next_field_id(), "IntegerType", IntegerType()),
-        NestedField(next_field_id(), "LongType", LongType()),
-        NestedField(next_field_id(), "FloatType", FloatType()),
-        NestedField(next_field_id(), "DoubleType", DoubleType()),
-        NestedField(next_field_id(), "DateType", DateType()),
-        NestedField(next_field_id(), "TimeType", TimeType()),
-        NestedField(next_field_id(), "TimestampType", TimestampType()),
-        NestedField(next_field_id(), "TimestamptzType", TimestamptzType()),
-        NestedField(next_field_id(), "StringType", StringType()),
-        NestedField(next_field_id(), "BinaryType", BinaryType()),
-        *(
-            [
-                NestedField(next_field_id(), "DecimalType", DecimalType(18, 2)),
-                NestedField(next_field_id(), "FixedType", FixedType(1)),
-            ]
-            if test_decimal_and_fixed
-            else []
-        ),
-        *([NestedField(next_field_id(), "UUIDType", UUIDType())] if test_uuid else []),
-    )
-
-    arrow_tbl = pa.Table.from_pydict(
-        {
-            "height_provider": [1],
-            "BooleanType": [True],
-            "IntegerType": [1],
-            "LongType": [1],
-            "FloatType": [1.0],
-            "DoubleType": [1.0],
-            "DateType": [date(2025, 1, 1)],
-            "TimeType": [time(11, 30)],
-            "TimestampType": [datetime(2025, 1, 1)],
-            "TimestamptzType": [datetime(2025, 1, 1)],
-            "StringType": ["A"],
-            "BinaryType": [b"A"],
-            **(
-                {"DecimalType": [D("1.0")], "FixedType": [b"A"]}
-                if test_decimal_and_fixed
-                else {}
-            ),
-            **({"UUIDType": [b"0000111100001111"]} if test_uuid else {}),
-        },
-        schema=schema_to_pyarrow(iceberg_schema, include_field_ids=False),
-    )
+    data = IcebergAllPrimitiveTypes.new(test_uuid=test_uuid)
+    iceberg_schema = data.iceberg_schema
+    arrow_tbl = data.arrow_table
+    expect = data.polars_df
 
     tbl = catalog.create_table(
         "namespace.table",
@@ -1477,31 +1570,6 @@ def test_fill_missing_fields_with_identity_partition_values(
         return
 
     tbl.append(arrow_tbl)
-
-    expect = pl.DataFrame(
-        [
-            pl.Series('height_provider', [1], dtype=pl.Int32),
-            pl.Series('BooleanType', [True], dtype=pl.Boolean),
-            pl.Series('IntegerType', [1], dtype=pl.Int32),
-            pl.Series('LongType', [1], dtype=pl.Int64),
-            pl.Series('FloatType', [1.0], dtype=pl.Float32),
-            pl.Series('DoubleType', [1.0], dtype=pl.Float64),
-            pl.Series('DateType', [date(2025, 1, 1)], dtype=pl.Date),
-            pl.Series('TimeType', [time(11, 30)], dtype=pl.Time),
-            pl.Series('TimestampType', [datetime(2025, 1, 1, 0, 0)], dtype=pl.Datetime(time_unit='us', time_zone=None)),
-            pl.Series('TimestamptzType', [datetime(2025, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key='UTC'))], dtype=pl.Datetime(time_unit='us', time_zone='UTC')),
-            pl.Series('StringType', ['A'], dtype=pl.String),
-            pl.Series('BinaryType', [b'A'], dtype=pl.Binary),
-            *(
-                [
-                    pl.Series('DecimalType', [D('1.00')], dtype=pl.Decimal(precision=18, scale=2)),
-                    pl.Series('FixedType', [b'A'], dtype=pl.Binary),
-                ]
-                if test_decimal_and_fixed
-                else []
-            ),
-        ]
-    )  # fmt: skip
 
     assert_frame_equal(
         pl.scan_iceberg(tbl, reader_override="pyiceberg").collect(),

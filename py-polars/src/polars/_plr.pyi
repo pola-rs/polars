@@ -3,6 +3,7 @@ from typing import Any, Literal, TypeAlias, overload
 
 from numpy.typing import NDArray
 
+from polars._typing import ArrowSchemaExportable
 from polars.io.scan_options._options import ScanOptions
 
 # This file mirrors all the definitions made in the polars-python Rust API.
@@ -955,6 +956,7 @@ class PyLazyFrame:
         row_group_size: int | None,
         data_page_size: int | None,
         metadata: KeyValueMetadata | None,
+        arrow_schema: ArrowSchemaExportable | None = None,
     ) -> PyLazyFrame: ...
     def sink_ipc(
         self,

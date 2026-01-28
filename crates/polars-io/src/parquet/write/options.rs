@@ -1,3 +1,4 @@
+use arrow::datatypes::ArrowSchemaRef;
 use polars_parquet::write::{
     BrotliLevel, CompressionOptions, GzipLevel, StatisticsOptions, ZstdLevel,
 };
@@ -6,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::KeyValueMetadata;
 
-#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[derive(Default, Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct ParquetWriteOptions {
@@ -20,6 +21,7 @@ pub struct ParquetWriteOptions {
     pub data_page_size: Option<usize>,
     /// Custom file-level key value metadata
     pub key_value_metadata: Option<KeyValueMetadata>,
+    pub arrow_schema: Option<ArrowSchemaRef>,
 }
 
 /// The compression strategy to use for writing Parquet files.
