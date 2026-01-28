@@ -338,7 +338,7 @@ pub(super) async fn ipc_file_info(
 }
 
 #[cfg(feature = "csv")]
-pub fn csv_file_info(
+pub async fn csv_file_info(
     sources: &ScanSources,
     _first_scan_source: ScanSourceRef<'_>,
     row_index: Option<&RowIndex>,
@@ -362,10 +362,13 @@ pub fn csv_file_info(
     let cache_entries = {
         if run_async {
             feature_gated!("cloud", {
-                Some(polars_io::file_cache::init_entries_from_uri_list(
-                    sources.as_paths().unwrap().iter().cloned(),
-                    cloud_options,
-                )?)
+                Some(
+                    polars_io::file_cache::init_entries_from_uri_list(
+                        sources.as_paths().unwrap().iter().cloned(),
+                        cloud_options,
+                    )
+                    .await?,
+                )
             })
         } else {
             None
@@ -444,7 +447,7 @@ pub fn csv_file_info(
 }
 
 #[cfg(feature = "json")]
-pub fn ndjson_file_info(
+pub async fn ndjson_file_info(
     sources: &ScanSources,
     first_scan_source: ScanSourceRef<'_>,
     row_index: Option<&RowIndex>,
@@ -459,10 +462,13 @@ pub fn ndjson_file_info(
     let cache_entries = {
         if run_async {
             feature_gated!("cloud", {
-                Some(polars_io::file_cache::init_entries_from_uri_list(
-                    sources.as_paths().unwrap().iter().cloned(),
-                    cloud_options,
-                )?)
+                Some(
+                    polars_io::file_cache::init_entries_from_uri_list(
+                        sources.as_paths().unwrap().iter().cloned(),
+                        cloud_options,
+                    )
+                    .await?,
+                )
             })
         } else {
             None
@@ -626,7 +632,7 @@ this scan to succeed with an empty DataFrame.",
             .map_err(|e| e.context(failed_here!(ipc scan)))?,
             #[cfg(feature = "csv")]
             FileScanDsl::Csv { mut options } => {
-                (|| {
+                {
                     // TODO: This is a hack. We conditionally set `allow_missing_columns` to
                     // mimic existing behavior, but this should be taken from a user provided
                     // parameter instead.
@@ -657,15 +663,16 @@ this scan to succeed with an empty DataFrame.",
                             unified_scan_args.row_index.as_ref(),
                             Arc::make_mut(&mut options),
                             cloud_options,
-                        )?
+                        )
+                        .await?
                     };
 
                     PolarsResult::Ok((file_info, FileScanIR::Csv { options }))
-                })()
+                }
                 .map_err(|e| e.context(failed_here!(csv scan)))?
             },
             #[cfg(feature = "json")]
-            FileScanDsl::NDJson { options } => (|| {
+            FileScanDsl::NDJson { options } => {
                 let file_info = if let Some(schema) = options.schema.clone() {
                     FileInfo {
                         schema: schema.clone(),
@@ -689,11 +696,12 @@ this scan to succeed with an empty DataFrame.",
                         unified_scan_args.row_index.as_ref(),
                         &options,
                         cloud_options,
-                    )?
+                    )
+                    .await?
                 };
 
                 PolarsResult::Ok((file_info, FileScanIR::NDJson { options }))
-            })()
+            }
             .map_err(|e| e.context(failed_here!(ndjson scan)))?,
             #[cfg(feature = "python")]
             FileScanDsl::PythonDataset { dataset_object } => (|| {

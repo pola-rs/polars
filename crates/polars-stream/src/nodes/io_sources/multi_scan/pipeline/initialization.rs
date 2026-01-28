@@ -149,7 +149,8 @@ async fn finish_initialize_multi_scan_pipeline(
         polars_io::file_cache::init_entries_from_uri_list(
             config.sources.as_paths().unwrap().iter().cloned(),
             config.cloud_options.as_deref(),
-        )?;
+        )
+        .await?;
     }
 
     // Row index should only be pushed if we have a predicate or negative slice as there is a
