@@ -242,7 +242,7 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
                 Buffer::from(self.views),
                 Buffer::from(self.buffer_set),
                 self.validity.into_opt_validity(),
-                self.total_bytes_len,
+                Some(self.total_bytes_len),
                 self.total_buffer_len,
             )
         }
@@ -263,7 +263,7 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
                 Buffer::from(core::mem::take(&mut self.views)),
                 Buffer::from(core::mem::take(&mut self.buffer_set)),
                 core::mem::take(&mut self.validity).into_opt_validity(),
-                self.total_bytes_len,
+                Some(self.total_bytes_len),
                 self.total_buffer_len,
             )
         };
