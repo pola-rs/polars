@@ -277,7 +277,7 @@ class Series:
     def __init__(
         self,
         name: str | ArrayLike | None = None,
-        values: ArrayLike | None = None,
+        values: ArrayLike | Iterable | None = None,
         dtype: PolarsDataType | None = None,
         *,
         strict: bool = True,
