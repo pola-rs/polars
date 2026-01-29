@@ -840,6 +840,43 @@ Other dataframe has additional columns: [{df2_extra}]."#,
     )
 }
 
+/// Vertically accumulate DataFrames from an iterator of DataFrames
+/// with a known schema.
+///
+/// If the `dfs` iterator is empty, this function will return an empty dataframe
+/// with that schema.  Prefer this function over `accumulate_dataframes_vertical`
+/// when the schema is known, such that we do not get incorrectly schema'd
+/// dataframes when the iterator is empty.
+pub fn accumulate_schema_dataframes_vertical_unchecked<I>(schema: SchemaRef, dfs: I) -> DataFrame
+where
+    I: IntoIterator<Item = DataFrame>,
+{
+    let iter = dfs
+        .into_iter()
+        .inspect(|df| assert!(*df.schema() == schema));
+    accumulate_dataframes_vertical_unchecked(iter)
+}
+
+/// Vertically accumulate DataFrames from an iterator of DataFrames
+/// with a known schema.
+///
+/// If the `dfs` iterator is empty, this function will return an empty dataframe
+/// with that schema.  Prefer this function over `accumulate_dataframes_vertical`
+/// when the schema is known, such that we do not get incorrectly schema'd
+/// dataframes when the iterator is empty.
+pub fn accumulate_schema_dataframes_vertical<I>(
+    schema: SchemaRef,
+    dfs: I,
+) -> PolarsResult<DataFrame>
+where
+    I: IntoIterator<Item = DataFrame>,
+{
+    let iter = dfs
+        .into_iter()
+        .inspect(|df| assert!(*df.schema() == schema));
+    accumulate_dataframes_vertical(iter)
+}
+
 pub fn accumulate_dataframes_vertical_unchecked_optional<I>(dfs: I) -> Option<DataFrame>
 where
     I: IntoIterator<Item = DataFrame>,
