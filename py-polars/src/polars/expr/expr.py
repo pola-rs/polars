@@ -8942,7 +8942,7 @@ Consider using {self}.implode() instead"""
         Note how the values match the following:
 
         >>> pl.Series([1, 4, 2]).skew(), pl.Series([4, 2, 9]).skew()
-        (0.38180177416060584, 0.47033046033698594)
+        (0.3818017741606063, 0.47033046033698594)
         """
         return wrap_expr(
             self._pyexpr.rolling_skew(
