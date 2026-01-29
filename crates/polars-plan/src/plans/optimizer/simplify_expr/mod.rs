@@ -474,7 +474,7 @@ impl OptimizationRule for SimplifyExprRule {
                     },
                     Minus => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l - r),
                     Multiply => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l * r),
-                    Divide => {
+                    RustDivide => {
                         if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) =
                             (left_aexpr, right_aexpr)
                         {
