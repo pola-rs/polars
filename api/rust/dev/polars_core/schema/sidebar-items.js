@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["ensure_matching_schema"],"mod":["iceberg"],"trait":["SchemaExt","SchemaNamesAndDtypes"],"type":["Schema","SchemaRef"]};

@@ -1,0 +1,22 @@
+﻿polars.PartitionParted
+======================
+
+.. currentmodule:: polars
+
+.. autoclass:: PartitionParted
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~PartitionParted.__init__
+   
+   
+
+   
+   
+   

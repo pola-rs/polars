@@ -1,0 +1,6 @@
+﻿polars.Expr.str.find_many
+=========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.str.find_many

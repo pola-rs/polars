@@ -1,0 +1,31 @@
+﻿polars.io.partition.KeyedPartition
+==================================
+
+.. currentmodule:: polars.io.partition
+
+.. autoclass:: KeyedPartition
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~KeyedPartition.__init__
+      ~KeyedPartition.hive_name
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~KeyedPartition.name
+      ~KeyedPartition.str_value
+      ~KeyedPartition.raw_value
+   
+   

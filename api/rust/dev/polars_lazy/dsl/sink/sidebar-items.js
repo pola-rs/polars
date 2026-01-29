@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PartitionStrategy","PartitionStrategyIR","SinkDestination","SinkTarget","SinkType","SinkTypeIR"],"struct":["CallbackSinkType","FileSinkOptions","PartitionedSinkOptions","PartitionedSinkOptionsIR","UnifiedSinkArgs"]};

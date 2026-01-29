@@ -1,0 +1,6 @@
+﻿polars.Config.set\_trim\_decimal\_zeros
+=======================================
+
+.. currentmodule:: polars
+
+.. automethod:: Config.set_trim_decimal_zeros

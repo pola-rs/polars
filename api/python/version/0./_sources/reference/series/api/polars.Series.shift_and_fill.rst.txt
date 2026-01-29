@@ -1,0 +1,6 @@
+﻿polars.Series.shift\_and\_fill
+==============================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.shift_and_fill

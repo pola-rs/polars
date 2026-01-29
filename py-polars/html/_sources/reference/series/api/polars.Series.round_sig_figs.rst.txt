@@ -1,0 +1,6 @@
+﻿polars.Series.round\_sig\_figs
+==============================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.round_sig_figs

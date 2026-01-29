@@ -1,0 +1,6 @@
+﻿polars.Series.has\_validity
+===========================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.has_validity

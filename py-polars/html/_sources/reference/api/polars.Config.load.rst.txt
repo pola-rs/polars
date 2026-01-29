@@ -1,0 +1,6 @@
+﻿polars.Config.load
+==================
+
+.. currentmodule:: polars
+
+.. automethod:: Config.load

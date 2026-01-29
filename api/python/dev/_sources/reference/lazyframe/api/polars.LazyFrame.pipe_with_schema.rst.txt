@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.pipe\_with\_schema
+===================================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.pipe_with_schema

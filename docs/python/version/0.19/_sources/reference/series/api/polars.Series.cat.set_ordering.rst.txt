@@ -1,0 +1,6 @@
+﻿polars.Series.cat.set_ordering
+==============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.cat.set_ordering

@@ -1,0 +1,6 @@
+﻿polars.DataFrame.corr
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.corr

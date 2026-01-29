@@ -1,0 +1,6 @@
+﻿polars.Series.get\_chunks
+=========================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.get_chunks

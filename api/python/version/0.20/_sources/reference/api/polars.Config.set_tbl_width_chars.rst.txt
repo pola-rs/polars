@@ -1,0 +1,6 @@
+﻿polars.Config.set\_tbl\_width\_chars
+====================================
+
+.. currentmodule:: polars
+
+.. automethod:: Config.set_tbl_width_chars

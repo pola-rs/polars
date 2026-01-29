@@ -1,0 +1,6 @@
+﻿polars.read\_database
+=====================
+
+.. currentmodule:: polars
+
+.. autofunction:: read_database

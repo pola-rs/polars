@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["check_bounds"],"struct":["ChunkId","NullableIdxSize"],"trait":["Bounded","Indexable","NullCount","ToIdx"],"type":["AtomicIdxSize","IdxSize","NonZeroIdxSize"]};

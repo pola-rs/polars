@@ -1,0 +1,6 @@
+﻿polars.DataFrame.group\_by\_rolling
+===================================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.group_by_rolling

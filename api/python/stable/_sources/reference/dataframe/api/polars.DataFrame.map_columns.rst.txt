@@ -1,0 +1,6 @@
+﻿polars.DataFrame.map\_columns
+=============================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.map_columns
