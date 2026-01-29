@@ -21,7 +21,6 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, UnitVec};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use crate::dispatch::misc;
 use crate::prelude::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
 use crate::state::ExecutionState;
 
@@ -69,34 +68,6 @@ pub fn reverse<'a>(
         ac.with_groups(positions);
     });
 
-    Ok(ac)
-}
-
-pub fn min_by<'a>(
-    inputs: &[Arc<dyn PhysicalExpr>],
-    df: &DataFrame,
-    groups: &'a GroupPositions,
-    state: &ExecutionState,
-) -> PolarsResult<AggregationContext<'a>> {
-    dbg!("groups_dispatch min_by");
-    assert_eq!(inputs.len(), 1);
-
-    let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
-    let mut ac_by = inputs[1].evaluate_on_groups(df, groups, state)?;
-
-    if let AggState::AggregatedScalar(s) | AggState::LiteralScalar(s) = &mut ac.state
-        && let AggState::AggregatedScalar(by) | AggState::LiteralScalar(by) = &mut ac_by.state
-    {
-        todo!("[amber]")
-    }
-
-    ac.groups();
-    ac_by.groups();
-
-    let values = ac.flat_naive();
-    let values_by = ac_by.flat_naive();
-    let out = misc::min_by(&[values.into_owned(), values_by.into_owned()])?;
-    ac.state = AggState::AggregatedScalar(out);
     Ok(ac)
 }
 
