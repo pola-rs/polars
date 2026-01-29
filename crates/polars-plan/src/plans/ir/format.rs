@@ -546,7 +546,7 @@ impl Display for ExprIRDisplay<'_> {
                 }
             },
             AnonymousFunction { input, fmt_str, .. }
-            | AnonymousStreamingAgg { input, fmt_str, .. } => {
+            | AnonymousAgg { input, fmt_str, .. } => {
                 let fst = self.with_root(&input[0]);
                 fst.fmt(f)?;
                 if input.len() >= 2 {

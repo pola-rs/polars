@@ -211,7 +211,7 @@ impl<'a> ObservableOrdersResolver<'a> {
                 }
             },
             // Fow now only non-observing aggregations
-            AExpr::AnonymousStreamingAgg {
+            AExpr::AnonymousAgg {
                 input: _,
                 fmt_str: _,
                 function: _,

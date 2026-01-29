@@ -235,8 +235,7 @@ pub enum AExpr {
         truthy: Node,
         falsy: Node,
     },
-    /// A streaming aggregation that can only run in the streaming engine.
-    AnonymousStreamingAgg {
+    AnonymousAgg {
         input: Vec<ExprIR>,
         fmt_str: Box<PlSmallStr>,
         function: OpaqueStreamingAgg,
@@ -306,7 +305,7 @@ impl AExpr {
     #[recursive::recursive]
     pub fn is_scalar(&self, arena: &Arena<AExpr>) -> bool {
         match self {
-            AExpr::AnonymousStreamingAgg { .. } => true,
+            AExpr::AnonymousAgg { .. } => true,
             AExpr::Element => false,
             AExpr::Literal(lv) => lv.is_scalar(),
             AExpr::Function { options, input, .. }
@@ -394,10 +393,7 @@ impl AExpr {
             #[cfg(feature = "dynamic_group_by")]
             AExpr::Rolling { .. } => true,
 
-            AExpr::AnonymousStreamingAgg { .. }
-            | AExpr::Literal(_)
-            | AExpr::Agg(_)
-            | AExpr::Len => false,
+            AExpr::AnonymousAgg { .. } | AExpr::Literal(_) | AExpr::Agg(_) | AExpr::Len => false,
             AExpr::Function { options, input, .. }
             | AExpr::AnonymousFunction { options, input, .. } => {
                 if options.flags.is_elementwise() {

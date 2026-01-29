@@ -3,7 +3,7 @@ use std::sync::{Arc, LazyLock, RwLock};
 use polars_error::PolarsResult;
 
 use super::AnonymousColumnsUdf;
-use super::agg::AnonymousStreamingAgg;
+use super::agg::AnonymousAgg;
 
 // Can be used to have named anonymous functions.
 // The receiver must have implemented this registry and map the names to the proper UDFs.
@@ -18,7 +18,7 @@ pub trait ExprRegistry: Sync + Send {
         &self,
         name: &str,
         payload: &[u8],
-    ) -> PolarsResult<Option<Arc<dyn AnonymousStreamingAgg>>> {
+    ) -> PolarsResult<Option<Arc<dyn AnonymousAgg>>> {
         Ok(None)
     }
 }

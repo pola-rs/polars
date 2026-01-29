@@ -119,7 +119,7 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn AnonymousColumnsUdf>> {
     }
 }
 
-impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn AnonymousStreamingAgg>> {
+impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn AnonymousAgg>> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'a>,
@@ -133,7 +133,7 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn AnonymousStreamingAgg>> {
     }
 }
 
-pub(super) fn deserialize_anon_agg(buf: &[u8]) -> PolarsResult<Arc<dyn AnonymousStreamingAgg>> {
+pub(super) fn deserialize_anon_agg(buf: &[u8]) -> PolarsResult<Arc<dyn AnonymousAgg>> {
     if buf.starts_with(NAMED_SERDE_MAGIC_BYTE_MARK) {
         let (reg, name, payload) = deserialize_named_registry(buf)?;
 

@@ -87,7 +87,7 @@ impl Hash for AExpr {
                 truthy: _,
                 falsy: _,
             } => {},
-            AExpr::AnonymousStreamingAgg {
+            AExpr::AnonymousAgg {
                 input: _,
                 fmt_str,
                 function: _,

@@ -34,7 +34,7 @@ impl AExpr {
             Rolling { .. } => false,
 
             Agg { .. }
-            | AnonymousStreamingAgg { .. }
+            | AnonymousAgg { .. }
             | Explode { .. }
             | Filter { .. }
             | Gather { .. }
