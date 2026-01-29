@@ -2,7 +2,7 @@
   description = "A basic Nix Flake for eachDefaultSystem";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";
     fenix = {
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -87,7 +87,7 @@
                   with pkgs;
                   lib.optionals stdenv.isLinux [
                     gcc13
-                    openssl_3_4
+                    openssl_3_6
                   ];
                 stdenv = pkgs.stdenv;
 
@@ -359,7 +359,7 @@
                     name: value: pkgs.writeShellScriptBin "pl-${name}" (aliasToScript value)
                   ) aliases)
                   ++ (pkgs.lib.optionals pkgs.stdenv.isLinux [
-                    pkgs.linuxPackages.perf
+                    pkgs.perf
                     mold-wrapped
                   ]);
 
