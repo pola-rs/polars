@@ -3,7 +3,7 @@ use std::sync::Arc;
 use arrow::io::ipc::IpcField;
 use arrow::io::ipc::write::common_sync::{push_footer, push_magic, push_message};
 use arrow::io::ipc::write::schema::schema_to_bytes;
-use arrow::io::ipc::write::{EncodedDataBytes, PutOwned, arrow_ipc_block};
+use arrow::io::ipc::write::{EncodedDataBytes, arrow_ipc_block};
 use bytes::Bytes;
 use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow;
@@ -11,6 +11,7 @@ use polars_error::PolarsResult;
 use polars_io::ipc::{IpcWriter, IpcWriterOptions};
 use polars_io::utils::file::Writeable;
 use polars_io::{SerWriter, schema_to_arrow_checked};
+use tokio::io::AsyncWriteExt;
 
 use crate::nodes::io_sinks::writers::interface::FileOpenTaskHandle;
 use crate::nodes::io_sinks::writers::ipc::IpcBatch;
@@ -33,12 +34,13 @@ impl IOWriter {
             ipc_fields,
         } = self;
 
-        let (mut file, sync_on_close) = file.await?;
+        let (file, sync_on_close) = file.await?;
 
-        match &mut file {
+        match file {
             Writeable::Cloud(cloudwriter) => {
                 // The zero-copy implementation takes ownership of the encoded data and, after
                 // framing and aligning, passes it to the object_store via the BufWriter::put() method.
+                let mut bufwriter = cloudwriter.try_into_inner()?;
                 let mut record_blocks = vec![];
                 let mut dictionary_blocks = vec![];
                 let mut block_offsets = 0;
@@ -46,7 +48,9 @@ impl IOWriter {
 
                 // Start with header.
                 let offset = push_magic(&mut sink_queue, true);
-                sink_queue.drain(..).try_for_each(|b| cloudwriter.put(b))?;
+                for bytes in sink_queue.drain(..) {
+                    bufwriter.put(bytes).await?;
+                }
                 block_offsets += offset;
 
                 // Add schema message.
@@ -56,7 +60,9 @@ impl IOWriter {
                     arrow_data: Bytes::new(),
                 };
                 let (meta, data) = push_message(&mut sink_queue, encoded_data);
-                sink_queue.drain(..).try_for_each(|b| cloudwriter.put(b))?;
+                for bytes in sink_queue.drain(..) {
+                    bufwriter.put(bytes).await?;
+                }
                 block_offsets += meta + data;
 
                 // Process each incoming batch as a message.
@@ -70,7 +76,9 @@ impl IOWriter {
                             };
 
                             let (meta, data) = push_message(&mut sink_queue, encoded_data);
-                            sink_queue.drain(..).try_for_each(|b| cloudwriter.put(b))?;
+                            for bytes in sink_queue.drain(..) {
+                                bufwriter.put(bytes).await?;
+                            }
 
                             let block = arrow_ipc_block(block_offsets, meta, data);
                             record_blocks.push(block);
@@ -85,7 +93,9 @@ impl IOWriter {
                             };
 
                             let (meta, data) = push_message(&mut sink_queue, encoded_dictionary);
-                            sink_queue.drain(..).try_for_each(|b| cloudwriter.put(b))?;
+                            for bytes in sink_queue.drain(..) {
+                                bufwriter.put(bytes).await?;
+                            }
 
                             let block = arrow_ipc_block(block_offsets, meta, data);
                             dictionary_blocks.push(block);
@@ -104,13 +114,14 @@ impl IOWriter {
                     None,
                 );
                 push_magic(&mut sink_queue, false);
-                sink_queue.drain(..).try_for_each(|b| cloudwriter.put(b))?;
+                for bytes in sink_queue.drain(..) {
+                    bufwriter.put(bytes).await?;
+                }
 
                 // Finish.
-                // NOTE. Is this technically required?
-                std::io::Write::flush(cloudwriter)?;
+                bufwriter.shutdown().await?;
             },
-            file => {
+            mut file => {
                 let mut buffered_file = file.as_buffered();
 
                 let mut ipc_writer = IpcWriter::new(&mut *buffered_file)
@@ -137,9 +148,10 @@ impl IOWriter {
 
                 drop(ipc_writer);
                 drop(buffered_file);
+                file.close(sync_on_close)?;
             },
         }
-        file.close(sync_on_close)?;
+
         Ok(())
     }
 }

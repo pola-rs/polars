@@ -2,7 +2,6 @@ use std::io::Write;
 use std::sync::Arc;
 
 use arrow_format::ipc::planus::Builder;
-use bytes::Bytes;
 use polars_error::{PolarsResult, polars_bail};
 
 use super::super::{ARROW_MAGIC_V2, IpcField};
@@ -261,15 +260,5 @@ impl<W: Write> FileWriter<W> {
     /// Sets custom schema metadata. Must be called before `start` is called
     pub fn set_custom_schema_metadata(&mut self, custom_metadata: Arc<Metadata>) {
         self.custom_schema_metadata = Some(custom_metadata);
-    }
-}
-
-pub trait PutOwned {
-    fn put(&mut self, data: Bytes) -> std::io::Result<()>;
-}
-
-impl<T: PutOwned + ?Sized> PutOwned for &mut T {
-    fn put(&mut self, data: Bytes) -> std::io::Result<()> {
-        (**self).put(data)
     }
 }
