@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use bytes::Bytes;
 use object_store::ObjectStore;
 use object_store::buffered::BufWriter;
 use object_store::path::Path;
