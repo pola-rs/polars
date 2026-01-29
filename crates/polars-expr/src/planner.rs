@@ -404,22 +404,6 @@ fn create_physical_expr_inner(
         },
         Function {
             input,
-            function: function @ (IRFunctionExpr::MinBy | IRFunctionExpr::MaxBy),
-            options: _,
-        } => {
-            let phys_input =
-                create_physical_expr_inner(input[0].node(), expr_arena, schema, state)?;
-            let phys_input_by =
-                create_physical_expr_inner(input[1].node(), expr_arena, schema, state)?;
-            let is_max_by = function == IRFunctionExpr::MaxBy;
-            return Ok(Arc::new(AggMinMaxByExpr::new(
-                phys_input,
-                phys_input_by,
-                is_max_by,
-            )));
-        },
-        Function {
-            input,
             function: function @ (IRFunctionExpr::ArgMin | IRFunctionExpr::ArgMax),
             options: _,
         } => {

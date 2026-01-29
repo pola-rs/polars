@@ -252,7 +252,7 @@ pub(super) fn min_by(s: &[Column]) -> PolarsResult<Column> {
     if input.len() != by.len() {
         polars_bail!(ShapeMismatch: "'by' column in `min_by` operation has incorrect length (got {}, expected {})", by.len(), input.len());
     }
-    match input.as_materialized_series().arg_min() {
+    match by.as_materialized_series().arg_min() {
         Some(idx) => Ok(input.new_from_index(idx, 1)),
         None => Ok(Series::new_null(input.name().clone(), 1).into_column()),
     }
@@ -265,7 +265,7 @@ pub(super) fn max_by(s: &[Column]) -> PolarsResult<Column> {
     if input.len() != by.len() {
         polars_bail!(ShapeMismatch: "'by' column in `max_by` operation has incorrect length (got {}, expected {})", by.len(), input.len());
     }
-    match input.as_materialized_series().arg_max() {
+    match by.as_materialized_series().arg_max() {
         Some(idx) => Ok(input.new_from_index(idx, 1)),
         None => Ok(Series::new_null(input.name().clone(), 1).into_column()),
     }
