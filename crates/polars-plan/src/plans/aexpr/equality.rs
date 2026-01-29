@@ -124,9 +124,7 @@ impl IRAggExpr {
             A::Mean(_) |
             A::Implode(_) |
             A::Sum(_) |
-            A::AggGroups(_) |
-            A::MinBy { input: _, by: _} |
-            A::MaxBy { input: _, by: _} => true,
+            A::AggGroups(_)  => true,
         };
 
         is_equal
