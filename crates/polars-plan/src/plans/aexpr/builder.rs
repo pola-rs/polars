@@ -484,7 +484,7 @@ impl AExprBuilder {
     }
 
     pub fn divide(self, other: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
-        self.binary_op(other, Operator::Divide, arena)
+        self.binary_op(other, Operator::RustDivide, arena)
     }
 
     pub fn true_divide(self, other: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {

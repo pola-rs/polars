@@ -98,7 +98,7 @@ impl<'py> IntoPyObject<'py> for Wrap<Operator> {
             Operator::Plus => PyOperator::Plus,
             Operator::Minus => PyOperator::Minus,
             Operator::Multiply => PyOperator::Multiply,
-            Operator::Divide => PyOperator::Divide,
+            Operator::RustDivide => PyOperator::Divide,
             Operator::TrueDivide => PyOperator::TrueDivide,
             Operator::FloorDivide => PyOperator::FloorDivide,
             Operator::Modulus => PyOperator::Modulus,
