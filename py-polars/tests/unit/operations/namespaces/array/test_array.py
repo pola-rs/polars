@@ -695,3 +695,60 @@ def test_array_get_broadcast_26217() -> None:
         {"literal": [42, 13, 37, 13, 37, 42, 13]}, schema={"literal": pl.UInt8}
     )
     assert_frame_equal(out, expected)
+
+
+def test_array_gather_every() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2, 3, 4, 5], [6, 7, 8, 9, 10], [11, 12, 13, 14, 15]],
+            "n": [2, 1, 3],
+            "offset": [0, 1, 0],
+        },
+        schema={"a": pl.Array(pl.Int64, 5), "n": pl.Int64, "offset": pl.Int64},
+    )
+
+    # Test with scalar n and offset
+    out = df.select(pl.col("a").arr.gather_every(2, 0))
+    expected = pl.DataFrame({"a": [[1, 3, 5], [6, 8, 10], [11, 13, 15]]})
+    assert_frame_equal(out, expected)
+
+    out = df.select(pl.col("a").arr.gather_every(2, 1))
+    expected = pl.DataFrame({"a": [[2, 4], [7, 9], [12, 14]]})
+    assert_frame_equal(out, expected)
+
+    # Test with column n
+    out = df.select(pl.col("a").arr.gather_every(pl.col("n"), 0))
+    expected = pl.DataFrame({"a": [[1, 3, 5], [6, 7, 8, 9, 10], [11, 14]]})
+    assert_frame_equal(out, expected)
+
+    # Test with column offset
+    out = df.select(pl.col("a").arr.gather_every(2, pl.col("offset")))
+    expected = pl.DataFrame({"a": [[1, 3, 5], [7, 9], [11, 13, 15]]})
+    assert_frame_equal(out, expected)
+
+    # Test with both n and offset as columns
+    out = df.select(pl.col("a").arr.gather_every(pl.col("n"), pl.col("offset")))
+    expected = pl.DataFrame({"a": [[1, 3, 5], [7, 8, 9, 10], [11, 14]]})
+    assert_frame_equal(out, expected)
+
+
+def test_array_gather_every_with_nulls() -> None:
+    s = pl.Series(
+        "a",
+        [[1, 2, 3, 4], [None, 2, None, 4], None],
+        dtype=pl.Array(pl.Int64, 4),
+    )
+
+    out = s.arr.gather_every(2, 0)
+    expected = pl.Series("a", [[1, 3], [None, None], None])
+    assert_series_equal(out, expected)
+
+
+def test_array_gather_every_nzero() -> None:
+    # Gather every n=0 should raise an error
+    df = pl.DataFrame(
+        {"a": [[1, 2, 3]]},
+        schema={"a": pl.Array(pl.Int64, 3)},
+    )
+    with pytest.raises(ComputeError):
+        df.select(pl.col("a").arr.gather_every(0, 0))
