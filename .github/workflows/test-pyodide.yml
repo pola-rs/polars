@@ -8,8 +8,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RUSTFLAGS: -C link-self-contained=no -C debuginfo=0
-  CFLAGS: -fPIC
+  CARGO_BUILD_JOBS: 1
+  RUSTFLAGS: -C link-self-contained=no -C debuginfo=0 -Zemscripten-wasm-eh -C codegen-units=1
+  CFLAGS: -fPIC -fwasm-exceptions
+  RUST_TOOLCHAIN: nightly-2025-06-27
 
 defaults:
   run:
@@ -31,27 +33,46 @@ jobs:
           sed -i 's/"serde_json",//' crates/polars-python/Cargo.toml
           sed -E -i "/^  \"(${FEATURES})\",$/d" crates/polars-python/Cargo.toml py-polars/runtime/polars-runtime-32/Cargo.toml
 
-      - name: Setup emsdk
-        uses: mymindstorm/setup-emsdk@v14
+      - name: Check out Emscripten v4.0.9 patches for Pyodide
+        uses: actions/checkout@v6
         with:
-          # This should match the exact version of Emscripten used by Pyodide
-          version: 3.1.58
+          ref: 0.29.2
+          path: pyodide-patches
+          repository: pyodide/pyodide
+          sparse-checkout: |
+            emsdk/patches/
 
-      - name: Install LLVM
-        # This should match the major version of LLVM expected by Emscripten
+      - name: Increase swapfile
         run: |
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 19
-          echo "EM_LLVM_ROOT=/usr/lib/llvm-19/bin" >> $GITHUB_ENV
+          sudo swapoff -a
+          sudo fallocate -l 15G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          sudo swapon --show
 
-      - name: Build wheel
-        uses: PyO3/maturin-action@v1
+      - name: Build Pyodide wheel
+        uses: pypa/cibuildwheel@9a15d0851eda6787ba362104ce414974f89201bf # brings v0.29.2, todo update with release
         with:
-          command: build
-          target: wasm32-unknown-emscripten
-          args: >
-            --profile dev
-            --manifest-path py-polars/runtime/polars-runtime-32/Cargo.toml
-            --interpreter python3.10
-          maturin-version: 1.7.4
+          package-dir: py-polars/runtime/polars-runtime-32
+          output-dir: wasm-dist
+          only: cp313-pyodide_wasm32
+        env:
+          CIBW_BEFORE_BUILD: |
+            # Apply Emscripten patches for Pyodide
+            for patch in pyodide-patches/emsdk/patches/*.patch; do
+              patch -p1 --verbose -d /home/runner/.cache/cibuildwheel/emsdk-4.0.9/emsdk-4.0.9/upstream/emscripten/ < "$patch"
+            done
+
+            # Add Rust target
+            rustup target add wasm32-unknown-emscripten
+          CIBW_CONFIG_SETTINGS_PYODIDE: "build-args=--profile=dist-release build-args=--manifest-path=Cargo.toml"
+          # CIBW_TEST_REQUIRES: pytest numpy pandas hypothesis matplotlib
+          # CIBW_TEST_COMMAND: pytest {project}/py-polars/tests
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pyodide-wasm-wheel
+          path: wasm-dist/*.whl
