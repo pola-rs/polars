@@ -534,6 +534,35 @@ def test_enum_cast_from_other_integer_dtype_oob() -> None:
         series.cast(enum_dtype)
 
 
+def test_enum_repr() -> None:
+    e1 = pl.Enum([f"c{i}" for i in range(6)])
+    e2 = pl.Enum([f"c{i}" for i in range(12)])
+    e3 = pl.Enum([f"c{i}" for i in range(24)])
+
+    assert repr(e1) == "Enum(categories=['c0','c1','c2','c3','c4','c5'])"
+    assert repr(e2) == "Enum(categories=['c0','c1','c2' … 'c9','c10','c11'])"
+    assert repr(e3) == "Enum(categories=['c0','c1','c2' … 'c21','c22','c23'])"
+
+
+def test_enum_creating_col_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "col1": ["a", "b", "c"],
+            "col2": ["d", "e", "f"],
+            "col3": ["g", "h", "i"],
+        },
+        schema={
+            "col1": pl.Enum(["a", "b", "c"]),
+            "col2": pl.Categorical(),
+            "col3": pl.Enum(["g", "h", "i"]),
+        },
+    )
+
+    out = df.select(pl.col(pl.Enum))
+    expected = df.select("col1", "col3")
+    assert_frame_equal(out, expected)
+
+
 def test_enum_cse_eq() -> None:
     df = pl.DataFrame({"a": [1]})
 
