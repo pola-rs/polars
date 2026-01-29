@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use arrow::io::ipc::write::PutOwned;
+use bytes::Bytes;
 use object_store::ObjectStore;
 use object_store::buffered::BufWriter;
 use object_store::path::Path;
@@ -114,6 +116,18 @@ impl std::io::Write for BlockingCloudWriter {
 
     fn flush(&mut self) -> std::io::Result<()> {
         self.try_with_writer(|writer| get_runtime().block_in_place_on(writer.flush()))
+    }
+}
+
+impl PutOwned for BlockingCloudWriter {
+    fn put(&mut self, data: Bytes) -> std::io::Result<()> {
+        self.try_with_writer(|writer| {
+            let data = data.clone();
+            get_runtime().block_in_place_on(async move {
+                writer.put(data).await?;
+                Ok(())
+            })
+        })
     }
 }
 

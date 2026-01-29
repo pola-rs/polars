@@ -3,6 +3,7 @@ use std::borrow::{Borrow, Cow};
 use arrow_format::ipc;
 use arrow_format::ipc::KeyValue;
 use arrow_format::ipc::planus::Builder;
+use bytes::Bytes;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::compression::ZstdLevel;
 
@@ -516,6 +517,15 @@ pub struct EncodedData {
     pub arrow_data: Vec<u8>,
 }
 
+/// Stores the encoded data, which is an ipc::Schema::Message, and optional Arrow data
+#[derive(Debug, Default)]
+pub struct EncodedDataBytes {
+    /// An encoded ipc::Schema::Message
+    pub ipc_message: Bytes,
+    /// Arrow buffers to be written, should be an empty vec for schema messages
+    pub arrow_data: Bytes,
+}
+
 /// Calculate an 8-byte boundary and return the number of bytes needed to pad to 8 bytes
 #[inline]
 pub(crate) fn pad_to_64(len: usize) -> usize {
@@ -571,5 +581,18 @@ where
             columns: Cow::Borrowed(columns),
             fields: fields.map(|f| f.into()),
         }
+    }
+}
+
+/// Create an IPC Block. Will panic when size limitations are not met.
+pub fn arrow_ipc_block(
+    offset: usize,
+    meta_data_length: usize,
+    body_length: usize,
+) -> arrow_format::ipc::Block {
+    arrow_format::ipc::Block {
+        offset: i64::try_from(offset).unwrap(),
+        meta_data_length: i32::try_from(meta_data_length).unwrap(),
+        body_length: i64::try_from(body_length).unwrap(),
     }
 }
