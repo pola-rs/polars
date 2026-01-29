@@ -212,6 +212,7 @@ list_filter = ["polars-ops/list_filter", "polars-expr/list_filter"]
 list_gather = ["polars-ops/list_gather", "polars-expr/list_gather"]
 list_count = ["polars-ops/list_count", "polars-expr/list_count"]
 array_count = ["polars-ops/array_count", "polars-expr/array_count", "dtype-array"]
+array_gather = ["polars-ops/array_gather", "polars-expr/array_gather"]
 true_div = ["polars-plan/true_div"]
 extract_jsonpath = ["polars-expr/extract_jsonpath", "polars-ops/extract_jsonpath"]
 
@@ -388,6 +389,7 @@ features = [
   "abs",
   "approx_unique",
   "arg_where",
+  "array_gather",
   "asof_join",
   "async",
   "bigidx",

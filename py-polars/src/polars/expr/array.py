@@ -9,7 +9,7 @@ from polars._utils.wrap import wrap_expr
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars import Expr
+    from polars import Expr, Series
     from polars._typing import IntoExpr, IntoExprColumn
 
 
@@ -668,6 +668,51 @@ class ExprArrayNameSpace:
         """
         index_pyexpr = parse_into_expression(index)
         return wrap_expr(self._pyexpr.arr_get(index_pyexpr, null_on_oob))
+
+    def gather(
+        self,
+        indices: Expr | Series | list[int] | list[list[int]],
+        *,
+        null_on_oob: bool = False,
+    ) -> Expr:
+        """
+        Gather elements from each sub-array by index.
+
+        The indices may be defined in a single column, or by sublists in another
+        column of dtype `Array`.
+
+        Parameters
+        ----------
+        indices
+            Indices to gather. A Python list of ints will be broadcast to all rows.
+            An Array-typed column specifies indices per row. A List-typed column
+            with uniform element lengths will be coerced to Array.
+        null_on_oob
+            Behavior if an index is out of bounds:
+            True -> set as null
+            False -> raise an error
+            Note that defaulting to raising an error is much cheaper
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[1, 2, 3], [4, 5, 6], [7, 8, 9]]},
+        ...     schema={"a": pl.Array(pl.Int32, 3)},
+        ... )
+        >>> df.with_columns(gather=pl.col("a").arr.gather([0, 2]))
+        shape: (3, 2)
+        ┌───────────────┬────────────┐
+        │ a             ┆ gather     │
+        │ ---           ┆ ---        │
+        │ array[i32, 3] ┆ array[i32] │
+        ╞═══════════════╪════════════╡
+        │ [1, 2, 3]     ┆ [1, 3]     │
+        │ [4, 5, 6]     ┆ [4, 6]     │
+        │ [7, 8, 9]     ┆ [7, 9]     │
+        └───────────────┴────────────┘
+        """
+        indices_pyexpr = parse_into_expression(indices)
+        return wrap_expr(self._pyexpr.arr_gather(indices_pyexpr, null_on_oob))
 
     def first(self) -> Expr:
         """

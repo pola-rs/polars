@@ -547,6 +547,44 @@ class ArrayNameSpace:
 
         """
 
+    def gather(
+        self,
+        indices: Series | list[int] | list[list[int]],
+        *,
+        null_on_oob: bool = False,
+    ) -> Series:
+        """
+        Gather elements from each sub-array by index.
+
+        Parameters
+        ----------
+        indices
+            Indices to gather. A Python list of ints will be broadcast to all rows.
+            An Array-typed column specifies indices per row. A List-typed column
+            with uniform element lengths will be coerced to Array.
+        null_on_oob
+            Behavior if an index is out of bounds:
+            True -> set as null
+            False -> raise an error
+            Note that defaulting to raising an error is much cheaper
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     "a",
+        ...     [[3, 2, 1], [1, None, None], [1, 2, 3]],
+        ...     dtype=pl.Array(pl.Int32, 3),
+        ... )
+        >>> s.arr.gather([0, 2])
+        shape: (3,)
+        Series: 'a' [array[i32, 2]]
+        [
+            [3, 1]
+            [1, null]
+            [1, 3]
+        ]
+        """
+
     def first(self) -> Series:
         """
         Get the first value of the sub-arrays.
