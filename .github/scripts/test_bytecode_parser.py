@@ -21,7 +21,10 @@ from typing import Any, Callable
 import pytest
 from polars._utils.udfs import BytecodeParser
 from tests.unit.operations.map.test_inefficient_map_warning import (
+    MY_COLLECTION,
     MY_DICT,
+    MY_STRING,
+    MY_SUBSTRING,
     NOOP_TEST_CASES,
     TEST_CASES,
 )
@@ -52,7 +55,10 @@ def test_bytecode_parser_expression_in_ipython(
         "from datetime import datetime; "
         "import numpy as np; "
         "import json; "
-        f"MY_DICT = {MY_DICT};"
+        f"MY_DICT = {MY_DICT}; "
+        f"MY_COLLECTION = {MY_COLLECTION}; "
+        f"MY_STRING = {repr(MY_STRING)}; "
+        f"MY_SUBSTRING = {repr(MY_SUBSTRING)}; "
         f'bytecode_parser = BytecodeParser({func}, map_target="expr");'
         f'print(bytecode_parser.to_expression("{col}"));'
     )
