@@ -29,6 +29,7 @@ ody = "ody"
 ND = "ND"
 nd = "nd"
 NDArray1D = "NDArray1D"
+NDArray2D = "NDArray2D"
 
 [type.rust.extend-identifiers]
 ANDed = "ANDed"
