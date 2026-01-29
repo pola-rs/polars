@@ -446,7 +446,7 @@ impl KurtosisState {
         let mut m2 = 0.0;
         let mut m3 = 0.0;
         let mut m4 = 0.0;
-        for xi in iter.clone() {
+        for xi in iter {
             let d = xi - mean;
             let d2 = d * d;
             let d3 = d * d2;
@@ -455,23 +455,12 @@ impl KurtosisState {
             m3 = alg_add_f64(m3, d3);
             m4 = alg_add_f64(m4, d4);
         }
-
-        // The above is fast but can overflow to NaN for large values.
-        // In that case we fall back to the slower but more stable iterative version.
-        if m4.is_nan() && !mean.is_nan() {
-            let mut state = Self::default();
-            for xi in iter {
-                state.insert_one(xi);
-            }
-            state
-        } else {
-            Self {
-                weight,
-                mean,
-                m2,
-                m3,
-                m4,
-            }
+        Self {
+            weight,
+            mean,
+            m2,
+            m3,
+            m4,
         }
     }
 
