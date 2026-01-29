@@ -193,6 +193,26 @@ def test_transpose_multiple_chunks() -> None:
     assert_frame_equal(df.vstack(df).transpose(), expected)
 
 
+def test_transpose_empty() -> None:
+    assert_frame_equal(pl.DataFrame().transpose(), pl.DataFrame())
+    assert_frame_equal(
+        pl.DataFrame().transpose(include_header=True),
+        pl.DataFrame(schema={"column": pl.String}),
+    )
+
+    assert pl.DataFrame(schema={"a": pl.Int32, "b": pl.Int32}).transpose().shape == (
+        2,
+        0,
+    )
+
+    assert_frame_equal(
+        pl.DataFrame(schema={"a": pl.Int32, "b": pl.Int32}).transpose(
+            include_header=True
+        ),
+        pl.DataFrame({"column": ["a", "b"]}),
+    )
+
+
 def test_nested_struct_transpose_21923() -> None:
     df = pl.DataFrame({"x": [{"a": {"b": 1, "c": 2}}]})
     assert df.transpose().item() == df.item()
