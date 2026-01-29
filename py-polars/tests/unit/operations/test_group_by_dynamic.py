@@ -658,7 +658,7 @@ def test_group_by_dynamic_crossing_dst(rule: str, offset: timedelta) -> None:
     start_dt = datetime(2021, 11, 7)
     end_dt = start_dt + offset
     date_range = pl.datetime_range(
-        start_dt, end_dt, rule, time_zone="US/Central", eager=True
+        start_dt, end_dt, rule, time_zone="America/Chicago", eager=True
     )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
     result = df.group_by_dynamic("time", every=rule, start_by="datapoint").agg(
@@ -738,7 +738,7 @@ def test_group_by_dynamic_startby_monday_crossing_dst(
     start_dt = datetime(2021, 11, 7)
     end_dt = datetime(2021, 11, 14)
     date_range = pl.datetime_range(
-        start_dt, end_dt, "1d", time_zone="US/Central", eager=True
+        start_dt, end_dt, "1d", time_zone="America/Chicago", eager=True
     )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
     result = df.group_by_dynamic("time", every="1w", start_by=start_by).agg(
@@ -747,7 +747,9 @@ def test_group_by_dynamic_startby_monday_crossing_dst(
     expected = pl.DataFrame(
         {"time": expected_time, "value": expected_value},
     )
-    expected = expected.with_columns(pl.col("time").dt.replace_time_zone("US/Central"))
+    expected = expected.with_columns(
+        pl.col("time").dt.replace_time_zone("America/Chicago")
+    )
     assert_frame_equal(result, expected)
 
 
@@ -755,7 +757,7 @@ def test_group_by_dynamic_startby_monday_dst_8737() -> None:
     start_dt = datetime(2021, 11, 6, 20)
     stop_dt = datetime(2021, 11, 7, 20)
     date_range = pl.datetime_range(
-        start_dt, stop_dt, "1d", time_zone="US/Central", eager=True
+        start_dt, stop_dt, "1d", time_zone="America/Chicago", eager=True
     )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
     result = df.group_by_dynamic("time", every="1w", start_by="monday").agg(
@@ -769,7 +771,9 @@ def test_group_by_dynamic_startby_monday_dst_8737() -> None:
             "value": [0.5],
         },
     )
-    expected = expected.with_columns(pl.col("time").dt.replace_time_zone("US/Central"))
+    expected = expected.with_columns(
+        pl.col("time").dt.replace_time_zone("America/Chicago")
+    )
     assert_frame_equal(result, expected)
 
 
@@ -777,7 +781,7 @@ def test_group_by_dynamic_monthly_crossing_dst() -> None:
     start_dt = datetime(2021, 11, 1)
     end_dt = datetime(2021, 12, 1)
     date_range = pl.datetime_range(
-        start_dt, end_dt, "1mo", time_zone="US/Central", eager=True
+        start_dt, end_dt, "1mo", time_zone="America/Chicago", eager=True
     )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
     result = df.group_by_dynamic("time", every="1mo").agg(pl.col("value").mean())
