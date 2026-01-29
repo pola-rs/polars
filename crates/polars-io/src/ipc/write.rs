@@ -2,7 +2,7 @@ use std::io::Write;
 
 use arrow::datatypes::Metadata;
 use arrow::io::ipc::IpcField;
-use arrow::io::ipc::write::{self, EncodedData, EncodedDataBytes, PutOwned, WriteOptions};
+use arrow::io::ipc::write::{self, EncodedData, WriteOptions};
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -141,30 +141,6 @@ impl<W: Write> IpcWriter<W> {
     }
 }
 
-impl<W: Write + PutOwned> IpcWriter<W> {
-    pub fn batched_with_put(
-        self,
-        schema: &Schema,
-        ipc_fields: Vec<IpcField>,
-    ) -> PolarsResult<PutEnabledBatchedWriter<W>> {
-        let schema = schema_to_arrow_checked(schema, self.compat_level, "ipc")?;
-        let mut writer = write::PutEnabledFileWriter::new(
-            self.writer,
-            Arc::new(schema),
-            Some(ipc_fields),
-            WriteOptions {
-                compression: self.compression.map(|c| c.into()),
-            },
-        );
-        writer.inner.start()?;
-
-        Ok(PutEnabledBatchedWriter {
-            writer,
-            compat_level: self.compat_level,
-        })
-    }
-}
-
 impl<W> SerWriter<W> for IpcWriter<W>
 where
     W: Write,
@@ -250,66 +226,6 @@ impl<W: Write> BatchedWriter<W> {
     /// Writes the footer of the IPC file.
     pub fn finish(&mut self) -> PolarsResult<()> {
         self.writer.finish()?;
-        Ok(())
-    }
-}
-
-pub struct PutEnabledBatchedWriter<W: Write + PutOwned> {
-    writer: write::PutEnabledFileWriter<W>,
-    compat_level: CompatLevel,
-}
-
-impl<W: Write + PutOwned> PutEnabledBatchedWriter<W> {
-    ///
-    /// # Panics
-    /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
-    pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
-        let iter = df.iter_chunks(self.compat_level, true);
-        for batch in iter {
-            self.writer.inner.write(&batch, None)?
-        }
-        Ok(())
-    }
-
-    /// Write a encoded data to the ipc writer.
-    ///
-    /// # Panics
-    /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
-    pub fn write_encoded(
-        &mut self,
-        dictionaries: &[EncodedData],
-        message: &EncodedData,
-    ) -> PolarsResult<()> {
-        self.writer.inner.write_encoded(dictionaries, message)
-    }
-
-    pub fn put_encoded(
-        &mut self,
-        dictionaries: Vec<EncodedDataBytes>,
-        message: EncodedDataBytes,
-    ) -> PolarsResult<()> {
-        self.writer.put_encoded(dictionaries, message)
-    }
-
-    pub fn write_encoded_dictionaries(
-        &mut self,
-        encoded_dictionaries: &[EncodedData],
-    ) -> PolarsResult<()> {
-        self.writer
-            .inner
-            .write_encoded_dictionaries(encoded_dictionaries)
-    }
-
-    pub fn put_encoded_dictionaries(
-        &mut self,
-        encoded_dictionaries: Vec<EncodedDataBytes>,
-    ) -> PolarsResult<()> {
-        self.writer.put_encoded_dictionaries(encoded_dictionaries)
-    }
-
-    /// Writes the footer of the IPC file.
-    pub fn finish(&mut self) -> PolarsResult<()> {
-        self.writer.inner.finish()?;
         Ok(())
     }
 }

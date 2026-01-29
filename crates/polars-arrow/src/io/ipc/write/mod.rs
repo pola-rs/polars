@@ -14,7 +14,7 @@ pub use common::{
 pub use schema::schema_to_bytes;
 pub use serialize::write;
 pub use stream::StreamWriter;
-pub use writer::{FileWriter, PutEnabledFileWriter, PutOwned};
+pub use writer::{FileWriter, PutOwned};
 
 pub mod common_sync;
 
