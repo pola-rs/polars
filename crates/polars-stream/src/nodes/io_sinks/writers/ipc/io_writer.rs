@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
 use arrow::io::ipc::IpcField;
-use arrow::io::ipc::write::EncodedDataBytes;
+use arrow::io::ipc::write::common_sync::{push_footer, push_magic, push_message};
+use arrow::io::ipc::write::schema::schema_to_bytes;
+use arrow::io::ipc::write::{EncodedDataBytes, PutOwned, arrow_ipc_block};
 use bytes::Bytes;
 use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow;
 use polars_error::PolarsResult;
-use polars_io::SerWriter;
 use polars_io::ipc::{IpcWriter, IpcWriterOptions};
 use polars_io::utils::file::Writeable;
+use polars_io::{SerWriter, schema_to_arrow_checked};
 
 use crate::nodes::io_sinks::writers::interface::FileOpenTaskHandle;
 use crate::nodes::io_sinks::writers::ipc::IpcBatch;
@@ -35,13 +37,29 @@ impl IOWriter {
 
         match &mut file {
             Writeable::Cloud(cloudwriter) => {
-                // Use a zero-copy 'put' method which consumes the data.
-                let mut ipc_writer = IpcWriter::new(&mut *cloudwriter)
-                    .with_compression(options.compression)
-                    .with_compat_level(options.compat_level)
-                    .with_parallel(false)
-                    .batched_with_put(&schema, ipc_fields)?;
+                // The zero-copy implementation takes ownership of the encoded data and, after
+                // framing and aligning, passes it to the object_store via the BufWriter::put() method.
+                let mut record_blocks = vec![];
+                let mut dictionary_blocks = vec![];
+                let mut block_offsets = 0;
+                let mut sink_queue = Vec::new();
 
+                // Start with header.
+                let offset = push_magic(&mut sink_queue, true);
+                sink_queue.drain(..).try_for_each(|b| cloudwriter.put(b))?;
+                block_offsets += offset;
+
+                // Add schema message.
+                let schema = schema_to_arrow_checked(&schema, options.compat_level, "ipc")?;
+                let encoded_data = EncodedDataBytes {
+                    ipc_message: Bytes::from(schema_to_bytes(&schema, &ipc_fields, None)),
+                    arrow_data: Bytes::new(),
+                };
+                let (meta, data) = push_message(&mut sink_queue, encoded_data);
+                sink_queue.drain(..).try_for_each(|b| cloudwriter.put(b))?;
+                block_offsets += meta + data;
+
+                // Process each incoming batch as a message.
                 while let Some(batch) = ipc_batch_rx.recv().await {
                     match batch {
                         IpcBatch::Record(handle, sink_morsel_permit) => {
@@ -50,21 +68,47 @@ impl IOWriter {
                                 ipc_message: Bytes::from(encoded_data.ipc_message),
                                 arrow_data: Bytes::from(encoded_data.arrow_data),
                             };
-                            ipc_writer.put_encoded(vec![], encoded_data)?;
+
+                            let (meta, data) = push_message(&mut sink_queue, encoded_data);
+                            sink_queue.drain(..).try_for_each(|b| cloudwriter.put(b))?;
+
+                            let block = arrow_ipc_block(block_offsets, meta, data);
+                            record_blocks.push(block);
+                            block_offsets += meta + data;
+
                             drop(sink_morsel_permit);
                         },
                         IpcBatch::Dictionary(dictionary_data) => {
-                            let dictionary_data = EncodedDataBytes {
+                            let encoded_dictionary = EncodedDataBytes {
                                 ipc_message: Bytes::from(dictionary_data.ipc_message),
                                 arrow_data: Bytes::from(dictionary_data.arrow_data),
                             };
-                            ipc_writer.put_encoded_dictionaries(vec![dictionary_data])?
+
+                            let (meta, data) = push_message(&mut sink_queue, encoded_dictionary);
+                            sink_queue.drain(..).try_for_each(|b| cloudwriter.put(b))?;
+
+                            let block = arrow_ipc_block(block_offsets, meta, data);
+                            dictionary_blocks.push(block);
+                            block_offsets += meta + data;
                         },
                     }
                 }
 
-                ipc_writer.finish()?;
-                drop(ipc_writer);
+                // Write footer.
+                push_footer(
+                    &mut sink_queue,
+                    &schema,
+                    &ipc_fields,
+                    dictionary_blocks,
+                    record_blocks,
+                    None,
+                );
+                push_magic(&mut sink_queue, false);
+                sink_queue.drain(..).try_for_each(|b| cloudwriter.put(b))?;
+
+                // Finish.
+                // NOTE. Is this technically required?
+                std::io::Write::flush(cloudwriter)?;
             },
             file => {
                 let mut buffered_file = file.as_buffered();

@@ -260,8 +260,6 @@ pub struct PutEnabledBatchedWriter<W: Write + PutOwned> {
 }
 
 impl<W: Write + PutOwned> PutEnabledBatchedWriter<W> {
-    // kdn TODO - TBD: do we still require this (i.e., is this writer batched or not)
-    // Write a batch to the ipc writer.
     ///
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.

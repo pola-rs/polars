@@ -583,3 +583,16 @@ where
         }
     }
 }
+
+/// Create an IPC Block. Will panic when size limitations are not met.
+pub fn arrow_ipc_block(
+    offset: usize,
+    meta_data_length: usize,
+    body_length: usize,
+) -> arrow_format::ipc::Block {
+    arrow_format::ipc::Block {
+        offset: i64::try_from(offset).unwrap(),
+        meta_data_length: i32::try_from(meta_data_length).unwrap(),
+        body_length: i64::try_from(body_length).unwrap(),
+    }
+}
