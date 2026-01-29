@@ -216,6 +216,23 @@ impl fmt::Debug for Expr {
                     _ => write!(f, "{:?}.{function}({:?})", input[0], &input[1..]),
                 }
             },
+            AnonymousAgg {
+                input,
+                fmt_str,
+                function,
+                ..
+            } => {
+                let name = match function {
+                    LazySerde::Named { name, .. } => name.as_str(),
+                    _ => fmt_str.as_str(),
+                };
+
+                match input.len() {
+                    0 => write!(f, "{name}()"),
+                    1 => write!(f, "{:?}.{name}()", input[0]),
+                    _ => write!(f, "{:?}.{name}({:?})", input[0], &input[1..]),
+                }
+            },
             AnonymousFunction {
                 input,
                 fmt_str,

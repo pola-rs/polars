@@ -215,7 +215,11 @@ impl<'a> ObservableOrdersResolver<'a> {
                 input: _,
                 fmt_str: _,
                 function: _,
-            } => O::None,
+            } => {
+                // TODO: Derive this information from the `AnonymousAgg` or re-think named functions
+                // and external Aggs in general.
+                O::None
+            },
             AExpr::Agg(agg) => match agg {
                 // Input order agnostic aggregations.
                 IRAggExpr::Min { input: node, .. }

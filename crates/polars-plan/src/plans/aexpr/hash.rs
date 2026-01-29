@@ -90,10 +90,10 @@ impl Hash for AExpr {
             AExpr::AnonymousAgg {
                 input: _,
                 fmt_str,
-                function: _,
+                function,
             } => {
+                function.hash(state);
                 fmt_str.hash(state);
-                // Invariant, fmt_str is unique. Only used in cloud.
             },
             AExpr::Eval {
                 expr: _,

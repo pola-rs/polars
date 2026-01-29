@@ -183,6 +183,16 @@ pub enum Expr {
     Len,
     #[cfg(feature = "dtype-struct")]
     Field(Arc<[PlSmallStr]>),
+    AnonymousAgg {
+        /// function arguments
+        input: Vec<Expr>,
+        /// function to apply
+        function: OpaqueStreamingAgg,
+
+        /// used for formatting
+        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
+        fmt_str: Box<PlSmallStr>,
+    },
     AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,
@@ -408,6 +418,14 @@ impl Hash for Expr {
             Expr::RenameAlias { function, expr } => {
                 function.hash(state);
                 expr.hash(state);
+            },
+            Expr::AnonymousAgg {
+                input,
+                function: _,
+                fmt_str,
+            } => {
+                input.hash(state);
+                fmt_str.hash(state);
             },
             Expr::AnonymousFunction {
                 input,

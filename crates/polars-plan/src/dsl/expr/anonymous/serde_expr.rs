@@ -45,6 +45,15 @@ fn deserialize_named_registry(buf: &[u8]) -> PolarsResult<(Arc<dyn ExprRegistry>
     }
 }
 
+impl Serialize for SpecialEq<Arc<dyn AnonymousAgg>> {
+    fn serialize<S>(&self, _serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        unreachable!("should not be hit")
+    }
+}
+
 impl Serialize for SpecialEq<Arc<dyn AnonymousColumnsUdf>> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where

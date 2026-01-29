@@ -14,11 +14,7 @@ pub trait ExprRegistry: Sync + Send {
     }
 
     #[allow(unused)]
-    fn get_agg(
-        &self,
-        name: &str,
-        payload: &[u8],
-    ) -> PolarsResult<Option<Arc<dyn AnonymousAgg>>> {
+    fn get_agg(&self, name: &str, payload: &[u8]) -> PolarsResult<Option<Arc<dyn AnonymousAgg>>> {
         Ok(None)
     }
 }

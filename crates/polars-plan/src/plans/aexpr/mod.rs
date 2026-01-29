@@ -305,7 +305,6 @@ impl AExpr {
     #[recursive::recursive]
     pub fn is_scalar(&self, arena: &Arena<AExpr>) -> bool {
         match self {
-            AExpr::AnonymousAgg { .. } => true,
             AExpr::Element => false,
             AExpr::Literal(lv) => lv.is_scalar(),
             AExpr::Function { options, input, .. }
@@ -332,7 +331,7 @@ impl AExpr {
                     && is_scalar_ae(*truthy, arena)
                     && is_scalar_ae(*falsy, arena)
             },
-            AExpr::Agg(_) | AExpr::Len => true,
+            AExpr::Agg(_) | AExpr::AnonymousAgg { .. } | AExpr::Len => true,
             AExpr::Cast { expr, .. } => is_scalar_ae(*expr, arena),
             AExpr::Eval { expr, variant, .. } => {
                 variant.is_length_preserving() && is_scalar_ae(*expr, arena)
