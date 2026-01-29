@@ -274,23 +274,11 @@ impl SkewState {
             return Self::default();
         }
 
-        let weight = length as f64;
-        let mean = alg_sum_f64(iter.clone()) / weight;
-        let mut m2 = 0.0;
-        let mut m3 = 0.0;
+        let mut state = Self::default();
         for xi in iter {
-            let d = xi - mean;
-            let d2 = d * d;
-            let d3 = d * d2;
-            m2 = alg_add_f64(m2, d2);
-            m3 = alg_add_f64(m3, d3);
+            state.insert_one(xi);
         }
-        Self {
-            weight,
-            mean,
-            m2,
-            m3,
-        }
+        state
     }
 
     fn clear_zero_weight_nan(&mut self) {
