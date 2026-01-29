@@ -11,6 +11,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import polars as pl
+from polars._typing import AsofJoinStrategy
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric.strategies.core import column, dataframes
 
@@ -598,6 +599,8 @@ def test_merge_join_applicable(
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
+@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+@pytest.mark.parametrize("allow_exact_matches", [False, True])
 @given(
     left=dataframes(
         cols=[column("ts", dtype=pl.Int16)],
@@ -606,11 +609,22 @@ def test_merge_join_applicable(
         cols=[column("ts", dtype=pl.Int16)],
     ),
 )
-def test_streaming_asof_join(left: pl.DataFrame, right: pl.DataFrame) -> None:
+def test_streaming_asof_join(
+    left: pl.DataFrame,
+    right: pl.DataFrame,
+    strategy: AsofJoinStrategy,
+    allow_exact_matches: bool,
+) -> None:
     left = left.sort("ts").with_row_index().lazy()
     right = right.sort("ts").with_row_index().lazy()
 
-    q = left.join_asof(right, on="ts", strategy="backward")
+    q = left.join_asof(
+        right,
+        on="ts",
+        strategy=strategy,
+        allow_exact_matches=allow_exact_matches,
+        coalesce=False,
+    )
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
 

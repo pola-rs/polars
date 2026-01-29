@@ -36,7 +36,7 @@ impl DataFrameBuffer {
         &self,
         column: &str,
         row_index: usize,
-        binary_offset_bypass_validity: bool,
+        bypass_validity: bool,
     ) -> AnyValue<'_> {
         debug_assert!(row_index < self.total_rows);
         let first_offset = match self.dfs_at_offsets.first_key_value() {
@@ -47,7 +47,7 @@ impl DataFrameBuffer {
         let (df_offset, df) = self.dfs_at_offsets.range(..=buf_index).next_back().unwrap();
         let series_index = buf_index - df_offset;
         let series = df.column(column).unwrap().as_materialized_series();
-        unsafe { series_get_bypass_validity(series, series_index, binary_offset_bypass_validity) }
+        unsafe { series_get_bypass_validity(series, series_index, bypass_validity) }
     }
 
     pub(super) fn push_df(&mut self, df: DataFrame) {
@@ -103,8 +103,8 @@ impl DataFrameBuffer {
         self.total_rows == 0
     }
 
-    /// Computes the first point on where `predicate` is true, assuming it is first
-    /// always false and then always true.
+    /// Find the index of the first item in the buffer that does not satisfy `predicate`,
+    /// assuming it is first always true and then always false.
     pub(super) fn binary_search<P>(
         &self,
         predicate: P,

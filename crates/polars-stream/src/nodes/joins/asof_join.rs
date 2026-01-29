@@ -1,7 +1,8 @@
 use std::collections::VecDeque;
 
 use polars_core::prelude::*;
-use polars_ops::frame::{AsOfOptions, JoinArgs, JoinType};
+use polars_ops::frame::{AsOfOptions, AsofStrategy, JoinArgs, JoinType};
+use polars_utils::parma::raw::Key;
 
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::execute::StreamingExecutionState;
@@ -187,14 +188,11 @@ impl ComputeNode for AsOfJoinNode {
         match &mut self.state {
             AsOfJoinState::Running | AsOfJoinState::FlushInputBuffer => {
                 let params = &self.params;
-                let mut recv_left = match self.state {
+                let recv_left = match self.state {
                     AsOfJoinState::Running => Some(recv_ports[0].take().unwrap().serial()),
                     _ => None,
                 };
                 let recv_right = recv_ports[1].take().map(RecvPort::serial);
-                dbg!(&self.state);
-                dbg!(&self.left_buffer);
-                dbg!(recv_left.is_some());
                 let send = send_ports[0].take().unwrap().serial();
                 let left_buffer = &mut self.left_buffer;
                 let right_buffer = &mut self.right_buffer;
@@ -207,7 +205,7 @@ impl ComputeNode for AsOfJoinNode {
                         right_buffer,
                         params,
                     )
-                    .await;
+                    .await?;
                     Ok(())
                 }));
             },
@@ -240,11 +238,10 @@ async fn process_asof_join_task(
     left_buffer: &mut VecDeque<Morsel>,
     right_buffer: &mut DataFrameBuffer,
     params: &AsOfJoinParams,
-) {
+) -> PolarsResult<()> {
+    let options = params.as_of_options();
     let right_done = recv_right.is_none();
 
-    dbg!(right_done);
-    let options = params.as_of_options();
     let mut recv_left_morsel = async |recv: Option<&mut PortReceiver>| {
         if let Some(m) = left_buffer.pop_front() {
             Ok(m)
@@ -255,27 +252,28 @@ async fn process_asof_join_task(
         }
     };
 
-    while let Ok(m) = recv_left_morsel(recv_left.as_mut()).await {
-        // TODO [amber]: Check if the right side is sufficientl complete
-        let have_enough_right_side = false;
-
-        while !right_done && !have_enough_right_side {
+    while let Ok(morsel) = recv_left_morsel(recv_left.as_mut()).await {
+        let (left_df, seq, st, wt) = morsel.into_inner();
+        while need_more_right_side(&left_df, right_buffer, params)? && !right_done {
             if let Some(ref mut recv) = recv_right
-                && let Ok(m_right) = recv.recv().await
+                && let Ok(morsel_right) = recv.recv().await
             {
-                right_buffer.push_df(m_right.into_df());
+                right_buffer.push_df(morsel_right.into_df());
             } else {
                 // The right pipe is empty at this stage, we will need to wait for
                 // a new stage and try again.
-                left_buffer.push_back(m);
+                let mut morsel = Morsel::new(left_df, seq, st);
+                if let Some(wt) = wt {
+                    morsel.set_consume_token(wt);
+                }
+                left_buffer.push_back(morsel);
                 stop_and_buffer_pipe_contents(recv_left.as_mut(), |m| left_buffer.push_back(m))
                     .await;
-                return;
+                return Ok(());
             }
         }
 
         // Compute AsOf join
-        let (left_df, seq, st, wt) = m.into_inner();
         let right_df = right_buffer.clone().into_df();
         let left_key = left_df.column(&params.left.key_col).unwrap();
         let right_key = right_df.column(&params.right.key_col).unwrap();
@@ -300,11 +298,52 @@ async fn process_asof_join_task(
             m.set_consume_token(wt);
         }
         if send.send(m).await.is_err() {
-            dbg!("cannot send");
-            return;
+            return Ok(());
         }
 
         // TODO [amber]: Prune the right buffer
     }
     stop_and_buffer_pipe_contents(recv_right.as_mut(), |m| right_buffer.push_df(m.into_df())).await;
+    Ok(())
+}
+
+/// Do we need more values on the right side before we can compute the AsOf join
+/// between the right side and the complete left side?
+fn need_more_right_side(
+    left: &DataFrame,
+    right: &DataFrameBuffer,
+    params: &AsOfJoinParams,
+) -> PolarsResult<bool> {
+    let options = params.as_of_options();
+
+    let left_key = left.column(&params.left.key_col)?.as_materialized_series();
+    if left_key.is_empty() {
+        return Ok(false);
+    }
+    // SAFETY: We just checked that left_key is not empty
+    let left_last = unsafe { left_key.get_unchecked(left_key.len() - 1) };
+    let mut right_range_end =
+        right.binary_search(|x: &_| left_last < *x, &params.right.key_col, false);
+    if right_range_end >= right.height() {
+        return Ok(true);
+    }
+    match options.strategy {
+        AsofStrategy::Backward | AsofStrategy::Forward => {
+            // We do not actually need up to the first greater value; but only
+            // up to the last value that is greater than or equal `left_last`.
+            right_range_end = right_range_end.saturating_sub(1);
+        },
+        AsofStrategy::Nearest => {
+            // In the Nearest case, there may be a chunk of consecutive equal values
+            // following the match value on the left side.  In this case, the AsOf
+            // join can match until the *end* of that chunk.
+
+            // SAFETY: We just checked that right_range_end is in bounds
+            let fst_greater_val =
+                unsafe { right.get_bypass_validity(&params.right.key_col, right_range_end, false) };
+            right_range_end =
+                right.binary_search(|x: &_| fst_greater_val < *x, &params.right.key_col, false);
+        },
+    }
+    Ok(right_range_end >= right.height())
 }
