@@ -7832,7 +7832,7 @@ class Series:
         Note how the values match
 
         >>> pl.Series([1, 4, 2]).skew(), pl.Series([4, 2, 9]).skew()
-        (0.3818017741606063, 0.47033046033698594)
+        (0.38180177416060584, 0.47033046033698594)
         """
 
     @unstable()
@@ -8352,7 +8352,7 @@ class Series:
         --------
         >>> s = pl.Series([1, 2, 2, 4, 5])
         >>> s.skew()
-        0.3477670622469944
+        0.34776706224699483
         """
         return self._s.skew(bias)
 
