@@ -92,6 +92,7 @@ pub fn concat_df_horizontal(
         out_width += df.width();
         df.height() == output_height
     });
+    dbg!(&dfs);
 
     // if not all equal length, extend the DataFrame with nulls
     let dfs = if !all_equal_height {
