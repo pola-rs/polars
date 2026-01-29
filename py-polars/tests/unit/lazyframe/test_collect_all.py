@@ -36,3 +36,21 @@ def test_collect_all_issue_26097(tmp_path: Path) -> None:
     assert_frame_equal(results[1], expected)
 
     Path(tmp_file).unlink()
+
+
+def test_collect_all_groupby_lazy_sink_issue_26296(tmp_path: Path) -> None:
+    df = pl.DataFrame({"g": ["A"], "v": [1]})
+    result = df.lazy().group_by("g").agg(pl.col("v").sum())
+
+    tmp_file = tmp_path / "bug.parquet"
+    sink = result.sink_parquet(tmp_file, lazy=True)
+    other = result.select(pl.lit(1))
+
+    # Should not raise ColumnNotFoundError: v
+    results = pl.collect_all([other, sink])
+
+    expected_other = pl.DataFrame({"literal": [1]}, schema={"literal": pl.Int32})
+    assert_frame_equal(results[0], expected_other)
+
+    expected_sink = pl.DataFrame({"g": ["A"], "v": [1]})
+    assert_frame_equal(pl.read_parquet(tmp_file), expected_sink)
