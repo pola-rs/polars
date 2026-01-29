@@ -76,7 +76,7 @@ impl<'py> ApplyLambdaGeneric<'py> for BooleanChunked {
     ) -> PyResult<Series> {
         let avs = call_and_collect_anyvalues(py, lambda, self.len(), self.into_iter(), skip_nulls)?;
         Ok(
-            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true)
+            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, false)
                 .map_err(PyPolarsErr::from)?,
         )
     }
@@ -106,7 +106,7 @@ where
     ) -> PyResult<Series> {
         let avs = call_and_collect_anyvalues(py, lambda, self.len(), self.into_iter(), skip_nulls)?;
         Ok(
-            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true)
+            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, false)
                 .map_err(PyPolarsErr::from)?,
         )
     }
@@ -132,7 +132,7 @@ impl<'py> ApplyLambdaGeneric<'py> for StringChunked {
     ) -> PyResult<Series> {
         let avs = call_and_collect_anyvalues(py, lambda, self.len(), self.into_iter(), skip_nulls)?;
         Ok(
-            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true)
+            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, false)
                 .map_err(PyPolarsErr::from)?,
         )
     }
@@ -160,7 +160,7 @@ impl<'py> ApplyLambdaGeneric<'py> for ListChunked {
         let it = self.into_iter().map(|opt_s| opt_s.map(Wrap));
         let avs = call_and_collect_anyvalues(py, lambda, self.len(), it, skip_nulls)?;
         Ok(
-            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true)
+            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, false)
                 .map_err(PyPolarsErr::from)?,
         )
     }
@@ -189,7 +189,7 @@ impl<'py> ApplyLambdaGeneric<'py> for ArrayChunked {
         let it = self.into_iter().map(|opt_s| Some(PySeries::new(opt_s?)));
         let avs = call_and_collect_anyvalues(py, lambda, self.len(), it, skip_nulls)?;
         Ok(
-            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true)
+            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, false)
                 .map_err(PyPolarsErr::from)?,
         )
     }
@@ -216,7 +216,7 @@ impl<'py> ApplyLambdaGeneric<'py> for ObjectChunked<ObjectValue> {
     ) -> PyResult<Series> {
         let avs = call_and_collect_anyvalues(py, lambda, self.len(), self.into_iter(), skip_nulls)?;
         Ok(
-            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true)
+            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, false)
                 .map_err(PyPolarsErr::from)?,
         )
     }
@@ -246,7 +246,7 @@ impl<'py> ApplyLambdaGeneric<'py> for StructChunked {
             .map(|i| unsafe { self.get_any_value_unchecked(i).null_to_none().map(Wrap) });
         let avs = call_and_collect_anyvalues(py, lambda, self.len(), it, skip_nulls)?;
         Ok(
-            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true)
+            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, false)
                 .map_err(PyPolarsErr::from)?,
         )
     }
@@ -272,7 +272,7 @@ impl<'py> ApplyLambdaGeneric<'py> for BinaryChunked {
     ) -> PyResult<Series> {
         let avs = call_and_collect_anyvalues(py, lambda, self.len(), self.into_iter(), skip_nulls)?;
         Ok(
-            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true)
+            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, false)
                 .map_err(PyPolarsErr::from)?,
         )
     }
@@ -307,7 +307,7 @@ where
             .map(|i| unsafe { self.get_any_value_unchecked(i).null_to_none().map(Wrap) });
         let avs = call_and_collect_anyvalues(py, lambda, self.len(), it, skip_nulls)?;
         Ok(
-            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true)
+            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, false)
                 .map_err(PyPolarsErr::from)?,
         )
     }
@@ -335,7 +335,7 @@ impl<'py> ApplyLambdaGeneric<'py> for NullChunked {
         let it = (0..self.len()).map(|_| None::<Wrap<AnyValue<'static>>>);
         let avs = call_and_collect_anyvalues(py, lambda, self.len(), it, skip_nulls)?;
         Ok(
-            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true)
+            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, false)
                 .map_err(PyPolarsErr::from)?,
         )
     }
