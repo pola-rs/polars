@@ -112,7 +112,8 @@ pub fn aexpr_to_column_predicates(
                                 options: _,
                             } if matches!(
                                 str_function,
-                                crate::plans::IRStringFunction::Contains { literal: _, strict: true } |
+                                crate::plans::IRStringFunction::Contains { literal: false, strict: true } |
+                                crate::plans::IRStringFunction::Contains { literal: true, strict: _ } |
                                 crate::plans::IRStringFunction::EndsWith |
                                 crate::plans::IRStringFunction::StartsWith
                             ) => {
@@ -366,7 +367,7 @@ mod tests {
 
     use super::*;
     use crate::dsl::Expr;
-    use crate::dsl::functions::col;
+    use crate::dsl::functions::{col, lit};
     use crate::plans::{ExprToIRContext, to_expr_ir, typed_lit};
 
     /// Given a single-column `Expr`, call `aexpr_to_column_predicates()` and
@@ -415,6 +416,28 @@ mod tests {
                     (expected_min.into(), expected_max.into()),
                     (actual_min, actual_max)
                 );
+            } else {
+                panic!("{predicate:?} is unexpected for {expr:?}");
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn column_predicates_string_contains() -> PolarsResult<()> {
+        let col_name = "testcol";
+        let test_values: [(Expr, &str); _] = [
+            (col(col_name).str().contains(lit("x.*y"), true), "x.*y"),
+            (col(col_name).str().contains_literal(lit("abc")), "abc"),
+            (
+                col(col_name).str().contains_literal(lit("x.*y")),
+                "x\\.\\*y",
+            ),
+        ];
+        for (expr, expected_regex_string) in test_values {
+            let predicate = column_predicate_for_expr(DataType::String, col_name, expr.clone())?;
+            if let Some(SpecializedColumnPredicate::RegexMatch(regex)) = predicate {
+                assert_eq!(&format!("{regex}"), expected_regex_string);
             } else {
                 panic!("{predicate:?} is unexpected for {expr:?}");
             }
