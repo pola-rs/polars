@@ -633,7 +633,7 @@ impl DataType {
         use DataType::*;
         match self {
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) | Enum(_, _) => true,
+            Categorical(_, _) => true,
             List(inner) => inner.contains_categoricals(),
             #[cfg(feature = "dtype-array")]
             Array(inner, _) => inner.contains_categoricals(),
@@ -641,6 +641,20 @@ impl DataType {
             Struct(fields) => fields
                 .iter()
                 .any(|field| field.dtype.contains_categoricals()),
+            _ => false,
+        }
+    }
+
+    pub fn contains_enums(&self) -> bool {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "dtype-categorical")]
+            Enum(_, _) => true,
+            List(inner) => inner.contains_enums(),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, _) => inner.contains_enums(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields.iter().any(|field| field.dtype.contains_enums()),
             _ => false,
         }
     }
