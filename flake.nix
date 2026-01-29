@@ -303,6 +303,7 @@
 									"jax"
 									"torch"
 									"jupyterlab"
+									"pyiceberg"
 
 									"pygithub"
 
