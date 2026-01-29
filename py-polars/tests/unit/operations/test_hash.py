@@ -33,9 +33,9 @@ def test_hash_cat_stable() -> None:
     )
 
     # Also stable in struct?
-    df1_struct = df1.select(pl.struct(c=pl.col.cat, x=1))
-    df2_struct = df2.select(pl.struct(c=pl.col.cat, x=1))
+    df1_struct = df1.select(struct = pl.struct(c=pl.col.cat, x=1))
+    df2_struct = df2.select(struct = pl.struct(c=pl.col.cat, x=1))
     assert_frame_equal(
-        df1_struct.select(pl.col("cat").hash()),
-        df2_struct.select(pl.col("cat").hash()),
+        df1_struct.select(pl.col.struct.hash()),
+        df2_struct.select(pl.col.struct.hash()),
     )
