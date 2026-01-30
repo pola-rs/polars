@@ -60,7 +60,7 @@ pub fn read_utf8<O: Offset, R: Read + Seek>(
         scratch,
     )?;
 
-    if checked.0 {
+    if *checked {
         Utf8Array::<O>::try_new(dtype, offsets.try_into()?, values, validity)
     } else {
         // SAFETY:

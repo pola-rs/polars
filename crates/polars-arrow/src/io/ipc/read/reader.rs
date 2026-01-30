@@ -54,7 +54,9 @@ impl<R: Read + Seek> FileReader<R> {
     /// Don't do expensive checks.
     /// This means the data source has to be trusted to be correct.
     pub unsafe fn unchecked(mut self) -> Self {
-        unsafe { self.checked.0 = false }
+        unsafe {
+            self.checked = UnsafeBool::new_false();
+        }
         self
     }
 

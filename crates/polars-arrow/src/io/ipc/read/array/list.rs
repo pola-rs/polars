@@ -82,7 +82,7 @@ where
         checked,
     )?;
 
-    let offsets = if checked.0 {
+    let offsets = if *checked {
         offsets.try_into()?
     } else {
         // SAFETY:

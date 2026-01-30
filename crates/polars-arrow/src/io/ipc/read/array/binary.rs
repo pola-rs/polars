@@ -63,7 +63,7 @@ pub fn read_binary<O: Offset, R: Read + Seek>(
         scratch,
     )?;
 
-    if checked.0 {
+    if *checked {
         BinaryArray::<O>::try_new(dtype, offsets.try_into()?, values, validity)
     } else {
         // SAFETY:

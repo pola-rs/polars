@@ -63,7 +63,7 @@ pub fn read_binview<T: ViewType + ?Sized, R: Read + Seek>(
         })
         .collect::<PolarsResult<Vec<Buffer<u8>>>>()?;
 
-    if checked.0 {
+    if *checked {
         BinaryViewArrayGeneric::<T>::try_new(dtype, views, Buffer::from(variadic_buffers), validity)
             .map(|arr| arr.boxed())
     } else {
