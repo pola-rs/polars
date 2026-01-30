@@ -328,6 +328,11 @@ pub fn execute_graph(
             eprintln!("polars-stream: updating graph state");
         }
         graph.update_all_states(&state, metrics.as_deref())?;
+
+        if let Some(m) = metrics.as_ref() {
+            m.lock().flush(&graph.pipes);
+        }
+
         polars_io::pl_async::get_runtime().block_on(async {
             // TODO: track this in metrics.
             while let Ok(handle) = subphase_tasks_recv.try_recv() {
@@ -369,10 +374,6 @@ pub fn execute_graph(
         })?;
         if polars_core::config::verbose() {
             eprintln!("polars-stream: done running graph phase");
-        }
-
-        if let Some(m) = metrics.as_ref() {
-            m.lock().flush(&graph.pipes);
         }
     }
 

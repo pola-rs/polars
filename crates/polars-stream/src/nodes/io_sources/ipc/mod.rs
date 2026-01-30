@@ -12,6 +12,7 @@ use polars_core::utils::arrow::io::ipc::read::{
 use polars_error::{ErrString, PolarsError, PolarsResult};
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
+use polars_io::metrics::OptIOMetrics;
 use polars_io::pl_async;
 use polars_io::utils::byte_source::{
     BufferByteSource, ByteSource, DynByteSource, DynByteSourceBuilder,
@@ -28,7 +29,6 @@ use super::multi_scan::reader_interface::BeginReadArgs;
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
 use crate::async_executor::{self, JoinHandle, TaskPriority};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
-use crate::metrics::OptIOMetrics;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::ipc::metadata::read_ipc_metadata_bytes;
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;

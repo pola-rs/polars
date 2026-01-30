@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_error::PolarsResult;
+use polars_io::metrics::IOMetrics;
 use polars_plan::dsl::UnifiedSinkArgs;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -26,6 +27,7 @@ pub fn start_partition_sink_pipeline(
     morsel_rx: connector::Receiver<Morsel>,
     config: IOSinkNodeConfig,
     execution_state: &StreamingExecutionState,
+    io_metrics: Option<Arc<IOMetrics>>,
 ) -> PolarsResult<async_executor::AbortOnDropHandle<PolarsResult<()>>> {
     let num_pipelines: NonZeroUsize = execution_state.num_pipelines.try_into().unwrap();
 
@@ -71,6 +73,7 @@ pub fn start_partition_sink_pipeline(
         provider_type: file_path_provider,
         upload_chunk_size,
         upload_max_concurrency,
+        io_metrics,
     });
 
     let file_writer_starter: Arc<dyn FileWriterStarter> =

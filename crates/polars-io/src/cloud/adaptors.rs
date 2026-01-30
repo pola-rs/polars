@@ -3,13 +3,14 @@
 use std::sync::Arc;
 
 use object_store::ObjectStore;
-use object_store::buffered::BufWriter;
 use object_store::path::Path;
 use polars_error::PolarsResult;
 use polars_utils::pl_path::PlRefPath;
 use tokio::io::AsyncWriteExt;
 
+use super::arrow_rs_object_store::BufWriter;
 use super::{CloudOptions, object_path_from_str};
+use crate::metrics::IOMetrics;
 use crate::pl_async::get_runtime;
 use crate::utils::file::WriteableTrait;
 
@@ -39,9 +40,11 @@ impl BlockingCloudWriter {
         path: Path,
         cloud_upload_chunk_size: usize,
         cloud_upload_max_concurrency: usize,
+        io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<Self> {
         let writer = BufWriter::with_capacity(object_store, path, cloud_upload_chunk_size)
-            .with_max_concurrency(cloud_upload_max_concurrency);
+            .with_max_concurrency(cloud_upload_max_concurrency)
+            .with_metrics(io_metrics);
         Ok(BlockingCloudWriter { state: Ok(writer) })
     }
 
@@ -54,6 +57,7 @@ impl BlockingCloudWriter {
         cloud_options: Option<&CloudOptions>,
         cloud_upload_chunk_size: usize,
         cloud_upload_max_concurrency: usize,
+        io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<Self> {
         let (cloud_location, object_store) =
             crate::cloud::build_object_store(uri, cloud_options, false).await?;
@@ -62,6 +66,7 @@ impl BlockingCloudWriter {
             object_path_from_str(&cloud_location.prefix)?,
             cloud_upload_chunk_size,
             cloud_upload_max_concurrency,
+            io_metrics,
         )
     }
 
@@ -189,6 +194,7 @@ mod tests {
             path,
             get_upload_chunk_size(),
             get_upload_concurrency(),
+            None,
         )
         .unwrap();
         CsvWriter::new(&mut cloud_writer)
@@ -220,6 +226,7 @@ mod tests {
                 None,
                 get_upload_chunk_size(),
                 get_upload_concurrency(),
+                None,
             ))
             .unwrap();
 

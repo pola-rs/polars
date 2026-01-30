@@ -6,6 +6,7 @@ use polars_core::utils::arrow::io::ipc::read::{
     BlockReader, FileMetadata, get_row_count_from_blocks,
 };
 use polars_error::{PolarsResult, polars_err};
+use polars_io::metrics::OptIOMetrics;
 use polars_io::utils::byte_source::{BufferByteSource, ByteSource, DynByteSource};
 use polars_utils::IdxSize;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -14,7 +15,6 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::async_primitives::oneshot_channel;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
-use crate::metrics::OptIOMetrics;
 use crate::nodes::io_sources::ipc::ROW_COUNT_OVERFLOW_ERR;
 use crate::utils::tokio_handle_ext;
 

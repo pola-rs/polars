@@ -41,6 +41,7 @@ pub use cloud::glob as async_glob;
 pub use options::*;
 pub use path_utils::*;
 pub use shared::*;
+pub mod metrics;
 
 pub mod hive;
 

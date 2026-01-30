@@ -6,6 +6,7 @@ use polars_core::prelude::ArrowSchema;
 use polars_core::schema::{Schema, SchemaExt, SchemaRef};
 use polars_error::{PolarsResult, polars_err};
 use polars_io::cloud::CloudOptions;
+use polars_io::metrics::OptIOMetrics;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::{BufferByteSource, DynByteSource, DynByteSourceBuilder};
@@ -22,7 +23,6 @@ use super::multi_scan::reader_interface::{
 };
 use crate::async_executor::{self};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
-use crate::metrics::OptIOMetrics;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::parquet::projection::{

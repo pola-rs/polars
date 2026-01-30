@@ -1,9 +1,8 @@
 use arrow::io::ipc::read::OutOfSpecKind;
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
+use polars_io::metrics::OptIOMetrics;
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
-
-use crate::metrics::OptIOMetrics;
 
 /// Read the metadata bytes of a parquet file, does not decode the bytes. If during metadata fetch
 /// the bytes of the entire file are loaded, it is returned in the second return value.

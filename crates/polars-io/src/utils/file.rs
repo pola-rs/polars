@@ -1,5 +1,6 @@
 use std::io;
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 #[cfg(feature = "cloud")]
 pub use async_writeable::{AsyncDynWriteable, AsyncWriteable};
@@ -12,6 +13,7 @@ use polars_utils::pl_path::{PlRefPath, format_file_uri};
 
 use super::sync_on_close::SyncOnCloseType;
 use crate::cloud::CloudOptions;
+use crate::metrics::IOMetrics;
 use crate::resolve_homedir;
 
 // TODO document precise contract.
@@ -43,6 +45,7 @@ impl Writeable {
         #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_options: Option<&CloudOptions>,
         #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_upload_chunk_size: usize,
         #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_upload_max_concurrency: usize,
+        #[cfg_attr(not(feature = "cloud"), expect(unused))] io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<Self> {
         Ok(if path.has_scheme() {
             feature_gated!("cloud", {
@@ -54,6 +57,7 @@ impl Writeable {
                         cloud_options,
                         cloud_upload_chunk_size,
                         cloud_upload_max_concurrency,
+                        io_metrics,
                     ))?;
 
                 Self::Cloud(writer)
@@ -77,6 +81,7 @@ impl Writeable {
                         cloud_options,
                         cloud_upload_chunk_size,
                         cloud_upload_max_concurrency,
+                        io_metrics,
                     ))?;
 
                 Self::Cloud(writer)
@@ -219,6 +224,7 @@ mod async_writeable {
     use std::io;
     use std::ops::{Deref, DerefMut};
     use std::pin::Pin;
+    use std::sync::Arc;
     use std::task::{Context, Poll};
 
     use polars_error::{PolarsError, PolarsResult};
@@ -229,6 +235,7 @@ mod async_writeable {
 
     use super::{Writeable, WriteableTrait};
     use crate::cloud::CloudOptions;
+    use crate::metrics::IOMetrics;
     use crate::utils::sync_on_close::SyncOnCloseType;
 
     /// Turn an abstract io::Write into an abstract tokio::io::AsyncWrite.
@@ -263,7 +270,7 @@ mod async_writeable {
     pub enum AsyncWriteable {
         Dyn(AsyncDynWriteable),
         Local(tokio::fs::File),
-        Cloud(object_store::buffered::BufWriter),
+        Cloud(crate::cloud::arrow_rs_object_store::BufWriter),
     }
 
     impl AsyncWriteable {
@@ -272,6 +279,7 @@ mod async_writeable {
             cloud_options: Option<&CloudOptions>,
             cloud_upload_chunk_size: usize,
             cloud_upload_max_concurrency: usize,
+            io_metrics: Option<Arc<IOMetrics>>,
         ) -> PolarsResult<Self> {
             // TODO: Native async impl
             Writeable::try_new(
@@ -279,6 +287,7 @@ mod async_writeable {
                 cloud_options,
                 cloud_upload_chunk_size,
                 cloud_upload_max_concurrency,
+                io_metrics,
             )
             .and_then(|x| x.try_into_async_writeable())
         }

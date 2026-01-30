@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
+use polars_io::metrics::{IOMetrics, OptIOMetrics};
 use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
 use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_plan::dsl::ScanSource;
@@ -10,7 +11,6 @@ use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::{FileReader, ParquetFileReader};
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::metrics::{IOMetrics, OptIOMetrics};
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 
@@ -85,7 +85,7 @@ impl FileReaderBuilder for ParquetReaderBuilder {
     }
 
     fn set_io_metrics(&self, io_metrics: Arc<IOMetrics>) {
-        let _ = self.io_metrics.set(io_metrics);
+        self.io_metrics.set(io_metrics).ok().unwrap()
     }
 
     fn build_file_reader(

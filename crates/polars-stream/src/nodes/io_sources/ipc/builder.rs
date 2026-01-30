@@ -84,7 +84,8 @@ impl FileReaderBuilder for IpcReaderBuilder {
         cloud_options: Option<Arc<CloudOptions>>,
         scan_source_idx: usize,
     ) -> Box<dyn FileReader> {
-        use crate::metrics::OptIOMetrics;
+        use polars_io::metrics::OptIOMetrics;
+
         use crate::nodes::io_sources::ipc::RecordBatchPrefetchSync;
 
         let scan_source = source;

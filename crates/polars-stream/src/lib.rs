@@ -14,7 +14,6 @@ mod graph;
 pub use graph::{GraphNodeKey, LogicalPipe, LogicalPipeKey};
 pub use skeleton::{QueryResult, StreamingQuery};
 mod metrics;
-mod metrics_io;
 pub use metrics::{GraphMetrics, NodeMetrics};
 mod morsel;
 mod nodes;

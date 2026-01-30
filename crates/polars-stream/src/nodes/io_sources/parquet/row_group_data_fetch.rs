@@ -6,13 +6,13 @@ use polars_core::prelude::PlHashMap;
 use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
+use polars_io::metrics::OptIOMetrics;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, create_sorting_map};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 use polars_parquet::read::RowGroupMetadata;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::metrics::OptIOMetrics;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 use crate::utils::tokio_handle_ext;
 
