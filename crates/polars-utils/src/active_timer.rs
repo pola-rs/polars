@@ -112,6 +112,7 @@ impl ActiveTimer {
         let total_ns2 = self.total_ns.load(Ordering::Relaxed);
 
         let total_ns = if total_ns2 != total_ns {
+            // This is a freshly updated value
             total_ns2
         } else {
             let now_ns = Instant::now().duration_since(self.base_instant).as_nanos() as u64;
