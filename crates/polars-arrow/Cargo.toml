@@ -15,6 +15,7 @@ description = "Minimal implementation of the Arrow specification forked from arr
 [dependencies]
 bitflags = { workspace = true }
 bytemuck = { workspace = true, features = ["must_cast"] }
+bytes = { workspace = true }
 chrono = { workspace = true }
 # for timezone support
 chrono-tz = { workspace = true, optional = true }
