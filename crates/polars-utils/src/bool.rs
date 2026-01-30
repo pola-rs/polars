@@ -12,7 +12,7 @@ impl Default for UnsafeBool {
 }
 
 impl UnsafeBool {
-    #[warn(clippy::missing_safety_doc)]
+    #[allow(clippy::missing_safety_doc)]
     pub unsafe fn new_false() -> Self {
         UnsafeBool(false)
     }

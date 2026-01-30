@@ -180,7 +180,7 @@ impl CastingRules {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Default)]
 #[cfg_attr(any(feature = "serde"), derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct FunctionOptions {
@@ -197,10 +197,10 @@ pub struct FunctionOptions {
 impl FunctionOptions {
     #[cfg(feature = "fused")]
     pub(crate) unsafe fn no_check_lengths(&mut self) {
-        self.check_lengths = UnsafeBool(false);
+        unsafe { self.check_lengths = UnsafeBool::new_false() };
     }
     pub fn check_lengths(&self) -> bool {
-        self.check_lengths.0
+        *self.check_lengths
     }
 
     pub fn set_elementwise(&mut self) {
@@ -277,16 +277,6 @@ impl FunctionOptions {
     pub fn with_flags(mut self, f: impl Fn(FunctionFlags) -> FunctionFlags) -> FunctionOptions {
         self.flags = f(self.flags);
         self
-    }
-}
-
-impl Default for FunctionOptions {
-    fn default() -> Self {
-        FunctionOptions {
-            check_lengths: UnsafeBool(true),
-            cast_options: Default::default(),
-            flags: Default::default(),
-        }
     }
 }
 
