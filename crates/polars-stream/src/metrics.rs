@@ -48,7 +48,7 @@ impl NodeMetrics {
     }
 
     fn add_io_recv(&mut self, io_metrics: &IOMetrics) {
-        self.download_total_active_ns += io_metrics.active_io_time_metrics.active_io_total_ns();
+        self.download_total_active_ns += io_metrics.active_io_timer.total_active_time_ns();
         self.download_total_bytes_requested += io_metrics.bytes_requested.load();
         self.download_total_bytes_received += io_metrics.bytes_received.load();
     }
