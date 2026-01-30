@@ -48,6 +48,7 @@ serde_json = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
 slotmap = { workspace = true }
 strum_macros = { workspace = true }
+tokio = { workspace = true }
 
 [build-dependencies]
 sha2 = { workspace = true }
