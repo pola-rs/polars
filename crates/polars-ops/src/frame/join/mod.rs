@@ -218,6 +218,7 @@ pub trait DataFrameJoinOps: IntoDf {
             .zip(&selected_right)
             .find(|(l, r)| l.dtype() != r.dtype())
         {
+            #[cfg(feature = "dtype-struct")]
             if let (DataType::Struct(left_fields), DataType::Struct(right_fields)) =
                 (l.dtype(), r.dtype())
             {
@@ -240,15 +241,15 @@ pub trait DataFrameJoinOps: IntoDf {
                             l.name(), l.dtype(), left_formatted, r.name(), r.dtype(), right_formatted
                         )
                 );
-            } else {
-                polars_bail!(
-                    ComputeError:
-                        format!(
-                            "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
-                            l.name(), l.dtype(), r.name(), r.dtype()
-                        )
-                );
             }
+
+            polars_bail!(
+                ComputeError:
+                    format!(
+                        "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
+                        l.name(), l.dtype(), r.name(), r.dtype()
+                    )
+            );
         };
 
         #[cfg(feature = "iejoin")]

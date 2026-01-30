@@ -63,6 +63,7 @@ impl<'a> AnonymousListBuilder<'a> {
             (DataType::Null, _) => {},
             (dt, None) => self.inner_dtype = Some(dt.clone()),
             (dt, Some(set_dt)) => {
+                #[cfg(feature = "dtype-struct")]
                 if let (DataType::Struct(got_fields), DataType::Struct(set_fields)) = (dt, set_dt) {
                     let got_formatted: String = got_fields
                         .iter()
@@ -77,9 +78,9 @@ impl<'a> AnonymousListBuilder<'a> {
                         .join(", ");
 
                     polars_bail!(ComputeError: "struct dtypes don't match, got {}, expected: {} ", got_formatted, set_formatted);
-                } else {
-                    polars_bail!(ComputeError: "dtypes don't match, got {dt}, expected: {set_dt}")
                 }
+
+                polars_bail!(ComputeError: "dtypes don't match, got {dt}, expected: {set_dt}")
             },
         }
         if s.is_empty() {
@@ -142,6 +143,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
             (dt, None) => self.inner_dtype = Some(dt.clone()),
             (dt, Some(set_dt)) => {
                 if dt != set_dt {
+                    #[cfg(feature = "dtype-struct")]
                     if let (DataType::Struct(got_fields), DataType::Struct(set_fields)) =
                         (dt, set_dt)
                     {
@@ -158,9 +160,9 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
                             .join(", ");
 
                         polars_bail!(ComputeError: "struct dtypes don't match, got {}, expected: {} ", got_formatted, set_formatted);
-                    } else {
-                        polars_bail!(ComputeError: "dtypes don't match, got {dt}, expected: {set_dt}")
                     }
+
+                    polars_bail!(ComputeError: "dtypes don't match, got {dt}, expected: {set_dt}")
                 }
             },
         }
