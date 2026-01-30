@@ -82,6 +82,8 @@ if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
         import polars._plr as plr
 
+    from builtins import list as list_
+    from builtins import str as str_
     from collections.abc import Callable, Iterable
     from io import IOBase
 
@@ -134,7 +136,7 @@ class Expr:
 
     # NOTE: This `= None` is needed to generate the docs with sphinx_accessor.
     _pyexpr: PyExpr = None  # type: ignore[assignment]
-    _accessors: ClassVar[set[str]] = {
+    _accessors: ClassVar[set[str_]] = {
         "arr",
         "bin",
         "cat",
@@ -153,10 +155,10 @@ class Expr:
         expr._pyexpr = pyexpr
         return expr
 
-    def _repr_html_(self) -> str:
+    def _repr_html_(self) -> str_:
         return self._pyexpr.to_str()
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> str_:
         if self._pyexpr is not None:
             if len(expr_str := self._pyexpr.to_str()) > 30:
                 expr_str = f"{expr_str[:30]}…"
@@ -164,7 +166,7 @@ class Expr:
         else:
             return "only during sphinx"
 
-    def __str__(self) -> str:
+    def __str__(self) -> str_:
         if self._pyexpr is not None:
             return self._pyexpr.to_str()
         else:
@@ -318,7 +320,7 @@ class Expr:
         self._pyexpr.__setstate__(state)
 
     def __array_ufunc__(
-        self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
+        self, ufunc: Callable[..., Any], method: str_, *inputs: Any, **kwargs: Any
     ) -> Expr:
         """Numpy universal functions."""
         if method != "__call__":
@@ -385,7 +387,7 @@ class Expr:
     @classmethod
     def deserialize(
         cls,
-        source: str | Path | IOBase | bytes,
+        source: str_ | Path | IOBase | bytes,
         *,
         format: SerializationFormat = "binary",
     ) -> Expr:
@@ -720,7 +722,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.exp())
 
-    def alias(self, name: str) -> Expr:
+    def alias(self, name: str_) -> Expr:
         """
         Rename the expression.
 
@@ -782,8 +784,8 @@ class Expr:
 
     def exclude(
         self,
-        columns: str | PolarsDataType | Collection[str] | Collection[PolarsDataType],
-        *more_columns: str | PolarsDataType,
+        columns: str_ | PolarsDataType | Collection[str_ | PolarsDataType],
+        *more_columns: str_ | PolarsDataType,
     ) -> Expr:
         """
         Exclude columns from a multi-column expression.
@@ -1771,7 +1773,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.round_sig_figs(digits))
 
-    def dot(self, other: Expr | str) -> Expr:
+    def dot(self, other: Expr | str_) -> Expr:
         """
         Compute the dot/inner product between two Expressions.
 
@@ -3877,8 +3879,8 @@ class Expr:
         self,
         index_column: IntoExprColumn,
         *,
-        period: str | timedelta,
-        offset: str | timedelta | None = None,
+        period: str_ | timedelta,
+        offset: str_ | timedelta | None = None,
         closed: ClosedInterval = "right",
     ) -> Expr:
         """
@@ -4132,7 +4134,7 @@ class Expr:
 
     def quantile(
         self,
-        quantile: float | list[float] | Expr,
+        quantile: float | list_[float] | Expr,
         interpolation: QuantileMethod = "nearest",
     ) -> Expr:
         """
@@ -4213,7 +4215,7 @@ class Expr:
         self,
         breaks: Sequence[float],
         *,
-        labels: Sequence[str] | None = None,
+        labels: Sequence[str_] | None = None,
         left_closed: bool = False,
         include_breaks: bool = False,
     ) -> Expr:
@@ -4294,7 +4296,7 @@ class Expr:
         self,
         quantiles: Sequence[float] | int,
         *,
-        labels: Sequence[str] | None = None,
+        labels: Sequence[str_] | None = None,
         left_closed: bool = False,
         allow_duplicates: bool = False,
         include_breaks: bool = False,
@@ -6126,7 +6128,7 @@ Consider using {self}.implode() instead"""
         other_pyexpr = parse_into_expression(other)
         return wrap_expr(self._pyexpr.is_in(other_pyexpr, nulls_equal))
 
-    def repeat_by(self, by: pl.Series | Expr | str | int) -> Expr:
+    def repeat_by(self, by: pl.Series | Expr | str_ | int) -> Expr:
         """
         Repeat the elements in this Series as specified in the given expression.
 
@@ -6432,7 +6434,7 @@ Consider using {self}.implode() instead"""
         """
         return wrap_expr(self._pyexpr.reinterpret(signed))
 
-    def inspect(self, fmt: str = "{}") -> Expr:
+    def inspect(self, fmt: str_ = "{}") -> Expr:
         """
         Print the value that this expression evaluates to and pass on the value.
 
@@ -6586,7 +6588,7 @@ Consider using {self}.implode() instead"""
     def rolling_min_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -6714,7 +6716,7 @@ Consider using {self}.implode() instead"""
     def rolling_max_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -6868,7 +6870,7 @@ Consider using {self}.implode() instead"""
     def rolling_mean_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -7029,7 +7031,7 @@ Consider using {self}.implode() instead"""
     def rolling_sum_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -7183,7 +7185,7 @@ Consider using {self}.implode() instead"""
     def rolling_std_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -7346,7 +7348,7 @@ Consider using {self}.implode() instead"""
     def rolling_var_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -7509,7 +7511,7 @@ Consider using {self}.implode() instead"""
     def rolling_median_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -7639,7 +7641,7 @@ Consider using {self}.implode() instead"""
     def rolling_quantile_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         quantile: float,
         interpolation: QuantileMethod = "nearest",
@@ -7781,7 +7783,7 @@ Consider using {self}.implode() instead"""
     def rolling_rank_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         method: RankMethod = "average",
         *,
         seed: int | None = None,
@@ -7878,7 +7880,7 @@ Consider using {self}.implode() instead"""
     def rolling_min(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -7988,7 +7990,7 @@ Consider using {self}.implode() instead"""
     def rolling_max(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8098,7 +8100,7 @@ Consider using {self}.implode() instead"""
     def rolling_mean(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8210,7 +8212,7 @@ Consider using {self}.implode() instead"""
     def rolling_sum(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8320,7 +8322,7 @@ Consider using {self}.implode() instead"""
     def rolling_std(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8436,7 +8438,7 @@ Consider using {self}.implode() instead"""
     def rolling_var(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8552,7 +8554,7 @@ Consider using {self}.implode() instead"""
     def rolling_median(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8664,7 +8666,7 @@ Consider using {self}.implode() instead"""
         quantile: float,
         interpolation: QuantileMethod = "nearest",
         window_size: int = 2,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -9021,7 +9023,7 @@ Consider using {self}.implode() instead"""
         self,
         function: Callable[[Series], Any],
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -10206,9 +10208,9 @@ Consider using {self}.implode() instead"""
 
     def ewm_mean_by(
         self,
-        by: str | IntoExpr,
+        by: str_ | IntoExpr,
         *,
-        half_life: str | timedelta,
+        half_life: str_ | timedelta,
     ) -> Expr:
         r"""
         Compute time-based exponentially weighted moving average.
@@ -10525,7 +10527,7 @@ Consider using {self}.implode() instead"""
         *,
         sort: bool = False,
         parallel: bool = False,
-        name: str | None = None,
+        name: str_ | None = None,
         normalize: bool = False,
     ) -> Expr:
         """
@@ -11518,9 +11520,9 @@ Consider using {self}.implode() instead"""
     def register_plugin(
         self,
         *,
-        lib: str,
-        symbol: str,
-        args: list[IntoExpr] | None = None,
+        lib: str_,
+        symbol: str_,
+        args: list_[IntoExpr] | None = None,
         kwargs: dict[Any, Any] | None = None,
         is_elementwise: bool = False,
         input_wildcard_expansion: bool = False,
@@ -11612,7 +11614,7 @@ Consider using {self}.implode() instead"""
 
     def _row_decode(
         self,
-        names: Sequence[str],
+        names: Sequence[str_],
         dtypes: Sequence[pl.DataTypeExpr | PolarsDataType],
         *,
         unordered: bool = False,
@@ -11636,7 +11638,7 @@ Consider using {self}.implode() instead"""
         return wrap_expr(result)
 
     @classmethod
-    def from_json(cls, value: str) -> Expr:
+    def from_json(cls, value: str_) -> Expr:
         """
         Read an expression from a JSON encoded string to construct an Expression.
 

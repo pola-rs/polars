@@ -114,6 +114,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
+    from builtins import list as list_
+    from builtins import set as set_
+    from builtins import str as str_
     from collections.abc import Callable
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -262,7 +265,7 @@ class Series:
 
     # NOTE: This `= None` is needed to generate the docs with sphinx_accessor.
     _s: PySeries = None  # type: ignore[assignment]
-    _accessors: ClassVar[set[str]] = {
+    _accessors: ClassVar[set_[str_]] = {
         "arr",
         "bin",
         "cat",
@@ -276,7 +279,7 @@ class Series:
 
     def __init__(
         self,
-        name: str | ArrayLike | None = None,
+        name: str_ | ArrayLike | None = None,
         values: ArrayLike | None = None,
         dtype: PolarsDataType | None = None,
         *,
@@ -391,12 +394,12 @@ class Series:
         "`_import_from_c` is deprecated; use `_import_arrow_from_c` instead. If "
         "you are using an extension, please compile it with the latest 'pyo3-polars'"
     )
-    def _import_from_c(cls, name: str, pointers: list[tuple[int, int]]) -> Self:
+    def _import_from_c(cls, name: str_, pointers: list_[tuple[int, int]]) -> Self:
         # `_import_from_c` was deprecated in 1.3
         return cls._from_pyseries(PySeries._import_arrow_from_c(name, pointers))
 
     @classmethod
-    def _import_arrow_from_c(cls, name: str, pointers: list[tuple[int, int]]) -> Self:
+    def _import_arrow_from_c(cls, name: str_, pointers: list_[tuple[int, int]]) -> Self:
         """
         Construct a Series from Arrows C interface.
 
@@ -609,7 +612,7 @@ class Series:
         return self._s.dtype()
 
     @property
-    def flags(self) -> dict[str, bool]:
+    def flags(self) -> dict[str_, bool]:
         """
         Get flags that are set on the Series.
 
@@ -628,7 +631,7 @@ class Series:
         return out
 
     @property
-    def name(self) -> str:
+    def name(self) -> str_:
         """
         Get the name of this Series.
 
@@ -672,11 +675,11 @@ class Series:
         self._s = Series()._s  # Initialize with a dummy
         self._s.__setstate__(state)
 
-    def __str__(self) -> str:
+    def __str__(self) -> str_:
         s_repr: str = self._s.as_str()
         return s_repr.replace("Series", f"{self.__class__.__name__}", 1)
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> str_:
         return self.__str__()
 
     def __len__(self) -> int:
@@ -1064,7 +1067,7 @@ class Series:
         """Method equivalent of operator expression `series > other`."""
         return self.__gt__(other)
 
-    def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Self:
+    def _arithmetic(self, other: Any, op_s: str_, op_ffi: str_) -> Self:
         if isinstance(other, pl.Expr):
             # expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
             other = self.to_frame().select_seq(other).to_series()
@@ -1482,7 +1485,7 @@ class Series:
         return arr
 
     def __array_ufunc__(
-        self, ufunc: np.ufunc, method: str, *inputs: Any, **kwargs: Any
+        self, ufunc: np.ufunc, method: str_, *inputs: Any, **kwargs: Any
     ) -> Series:
         """Numpy universal functions."""
         if self._s.n_chunks() > 1:
@@ -1606,7 +1609,7 @@ class Series:
         """
         return self._s.__arrow_c_stream__(requested_schema)
 
-    def _repr_html_(self) -> str:
+    def _repr_html_(self) -> str_:
         """Format output data in HTML for display in Jupyter Notebooks."""
         return self.to_frame()._repr_html_(_from_series=True)
 
@@ -1937,7 +1940,7 @@ class Series:
         ]
         """
 
-    def to_frame(self, name: str | None = None) -> DataFrame:
+    def to_frame(self, name: str_ | None = None) -> DataFrame:
         """
         Cast this Series to a DataFrame.
 
@@ -2221,7 +2224,7 @@ class Series:
         """
         return self.to_frame().select_seq(F.col(self.name).max_by(by)).item()
 
-    def nan_max(self) -> int | float | date | datetime | timedelta | str:
+    def nan_max(self) -> int | float | date | datetime | timedelta | str_:
         """
         Get maximum value, but propagate/poison encountered NaN values.
 
@@ -2240,7 +2243,7 @@ class Series:
         """
         return self.to_frame().select_seq(F.col(self.name).nan_max()).item()
 
-    def nan_min(self) -> int | float | date | datetime | timedelta | str:
+    def nan_min(self) -> int | float | date | datetime | timedelta | str_:
         """
         Get minimum value, but propagate/poison encountered NaN values.
 
@@ -2310,8 +2313,8 @@ class Series:
         return self._s.median()
 
     def quantile(
-        self, quantile: float | list[float], interpolation: QuantileMethod = "nearest"
-    ) -> float | list[float] | None:
+        self, quantile: float | list_[float], interpolation: QuantileMethod = "nearest"
+    ) -> float | list_[float] | None:
         """
         Get the quantile value of this Series.
 
@@ -2343,7 +2346,7 @@ class Series:
     def to_dummies(
         self,
         *,
-        separator: str = "_",
+        separator: str_ = "_",
         drop_first: bool = False,
         drop_nulls: bool = False,
     ) -> DataFrame:
@@ -2408,7 +2411,7 @@ class Series:
         self,
         breaks: Sequence[float],
         *,
-        labels: Sequence[str] | None = None,
+        labels: Sequence[str_] | None = None,
         left_closed: bool = False,
         include_breaks: bool = False,
     ) -> Series:
@@ -2482,7 +2485,7 @@ class Series:
         self,
         quantiles: Sequence[float] | int,
         *,
-        labels: Sequence[str] | None = None,
+        labels: Sequence[str_] | None = None,
         left_closed: bool = False,
         allow_duplicates: bool = False,
         include_breaks: bool = False,
@@ -2645,7 +2648,7 @@ class Series:
     @unstable()
     def hist(
         self,
-        bins: list[float] | None = None,
+        bins: list_[float] | None = None,
         *,
         bin_count: int | None = None,
         include_category: bool = True,
@@ -2712,7 +2715,7 @@ class Series:
         *,
         sort: bool = False,
         parallel: bool = False,
-        name: str | None = None,
+        name: str_ | None = None,
         normalize: bool = False,
     ) -> DataFrame:
         """
@@ -2883,7 +2886,7 @@ class Series:
         ]
         """
 
-    def alias(self, name: str) -> Series:
+    def alias(self, name: str_) -> Series:
         """
         Rename the series.
 
@@ -2908,7 +2911,7 @@ class Series:
         s._s.rename(name)
         return s
 
-    def rename(self, name: str) -> Series:
+    def rename(self, name: str_) -> Series:
         """
         Rename this Series.
 
@@ -2933,7 +2936,7 @@ class Series:
         """
         return self.alias(name)
 
-    def chunk_lengths(self) -> list[int]:
+    def chunk_lengths(self) -> list_[int]:
         """
         Get the length of each individual chunk.
 
@@ -3405,7 +3408,7 @@ class Series:
         ]
         """
 
-    def sql(self, query: str, *, table_name: str = "self") -> DataFrame:
+    def sql(self, query: str_, *, table_name: str_ = "self") -> DataFrame:
         """
         Execute a SQL query against the Series.
 
@@ -3807,7 +3810,7 @@ class Series:
     @overload
     def search_sorted(
         self,
-        element: list[NonNestedLiteral | None] | np.ndarray[Any, Any] | Expr | Series,
+        element: list_[NonNestedLiteral | None] | np.ndarray[Any, Any] | Expr | Series,
         side: SearchSortedSide = ...,
         *,
         descending: bool = ...,
@@ -3902,7 +3905,7 @@ class Series:
         """
 
     def gather(
-        self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
+        self, indices: int | list_[int] | Expr | Series | np.ndarray[Any, Any]
     ) -> Series:
         """
         Take values by index.
@@ -4442,7 +4445,7 @@ class Series:
 
     def cast(
         self,
-        dtype: type[int | float | str | bool] | PolarsDataType,
+        dtype: type[int | float | str_ | bool] | PolarsDataType,
         *,
         strict: bool = True,
         wrap_numerical: bool = False,
@@ -4523,7 +4526,7 @@ class Series:
         ]
         """
 
-    def to_list(self) -> list[Any]:
+    def to_list(self) -> list_[Any]:
         """
         Convert this Series to a Python list.
 
@@ -4856,7 +4859,7 @@ class Series:
         return self._s.to_numpy(writable=writable, allow_copy=allow_copy)
 
     @unstable()
-    def to_jax(self, device: jax.Device | str | None = None) -> jax.Array:
+    def to_jax(self, device: jax.Device | str_ | None = None) -> jax.Array:
         """
         Convert this Series to a Jax Array.
 
@@ -5082,7 +5085,7 @@ class Series:
         pd_series.name = self.name
         return pd_series
 
-    def to_init_repr(self, n: int = 1000) -> str:
+    def to_init_repr(self, n: int = 1000) -> str_:
         """
         Convert Series to instantiable string representation.
 
@@ -6094,7 +6097,7 @@ class Series:
     def rolling_min_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -6224,7 +6227,7 @@ class Series:
     def rolling_min(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -6274,7 +6277,7 @@ class Series:
     def rolling_max_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -6404,7 +6407,7 @@ class Series:
     def rolling_max(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -6454,7 +6457,7 @@ class Series:
     def rolling_mean_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -6584,7 +6587,7 @@ class Series:
     def rolling_mean(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -6634,7 +6637,7 @@ class Series:
     def rolling_sum_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -6764,7 +6767,7 @@ class Series:
     def rolling_sum(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -6814,7 +6817,7 @@ class Series:
     def rolling_std_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -6947,7 +6950,7 @@ class Series:
     def rolling_std(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -7001,7 +7004,7 @@ class Series:
     def rolling_var_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -7134,7 +7137,7 @@ class Series:
     def rolling_var(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -7190,7 +7193,7 @@ class Series:
         self,
         function: Callable[[Series], Any],
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -7245,7 +7248,7 @@ class Series:
     def rolling_median_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -7376,7 +7379,7 @@ class Series:
     def rolling_median(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -7427,7 +7430,7 @@ class Series:
     def rolling_quantile_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         quantile: float,
         interpolation: QuantileMethod = "nearest",
@@ -7565,7 +7568,7 @@ class Series:
         quantile: float,
         interpolation: QuantileMethod = "nearest",
         window_size: int = 2,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -7631,7 +7634,7 @@ class Series:
     def rolling_rank_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         method: RankMethod = "average",
         *,
         seed: int | None = None,
@@ -8901,7 +8904,7 @@ class Series:
         self,
         by: IntoExpr,
         *,
-        half_life: str | timedelta,
+        half_life: str_ | timedelta,
     ) -> Series:
         r"""
         Compute time-based exponentially weighted moving average.
@@ -9262,7 +9265,7 @@ class Series:
         """
         return wrap_s(self._s.shrink_dtype())
 
-    def get_chunks(self) -> list[Series]:
+    def get_chunks(self) -> list_[Series]:
         """
         Get the chunks of this Series as a list of Series.
 
@@ -9393,7 +9396,7 @@ class Series:
 
     def _row_decode(
         self,
-        names: Sequence[str],
+        names: Sequence[str_],
         dtypes: Sequence[PolarsDataType],
         *,
         unordered: bool = False,
