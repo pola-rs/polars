@@ -3428,6 +3428,7 @@ dependencies = [
  "sha2",
  "slotmap",
  "strum_macros 0.27.2",
+ "tokio",
  "version_check",
 ]
 
