@@ -1,6 +1,7 @@
 use bitflags::bitflags;
 use polars_core::prelude::*;
 use polars_core::utils::SuperTypeOptions;
+use polars_utils::bool::UnsafeBool;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -20,17 +21,6 @@ pub struct DistinctOptionsIR {
     pub keep_strategy: UniqueKeepStrategy,
     /// Take only a slice of the result
     pub slice: Option<(i64, usize)>,
-}
-
-// a boolean that can only be set to `false` safely
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct UnsafeBool(bool);
-impl Default for UnsafeBool {
-    fn default() -> Self {
-        UnsafeBool(true)
-    }
 }
 
 #[cfg(feature = "dsl-schema")]
