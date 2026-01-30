@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering, fence};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 /// Measures the time for which at least 1 session was active.
@@ -71,11 +71,8 @@ impl ActiveTimer {
                             Instant::now().duration_since(self.base_instant).as_nanos() as u64;
 
                         if stopped_at_ns == u64::MAX {
-                            stopped_at_ns = self.start_ns.load(Ordering::Relaxed)
-                        }
-
-                        if total_ns == u64::MAX {
-                            total_ns = self.total_ns.load(Ordering::Relaxed)
+                            stopped_at_ns = self.start_ns.load(Ordering::Relaxed);
+                            total_ns = self.total_ns.load(Ordering::Relaxed);
                         }
 
                         let update = now_ns - stopped_at_ns;
@@ -105,13 +102,12 @@ impl ActiveTimer {
     }
 
     pub fn total_active_time_ns(&self) -> u64 {
-        let total_ns = self.total_ns.load(Ordering::Relaxed);
+        let total_ns = self.total_ns.load(Ordering::Acquire);
 
         if total_ns & RUNNING_BIT == 0 {
             return total_ns;
         }
 
-        fence(Ordering::Acquire);
         let start_ns = self.start_ns.load(Ordering::Acquire);
         let total_ns2 = self.total_ns.load(Ordering::Relaxed);
 
