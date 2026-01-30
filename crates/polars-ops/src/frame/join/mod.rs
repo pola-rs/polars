@@ -36,6 +36,7 @@ use polars_core::POOL;
 use polars_core::chunked_array::ops::row_encode::{
     encode_rows_vertical_par_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,
 };
+use polars_core::datatypes::DataType;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 pub(super) use polars_core::series::IsSorted;
@@ -217,13 +218,37 @@ pub trait DataFrameJoinOps: IntoDf {
             .zip(&selected_right)
             .find(|(l, r)| l.dtype() != r.dtype())
         {
-            polars_bail!(
-                ComputeError:
-                    format!(
-                        "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
-                        l.name(), l.dtype(), r.name(), r.dtype()
-                    )
-            );
+            if let (DataType::Struct(left_fields), DataType::Struct(right_fields)) =
+                (l.dtype(), r.dtype())
+            {
+                let left_formatted: String = left_fields
+                    .iter()
+                    .map(|field| format!("{}: {}", field.name, field.dtype))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+
+                let right_formatted: String = right_fields
+                    .iter()
+                    .map(|field| format!("{}: {}", field.name, field.dtype))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+
+                polars_bail!(
+                    ComputeError:
+                        format!(
+                            "datatypes of join keys don't match - `{}`: {} with fields {} on left does not match `{}`: {} with fields {} on right",
+                            l.name(), l.dtype(), left_formatted, r.name(), r.dtype(), right_formatted
+                        )
+                );
+            } else {
+                polars_bail!(
+                    ComputeError:
+                        format!(
+                            "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
+                            l.name(), l.dtype(), r.name(), r.dtype()
+                        )
+                );
+            }
         };
 
         #[cfg(feature = "iejoin")]
