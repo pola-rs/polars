@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_core::POOL;
 use polars_core::prelude::{IntoColumn, PlHashSet, PlRandomState};
 use polars_core::schema::Schema;
-use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_core::utils::accumulate_schema_dataframes_vertical_unchecked;
 use polars_expr::groups::Grouper;
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::hot_groups::{HotGrouper, new_hash_hot_grouper};
@@ -626,7 +626,10 @@ impl ComputeNode for GroupByNode {
                         .collect::<Result<Vec<_>, _>>()
                 })?;
 
-                let df = accumulate_dataframes_vertical_unchecked(dfs);
+                let df = accumulate_schema_dataframes_vertical_unchecked(
+                    self.output_schema.clone(),
+                    dfs,
+                );
                 let source = InMemorySourceNode::new(Arc::new(df), MorselSeq::new(0));
                 self.state = GroupByState::Source(source);
             },

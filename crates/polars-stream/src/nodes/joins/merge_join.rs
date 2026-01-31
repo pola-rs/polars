@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use polars_core::POOL;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
-use polars_core::utils::Container;
+use polars_core::utils::{Container, accumulate_schema_dataframes_vertical_unchecked};
 use polars_ops::frame::merge_join::*;
 use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_utils::UnitVec;
@@ -891,10 +891,10 @@ impl DataFrameBuffer {
     }
 
     fn into_df(self) -> DataFrame {
-        let mut acc = DataFrame::empty_with_schema(&self.schema);
-        for df in self.dfs_at_offsets.into_values() {
-            acc.vstack_mut_owned(df).unwrap();
-        }
+        let acc = accumulate_schema_dataframes_vertical_unchecked(
+            self.schema,
+            self.dfs_at_offsets.into_values(),
+        );
         acc.slice(self.skip_rows as i64, self.total_rows)
     }
 
