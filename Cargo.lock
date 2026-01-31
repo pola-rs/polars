@@ -2966,6 +2966,7 @@ dependencies = [
  "avro-schema",
  "bitflags",
  "bytemuck",
+ "bytes",
  "chrono",
  "chrono-tz",
  "dyn-clone",
@@ -3427,6 +3428,7 @@ dependencies = [
  "sha2",
  "slotmap",
  "strum_macros 0.27.2",
+ "tokio",
  "version_check",
 ]
 
@@ -3564,6 +3566,7 @@ dependencies = [
  "async-trait",
  "atomic-waker",
  "bitflags",
+ "bytes",
  "chrono-tz",
  "crossbeam-channel",
  "crossbeam-deque",

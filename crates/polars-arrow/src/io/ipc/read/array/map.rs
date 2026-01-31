@@ -3,6 +3,7 @@ use std::io::{Read, Seek};
 
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_err};
+use polars_utils::bool::UnsafeBool;
 
 use super::super::super::IpcField;
 use super::super::deserialize::{read, skip};
@@ -27,6 +28,7 @@ pub fn read_map<R: Read + Seek>(
     limit: Option<usize>,
     version: Version,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<MapArray> {
     let field_node = try_get_field_node(field_nodes, &dtype)?;
 
@@ -73,6 +75,7 @@ pub fn read_map<R: Read + Seek>(
         Some(last_offset),
         version,
         scratch,
+        checked,
     )?;
     MapArray::try_new(dtype, offsets.try_into()?, field, validity)
 }

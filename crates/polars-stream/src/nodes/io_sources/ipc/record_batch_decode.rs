@@ -13,6 +13,7 @@ use polars_core::utils::arrow::io::ipc::read::{BlockReader, FileMetadata, read_b
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_io::RowIndex;
 use polars_utils::IdxSize;
+use polars_utils::bool::UnsafeBool;
 
 use super::record_batch_data_fetch::RecordBatchData;
 use crate::nodes::io_sinks::writers::interface::IPC_RW_RECORD_BATCH_FLAGS_KEY;
@@ -24,6 +25,7 @@ pub(super) struct RecordBatchDecoder {
     pub(super) dictionaries: Arc<Option<Dictionaries>>,
     pub(super) row_index: Option<RowIndex>,
     pub(super) read_statistics_flags: bool,
+    pub(super) checked: UnsafeBool,
 }
 
 impl RecordBatchDecoder {
@@ -71,6 +73,7 @@ impl RecordBatchDecoder {
                 true,
                 &mut message_scratch,
                 &mut data_scratch,
+                self.checked,
             );
 
             // Apply projection.
