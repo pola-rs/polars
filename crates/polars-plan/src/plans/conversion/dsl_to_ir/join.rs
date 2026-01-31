@@ -328,7 +328,7 @@ pub fn resolve_join(
 
                 polars_bail!(
                     SchemaMismatch:
-                    "datatypes of join keys don't match - `{}`: struct with fields {} on left does not match `{}`: struct with fields {} on right (and no other type was available to cast to)",
+                    "datatypes of join keys don't match - `{}`: struct with fields {{{}}} on left does not match `{}`: struct with fields {{{}}} on right (and no other type was available to cast to)",
                     lnode.output_name(), left_formatted, rnode.output_name(), right_formatted
                 );
             }

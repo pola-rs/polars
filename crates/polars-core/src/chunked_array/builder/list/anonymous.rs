@@ -77,7 +77,7 @@ impl<'a> AnonymousListBuilder<'a> {
                         .collect::<Vec<String>>()
                         .join(", ");
 
-                    polars_bail!(ComputeError: "struct dtypes don't match, got {}, expected: {} ", got_formatted, set_formatted);
+                    polars_bail!(ComputeError: "struct dtypes don't match, got {{{}}}, expected: {{{}}}", got_formatted, set_formatted);
                 }
 
                 polars_bail!(ComputeError: "dtypes don't match, got {dt}, expected: {set_dt}")
@@ -159,7 +159,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
                             .collect::<Vec<String>>()
                             .join(", ");
 
-                        polars_bail!(ComputeError: "struct dtypes don't match, got {}, expected: {} ", got_formatted, set_formatted);
+                        polars_bail!(ComputeError: "struct dtypes don't match, got {{{}}}, expected: {{{}}}", got_formatted, set_formatted);
                     }
 
                     polars_bail!(ComputeError: "dtypes don't match, got {dt}, expected: {set_dt}")
