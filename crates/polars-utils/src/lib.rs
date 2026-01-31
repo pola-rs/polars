@@ -18,6 +18,7 @@ pub mod clmul;
 mod config;
 pub mod small_bytes;
 pub use config::check_allow_importing_interval_as_struct;
+pub mod active_timer;
 pub mod arg_min_max;
 pub mod cpuid;
 pub mod error;

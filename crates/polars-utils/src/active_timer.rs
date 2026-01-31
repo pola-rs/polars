@@ -1,14 +1,15 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Measures the time for which at least 1 session was active.
 #[derive(Debug)]
 pub struct ActiveTimer {
     base_instant: Instant,
     num_active: AtomicU64,
-    start_ns: AtomicU64,
-    total_ns: AtomicU64,
+    /// If `RUNNING_BIT` is set, this represents the amount of time to exclude from `base_instant.elapsed()`.
+    /// Otherwise, this represents the total time recorded by this timer.
+    state_ns: AtomicU64,
 }
 
 impl Default for ActiveTimer {
@@ -24,8 +25,7 @@ impl ActiveTimer {
         Self {
             base_instant: Instant::now(),
             num_active: AtomicU64::new(0),
-            start_ns: AtomicU64::new(0),
-            total_ns: AtomicU64::new(0),
+            state_ns: AtomicU64::new(0),
         }
     }
 
@@ -46,55 +46,36 @@ impl ActiveTimer {
 
     pub fn _register_session(&self) {
         if self.num_active.fetch_add(1, Ordering::Acquire) == 0 {
-            self.start_ns.store(
-                Instant::now().duration_since(self.base_instant).as_nanos() as u64,
-                Ordering::Relaxed,
-            );
+            let mut state_ns = self.state_ns.load(Ordering::Relaxed);
 
-            let total_ns = self.total_ns.load(Ordering::Relaxed);
-            self.total_ns
-                .store(total_ns | RUNNING_BIT, Ordering::Release);
+            state_ns = self.base_instant.elapsed().as_nanos() as u64 - state_ns;
+
+            self.state_ns
+                .store(state_ns | RUNNING_BIT, Ordering::Relaxed);
         }
     }
 
     pub fn _unregister_session(&self) {
-        let mut stopped = false;
-        let mut stopped_at_ns = u64::MAX;
-        let mut total_ns = u64::MAX;
+        let mut state_ns = u64::MAX;
 
         let _ = self
             .num_active
             .fetch_update(Ordering::Release, Ordering::Acquire, |num_active| {
                 if num_active == 1 {
-                    if !stopped {
-                        let now_ns =
-                            Instant::now().duration_since(self.base_instant).as_nanos() as u64;
-
-                        if stopped_at_ns == u64::MAX {
-                            stopped_at_ns = self.start_ns.load(Ordering::Relaxed);
-                            total_ns = self.total_ns.load(Ordering::Relaxed);
+                    if state_ns & RUNNING_BIT != 0 {
+                        if state_ns == u64::MAX {
+                            state_ns = self.state_ns.load(Ordering::Relaxed);
                         }
 
-                        let update = now_ns - stopped_at_ns;
-                        total_ns += update;
+                        state_ns &= !RUNNING_BIT;
+                        state_ns = self.base_instant.elapsed().as_nanos() as u64 - state_ns;
 
-                        self.total_ns
-                            .store(total_ns & !RUNNING_BIT, Ordering::Relaxed);
-
-                        stopped_at_ns = now_ns;
-
-                        stopped = true;
+                        self.state_ns.store(state_ns, Ordering::Relaxed);
                     }
-                } else if stopped == true {
-                    self.start_ns.store(
-                        stopped_at_ns,
-                        // Release the store on `total_ns` from the `!stopped` branch above.
-                        Ordering::Release,
-                    );
-                    self.total_ns
-                        .store(total_ns | RUNNING_BIT, Ordering::Release);
-
-                    stopped = false;
+                } else if state_ns & RUNNING_BIT == 0 {
+                    state_ns = self.base_instant.elapsed().as_nanos() as u64 - state_ns;
+                    state_ns |= RUNNING_BIT;
+                    self.state_ns.store(state_ns, Ordering::Relaxed);
                 }
 
                 Some(num_active - 1)
@@ -102,26 +83,13 @@ impl ActiveTimer {
     }
 
     pub fn total_active_time_ns(&self) -> u64 {
-        let total_ns = self.total_ns.load(Ordering::Acquire);
+        let state_ns = self.state_ns.load(Ordering::Relaxed);
 
-        if total_ns & RUNNING_BIT == 0 {
-            return total_ns;
-        }
-
-        let start_ns = self.start_ns.load(Ordering::Acquire);
-        let total_ns2 = self.total_ns.load(Ordering::Relaxed);
-
-        let total_ns = if total_ns2 != total_ns {
-            // This is a freshly updated value
-            total_ns2
+        if state_ns & RUNNING_BIT == 0 {
+            state_ns
         } else {
-            let now_ns = Instant::now().duration_since(self.base_instant).as_nanos() as u64;
-            let update = now_ns - start_ns;
-
-            total_ns + update
-        };
-
-        total_ns & !RUNNING_BIT
+            self.base_instant.elapsed().as_nanos() as u64 - (state_ns & !RUNNING_BIT)
+        }
     }
 }
 
