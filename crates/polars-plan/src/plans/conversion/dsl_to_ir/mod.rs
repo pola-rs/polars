@@ -152,10 +152,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         let cache_file_info = ctxt.cache_file_info.clone();
         use tokio::runtime::Handle;
 
-        if let Ok(handle) = Handle::try_current() {
-            handle.block_on(fetch_metadata(&lp, cache_file_info, verbose))?;
+        let fut = fetch_metadata(&lp, cache_file_info, verbose);
+        if let Ok(_handle) = Handle::try_current() {
+            get_runtime().block_in_place_on(fut)?;
         } else {
-            get_runtime().block_on(fetch_metadata(&lp, cache_file_info, verbose))?;
+            get_runtime().block_on(fut)?;
         }
     }
 
