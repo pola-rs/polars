@@ -4142,6 +4142,7 @@ class Expr:
         ----------
         quantile
             Quantile(s) between 0.0 and 1.0. Can be a single float or a list of floats.
+
             - If a single float, returns a single f64 value per row.
             - If a list of floats, returns a list of f64 values per row (one value per quantile).
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}

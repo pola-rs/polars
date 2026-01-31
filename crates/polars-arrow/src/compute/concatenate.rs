@@ -219,17 +219,19 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
         all_same_bufs &= Buffer::is_same_buffer(arr.data_buffers(), first_arr.data_buffers());
     }
 
-    let mut total_bytes_len = 0;
+    let mut total_bytes_len = None;
     let mut views = Vec::with_capacity(total_len);
 
     let mut total_buffer_len = 0;
     let buffers = if all_same_bufs {
         total_buffer_len = first_arr.total_buffer_len();
+        let mut bytes_len = 0;
         for arr in arrays {
             let arr: &BinaryViewArrayGeneric<V> = arr.as_ref().as_any().downcast_ref().unwrap();
             views.extend_from_slice(arr.views());
-            total_bytes_len += arr.total_bytes_len();
+            bytes_len += arr.total_bytes_len();
         }
+        total_bytes_len = Some(bytes_len);
         Buffer::clone(first_arr.data_buffers())
 
     // There might be way more buffers than elements, so we only dedup if there
@@ -274,7 +276,6 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
                         view.buffer_idx = new_buffer_idx;
                     }
 
-                    total_bytes_len += view.length as usize;
                     views.push_unchecked(view);
                 }
             }
@@ -302,7 +303,6 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
 
             unsafe {
                 for mut view in arr.views().iter().copied() {
-                    total_bytes_len += view.length as usize;
                     if view.length > 12 {
                         if new_buffers.last().unwrap_unchecked().len() + view.length as usize
                             >= u32::MAX as usize
