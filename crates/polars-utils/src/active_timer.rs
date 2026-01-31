@@ -7,8 +7,9 @@ use std::time::{Duration, Instant};
 pub struct ActiveTimer {
     base_instant: Instant,
     num_active: AtomicU64,
-    /// If `TICKING_BIT` is set, this represents the amount of time to exclude from `base_instant.elapsed()`.
-    /// Otherwise, this represents the total time recorded by this timer.
+    /// If `TICKING_BIT` is set, this represents the amount of nanoseconds in `base_instant.elapsed()`
+    /// for which the timer was was not active. Otherwise, this represents the total time recorded
+    /// by this timer.
     state_ns: AtomicU64,
 }
 
