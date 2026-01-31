@@ -84,6 +84,7 @@ impl ActiveTimer {
 
     /// Note, this is not monotonically nondecreasing across calls.
     pub fn total_active_time_ns(&self) -> u64 {
+        self.num_active.load(Ordering::Acquire);
         let state_ns = self.state_ns.load(Ordering::Relaxed);
 
         if state_ns & RUNNING_BIT == 0 {
