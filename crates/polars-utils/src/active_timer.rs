@@ -67,8 +67,8 @@ impl ActiveTimer {
                             state_ns = self.state_ns.load(Ordering::Relaxed);
                         }
 
-                        state_ns &= !RUNNING_BIT;
-                        state_ns = self.base_instant.elapsed().as_nanos() as u64 - state_ns;
+                        state_ns = self.base_instant.elapsed().as_nanos() as u64
+                            - (state_ns & !RUNNING_BIT);
 
                         self.state_ns.store(state_ns, Ordering::Relaxed);
                     }
