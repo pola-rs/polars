@@ -1051,3 +1051,53 @@ class ExprArrayNameSpace:
         polars.Expr.list.agg: Same for the List datatype.
         """
         return wrap_expr(self._pyexpr.arr_agg(expr._pyexpr))
+
+    def gather_every(
+        self,
+        n: int | IntoExprColumn,
+        offset: int | IntoExprColumn = 0,
+    ) -> Expr:
+        """
+        Take every n-th value starting from offset in sub-arrays.
+
+        Parameters
+        ----------
+        n
+            Gather every n-th element.
+        offset
+            Starting index.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`List`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2, 3, 4, 5], [6, 7, 8, 9, 10], [11, 12, 13, 14, 15]],
+        ...         "n": [2, 1, 3],
+        ...         "offset": [0, 1, 0],
+        ...     },
+        ...     schema={"a": pl.Array(pl.Int64, 5), "n": pl.Int64, "offset": pl.Int64},
+        ... )
+        >>> df.with_columns(
+        ...     gather_every=pl.col("a").arr.gather_every(
+        ...         n=pl.col("n"), offset=pl.col("offset")
+        ...     )
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (3, 4)
+        ┌───────────────────┬─────┬────────┬──────────────┐
+        │ a                 ┆ n   ┆ offset ┆ gather_every │
+        │ ---               ┆ --- ┆ ---    ┆ ---          │
+        │ array[i64, 5]     ┆ i64 ┆ i64    ┆ list[i64]    │
+        ╞═══════════════════╪═════╪════════╪══════════════╡
+        │ [1, 2, … 5]       ┆ 2   ┆ 0      ┆ [1, 3, 5]    │
+        │ [6, 7, … 10]      ┆ 1   ┆ 1      ┆ [7, 8, … 10] │
+        │ [11, 12, … 15]    ┆ 3   ┆ 0      ┆ [11, 14]     │
+        └───────────────────┴─────┴────────┴──────────────┘
+        """
+        n_pyexpr = parse_into_expression(n)
+        offset_pyexpr = parse_into_expression(offset)
+        return wrap_expr(self._pyexpr.arr_gather_every(n_pyexpr, offset_pyexpr))
