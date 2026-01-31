@@ -45,14 +45,21 @@ impl ActiveTimer {
     }
 
     pub fn _register_session(&self) {
-        if self.num_active.fetch_add(1, Ordering::Acquire) == 0 {
-            let mut state_ns = self.state_ns.load(Ordering::Relaxed);
+        let _ = self
+            .num_active
+            .fetch_update(Ordering::Release, Ordering::Acquire, |num_active| {
+                if num_active == 1 {
+                    let mut state_ns = self.state_ns.load(Ordering::Relaxed);
 
-            state_ns = self.base_instant.elapsed().as_nanos() as u64 - state_ns;
+                    state_ns =
+                        self.base_instant.elapsed().as_nanos() as u64 - (state_ns & !RUNNING_BIT);
 
-            self.state_ns
-                .store(state_ns | RUNNING_BIT, Ordering::Relaxed);
-        }
+                    self.state_ns
+                        .store(state_ns | RUNNING_BIT, Ordering::Relaxed);
+                }
+
+                Some(num_active + 1)
+            });
     }
 
     pub fn _unregister_session(&self) {
