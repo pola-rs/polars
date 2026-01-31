@@ -58,7 +58,7 @@ pydantic = ["pydantic"]
 # Excel
 calamine = ["fastexcel >= 0.9"]
 openpyxl = ["openpyxl >= 3.0.0"]
-xlsx2csv = ["xlsx2csv >= 0.8.0, < 0.8.5"]
+xlsx2csv = ["xlsx2csv >= 0.8.0"]
 xlsxwriter = ["xlsxwriter"]
 excel = ["polars[calamine,openpyxl,xlsx2csv,xlsxwriter]"]
 
