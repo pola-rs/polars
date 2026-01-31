@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 pub struct ActiveTimer {
     base_instant: Instant,
     num_active: AtomicU64,
-    /// If `RUNNING_BIT` is set, this represents the amount of time to exclude from `base_instant.elapsed()`.
+    /// If `TICKING_BIT` is set, this represents the amount of time to exclude from `base_instant.elapsed()`.
     /// Otherwise, this represents the total time recorded by this timer.
     state_ns: AtomicU64,
 }
@@ -18,7 +18,8 @@ impl Default for ActiveTimer {
     }
 }
 
-const RUNNING_BIT: u64 = 1 << 63;
+/// Indicates if this timer is currently ticking.
+const TICKING_BIT: u64 = 1 << 63;
 
 impl ActiveTimer {
     pub fn new() -> Self {
@@ -56,7 +57,7 @@ impl ActiveTimer {
             state_ns = self.base_instant.elapsed().as_nanos() as u64 - state_ns;
 
             self.state_ns
-                .store(state_ns | RUNNING_BIT, Ordering::Relaxed);
+                .store(state_ns | TICKING_BIT, Ordering::Relaxed);
             // Release immediately, otherwise `total_active_time_ns()` may not see the started timer
             // until this thread runs `self._unregister_session()`.
             self.num_active.fetch_add(0, Ordering::Release);
@@ -77,19 +78,19 @@ impl ActiveTimer {
             Ordering::Acquire,
             |num_active| {
                 if num_active == 1 {
-                    if state_ns & RUNNING_BIT != 0 {
+                    if state_ns & TICKING_BIT != 0 {
                         if state_ns == u64::MAX {
                             state_ns = self.state_ns.load(Ordering::Relaxed);
                         }
 
                         state_ns = self.base_instant.elapsed().as_nanos() as u64
-                            - (state_ns & !RUNNING_BIT);
+                            - (state_ns & !TICKING_BIT);
 
                         self.state_ns.store(state_ns, Ordering::Relaxed);
                     }
-                } else if state_ns & RUNNING_BIT == 0 {
+                } else if state_ns & TICKING_BIT == 0 {
                     state_ns = self.base_instant.elapsed().as_nanos() as u64 - state_ns;
-                    state_ns |= RUNNING_BIT;
+                    state_ns |= TICKING_BIT;
                     self.state_ns.store(state_ns, Ordering::Relaxed);
                 }
 
@@ -103,10 +104,10 @@ impl ActiveTimer {
         self.num_active.load(Ordering::Acquire);
         let state_ns = self.state_ns.load(Ordering::Relaxed);
 
-        if state_ns & RUNNING_BIT == 0 {
+        if state_ns & TICKING_BIT == 0 {
             state_ns
         } else {
-            self.base_instant.elapsed().as_nanos() as u64 - (state_ns & !RUNNING_BIT)
+            self.base_instant.elapsed().as_nanos() as u64 - (state_ns & !TICKING_BIT)
         }
     }
 }
