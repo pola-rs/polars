@@ -3835,3 +3835,20 @@ def test_parquet_ordered_cat_26174() -> None:
             schema={"dummy": pl.Categorical},
         ),
     )
+
+
+def test_scan_parquet_is_in_with_long_string_26332() -> None:
+    short_values = [f"s{i:04d}" for i in range(200)]
+    long_value = "L" * 64
+    values = short_values[:100] + [long_value] + short_values[100:]
+
+    df = pl.DataFrame({"id": range(len(values)), "s": values})
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+
+    result = pl.scan_parquet(f).filter(pl.col("s").is_in(["s0001"])).collect()
+    expected = pl.DataFrame({"id": [1], "s": ["s0001"]})
+
+    assert_frame_equal(result, expected)
