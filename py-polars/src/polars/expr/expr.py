@@ -11699,9 +11699,6 @@ Consider using {self}.implode() instead"""
         """Create an object namespace of all datetime related methods."""
         return ExprDateTimeNameSpace(self)
 
-    # Keep the `list` and `str` properties below at the end of the definition of Expr,
-    # as to not confuse mypy with the type annotation `str` and `list`
-
     @property
     def list(self) -> ExprListNameSpace:
         """

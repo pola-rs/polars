@@ -9438,9 +9438,6 @@ class Series:
             original data type.
         """
 
-    # Keep the `list` and `str` properties below at the end of the definition of Series,
-    # as to not confuse mypy with the type annotation `str` and `list`
-
     @property
     def bin(self) -> BinaryNameSpace:
         """Create an object namespace of all binary related methods."""
