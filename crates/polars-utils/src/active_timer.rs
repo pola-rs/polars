@@ -8,8 +8,8 @@ pub struct ActiveTimer {
     base_instant: Instant,
     num_active: AtomicU64,
     /// If `TICKING_BIT` is set, this represents the amount of nanoseconds in `base_instant.elapsed()`
-    /// for which the timer was was not active. Otherwise, this represents the total time recorded
-    /// by this timer.
+    /// for which the timer was was not active. Otherwise, this represents the total amount of
+    /// nanoseconds for which this timer was ticking.
     state_ns: AtomicU64,
 }
 
