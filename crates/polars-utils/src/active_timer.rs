@@ -59,7 +59,7 @@ impl ActiveTimer {
             self.state_ns
                 .store(state_ns | TICKING_BIT, Ordering::Relaxed);
             // Release immediately, otherwise `total_active_time_ns()` may not see the started timer
-            // until this thread runs `self._unregister_session()`.
+            // until this thread reaches and completes `self._unregister_session()`.
             self.num_active.fetch_add(0, Ordering::Release);
         }
     }
