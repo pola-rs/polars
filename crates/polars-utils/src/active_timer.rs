@@ -45,7 +45,12 @@ impl ActiveTimer {
     }
 
     pub fn _register_session(&self) {
-        if self.num_active.fetch_add(1, Ordering::Acquire) == 0 {
+        if self.num_active.fetch_add(
+            1,
+            // Acquire the store on `state_ns` if the timer was stopped from another thread.
+            Ordering::Acquire,
+        ) == 0
+        {
             let mut state_ns = self.state_ns.load(Ordering::Relaxed);
 
             state_ns = self.base_instant.elapsed().as_nanos() as u64 - state_ns;
@@ -53,7 +58,7 @@ impl ActiveTimer {
             self.state_ns
                 .store(state_ns | RUNNING_BIT, Ordering::Relaxed);
             // Release immediately, otherwise `total_active_time_ns()` may not see the started timer
-            // until `self._unregister_session()`.
+            // until this thread runs `self._unregister_session()`.
             self.num_active.fetch_add(0, Ordering::Release);
         }
     }
@@ -61,9 +66,16 @@ impl ActiveTimer {
     pub fn _unregister_session(&self) {
         let mut state_ns = u64::MAX;
 
-        let _ = self
-            .num_active
-            .fetch_update(Ordering::Release, Ordering::Acquire, |num_active| {
+        let _ = self.num_active.fetch_update(
+            // # Release
+            // * If this thread stops the timer, releases the store on `state_ns` below.
+            // * If this thread started the timer from `_register_session()`, but does not stop the
+            //   timer, releases the store on `state_ns` from `_register_session()` for the thread
+            //   that eventually stops the timer.
+            Ordering::Release,
+            // Acquire the store on `state_ns` if the timer was started from another thread.
+            Ordering::Acquire,
+            |num_active| {
                 if num_active == 1 {
                     if state_ns & RUNNING_BIT != 0 {
                         if state_ns == u64::MAX {
@@ -82,7 +94,8 @@ impl ActiveTimer {
                 }
 
                 Some(num_active - 1)
-            });
+            },
+        );
     }
 
     /// Note, this is not monotonically nondecreasing across calls.
