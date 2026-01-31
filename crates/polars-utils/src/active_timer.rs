@@ -49,7 +49,7 @@ impl ActiveTimer {
     pub fn _register_session(&self) {
         if self.num_active.fetch_add(
             1,
-            // Acquire the store on `state_ns` if the timer was stopped from another thread.
+            // Acquire the store on `state_ns` if the timer was previously stopped from another thread.
             Ordering::Acquire,
         ) == 0
         {
@@ -70,7 +70,8 @@ impl ActiveTimer {
 
         let _ = self.num_active.fetch_update(
             // # Release
-            // * If this thread stops the timer, releases the store on `state_ns` below.
+            // * If this thread stops the timer, releases the store on `state_ns` below for the next
+            //   thread that starts the timer.
             // * If this thread started the timer from `_register_session()`, but does not stop the
             //   timer, releases the store on `state_ns` from `_register_session()` for the thread
             //   that eventually stops the timer.
