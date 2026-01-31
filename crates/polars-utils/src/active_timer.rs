@@ -89,6 +89,8 @@ impl ActiveTimer {
                         self.state_ns.store(state_ns, Ordering::Relaxed);
                     }
                 } else if state_ns & TICKING_BIT == 0 {
+                    // We stopped the timer, but another thread incremented `num_active`, so start
+                    // the timer again.
                     state_ns = self.base_instant.elapsed().as_nanos() as u64 - state_ns;
                     state_ns |= TICKING_BIT;
                     self.state_ns.store(state_ns, Ordering::Relaxed);
