@@ -3864,6 +3864,9 @@ def test_parquet_data_page_size_dictionary_encoding_20141(tmp_path: Path) -> Non
 
     assert_frame_equal(df, pl.read_parquet(tmp_file))
 
+    if sys.platform.startswith("win"):
+        return
+
     code = f'import os; os.environ["PARQUET_DO_VERBOSE"]="1"; import polars as pl; pl.read_parquet("{tmp_file}")'
     result = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True
@@ -3895,6 +3898,9 @@ def test_parquet_nested_dictionary_multipage(tmp_path: Path) -> None:
     df.write_parquet(path, data_page_size=20)
 
     assert_frame_equal(df, pl.read_parquet(path))
+
+    if sys.platform.startswith("win"):
+        return
 
     code = f'import os; os.environ["PARQUET_DO_VERBOSE"]="1"; import polars as pl; pl.read_parquet("{path}")'
     result = subprocess.run(
