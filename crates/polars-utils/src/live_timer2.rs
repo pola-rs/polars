@@ -17,7 +17,7 @@ pub struct LiveTimer {
     /// for which the timer was not ticking. Otherwise, this represents the total amount of
     /// nanoseconds for which this timer was ticking.
     state_ns: AtomicU64,
-    /// Used by `total_live_time_ns` to ensure output is monotonically nondecreasing.
+    /// Used by `total_time_live_ns` to ensure output is monotonically nondecreasing.
     max_measured_ns: AtomicU64,
 }
 
