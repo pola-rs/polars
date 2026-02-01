@@ -112,42 +112,34 @@ impl ActiveTimer {
     }
 }
 
-pub use session::{ActiveTimerSessionGuard, ActiveTimerSessionGuardOwned};
+pub struct ActiveTimerSessionGuard<'a> {
+    timer: &'a ActiveTimer,
+}
 
-mod session {
-    use std::sync::Arc;
-
-    use super::ActiveTimer;
-
-    pub struct ActiveTimerSessionGuard<'a> {
-        timer: &'a ActiveTimer,
+impl<'a> ActiveTimerSessionGuard<'a> {
+    fn new(timer: &'a ActiveTimer) -> Self {
+        Self { timer }
     }
+}
 
-    impl<'a> ActiveTimerSessionGuard<'a> {
-        pub(super) fn new(timer: &'a ActiveTimer) -> Self {
-            Self { timer }
-        }
+impl Drop for ActiveTimerSessionGuard<'_> {
+    fn drop(&mut self) {
+        self.timer._unregister_session();
     }
+}
 
-    impl Drop for ActiveTimerSessionGuard<'_> {
-        fn drop(&mut self) {
-            self.timer._unregister_session();
-        }
+pub struct ActiveTimerSessionGuardOwned {
+    timer: Arc<ActiveTimer>,
+}
+
+impl ActiveTimerSessionGuardOwned {
+    fn new(timer: Arc<ActiveTimer>) -> Self {
+        Self { timer }
     }
+}
 
-    pub struct ActiveTimerSessionGuardOwned {
-        timer: Arc<ActiveTimer>,
-    }
-
-    impl ActiveTimerSessionGuardOwned {
-        pub(super) fn new(timer: Arc<ActiveTimer>) -> Self {
-            Self { timer }
-        }
-    }
-
-    impl Drop for ActiveTimerSessionGuardOwned {
-        fn drop(&mut self) {
-            self.timer._unregister_session();
-        }
+impl Drop for ActiveTimerSessionGuardOwned {
+    fn drop(&mut self) {
+        self.timer._unregister_session();
     }
 }
