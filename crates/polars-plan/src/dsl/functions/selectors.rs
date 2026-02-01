@@ -70,7 +70,7 @@ pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> DataTypeSelector {
     DataTypeSelector::AnyOf(dtypes.into())
 }
 
-/// Select multiple columns by dtype.
+/// Select multiple columns by name.
 pub fn by_name<S: Into<PlSmallStr>, I: IntoIterator<Item = S>>(names: I, strict: bool) -> Selector {
     let mut selector = None;
     let _s = &mut selector;
