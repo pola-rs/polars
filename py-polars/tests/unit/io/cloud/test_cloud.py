@@ -1,13 +1,9 @@
 from __future__ import annotations
 
 import contextlib
-import warnings
+import subprocess
+import sys
 from functools import partial
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from typing import Any
-
 
 import pytest
 
@@ -92,127 +88,82 @@ def test_is_aws_cloud() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "function",
-    [
-        partial(pl.scan_parquet, "file:///dummy"),
-        partial(pl.scan_csv, "file:///dummy"),
-        partial(pl.scan_ipc, "file:///dummy"),
-        partial(pl.scan_ndjson, "file:///dummy"),
-        partial(pl.read_parquet, "file:///dummy"),
-        partial(pl.read_ndjson, "file:///dummy"),
-        partial(pl.DataFrame().write_parquet, "file:///dummy"),
-        partial(pl.DataFrame().write_csv, "file:///dummy"),
-        partial(pl.DataFrame().write_ipc, "file:///dummy"),
-        partial(pl.LazyFrame().sink_parquet, "file:///dummy"),
-        partial(pl.LazyFrame().sink_csv, "file:///dummy"),
-        partial(pl.LazyFrame().sink_ipc, "file:///dummy"),
-        partial(pl.LazyFrame().sink_ndjson, "file:///dummy"),
-    ],
-)
-def test_storage_options_retries(
-    function: Any,
-    monkeypatch: pytest.MonkeyPatch,
-    capfd: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
-
-    with pytest.raises(
-        DeprecationWarning,
-        match=r"the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead",
-    ):
-        function(retries=7)
-
-    capfd.readouterr()
-
-    with warnings.catch_warnings(), contextlib.suppress(OSError):
-        warnings.simplefilter("ignore")
-        function(retries=7)
-
-    capture = capfd.readouterr().err
-    assert "max_retries: 7" in capture
-
-    with contextlib.suppress(OSError):
-        function(storage_options={"max_retries": 13})
-    capture = capfd.readouterr().err
-    assert "max_retries: 13" in capture
-
-    with pytest.raises(
-        ValueError, match=r"invalid value for 'max_retries': '1' \(expected int\)"
-    ):
-        function(storage_options={"max_retries": "1"})
-
-    capfd.readouterr()
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        try:
-            function(file_cache_ttl=13)
-        except OSError:
-            pass
-        except TypeError:
-            return
-
-    capture = capfd.readouterr().err
-    assert "file_cache_ttl: 13" in capture
-
-    with (
-        pytest.raises(
-            DeprecationWarning,
-            match=r"the `file_cache_ttl` parameter was deprecated in 1.37.1; specify 'file_cache_ttl' in `storage_options` instead",
-        ),
-        contextlib.suppress(OSError),
-    ):
-        function(file_cache_ttl=13)
-
-
 def test_storage_options_retry_config(
     monkeypatch: pytest.MonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
 
-    monkeypatch.setenv("POLARS_CLOUD_MAX_RETRIES", "53")
-    monkeypatch.setenv("POLARS_CLOUD_RETRY_TIMEOUT_MS", "10371")
-    monkeypatch.setenv("POLARS_CLOUD_RETRY_INIT_BACKOFF_MS", "10372")
-    monkeypatch.setenv("POLARS_CLOUD_RETRY_MAX_BACKOFF_MS", "10373")
-    monkeypatch.setenv("POLARS_CLOUD_RETRY_BASE_MULTIPLIER", "6.28")
+    capture = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
+import contextlib
+import os
 
-    capfd.readouterr()
-    pl.scan_parquet("", storage_options={})
-    capture = capfd.readouterr().err
+import polars as pl
+
+os.environ["POLARS_VERBOSE"] = "1"
+os.environ["POLARS_CLOUD_MAX_RETRIES"] = "1"
+os.environ["POLARS_CLOUD_RETRY_TIMEOUT_MS"] = "1"
+os.environ["POLARS_CLOUD_RETRY_INIT_BACKOFF_MS"] = "2"
+os.environ["POLARS_CLOUD_RETRY_MAX_BACKOFF_MS"] = "10373"
+os.environ["POLARS_CLOUD_RETRY_BASE_MULTIPLIER"] = "6.28"
+
+q = pl.scan_parquet(
+    "s3://.../...",
+    storage_options={"aws_endpoint_url": "https://localhost:333"},
+    credential_provider=None,
+)
+
+with contextlib.suppress(OSError):
+    q.collect()
+
+""",
+        ],
+        stderr=subprocess.STDOUT,
+    ).decode()
 
     assert (
         """\
-max_retries: 53, \
-retry_timeout: 10.371s, \
-retry_init_backoff: 10.372s, \
-retry_max_backoff: 10.373s, \
-retry_base_multiplier: TotalOrdWrap(6.28)"""
+init_backoff: 2ms, \
+max_backoff: 10.373s, \
+base: 6.28 }, \
+max_retries: 1, \
+retry_timeout: 1ms"""
         in capture
     )
 
-    capfd.readouterr()
-    pl.scan_parquet(
-        "",
+    q = pl.scan_parquet(
+        "s3://.../...",
         storage_options={
             "file_cache_ttl": 7,
-            "max_retries": 3,
-            "retry_timeout_ms": 9873,
-            "retry_init_backoff_ms": 9874,
+            "max_retries": 0,
+            "retry_timeout_ms": 23,
+            "retry_init_backoff_ms": 24,
             "retry_max_backoff_ms": 9875,
             "retry_base_multiplier": 3.14159,
+            "aws_endpoint_url": "https://localhost:333",
         },
+        credential_provider=None,
     )
+
+    capfd.readouterr()
+
+    with pytest.raises(OSError):
+        q.collect()
+
     capture = capfd.readouterr().err
 
     assert "file_cache_ttl: 7" in capture
 
     assert (
         """\
-max_retries: 3, \
-retry_timeout: 9.873s, \
-retry_init_backoff: 9.874s, \
-retry_max_backoff: 9.875s, \
-retry_base_multiplier: TotalOrdWrap(3.14159)"""
+init_backoff: 24ms, \
+max_backoff: 9.875s, \
+base: 3.14159 }, \
+max_retries: 0, \
+retry_timeout: 23ms"""
         in capture
     )

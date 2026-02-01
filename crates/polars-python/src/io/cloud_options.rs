@@ -78,32 +78,32 @@ impl OptPyCloudOptions<'_> {
                             .map_err(expected_type!("max_retries", "int"))?;
                     },
                     "retry_timeout_ms" => {
-                        retry_config.retry_timeout = Duration::from_millis(
+                        retry_config.retry_timeout = Some(Duration::from_millis(
                             value
                                 .extract()
                                 .map_err(expected_type!("retry_timeout", "int"))?,
-                        );
+                        ));
                     },
                     "retry_init_backoff_ms" => {
-                        retry_config.retry_init_backoff = Duration::from_millis(
+                        retry_config.retry_init_backoff = Some(Duration::from_millis(
                             value
                                 .extract()
                                 .map_err(expected_type!("retry_init_backoff", "int"))?,
-                        );
+                        ));
                     },
                     "retry_max_backoff_ms" => {
-                        retry_config.retry_max_backoff = Duration::from_millis(
+                        retry_config.retry_max_backoff = Some(Duration::from_millis(
                             value
                                 .extract()
                                 .map_err(expected_type!("retry_max_backoff", "int"))?,
-                        );
+                        ));
                     },
                     "retry_base_multiplier" => {
-                        retry_config.retry_base_multiplier = TotalOrdWrap(
+                        retry_config.retry_base_multiplier = Some(TotalOrdWrap(
                             value
                                 .extract()
                                 .map_err(expected_type!("retry_base_multiplier", "float"))?,
-                        );
+                        ));
                     },
                     _ => {
                         let value: String = value.extract().map_err(expected_type!(&key, "str"))?;
@@ -127,7 +127,6 @@ impl OptPyCloudOptions<'_> {
         if file_cache_ttl > 0 {
             cloud_options.file_cache_ttl = file_cache_ttl;
         }
-
         verbose_print_sensitive(|| format!("extracted cloud_options: {:?}", &cloud_options));
 
         Ok(Some(cloud_options))

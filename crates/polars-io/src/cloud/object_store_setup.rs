@@ -2,7 +2,7 @@ use std::sync::{Arc, LazyLock};
 
 use object_store::ObjectStore;
 use object_store::local::LocalFileSystem;
-use polars_core::config::{self, verbose_print_sensitive};
+use polars_core::config::{self, verbose, verbose_print_sensitive};
 use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_path::{PlPath, PlRefPath};
@@ -115,6 +115,15 @@ impl PolarsObjectStoreBuilder {
             .options
             .as_ref()
             .unwrap_or_else(|| CloudOptions::default_static_ref());
+
+        if let Some(options) = &self.options
+            && verbose()
+        {
+            eprintln!(
+                "build object-store: file_cache_ttl: {}",
+                options.file_cache_ttl
+            )
+        }
 
         let store = match self.cloud_type {
             CloudType::Aws => {
