@@ -134,3 +134,52 @@ def test_literal_object_25679() -> None:
 
     assert res.schema == {"colx": pl.Object()}
     assert res["colx"].to_list() == [0, 0, 1, 2, 0, 3, 3, 0]
+
+
+@pytest.mark.parametrize(
+    ("numerator", "divisor", "floordiv", "mod"),
+    [
+        (10, 3, 3, 1),
+        (10, 2, 5, 0),
+        (1, 2, 0, 1),
+        (0, 10, 0, 0),
+        (1, 0, None, None),
+    ],
+)
+@pytest.mark.parametrize(
+    ("numerator_dtype", "divisor_dtype"),
+    [
+        (x, y)
+        for x in [pl.Int8, pl.UInt8, None]
+        for y in [pl.Int8, pl.UInt8, None]
+        if x == y or x is None or y is None
+    ],
+)
+def test_floordiv_mod(
+    numerator: int,
+    divisor: int,
+    floordiv: int | None,
+    mod: int | None,
+    numerator_dtype: pl.Dtype,
+    divisor_dtype: pl.Dtype,
+) -> None:
+    assert_frame_equal(
+        pl.select(
+            pl.lit(numerator, dtype=numerator_dtype)
+            // pl.lit(divisor, dtype=divisor_dtype)
+        ),
+        pl.DataFrame(
+            {"literal": [floordiv]},
+            schema={"literal": numerator_dtype or divisor_dtype or pl.Int32},
+        ),
+    )
+    assert_frame_equal(
+        pl.select(
+            pl.lit(numerator, dtype=numerator_dtype)
+            % pl.lit(divisor, dtype=divisor_dtype)
+        ),
+        pl.DataFrame(
+            {"literal": [mod]},
+            schema={"literal": numerator_dtype or divisor_dtype or pl.Int32},
+        ),
+    )
