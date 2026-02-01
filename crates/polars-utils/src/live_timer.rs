@@ -1,21 +1,30 @@
-///
-/// Live timer from Orson
-///
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Instant;
+
+/// Indicates if the timer is currently ticking.
+const TICKING_BIT: u64 = 1 << 63;
 
 /// Counts for how much time this timer was 'live'.
 ///
 /// It is live when there is at least one session, but multiple concurrent
 /// sessions don't increase the rate at which the timer ticks.
+#[derive(Debug)]
 pub struct LiveTimer {
     base_timestamp: Instant,
     live_sessions: AtomicU64,
+    /// If `TICKING_BIT` is set, this represents the amount of nanoseconds in `base_timestamp.elapsed()`
+    /// for which the timer was not ticking. Otherwise, this represents the total amount of
+    /// nanoseconds for which this timer was ticking.
+    state_ns: AtomicU64,
+    /// Used by `total_time_live_ns` to ensure output is monotonically nondecreasing.
+    max_measured_ns: AtomicU64,
+}
 
-    /// Nanoseconds since base_timestamp.
-    current_segment_start: AtomicU64,
-    /// Bottom bit indicates whether the current segment should be accounted for.
-    accumulated_ns: AtomicU64,
+impl Default for LiveTimer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LiveTimer {
@@ -23,80 +32,123 @@ impl LiveTimer {
         Self {
             base_timestamp: Instant::now(),
             live_sessions: AtomicU64::new(0),
-            current_segment_start: AtomicU64::new(0),
-            accumulated_ns: AtomicU64::new(0),
+            state_ns: AtomicU64::new(0),
+            max_measured_ns: AtomicU64::new(0),
         }
     }
 
-    pub fn total_time_live_ns(&self) -> u64 {
-        // Load accum and current_segment_start in a self-consistent way.
-        let mut current_segment_start = 0;
-        let mut accum = self.accumulated_ns.load(Ordering::Acquire); // This Acquire prevents cur_seg.load() from being reordered before.
-        while accum & 1 != 0 {
-            current_segment_start = self.current_segment_start.load(Ordering::Relaxed);
-            let accum2 = self.accumulated_ns.fetch_add(0, Ordering::AcqRel); // This Release prevents cur_seg.load() from being reordered after.
-            if accum == accum2 {
-                break; // No change to accumulator, current_segment must be correct for it.
-            } else {
-                accum = accum2; // Accumulator changed, try again.
-            }
-        }
-
-        let mut total_ns = accum >> 1;
-        if accum & 1 != 0 {
-            let start = self.base_timestamp + Duration::from_nanos(current_segment_start);
-            total_ns += start.elapsed().as_nanos() as u64;
-        }
-        total_ns
+    /// Register a session. This starts the timer if it is stopped.
+    ///
+    /// # Returns
+    /// Returns a session guard that unregisters the session when dropped. The timer is stopped if
+    /// no sessions are active after this guard is dropped.
+    pub fn start_session(&self) -> LiveTimerSessionGuard<'_> {
+        self._start_session();
+        LiveTimerSessionGuard::new(self)
     }
 
-    // May not be concurrently called with exclusive_stop_current_segment.
-    fn exclusive_start_current_segment(&self) {
-        let start = Instant::now()
-            .duration_since(self.base_timestamp)
-            .as_nanos() as u64;
-        self.current_segment_start.store(start, Ordering::Relaxed);
-        let accum = self.accumulated_ns.load(Ordering::Relaxed);
-        self.accumulated_ns.store(accum | 1, Ordering::Release);
+    pub fn start_session_owned(self: Arc<Self>) -> LiveTimerSessionGuardOwned {
+        self._start_session();
+        LiveTimerSessionGuardOwned::new(self)
     }
 
-    // May not be concurrently called with exclusive_start_current_segment.
-    fn exclusive_stop_current_segment(&self) {
-        let current_segment_start = self.current_segment_start.load(Ordering::Relaxed);
-        let start = self.base_timestamp + Duration::from_nanos(current_segment_start);
-        let accum = self.accumulated_ns.load(Ordering::Relaxed);
-        let new_accum = (accum & !1) + ((start.elapsed().as_nanos() as u64) << 1);
-        self.accumulated_ns.store(new_accum, Ordering::Relaxed);
-    }
+    pub fn _start_session(&self) {
+        if self.live_sessions.fetch_add(
+            1,
+            // Acquire the store on `state_ns` if the timer was previously stopped from another thread.
+            Ordering::Acquire,
+        ) == 0
+        {
+            let mut state_ns = self.state_ns.load(Ordering::Relaxed);
 
-    pub fn start_session(&self) {
-        if self.live_sessions.fetch_add(1, Ordering::Acquire) == 0 {
-            self.exclusive_start_current_segment();
+            state_ns = self.base_timestamp.elapsed().as_nanos() as u64 - state_ns;
+
+            self.state_ns
+                .store(state_ns | TICKING_BIT, Ordering::Relaxed);
         }
     }
 
-    /// May only be called once for each time start_session is called.
-    pub fn stop_session(&self) {
-        let mut stopped = false;
-        self.live_sessions
-            .fetch_update(Ordering::Release, Ordering::Acquire, |live_sessions| {
-                // We stop the current segment if we are the last sessions, but we may have to restart
-                // it if in the meantime someone incremented the live_sessions counter.
+    fn stop_session(&self) {
+        let mut state_ns = u64::MAX;
+
+        let _ = self.live_sessions.fetch_update(
+            // # Release
+            // * If this thread stops the timer, releases the store on `state_ns` below for the next
+            //   thread that starts the timer.
+            // * If this thread started the timer from `_start_session()`, but does not stop the
+            //   timer, releases the store on `state_ns` from `_start_session()` for the thread
+            //   that eventually stops the timer.
+            Ordering::Release,
+            // Acquire the store on `state_ns` if the timer was started from another thread.
+            Ordering::Acquire,
+            |live_sessions| {
                 if live_sessions == 1 {
-                    if !stopped {
-                        self.exclusive_stop_current_segment();
-                        stopped = true;
+                    if state_ns & TICKING_BIT != 0 {
+                        if state_ns == u64::MAX {
+                            state_ns = self.state_ns.load(Ordering::Relaxed);
+                        }
+
+                        state_ns = self.base_timestamp.elapsed().as_nanos() as u64
+                            - (state_ns & !TICKING_BIT);
+
+                        self.state_ns.store(state_ns, Ordering::Relaxed);
                     }
-                } else {
-                    if stopped {
-                        self.exclusive_start_current_segment();
-                        stopped = false;
-                    }
+                } else if state_ns & TICKING_BIT == 0 {
+                    // We stopped the timer, but another thread incremented `live_sessions`, so start
+                    // the timer again.
+                    state_ns = self.base_timestamp.elapsed().as_nanos() as u64 - state_ns;
+                    state_ns |= TICKING_BIT;
+                    self.state_ns.store(state_ns, Ordering::Relaxed);
                 }
 
                 Some(live_sessions - 1)
-            })
-            .ok();
+            },
+        );
+    }
+
+    pub fn total_time_live_ns(&self) -> u64 {
+        let state_ns = self.state_ns.load(Ordering::Relaxed);
+
+        let active_time = if state_ns & TICKING_BIT == 0 {
+            state_ns
+        } else {
+            self.base_timestamp.elapsed().as_nanos() as u64 - (state_ns & !TICKING_BIT)
+        };
+
+        self.max_measured_ns
+            .fetch_max(active_time, Ordering::Relaxed)
+    }
+}
+
+pub struct LiveTimerSessionGuard<'a> {
+    timer: &'a LiveTimer,
+}
+
+impl<'a> LiveTimerSessionGuard<'a> {
+    fn new(timer: &'a LiveTimer) -> Self {
+        Self { timer }
+    }
+}
+
+impl Drop for LiveTimerSessionGuard<'_> {
+    fn drop(&mut self) {
+        self.timer.stop_session();
+    }
+}
+
+pub struct LiveTimerSessionGuardOwned {
+    timer: Arc<LiveTimer>,
+}
+
+impl LiveTimerSessionGuardOwned {
+    fn new(timer: Arc<LiveTimer>) -> Self {
+        Self { timer }
+    }
+}
+
+impl Drop for LiveTimerSessionGuardOwned {
+    fn drop(&mut self) {
+        self.timer.stop_session();
     }
 }
 
@@ -156,4 +208,5 @@ fn main() {
     dbg!(h1.join().unwrap());
 
     dbg!(timer.total_time_live_ns());
+    dbg!(timer.max_measured_ns.load(Ordering::Relaxed));
 }
