@@ -7,7 +7,7 @@ const TICKING_BIT: u64 = 1 << 63;
 
 /// Measures the time for which at least 1 session was active.
 #[derive(Debug)]
-pub struct ActiveTimer {
+pub struct LiveTimer {
     base_instant: Instant,
     num_active: AtomicU64,
     /// If `TICKING_BIT` is set, this represents the amount of nanoseconds in `base_instant.elapsed()`
@@ -18,13 +18,13 @@ pub struct ActiveTimer {
     max_measured_ns: AtomicU64,
 }
 
-impl Default for ActiveTimer {
+impl Default for LiveTimer {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ActiveTimer {
+impl LiveTimer {
     pub fn new() -> Self {
         Self {
             base_instant: Instant::now(),
@@ -39,17 +39,17 @@ impl ActiveTimer {
     /// # Returns
     /// Returns a session guard that unregisters the session when dropped. The timer is stopped if
     /// no sessions are active after this guard is dropped.
-    pub fn register_session(&self) -> ActiveTimerSessionGuard<'_> {
-        self._register_session();
-        ActiveTimerSessionGuard::new(self)
+    pub fn start_session(&self) -> LiveTimerSessionGuard<'_> {
+        self._start_session();
+        LiveTimerSessionGuard::new(self)
     }
 
-    pub fn register_session_owned(self: Arc<Self>) -> ActiveTimerSessionGuardOwned {
-        self._register_session();
-        ActiveTimerSessionGuardOwned::new(self)
+    pub fn start_session_owned(self: Arc<Self>) -> LiveTimerSessionGuardOwned {
+        self._start_session();
+        LiveTimerSessionGuardOwned::new(self)
     }
 
-    pub fn _register_session(&self) {
+    pub fn _start_session(&self) {
         if self.num_active.fetch_add(
             1,
             // Acquire the store on `state_ns` if the timer was previously stopped from another thread.
@@ -65,15 +65,15 @@ impl ActiveTimer {
         }
     }
 
-    pub fn _unregister_session(&self) {
+    fn _stop_session(&self) {
         let mut state_ns = u64::MAX;
 
         let _ = self.num_active.fetch_update(
             // # Release
             // * If this thread stops the timer, releases the store on `state_ns` below for the next
             //   thread that starts the timer.
-            // * If this thread started the timer from `_register_session()`, but does not stop the
-            //   timer, releases the store on `state_ns` from `_register_session()` for the thread
+            // * If this thread started the timer from `_start_session()`, but does not stop the
+            //   timer, releases the store on `state_ns` from `_start_session()` for the thread
             //   that eventually stops the timer.
             Ordering::Release,
             // Acquire the store on `state_ns` if the timer was started from another thread.
@@ -117,56 +117,56 @@ impl ActiveTimer {
     }
 }
 
-pub struct ActiveTimerSessionGuard<'a> {
-    timer: &'a ActiveTimer,
+pub struct LiveTimerSessionGuard<'a> {
+    timer: &'a LiveTimer,
 }
 
-impl<'a> ActiveTimerSessionGuard<'a> {
-    fn new(timer: &'a ActiveTimer) -> Self {
+impl<'a> LiveTimerSessionGuard<'a> {
+    fn new(timer: &'a LiveTimer) -> Self {
         Self { timer }
     }
 }
 
-impl Drop for ActiveTimerSessionGuard<'_> {
+impl Drop for LiveTimerSessionGuard<'_> {
     fn drop(&mut self) {
-        self.timer._unregister_session();
+        self.timer._stop_session();
     }
 }
 
-pub struct ActiveTimerSessionGuardOwned {
-    timer: Arc<ActiveTimer>,
+pub struct LiveTimerSessionGuardOwned {
+    timer: Arc<LiveTimer>,
 }
 
-impl ActiveTimerSessionGuardOwned {
-    fn new(timer: Arc<ActiveTimer>) -> Self {
+impl LiveTimerSessionGuardOwned {
+    fn new(timer: Arc<LiveTimer>) -> Self {
         Self { timer }
     }
 }
 
-impl Drop for ActiveTimerSessionGuardOwned {
+impl Drop for LiveTimerSessionGuardOwned {
     fn drop(&mut self) {
-        self.timer._unregister_session();
+        self.timer._stop_session();
     }
 }
 
 fn main() {
     use std::time::Duration;
 
-    let timer = Arc::new(ActiveTimer::new());
+    let timer = Arc::new(LiveTimer::new());
 
     let h1 = {
         let timer = timer.clone();
         std::thread::spawn(move || {
-            timer._register_session();
-            timer._unregister_session();
+            timer._start_session();
+            timer._stop_session();
             std::thread::sleep(Duration::from_secs(1));
-            timer._register_session();
+            timer._start_session();
             std::thread::sleep(Duration::from_secs(1));
-            timer._register_session();
+            timer._start_session();
             std::thread::sleep(Duration::from_secs(1));
-            timer._unregister_session();
+            timer._stop_session();
             std::thread::sleep(Duration::from_secs(1));
-            timer._unregister_session();
+            timer._stop_session();
             std::thread::sleep(Duration::from_secs(1));
         })
     };
