@@ -69,7 +69,7 @@ pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResu
         Operator::Plus => left + right,
         Operator::Minus => left - right,
         Operator::Multiply => left * right,
-        Operator::Divide => left / right,
+        Operator::RustDivide => left / right,
         Operator::TrueDivide => match left.dtype() {
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => left / right,

@@ -283,7 +283,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                     O::Plus
                     | O::Minus
                     | O::Multiply
-                    | O::Divide
+                    | O::RustDivide
                     | O::TrueDivide
                     | O::FloorDivide
                     | O::Modulus
