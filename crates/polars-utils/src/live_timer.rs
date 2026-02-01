@@ -1,7 +1,6 @@
 ///
 /// Live timer from Orson
 ///
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -102,6 +101,7 @@ impl LiveTimer {
 }
 
 fn main() {
+    use std::sync::Arc;
     use std::time::Duration;
 
     let timer = Arc::new(LiveTimer::new());
