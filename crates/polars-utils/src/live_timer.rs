@@ -194,11 +194,12 @@ fn main() {
         for i in recorded.iter_mut() {
             let new = timer.total_time_live_ns();
 
+            *i = new;
+
             if new < prev {
                 break 'outer;
             }
 
-            *i = new;
             prev = new;
         }
     }

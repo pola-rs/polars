@@ -141,11 +141,12 @@ fn main() {
         for i in recorded.iter_mut() {
             let new = timer.total_time_live_ns();
 
+            *i = new;
+
             if new < prev {
                 break 'outer;
             }
 
-            *i = new;
             prev = new;
         }
     }
@@ -156,4 +157,5 @@ fn main() {
     dbg!(h1.join().unwrap());
 
     dbg!(timer.total_time_live_ns());
+    dbg!(timer.max_measured_ns.load(Ordering::Relaxed));
 }
