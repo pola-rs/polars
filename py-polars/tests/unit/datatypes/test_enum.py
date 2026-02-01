@@ -6,6 +6,7 @@ import io
 import operator
 import re
 import sys
+import warnings
 from datetime import date
 from textwrap import dedent
 from typing import TYPE_CHECKING, Any
@@ -155,11 +156,15 @@ def test_nested_enum_creation() -> None:
     assert s.dtype == dtype
 
 
+# Test can be removed after 2.0 release
 def test_enum_union() -> None:
     e1 = pl.Enum(["a", "b"])
     e2 = pl.Enum(["b", "c"])
-    assert e1 | e2 == pl.Enum(["a", "b", "c"])
-    assert e1.union(e2) == pl.Enum(["a", "b", "c"])
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        assert e1 | e2 == pl.Enum(["a", "b", "c"])
+        assert e1.union(e2) == pl.Enum(["a", "b", "c"])
 
 
 def test_nested_enum_concat() -> None:
