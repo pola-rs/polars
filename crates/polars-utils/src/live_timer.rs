@@ -125,7 +125,7 @@ fn main() {
 
     let mut recorded = [0u64; 16];
 
-    'outer: while timer.base_instant.elapsed().as_millis() < 4000 {
+    'outer: while !h1.is_finished() {
         let mut prev = timer.total_time_live_ns();
         for i in recorded.iter_mut() {
             let new = timer.total_time_live_ns();
