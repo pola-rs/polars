@@ -2,13 +2,16 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+/// Indicates if the timer is currently ticking.
+const TICKING_BIT: u64 = 1 << 63;
+
 /// Measures the time for which at least 1 session was active.
 #[derive(Debug)]
 pub struct ActiveTimer {
     base_instant: Instant,
     num_active: AtomicU64,
     /// If `TICKING_BIT` is set, this represents the amount of nanoseconds in `base_instant.elapsed()`
-    /// for which the timer was was not active. Otherwise, this represents the total amount of
+    /// for which the timer was not ticking. Otherwise, this represents the total amount of
     /// nanoseconds for which this timer was ticking.
     state_ns: AtomicU64,
 }
@@ -18,9 +21,6 @@ impl Default for ActiveTimer {
         Self::new()
     }
 }
-
-/// Indicates if this timer is currently ticking.
-const TICKING_BIT: u64 = 1 << 63;
 
 impl ActiveTimer {
     pub fn new() -> Self {
@@ -59,9 +59,6 @@ impl ActiveTimer {
 
             self.state_ns
                 .store(state_ns | TICKING_BIT, Ordering::Relaxed);
-            // Release immediately, otherwise `total_active_time_ns()` may not see the started timer
-            // until this thread reaches and completes `self._unregister_session()`.
-            self.num_active.fetch_add(0, Ordering::Release);
         }
     }
 
@@ -105,7 +102,6 @@ impl ActiveTimer {
 
     /// Note, this is NOT monotonically nondecreasing across calls.
     pub fn total_active_time_ns(&self) -> u64 {
-        self.num_active.load(Ordering::Acquire);
         let state_ns = self.state_ns.load(Ordering::Relaxed);
 
         if state_ns & TICKING_BIT == 0 {
