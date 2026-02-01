@@ -188,6 +188,7 @@ fn main() {
     }
 
     dbg!(&recorded);
+    dbg!(recorded.is_sorted());
 
     dbg!(h1.join().unwrap());
 
