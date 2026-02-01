@@ -62,14 +62,15 @@ impl LiveTimer {
             let mut state_ns = self.state_ns.load(Ordering::Relaxed);
 
             state_ns = self.base_timestamp.elapsed().as_nanos() as u64 - state_ns;
+            state_ns |= TICKING_BIT;
 
-            self.state_ns
-                .store(state_ns | TICKING_BIT, Ordering::Relaxed);
+            self.state_ns.store(state_ns, Ordering::Relaxed);
         }
     }
 
     fn stop_session(&self) {
         let mut state_ns = u64::MAX;
+        let mut stopped_at_ns = u64::MAX;
 
         let _ = self.live_sessions.fetch_update(
             // # Release
@@ -86,17 +87,17 @@ impl LiveTimer {
                     if state_ns & TICKING_BIT != 0 {
                         if state_ns == u64::MAX {
                             state_ns = self.state_ns.load(Ordering::Relaxed);
+                            stopped_at_ns = self.base_timestamp.elapsed().as_nanos() as u64;
                         }
 
-                        state_ns = self.base_timestamp.elapsed().as_nanos() as u64
-                            - (state_ns & !TICKING_BIT);
+                        state_ns = stopped_at_ns - (state_ns & !TICKING_BIT);
 
                         self.state_ns.store(state_ns, Ordering::Relaxed);
                     }
                 } else if state_ns & TICKING_BIT == 0 {
                     // We stopped the timer, but another thread incremented `live_sessions`, so start
                     // the timer again.
-                    state_ns = self.base_timestamp.elapsed().as_nanos() as u64 - state_ns;
+                    state_ns = stopped_at_ns - state_ns;
                     state_ns |= TICKING_BIT;
                     self.state_ns.store(state_ns, Ordering::Relaxed);
                 }
