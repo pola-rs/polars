@@ -56,14 +56,14 @@ impl LiveTimer {
         let start = Instant::now()
             .duration_since(self.base_timestamp)
             .as_nanos() as u64;
-        self.current_segment_start.store(start, Ordering::Relaxed);
+        self.current_segment_start.store(start, Ordering::Release);
         let accum = self.accumulated_ns.load(Ordering::Relaxed);
         self.accumulated_ns.store(accum | 1, Ordering::Release);
     }
 
     // May not be concurrently called with exclusive_start_current_segment.
     fn exclusive_stop_current_segment(&self) {
-        let current_segment_start = self.current_segment_start.load(Ordering::Relaxed);
+        let current_segment_start = self.current_segment_start.load(Ordering::Acquire);
         let start = self.base_timestamp + Duration::from_nanos(current_segment_start);
         let accum = self.accumulated_ns.load(Ordering::Relaxed);
         let new_accum = (accum & !1) + ((start.elapsed().as_nanos() as u64) << 1);
