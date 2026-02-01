@@ -5,12 +5,15 @@ use std::time::Instant;
 /// Indicates if the timer is currently ticking.
 const TICKING_BIT: u64 = 1 << 63;
 
-/// Measures the time for which at least 1 session was active.
+/// Counts for how much time this timer was 'live'.
+///
+/// It is live when there is at least one session, but multiple concurrent
+/// sessions don't increase the rate at which the timer ticks.
 #[derive(Debug)]
 pub struct LiveTimer {
-    base_instant: Instant,
-    num_active: AtomicU64,
-    /// If `TICKING_BIT` is set, this represents the amount of nanoseconds in `base_instant.elapsed()`
+    base_timestamp: Instant,
+    live_sessions: AtomicU64,
+    /// If `TICKING_BIT` is set, this represents the amount of nanoseconds in `base_timestamp.elapsed()`
     /// for which the timer was not ticking. Otherwise, this represents the total amount of
     /// nanoseconds for which this timer was ticking.
     state_ns: AtomicU64,
@@ -27,8 +30,8 @@ impl Default for LiveTimer {
 impl LiveTimer {
     pub fn new() -> Self {
         Self {
-            base_instant: Instant::now(),
-            num_active: AtomicU64::new(0),
+            base_timestamp: Instant::now(),
+            live_sessions: AtomicU64::new(0),
             state_ns: AtomicU64::new(0),
             max_measured_ns: AtomicU64::new(0),
         }
@@ -50,7 +53,7 @@ impl LiveTimer {
     }
 
     pub fn _start_session(&self) {
-        if self.num_active.fetch_add(
+        if self.live_sessions.fetch_add(
             1,
             // Acquire the store on `state_ns` if the timer was previously stopped from another thread.
             Ordering::Acquire,
@@ -58,7 +61,7 @@ impl LiveTimer {
         {
             let mut state_ns = self.state_ns.load(Ordering::Relaxed);
 
-            state_ns = self.base_instant.elapsed().as_nanos() as u64 - state_ns;
+            state_ns = self.base_timestamp.elapsed().as_nanos() as u64 - state_ns;
 
             self.state_ns
                 .store(state_ns | TICKING_BIT, Ordering::Relaxed);
@@ -68,7 +71,7 @@ impl LiveTimer {
     fn stop_session(&self) {
         let mut state_ns = u64::MAX;
 
-        let _ = self.num_active.fetch_update(
+        let _ = self.live_sessions.fetch_update(
             // # Release
             // * If this thread stops the timer, releases the store on `state_ns` below for the next
             //   thread that starts the timer.
@@ -78,27 +81,27 @@ impl LiveTimer {
             Ordering::Release,
             // Acquire the store on `state_ns` if the timer was started from another thread.
             Ordering::Acquire,
-            |num_active| {
-                if num_active == 1 {
+            |live_sessions| {
+                if live_sessions == 1 {
                     if state_ns & TICKING_BIT != 0 {
                         if state_ns == u64::MAX {
                             state_ns = self.state_ns.load(Ordering::Relaxed);
                         }
 
-                        state_ns = self.base_instant.elapsed().as_nanos() as u64
+                        state_ns = self.base_timestamp.elapsed().as_nanos() as u64
                             - (state_ns & !TICKING_BIT);
 
                         self.state_ns.store(state_ns, Ordering::Relaxed);
                     }
                 } else if state_ns & TICKING_BIT == 0 {
-                    // We stopped the timer, but another thread incremented `num_active`, so start
+                    // We stopped the timer, but another thread incremented `live_sessions`, so start
                     // the timer again.
-                    state_ns = self.base_instant.elapsed().as_nanos() as u64 - state_ns;
+                    state_ns = self.base_timestamp.elapsed().as_nanos() as u64 - state_ns;
                     state_ns |= TICKING_BIT;
                     self.state_ns.store(state_ns, Ordering::Relaxed);
                 }
 
-                Some(num_active - 1)
+                Some(live_sessions - 1)
             },
         );
     }
@@ -109,7 +112,7 @@ impl LiveTimer {
         let active_time = if state_ns & TICKING_BIT == 0 {
             state_ns
         } else {
-            self.base_instant.elapsed().as_nanos() as u64 - (state_ns & !TICKING_BIT)
+            self.base_timestamp.elapsed().as_nanos() as u64 - (state_ns & !TICKING_BIT)
         };
 
         self.max_measured_ns
