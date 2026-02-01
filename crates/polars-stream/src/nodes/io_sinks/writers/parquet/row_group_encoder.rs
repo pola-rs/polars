@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
+use polars_buffer::Buffer;
 use polars_core::prelude::CompatLevel;
 use polars_error::PolarsResult;
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::read::ParquetError;
 use polars_parquet::write::{
-    ColumnWriteOptions, CompressedPage, Compressor, SchemaDescriptor, WriteOptions,
-    array_to_columns,
+    CompressedPage, Compressor, Encoding, SchemaDescriptor, WriteOptions, array_to_columns,
 };
 use polars_utils::UnitVec;
 
@@ -22,7 +22,7 @@ pub struct RowGroupEncoder {
         tokio::sync::mpsc::Sender<async_executor::AbortOnDropHandle<PolarsResult<EncodedRowGroup>>>,
     pub schema_descriptor: Arc<SchemaDescriptor>,
     pub write_options: WriteOptions,
-    pub column_options: Arc<Vec<ColumnWriteOptions>>,
+    pub encodings: Buffer<Vec<Encoding>>,
     pub num_leaf_columns: usize,
 }
 
@@ -33,13 +33,13 @@ impl RowGroupEncoder {
             encoded_row_group_tx,
             schema_descriptor,
             write_options,
-            column_options,
+            encodings,
             num_leaf_columns,
         } = self;
 
         while let Ok(morsel) = morsel_rx.recv().await {
             let schema_descriptor = Arc::clone(&schema_descriptor);
-            let column_options = Arc::clone(&column_options);
+            let encodings = Buffer::clone(&encodings);
 
             let row_group_encode_handle = async_executor::AbortOnDropHandle::new(
                 async_executor::spawn(TaskPriority::High, async move {
@@ -52,11 +52,11 @@ impl RowGroupEncoder {
                         TaskPriority::High,
                         df.into_columns().into_iter().enumerate().map(|(i, c)| {
                             let schema_descriptor = Arc::clone(&schema_descriptor);
-                            let column_options = Arc::clone(&column_options);
+                            let encodings = Buffer::clone(&encodings);
 
                             async move {
                                 let parquet_type = &schema_descriptor.fields()[i];
-                                let column_options = &column_options[i];
+                                let encodings = encodings[i].as_slice();
                                 let array = c
                                     .as_materialized_series()
                                     .rechunk()
@@ -68,8 +68,8 @@ impl RowGroupEncoder {
                                 for encode_page_iter in array_to_columns(
                                     array,
                                     parquet_type.clone(),
-                                    column_options,
                                     write_options,
+                                    encodings,
                                 )? {
                                     let compressed_pages: Vec<CompressedPage> =
                                         Compressor::new_from_vec(

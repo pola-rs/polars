@@ -82,7 +82,6 @@ SetOperation: TypeAlias = Literal[
 ]
 FloatFmt: TypeAlias = Literal["full", "mixed"]
 NDArray1D: TypeAlias = NDArray[Any]
-ParquetFieldOverwrites: TypeAlias = Any
 StatisticsOptions: TypeAlias = Any
 EngineType: TypeAlias = Literal["auto", "in-memory", "streaming", "gpu"]
 PyScanOptions: TypeAlias = Any
@@ -956,7 +955,6 @@ class PyLazyFrame:
         row_group_size: int | None,
         data_page_size: int | None,
         metadata: KeyValueMetadata | None,
-        field_overwrites: Sequence[ParquetFieldOverwrites],
     ) -> PyLazyFrame: ...
     def sink_ipc(
         self,

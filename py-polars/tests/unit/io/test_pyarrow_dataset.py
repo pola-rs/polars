@@ -285,13 +285,9 @@ def test_pyarrow_dataset_python_scan(tmp_path: Path) -> None:
     assert_frame_equal(df, out)
 
 
-@pytest.mark.write_disk
-def test_pyarrow_dataset_allow_pyarrow_filter_false(tmp_path: Path) -> None:
+def test_pyarrow_dataset_allow_pyarrow_filter_false() -> None:
     df = pl.DataFrame({"item": ["foo", "bar", "baz"], "price": [10.0, 20.0, 30.0]})
-    file_path = tmp_path / "data.parquet"
-    df.write_parquet(file_path)
-
-    dataset = ds.dataset(file_path)
+    dataset = ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
 
     # basic scan without filter
     result = pl.scan_pyarrow_dataset(dataset, allow_pyarrow_filter=False).collect()
