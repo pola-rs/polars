@@ -61,8 +61,6 @@ impl TreeWalker for Expr {
             Agg(agg_expr) => Agg(match agg_expr {
                 Min { input, propagate_nans } => Min { input: am(input, f)?, propagate_nans },
                 Max { input, propagate_nans } => Max { input: am(input, f)?, propagate_nans },
-                MinBy { input, by } => MinBy { input: am(input, &mut f)?, by: am(by, f)? },
-                MaxBy { input, by } =>  MaxBy { input: am(input, &mut f)?, by: am(by, f)? },
                 Median(x) => Median(am(x, f)?),
                 NUnique(x) => NUnique(am(x, f)?),
                 First(x) => First(am(x, f)?),
