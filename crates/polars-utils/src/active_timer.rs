@@ -14,7 +14,7 @@ pub struct ActiveTimer {
     /// for which the timer was not ticking. Otherwise, this represents the total amount of
     /// nanoseconds for which this timer was ticking.
     state_ns: AtomicU64,
-    non_decreasing_measure: AtomicU64,
+    max_measured_time: AtomicU64,
 }
 
 impl Default for ActiveTimer {
@@ -29,7 +29,7 @@ impl ActiveTimer {
             base_instant: Instant::now(),
             num_active: AtomicU64::new(0),
             state_ns: AtomicU64::new(0),
-            non_decreasing_measure: AtomicU64::new(0),
+            max_measured_time: AtomicU64::new(0),
         }
     }
 
@@ -111,7 +111,7 @@ impl ActiveTimer {
             self.base_instant.elapsed().as_nanos() as u64 - (state_ns & !TICKING_BIT)
         };
 
-        self.non_decreasing_measure
+        self.max_measured_time
             .fetch_max(active_time, Ordering::Relaxed)
     }
 }
@@ -191,5 +191,5 @@ fn main() {
     dbg!(h1.join().unwrap());
 
     dbg!(timer.total_active_time_ns());
-    dbg!(timer.non_decreasing_measure.load(Ordering::Relaxed));
+    dbg!(timer.max_measured_time.load(Ordering::Relaxed));
 }
