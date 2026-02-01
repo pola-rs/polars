@@ -3,6 +3,8 @@ from __future__ import annotations
 import decimal
 import functools
 import io
+import subprocess
+import sys
 import warnings
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
@@ -3852,3 +3854,61 @@ def test_scan_parquet_is_in_with_long_string_26332() -> None:
     expected = pl.DataFrame({"id": [1], "s": ["s0001"]})
 
     assert_frame_equal(result, expected)
+
+
+def test_parquet_data_page_size_dictionary_encoding_20141(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": ["A"] * 10_000}, schema={"a": pl.Enum(["A"])})
+
+    tmp_file = tmp_path / "test_20141.parquet"
+    df.write_parquet(tmp_file, data_page_size=1)
+
+    assert_frame_equal(df, pl.read_parquet(tmp_file))
+
+    if sys.platform.startswith("win"):
+        return
+
+    code = f'import os; os.environ["PARQUET_DO_VERBOSE"]="1"; import polars as pl; pl.read_parquet("{tmp_file}")'
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True
+    )
+    data_pages = result.stderr.count("DataPageV1")
+    dict_pages = result.stderr.count("DictPage")
+
+    tmp_file.unlink()
+
+    assert data_pages == 10_000, (
+        f"BUG #20141: Expected 10000 data pages, got {data_pages}"
+    )
+    assert dict_pages == 1, f"Expected 1 dict page, got {dict_pages}"
+
+
+def test_parquet_nested_dictionary_multipage(tmp_path: Path) -> None:
+    # Math
+    # 5 rows, 28 bytes
+    # bytes_per_row = ceil(28/5) = 6
+    # data_page_size = 20
+    # rows_per_page = ceil(20/6) = 4
+    # 5 rows / 4 rows per page = 2 pages
+    df = pl.DataFrame(
+        {"a": [["A", "B"], ["C"], ["A", "C", "B"], [], ["B"]]},
+        schema={"a": pl.List(pl.Categorical)},
+    )
+
+    path = tmp_path / "test.parquet"
+    df.write_parquet(path, data_page_size=20)
+
+    assert_frame_equal(df, pl.read_parquet(path))
+
+    if sys.platform.startswith("win"):
+        return
+
+    code = f'import os; os.environ["PARQUET_DO_VERBOSE"]="1"; import polars as pl; pl.read_parquet("{path}")'
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True
+    )
+
+    data_pages = result.stderr.count("DataPageV1")
+    dict_pages = result.stderr.count("DictPage")
+
+    assert dict_pages == 1, f"Expected 1 dict page, got {dict_pages}"
+    assert data_pages == 2, f"Expected 2 data pages, got {data_pages}"
