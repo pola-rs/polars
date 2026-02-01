@@ -1,12 +1,187 @@
 use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::*;
+#[cfg(not(feature = "timezones"))]
 use chrono::NaiveDateTime;
 #[cfg(feature = "timezones")]
-use chrono::TimeZone;
+use chrono::{Datelike, LocalResult, NaiveDateTime, TimeZone};
 use now::DateTimeNow;
 use polars_core::prelude::*;
 
 use crate::prelude::*;
+#[cfg(feature = "timezones")]
+use crate::utils::unlocalize_datetime;
+
+// Probe forward to find first valid time after a DST gap.
+// Most DST gaps are 60 minutes, but time zones may use 30-minute offsets.
+#[cfg(feature = "timezones")]
+macro_rules! impl_resolve_nonexistent {
+    ($name:ident, $datetime_to_timestamp:expr, $fallback_offset:expr) => {
+        fn $name(local_ndt: NaiveDateTime, tz: &Tz) -> i64 {
+            for minutes in [30i64, 60] {
+                let probe = local_ndt + chrono::Duration::minutes(minutes);
+                match tz.from_local_datetime(&probe) {
+                    LocalResult::Single(dt) => return $datetime_to_timestamp(dt.naive_utc()),
+                    LocalResult::Ambiguous(earliest, _) => {
+                        return $datetime_to_timestamp(earliest.naive_utc());
+                    },
+                    LocalResult::None => continue,
+                }
+            }
+            $datetime_to_timestamp(local_ndt) + $fallback_offset
+        }
+    };
+}
+
+#[cfg(feature = "timezones")]
+impl_resolve_nonexistent!(
+    resolve_nonexistent_ns,
+    datetime_to_timestamp_ns,
+    3_600_000_000_000
+);
+#[cfg(feature = "timezones")]
+impl_resolve_nonexistent!(
+    resolve_nonexistent_us,
+    datetime_to_timestamp_us,
+    3_600_000_000
+);
+#[cfg(feature = "timezones")]
+impl_resolve_nonexistent!(resolve_nonexistent_ms, datetime_to_timestamp_ms, 3_600_000);
+
+#[cfg(feature = "timezones")]
+use crate::windows::calendar::days_in_month;
+
+#[cfg(feature = "timezones")]
+fn add_duration_in_local_time(local_dt: NaiveDateTime, duration: &Duration) -> NaiveDateTime {
+    if duration.months() == 0 && duration.weeks() == 0 && duration.days() == 0 {
+        local_dt + chrono::Duration::nanoseconds(duration.duration_ns())
+    } else {
+        let days_to_add = duration.days() + duration.weeks() * 7;
+        let months_to_add = duration.months();
+
+        let mut result = local_dt;
+
+        if months_to_add != 0 {
+            let month = result.month() as i64;
+            let year = result.year() as i64;
+            let total_months = year * 12 + month - 1 + months_to_add;
+            let new_year = (total_months / 12) as i32;
+            let new_month = ((total_months % 12) + 1) as u32;
+            let day = result
+                .day()
+                .min(days_in_month(new_year, new_month as u8) as u32);
+            result = result
+                .with_year(new_year)
+                .and_then(|d| d.with_month(new_month))
+                .and_then(|d| d.with_day(day))
+                .unwrap_or(result);
+        }
+
+        if days_to_add != 0 {
+            result += chrono::Duration::days(days_to_add);
+        }
+
+        result + chrono::Duration::nanoseconds(duration.nanoseconds())
+    }
+}
+
+#[cfg(feature = "timezones")]
+fn is_dst_error(err: &PolarsError) -> bool {
+    match err {
+        PolarsError::ComputeError(msg) => {
+            let msg = msg.as_ref();
+            msg.contains("is ambiguous in time zone")
+                || msg.contains("is non-existent in time zone")
+        },
+        _ => false,
+    }
+}
+
+// Add duration, handling DST transitions:
+// - Ambiguous times (fall back): use earliest
+// - Non-existent times (spring forward): find next valid time
+macro_rules! impl_add_duration_with_dst_handling {
+    ($name:ident, $add_method:ident, $duration_method:ident,
+     $timestamp_to_datetime:expr, $datetime_to_timestamp:expr, $resolve_nonexistent:ident) => {
+        fn $name(duration: &Duration, t: i64, tz: Option<&Tz>) -> i64 {
+            match duration.$add_method(t, tz) {
+                Ok(result) => result,
+                Err(e) => {
+                    #[cfg(feature = "timezones")]
+                    if is_dst_error(&e) {
+                        if let Some(tz) = tz {
+                            let utc_dt = $timestamp_to_datetime(t);
+                            let local_dt = unlocalize_datetime(utc_dt, tz);
+                            let result_local = add_duration_in_local_time(local_dt, duration);
+
+                            return match tz.from_local_datetime(&result_local) {
+                                LocalResult::Single(dt) => $datetime_to_timestamp(dt.naive_utc()),
+                                LocalResult::Ambiguous(earliest, _) => {
+                                    $datetime_to_timestamp(earliest.naive_utc())
+                                },
+                                LocalResult::None => $resolve_nonexistent(result_local, tz),
+                            };
+                        }
+                    }
+                    // For non-DST errors or when timezones feature is disabled, fall back
+                    t + duration.$duration_method()
+                },
+            }
+        }
+    };
+}
+
+impl_add_duration_with_dst_handling!(
+    add_duration_ns_with_dst_handling,
+    add_ns,
+    duration_ns,
+    timestamp_ns_to_datetime,
+    datetime_to_timestamp_ns,
+    resolve_nonexistent_ns
+);
+impl_add_duration_with_dst_handling!(
+    add_duration_us_with_dst_handling,
+    add_us,
+    duration_us,
+    timestamp_us_to_datetime,
+    datetime_to_timestamp_us,
+    resolve_nonexistent_us
+);
+impl_add_duration_with_dst_handling!(
+    add_duration_ms_with_dst_handling,
+    add_ms,
+    duration_ms,
+    timestamp_ms_to_datetime,
+    datetime_to_timestamp_ms,
+    resolve_nonexistent_ms
+);
+
+// DST-safe wrappers returning PolarsResult for use as offset_fn.
+macro_rules! impl_add_dst_safe {
+    ($name:ident, $inner:ident) => {
+        fn $name(duration: &Duration, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+            Ok($inner(duration, t, tz))
+        }
+    };
+}
+
+impl_add_dst_safe!(add_ns_dst_safe, add_duration_ns_with_dst_handling);
+impl_add_dst_safe!(add_us_dst_safe, add_duration_us_with_dst_handling);
+impl_add_dst_safe!(add_ms_dst_safe, add_duration_ms_with_dst_handling);
+
+/// Add duration to timestamp (ns), handling DST transitions.
+pub fn duration_add_ns_dst_safe(duration: &Duration, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+    Ok(add_duration_ns_with_dst_handling(duration, t, tz))
+}
+
+/// Add duration to timestamp (us), handling DST transitions.
+pub fn duration_add_us_dst_safe(duration: &Duration, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+    Ok(add_duration_us_with_dst_handling(duration, t, tz))
+}
+
+/// Add duration to timestamp (ms), handling DST transitions.
+pub fn duration_add_ms_dst_safe(duration: &Duration, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+    Ok(add_duration_ms_with_dst_handling(duration, t, tz))
+}
 
 /// Ensure that earliest datapoint (`t`) is in, or in front of, first window.
 ///
@@ -119,11 +294,11 @@ impl Window {
         tz: Option<&Tz>,
     ) -> PolarsResult<Bounds> {
         let start = self.truncate_ns(t, tz)?;
-        let start = self.offset.add_ns(start, tz)?;
+        let start = add_duration_ns_with_dst_handling(&self.offset, start, tz);
         ensure_t_in_or_in_front_of_window(
             self.every,
             t,
-            Duration::add_ns,
+            add_ns_dst_safe,
             Duration::nte_duration_ns,
             self.period,
             start,
@@ -139,11 +314,11 @@ impl Window {
         tz: Option<&Tz>,
     ) -> PolarsResult<Bounds> {
         let start = self.truncate_us(t, tz)?;
-        let start = self.offset.add_us(start, tz)?;
+        let start = add_duration_us_with_dst_handling(&self.offset, start, tz);
         ensure_t_in_or_in_front_of_window(
             self.every,
             t,
-            Duration::add_us,
+            add_us_dst_safe,
             Duration::nte_duration_us,
             self.period,
             start,
@@ -159,11 +334,11 @@ impl Window {
         tz: Option<&Tz>,
     ) -> PolarsResult<Bounds> {
         let start = self.truncate_ms(t, tz)?;
-        let start = self.offset.add_ms(start, tz)?;
+        let start = add_duration_ms_with_dst_handling(&self.offset, start, tz);
         ensure_t_in_or_in_front_of_window(
             self.every,
             t,
-            Duration::add_ms,
+            add_ms_dst_safe,
             Duration::nte_duration_ms,
             self.period,
             start,
@@ -221,9 +396,9 @@ impl<'a> BoundsIter<'a> {
             StartBy::DataPoint => {
                 let mut boundary = boundary;
                 let offset_fn = match tu {
-                    TimeUnit::Nanoseconds => Duration::add_ns,
-                    TimeUnit::Microseconds => Duration::add_us,
-                    TimeUnit::Milliseconds => Duration::add_ms,
+                    TimeUnit::Nanoseconds => add_ns_dst_safe,
+                    TimeUnit::Microseconds => add_us_dst_safe,
+                    TimeUnit::Milliseconds => add_ms_dst_safe,
                 };
                 boundary.stop = offset_fn(&window.period, boundary.start, tz)?;
                 boundary
@@ -251,19 +426,19 @@ impl<'a> BoundsIter<'a> {
                         TimeUnit::Nanoseconds => (
                             timestamp_ns_to_datetime,
                             datetime_to_timestamp_ns,
-                            Duration::add_ns,
+                            add_ns_dst_safe,
                             Duration::nte_duration_ns,
                         ),
                         TimeUnit::Microseconds => (
                             timestamp_us_to_datetime,
                             datetime_to_timestamp_us,
-                            Duration::add_us,
+                            add_us_dst_safe,
                             Duration::nte_duration_us,
                         ),
                         TimeUnit::Milliseconds => (
                             timestamp_ms_to_datetime,
                             datetime_to_timestamp_ms,
-                            Duration::add_ms,
+                            add_ms_dst_safe,
                             Duration::nte_duration_ms,
                         ),
                     };
@@ -346,19 +521,41 @@ impl Iterator for BoundsIter<'_> {
         if self.bi.start < self.boundary.stop {
             let out = self.bi;
             match self.tu {
-                // TODO: find some way to propagate error instead of unwrapping?
-                // Issue is that `next` needs to return `Option`.
                 TimeUnit::Nanoseconds => {
-                    self.bi.start = self.window.every.add_ns(self.bi.start, self.tz).unwrap();
-                    self.bi.stop = self.window.period.add_ns(self.bi.start, self.tz).unwrap();
+                    self.bi.start = add_duration_ns_with_dst_handling(
+                        &self.window.every,
+                        self.bi.start,
+                        self.tz,
+                    );
+                    self.bi.stop = add_duration_ns_with_dst_handling(
+                        &self.window.period,
+                        self.bi.start,
+                        self.tz,
+                    );
                 },
                 TimeUnit::Microseconds => {
-                    self.bi.start = self.window.every.add_us(self.bi.start, self.tz).unwrap();
-                    self.bi.stop = self.window.period.add_us(self.bi.start, self.tz).unwrap();
+                    self.bi.start = add_duration_us_with_dst_handling(
+                        &self.window.every,
+                        self.bi.start,
+                        self.tz,
+                    );
+                    self.bi.stop = add_duration_us_with_dst_handling(
+                        &self.window.period,
+                        self.bi.start,
+                        self.tz,
+                    );
                 },
                 TimeUnit::Milliseconds => {
-                    self.bi.start = self.window.every.add_ms(self.bi.start, self.tz).unwrap();
-                    self.bi.stop = self.window.period.add_ms(self.bi.start, self.tz).unwrap();
+                    self.bi.start = add_duration_ms_with_dst_handling(
+                        &self.window.every,
+                        self.bi.start,
+                        self.tz,
+                    );
+                    self.bi.stop = add_duration_ms_with_dst_handling(
+                        &self.window.period,
+                        self.bi.start,
+                        self.tz,
+                    );
                 },
             }
             Some(out)
@@ -372,22 +569,40 @@ impl Iterator for BoundsIter<'_> {
         if self.bi.start < self.boundary.stop {
             match self.tu {
                 TimeUnit::Nanoseconds => {
-                    self.bi.start = (self.window.every * n)
-                        .add_ns(self.bi.start, self.tz)
-                        .unwrap();
-                    self.bi.stop = (self.window.period).add_ns(self.bi.start, self.tz).unwrap();
+                    self.bi.start = add_duration_ns_with_dst_handling(
+                        &(self.window.every * n),
+                        self.bi.start,
+                        self.tz,
+                    );
+                    self.bi.stop = add_duration_ns_with_dst_handling(
+                        &self.window.period,
+                        self.bi.start,
+                        self.tz,
+                    );
                 },
                 TimeUnit::Microseconds => {
-                    self.bi.start = (self.window.every * n)
-                        .add_us(self.bi.start, self.tz)
-                        .unwrap();
-                    self.bi.stop = (self.window.period).add_us(self.bi.start, self.tz).unwrap();
+                    self.bi.start = add_duration_us_with_dst_handling(
+                        &(self.window.every * n),
+                        self.bi.start,
+                        self.tz,
+                    );
+                    self.bi.stop = add_duration_us_with_dst_handling(
+                        &self.window.period,
+                        self.bi.start,
+                        self.tz,
+                    );
                 },
                 TimeUnit::Milliseconds => {
-                    self.bi.start = (self.window.every * n)
-                        .add_ms(self.bi.start, self.tz)
-                        .unwrap();
-                    self.bi.stop = (self.window.period).add_ms(self.bi.start, self.tz).unwrap();
+                    self.bi.start = add_duration_ms_with_dst_handling(
+                        &(self.window.every * n),
+                        self.bi.start,
+                        self.tz,
+                    );
+                    self.bi.stop = add_duration_ms_with_dst_handling(
+                        &self.window.period,
+                        self.bi.start,
+                        self.tz,
+                    );
                 },
             }
             self.next()
