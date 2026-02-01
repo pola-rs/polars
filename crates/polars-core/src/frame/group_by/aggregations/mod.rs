@@ -183,12 +183,39 @@ where
     ca.into_series()
 }
 
+/// Same as `agg_helper_idx_on_all` but also passes the group index to the closure.
+fn agg_helper_idx_on_all_with_idx<T, F>(groups: &GroupsIdx, f: F) -> Series
+where
+    F: Fn((usize, &IdxVec)) -> Option<T::Native> + Send + Sync,
+    T: PolarsNumericType,
+{
+    let ca: ChunkedArray<T> =
+        POOL.install(|| groups.all().into_par_iter().enumerate().map(f).collect());
+    ca.into_series()
+}
+
 pub fn _agg_helper_slice<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    ca.into_series()
+}
+
+/// Same as `_agg_helper_slice` but also passes the group index to the closure.
+fn _agg_helper_slice_with_idx<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
+where
+    F: Fn(usize, [IdxSize; 2]) -> Option<T::Native> + Send + Sync,
+    T: PolarsNumericType,
+{
+    let ca: ChunkedArray<T> = POOL.install(|| {
+        groups
+            .par_iter()
+            .enumerate()
+            .map(|(idx, &g)| f(idx, g))
+            .collect()
+    });
     ca.into_series()
 }
 
@@ -334,6 +361,64 @@ where
                     }
                 })
             }
+        },
+    }
+}
+
+/// Compute quantile aggregation where each group can have a different quantile value.
+unsafe fn agg_varying_quantile_generic<T, K>(
+    ca: &ChunkedArray<T>,
+    groups: &GroupsType,
+    quantiles: &[f64],
+    method: QuantileMethod,
+) -> Series
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>: QuantileDispatcher<K::Native>,
+    K: PolarsNumericType,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float + quantile_filter::SealedRolling,
+{
+    match groups {
+        GroupsType::Idx(groups) => {
+            let ca = ca.rechunk();
+            agg_helper_idx_on_all_with_idx::<K, _>(groups, |(group_idx, idx)| {
+                debug_assert!(idx.len() <= ca.len());
+                let quantile = quantiles[group_idx];
+                if !(0.0..=1.0).contains(&quantile) {
+                    return None;
+                }
+                match idx.len() {
+                    0 => None,
+                    1 => {
+                        let idx = idx[0] as usize;
+                        ca.get(idx).map(|v| NumCast::from(v).unwrap())
+                    },
+                    _ => {
+                        let take = { ca.take_unchecked(idx) };
+                        take._quantile(quantile, method).unwrap()
+                    },
+                }
+            })
+        },
+        GroupsType::Slice { groups, .. } => {
+            _agg_helper_slice_with_idx::<K, _>(groups, |group_idx, [first, len]| {
+                debug_assert!(first + len <= ca.len() as IdxSize);
+                let quantile = quantiles[group_idx];
+                if !(0.0..=1.0).contains(&quantile) {
+                    return None;
+                }
+                match len {
+                    0 => None,
+                    1 => ca.get(first as usize).map(|v| NumCast::from(v).unwrap()),
+                    _ => {
+                        let arr_group = _slice_from_offsets(ca, first, len);
+                        arr_group
+                            ._quantile(quantile, method)
+                            .unwrap_unchecked()
+                            .map(|flt| NumCast::from(flt).unwrap_unchecked())
+                    },
+                }
+            })
         },
     }
 }
@@ -1138,6 +1223,14 @@ impl Float32Chunked {
     ) -> Series {
         agg_quantile_generic::<_, Float32Type>(self, groups, quantile, method)
     }
+    pub(crate) unsafe fn agg_varying_quantile(
+        &self,
+        groups: &GroupsType,
+        quantiles: &[f64],
+        method: QuantileMethod,
+    ) -> Series {
+        agg_varying_quantile_generic::<_, Float32Type>(self, groups, quantiles, method)
+    }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
         agg_median_generic::<_, Float32Type>(self, groups)
     }
@@ -1150,6 +1243,14 @@ impl Float64Chunked {
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
+    }
+    pub(crate) unsafe fn agg_varying_quantile(
+        &self,
+        groups: &GroupsType,
+        quantiles: &[f64],
+        method: QuantileMethod,
+    ) -> Series {
+        agg_varying_quantile_generic::<_, Float64Type>(self, groups, quantiles, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
         agg_median_generic::<_, Float64Type>(self, groups)
@@ -1342,6 +1443,14 @@ where
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
+    }
+    pub(crate) unsafe fn agg_varying_quantile(
+        &self,
+        groups: &GroupsType,
+        quantiles: &[f64],
+        method: QuantileMethod,
+    ) -> Series {
+        agg_varying_quantile_generic::<_, Float64Type>(self, groups, quantiles, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
         agg_median_generic::<_, Float64Type>(self, groups)
