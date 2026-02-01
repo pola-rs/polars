@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Indicates if the timer is currently ticking.
 const TICKING_BIT: u64 = 1 << 63;
