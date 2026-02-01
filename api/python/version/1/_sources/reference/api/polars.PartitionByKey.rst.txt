@@ -1,0 +1,22 @@
+﻿polars.PartitionByKey
+=====================
+
+.. currentmodule:: polars
+
+.. autoclass:: PartitionByKey
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~PartitionByKey.__init__
+   
+   
+
+   
+   
+   

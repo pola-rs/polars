@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.sort
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.sort

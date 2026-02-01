@@ -1,0 +1,355 @@
+/*
+  Inspired by https://spec.draculatheme.com/ specification, they should work
+  decently with both dark and light themes.
+  */
+:root {
+    --ansi-red: #ff5555;
+    --ansi-green: #50fa7b;
+    --ansi-blue: #265285;
+    --ansi-yellow: #ffb86c;
+    --ansi-magenta: #bd93f9;
+    --ansi-cyan: #8be9fd;
+    --ansi-black: #282a36;
+    --ansi-white: #f8f8f2;
+}
+
+.-Color-Green,
+.-Color-Faint-Green,
+.-Color-Bold-Green,
+.-Color-BrightGreen {
+    color: var(--ansi-green);
+}
+
+.-Color-Red,
+.-Color-Faint-Red,
+.-Color-Bold-Red,
+.-Color-BrightRed {
+    color: var(--ansi-red);
+}
+
+.-Color-Yellow,
+.-Color-Faint-Yellow,
+.-Color-Bold-Yellow,
+.-Color-BrightYellow {
+    color: var(--ansi-yellow);
+}
+
+.-Color-Blue,
+.-Color-Faint-Blue,
+.-Color-Bold-Blue,
+.-Color-BrightBlue {
+    color: var(--ansi-blue);
+}
+
+.-Color-Magenta,
+.-Color-Faint-Magenta,
+.-Color-Bold-Magenta,
+.-Color-BrightMagenta {
+    color: var(--ansi-magenta);
+}
+
+.-Color-Cyan,
+.-Color-Faint-Cyan,
+.-Color-Bold-Cyan,
+.-Color-BrightCyan {
+    color: var(--ansi-cyan);
+}
+
+.-Color-White,
+.-Color-Faint-White,
+.-Color-Bold-White,
+.-Color-BrightWhite {
+    color: var(--ansi-white);
+}
+
+.-Color-Black,
+.-Color-Faint-Black,
+.-Color-Bold-Black,
+.-Color-BrightBlack {
+    color: var(--ansi-black);
+}
+
+.-Color-Faint {
+    opacity: 0.5;
+}
+
+.-Color-Bold {
+    font-weight: bold;
+}
+
+.-Color-BGBlack,
+.-Color-Black-BGBlack,
+.-Color-Blue-BGBlack,
+.-Color-Bold-BGBlack,
+.-Color-BrightBGBlack,
+.-Color-Bold-Black-BGBlack,
+.-Color-BrightBlack-BGBlack,
+.-Color-Bold-Green-BGBlack,
+.-Color-BrightGreen-BGBlack,
+.-Color-Bold-Cyan-BGBlack,
+.-Color-BrightCyan-BGBlack,
+.-Color-Bold-Blue-BGBlack,
+.-Color-BrightBlue-BGBlack,
+.-Color-Bold-Magenta-BGBlack,
+.-Color-BrightMagenta-BGBlack,
+.-Color-Bold-Red-BGBlack,
+.-Color-BrightRed-BGBlack,
+.-Color-Bold-White-BGBlack,
+.-Color-BrightWhite-BGBlack,
+.-Color-Bold-Yellow-BGBlack,
+.-Color-BrightYellow-BGBlack,
+.-Color-Cyan-BGBlack,
+.-Color-Green-BGBlack,
+.-Color-Magenta-BGBlack,
+.-Color-Red-BGBlack,
+.-Color-White-BGBlack,
+.-Color-Yellow-BGBlack {
+    background-color: var(--ansi-black);
+}
+
+.-Color-BGRed,
+.-Color-Black-BGRed,
+.-Color-Blue-BGRed,
+.-Color-Bold-BGRed,
+.-Color-BrightBGRed,
+.-Color-Bold-Black-BGRed,
+.-Color-BrightBlack-BGRed,
+.-Color-Bold-Green-BGRed,
+.-Color-BrightGreen-BGRed,
+.-Color-Bold-Cyan-BGRed,
+.-Color-BrightCyan-BGRed,
+.-Color-Bold-Blue-BGRed,
+.-Color-BrightBlue-BGRed,
+.-Color-Bold-Magenta-BGRed,
+.-Color-BrightMagenta-BGRed,
+.-Color-Bold-Red-BGRed,
+.-Color-BrightRed-BGRed,
+.-Color-Bold-White-BGRed,
+.-Color-BrightWhite-BGRed,
+.-Color-Bold-Yellow-BGRed,
+.-Color-BrightYellow-BGRed,
+.-Color-Cyan-BGRed,
+.-Color-Green-BGRed,
+.-Color-Magenta-BGRed,
+.-Color-Red-BGRed,
+.-Color-White-BGRed,
+.-Color-Yellow-BGRed {
+    background-color: var(--ansi-red);
+}
+
+.-Color-BGGreen,
+.-Color-Black-BGGreen,
+.-Color-Blue-BGGreen,
+.-Color-Bold-BGGreen,
+.-Color-BrightBGGreen,
+.-Color-Bold-Black-BGGreen,
+.-Color-BrightBlack-BGGreen,
+.-Color-Bold-Green-BGGreen,
+.-Color-BrightGreen-BGGreen,
+.-Color-Bold-Cyan-BGGreen,
+.-Color-BrightCyan-BGGreen,
+.-Color-Bold-Blue-BGGreen,
+.-Color-BrightBlue-BGGreen,
+.-Color-Bold-Magenta-BGGreen,
+.-Color-BrightMagenta-BGGreen,
+.-Color-Bold-Red-BGGreen,
+.-Color-BrightRed-BGGreen,
+.-Color-Bold-White-BGGreen,
+.-Color-BrightWhite-BGGreen,
+.-Color-Bold-Yellow-BGGreen,
+.-Color-BrightYellow-BGGreen,
+.-Color-Cyan-BGGreen,
+.-Color-Green-BGGreen,
+.-Color-Magenta-BGGreen,
+.-Color-Red-BGGreen,
+.-Color-White-BGGreen,
+.-Color-Yellow-BGGreen {
+    background-color: var(--ansi-green);
+}
+
+.-Color-BGYellow,
+.-Color-Black-BGYellow,
+.-Color-Blue-BGYellow,
+.-Color-Bold-BGYellow,
+.-Color-BrightBGYellow,
+.-Color-Bold-Black-BGYellow,
+.-Color-BrightBlack-BGYellow,
+.-Color-Bold-Green-BGYellow,
+.-Color-BrightGreen-BGYellow,
+.-Color-Bold-Cyan-BGYellow,
+.-Color-BrightCyan-BGYellow,
+.-Color-Bold-Blue-BGYellow,
+.-Color-BrightBlue-BGYellow,
+.-Color-Bold-Magenta-BGYellow,
+.-Color-BrightMagenta-BGYellow,
+.-Color-Bold-Red-BGYellow,
+.-Color-BrightRed-BGYellow,
+.-Color-Bold-White-BGYellow,
+.-Color-BrightWhite-BGYellow,
+.-Color-Bold-Yellow-BGYellow,
+.-Color-BrightYellow-BGYellow,
+.-Color-Cyan-BGYellow,
+.-Color-Green-BGYellow,
+.-Color-Magenta-BGYellow,
+.-Color-Red-BGYellow,
+.-Color-White-BGYellow,
+.-Color-Yellow-BGYellow {
+    background-color: var(--ansi-yellow);
+}
+
+.-Color-BGBlue,
+.-Color-Black-BGBlue,
+.-Color-Blue-BGBlue,
+.-Color-Bold-BGBlue,
+.-Color-BrightBGBlue,
+.-Color-Bold-Black-BGBlue,
+.-Color-BrightBlack-BGBlue,
+.-Color-Bold-Green-BGBlue,
+.-Color-BrightGreen-BGBlue,
+.-Color-Bold-Cyan-BGBlue,
+.-Color-BrightCyan-BGBlue,
+.-Color-Bold-Blue-BGBlue,
+.-Color-BrightBlue-BGBlue,
+.-Color-Bold-Magenta-BGBlue,
+.-Color-BrightMagenta-BGBlue,
+.-Color-Bold-Red-BGBlue,
+.-Color-BrightRed-BGBlue,
+.-Color-Bold-White-BGBlue,
+.-Color-BrightWhite-BGBlue,
+.-Color-Bold-Yellow-BGBlue,
+.-Color-BrightYellow-BGBlue,
+.-Color-Cyan-BGBlue,
+.-Color-Green-BGBlue,
+.-Color-Magenta-BGBlue,
+.-Color-Red-BGBlue,
+.-Color-White-BGBlue,
+.-Color-Yellow-BGBlue {
+    background-color: var(--ansi-blue);
+}
+
+.-Color-BGMagenta,
+.-Color-Black-BGMagenta,
+.-Color-Blue-BGMagenta,
+.-Color-Bold-BGMagenta,
+.-Color-BrightBGMagenta,
+.-Color-Bold-Black-BGMagenta,
+.-Color-BrightBlack-BGMagenta,
+.-Color-Bold-Green-BGMagenta,
+.-Color-BrightGreen-BGMagenta,
+.-Color-Bold-Cyan-BGMagenta,
+.-Color-BrightCyan-BGMagenta,
+.-Color-Bold-Blue-BGMagenta,
+.-Color-BrightBlue-BGMagenta,
+.-Color-Bold-Magenta-BGMagenta,
+.-Color-BrightMagenta-BGMagenta,
+.-Color-Bold-Red-BGMagenta,
+.-Color-BrightRed-BGMagenta,
+.-Color-Bold-White-BGMagenta,
+.-Color-BrightWhite-BGMagenta,
+.-Color-Bold-Yellow-BGMagenta,
+.-Color-BrightYellow-BGMagenta,
+.-Color-Cyan-BGMagenta,
+.-Color-Green-BGMagenta,
+.-Color-Magenta-BGMagenta,
+.-Color-Red-BGMagenta,
+.-Color-White-BGMagenta,
+.-Color-Yellow-BGMagenta {
+    background-color: var(--ansi-magenta);
+}
+
+.-Color-BGCyan,
+.-Color-Black-BGCyan,
+.-Color-Blue-BGCyan,
+.-Color-Bold-BGCyan,
+.-Color-BrightBGCyan,
+.-Color-Bold-Black-BGCyan,
+.-Color-BrightBlack-BGCyan,
+.-Color-Bold-Green-BGCyan,
+.-Color-BrightGreen-BGCyan,
+.-Color-Bold-Cyan-BGCyan,
+.-Color-BrightCyan-BGCyan,
+.-Color-Bold-Blue-BGCyan,
+.-Color-BrightBlue-BGCyan,
+.-Color-Bold-Magenta-BGCyan,
+.-Color-BrightMagenta-BGCyan,
+.-Color-Bold-Red-BGCyan,
+.-Color-BrightRed-BGCyan,
+.-Color-Bold-White-BGCyan,
+.-Color-BrightWhite-BGCyan,
+.-Color-Bold-Yellow-BGCyan,
+.-Color-BrightYellow-BGCyan,
+.-Color-Cyan-BGCyan,
+.-Color-Green-BGCyan,
+.-Color-Magenta-BGCyan,
+.-Color-Red-BGCyan,
+.-Color-White-BGCyan,
+.-Color-Yellow-BGCyan {
+    background-color: var(--ansi-cyan);
+}
+
+.-Color-BGWhite,
+.-Color-Black-BGWhite,
+.-Color-Blue-BGWhite,
+.-Color-Bold-BGWhite,
+.-Color-BrightBGWhite,
+.-Color-Bold-Black-BGWhite,
+.-Color-BrightBlack-BGWhite,
+.-Color-Bold-Green-BGWhite,
+.-Color-BrightGreen-BGWhite,
+.-Color-Bold-Cyan-BGWhite,
+.-Color-BrightCyan-BGWhite,
+.-Color-Bold-Blue-BGWhite,
+.-Color-BrightBlue-BGWhite,
+.-Color-Bold-Magenta-BGWhite,
+.-Color-BrightMagenta-BGWhite,
+.-Color-Bold-Red-BGWhite,
+.-Color-BrightRed-BGWhite,
+.-Color-Bold-White-BGWhite,
+.-Color-BrightWhite-BGWhite,
+.-Color-Bold-Yellow-BGWhite,
+.-Color-BrightYellow-BGWhite,
+.-Color-Cyan-BGWhite,
+.-Color-Green-BGWhite,
+.-Color-Magenta-BGWhite,
+.-Color-Red-BGWhite,
+.-Color-White-BGWhite,
+.-Color-Yellow-BGWhite {
+    background-color: var(--ansi-white);
+}
+
+.-Color-Black,
+.-Color-Bold-Black,
+.-Color-BrightBlack,
+.-Color-Black-BGBlack,
+.-Color-Bold-Black-BGBlack,
+.-Color-BrightBlack-BGBlack,
+.-Color-Black-BGGreen,
+.-Color-Red-BGRed,
+.-Color-Bold-Red-BGRed,
+.-Color-BrightRed-BGRed,
+.-Color-Bold-Blue-BGBlue,
+.-Color-BrightBlue-BGBlue,
+.-Color-Blue-BGBlue {
+    text-shadow: 0 0 1px var(--ansi-white);
+}
+
+.-Color-Bold-Cyan-BGCyan,
+.-Color-BrightCyan-BGCyan,
+.-Color-Bold-Magenta-BGMagenta,
+.-Color-BrightMagenta-BGMagenta,
+.-Color-Bold-White,
+.-Color-BrightWhite,
+.-Color-Bold-Yellow-BGYellow,
+.-Color-BrightYellow-BGYellow,
+.-Color-Bold-Green-BGGreen,
+.-Color-BrightGreen-BGGreen,
+.-Color-Cyan-BGCyan,
+.-Color-Cyan-BGGreen,
+.-Color-Green-BGCyan,
+.-Color-Green-BGGreen,
+.-Color-Magenta-BGMagenta,
+.-Color-White,
+.-Color-White-BGWhite,
+.-Color-Yellow-BGYellow {
+    text-shadow: 0 0 1px var(--ansi-black);
+}

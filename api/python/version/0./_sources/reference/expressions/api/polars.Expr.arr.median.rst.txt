@@ -1,0 +1,6 @@
+﻿polars.Expr.arr.median
+======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.arr.median

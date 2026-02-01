@@ -1,0 +1,6 @@
+﻿polars.arg\_sort\_by
+====================
+
+.. currentmodule:: polars
+
+.. autofunction:: arg_sort_by

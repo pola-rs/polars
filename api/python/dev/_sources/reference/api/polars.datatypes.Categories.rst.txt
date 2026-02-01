@@ -1,0 +1,27 @@
+﻿polars.datatypes.Categories
+===========================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Categories
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Categories.__init__
+      ~Categories.is_global
+      ~Categories.name
+      ~Categories.namespace
+      ~Categories.physical
+      ~Categories.random
+   
+   
+
+   
+   
+   

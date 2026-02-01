@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["extract_table_identifiers","sql_expr"],"mod":["function_registry","keywords"],"struct":["SQLContext"]};

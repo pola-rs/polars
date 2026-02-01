@@ -1,0 +1,6 @@
+﻿polars.read\_delta
+==================
+
+.. currentmodule:: polars
+
+.. autofunction:: read_delta

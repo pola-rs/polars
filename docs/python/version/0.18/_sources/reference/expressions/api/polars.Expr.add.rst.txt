@@ -1,0 +1,6 @@
+﻿polars.Expr.add
+===============
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.add

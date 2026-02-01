@@ -1,0 +1,6 @@
+﻿polars.Config.set\_tbl\_hide\_dtype\_separator
+==============================================
+
+.. currentmodule:: polars
+
+.. automethod:: Config.set_tbl_hide_dtype_separator

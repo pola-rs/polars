@@ -1,0 +1,6 @@
+﻿polars.dataframe.group\_by.GroupBy.first
+========================================
+
+.. currentmodule:: polars.dataframe.group_by
+
+.. automethod:: GroupBy.first

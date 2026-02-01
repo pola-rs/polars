@@ -1,0 +1,6 @@
+﻿polars.DataFrame.join
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.join

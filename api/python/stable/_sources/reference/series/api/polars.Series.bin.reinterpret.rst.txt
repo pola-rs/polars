@@ -1,0 +1,6 @@
+﻿polars.Series.bin.reinterpret
+=============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.bin.reinterpret

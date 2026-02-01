@@ -1,0 +1,6 @@
+﻿polars.Expr.skew
+================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.skew

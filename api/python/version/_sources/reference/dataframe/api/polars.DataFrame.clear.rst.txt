@@ -1,0 +1,6 @@
+﻿polars.DataFrame.clear
+======================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.clear

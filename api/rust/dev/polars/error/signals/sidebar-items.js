@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["catch_keyboard_interrupt","register_polars_keyboard_interrupt_hook","try_raise_keyboard_interrupt"],"struct":["KeyboardInterrupt"]};

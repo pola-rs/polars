@@ -1,0 +1,6 @@
+﻿polars.read\_parquet\_metadata
+==============================
+
+.. currentmodule:: polars
+
+.. autofunction:: read_parquet_metadata

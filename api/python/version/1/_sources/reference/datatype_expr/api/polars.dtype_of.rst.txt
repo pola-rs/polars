@@ -1,0 +1,6 @@
+﻿polars.dtype\_of
+================
+
+.. currentmodule:: polars
+
+.. autofunction:: dtype_of

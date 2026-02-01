@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ChildFieldOverwrites","KeyValueMetadata","ParquetCompression"],"fn":["get_column_write_options"],"struct":["BatchedWriter","MetadataKeyValue","ParquetFieldOverwrites","ParquetMetadataContext","ParquetWriteOptions","ParquetWriter","StatisticsOptions"],"type":["RowGroupIterColumns"]};
