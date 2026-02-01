@@ -108,6 +108,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from builtins import slice as slice_
     from collections.abc import Awaitable, Callable, Iterator, Sequence
     from io import IOBase
     from typing import IO, Concatenate, Literal, ParamSpec
@@ -747,7 +748,7 @@ class LazyFrame:
     def __deepcopy__(self, memo: None = None) -> LazyFrame:
         return self.clone()
 
-    def __getitem__(self, item: slice) -> LazyFrame:
+    def __getitem__(self, item: slice_) -> LazyFrame:
         """
         Support slice syntax, returning a new LazyFrame.
 
