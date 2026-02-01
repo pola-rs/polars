@@ -14,7 +14,7 @@ pub struct LiveTimer {
     /// for which the timer was not ticking. Otherwise, this represents the total amount of
     /// nanoseconds for which this timer was ticking.
     state_ns: AtomicU64,
-    /// Used by `total_active_time_ns` to ensure output is monotonically nondecreasing.
+    /// Used by `total_live_time_ns` to ensure output is monotonically nondecreasing.
     max_measured_ns: AtomicU64,
 }
 
@@ -65,7 +65,7 @@ impl LiveTimer {
         }
     }
 
-    fn _stop_session(&self) {
+    fn stop_session(&self) {
         let mut state_ns = u64::MAX;
 
         let _ = self.num_active.fetch_update(
@@ -103,7 +103,7 @@ impl LiveTimer {
         );
     }
 
-    pub fn total_active_time_ns(&self) -> u64 {
+    pub fn total_time_live_ns(&self) -> u64 {
         let state_ns = self.state_ns.load(Ordering::Relaxed);
 
         let active_time = if state_ns & TICKING_BIT == 0 {
@@ -129,7 +129,7 @@ impl<'a> LiveTimerSessionGuard<'a> {
 
 impl Drop for LiveTimerSessionGuard<'_> {
     fn drop(&mut self) {
-        self.timer._stop_session();
+        self.timer.stop_session();
     }
 }
 
@@ -145,11 +145,12 @@ impl LiveTimerSessionGuardOwned {
 
 impl Drop for LiveTimerSessionGuardOwned {
     fn drop(&mut self) {
-        self.timer._stop_session();
+        self.timer.stop_session();
     }
 }
 
 fn main() {
+    use std::sync::Arc;
     use std::time::Duration;
 
     let timer = Arc::new(LiveTimer::new());
@@ -157,26 +158,37 @@ fn main() {
     let h1 = {
         let timer = timer.clone();
         std::thread::spawn(move || {
-            timer._start_session();
-            timer._stop_session();
+            std::mem::forget(timer.start_session());
+            timer.stop_session();
+            dbg!(timer.total_time_live_ns());
+
             std::thread::sleep(Duration::from_secs(1));
-            timer._start_session();
+            dbg!(timer.total_time_live_ns());
+
+            std::mem::forget(timer.start_session());
             std::thread::sleep(Duration::from_secs(1));
-            timer._start_session();
+            dbg!(timer.total_time_live_ns());
+
+            std::mem::forget(timer.start_session());
             std::thread::sleep(Duration::from_secs(1));
-            timer._stop_session();
+            dbg!(timer.total_time_live_ns());
+
+            timer.stop_session();
             std::thread::sleep(Duration::from_secs(1));
-            timer._stop_session();
+            dbg!(timer.total_time_live_ns());
+
+            timer.stop_session();
             std::thread::sleep(Duration::from_secs(1));
+            dbg!(timer.total_time_live_ns());
         })
     };
 
     let mut recorded = [0u64; 16];
 
     'outer: while !h1.is_finished() {
-        let mut prev = timer.total_active_time_ns();
+        let mut prev = timer.total_time_live_ns();
         for i in recorded.iter_mut() {
-            let new = timer.total_active_time_ns();
+            let new = timer.total_time_live_ns();
 
             if new < prev {
                 break 'outer;
@@ -192,6 +204,6 @@ fn main() {
 
     dbg!(h1.join().unwrap());
 
-    dbg!(timer.total_active_time_ns());
+    dbg!(timer.total_time_live_ns());
     dbg!(timer.max_measured_ns.load(Ordering::Relaxed));
 }

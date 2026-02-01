@@ -109,17 +109,28 @@ fn main() {
     let h1 = {
         let timer = timer.clone();
         std::thread::spawn(move || {
-            timer.start_session();
+            std::mem::forget(timer.start_session());
+            timer.stop_session();
+            dbg!(timer.total_time_live_ns());
+
+            std::thread::sleep(Duration::from_secs(1));
+            dbg!(timer.total_time_live_ns());
+
+            std::mem::forget(timer.start_session());
+            std::thread::sleep(Duration::from_secs(1));
+            dbg!(timer.total_time_live_ns());
+
+            std::mem::forget(timer.start_session());
+            std::thread::sleep(Duration::from_secs(1));
+            dbg!(timer.total_time_live_ns());
+
             timer.stop_session();
             std::thread::sleep(Duration::from_secs(1));
-            timer.start_session();
-            std::thread::sleep(Duration::from_secs(1));
-            timer.start_session();
-            std::thread::sleep(Duration::from_secs(1));
+            dbg!(timer.total_time_live_ns());
+
             timer.stop_session();
             std::thread::sleep(Duration::from_secs(1));
-            timer.stop_session();
-            std::thread::sleep(Duration::from_secs(1));
+            dbg!(timer.total_time_live_ns());
         })
     };
 
@@ -146,24 +157,3 @@ fn main() {
 
     dbg!(timer.total_time_live_ns());
 }
-
-// fn main() {
-//     let lt = LiveTimer::new();
-//     lt.start_session();
-//     lt.stop_session();
-//     dbg!(lt.total_time_live_ns());
-//     std::thread::sleep(Duration::from_secs(1));
-//     dbg!(lt.total_time_live_ns());
-//     lt.start_session();
-//     std::thread::sleep(Duration::from_secs(1));
-//     dbg!(lt.total_time_live_ns());
-//     lt.start_session();
-//     std::thread::sleep(Duration::from_secs(1));
-//     dbg!(lt.total_time_live_ns());
-//     lt.stop_session();
-//     std::thread::sleep(Duration::from_secs(1));
-//     dbg!(lt.total_time_live_ns());
-//     lt.stop_session();
-//     std::thread::sleep(Duration::from_secs(1));
-//     dbg!(lt.total_time_live_ns());
-// }
