@@ -29,6 +29,7 @@ pub mod hashing;
 pub mod ideal_morsel_size;
 pub mod idx_map;
 pub mod idx_vec;
+mod live_timer;
 pub mod marked_usize;
 pub mod mem;
 pub mod min_max;

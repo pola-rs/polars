@@ -14,6 +14,7 @@ pub struct ActiveTimer {
     /// for which the timer was not ticking. Otherwise, this represents the total amount of
     /// nanoseconds for which this timer was ticking.
     state_ns: AtomicU64,
+    non_decreasing_measure: AtomicU64,
 }
 
 impl Default for ActiveTimer {
@@ -28,6 +29,7 @@ impl ActiveTimer {
             base_instant: Instant::now(),
             num_active: AtomicU64::new(0),
             state_ns: AtomicU64::new(0),
+            non_decreasing_measure: AtomicU64::new(0),
         }
     }
 
@@ -100,15 +102,17 @@ impl ActiveTimer {
         );
     }
 
-    /// Note, this is NOT monotonically nondecreasing across calls.
     pub fn total_active_time_ns(&self) -> u64 {
         let state_ns = self.state_ns.load(Ordering::Relaxed);
 
-        if state_ns & TICKING_BIT == 0 {
+        let active_time = if state_ns & TICKING_BIT == 0 {
             state_ns
         } else {
             self.base_instant.elapsed().as_nanos() as u64 - (state_ns & !TICKING_BIT)
-        }
+        };
+
+        self.non_decreasing_measure
+            .fetch_max(active_time, Ordering::Relaxed)
     }
 }
 
@@ -142,4 +146,50 @@ impl Drop for ActiveTimerSessionGuardOwned {
     fn drop(&mut self) {
         self.timer._unregister_session();
     }
+}
+
+fn main() {
+    use std::time::Duration;
+
+    let timer = Arc::new(ActiveTimer::new());
+
+    let h1 = {
+        let timer = timer.clone();
+        std::thread::spawn(move || {
+            timer._register_session();
+            timer._unregister_session();
+            std::thread::sleep(Duration::from_secs(1));
+            timer._register_session();
+            std::thread::sleep(Duration::from_secs(1));
+            timer._register_session();
+            std::thread::sleep(Duration::from_secs(1));
+            timer._unregister_session();
+            std::thread::sleep(Duration::from_secs(1));
+            timer._unregister_session();
+            std::thread::sleep(Duration::from_secs(1));
+        })
+    };
+
+    let mut recorded = [0u64; 16];
+
+    'outer: while !h1.is_finished() {
+        let mut prev = timer.total_active_time_ns();
+        for i in recorded.iter_mut() {
+            let new = timer.total_active_time_ns();
+
+            if new < prev {
+                break 'outer;
+            }
+
+            *i = new;
+            prev = new;
+        }
+    }
+
+    dbg!(&recorded);
+
+    dbg!(h1.join().unwrap());
+
+    dbg!(timer.total_active_time_ns());
+    dbg!(timer.non_decreasing_measure.load(Ordering::Relaxed));
 }
