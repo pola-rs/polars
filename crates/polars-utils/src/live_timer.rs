@@ -56,14 +56,14 @@ impl LiveTimer {
         let start = Instant::now()
             .duration_since(self.base_timestamp)
             .as_nanos() as u64;
-        self.current_segment_start.store(start, Ordering::Release);
+        self.current_segment_start.store(start, Ordering::Relaxed);
         let accum = self.accumulated_ns.load(Ordering::Relaxed);
         self.accumulated_ns.store(accum | 1, Ordering::Release);
     }
 
     // May not be concurrently called with exclusive_start_current_segment.
     fn exclusive_stop_current_segment(&self) {
-        let current_segment_start = self.current_segment_start.load(Ordering::Acquire);
+        let current_segment_start = self.current_segment_start.load(Ordering::Relaxed);
         let start = self.base_timestamp + Duration::from_nanos(current_segment_start);
         let accum = self.accumulated_ns.load(Ordering::Relaxed);
         let new_accum = (accum & !1) + ((start.elapsed().as_nanos() as u64) << 1);
@@ -125,13 +125,13 @@ fn main() {
 
     let mut recorded = [0u64; 16];
 
-    while timer.base_timestamp.elapsed().as_millis() < 4000 {
+    'outer: while !h1.is_finished() {
         let mut prev = timer.total_time_live_ns();
         for i in recorded.iter_mut() {
             let new = timer.total_time_live_ns();
 
             if new < prev {
-                break;
+                break 'outer;
             }
 
             *i = new;
@@ -140,9 +140,10 @@ fn main() {
     }
 
     dbg!(&recorded);
-    dbg!(recorded.is_sorted());
 
     dbg!(h1.join().unwrap());
+
+    dbg!(&recorded);
 
     dbg!(timer.total_time_live_ns());
 }
