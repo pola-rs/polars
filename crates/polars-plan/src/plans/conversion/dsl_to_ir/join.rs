@@ -310,33 +310,10 @@ pub fn resolve_join(
                 rnode.set_node(casted_r);
             }
         } else if ltype != rtype {
-            #[cfg(feature = "dtype-struct")]
-            if let (DataType::Struct(left_fields), DataType::Struct(right_fields)) =
-                (&ltype, &rtype)
-            {
-                let left_formatted: String = left_fields
-                    .iter()
-                    .map(|field| format!("{}: {}", field.name, field.dtype))
-                    .collect::<Vec<String>>()
-                    .join(", ");
-
-                let right_formatted: String = right_fields
-                    .iter()
-                    .map(|field| format!("{}: {}", field.name, field.dtype))
-                    .collect::<Vec<String>>()
-                    .join(", ");
-
-                polars_bail!(
-                    SchemaMismatch:
-                    "datatypes of join keys don't match - `{}`: struct with fields {{{}}} on left does not match `{}`: struct with fields {{{}}} on right (and no other type was available to cast to)",
-                    lnode.output_name(), left_formatted, rnode.output_name(), right_formatted
-                );
-            }
-
             polars_bail!(
                 SchemaMismatch:
                 "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right (and no other type was available to cast to)",
-                lnode.output_name(), ltype, rnode.output_name(), rtype
+                lnode.output_name(), ltype.pretty_format(), rnode.output_name(), rtype.pretty_format()
             );
         }
     }

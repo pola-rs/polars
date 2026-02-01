@@ -1863,5 +1863,5 @@ def test_join_struct_error_lazy_26276() -> None:
     lhs = pl.DataFrame({"x": [{"a": 1, "b": 2}]}).lazy()
     rhs = pl.DataFrame({"x": [{"b": 2, "a": 1}]}).lazy()
 
-    with pytest.raises(pl.exceptions.SchemaError, match="struct with fields"):
+    with pytest.raises(pl.exceptions.SchemaError, match=r"struct \{.*\}"):
         lhs.join(rhs, on="x").collect()

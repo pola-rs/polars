@@ -63,24 +63,7 @@ impl<'a> AnonymousListBuilder<'a> {
             (DataType::Null, _) => {},
             (dt, None) => self.inner_dtype = Some(dt.clone()),
             (dt, Some(set_dt)) => {
-                #[cfg(feature = "dtype-struct")]
-                if let (DataType::Struct(got_fields), DataType::Struct(set_fields)) = (dt, set_dt) {
-                    let got_formatted: String = got_fields
-                        .iter()
-                        .map(|field| format!("{}: {}", field.name, field.dtype))
-                        .collect::<Vec<String>>()
-                        .join(", ");
-
-                    let set_formatted: String = set_fields
-                        .iter()
-                        .map(|field| format!("{}: {}", field.name, field.dtype))
-                        .collect::<Vec<String>>()
-                        .join(", ");
-
-                    polars_bail!(ComputeError: "struct dtypes don't match, got {{{}}}, expected: {{{}}}", got_formatted, set_formatted);
-                }
-
-                polars_bail!(ComputeError: "dtypes don't match, got {dt}, expected: {set_dt}")
+                polars_bail!(ComputeError: "dtypes don't match, got {}, expected: {}", dt.pretty_format(), set_dt.pretty_format());
             },
         }
         if s.is_empty() {
@@ -143,26 +126,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
             (dt, None) => self.inner_dtype = Some(dt.clone()),
             (dt, Some(set_dt)) => {
                 if dt != set_dt {
-                    #[cfg(feature = "dtype-struct")]
-                    if let (DataType::Struct(got_fields), DataType::Struct(set_fields)) =
-                        (dt, set_dt)
-                    {
-                        let got_formatted: String = got_fields
-                            .iter()
-                            .map(|field| format!("{}: {}", field.name, field.dtype))
-                            .collect::<Vec<String>>()
-                            .join(", ");
-
-                        let set_formatted: String = set_fields
-                            .iter()
-                            .map(|field| format!("{}: {}", field.name, field.dtype))
-                            .collect::<Vec<String>>()
-                            .join(", ");
-
-                        polars_bail!(ComputeError: "struct dtypes don't match, got {{{}}}, expected: {{{}}}", got_formatted, set_formatted);
-                    }
-
-                    polars_bail!(ComputeError: "dtypes don't match, got {dt}, expected: {set_dt}")
+                    polars_bail!(ComputeError: "dtypes don't match, got {}, expected: {}", dt.pretty_format(), set_dt.pretty_format());
                 }
             },
         }

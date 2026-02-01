@@ -218,36 +218,11 @@ pub trait DataFrameJoinOps: IntoDf {
             .zip(&selected_right)
             .find(|(l, r)| l.dtype() != r.dtype())
         {
-            #[cfg(feature = "dtype-struct")]
-            if let (DataType::Struct(left_fields), DataType::Struct(right_fields)) =
-                (l.dtype(), r.dtype())
-            {
-                let left_formatted: String = left_fields
-                    .iter()
-                    .map(|field| format!("{}: {}", field.name, field.dtype))
-                    .collect::<Vec<String>>()
-                    .join(", ");
-
-                let right_formatted: String = right_fields
-                    .iter()
-                    .map(|field| format!("{}: {}", field.name, field.dtype))
-                    .collect::<Vec<String>>()
-                    .join(", ");
-
-                polars_bail!(
-                    ComputeError:
-                        format!(
-                            "datatypes of join keys don't match - `{}`: {} with fields {{{}}} on left does not match `{}`: {} with fields {{{}}} on right",
-                            l.name(), l.dtype(), left_formatted, r.name(), r.dtype(), right_formatted
-                        )
-                );
-            }
-
             polars_bail!(
                 ComputeError:
                     format!(
                         "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
-                        l.name(), l.dtype(), r.name(), r.dtype()
+                        l.name(), l.dtype().pretty_format(), r.name(), r.dtype().pretty_format()
                     )
             );
         };
