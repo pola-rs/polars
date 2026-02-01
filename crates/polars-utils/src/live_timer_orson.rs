@@ -157,5 +157,4 @@ fn main() {
     dbg!(h1.join().unwrap());
 
     dbg!(timer.total_time_live_ns());
-    dbg!(timer.max_measured_ns.load(Ordering::Relaxed));
 }
