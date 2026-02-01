@@ -173,13 +173,13 @@ fn main() {
 
     let mut recorded = [0u64; 16];
 
-    'outer: while !h1.is_finished() {
+    while timer.base_instant.elapsed().as_millis() < 4000 {
         let mut prev = timer.total_active_time_ns();
         for i in recorded.iter_mut() {
             let new = timer.total_active_time_ns();
 
             if new < prev {
-                break 'outer;
+                break;
             }
 
             *i = new;
