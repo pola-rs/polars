@@ -137,7 +137,7 @@ fn main() {
     let mut recorded = [0u64; 16];
 
     'outer: while !h1.is_finished() {
-        let mut prev = timer.total_time_live_ns();
+        let mut prev = 0;
         for i in recorded.iter_mut() {
             let new = timer.total_time_live_ns();
 
