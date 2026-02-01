@@ -10,7 +10,7 @@ from hypothesis import assume, given, reject
 
 import polars as pl
 from polars._utils.various import parse_version
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_series_equal
 
 
@@ -117,7 +117,7 @@ def test_business_day_count_schema() -> None:
     )
     assert result.collect_schema()["business_day_count"] == pl.Int32
     assert result.collect().schema["business_day_count"] == pl.Int32
-    assert 'col("start").business_day_count([col("end")])' in result.explain()
+    assert 'col("start").business_day_count([col("end"), Series])' in result.explain()
 
 
 def test_business_day_count_w_holidays() -> None:
@@ -176,5 +176,65 @@ def test_unequal_length_22018() -> None:
             pl.business_day_count(
                 pl.Series([date(2020, 1, 1)] * 2),
                 pl.Series([date(2020, 1, 1)] * 3),
+            )
+        )
+
+
+def test_business_day_count_multiple_holidays() -> None:
+    base_df = pl.DataFrame(
+        {
+            "start": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 2)],
+            "end": [date(2020, 1, 3), date(2020, 1, 10), date(2020, 1, 9)],
+        }
+    )
+    holidays = pl.Series("holidays", [[date(2020, 1, 1), date(2020, 1, 9)], None, []])
+    for holidays_expr, df in [
+        (holidays, base_df),
+        (pl.col("holidays"), base_df.with_columns(holidays=holidays)),
+    ]:
+        result = df.select(
+            business_day_count=pl.business_day_count(
+                "start",
+                "end",
+                holidays=holidays_expr,  # type: ignore[arg-type]
+            ),
+        )["business_day_count"]
+        expected = pl.Series("business_day_count", [1, None, 5], pl.Int32)
+        assert_series_equal(result, expected)
+
+
+def test_business_day_count_bad_holidays() -> None:
+    df = pl.DataFrame(
+        {
+            "start": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 2)],
+            "end": [date(2020, 1, 3), date(2020, 1, 10), date(2020, 1, 9)],
+        }
+    )
+    # null in list of holidays
+    with pytest.raises(ComputeError, match="contained a null"):
+        df.select(
+            result=pl.business_day_count(
+                "start", "end", holidays=pl.Series([[date(2020, 1, 3)], [None], []])
+            )
+        )
+    # holidays are wrong length
+    with pytest.raises(ShapeError):
+        df.select(
+            result=pl.business_day_count(
+                "start", "end", holidays=pl.Series([[date(2020, 1, 3)], []])
+            )
+        )
+    # holidays are not List
+    with pytest.raises(ComputeError, match="wrong data type"):
+        df.select(
+            result=pl.business_day_count(
+                "start", "end", holidays=pl.Series(["abc", "xx", "def"])
+            )
+        )
+    # holidays are not List of Date
+    with pytest.raises(ComputeError, match="wrong data type"):
+        df.select(
+            result=pl.business_day_count(
+                "start", "end", holidays=pl.Series([["abc"], [], ["def"]])
             )
         )
