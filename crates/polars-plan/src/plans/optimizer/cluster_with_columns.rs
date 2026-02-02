@@ -15,10 +15,9 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
     let mut ir_stack = Vec::with_capacity(16);
     ir_stack.push(root);
 
-    // We define these here to reuse the allocations across the loops
-    let mut input_exprs_map: PlIndexMap<PlSmallStr, ExprIR> = PlIndexMap::new();
+    let mut input_name_to_expr_map: PlIndexMap<PlSmallStr, ExprIR> = PlIndexMap::new();
     let mut accessed_input_names: PlHashSet<PlSmallStr> = PlHashSet::new();
-    let mut push_candidates: Vec<usize> = vec![];
+    let mut push_candidate_idxs: Vec<usize> = vec![];
     let mut new_current_exprs: Vec<ExprIR> = vec![];
     let mut visited_caches = PlHashSet::new();
 
@@ -61,12 +60,12 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             continue;
         };
 
-        input_exprs_map.clear();
+        input_name_to_expr_map.clear();
         accessed_input_names.clear();
-        push_candidates.clear();
+        push_candidate_idxs.clear();
         new_current_exprs.clear();
 
-        input_exprs_map.extend(
+        input_name_to_expr_map.extend(
             input_exprs
                 .iter()
                 .map(|e| (e.output_name().clone(), e.clone())),
@@ -76,28 +75,28 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             let mut accessed_upper_expr = false;
 
             for name in aexpr_to_leaf_names_iter(e.node(), expr_arena) {
-                if input_exprs_map.contains_key(name) {
+                if input_name_to_expr_map.contains_key(name) {
                     accessed_upper_expr = true;
                     accessed_input_names.insert(name.clone());
                 }
             }
 
             if !accessed_upper_expr {
-                push_candidates.push(i);
+                push_candidate_idxs.push(i);
             }
         }
 
         let mut candidate_idx: usize = 0;
 
         for (i, e) in current_exprs.iter().enumerate() {
-            if push_candidates.get(candidate_idx) == Some(&i) {
+            if push_candidate_idxs.get(candidate_idx) == Some(&i) {
                 candidate_idx += 1;
 
                 if !accessed_input_names.contains(e.output_name())
                     && aexpr_to_leaf_names_iter(e.node(), expr_arena)
                         .all(|name| !accessed_input_names.contains(name))
                 {
-                    input_exprs_map.insert(e.output_name().clone(), e.clone());
+                    input_name_to_expr_map.insert(e.output_name().clone(), e.clone());
                     continue;
                 }
             }
@@ -111,7 +110,10 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
         input_exprs.clear();
 
-        for (output_name, e) in input_exprs_map.iter().map(|x| (x.0.clone(), x.1.clone())) {
+        for (output_name, e) in input_name_to_expr_map
+            .iter()
+            .map(|x| (x.0.clone(), x.1.clone()))
+        {
             input_exprs.push(e);
 
             if !input_schema.contains(&output_name) {
