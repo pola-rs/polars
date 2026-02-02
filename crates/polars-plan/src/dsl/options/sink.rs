@@ -402,7 +402,7 @@ impl PartitionedSinkOptionsIR {
                             e.output_name().clone(),
                             expr_arena
                                 .get(e.node())
-                                .to_dtype(&ToFieldContext::new(expr_arena, &input_schema))?,
+                                .to_dtype(&ToFieldContext::new(expr_arena, input_schema))?,
                         );
                     }
 

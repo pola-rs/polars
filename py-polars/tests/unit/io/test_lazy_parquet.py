@@ -1405,7 +1405,7 @@ def test_sink_parquet_arrow_schema_logical_types() -> None:
     )
 
     def build_pyarrow_extension_type(name: str) -> Any:
-        class PythonTestExtensionPyarrow(pa.ExtensionType):
+        class PythonTestExtensionPyarrow(pa.ExtensionType):  # type: ignore[misc]
             def __init__(self, data_type: pa.DataType) -> None:
                 super().__init__(data_type, name)
 
