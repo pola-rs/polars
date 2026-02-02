@@ -1480,6 +1480,7 @@ def test_join_preserve_order_full() -> None:
         ["UInt16", "UInt16", "UInt8"],
 
         ["Float64", "Float64", "Float32"],
+        ["Float32", "Float32", "Float16"],
     ],
 )  # fmt: skip
 @pytest.mark.parametrize("swap", [True, False])
