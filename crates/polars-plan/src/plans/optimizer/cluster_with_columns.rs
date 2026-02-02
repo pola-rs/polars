@@ -42,7 +42,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             input: _,
             exprs: current_exprs,
             schema: current_schema,
-            options: current_options,
+            options: _,
         } = current_ir
         else {
             unreachable!();
