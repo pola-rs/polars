@@ -119,6 +119,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
             io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
             verbose,
             init_data: None,
+            checked: self.options.checked,
         };
 
         Box::new(reader) as Box<dyn FileReader>

@@ -332,6 +332,7 @@ impl PyLazyFrame {
     ) -> PyResult<Self> {
         let options = IpcScanOptions {
             record_batch_statistics,
+            checked: Default::default(),
         };
 
         let sources = sources.0;

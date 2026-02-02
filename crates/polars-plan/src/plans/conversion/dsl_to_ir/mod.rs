@@ -19,6 +19,7 @@ use crate::constants::get_pl_element_name;
 use crate::dsl::PartitionedSinkOptions;
 use crate::dsl::file_provider::{FileProviderType, HivePathProvider};
 use crate::dsl::functions::{all_horizontal, col};
+use crate::plans::conversion::dsl_to_ir::scans::SourcesToFileInfo;
 
 mod concat;
 mod datatype_fn_to_ir;
@@ -103,6 +104,41 @@ fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> Polars
     Ok(lp_node)
 }
 
+async fn fetch_metadata(
+    lp: &DslPlan,
+    cache_file_info: SourcesToFileInfo,
+    verbose: bool,
+) -> PolarsResult<()> {
+    use futures::stream::StreamExt;
+    let mut futures = lp
+        .into_iter()
+        .filter_map(|dsl| {
+            let DslPlan::Scan {
+                sources,
+                unified_scan_args,
+                scan_type,
+                cached_ir,
+            } = dsl
+            else {
+                return None;
+            };
+            Some(scans::dsl_to_ir(
+                sources.clone(),
+                unified_scan_args.clone(),
+                scan_type.clone(),
+                cached_ir.clone(),
+                cache_file_info.clone(),
+                verbose,
+            ))
+        })
+        .collect::<FuturesUnordered<_>>();
+
+    while let Some(result) = futures.next().await {
+        result?
+    }
+    Ok::<(), PolarsError>(())
+}
+
 /// converts LogicalPlan to IR
 /// it adds expressions & lps to the respective arenas as it traverses the plan
 /// finally it returns the top node of the logical plan
@@ -114,37 +150,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
     {
         let verbose = ctxt.verbose;
         let cache_file_info = ctxt.cache_file_info.clone();
+        use tokio::runtime::Handle;
 
-        get_runtime().block_on(async {
-            use futures::stream::StreamExt;
-            let mut futures = lp
-                .into_iter()
-                .filter_map(|dsl| {
-                    let DslPlan::Scan {
-                        sources,
-                        unified_scan_args,
-                        scan_type,
-                        cached_ir,
-                    } = dsl
-                    else {
-                        return None;
-                    };
-                    Some(scans::dsl_to_ir(
-                        sources.clone(),
-                        unified_scan_args.clone(),
-                        scan_type.clone(),
-                        cached_ir.clone(),
-                        cache_file_info.clone(),
-                        verbose,
-                    ))
-                })
-                .collect::<FuturesUnordered<_>>();
-
-            while let Some(result) = futures.next().await {
-                result?
-            }
-            Ok::<(), PolarsError>(())
-        })?;
+        let fut = fetch_metadata(&lp, cache_file_info, verbose);
+        if let Ok(_handle) = Handle::try_current() {
+            get_runtime().block_in_place_on(fut)?;
+        } else {
+            get_runtime().block_on(fut)?;
+        }
     }
 
     let v = match lp {
