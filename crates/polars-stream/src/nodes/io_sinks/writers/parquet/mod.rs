@@ -113,6 +113,7 @@ impl FileWriterStarter for ParquetWriterStarter {
         };
 
         let arrow_schema = Arc::clone(&self.arrow_schema);
+        dbg!(&arrow_schema);
         let num_leaf_columns = schema_descriptor.leaves().len();
 
         let io_handle = tokio_handle_ext::AbortOnDropHandle(

@@ -44,6 +44,7 @@ impl RowGroupEncoder {
             let row_group_encode_handle = async_executor::AbortOnDropHandle::new(
                 async_executor::spawn(TaskPriority::High, async move {
                     let (df, morsel_permit) = morsel.into_inner();
+                    dbg!(df.schema());
                     let num_rows = df.height();
 
                     let mut data: Vec<Vec<CompressedPage>> = Vec::with_capacity(num_leaf_columns);

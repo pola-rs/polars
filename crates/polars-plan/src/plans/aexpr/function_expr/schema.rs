@@ -1,3 +1,5 @@
+#[cfg(feature = "diff")]
+use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_core::utils::materialize_dyn_int;
 
 use super::*;
@@ -252,6 +254,7 @@ impl IRFunctionExpr {
                 DataType::UInt64 | DataType::UInt32 => DataType::Int64,
                 DataType::UInt16 => DataType::Int32,
                 DataType::UInt8 => DataType::Int16,
+                DataType::Decimal(_, scale) => DataType::Decimal(DEC128_MAX_PREC, *scale),
                 dt => dt.clone(),
             }),
             #[cfg(feature = "pct_change")]
