@@ -4,8 +4,20 @@ import typing
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
+import hypothesis.strategies as st
+from hypothesis import HealthCheck, given, settings
+from polars._typing import AsofJoinStrategy
+from polars.datatypes.group import (
+    DATETIME_DTYPES,
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    NUMERIC_DTYPES,
+    TEMPORAL_DTYPES,
+)
 import numpy as np
 import pandas as pd
+from polars.testing.parametric.strategies.core import dataframes
+from polars.testing.parametric.strategies.data import floats, nulls
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -601,26 +613,31 @@ def test_merge_join_applicable(
 
 @pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
 @pytest.mark.parametrize("allow_exact_matches", [False, True])
-@given(
-    left=dataframes(
-        cols=[column("ts", dtype=pl.Int16)],
-    ),
-    right=dataframes(
-        cols=[column("ts", dtype=pl.Int16)],
-    ),
-)
+@pytest.mark.parametrize("morsel_size", ["1", "10", "1000"])
+@given(data=st.data())
+@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_streaming_asof_join(
-    left: pl.DataFrame,
-    right: pl.DataFrame,
+    data: st.DataObject,
     strategy: AsofJoinStrategy,
     allow_exact_matches: bool,
+    morsel_size: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    left = left.sort("ts").with_row_index().lazy()
-    right = right.sort("ts").with_row_index().lazy()
+    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", morsel_size)
+
+    dtype = data.draw(st.sampled_from(list(FLOAT_DTYPES | INTEGER_DTYPES)))
+    df_st = dataframes(
+        min_cols=1, max_cols=1, allowed_dtypes=[dtype], allow_time_zones=False
+    )
+    left = data.draw(df_st)
+    right = data.draw(df_st)
+
+    left = left.rename(lambda _: "key").sort("key").with_row_index().lazy()
+    right = right.rename(lambda _: "key").sort("key").with_row_index().lazy()
 
     q = left.join_asof(
         right,
-        on="ts",
+        on="key",
         strategy=strategy,
         allow_exact_matches=allow_exact_matches,
         coalesce=False,

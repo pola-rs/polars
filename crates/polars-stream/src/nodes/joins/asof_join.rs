@@ -1,7 +1,10 @@
 use std::collections::VecDeque;
 
 use polars_core::prelude::*;
+use polars_core::utils::Container;
 use polars_ops::frame::{AsOfOptions, AsofStrategy, JoinArgs, JoinType};
+use polars_utils::format_pl_smallstr;
+use polars_utils::itertools::Itertools;
 use polars_utils::parma::raw::Key;
 
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
@@ -9,6 +12,7 @@ use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::Morsel;
 use crate::nodes::ComputeNode;
+use crate::nodes::io_sources::multi_scan::reader_interface::output;
 use crate::nodes::joins::utils::DataFrameBuffer;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
@@ -58,6 +62,8 @@ pub struct AsOfJoinNode {
     left_buffer: VecDeque<Morsel>,
     /// Buffer of the live range of right AsOf join rows.
     right_buffer: DataFrameBuffer,
+    /// Last row that was processed on the left side.
+    last_left_row: Option<DataFrame>,
 }
 
 impl AsOfJoinNode {
@@ -102,6 +108,7 @@ impl AsOfJoinNode {
             state: AsOfJoinState::default(),
             left_buffer: Default::default(),
             right_buffer: DataFrameBuffer::empty_with_schema(right_input_schema),
+            last_left_row: None,
         }
     }
 }
@@ -196,6 +203,7 @@ impl ComputeNode for AsOfJoinNode {
                 let send = send_ports[0].take().unwrap().serial();
                 let left_buffer = &mut self.left_buffer;
                 let right_buffer = &mut self.right_buffer;
+                let last_left_row = &mut self.last_left_row;
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     process_asof_join_task(
                         recv_left,
@@ -203,6 +211,7 @@ impl ComputeNode for AsOfJoinNode {
                         send,
                         left_buffer,
                         right_buffer,
+                        last_left_row,
                         params,
                     )
                     .await?;
@@ -237,6 +246,7 @@ async fn process_asof_join_task(
     mut send: PortSender,
     left_buffer: &mut VecDeque<Morsel>,
     right_buffer: &mut DataFrameBuffer,
+    last_left_row: &mut Option<DataFrame>,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
     let options = params.as_of_options();
@@ -253,7 +263,7 @@ async fn process_asof_join_task(
     };
 
     while let Ok(morsel) = recv_left_morsel(recv_left.as_mut()).await {
-        let (left_df, seq, st, wt) = morsel.into_inner();
+        let (mut left_df, seq, st, wt) = morsel.into_inner();
         while need_more_right_side(&left_df, right_buffer, params)? && !right_done {
             if let Some(ref mut recv) = recv_right
                 && let Ok(morsel_right) = recv.recv().await
@@ -273,32 +283,54 @@ async fn process_asof_join_task(
             }
         }
 
-        // Compute AsOf join
         let right_df = right_buffer.clone().into_df();
-        let left_key = left_df.column(&params.left.key_col).unwrap();
-        let right_key = right_df.column(&params.right.key_col).unwrap();
-        let mut out = polars_ops::frame::AsofJoin::_join_asof(
-            &left_df,
-            &right_df,
-            left_key.as_materialized_series(),
-            right_key.as_materialized_series(),
-            options.strategy,
-            options.tolerance.clone().map(Scalar::into_value),
-            params.args.suffix.clone(),
-            None, // slice: Option<(i64, usize)>
-            params.args.coalesce.coalesce(&params.args.how),
-            options.allow_eq,
-            options.check_sortedness,
-        )
-        .unwrap();
-        let _ = out.drop_in_place(KEY_COL_NAME);
+        dbg!(&left_df, &right_df);
+        {
+            // Compute AsOf join
+            let mut drop_first_out_row = false;
+            if let Some(llr) = last_left_row.take() {
+                left_df = llr.vstack(&left_df).unwrap();
+                drop_first_out_row = true;
+            }
 
-        let mut m = Morsel::new(out, seq, st);
-        if let Some(wt) = wt {
-            m.set_consume_token(wt);
+            let left_key = left_df.column(&params.left.key_col).unwrap();
+            let right_key = right_df.column(&params.right.key_col).unwrap();
+            let mut out = polars_ops::frame::AsofJoin::_join_asof(
+                &left_df,
+                &right_df,
+                left_key.as_materialized_series(),
+                right_key.as_materialized_series(),
+                options.strategy,
+                options.tolerance.clone().map(Scalar::into_value),
+                params.args.suffix.clone(),
+                None, // slice: Option<(i64, usize)>
+                params.args.coalesce.coalesce(&params.args.how),
+                options.allow_eq,
+                options.check_sortedness,
+            )
+            .unwrap();
+
+            let right_key_col_name =
+                format_pl_smallstr!("{}{}", KEY_COL_NAME, params.args.suffix());
+            out = out.drop_many([KEY_COL_NAME, &right_key_col_name]);
+
+            if drop_first_out_row {
+                out = out.slice(1, out.height() - 1);
+            }
+
+            let mut m = Morsel::new(out, seq, st);
+            if let Some(wt) = wt {
+                m.set_consume_token(wt);
+            }
+            if send.send(m).await.is_err() {
+                return Ok(());
+            }
         }
-        if send.send(m).await.is_err() {
-            return Ok(());
+
+        if options.strategy == AsofStrategy::Backward {
+            if let Some(row) = get_last_total_ord_row(&left_df, params)? {
+                *last_left_row = Some(row);
+            }
         }
 
         // TODO [amber]: Prune the right buffer
@@ -315,35 +347,122 @@ fn need_more_right_side(
     params: &AsOfJoinParams,
 ) -> PolarsResult<bool> {
     let options = params.as_of_options();
-
     let left_key = left.column(&params.left.key_col)?.as_materialized_series();
+
     if left_key.is_empty() {
         return Ok(false);
     }
     // SAFETY: We just checked that left_key is not empty
     let left_last = unsafe { left_key.get_unchecked(left_key.len() - 1) };
-    let mut right_range_end =
-        right.binary_search(|x: &_| left_last < *x, &params.right.key_col, false);
-    if right_range_end >= right.height() {
-        return Ok(true);
-    }
-    match options.strategy {
-        AsofStrategy::Backward | AsofStrategy::Forward => {
-            // We do not actually need up to the first greater value; but only
-            // up to the last value that is greater than or equal `left_last`.
-            right_range_end = right_range_end.saturating_sub(1);
+    let right_range_end = match (options.strategy, options.allow_eq) {
+        (AsofStrategy::Forward, false) => {
+            right.binary_search(|x: &_| *x > left_last, &params.right.key_col, false)
         },
-        AsofStrategy::Nearest => {
-            // In the Nearest case, there may be a chunk of consecutive equal values
-            // following the match value on the left side.  In this case, the AsOf
-            // join can match until the *end* of that chunk.
+        (AsofStrategy::Forward, true) | (AsofStrategy::Backward, false) => {
+            right.binary_search(|x: &_| *x >= left_last, &params.right.key_col, false)
+        },
+        (AsofStrategy::Backward, true) | (AsofStrategy::Nearest, _) => {
+            let fst_greater =
+                right.binary_search(|x: &_| *x > left_last, &params.right.key_col, false);
+            if fst_greater >= right.height() {
+                return Ok(true);
+            }
+            // In the Backward/Nearest cases, there may be a chunk of consecutive equal
+            // values following the match value on the left side.  In this case, the AsOf
+            // join is greedy and should until the *end* of that chunk.
 
             // SAFETY: We just checked that right_range_end is in bounds
             let fst_greater_val =
-                unsafe { right.get_bypass_validity(&params.right.key_col, right_range_end, false) };
-            right_range_end =
-                right.binary_search(|x: &_| fst_greater_val < *x, &params.right.key_col, false);
+                unsafe { right.get_bypass_validity(&params.right.key_col, fst_greater, false) };
+            right.binary_search(|x: &_| *x > fst_greater_val, &params.right.key_col, false)
         },
-    }
+    };
     Ok(right_range_end >= right.height())
 }
+
+fn get_last_total_ord_row(
+    left: &DataFrame,
+    params: &AsOfJoinParams,
+) -> PolarsResult<Option<DataFrame>> {
+    let left_key = left.column(&params.left.key_col)?.as_materialized_series();
+    if left_key.is_empty() {
+        return Ok(None);
+    }
+    // Fast path: first check only the last value
+    // SAFETY: We just checket that left_key is not empty
+    if !unsafe { left_key.get_unchecked(left_key.len() - 1) }.is_nan() {
+        return Ok(Some(left.slice((left.height() - 1) as i64, 1)));
+    }
+    // Backup path: scan through all of the keys
+    let not_nan = left_key.is_not_nan()?;
+    let row = not_nan
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, p)| *p == Some(true))
+        .map(|(idx, _)| left.slice(idx as i64, 1));
+    Ok(row)
+}
+
+// TODO: LEFT HERE
+//
+// This input leads to problems:
+
+//     left.collect() = shape: (3, 2)
+//     ┌───────┬─────┐
+//     │ index ┆ key │
+//     │ ---   ┆ --- │
+//     │ u32   ┆ f32 │
+//     ╞═══════╪═════╡
+//     │ 0     ┆ 0.0 │
+//     │ 1     ┆ NaN │
+//     │ 2     ┆ NaN │
+//     └───────┴─────┘
+//     right.collect() = shape: (2, 2)
+//     ┌───────┬──────┐
+//     │ index ┆ key  │
+//     │ ---   ┆ ---  │
+//     │ u32   ┆ f32  │
+//     ╞═══════╪══════╡
+//     │ 0     ┆ null │
+//     │ 1     ┆ 0.0  │
+//     └───────┴──────┘
+//     actual = shape: (3, 4)
+//     ┌───────┬─────┬─────────────┬───────────┐
+//     │ index ┆ key ┆ index_right ┆ key_right │
+//     │ ---   ┆ --- ┆ ---         ┆ ---       │
+//     │ u32   ┆ f32 ┆ u32         ┆ f32       │
+//     ╞═══════╪═════╪═════════════╪═══════════╡
+//     │ 0     ┆ 0.0 ┆ 1           ┆ 0.0       │
+//     │ 1     ┆ NaN ┆ 1           ┆ 0.0       │
+//     │ 2     ┆ NaN ┆ null        ┆ null      │
+//     └───────┴─────┴─────────────┴───────────┘
+//     expected = shape: (3, 4)
+//     ┌───────┬─────┬─────────────┬───────────┐
+//     │ index ┆ key ┆ index_right ┆ key_right │
+//     │ ---   ┆ --- ┆ ---         ┆ ---       │
+//     │ u32   ┆ f32 ┆ u32         ┆ f32       │
+//     ╞═══════╪═════╪═════════════╪═══════════╡
+//     │ 0     ┆ 0.0 ┆ 1           ┆ 0.0       │
+//     │ 1     ┆ NaN ┆ 1           ┆ 0.0       │
+//     │ 2     ┆ NaN ┆ 1           ┆ 0.0       │
+//     └───────┴─────┴─────────────┴───────────┘
+//
+// What happens is that when the asof join is dealing with the second row on
+// the left side, the information on where we were in the right side is lost.
+// So either we need to keep that information around (i.e., that we already
+// skipped the 'null' key).
+// Maybe we need to keep the state around somewhere???
+// But maybe better to see if we can greedily prune the old rows on the right
+// side.  Basically: drop everything until the last row that would have matched
+// the last value from the left side in the previous morsel processing.
+//
+// Let's first research what kind of matching operator the asof join kernel uses
+// it uses PartialOrd.
+//
+//  - [x] First rewrite using that
+//
+// I think *a* problem is that the values in the series can be ordered as
+// [1, 4, 6, 8, 9, NaN, NaN, NaN]
+// This breaks the total order of the input.
+// One way to overcome this is to just collect them
