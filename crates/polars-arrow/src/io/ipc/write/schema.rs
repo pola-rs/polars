@@ -55,17 +55,16 @@ pub fn serialize_schema(
 
     if let Some(custom_schema_metadata) = custom_schema_metadata {
         for (k, v) in custom_schema_metadata {
-            custom_metadata.insert(
-                schema
-                    .metadata()
-                    .keys()
-                    .position(|x| x == k)
-                    .unwrap_or(custom_metadata.len()),
-                KeyValue {
-                    key: Some(k.to_string()),
-                    value: Some(v.to_string()),
-                },
-            )
+            let kv = KeyValue {
+                key: Some(k.to_string()),
+                value: Some(v.to_string()),
+            };
+
+            if let Some(i) = schema.metadata().keys().position(|x| x == k) {
+                custom_metadata[i] = kv
+            } else {
+                custom_metadata.push(kv);
+            }
         }
     }
 
