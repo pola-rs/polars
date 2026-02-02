@@ -432,6 +432,36 @@ fn create_physical_expr_inner(
                 output_field,
             )))
         },
+        Function {
+            input: inputs,
+            function: function @ (IRFunctionExpr::MinBy | IRFunctionExpr::MaxBy),
+            options: _,
+        } => {
+            assert!(inputs.len() == 2);
+            let input = inputs[0].node();
+            let by = inputs[1].node();
+            let arg_fn = match function {
+                IRFunctionExpr::MinBy => IRFunctionExpr::ArgMin,
+                IRFunctionExpr::MaxBy => IRFunctionExpr::ArgMax,
+                _ => unreachable!(), // guaranteed by pattern
+            };
+
+            let arg_min_aexpr = AExpr::Function {
+                input: vec![ExprIR::from_node(by, expr_arena)],
+                function: arg_fn,
+                options: FunctionOptions::aggregation(),
+            };
+            let arg_min = expr_arena.add(arg_min_aexpr);
+            let gather_aexpr = AExpr::Gather {
+                expr: input,
+                idx: arg_min,
+                returns_scalar: true,
+                null_on_oob: false,
+            };
+            let gather = expr_arena.add(gather_aexpr);
+
+            return create_physical_expr_inner(gather, expr_arena, schema, state);
+        },
         Cast {
             expr,
             dtype,

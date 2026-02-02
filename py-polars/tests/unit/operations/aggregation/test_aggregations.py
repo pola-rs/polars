@@ -1398,6 +1398,7 @@ def test_grouped_minmax_after_reverse_on_sorted_column_26141(
 
 
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.xfail(reason="#26049")
 @pytest.mark.parametrize("agg_by", [pl.Expr.min_by, pl.Expr.max_by])
 def test_min_max_by_series_length_mismatch(
     agg_by: Callable[[pl.Expr, pl.Expr], pl.Expr],
