@@ -1,6 +1,3 @@
-///
-/// Live timer from Orson
-///
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -33,7 +30,7 @@ impl LiveTimer {
         let mut current_segment_start = 0;
         let mut accum = self.accumulated_ns.load(Ordering::Acquire); // This Acquire prevents cur_seg.load() from being reordered before.
         while accum & 1 != 0 {
-            current_segment_start = self.current_segment_start.load(Ordering::Relaxed);
+            current_segment_start = self.current_segment_start.load(Ordering::Acquire);
             let accum2 = self.accumulated_ns.fetch_add(0, Ordering::AcqRel); // This Release prevents cur_seg.load() from being reordered after.
             if accum == accum2 {
                 break; // No change to accumulator, current_segment must be correct for it.
@@ -51,21 +48,35 @@ impl LiveTimer {
     }
 
     // May not be concurrently called with exclusive_stop_current_segment.
+    // The synchronization for this is provided by Acquire/Release on live_sessions in start/stop_session.
+    // The orderings within this body are merely to provide communication to total_time_live_ns through
+    // current_segment_start and accumulated_ns.
     fn exclusive_start_current_segment(&self) {
         let start = Instant::now()
             .duration_since(self.base_timestamp)
             .as_nanos() as u64;
-        self.current_segment_start.store(start, Ordering::Relaxed);
         let accum = self.accumulated_ns.load(Ordering::Relaxed);
+
+        // This first release ensures that if total_time_live_ns loads this current_segment_start it
+        // is guaranteed to at least see the previously called exclusive_stop_current_segment.
+        self.current_segment_start.store(start, Ordering::Release);
+
+        // This second release ensures that if total_time_live_ns loads this accumulated_ns it is
+        // guaranteed to see our just-written current_segment_start.
         self.accumulated_ns.store(accum | 1, Ordering::Release);
     }
 
     // May not be concurrently called with exclusive_start_current_segment.
+    // The synchronization for this is provided by Acquire/Release on live_sessions in start/stop_session.
+    // The orderings within this body are merely to provide communication to total_time_live_ns through
+    // current_segment_start and accumulated_ns.
     fn exclusive_stop_current_segment(&self) {
         let current_segment_start = self.current_segment_start.load(Ordering::Relaxed);
         let start = self.base_timestamp + Duration::from_nanos(current_segment_start);
         let accum = self.accumulated_ns.load(Ordering::Relaxed);
         let new_accum = (accum & !1) + ((start.elapsed().as_nanos() as u64) << 1);
+
+        // Can be relaxed because if total_time_live_ns loads this value it will not look at current_segment_start.
         self.accumulated_ns.store(new_accum, Ordering::Relaxed);
     }
 
@@ -80,7 +91,7 @@ impl LiveTimer {
         let mut stopped = false;
         self.live_sessions
             .fetch_update(Ordering::Release, Ordering::Acquire, |live_sessions| {
-                // We stop the current segment if we are the last sessions, but we may have to restart
+                // We stop the current segment if we are the last session, but we may have to restart
                 // it if in the meantime someone incremented the live_sessions counter.
                 if live_sessions == 1 {
                     if !stopped {
