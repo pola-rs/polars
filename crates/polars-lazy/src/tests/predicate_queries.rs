@@ -349,3 +349,31 @@ fn test_right_join_with_cast_predicate_pushdown_26322() -> PolarsResult<()> {
 
     Ok(())
 }
+
+  #[test]
+  fn test_full_join_rewrite_to_right_with_cast() -> PolarsResult<()> {
+      // Full → Right rewrite: filter on RIGHT-side column removes NULLs
+      let lhs = df![
+          "x" => [0i64, 1i64],
+          "a" => [10i64, 20i64],
+      ]?.lazy();
+
+      let rhs = df![
+          "y" => [2i32, 3i32],  // Different type triggers Cast
+          "b" => [30i32, 40i32],
+      ]?.lazy();
+
+      // Filter on 'b' (right-side column) - removes rows where b is NULL
+      // In a Full join, left-unmatched rows have NULL in right columns
+      // → Optimizer rewrites Full to Right join
+      let q = lhs
+          .join(rhs, [col("x")], [col("y")], JoinType::Full.into())
+          .filter(col("b").gt_eq(lit(0i32)));
+
+      let out = q.collect()?;
+      // No matches (x values 0,1 vs y values 2,3), but filter removes left-unmatched rows
+      // Only right-unmatched rows remain with NULL in left columns
+      assert_eq!(out.height(), 2);  // y=2 and y=3 rows
+
+      Ok(())
+  }
