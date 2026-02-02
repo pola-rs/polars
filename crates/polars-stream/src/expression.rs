@@ -41,7 +41,7 @@ impl StreamExpr {
         df: &DataFrame,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
-        let mut c = self.evaluate(&df, state).await?;
+        let mut c = self.evaluate(df, state).await?;
 
         if c.len() != df.height() {
             if c.len() != 1 {
