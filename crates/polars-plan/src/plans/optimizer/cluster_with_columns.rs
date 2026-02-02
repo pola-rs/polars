@@ -69,6 +69,14 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                 .map(|e| (e.output_name().clone(), e.clone())),
         );
 
+        if input_name_to_expr_map.len() != input_exprs.len() {
+            if cfg!(debug_assertions) {
+                panic!()
+            };
+
+            continue;
+        }
+
         for (i, e) in current_exprs.iter().enumerate() {
             let mut accessed_upper_expr = false;
 
