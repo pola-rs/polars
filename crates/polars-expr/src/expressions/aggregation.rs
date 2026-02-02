@@ -693,10 +693,6 @@ impl PhysicalExpr for AnonymousAggregationExpr {
             return Ok(ac);
         }
 
-        // AggregatedScalar has no defined group structure. We fix it up here, so that we can
-        // reliably call `agg_*` functions with the groups.
-        ac.set_groups_for_undefined_agg_states();
-
         let (input_column, resolved_groups) = ac.get_final_aggregation();
 
         let mut gr = self.grouped_reduction.new_empty();

@@ -76,7 +76,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
                 return write!(f, "anonymous_function: {fmt_str}");
             },
             AExpr::AnonymousAgg { fmt_str, .. } => {
-                return write!(f, "anonymous_streaming_agg: {fmt_str}");
+                return write!(f, "anonymous_agg: {fmt_str}");
             },
             AExpr::Eval { .. } => "list.eval",
             #[cfg(feature = "dtype-struct")]
