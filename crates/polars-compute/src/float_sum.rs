@@ -22,8 +22,7 @@ pub trait SimdCastGeneric<const N: usize> {
 macro_rules! impl_cast_custom {
     ($_type:ty) => {
         #[cfg(feature = "simd")]
-        impl<const N: usize> SimdCastGeneric<N> for Simd<$_type, N>
-        {
+        impl<const N: usize> SimdCastGeneric<N> for Simd<$_type, N> {
             fn cast_generic<U: SimdCast>(self) -> Simd<U, N> {
                 self.cast::<U>()
             }

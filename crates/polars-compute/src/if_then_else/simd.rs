@@ -1,7 +1,7 @@
 #[cfg(target_arch = "x86_64")]
 use std::mem::MaybeUninit;
 #[cfg(target_arch = "x86_64")]
-use std::simd::{Mask, Simd, SimdElement, Select};
+use std::simd::{Mask, Select, Simd, SimdElement};
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;

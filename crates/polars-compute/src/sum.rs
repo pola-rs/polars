@@ -1,8 +1,8 @@
 use std::ops::Add;
 #[cfg(feature = "simd")]
-use std::simd::prelude::*;
-#[cfg(feature = "simd")]
 use std::simd::Select;
+#[cfg(feature = "simd")]
+use std::simd::prelude::*;
 
 use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::bitmask::BitMask;

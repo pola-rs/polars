@@ -1,5 +1,5 @@
 use std::simd::prelude::*;
-use std::simd::{SimdElement, Select};
+use std::simd::{Select, SimdElement};
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
