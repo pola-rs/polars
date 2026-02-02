@@ -59,6 +59,8 @@ pub(super) fn convert_functions(
                 A::Slice(offset, length) => IA::Slice(offset, length),
                 #[cfg(feature = "array_to_struct")]
                 A::ToStruct(ng) => IA::ToStruct(ng),
+                #[cfg(feature = "list_gather")]
+                A::GatherEvery => IA::GatherEvery,
             })
         },
         F::BinaryExpr(binary_function) => {
