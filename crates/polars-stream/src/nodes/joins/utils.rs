@@ -103,8 +103,8 @@ impl DataFrameBuffer {
         self.total_rows == 0
     }
 
-    /// Find the index of the first item in the buffer that does not satisfy `predicate`,
-    /// assuming it is first always true and then always false.
+    /// Find the index of the first item in the buffer that satisfies `predicate`,
+    /// assuming it is first always false and then always true.
     pub(super) fn binary_search<P>(
         &self,
         predicate: P,

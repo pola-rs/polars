@@ -284,7 +284,6 @@ async fn process_asof_join_task(
         }
 
         let right_df = right_buffer.clone().into_df();
-        dbg!(&left_df, &right_df);
         {
             // Compute AsOf join
             let mut drop_first_out_row = false;
@@ -327,10 +326,14 @@ async fn process_asof_join_task(
             }
         }
 
-        if options.strategy == AsofStrategy::Backward {
-            if let Some(row) = get_last_total_ord_row(&left_df, params)? {
-                *last_left_row = Some(row);
-            }
+        // The Backward strategy keeps the position of the last non-null &&
+        // non-NaN value in its internal state, which is emitted whenever the
+        // left key is null or NaN. We prepend it to the dataframe to seed its
+        // state. Accordingly, we will remove the first row of the join result.
+        if options.strategy == AsofStrategy::Backward
+            && let Some(row) = get_last_total_ord_row(&left_df, params)?
+        {
+            *last_left_row = Some(row);
         }
 
         // TODO [amber]: Prune the right buffer
@@ -355,14 +358,14 @@ fn need_more_right_side(
     // SAFETY: We just checked that left_key is not empty
     let left_last = unsafe { left_key.get_unchecked(left_key.len() - 1) };
     let right_range_end = match (options.strategy, options.allow_eq) {
-        (AsofStrategy::Forward, false) => {
-            right.binary_search(|x: &_| *x > left_last, &params.right.key_col, false)
-        },
-        (AsofStrategy::Forward, true) | (AsofStrategy::Backward, false) => {
+        (AsofStrategy::Forward, true) => {
             right.binary_search(|x: &_| *x >= left_last, &params.right.key_col, false)
         },
-        (AsofStrategy::Backward, true) | (AsofStrategy::Nearest, _) => {
-            let fst_greater =
+        (AsofStrategy::Forward, false) | (AsofStrategy::Backward, true) => {
+            right.binary_search(|x: &_| *x > left_last, &params.right.key_col, false)
+        },
+        (AsofStrategy::Backward, false) | (AsofStrategy::Nearest, _) => {
+            let fst_greater: usize =
                 right.binary_search(|x: &_| *x > left_last, &params.right.key_col, false);
             if fst_greater >= right.height() {
                 return Ok(true);
@@ -384,24 +387,29 @@ fn get_last_total_ord_row(
     left: &DataFrame,
     params: &AsOfJoinParams,
 ) -> PolarsResult<Option<DataFrame>> {
+    let is_partial_ord = |av: &AnyValue| av.is_float() && av.is_nan();
     let left_key = left.column(&params.left.key_col)?.as_materialized_series();
     if left_key.is_empty() {
         return Ok(None);
     }
     // Fast path: first check only the last value
-    // SAFETY: We just checket that left_key is not empty
-    if !unsafe { left_key.get_unchecked(left_key.len() - 1) }.is_nan() {
+    // SAFETY: We just checked that left_key is not empty
+    let last_val = unsafe { left_key.get_unchecked(left_key.len() - 1) };
+    if !is_partial_ord(&last_val) {
         return Ok(Some(left.slice((left.height() - 1) as i64, 1)));
     }
-    // Backup path: scan through all of the keys
-    let not_nan = left_key.is_not_nan()?;
-    let row = not_nan
-        .iter()
-        .enumerate()
-        .rev()
-        .find(|(_, p)| *p == Some(true))
-        .map(|(idx, _)| left.slice(idx as i64, 1));
-    Ok(row)
+    // Backup path: because the last value was NaN, we know that the chunk of
+    // consecutive NaN values fill the tail of the key column.
+    // So we search for the last value that appears *before* those NaNs.
+    let mut left_buf = DataFrameBuffer::empty_with_schema(params.left.input_schema.clone());
+    left_buf.push_df(left.clone());
+    let first_nan_idx = left_buf.binary_search(is_partial_ord, &params.left.key_col, false);
+    if first_nan_idx == 0 {
+        Ok(None)
+    } else {
+        debug_assert!(!is_partial_ord(&left_key.get(first_nan_idx - 1).unwrap()));
+        Ok(Some(left.slice((first_nan_idx - 1) as i64, 1)))
+    }
 }
 
 // TODO: LEFT HERE

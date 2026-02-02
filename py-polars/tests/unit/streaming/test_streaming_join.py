@@ -611,11 +611,20 @@ def test_merge_join_applicable(
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
-@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+@pytest.mark.parametrize(
+    "strategy",
+    [
+        "backward",
+        "forward",
+        "nearest",
+    ],
+)
 @pytest.mark.parametrize("allow_exact_matches", [False, True])
 @pytest.mark.parametrize("morsel_size", ["1", "10", "1000"])
 @given(data=st.data())
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(
+    max_examples=1000, suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
 def test_streaming_asof_join(
     data: st.DataObject,
     strategy: AsofJoinStrategy,
