@@ -195,6 +195,67 @@ impl<'a> AggregationContext<'a> {
                 self.det_groups_from_list(s.as_materialized_series());
             },
         }
+
+        match &self.state {
+            AggState::AggregatedList(_) | AggState::NotAggregated(_) => {},
+            AggState::AggregatedScalar(c) => {
+                assert_eq!(self.update_groups, UpdateGroups::No);
+
+                #[expect(clippy::never_loop)]
+                loop {
+                    if let GroupsType::Slice {
+                        groups,
+                        overlapping: false,
+                        monotonic: true,
+                    } = &**self.groups
+                    {
+                        if groups.len() == c.len()
+                            && groups[0] == [0, 1]
+                            && *groups.last().unwrap() == [(groups.len() - 1) as IdxSize, 1]
+                        {
+                            break;
+                        }
+                    }
+
+                    self.groups = Cow::Owned({
+                        let groups = (0..c.len() as IdxSize).map(|i| [i, 1]).collect();
+                        GroupsType::new_slice(groups, false, true).into_sliceable()
+                    });
+
+                    break;
+                }
+            },
+            AggState::LiteralScalar(c) => {
+                assert_eq!(c.len(), 1);
+                assert_eq!(self.update_groups, UpdateGroups::No);
+
+                #[expect(clippy::never_loop)]
+                loop {
+                    if self.groups.is_empty() {
+                        break;
+                    }
+
+                    if let GroupsType::Slice {
+                        groups,
+                        overlapping: true,
+                        monotonic: true,
+                    } = &**self.groups
+                    {
+                        if groups[0] == [0, 1] && *groups.last().unwrap() == [0, 1] {
+                            break;
+                        }
+                    }
+
+                    self.groups = Cow::Owned({
+                        let groups = vec![[0, 1]; self.groups.len()];
+                        GroupsType::new_slice(groups, true, true).into_sliceable()
+                    });
+
+                    break;
+                }
+            },
+        }
+
         &self.groups
     }
 
@@ -636,28 +697,7 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
-    /// Fixes groups for `AggregatedScalar` and `LiteralScalar` so that they point to valid
-    /// data elements in the `AggState` values.
-    fn set_groups_for_undefined_agg_states(&mut self) {
-        match &self.state {
-            AggState::AggregatedList(_) | AggState::NotAggregated(_) => {},
-            AggState::AggregatedScalar(c) => {
-                assert_eq!(self.update_groups, UpdateGroups::No);
-                self.groups = Cow::Owned({
-                    let groups = (0..c.len() as IdxSize).map(|i| [i, 1]).collect();
-                    GroupsType::new_slice(groups, false, true).into_sliceable()
-                });
-            },
-            AggState::LiteralScalar(c) => {
-                assert_eq!(c.len(), 1);
-                assert_eq!(self.update_groups, UpdateGroups::No);
-                self.groups = Cow::Owned({
-                    let groups = vec![[0, 1]; self.groups.len()];
-                    GroupsType::new_slice(groups, true, true).into_sliceable()
-                });
-            },
-        }
-    }
+    fn set_groups_for_undefined_agg_states(&mut self) {}
 
     pub fn into_static(&self) -> AggregationContext<'static> {
         let groups: GroupPositions = GroupPositions::to_owned(&self.groups);
