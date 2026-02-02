@@ -120,7 +120,7 @@ impl LiveTimer {
         //
         // To handle this case, we perform the following spin in the hopes that it stalls for enough
         // time such that the store on `state_ns` from `stop_session()` becomes visible to us.
-        for _ in 0..4 {
+        for _ in 0..8 {
             let state_ns = self.state_ns.load(Ordering::Relaxed);
 
             if state_ns & TICKING_BIT == 0 {
