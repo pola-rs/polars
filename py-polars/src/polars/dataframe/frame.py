@@ -6862,7 +6862,7 @@ class DataFrame:
     def map_columns(
         self,
         column_names: str | Sequence[str] | pl.Selector,
-        function: Callable[[Series], Series],
+        function: Callable[Concatenate[Series, P], Series],
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> DataFrame:
