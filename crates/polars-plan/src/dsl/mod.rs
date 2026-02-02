@@ -50,6 +50,7 @@ pub mod udf;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+mod iter;
 mod plan;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]

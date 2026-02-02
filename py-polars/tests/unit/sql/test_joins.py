@@ -799,22 +799,22 @@ def test_nulls_equal_19624() -> None:
     df2 = pl.DataFrame({"a": [1, 1, 2, 2, None], "b": [0, 1, 2, 3, 4]})
 
     # left join
-    result_df = df1.join(df2, how="left", on="a", nulls_equal=False, validate="1:m")
+    res_df = df1.join(df2, how="left", on="a", nulls_equal=False, validate="1:m")
     expected_df = pl.DataFrame(
         {"a": [1, 1, 2, 2, None, None], "b": [0, 1, 2, 3, None, None]}
     )
-    assert_frame_equal(result_df, expected_df)
-    result_df = df2.join(df1, how="left", on="a", nulls_equal=False, validate="m:1")
+    assert_frame_equal(res_df, expected_df)
+    res_df = df2.join(df1, how="left", on="a", nulls_equal=False, validate="m:1")
     expected_df = pl.DataFrame({"a": [1, 1, 2, 2, None], "b": [0, 1, 2, 3, 4]})
-    assert_frame_equal(result_df, expected_df)
+    assert_frame_equal(res_df, expected_df)
 
     # inner join
-    result_df = df1.join(df2, how="inner", on="a", nulls_equal=False, validate="1:m")
+    res_df = df1.join(df2, how="inner", on="a", nulls_equal=False, validate="1:m")
     expected_df = pl.DataFrame({"a": [1, 1, 2, 2], "b": [0, 1, 2, 3]})
-    assert_frame_equal(result_df, expected_df)
-    result_df = df2.join(df1, how="inner", on="a", nulls_equal=False, validate="m:1")
+    assert_frame_equal(res_df, expected_df)
+    res_df = df2.join(df1, how="inner", on="a", nulls_equal=False, validate="m:1")
     expected_df = pl.DataFrame({"a": [1, 1, 2, 2], "b": [0, 1, 2, 3]})
-    assert_frame_equal(result_df, expected_df)
+    assert_frame_equal(res_df, expected_df)
 
 
 def test_join_on_literal_string_comparison() -> None:
@@ -1220,12 +1220,154 @@ def test_ambiguous_column_detection_in_joins() -> None:
     ):
         pl.sql(
             query="""
-                WITH a AS (
-                  SELECT 0 AS k
-                ), c AS (
-                  SELECT 0 AS k
-                )
+                WITH
+                  a AS (SELECT 0 AS k),
+                  c AS (SELECT 0 AS k)
                 SELECT k FROM a JOIN c ON a.k = c.k
             """,
             eager=True,
         )
+
+
+def test_duplicate_column_detection_via_wildcard() -> None:
+    # selecting a column explicitly that is already included in a qualified
+    # wildcard from the same table should raise a duplicate column error
+    a = pl.DataFrame({"id": [1, 2], "x": [10, 20]})
+    b = pl.DataFrame({"id": [1, 2], "y": [30, 40]})
+
+    with pytest.raises(
+        SQLInterfaceError,
+        match=r"column 'id' is duplicated in the SELECT",
+    ):
+        pl.sql("SELECT a.*, a.id FROM a JOIN b ON a.id = b.id", eager=True)
+
+
+def test_qualified_wildcard_multiway_join() -> None:
+    df1 = pl.DataFrame({"id": [1, 2], "a": ["x", "y"]})
+    df2 = pl.DataFrame({"id": [1, 2], "b": ["p", "q"]})
+    df3 = pl.DataFrame({"id": [1, 2], "c": ["m", "n"]})
+
+    res = pl.sql("""
+        SELECT df1.*, df2.*, df3.*
+        FROM df1
+        INNER JOIN df2 ON df1.id = df2.id
+        INNER JOIN df3 ON df1.id = df3.id
+        ORDER BY id
+    """).collect()
+    expected = pl.DataFrame(
+        {
+            "id": [1, 2],
+            "a": ["x", "y"],
+            "id:df2": [1, 2],
+            "b": ["p", "q"],
+            "id:df3": [1, 2],
+            "c": ["m", "n"],
+        }
+    )
+    assert_frame_equal(res, expected)
+
+
+def test_qualified_wildcard_self_join() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "parent": [None, 1, 1],
+            "name": ["root", "child1", "child2"],
+        }
+    )
+    res = pl.sql("""
+        SELECT child.*, parent.*
+        FROM df AS child
+        LEFT JOIN df AS parent ON child.parent = parent.id
+        ORDER BY id
+    """).collect()
+
+    expected = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "parent": [None, 1, 1],
+            "name": ["root", "child1", "child2"],
+            "id:parent": [None, 1, 1],
+            "parent:parent": [None, None, None],
+            "name:parent": [None, "root", "root"],
+        },
+        schema_overrides={"parent:parent": pl.Int64},
+    )
+    assert_frame_equal(res, expected)
+
+
+@pytest.mark.parametrize(
+    ("join_type", "result"),
+    [
+        (
+            "INNER",
+            {"k": [1], "v": ["a"], "k:df2": [1], "v:df2": ["x"]},
+        ),
+        (
+            "LEFT",
+            {"k": [1, 2], "v": ["a", "b"], "k:df2": [1, None], "v:df2": ["x", None]},
+        ),
+        (
+            "RIGHT",
+            {"k": [1, None], "v": ["a", None], "k:df2": [1, 3], "v:df2": ["x", "y"]},
+        ),
+    ],
+)
+def test_qualified_wildcard_join_types(join_type: str, result: dict[str, Any]) -> None:
+    df1 = pl.DataFrame({"k": [1, 2], "v": ["a", "b"]})
+    df2 = pl.DataFrame({"k": [1, 3], "v": ["x", "y"]})
+
+    actual = pl.sql(
+        query=f"""
+        SELECT df1.*, df2.*
+        FROM df1 {join_type} JOIN df2 ON df1.k = df2.k
+        """,
+        eager=True,
+    )
+    expected = pl.DataFrame(result)
+    assert_frame_equal(
+        left=expected,
+        right=actual,
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (  # specific column conflicts with wildcard
+            "SELECT a.id, b.* FROM a JOIN b ON a.id = b.id",
+            {"id": [1, 2], "id:b": [1, 2], "y": [30, 40]},
+        ),
+        (  # specific column doesn't conflict with wildcard
+            "SELECT b.y, a.* FROM a JOIN b ON a.id = b.id",
+            {"y": [30, 40], "id": [1, 2], "x": [10, 20]},
+        ),
+        (  # single-table wildcard (no conflict, uses original names)
+            "SELECT b.* FROM a JOIN b ON a.id = b.id",
+            {"id": [1, 2], "y": [30, 40]},
+        ),
+        (  # table aliases (disambiguation should use the alias)
+            "SELECT t1.*, t2.* FROM a AS t1 JOIN b AS t2 ON t1.id = t2.id",
+            {"id": [1, 2], "x": [10, 20], "id:t2": [1, 2], "y": [30, 40]},
+        ),
+        (  # no column overlap (expect no disambiguation)
+            "SELECT a.*, c.* FROM a JOIN c ON a.id = c.k",
+            {"id": [1, 2], "x": [10, 20], "k": [1, 2], "z": [50, 60]},
+        ),
+        (  # reverse wildcard order (disambiguation follows *table* order)
+            "SELECT b.*, a.* FROM a JOIN b ON a.id = b.id",
+            {"id:b": [1, 2], "y": [30, 40], "id": [1, 2], "x": [10, 20]},
+        ),
+    ],
+)
+def test_qualified_wildcard_combinations(query: str, expected: dict[str, Any]) -> None:
+    a = pl.DataFrame({"id": [1, 2], "x": [10, 20]})
+    b = pl.DataFrame({"id": [1, 2], "y": [30, 40]})
+    c = pl.DataFrame({"k": [1, 2], "z": [50, 60]})
+
+    assert_frame_equal(
+        left=pl.DataFrame(expected),
+        right=pl.sql(query).collect(),
+        check_row_order=False,
+    )

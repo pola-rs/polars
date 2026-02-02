@@ -4,7 +4,7 @@
 //!
 //! This module defines:
 //! - all Polars SQL keywords [`all_keywords`]
-//! - all of polars SQL functions [`all_functions`]
+//! - all Polars SQL functions [`all_functions`]
 
 use std::fmt::Display;
 use std::ops::Div;

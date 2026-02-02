@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use futures::StreamExt;
 use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
+use polars_io::pl_async::get_runtime;
 use polars_mem_engine::scan_predicate::initialize_scan_predicate;
 use polars_plan::dsl::PredicateFileSkip;
 use polars_utils::row_counter::RowCounter;
@@ -146,10 +147,10 @@ async fn finish_initialize_multi_scan_pipeline(
     {
         // In cloud execution the entries may not exist at this point due to DSL resolution
         // happening on a separate machine.
-        polars_io::file_cache::init_entries_from_uri_list(
+        get_runtime().block_in_place_on(polars_io::file_cache::init_entries_from_uri_list(
             config.sources.as_paths().unwrap().iter().cloned(),
             config.cloud_options.as_deref(),
-        )?;
+        ))?;
     }
 
     // Row index should only be pushed if we have a predicate or negative slice as there is a

@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
@@ -5,17 +6,20 @@ use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
+use polars_core::prelude::PlHashSet;
+use polars_core::schema::Schema;
 use polars_io::cloud::CloudOptions;
 use polars_io::utils::file::Writeable;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::IdxSize;
 use polars_utils::arena::Arena;
 use polars_utils::pl_path::{CloudScheme, PlRefPath};
+use polars_utils::pl_str::PlSmallStr;
 
 use super::FileWriteFormat;
 use crate::dsl::file_provider::FileProviderType;
 use crate::dsl::{AExpr, Expr, SpecialEq};
-use crate::plans::ExprIR;
+use crate::plans::{ExprIR, ToFieldContext};
 use crate::prelude::PlanCallback;
 
 type DynSinkTarget = SpecialEq<Arc<std::sync::Mutex<Option<Writeable>>>>;
@@ -83,6 +87,7 @@ impl SinkTarget {
         cloud_options: Option<&CloudOptions>,
         mkdir: bool,
         cloud_upload_chunk_size: usize,
+        cloud_upload_max_concurrency: usize,
     ) -> PolarsResult<Writeable> {
         match self {
             SinkTarget::Path(path) => {
@@ -94,6 +99,7 @@ impl SinkTarget {
                     path.clone(),
                     cloud_options,
                     cloud_upload_chunk_size,
+                    cloud_upload_max_concurrency,
                 )
             },
             SinkTarget::Dyn(memory_writer) => Ok(memory_writer.lock().unwrap().take().unwrap()),
@@ -105,6 +111,7 @@ impl SinkTarget {
         cloud_options: Option<&CloudOptions>,
         mkdir: bool,
         cloud_upload_chunk_size: usize,
+        cloud_upload_max_concurrency: usize,
     ) -> PolarsResult<Writeable> {
         #[cfg(feature = "cloud")]
         {
@@ -118,6 +125,7 @@ impl SinkTarget {
                         path.clone(),
                         cloud_options,
                         cloud_upload_chunk_size,
+                        cloud_upload_max_concurrency,
                     )
                 },
                 SinkTarget::Dyn(memory_writer) => Ok(memory_writer.lock().unwrap().take().unwrap()),
@@ -126,7 +134,12 @@ impl SinkTarget {
 
         #[cfg(not(feature = "cloud"))]
         {
-            self.open_into_writeable(cloud_options, mkdir, cloud_upload_chunk_size)
+            self.open_into_writeable(
+                cloud_options,
+                mkdir,
+                cloud_upload_chunk_size,
+                cloud_upload_max_concurrency,
+            )
         }
     }
 
@@ -355,6 +368,49 @@ impl PartitionedSinkOptionsIR {
             } => keys.iter(),
             PartitionStrategyIR::FileSize => [][..].iter(),
         }
+    }
+
+    pub fn file_output_schema<'a>(
+        &self,
+        input_schema: &'a Schema,
+        expr_arena: &Arena<AExpr>,
+    ) -> PolarsResult<Cow<'a, Schema>> {
+        Ok(match &self.partition_strategy {
+            PartitionStrategyIR::Keyed {
+                keys,
+                include_keys,
+                keys_pre_grouped: _,
+            } => {
+                if keys.is_empty() {
+                    Cow::Borrowed(input_schema)
+                } else if !include_keys {
+                    let key_output_names: PlHashSet<&PlSmallStr> =
+                        keys.iter().map(|e| e.output_name()).collect();
+
+                    Cow::Owned(
+                        input_schema
+                            .iter()
+                            .filter(|(name, _)| !key_output_names.contains(*name))
+                            .map(|(name, dtype)| (name.clone(), dtype.clone()))
+                            .collect(),
+                    )
+                } else {
+                    let mut out = input_schema.clone();
+
+                    for e in keys {
+                        out.with_column(
+                            e.output_name().clone(),
+                            expr_arena
+                                .get(e.node())
+                                .to_dtype(&ToFieldContext::new(expr_arena, input_schema))?,
+                        );
+                    }
+
+                    Cow::Owned(out)
+                }
+            },
+            PartitionStrategyIR::FileSize => Cow::Borrowed(input_schema),
+        })
     }
 
     #[cfg(feature = "cse")]

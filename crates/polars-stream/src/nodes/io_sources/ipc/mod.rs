@@ -19,6 +19,7 @@ use polars_io::utils::byte_source::{
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
+use polars_utils::bool::UnsafeBool;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::slice_enum::Slice;
 use record_batch_data_fetch::RecordBatchDataFetcher;
@@ -59,6 +60,7 @@ struct IpcFileReader {
     io_metrics: OptIOMetrics,
     verbose: bool,
     init_data: Option<InitializedState>,
+    checked: UnsafeBool,
 }
 
 struct RecordBatchPrefetchSync {
@@ -131,9 +133,17 @@ impl FileReader for IpcFileReader {
             let byte_source_async = byte_source.clone();
             let io_metrics = self.io_metrics.clone();
             let metadata_async = file_metadata.clone();
+            let checked = self.checked;
             let dictionaries = pl_async::get_runtime()
                 .spawn(async move {
-                    read_dictionaries(&byte_source_async, io_metrics, metadata_async, verbose).await
+                    read_dictionaries(
+                        &byte_source_async,
+                        io_metrics,
+                        metadata_async,
+                        verbose,
+                        checked,
+                    )
+                    .await
                 })
                 .await
                 .unwrap()?;
@@ -315,6 +325,7 @@ impl FileReader for IpcFileReader {
             dictionaries: dictionaries.clone(),
             row_index,
             read_statistics_flags,
+            checked: self.checked,
         });
 
         // Set up channels.
@@ -499,6 +510,7 @@ async fn read_dictionaries(
     io_metrics: OptIOMetrics,
     file_metadata: Arc<FileMetadata>,
     verbose: bool,
+    checked: UnsafeBool,
 ) -> PolarsResult<Dictionaries> {
     let blocks = if let Some(blocks) = &file_metadata.dictionaries {
         blocks
@@ -534,6 +546,7 @@ async fn read_dictionaries(
             &mut dictionaries,
             &mut message_scratch,
             &mut dictionary_scratch,
+            checked,
         )?;
     }
 

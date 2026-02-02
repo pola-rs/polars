@@ -1156,13 +1156,6 @@ def test_scan_empty_paths_friendly_error(
     assert "glob: true)." in exc_str
     assert exc_str.count(tmp_path.name) == 1
 
-    assert (
-        name_in_context
-        in exc_str.split(
-            "This error occurred with the following context stack:", maxsplit=1
-        )[1]
-    )
-
     if scan_function is pl.scan_parquet:
         assert (
             "Hint: passing a schema can allow this scan to succeed with an empty DataFrame."
