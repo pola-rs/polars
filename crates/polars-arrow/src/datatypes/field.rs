@@ -103,15 +103,6 @@ impl Field {
             .is_some_and(|md| md.contains_key(PARQUET_EMPTY_STRUCT))
     }
 
-    pub fn map_dtype(mut self, f: impl FnOnce(ArrowDataType) -> ArrowDataType) -> Self {
-        self.dtype = f(self.dtype);
-        self
-    }
-
-    pub fn map_dtype_mut(&mut self, f: impl FnOnce(&mut ArrowDataType)) {
-        f(&mut self.dtype);
-    }
-
     pub fn with_dtype(&self, dtype: ArrowDataType) -> Self {
         Self {
             name: self.name.clone(),
