@@ -78,7 +78,6 @@ pub(crate) enum CloudConfig {
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 /// Options to connect to various cloud providers.
 pub struct CloudOptions {
-    pub max_retries: usize, // TODO: Remove in a breaking DSL change
     #[cfg(feature = "file_cache")]
     pub file_cache_ttl: u64,
     pub(crate) config: Option<CloudConfig>,
@@ -99,7 +98,6 @@ impl Default for CloudOptions {
 impl CloudOptions {
     pub fn default_static_ref() -> &'static Self {
         static DEFAULT: LazyLock<CloudOptions> = LazyLock::new(|| CloudOptions {
-            max_retries: 2,
             #[cfg(feature = "file_cache")]
             file_cache_ttl: get_env_file_cache_ttl(),
             config: None,
@@ -319,7 +317,6 @@ fn read_config(
 
 impl CloudOptions {
     pub fn with_retry_config(mut self, retry_config: CloudRetryConfig) -> Self {
-        self.max_retries = retry_config.max_retries.unwrap_or(2);
         self.retry_config = retry_config;
         self
     }

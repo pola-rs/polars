@@ -38,7 +38,6 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Vec<u
     // We include credentials as they can expire, so users will send new credentials for the same url.
     let cloud_options = options.map(
         |CloudOptions {
-             max_retries: _,
              // Destructure to ensure this breaks if anything changes.
              #[cfg(feature = "file_cache")]
              file_cache_ttl,
