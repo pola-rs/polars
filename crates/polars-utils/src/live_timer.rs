@@ -10,7 +10,7 @@ const TIMER_UNIT: u64 = 1 << 32; // Base unit for number of timers.
 ///
 /// It is live when there is at least one session, but multiple concurrent
 /// sessions don't increase the rate at which the timer ticks.
-/// 
+///
 /// Clones of this timer are cheap, and the clones are identical, like an Arc.
 pub struct LiveTimer {
     // We use a raw pointer instead of an Arc to ensure starting/stopping sessions only involves
