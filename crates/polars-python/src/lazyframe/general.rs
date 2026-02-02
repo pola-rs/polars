@@ -642,7 +642,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[pyo3(signature = (
         target, sink_options, compression, compression_level, statistics, row_group_size, data_page_size,
-        metadata
+        metadata, arrow_schema
     ))]
     fn sink_parquet(
         &self,
@@ -655,6 +655,7 @@ impl PyLazyFrame {
         row_group_size: Option<usize>,
         data_page_size: Option<usize>,
         metadata: Wrap<Option<KeyValueMetadata>>,
+        arrow_schema: Option<Wrap<ArrowSchema>>,
     ) -> PyResult<PyLazyFrame> {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
@@ -664,6 +665,7 @@ impl PyLazyFrame {
             row_group_size,
             data_page_size,
             key_value_metadata: metadata.0,
+            arrow_schema: arrow_schema.map(|x| Arc::new(x.0)),
         };
 
         let target = target.extract_file_sink_destination()?;
