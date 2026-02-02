@@ -630,6 +630,17 @@ def test_pipe() -> None:
     assert_frame_equal(result, df * 3)
 
 
+def test_map_columns() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8]})
+
+    def _mul_add(s: pl.Series, mul: int, add: int = 0) -> pl.Series:
+        return s * mul + add
+
+    result = df.map_columns(["foo", "bar"], _mul_add, 3, add=1)
+
+    assert_frame_equal(result, df * 3 + 1)
+
+
 def test_explode() -> None:
     df = pl.DataFrame({"letters": ["c", "a"], "nrs": [[1, 2], [1, 3]]})
     out = df.explode("nrs")
