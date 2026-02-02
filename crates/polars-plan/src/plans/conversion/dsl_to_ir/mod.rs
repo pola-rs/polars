@@ -152,10 +152,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         let cache_file_info = ctxt.cache_file_info.clone();
         use tokio::runtime::Handle;
 
-        if let Ok(handle) = Handle::try_current() {
-            handle.block_on(fetch_metadata(&lp, cache_file_info, verbose))?;
+        let fut = fetch_metadata(&lp, cache_file_info, verbose);
+        if let Ok(_handle) = Handle::try_current() {
+            get_runtime().block_in_place_on(fut)?;
         } else {
-            get_runtime().block_on(fetch_metadata(&lp, cache_file_info, verbose))?;
+            get_runtime().block_on(fut)?;
         }
     }
 
@@ -1303,6 +1304,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 SinkType::File(options) => {
                     let mut compression_opt = None::<ExternalCompression>;
 
+                    #[cfg(feature = "parquet")]
+                    if let FileWriteFormat::Parquet(options) = &options.file_format
+                        && let Some(arrow_schema) = &options.arrow_schema
+                    {
+                        validate_arrow_schema_conversion(
+                            input_schema.as_ref(),
+                            arrow_schema,
+                            CompatLevel::newest(),
+                        )?;
+                    }
+
                     #[cfg(feature = "csv")]
                     if let FileWriteFormat::Csv(csv_options) = &options.file_format
                         && csv_options.check_extension
@@ -1390,6 +1402,20 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         max_rows_per_file,
                         approximate_bytes_per_file,
                     };
+
+                    #[cfg(feature = "parquet")]
+                    if let FileWriteFormat::Parquet(parquet_options) = &options.file_format
+                        && let Some(arrow_schema) = &parquet_options.arrow_schema
+                    {
+                        let file_schema =
+                            options.file_output_schema(&input_schema, ctxt.expr_arena)?;
+
+                        validate_arrow_schema_conversion(
+                            file_schema.as_ref(),
+                            arrow_schema,
+                            CompatLevel::newest(),
+                        )?;
+                    }
 
                     ctxt.conversion_optimizer
                         .fill_scratch(options.expr_irs_iter(), ctxt.expr_arena);

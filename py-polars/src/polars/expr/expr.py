@@ -2713,7 +2713,7 @@ class Expr:
         Parameters
         ----------
         index
-            An expression that leads to a UInt32 index.
+            An expression that evaluates to an integer.
             Negative indexing is supported.
 
         null_on_oob
