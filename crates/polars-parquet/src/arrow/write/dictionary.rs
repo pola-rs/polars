@@ -2,11 +2,12 @@ use arrow::array::{
     Array, BinaryViewArray, DictionaryArray, DictionaryKey, PrimitiveArray, Utf8ViewArray,
 };
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::buffer::Buffer;
+use arrow::compute::aggregate::estimated_bytes_size;
 use arrow::datatypes::{ArrowDataType, IntegerType, PhysicalType};
 use arrow::legacy::utils::CustomIterTools;
 use arrow::trusted_len::TrustMyLength;
 use arrow::types::NativeType;
+use polars_buffer::Buffer;
 use polars_compute::min_max::MinMaxKernel;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::float16::pf16;
@@ -17,13 +18,14 @@ use super::binary::{
 use super::fixed_size_binary::{
     build_statistics as fixed_binary_build_statistics, encode_plain as fixed_binary_encode_plain,
 };
-use super::pages::PrimitiveNested;
 use super::primitive::{
     build_statistics as primitive_build_statistics, encode_plain as primitive_encode_plain,
 };
-use super::{EncodeNullability, Nested, WriteOptions, binview, nested};
+use super::{
+    EncodeNullability, Nested, WriteOptions, binview, nested, row_slice_ranges, slice_parquet_array,
+};
 use crate::arrow::read::schema::is_nullable;
-use crate::arrow::write::{slice_nested_leaf, utils};
+use crate::arrow::write::utils;
 use crate::parquet::CowBuffer;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::encoding::hybrid_rle::encode;
@@ -355,38 +357,59 @@ fn serialize_keys<K: DictionaryKey>(
     nested: &[Nested],
     statistics: Option<ParquetStatistics>,
     options: WriteOptions,
+) -> DynIter<'static, PolarsResult<Page>> {
+    let number_of_rows = nested[0].len();
+    let byte_size = estimated_bytes_size(array.keys());
+
+    let array = array.clone();
+    let nested = nested.to_vec();
+
+    let pages =
+        row_slice_ranges(number_of_rows, byte_size, options).map(move |(offset, length)| {
+            let mut sliced_array = array.clone();
+            let mut sliced_nested = nested.clone();
+            slice_parquet_array(&mut sliced_array, &mut sliced_nested, offset, length);
+
+            serialize_keys_range(
+                &sliced_array,
+                &type_,
+                &sliced_nested,
+                statistics.clone(),
+                options,
+            )
+        });
+
+    DynIter::new(pages)
+}
+
+fn serialize_keys_range<K: DictionaryKey>(
+    array: &DictionaryArray<K>,
+    type_: &PrimitiveType,
+    nested: &[Nested],
+    statistics: Option<ParquetStatistics>,
+    options: WriteOptions,
 ) -> PolarsResult<Page> {
     let mut buffer = vec![];
 
-    let (start, len) = slice_nested_leaf(nested);
-
-    let mut nested = nested.to_vec();
-    let array = array.clone().sliced(start, len);
-    if let Some(Nested::Primitive(PrimitiveNested { length, .. })) = nested.last_mut() {
-        *length = len;
-    } else {
-        unreachable!("")
-    }
     // Parquet only accepts a single validity - we "&" the validities into a single one
     // and ignore keys whose _value_ is null.
-    // It's important that we slice before normalizing.
-    let validity = normalized_validity(&array);
+    let validity = normalized_validity(array);
 
     let (repetition_levels_byte_length, definition_levels_byte_length) = serialize_levels(
         validity.as_ref(),
         array.len(),
-        &type_,
-        &nested,
+        type_,
+        nested,
         options,
         &mut buffer,
     )?;
 
-    serialize_keys_values(&array, validity.as_ref(), &mut buffer)?;
+    serialize_keys_values(array, validity.as_ref(), &mut buffer)?;
 
     let (num_values, num_rows) = if nested.len() == 1 {
         (array.len(), array.len())
     } else {
-        (nested::num_values(&nested), nested[0].len())
+        (nested::num_values(nested), nested[0].len())
     };
 
     utils::build_plain_page(
@@ -397,7 +420,7 @@ fn serialize_keys<K: DictionaryKey>(
         repetition_levels_byte_length,
         definition_levels_byte_length,
         statistics,
-        type_,
+        type_.clone(),
         options,
         Encoding::RleDictionary,
     )
@@ -583,14 +606,11 @@ pub fn array_to_pages<K: DictionaryKey>(
                 stats.null_count = Some(array.null_count() as i64)
             }
 
-            // write DataPage pointing to DictPage
-            let data_page =
-                serialize_keys(array, type_, nested, statistics, options)?.unwrap_data();
+            // write DataPages pointing to DictPage
+            let data_pages = serialize_keys(array, type_, nested, statistics, options);
 
             Ok(DynIter::new(
-                [Page::Dict(dict_page), Page::Data(data_page)]
-                    .into_iter()
-                    .map(Ok),
+                std::iter::once(Ok(Page::Dict(dict_page))).chain(data_pages),
             ))
         },
         _ => polars_bail!(nyi = "Dictionary arrays only support dictionary encoding"),

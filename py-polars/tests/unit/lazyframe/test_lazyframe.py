@@ -6,7 +6,7 @@ from functools import reduce
 from inspect import signature
 from operator import add
 from string import ascii_letters
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, cast
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 import numpy as np
 import pytest
@@ -23,6 +23,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from _pytest.capture import CaptureFixture
 
     from polars._typing import MapElementsStrategy, PolarsDataType

@@ -5,6 +5,7 @@ use arrow_format::ipc::FooterRef;
 use arrow_format::ipc::planus::ReadAsRoot;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
+use polars_utils::bool::UnsafeBool;
 
 use super::super::{ARROW_MAGIC_V1, ARROW_MAGIC_V2, CONTINUATION_MARKER};
 use super::common::*;
@@ -33,7 +34,7 @@ pub struct FileMetadata {
     pub blocks: Vec<arrow_format::ipc::Block>,
 
     /// Dictionaries associated to each dict_id
-    pub(crate) dictionaries: Option<Vec<arrow_format::ipc::Block>>,
+    pub dictionaries: Option<Vec<arrow_format::ipc::Block>>,
 
     /// The total size of the file in bytes
     pub size: u64,
@@ -78,26 +79,35 @@ pub(crate) fn get_dictionary_batch<'a>(
     }
 }
 
-fn read_dictionary_block<R: Read + Seek>(
+#[allow(clippy::too_many_arguments)]
+pub fn read_dictionary_block<R: Read + Seek>(
     reader: &mut R,
     metadata: &FileMetadata,
     block: &arrow_format::ipc::Block,
+    // When true, the underlying reader bytestream represents a standalone IPC Block
+    // rather than a complete IPC File.
+    force_zero_offset: bool,
     dictionaries: &mut Dictionaries,
     message_scratch: &mut Vec<u8>,
     dictionary_scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<()> {
-    let message = get_message_from_block(reader, block, message_scratch)?;
-    let batch = get_dictionary_batch(&message)?;
-
-    let offset: u64 = block
-        .offset
-        .try_into()
-        .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?;
+    let offset: u64 = if force_zero_offset {
+        0
+    } else {
+        block
+            .offset
+            .try_into()
+            .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?
+    };
 
     let length: u64 = block
         .meta_data_length
         .try_into()
         .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?;
+
+    let message = get_message_from_block_offset(reader, offset, message_scratch)?;
+    let batch = get_dictionary_batch(&message)?;
 
     read_dictionary(
         batch,
@@ -107,6 +117,7 @@ fn read_dictionary_block<R: Read + Seek>(
         reader,
         offset + length,
         dictionary_scratch,
+        checked,
     )
 }
 
@@ -116,6 +127,7 @@ pub fn read_file_dictionaries<R: Read + Seek>(
     reader: &mut R,
     metadata: &FileMetadata,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<Dictionaries> {
     let mut dictionaries = Default::default();
 
@@ -132,9 +144,11 @@ pub fn read_file_dictionaries<R: Read + Seek>(
             reader,
             metadata,
             block,
+            false,
             &mut dictionaries,
             &mut message_scratch,
             scratch,
+            checked,
         )?;
     }
     Ok(dictionaries)
@@ -281,12 +295,11 @@ pub(crate) fn get_record_batch(
     }
 }
 
-fn get_message_from_block_offset<'a, R: Read + Seek>(
+pub fn get_message_from_block_offset<'a, R: Read + Seek>(
     reader: &mut R,
     offset: u64,
     message_scratch: &'a mut Vec<u8>,
 ) -> PolarsResult<arrow_format::ipc::MessageRef<'a>> {
-    // read length
     reader.seek(SeekFrom::Start(offset))?;
     let mut meta_buf = [0; 4];
     reader.read_exact(&mut meta_buf)?;
@@ -294,6 +307,7 @@ fn get_message_from_block_offset<'a, R: Read + Seek>(
         // continuation marker encountered, read message next
         reader.read_exact(&mut meta_buf)?;
     }
+
     let meta_len = i32::from_le_bytes(meta_buf)
         .try_into()
         .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?;
@@ -337,15 +351,22 @@ pub fn read_batch<R: Read + Seek>(
     projection: Option<&[usize]>,
     limit: Option<usize>,
     index: usize,
+    // When true, the reader object is handled as an IPC Block.
+    force_zero_offset: bool,
     message_scratch: &mut Vec<u8>,
     data_scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
     let block = metadata.blocks[index];
 
-    let offset: u64 = block
-        .offset
-        .try_into()
-        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
+    let offset: u64 = if force_zero_offset {
+        0
+    } else {
+        block
+            .offset
+            .try_into()
+            .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?
+    };
 
     let length: u64 = block
         .meta_data_length
@@ -368,5 +389,6 @@ pub fn read_batch<R: Read + Seek>(
         reader,
         offset + length,
         data_scratch,
+        checked,
     )
 }

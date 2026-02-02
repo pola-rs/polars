@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 import typing
 
 import pytest
@@ -82,7 +81,6 @@ def trailing_ones(v: int | None) -> int | None:
     ],
 )
 @pytest.mark.parametrize("dtype", [*INTEGER_DTYPES, pl.Boolean])
-@pytest.mark.skipif(sys.version_info < (3, 10), reason="bit_count introduced in 3.10")
 @typing.no_type_check
 def test_bit_counts(value: int, dtype: pl.DataType) -> None:
     bitsize = 8

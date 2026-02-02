@@ -3,8 +3,9 @@ use std::sync::Arc;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap,
+    DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, PlIndexSet,
 };
+use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
@@ -139,7 +140,7 @@ pub fn is_input_independent_rec(
     let ret = match arena.get(expr_key) {
         // Handled separately in `Eval`.
         AExpr::Element => unreachable!(),
-
+        AExpr::StructField(_) => false,
         AExpr::Explode { expr: inner, .. }
         | AExpr::Cast {
             expr: inner,
@@ -151,6 +152,7 @@ pub fn is_input_independent_rec(
             options: _,
         } => is_input_independent_rec(*inner, arena, cache),
         AExpr::Column(_) => false,
+
         AExpr::Literal(_) => true,
         AExpr::BinaryExpr { left, op: _, right } => {
             is_input_independent_rec(*left, arena, cache)
@@ -160,6 +162,7 @@ pub fn is_input_independent_rec(
             expr,
             idx,
             returns_scalar: _,
+            null_on_oob: _,
         } => {
             is_input_independent_rec(*expr, arena, cache)
                 && is_input_independent_rec(*idx, arena, cache)
@@ -219,6 +222,12 @@ pub fn is_input_independent_rec(
             evaluation: _,
             variant: _,
         } => is_input_independent_rec(*expr, arena, cache),
+        AExpr::StructEval { expr, evaluation } => {
+            is_input_independent_rec(*expr, arena, cache)
+                && evaluation
+                    .iter()
+                    .all(|expr| is_input_independent_rec(expr.node(), arena, cache))
+        },
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling {
             function,
@@ -302,6 +311,8 @@ pub fn is_length_preserving_rec(
     let ret = match arena.get(expr_key) {
         // Handled separately in `Eval`.
         AExpr::Element => unreachable!(),
+        // Mapped to `Column` in `StructEval`.
+        AExpr::StructField(_) => unreachable!(),
 
         AExpr::Gather { .. }
         | AExpr::Explode { .. }
@@ -355,7 +366,7 @@ pub fn is_length_preserving_rec(
             function: _,
             options,
         } => {
-            // FIXME: actually inspect the functions? This is overly conservative.
+            // TODO: actually inspect the functions? This is overly conservative.
             options.is_length_preserving()
                 && input
                     .iter()
@@ -374,6 +385,10 @@ pub fn is_length_preserving_rec(
             offset: _,
             closed_window: _,
         } => true,
+        AExpr::StructEval {
+            expr,
+            evaluation: _,
+        } => is_length_preserving_rec(*expr, arena, cache),
         AExpr::Over {
             function: _, // Actually shouldn't matter for window functions.
             partition_by: _,
@@ -460,7 +475,8 @@ fn build_fallback_node_with_ctx(
             .iter()
             .map(|phys_expr| phys_expr.evaluate(&df, &exec_state))
             .try_collect()?;
-        DataFrame::new_with_broadcast(columns)
+
+        DataFrame::new_infer_broadcast(columns)
     };
 
     let format_str = ctx.prepare_visualization.then(|| {
@@ -485,12 +501,12 @@ fn build_fallback_node_with_ctx(
 
 fn simplify_input_streams(
     orig_input: PhysStream,
-    mut input_streams: PlHashSet<PhysStream>,
+    mut input_streams: PlIndexSet<PhysStream>,
     ctx: &mut LowerExprContext,
-) -> PolarsResult<PlHashSet<PhysStream>> {
+) -> PolarsResult<PlIndexSet<PhysStream>> {
     // Flatten nested zips (ensures the original input columns only occur once).
     if input_streams.len() > 1 {
-        let mut flattened_input_streams = PlHashSet::with_capacity(input_streams.len());
+        let mut flattened_input_streams = PlIndexSet::with_capacity(input_streams.len());
         for input_stream in input_streams {
             if let PhysNodeKind::Zip {
                 inputs,
@@ -538,10 +554,10 @@ fn simplify_input_streams(
     Ok(input_streams)
 }
 
-// Assuming that agg_node is a single-input reduction, lowers its input recursively
-// and returns a Reduce node as well a node corresponding to the column to select
+// Assuming that agg_node is a reduction, lowers its input recursively and
+// returns a Reduce node as well a node corresponding to the column to select
 // from the Reduce node for the aggregate.
-fn lower_unary_reduce_node(
+fn lower_reduce_node(
     input: PhysStream,
     agg_node: Node,
     ctx: &mut LowerExprContext,
@@ -549,7 +565,7 @@ fn lower_unary_reduce_node(
     let agg_aexpr = ctx.expr_arena.get(agg_node).clone();
     let mut agg_input = Vec::with_capacity(1);
     agg_aexpr.inputs_rev(&mut agg_input);
-    assert!(agg_input.len() == 1);
+    agg_input.reverse();
 
     let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &agg_input, ctx)?;
     let trans_agg_node = ctx.expr_arena.add(agg_aexpr.replace_inputs(&trans_exprs));
@@ -595,7 +611,7 @@ fn lower_exprs_with_ctx(
     let mut fallback_subset = Vec::new();
 
     // Streams containing the columns used for executing transformed expressions.
-    let mut input_streams = PlHashSet::new();
+    let mut input_streams = PlIndexSet::new();
 
     // The final transformed expressions that will be selected from the zipped
     // together transformed nodes.
@@ -613,6 +629,8 @@ fn lower_exprs_with_ctx(
         match ctx.expr_arena.get(expr).clone() {
             // Handled separately in `Eval` expressions.
             AExpr::Element => unreachable!(),
+            // Mapped to `Column` in `StructEval`.
+            AExpr::StructField(_) => unreachable!(),
 
             AExpr::Explode {
                 expr: inner,
@@ -1529,6 +1547,168 @@ fn lower_exprs_with_ctx(
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 },
             },
+            AExpr::StructEval {
+                expr: inner,
+                mut evaluation,
+            } => {
+                // Transform (simplified):
+                //    expr.struct.with_fields(evaluation).alias(name)
+                //      ->
+                //    .select(expr)
+                //    .with_columns(validity = expr.is_not_null())
+                //    .map(df.struct.unnest()))
+                //    .with_columns([evaluation])
+                //    .select(pl.when(validity).then(as_struct()).alias(name)
+                //
+                // Any reference to `StructField(x)` gets remapped to `Column(PREFIX_x)` prior to
+                // calling `unnest()`, with PREFIX being unique for each StructEval expression.
+
+                // Evaluate input `expr` and capture `col` references from `evaluation`
+                let out_name = unique_column_name();
+                let inner_expr_ir = ExprIR::new(inner, OutputName::Alias(out_name.clone()));
+                let mut expr_irs = Vec::new();
+                expr_irs.push(inner_expr_ir);
+
+                // Any column expression inside evaluation must be added explicitly.
+                let eval_col_names: PlHashSet<_> = evaluation
+                    .iter()
+                    .flat_map(|expr| {
+                        polars_plan::utils::aexpr_to_leaf_names_iter(expr.node(), ctx.expr_arena)
+                    })
+                    .cloned()
+                    .collect();
+                for name in eval_col_names {
+                    expr_irs.push(ExprIR::new(
+                        ctx.expr_arena.add(AExpr::Column(name.clone())),
+                        OutputName::ColumnLhs(name),
+                    ));
+                }
+                let stream = build_select_stream_with_ctx(input, &expr_irs, ctx)?;
+
+                // Capture validity as an extra column.
+                let validity_name = polars_utils::format_pl_smallstr!(
+                    "{}{}",
+                    out_name,
+                    PlSmallStr::from_static("_VLD")
+                );
+                let validity_input_node = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
+                let validity_expr_ir = ExprIR::new(
+                    validity_input_node,
+                    OutputName::Alias(validity_name.clone()),
+                );
+                let validity_expr = AExprBuilder::function(
+                    vec![validity_expr_ir],
+                    IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
+                    ctx.expr_arena,
+                );
+                let validity_node = validity_expr.node();
+                let validity_expr_ir =
+                    ExprIR::new(validity_node, OutputName::Alias(validity_name.clone()));
+                let stream = build_hstack_stream(
+                    stream,
+                    &[validity_expr_ir],
+                    ctx.expr_arena,
+                    ctx.phys_sm,
+                    ctx.cache,
+                    StreamingLowerIRContext {
+                        prepare_visualization: ctx.prepare_visualization,
+                    },
+                )?;
+
+                // Rewrite any `StructField(x)`` expression into a `Col(prefix_x)`` expression.
+                let separator = PlSmallStr::from_static("_FLD_");
+                let field_prefix = polars_utils::format_pl_smallstr!("{}{}", out_name, separator);
+                evaluation.iter_mut().for_each(|e| {
+                    e.set_node(structfield_to_column(
+                        e.node(),
+                        ctx.expr_arena,
+                        &field_prefix,
+                    ))
+                });
+
+                // Unnest.
+                let unnest_fn = FunctionIR::Unnest {
+                    columns: Arc::new([out_name.clone()]),
+                    separator: Some(separator.clone()),
+                };
+                let input_schema = ctx.phys_sm[stream.node].output_schema.clone();
+                let output_schema = unnest_fn.schema(&input_schema)?.into_owned();
+                let format_str = ctx.prepare_visualization.then(|| {
+                    format!(
+                        "UNNEST columns: [{}], separator: \"{}\"",
+                        out_name.as_str(),
+                        separator.as_str()
+                    )
+                });
+                let map = Arc::new(move |df| unnest_fn.evaluate(df));
+                let node_kind = PhysNodeKind::Map {
+                    input: stream,
+                    map,
+                    format_str,
+                };
+                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
+                let stream = PhysStream::first(node_key);
+
+                // Evaluate `evaluation`, using `with_columns`.
+                // This requires output names to be prefixed, as they refer to the local StructField namespace.
+                // Note, native columns are still included in the stream but could be dropped (nice-to-have).
+                evaluation.iter_mut().for_each(|e| {
+                    *e = e.with_alias(polars_utils::format_pl_smallstr!(
+                        "{}{}",
+                        &field_prefix,
+                        e.output_name()
+                    ));
+                });
+                let stream = build_hstack_stream(
+                    stream,
+                    &evaluation,
+                    ctx.expr_arena,
+                    ctx.phys_sm,
+                    ctx.cache,
+                    StreamingLowerIRContext {
+                        prepare_visualization: ctx.prepare_visualization,
+                    },
+                )?;
+
+                // Nest any column that belongs to the StructField namespace back into a Struct.
+                let mut fields_expr_irs = Vec::new();
+                let eval_schema = ctx.phys_sm[stream.node].output_schema.clone();
+                for (name, _) in eval_schema.iter() {
+                    if let Some(stripped_name) = name.strip_prefix(field_prefix.as_str()) {
+                        let node = ctx.expr_arena.add(AExpr::Column(name.clone()));
+                        fields_expr_irs.push(
+                            ExprIR::from_node(node, ctx.expr_arena)
+                                .with_alias(PlSmallStr::from_str(stripped_name)),
+                        );
+                    }
+                }
+                let as_struct_expr = AExprBuilder::function(
+                    fields_expr_irs,
+                    IRFunctionExpr::AsStruct,
+                    ctx.expr_arena,
+                );
+                let as_struct_node = as_struct_expr.node();
+
+                // Apply validity.
+                let with_validity = AExprBuilder::when_then_otherwise(
+                    AExprBuilder::col(validity_name.clone(), ctx.expr_arena),
+                    AExprBuilder::new_from_node(as_struct_node),
+                    AExprBuilder::lit(
+                        LiteralValue::Scalar(Scalar::null(DataType::Null)),
+                        ctx.expr_arena,
+                    ),
+                    ctx.expr_arena,
+                );
+                let with_validity_node = with_validity.node();
+                let validity_expr_ir =
+                    ExprIR::new(with_validity_node, OutputName::Alias(out_name.clone()));
+                let stream = build_select_stream_with_ctx(stream, &[validity_expr_ir], ctx)?;
+                let exit_node = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
+
+                // Finalize.
+                input_streams.insert(stream);
+                transformed_exprs.push(exit_node);
+            },
             AExpr::Ternary {
                 predicate,
                 truthy,
@@ -1702,7 +1882,7 @@ fn lower_exprs_with_ctx(
                 fmt_str: _,
                 function: _,
             } => {
-                let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
                 input_streams.insert(trans_stream);
                 transformed_exprs.push(trans_expr);
             },
@@ -1711,6 +1891,8 @@ fn lower_exprs_with_ctx(
                 // Change agg mutably so we can share the codepath for all of these.
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }
+                | IRAggExpr::MinBy { .. }
+                | IRAggExpr::MaxBy { .. }
                 | IRAggExpr::First(_)
                 | IRAggExpr::FirstNonNull(_)
                 | IRAggExpr::Last(_)
@@ -1721,7 +1903,7 @@ fn lower_exprs_with_ctx(
                 | IRAggExpr::Var { .. }
                 | IRAggExpr::Std { .. }
                 | IRAggExpr::Count { .. } => {
-                    let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                    let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
                     input_streams.insert(trans_stream);
                     transformed_exprs.push(trans_expr);
                 },
@@ -1786,7 +1968,7 @@ fn lower_exprs_with_ctx(
                     ),
                 ..
             } => {
-                let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
                 input_streams.insert(trans_stream);
                 transformed_exprs.push(trans_expr);
             },
@@ -1796,7 +1978,7 @@ fn lower_exprs_with_ctx(
                 function: IRFunctionExpr::ApproxNUnique,
                 ..
             } => {
-                let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
                 input_streams.insert(trans_stream);
                 transformed_exprs.push(trans_expr);
             },
@@ -1809,7 +1991,7 @@ fn lower_exprs_with_ctx(
                     | IRFunctionExpr::NullCount,
                 ..
             } => {
-                let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
                 input_streams.insert(trans_stream);
                 transformed_exprs.push(trans_expr);
             },

@@ -14,14 +14,13 @@ use polars::chunked_array::object::PolarsObjectSafe;
 use polars::frame::row::Row;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-#[cfg(feature = "cloud")]
-use polars::io::cloud::CloudOptions;
 use polars::prelude::ColumnMapping;
 use polars::prelude::default_values::{
     DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
 };
 use polars::prelude::deletion::DeletionFilesList;
 use polars::series::ops::NullBehavior;
+use polars_buffer::Buffer;
 use polars_compute::decimal::dec128_verify_prec_scale;
 use polars_core::datatypes::extension::get_extension_type_or_generic;
 use polars_core::schema::iceberg::IcebergSchema;
@@ -32,7 +31,6 @@ use polars_lazy::prelude::*;
 use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
 use polars_utils::compression::{BrotliLevel, GzipLevel, ZstdLevel};
-use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
@@ -46,12 +44,11 @@ use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
 use crate::error::PyPolarsErr;
 use crate::expr::PyExpr;
 use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
-use crate::interop::arrow::to_rust::field_to_rust_arrow;
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
 use crate::py_modules::{pl_series, polars};
-use crate::series::PySeries;
+use crate::series::{PySeries, import_schema_pycapsule};
 use crate::utils::to_py_err;
 use crate::{PyDataFrame, PyLazyFrame};
 
@@ -602,42 +599,27 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Schema> {
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ArrowSchema> {
     type Error = PyErr;
 
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let py = ob.py();
+    fn extract(schema_object: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let py = schema_object.py();
 
-        let pyarrow_schema_cls = py
-            .import(intern!(py, "pyarrow"))?
-            .getattr(intern!(py, "Schema"))?;
+        let schema_capsule = schema_object
+            .getattr(intern!(py, "__arrow_c_schema__"))?
+            .call0()?;
 
-        if ob.is_none() {
-            return Err(PyValueError::new_err("arrow_schema() returned None").into());
-        }
+        let field = import_schema_pycapsule(&schema_capsule.extract()?)?;
 
-        let schema_cls = ob.getattr(intern!(py, "__class__"))?;
-
-        if !schema_cls.is(&pyarrow_schema_cls) {
-            return Err(PyTypeError::new_err(format!(
-                "expected pyarrow.Schema, got: {schema_cls}"
+        let ArrowDataType::Struct(fields) = field.dtype else {
+            return Err(PyValueError::new_err(format!(
+                "__arrow_c_schema__ of object did not return struct dtype: \
+                object: {:?}, dtype: {:?}",
+                schema_object, &field.dtype
             )));
-        }
+        };
 
-        let mut iter = ob.try_iter()?.map(|x| x.and_then(field_to_rust_arrow));
+        let mut schema = ArrowSchema::from_iter_check_duplicates(fields).map_err(to_py_err)?;
 
-        let mut last_err = None;
-
-        let schema =
-            ArrowSchema::from_iter_check_duplicates(std::iter::from_fn(|| match iter.next() {
-                Some(Ok(v)) => Some(v),
-                Some(Err(e)) => {
-                    last_err = Some(e);
-                    None
-                },
-                None => None,
-            }))
-            .map_err(to_py_err)?;
-
-        if let Some(last_err) = last_err {
-            return Err(last_err.into());
+        if let Some(md) = field.metadata {
+            *schema.metadata_mut() = Arc::unwrap_or_clone(md);
         }
 
         Ok(Wrap(schema))
@@ -655,9 +637,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ScanSources> {
         }
 
         enum MutableSources {
-            Paths(Vec<PlPath>),
+            Paths(Vec<PlRefPath>),
             Files(Vec<File>),
-            Buffers(Vec<MemSlice>),
+            Buffers(Vec<Buffer<u8>>),
         }
 
         let num_items = list.len();
@@ -1379,16 +1361,6 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<QuoteStyle> {
     }
 }
 
-#[cfg(feature = "cloud")]
-pub(crate) fn parse_cloud_options(
-    cloud_scheme: Option<CloudScheme>,
-    keys_and_values: impl IntoIterator<Item = (String, String)>,
-) -> PyResult<CloudOptions> {
-    let iter: &mut dyn Iterator<Item = _> = &mut keys_and_values.into_iter();
-    let out = CloudOptions::from_untyped_config(cloud_scheme, iter).map_err(PyPolarsErr::from)?;
-    Ok(out)
-}
-
 #[cfg(feature = "list_sets")]
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<SetOperation> {
     type Error = PyErr;
@@ -1902,29 +1874,30 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DefaultFieldValues> {
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PlPath> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PlRefPath> {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         if let Ok(path) = ob.extract::<PyBackedStr>() {
-            Ok(Wrap(PlPath::new(&path)))
+            Ok(Wrap(PlRefPath::new(&*path)))
         } else if let Ok(path) = ob.extract::<std::path::PathBuf>() {
-            Ok(Wrap(PlPath::Local(path.into())))
+            Ok(Wrap(PlRefPath::try_from_path(&path).map_err(to_py_err)?))
         } else {
-            Err(
-                PyTypeError::new_err(format!("PlPath cannot be formed from '{}'", ob.get_type()))
-                    .into(),
-            )
+            Err(PyTypeError::new_err(format!(
+                "PlRefPath cannot be formed from '{}'",
+                ob.get_type()
+            ))
+            .into())
         }
     }
 }
 
-impl<'py> IntoPyObject<'py> for Wrap<PlPath> {
+impl<'py> IntoPyObject<'py> for Wrap<PlRefPath> {
     type Target = PyString;
     type Output = Bound<'py, Self::Target>;
     type Error = Infallible;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        self.0.to_str().into_pyobject(py)
+        self.0.as_str().into_pyobject(py)
     }
 }

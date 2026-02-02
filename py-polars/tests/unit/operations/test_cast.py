@@ -3,7 +3,7 @@ from __future__ import annotations
 import operator
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -15,6 +15,8 @@ from polars.testing.asserts.series import assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType, PythonDataType
 
 

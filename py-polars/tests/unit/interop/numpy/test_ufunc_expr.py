@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, Callable, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def test_ufunc() -> None:
@@ -130,7 +133,7 @@ def test_grouped_ufunc() -> None:
 
 
 def test_generalized_ufunc_scalar() -> None:
-    numba = pytest.importorskip("numba")
+    numba = pytest.importorskip("numba", exc_type=ImportError)
 
     @numba.guvectorize([(numba.int64[:], numba.int64[:])], "(n)->()")  # type: ignore[misc]
     def my_custom_sum(arr, result) -> None:  # type: ignore[no-untyped-def]  # noqa: ANN001
@@ -182,7 +185,7 @@ def test_generalized_ufunc_scalar() -> None:
 
 
 def make_gufunc_mean() -> Callable[[pl.Series], pl.Series]:
-    numba = pytest.importorskip("numba")
+    numba = pytest.importorskip("numba", exc_type=ImportError)
 
     @numba.guvectorize([(numba.float64[:], numba.float64[:])], "(n)->(n)")  # type: ignore[misc]
     def gufunc_mean(arr: Any, result: Any) -> None:

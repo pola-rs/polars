@@ -3,7 +3,8 @@
 //! It also provides utility functions for working with SQL datatypes.
 use polars_core::datatypes::{DataType, TimeUnit};
 use polars_error::{PolarsResult, polars_bail};
-use polars_plan::dsl::{Expr, lit};
+use polars_plan::dsl::Expr;
+use polars_plan::dsl::functions::lit;
 use sqlparser::ast::{
     ArrayElemTypeDef, DataType as SQLDataType, ExactNumberInfo, Ident, ObjectName, ObjectNamePart,
     TimezoneInfo,

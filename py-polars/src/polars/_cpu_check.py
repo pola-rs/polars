@@ -232,11 +232,16 @@ def check_cpu_flags(feature_flags: str) -> None:
     if not feature_flags or os.environ.get("POLARS_SKIP_CPU_CHECK"):
         return
 
-    expected_cpu_flags = [f.lstrip("+") for f in feature_flags.split(",")]
+    expected_cpu_flags = [
+        f.lstrip("+") for f in feature_flags.split(",") if not f.startswith("-")
+    ]
     supported_cpu_flags = _read_cpu_flags()
 
     missing_features = []
     for f in expected_cpu_flags:
+        if f == "crt-static":  # Not actually a CPU flag.
+            continue
+
         if f not in supported_cpu_flags:
             msg = f"unknown feature flag: {f!r}"
             raise RuntimeError(msg)

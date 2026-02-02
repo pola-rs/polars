@@ -62,11 +62,13 @@ impl AExpr {
         let is_equal = match self {
             E::Explode { expr: _, options: l_options } => matches!(other, E::Explode { expr: _, options: r_options } if l_options == r_options),
             E::Column(l_name) => matches!(other, E::Column(r_name) if l_name == r_name),
+            #[cfg(feature = "dtype-struct")]
+            E::StructField (l_name) => matches!(other, E::StructField(r_name) if l_name == r_name),
             E::Literal(l_lit) => matches!(other, E::Literal(r_lit) if l_lit == r_lit),
             E::BinaryExpr { left: _, op: l_op, right: _ } => matches!(other, E::BinaryExpr { left: _, op: r_op, right: _ } if l_op == r_op),
             E::Cast { expr: _, dtype: l_dtype, options: l_options } => matches!(other, E::Cast { expr: _, dtype: r_dtype, options: r_options } if l_dtype == r_dtype && l_options == r_options),
             E::Sort { expr: _, options: l_options } => matches!(other, E::Sort { expr: _, options: r_options } if l_options == r_options),
-            E::Gather { expr: _, idx: l_idx, returns_scalar: l_returns_scalar } => matches!(other, E::Gather { expr: _, idx: r_idx, returns_scalar: r_returns_scalar } if l_idx == r_idx && l_returns_scalar == r_returns_scalar),
+            E::Gather { expr: _, idx: l_idx, returns_scalar: l_returns_scalar, null_on_oob: l_null_on_oob } => matches!(other, E::Gather { expr: _, idx: r_idx, returns_scalar: r_returns_scalar, null_on_oob: r_null_on_oob } if l_idx == r_idx && l_returns_scalar == r_returns_scalar && l_null_on_oob == r_null_on_oob),
             E::SortBy { expr: _, by: l_by, sort_options: l_sort_options } => matches!(other, E::SortBy { expr: _, by: r_by, sort_options: r_sort_options } if l_by.len() == r_by.len() && l_sort_options == r_sort_options),
             E::Agg(l_agg) => matches!(other, E::Agg(r_agg) if l_agg.is_agg_equal_top_level(r_agg)),
             E::AnonymousStreamingAgg { input: input_l, fmt_str: fmt_str_l, function: function_l } => matches!(other, E::AnonymousStreamingAgg { input: input_r, fmt_str: fmt_str_r, function: function_r} if input_l == input_r && function_l == function_r && fmt_str_l == fmt_str_r),
@@ -83,6 +85,8 @@ impl AExpr {
             E::Ternary { predicate: _, truthy: _, falsy: _ } |
             E::Slice { input: _, offset: _, length: _ } |
             E::Len => true,
+            #[cfg(feature = "dtype-struct")]
+            E::StructEval { expr: _, evaluation: _} => true
         };
 
         is_equal
@@ -120,7 +124,9 @@ impl IRAggExpr {
             A::Mean(_) |
             A::Implode(_) |
             A::Sum(_) |
-            A::AggGroups(_) => true,
+            A::AggGroups(_) |
+            A::MinBy { input: _, by: _} |
+            A::MaxBy { input: _, by: _} => true,
         };
 
         is_equal

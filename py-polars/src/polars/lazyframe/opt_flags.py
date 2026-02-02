@@ -9,15 +9,13 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 import inspect
 from functools import wraps
-from typing import TYPE_CHECKING, Callable, TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
-    import sys
+    from collections.abc import Callable
+    from typing import ParamSpec
 
-    if sys.version_info >= (3, 10):
-        from typing import ParamSpec
-    else:
-        from typing_extensions import ParamSpec
+    from polars._utils.various import IdentityFunction
 
     P = ParamSpec("P")
     T = TypeVar("T")
@@ -269,7 +267,7 @@ except (ImportError, NameError) as _:
     DEFAULT_QUERY_OPT_FLAGS = ()  # type: ignore[assignment]
 
 
-def forward_old_opt_flags() -> Callable[[Callable[P, T]], Callable[P, T]]:
+def forward_old_opt_flags() -> IdentityFunction:
     """Decorator to mark to forward the old optimization flags."""
 
     def helper(f: QueryOptFlags, field_name: str, value: bool) -> QueryOptFlags:  # noqa: FBT001

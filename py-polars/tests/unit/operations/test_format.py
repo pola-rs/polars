@@ -34,10 +34,16 @@ def test_format_expr() -> None:
             "a": [f"xyz abc {i}" for i in a],
             "b": [f"abc xyz {i}" for i in a],
             "c": [None if i is None else f"abc xyz {i}" for i in b],
-            "d": [None if j is None else f"abc {i} {j}" for i, j in zip(a, b)],
-            "e": [None if j is None else f"{i} abc {j}" for i, j in zip(a, b)],
-            "f": [None if j is None else f"{i} {j} abc" for i, j in zip(a, b)],
-            "g": [None if j is None else f"{i}{j}" for i, j in zip(a, b)],
+            "d": [
+                None if j is None else f"abc {i} {j}" for i, j in zip(a, b, strict=True)
+            ],
+            "e": [
+                None if j is None else f"{i} abc {j}" for i, j in zip(a, b, strict=True)
+            ],
+            "f": [
+                None if j is None else f"{i} {j} abc" for i, j in zip(a, b, strict=True)
+            ],
+            "g": [None if j is None else f"{i}{j}" for i, j in zip(a, b, strict=True)],
             "h": [f"{i}" for i in a],
             "i": [None if i is None else f"{i}" for i in b],
         }

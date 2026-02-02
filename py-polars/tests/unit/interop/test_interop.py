@@ -14,6 +14,7 @@ import polars as pl
 from polars.exceptions import (
     ComputeError,
     DuplicateError,
+    InvalidOperationError,
     PanicException,
     UnstableWarning,
 )
@@ -29,7 +30,7 @@ def test_arrow_list_roundtrip() -> None:
 
     assert arw.shape == tbl.shape
     assert arw.schema.names == tbl.schema.names
-    for c1, c2 in zip(arw.columns, tbl.columns):
+    for c1, c2 in zip(arw.columns, tbl.columns, strict=True):
         assert c1.to_pylist() == c2.to_pylist()
 
 
@@ -44,7 +45,7 @@ def test_arrow_null_roundtrip() -> None:
 
     assert arw.shape == tbl.shape
     assert arw.schema.names == tbl.schema.names
-    for c1, c2 in zip(arw.columns, tbl.columns):
+    for c1, c2 in zip(arw.columns, tbl.columns, strict=True):
         assert c1.to_pylist() == c2.to_pylist()
 
 
@@ -115,7 +116,9 @@ def test_from_dict() -> None:
     data = {"a": [1, 2], "b": [3, 4]}
     df = pl.from_dict(data)
     assert df.shape == (2, 2)
-    for s1, s2 in zip(list(df), [pl.Series("a", [1, 2]), pl.Series("b", [3, 4])]):
+    for s1, s2 in zip(
+        list(df), [pl.Series("a", [1, 2]), pl.Series("b", [3, 4])], strict=True
+    ):
         assert_series_equal(s1, s2)
 
 
@@ -1395,3 +1398,43 @@ def test_schema_to_arrow_15563() -> None:
     assert pl.Schema({"x": pl.String}).to_arrow(
         compat_level=CompatLevel.oldest()
     ) == pa.schema([pa.field("x", pa.large_string())])
+
+
+def test_0_width_df_roundtrip() -> None:
+    assert pl.DataFrame(height=(1 << 32) - 1).to_numpy().shape == ((1 << 32) - 1, 0)
+    assert pl.DataFrame(np.zeros((10, 0))).shape == (10, 0)
+
+    arrow_table = pl.DataFrame(height=(1 << 32) - 1).to_arrow()
+    assert arrow_table.shape == ((1 << 32) - 1, 0)
+    assert pl.DataFrame(arrow_table).shape == ((1 << 32) - 1, 0)
+
+    pandas_df = pl.DataFrame(height=(1 << 32) - 1).to_pandas()
+    assert pandas_df.shape == ((1 << 32) - 1, 0)
+    assert pl.DataFrame(pandas_df).shape == ((1 << 32) - 1, 0)
+
+    df = pl.DataFrame(height=5)
+
+    assert pl.DataFrame.deserialize(df.serialize()).shape == (5, 0)
+    assert pl.LazyFrame.deserialize(df.lazy().serialize()).collect().shape == (5, 0)
+
+    for file_format in ["parquet", "ipc", "ndjson"]:
+        f = io.BytesIO()
+        getattr(pl.DataFrame, f"write_{file_format}")(df, f)
+        f.seek(0)
+        assert getattr(pl, f"read_{file_format}")(f).shape == (5, 0)
+
+        f = io.BytesIO()
+        getattr(pl.LazyFrame, f"sink_{file_format}")(df.lazy(), f)
+        f.seek(0)
+        assert getattr(pl, f"scan_{file_format}")(f).collect().shape == (5, 0)
+
+    f = io.BytesIO()
+    pl.LazyFrame().sink_csv(f)
+    v = f.getvalue()
+    assert v == b"\n"
+
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"cannot sink 0-width DataFrame with non-zero height \(1\) to CSV",
+    ):
+        pl.LazyFrame(height=1).sink_csv(io.BytesIO())

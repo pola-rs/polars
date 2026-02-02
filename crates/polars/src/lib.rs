@@ -131,7 +131,7 @@
 //! ```no_run
 //! # use polars::prelude::*;
 //! # fn example() -> PolarsResult<()> {
-//! # let df = DataFrame::default();
+//! # let df = DataFrame::empty();
 //!   df.lazy()
 //!    .select([
 //!        col("foo").sort(Default::default()).head(None),

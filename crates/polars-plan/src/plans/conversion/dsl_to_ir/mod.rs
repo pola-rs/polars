@@ -1,12 +1,15 @@
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::rewrite_projections;
+use futures::stream::FuturesUnordered;
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
+use polars_io::ExternalCompression;
+use polars_io::pl_async::get_runtime;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
-use polars_utils::plpath::PlPath;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::unique_id::UniqueId;
 
 use super::convert_utils::SplitPredicates;
@@ -14,7 +17,9 @@ use super::stack_opt::ConversionOptimizer;
 use super::*;
 use crate::constants::get_pl_element_name;
 use crate::dsl::PartitionedSinkOptions;
-use crate::dsl::sink2::FileProviderType;
+use crate::dsl::file_provider::{FileProviderType, HivePathProvider};
+use crate::dsl::functions::{all_horizontal, col};
+use crate::plans::conversion::dsl_to_ir::scans::SourcesToFileInfo;
 
 mod concat;
 mod datatype_fn_to_ir;
@@ -99,6 +104,41 @@ fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> Polars
     Ok(lp_node)
 }
 
+async fn fetch_metadata(
+    lp: &DslPlan,
+    cache_file_info: SourcesToFileInfo,
+    verbose: bool,
+) -> PolarsResult<()> {
+    use futures::stream::StreamExt;
+    let mut futures = lp
+        .into_iter()
+        .filter_map(|dsl| {
+            let DslPlan::Scan {
+                sources,
+                unified_scan_args,
+                scan_type,
+                cached_ir,
+            } = dsl
+            else {
+                return None;
+            };
+            Some(scans::dsl_to_ir(
+                sources.clone(),
+                unified_scan_args.clone(),
+                scan_type.clone(),
+                cached_ir.clone(),
+                cache_file_info.clone(),
+                verbose,
+            ))
+        })
+        .collect::<FuturesUnordered<_>>();
+
+    while let Some(result) = futures.next().await {
+        result?
+    }
+    Ok::<(), PolarsError>(())
+}
+
 /// converts LogicalPlan to IR
 /// it adds expressions & lps to the respective arenas as it traverses the plan
 /// finally it returns the top node of the logical plan
@@ -106,13 +146,27 @@ fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> Polars
 pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult<Node> {
     let owned = Arc::unwrap_or_clone;
 
+    // First do a pass to collect all scans and fetch all metadata concurrently.
+    {
+        let verbose = ctxt.verbose;
+        let cache_file_info = ctxt.cache_file_info.clone();
+        use tokio::runtime::Handle;
+
+        let fut = fetch_metadata(&lp, cache_file_info, verbose);
+        if let Ok(_handle) = Handle::try_current() {
+            get_runtime().block_in_place_on(fut)?;
+        } else {
+            get_runtime().block_on(fut)?;
+        }
+    }
+
     let v = match lp {
         DslPlan::Scan {
-            sources,
-            unified_scan_args,
-            scan_type,
+            sources: _,
+            unified_scan_args: _,
+            scan_type: _,
             cached_ir,
-        } => scans::dsl_to_ir(sources, unified_scan_args, scan_type, cached_ir, ctxt)?,
+        } => cached_ir.lock().unwrap().clone().unwrap(),
         #[cfg(feature = "python")]
         DslPlan::PythonScan { options } => {
             use crate::dsl::python_dsl::PythonOptionsDsl;
@@ -162,10 +216,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 .map_err(|e| e.context(failed_here!(vertical concat)))?;
             }
 
-            let first = *inputs.first().ok_or_else(
+            let first_n = *inputs.first().ok_or_else(
                 || polars_err!(InvalidOperation: "expected at least one input in 'union'/'concat'"),
             )?;
-            let schema = ctxt.lp_arena.get(first).schema(ctxt.lp_arena);
+            let schema = ctxt.lp_arena.get(first_n).schema(ctxt.lp_arena);
             for n in &inputs[1..] {
                 let schema_i = ctxt.lp_arena.get(*n).schema(ctxt.lp_arena);
                 // The first argument
@@ -755,14 +809,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             polars_ensure!(on.len() == on_columns.width(), InvalidOperation: "`pivot` expected `on` and `on_columns` to have the same amount of columns.");
             if on.len() > 1 {
                 polars_ensure!(
-                    on_columns.get_columns().iter().zip(on.iter()).all(|(c, o)| o == c.name()),
+                    on_columns.columns().iter().zip(on.iter()).all(|(c, o)| o == c.name()),
                     InvalidOperation: "`pivot` has mismatching column names between `on` and `on_columns`."
                 );
             }
             polars_ensure!(!values.is_empty(), InvalidOperation: "`pivot` called without `values` columns.");
 
             let on_titles = if on_columns.width() == 1 {
-                on_columns.get_columns()[0].cast(&DataType::String)?
+                on_columns.columns()[0].cast(&DataType::String)?
             } else {
                 on_columns
                     .as_ref()
@@ -836,7 +890,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     }
 
                     let predicate = if on.len() == 1 {
-                        on_predicate(&on[0], &on_columns.get_columns()[0], i, ctxt.expr_arena)
+                        on_predicate(&on[0], &on_columns.columns()[0], i, ctxt.expr_arena)
                     } else {
                         AExprBuilder::function(
                             on.iter()
@@ -844,7 +898,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                                 .map(|(j, on_col)| {
                                     on_predicate(
                                         on_col,
-                                        &on_columns.get_columns()[j],
+                                        &on_columns.columns()[j],
                                         i,
                                         ctxt.expr_arena,
                                     )
@@ -1247,12 +1301,60 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let payload = match payload {
                 SinkType::Memory => SinkTypeIR::Memory,
                 SinkType::Callback(f) => SinkTypeIR::Callback(f),
-                SinkType::File(options) => SinkTypeIR::File(options),
+                SinkType::File(options) => {
+                    let mut compression_opt = None::<ExternalCompression>;
+
+                    #[cfg(feature = "parquet")]
+                    if let FileWriteFormat::Parquet(options) = &options.file_format
+                        && let Some(arrow_schema) = &options.arrow_schema
+                    {
+                        validate_arrow_schema_conversion(
+                            input_schema.as_ref(),
+                            arrow_schema,
+                            CompatLevel::newest(),
+                        )?;
+                    }
+
+                    #[cfg(feature = "csv")]
+                    if let FileWriteFormat::Csv(csv_options) = &options.file_format
+                        && csv_options.check_extension
+                    {
+                        compression_opt = Some(csv_options.compression);
+                    }
+
+                    #[cfg(feature = "json")]
+                    if let FileWriteFormat::NDJson(ndjson_options) = &options.file_format
+                        && ndjson_options.check_extension
+                    {
+                        compression_opt = Some(ndjson_options.compression);
+                    }
+
+                    if let Some(compression) = compression_opt {
+                        if let SinkTarget::Path(path) = &options.target {
+                            let path_str = path.as_str();
+
+                            if let Some(suffix) = compression.file_suffix() {
+                                polars_ensure!(
+                                    path_str.ends_with(suffix) || !path_str.contains('.'),
+                                    InvalidOperation: "the path ({}) does not conform to standard naming, expected suffix: ({}), set `check_extension` to `False` if you don't want this behavior", path, suffix
+                                );
+                            } else if [".gz", ".zst", ".zstd"]
+                                .iter()
+                                .any(|extension| path_str.ends_with(extension))
+                            {
+                                polars_bail!(
+                                    InvalidOperation: "use the compression parameter to control compression, or set `check_extension` to `False` if you want to suffix an uncompressed filename with an ending intended for compression"
+                                );
+                            }
+                        }
+                    }
+
+                    SinkTypeIR::File(options)
+                },
                 SinkType::Partitioned(PartitionedSinkOptions {
                     base_path,
                     file_path_provider,
                     partition_strategy,
-                    finish_callback,
                     file_format,
                     unified_sink_args,
                     max_rows_per_file,
@@ -1269,30 +1371,19 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             keys,
                             include_keys,
                             keys_pre_grouped,
-                            per_partition_sort_by,
                         } => {
                             let keys = to_expr_irs(keys, expr_to_ir_cx)?;
-                            let per_partition_sort_by: Vec<SortColumnIR> = per_partition_sort_by
-                                .into_iter()
-                                .map(|s| {
-                                    let SortColumn {
-                                        expr,
-                                        descending,
-                                        nulls_last,
-                                    } = s;
-                                    Ok(SortColumnIR {
-                                        expr: to_expr_ir(expr, expr_to_ir_cx)?,
-                                        descending,
-                                        nulls_last,
-                                    })
-                                })
-                                .collect::<PolarsResult<_>>()?;
+
+                            polars_ensure!(
+                                keys.iter().all(|e| is_elementwise_rec(e.node(), ctxt.expr_arena)),
+                                InvalidOperation:
+                                "cannot use non-elementwise expressions for PartitionBy keys"
+                            );
 
                             PartitionStrategyIR::Keyed {
                                 keys,
                                 include_keys,
                                 keys_pre_grouped,
-                                per_partition_sort_by,
                             }
                         },
                         PartitionStrategy::FileSize => PartitionStrategyIR::FileSize,
@@ -1301,17 +1392,30 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let options = PartitionedSinkOptionsIR {
                         base_path,
                         file_path_provider: file_path_provider.unwrap_or_else(|| {
-                            FileProviderType::Hive {
+                            FileProviderType::Hive(HivePathProvider {
                                 extension: PlSmallStr::from_static(file_format.extension()),
-                            }
+                            })
                         }),
                         partition_strategy,
-                        finish_callback,
                         file_format,
                         unified_sink_args,
                         max_rows_per_file,
                         approximate_bytes_per_file,
                     };
+
+                    #[cfg(feature = "parquet")]
+                    if let FileWriteFormat::Parquet(parquet_options) = &options.file_format
+                        && let Some(arrow_schema) = &parquet_options.arrow_schema
+                    {
+                        let file_schema =
+                            options.file_output_schema(&input_schema, ctxt.expr_arena)?;
+
+                        validate_arrow_schema_conversion(
+                            file_schema.as_ref(),
+                            arrow_schema,
+                            CompatLevel::newest(),
+                        )?;
+                    }
 
                     ctxt.conversion_optimizer
                         .fill_scratch(options.expr_irs_iter(), ctxt.expr_arena);

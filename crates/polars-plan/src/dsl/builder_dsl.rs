@@ -9,10 +9,10 @@ use polars_io::ipc::IpcScanOptions;
 use polars_io::parquet::read::ParquetOptions;
 use polars_utils::unique_id::UniqueId;
 
+use crate::dsl::functions::lit;
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonFunction;
 use crate::prelude::*;
-
 pub struct DslBuilder(pub DslPlan);
 
 impl From<DslPlan> for DslBuilder {
@@ -100,13 +100,15 @@ impl DslBuilder {
     #[cfg(feature = "csv")]
     pub fn scan_csv(
         sources: ScanSources,
-        options: CsvReadOptions,
+        options: impl Into<Arc<CsvReadOptions>>,
         unified_scan_args: UnifiedScanArgs,
     ) -> PolarsResult<Self> {
         Ok(DslPlan::Scan {
             sources,
             unified_scan_args: Box::new(unified_scan_args),
-            scan_type: Box::new(FileScanDsl::Csv { options }),
+            scan_type: Box::new(FileScanDsl::Csv {
+                options: options.into(),
+            }),
             cached_ir: Default::default(),
         }
         .into())
@@ -153,7 +155,7 @@ impl DslBuilder {
 
     pub fn fill_null(self, fill_value: Expr) -> Self {
         self.project(
-            vec![all().as_expr().fill_null(fill_value)],
+            vec![functions::all().as_expr().fill_null(fill_value)],
             ProjectionOptions {
                 duplicate_check: false,
                 ..Default::default()
@@ -166,12 +168,12 @@ impl DslBuilder {
             .unwrap_or(DataTypeSelector::Float.as_selector())
             .as_expr()
             .is_nan();
-        self.remove(any_horizontal([is_nan]).unwrap())
+        self.remove(functions::any_horizontal([is_nan]).unwrap())
     }
 
     pub fn drop_nulls(self, subset: Option<Selector>) -> Self {
         let is_not_null = subset.unwrap_or(Selector::Wildcard).as_expr().is_not_null();
-        self.filter(all_horizontal([is_not_null]).unwrap())
+        self.filter(functions::all_horizontal([is_not_null]).unwrap())
     }
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {

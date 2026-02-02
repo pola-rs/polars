@@ -1,22 +1,12 @@
 from __future__ import annotations
 
-import contextlib
-from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from polars._utils.various import (
-    _process_null_values,
-    normalize_filepath,
-)
-from polars._utils.wrap import wrap_df
-from polars.datatypes import N_INFER_DEFAULT, parse_into_dtype
-from polars.io._utils import parse_columns_arg, parse_row_index_args
-from polars.io.csv._utils import _update_columns
-
-with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars._plr import PyBatchedCsv
+import polars as pl
+from polars.datatypes import N_INFER_DEFAULT
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
     from polars import DataFrame
@@ -58,66 +48,50 @@ class BatchedCsvReader:
         truncate_ragged_lines: bool = False,
         decimal_comma: bool = False,
     ) -> None:
-        path = normalize_filepath(source, check_not_directory=False)
-
-        dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
-        dtype_slice: Sequence[PolarsDataType] | None = None
-        if schema_overrides is not None:
-            if isinstance(schema_overrides, dict):
-                dtype_list = []
-                for k, v in schema_overrides.items():
-                    dtype_list.append((k, parse_into_dtype(v)))
-            elif isinstance(schema_overrides, Sequence):
-                dtype_slice = schema_overrides
-            else:
-                msg = "`schema_overrides` arg should be list or dict"
-                raise TypeError(msg)
-
-        processed_null_values = _process_null_values(null_values)
-        projection, columns = parse_columns_arg(columns)
-
-        self._reader = PyBatchedCsv.new(
+        q = pl.scan_csv(
             infer_schema_length=infer_schema_length,
-            chunk_size=batch_size,
             has_header=has_header,
             ignore_errors=ignore_errors,
             n_rows=n_rows,
             skip_rows=skip_rows,
             skip_lines=skip_lines,
-            projection=projection,
             separator=separator,
             rechunk=rechunk,
-            columns=columns,
             encoding=encoding,
-            n_threads=n_threads,
-            path=path,
-            schema_overrides=dtype_list,
-            overwrite_dtype_slice=dtype_slice,
+            source=source,
+            schema_overrides=schema_overrides,
             low_memory=low_memory,
             comment_prefix=comment_prefix,
             quote_char=quote_char,
-            null_values=processed_null_values,
+            null_values=null_values,
             missing_utf8_is_empty_string=missing_utf8_is_empty_string,
             try_parse_dates=try_parse_dates,
             skip_rows_after_header=skip_rows_after_header,
-            row_index=parse_row_index_args(row_index_name, row_index_offset),
+            row_index_name=row_index_name,
+            row_index_offset=row_index_offset,
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
             truncate_ragged_lines=truncate_ragged_lines,
             decimal_comma=decimal_comma,
+            new_columns=new_columns,
         )
-        self.new_columns = new_columns
+
+        if columns is not None:
+            q = q.select(columns)
+
+        # Trigger empty data.
+        if raise_if_empty:
+            q.collect_schema()
+        self._reader = q.collect_batches(chunk_size=batch_size)
 
     def next_batches(self, n: int) -> list[DataFrame] | None:
         """
         Read `n` batches from the reader.
 
-        These batches will be parallelized over the available threads.
-
         Parameters
         ----------
         n
-            Number of chunks to fetch; ideally this is >= number of threads.
+            Number of chunks to fetch.
 
         Examples
         --------
@@ -132,11 +106,16 @@ class BatchedCsvReader:
         -------
         list of DataFrames
         """
-        if (batches := self._reader.next_batches(n)) is not None:
-            if self.new_columns:
-                return [
-                    _update_columns(wrap_df(df), self.new_columns) for df in batches
-                ]
-            else:
-                return [wrap_df(df) for df in batches]
+        chunks = []
+
+        for _ in range(n):
+            try:
+                chunk = self._reader.__next__()
+                if chunk is not None:
+                    chunks.append(chunk)
+            except StopIteration:  # noqa: PERF203
+                break
+
+        if len(chunks) > 0:
+            return chunks
         return None

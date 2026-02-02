@@ -2487,7 +2487,7 @@ def test_timezone_ignore_error(
         ComputeError,
         match=(
             "unable to parse time zone: 'non-existent'"
-            r".*POLARS_IGNORE_TIMEZONE_PARSE_ERROR"
+            r".*\n\n.*\n\n.*POLARS_IGNORE_TIMEZONE_PARSE_ERROR"
         ),
     ):
         pl.DataFrame({"a": datetime(2025, 1, 1)}, schema={"a": dtype})

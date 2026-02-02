@@ -6,7 +6,7 @@ import random
 import string
 import sys
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Callable, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
@@ -15,7 +15,7 @@ import polars as pl
 from polars.testing.parametric import load_profile
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Callable, Generator
     from types import ModuleType
     from typing import Any
 

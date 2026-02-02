@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from decimal import Decimal as D
 from math import ceil, floor
 from random import choice, randrange, seed
-from typing import Any, Callable, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import pyarrow as pa
 import pytest
@@ -15,6 +15,9 @@ import pytest
 import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @pytest.fixture(scope="module")
@@ -844,3 +847,8 @@ def test_fallible_decimal_aggregated_with_filter(maintain_order: bool) -> None:
     out = q.collect()
     expected = pl.DataFrame({"g": [10, 20], "div": [[D("1.0"), D("1.0")], [D("0.5")]]})
     assert_frame_equal(out, expected, check_row_order=maintain_order)
+
+
+def test_decimal_fits_too_large() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        s = pl.Series([0, 2**128 - 10], dtype=pl.UInt128).cast(pl.Decimal(38, 0))

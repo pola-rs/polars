@@ -243,7 +243,11 @@ fn validate_types(left: &DataType, right: &DataType) -> PolarsResult<()> {
         (Categorical(_, _) | Enum(_, _), dt) | (dt, Categorical(_, _) | Enum(_, _))
             if !(dt.is_categorical() | dt.is_string() | dt.is_enum()) =>
         {
-            polars_bail!(ComputeError: "cannot compare categorical with {}", dt);
+            polars_bail!(ComputeError: "cannot compare categorical with {}", dt)
+        },
+        #[cfg(feature = "dtype-duration")]
+        (Date, Duration(_)) | (Duration(_), Date) => {
+            polars_bail!(ComputeError: "cannot compare date with duration")
         },
         _ => (),
     };

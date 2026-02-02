@@ -16,6 +16,7 @@ use crate::reduce::first_last_nonnull::{new_first_nonnull_reduction, new_last_no
 use crate::reduce::len::LenReduce;
 use crate::reduce::mean::new_mean_reduction;
 use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
+use crate::reduce::min_max_by::{new_max_by_reduction, new_min_by_reduction};
 use crate::reduce::sum::new_sum_reduction;
 use crate::reduce::var_std::new_var_std_reduction;
 
@@ -24,6 +25,7 @@ pub fn into_reduction(
     node: Node,
     expr_arena: &mut Arena<AExpr>,
     schema: &Schema,
+    is_aggregation_context: bool,
 ) -> PolarsResult<(Box<dyn GroupedReduction>, Vec<Node>)> {
     let get_dt = |node| {
         expr_arena
@@ -66,6 +68,14 @@ pub fn into_reduction(
                 let count = Box::new(CountReduce::new(*include_nulls)) as Box<_>;
                 (count, *input)
             },
+            IRAggExpr::MinBy { input, by } => {
+                let gr = new_min_by_reduction(get_dt(*input)?, get_dt(*by)?)?;
+                return Ok((gr, vec![*input, *by]));
+            },
+            IRAggExpr::MaxBy { input, by } => {
+                let gr = new_max_by_reduction(get_dt(*input)?, get_dt(*by)?)?;
+                return Ok((gr, vec![*input, *by]));
+            },
             IRAggExpr::Quantile { .. } => todo!(),
             IRAggExpr::Median(_) => todo!(),
             IRAggExpr::NUnique(_) => todo!(),
@@ -85,6 +95,12 @@ pub fn into_reduction(
                 //   project to the height of the DataFrame (in the PhysicalExpr impl).
                 // * This approach is not sound for `update_groups()`, but currently that case is
                 //   not hit (it would need group-by -> len on empty morsels).
+                polars_ensure!(
+                    !is_aggregation_context,
+                    ComputeError:
+                    "not implemented: len() of groups with no columns"
+                );
+
                 let out: Box<dyn GroupedReduction> = new_sum_reduction(DataType::IDX_DTYPE)?;
                 let expr = expr_arena.add(AExpr::Len);
 

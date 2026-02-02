@@ -59,7 +59,7 @@ autolabeler:
       - '/^release/'
   - label: A-sql
     title:
-      - '/\bsql\b/i'
+      - '/\bsql\b|sqlcontext/i'
   - label: A-dtype-categorical
     title:
       - '/categorical|categories/i'
@@ -77,7 +77,7 @@ autolabeler:
       - '/\bgpu\b/i'
   - label: A-ide
     title:
-      - '/IDE/i'
+      - '/\bide\b/i'
   - label: A-io-avro
     title:
       - '/\bavro\b/i'

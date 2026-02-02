@@ -27,7 +27,7 @@ async fn select_keys(
     for selector in key_selectors {
         key_columns.push(selector.evaluate(df, state).await?.into_column());
     }
-    let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
+    let keys = unsafe { DataFrame::new_unchecked_with_broadcast(df.height(), key_columns) }?;
     Ok(HashKeys::from_df(
         &keys,
         params.random_state.clone(),
@@ -305,7 +305,7 @@ impl ProbeState {
                         arr.set_validity(hash_keys.validity().cloned());
                     }
                     let s = BooleanChunked::with_chunk(df[0].name().clone(), arr).into_series();
-                    DataFrame::new(vec![Column::from(s)])?
+                    DataFrame::new_unchecked(s.len(), vec![Column::from(s)])
                 } else {
                     probe_match.clear();
                     partitions[0].probe_partitioned_groupers(

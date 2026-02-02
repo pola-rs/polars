@@ -5,11 +5,15 @@ import os
 from collections.abc import Sequence
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Callable, Literal
+from typing import IO, TYPE_CHECKING, Literal
 
 import polars._reexport as pl
 import polars.functions as F
-from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.deprecation import (
+    deprecate_renamed_parameter,
+    deprecated,
+    issue_deprecation_warning,
+)
 from polars._utils.various import (
     _process_null_values,
     is_path_or_str_sequence,
@@ -35,10 +39,15 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame, PyLazyFrame
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
     from polars import DataFrame, LazyFrame
-    from polars._typing import CsvEncoding, PolarsDataType, SchemaDict
+    from polars._typing import (
+        CsvEncoding,
+        PolarsDataType,
+        SchemaDict,
+        StorageOptionsDict,
+    )
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
 
@@ -74,7 +83,7 @@ def read_csv(
     low_memory: bool = False,
     rechunk: bool = False,
     use_pyarrow: bool = False,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     skip_rows_after_header: int = 0,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
@@ -172,8 +181,10 @@ def read_csv(
         specified in `schema` or `schema_overrides`.
     infer_schema_length
         The maximum number of rows to scan for schema inference.
-        If set to `None`, the full data may be scanned *(this is slow)*.
-        Set `infer_schema=False` to read all columns as `pl.String`.
+        If set to `None`, the full data will be scanned into memory
+        **(this is slow)**.
+        Alternatively set `infer_schema=False` to read all columns as
+        `pl.String`.
     batch_size
         Number of lines to read into the buffer at once.
         Modify this to change performance.
@@ -390,7 +401,7 @@ def read_csv(
         # Map list of dtypes when used together with selected columns as a dtypes dict
         # so the dtypes are applied to the correct column instead of the first x
         # columns.
-        schema_overrides = dict(zip(columns, schema_overrides))
+        schema_overrides = dict(zip(columns, schema_overrides, strict=False))
 
     if new_columns and schema_overrides and isinstance(schema_overrides, dict):
         current_columns = None
@@ -448,7 +459,7 @@ def read_csv(
                     schema_overrides = dtype_list
 
         if current_columns and isinstance(schema_overrides, dict):
-            new_to_current = dict(zip(new_columns, current_columns))
+            new_to_current = dict(zip(new_columns, current_columns, strict=False))
             # Change new column names to current column names in dtype.
             schema_overrides = {
                 new_to_current.get(column_name, column_name): column_dtype
@@ -732,6 +743,9 @@ def _read_csv_impl(
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+@deprecated(
+    "`read_csv_batched` is deprecated; use `scan_csv().collect_batches()` instead."
+)
 def read_csv_batched(
     source: str | Path,
     *,
@@ -778,6 +792,9 @@ def read_csv_batched(
     .. versionchanged:: 0.20.4
         * The `row_count_name` parameter was renamed `row_index_name`.
         * The `row_count_offset` parameter was renamed `row_index_offset`.
+
+    .. deprecated:: 1.37.0
+        Use `scan_csv().collect_batches()` instead.
 
     Parameters
     ----------
@@ -959,7 +976,7 @@ def read_csv_batched(
         # Map list of dtypes when used together with selected columns as a dtypes dict
         # so the dtypes are applied to the correct column instead of the first x
         # columns.
-        schema_overrides = dict(zip(columns, schema_overrides))
+        schema_overrides = dict(zip(columns, schema_overrides, strict=False))
 
     if new_columns and schema_overrides and isinstance(schema_overrides, dict):
         current_columns = None
@@ -1011,7 +1028,7 @@ def read_csv_batched(
                     schema_overrides = dtype_list
 
         if current_columns and isinstance(schema_overrides, dict):
-            new_to_current = dict(zip(new_columns, current_columns))
+            new_to_current = dict(zip(new_columns, current_columns, strict=False))
             # Change new column names to current column names in dtype.
             schema_overrides = {
                 new_to_current.get(column_name, column_name): column_dtype
@@ -1096,9 +1113,9 @@ def scan_csv(
     truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
     glob: bool = True,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    retries: int = 2,
+    retries: int | None = None,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
 ) -> LazyFrame:
@@ -1177,8 +1194,10 @@ def scan_csv(
         specified in `schema` or `schema_overrides`.
     infer_schema_length
         The maximum number of rows to scan for schema inference.
-        If set to `None`, the full data may be scanned *(this is slow)*.
-        Set `infer_schema=False` to read all columns as `pl.String`.
+        If set to `None`, the full data will be scanned into memory
+        **(this is slow)**.
+        Alternatively set `infer_schema=False` to read all columns as
+        `pl.String`.
     n_rows
         Stop reading from CSV file after reading `n_rows`.
     encoding : {'utf8', 'utf8-lossy'}
@@ -1240,10 +1259,16 @@ def scan_csv(
             at any point without it being considered a breaking change.
     retries
         Number of retries if accessing a cloud instance fails.
+
+        .. deprecated:: 1.37.1
+            Pass {"max_retries": n} via `storage_options` instead.
     file_cache_ttl
         Amount of time to keep downloaded cloud files since their last access time,
         in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
         (which defaults to 1 hour) if not given.
+
+        .. deprecated:: 1.37.1
+            Pass {"file_cache_ttl": n} via `storage_options` instead.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
 
@@ -1327,7 +1352,7 @@ def scan_csv(
             msg = "cannot set both `with_column_names` and `new_columns`; mutually exclusive"
             raise ValueError(msg)
         if schema_overrides and isinstance(schema_overrides, Sequence):
-            schema_overrides = dict(zip(new_columns, schema_overrides))
+            schema_overrides = dict(zip(new_columns, schema_overrides, strict=False))
 
         # wrap new column names as a callable
         def with_column_names(cols: list[str]) -> list[str]:
@@ -1348,6 +1373,18 @@ def scan_csv(
 
     if not infer_schema:
         infer_schema_length = 0
+
+    if retries is not None:
+        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
+        issue_deprecation_warning(msg)
+        storage_options = storage_options or {}
+        storage_options["max_retries"] = retries
+
+    if file_cache_ttl is not None:
+        msg = "the `file_cache_ttl` parameter was deprecated in 1.37.1; specify 'file_cache_ttl' in `storage_options` instead."
+        issue_deprecation_warning(msg)
+        storage_options = storage_options or {}
+        storage_options["file_cache_ttl"] = file_cache_ttl
 
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "scan_csv"
@@ -1383,10 +1420,8 @@ def scan_csv(
         truncate_ragged_lines=truncate_ragged_lines,
         decimal_comma=decimal_comma,
         glob=glob,
-        retries=retries,
         storage_options=storage_options,
         credential_provider=credential_provider_builder,
-        file_cache_ttl=file_cache_ttl,
         include_file_paths=include_file_paths,
     )
 
@@ -1429,10 +1464,8 @@ def _scan_csv_impl(
     truncate_ragged_lines: bool = True,
     decimal_comma: bool = False,
     glob: bool = True,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderBuilder | None = None,
-    retries: int = 2,
-    file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
@@ -1450,12 +1483,6 @@ def _scan_csv_impl(
         source = None  # type: ignore[assignment]
     else:
         sources = []
-
-    if storage_options:
-        storage_options = list(storage_options.items())  # type: ignore[assignment]
-    else:
-        # Handle empty dict input
-        storage_options = None
 
     pylf = PyLazyFrame.new_from_csv(
         source,
@@ -1488,8 +1515,6 @@ def _scan_csv_impl(
         schema=schema,
         cloud_options=storage_options,
         credential_provider=credential_provider,
-        retries=retries,
-        file_cache_ttl=file_cache_ttl,
         include_file_paths=include_file_paths,
     )
     return wrap_ldf(pylf)

@@ -8,14 +8,18 @@ from datetime import datetime
 from functools import partial
 from math import ceil
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing.asserts.frame import assert_frame_equal
+from tests.unit.io.conftest import format_file_uri, normalize_path_separator_pl
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import SchemaDict
 
 
@@ -478,7 +482,7 @@ def test_scan_directory(
         tmp_path / "dir/data.bin",
     ]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         path.parent.mkdir(exist_ok=True)
         write_func(df, path)
 
@@ -628,7 +632,7 @@ def test_scan_include_file_paths(
         dfs.append(pl.DataFrame({"x": 10 * [x]}).with_columns(path=pl.lit(str(path))))
         write_func(dfs[-1].drop("path"), path)
 
-    df = pl.concat(dfs)
+    df = pl.concat(dfs).with_columns(normalize_path_separator_pl(pl.col("path")))
     assert df.columns == ["x", "path"]
 
     with pytest.raises(
@@ -1023,7 +1027,6 @@ def test_only_project_missing(scan_type: tuple[Any, Any]) -> None:
     )
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="windows paths are a mess")
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     "scan_type",
@@ -1042,13 +1045,19 @@ def test_async_read_21945(tmp_path: Path, scan_type: tuple[Any, Any]) -> None:
     pl.DataFrame({"value": [3]}).write_parquet(f2)
 
     df = (
-        pl.scan_parquet(["file://" + str(f1), str(f2)], include_file_paths="foo")
+        pl.scan_parquet([format_file_uri(str(f1)), str(f2)], include_file_paths="foo")
         .filter(value=1)
         .collect()
     )
 
     assert_frame_equal(
-        df, pl.DataFrame({"value": [1], "foo": ["file://" + f1.as_posix()]})
+        df,
+        pl.DataFrame(
+            {
+                "value": [1],
+                "foo": [format_file_uri(f1)],
+            }
+        ),
     )
 
 
@@ -1141,18 +1150,11 @@ def test_scan_empty_paths_friendly_error(
 
     assert (
         f"ComputeError: {failed_message}: expanded paths were empty "
-        "(path expansion input: 'paths: [Local"
+        "(path expansion input: 'paths: "
     ) in exc_str
 
     assert "glob: true)." in exc_str
     assert exc_str.count(tmp_path.name) == 1
-
-    assert (
-        name_in_context
-        in exc_str.split(
-            "This error occurred with the following context stack:", maxsplit=1
-        )[1]
-    )
 
     if scan_function is pl.scan_parquet:
         assert (
@@ -1170,7 +1172,7 @@ def test_scan_empty_paths_friendly_error(
 
     assert (
         f"ComputeError: {failed_message}: expanded paths were empty "
-        "(path expansion input: 'paths: [Local"
+        "(path expansion input: 'paths: "
     ) in exc_str
 
     assert "glob: true)." in exc_str
@@ -1220,13 +1222,11 @@ def test_scan_with_schema_skips_schema_inference(
     assert_frame_equal(q.collect(engine="streaming"), pl.DataFrame(schema=schema))
 
 
-@pytest.fixture(scope="session")
-def corrupt_compressed_csv() -> bytes:
-    large_and_simple_csv = b"line_val\n" * 500_000
-    compressed_data = zlib.compress(large_and_simple_csv, level=0)
+def corrupt_compressed_impl(base_line: bytes, target_size: int) -> bytes:
+    large_and_simple_data = base_line * round(target_size / len(base_line))
+    compressed_data = zlib.compress(large_and_simple_data, level=0)
 
     corruption_start_pos = round(len(compressed_data) * 0.9)
-    assert corruption_start_pos > 4_000_000
     corruption_len = 500
 
     # The idea is to corrupt the input to make sure the scan never fully
@@ -1235,15 +1235,28 @@ def corrupt_compressed_csv() -> bytes:
     corrupted_data[corruption_start_pos : corruption_start_pos + corruption_len] = (
         b"\00"
     )
-    # ~4MB of valid zlib compressed CSV to read before the corrupted data
+    # ~1.8MB of valid zlib compressed data to read before the corrupted data
     # appears.
     return corrupted_data
 
 
-def test_scan_csv_streaming_decompression(corrupt_compressed_csv: bytes) -> None:
-    # TODO: also without schema
-    schema = {"line_val": pl.String}
+@pytest.fixture(scope="session")
+def corrupt_compressed_csv() -> bytes:
+    return corrupt_compressed_impl(b"line_val\n", int(2e6))
 
+
+@pytest.fixture(scope="session")
+def corrupt_compressed_ndjson() -> bytes:
+    # The decompressor is part of the line-batch provider which only stops once
+    # processing noticed that it doesn't need anymore data. This can take a
+    # bit. Tested with debug/release and calm/stressed machine.
+    return corrupt_compressed_impl(b'{"line_val": 45}\n', int(100e6))
+
+
+@pytest.mark.parametrize("schema", [{"line_val": pl.String}, None])
+def test_scan_csv_streaming_decompression(
+    corrupt_compressed_csv: bytes, schema: Any
+) -> None:
     slice_count = 11
 
     df = (
@@ -1252,9 +1265,74 @@ def test_scan_csv_streaming_decompression(corrupt_compressed_csv: bytes) -> None
         .collect(engine="streaming")
     )
 
-    expected = pl.DataFrame(
-        [
-            pl.Series("line_val", ["line_val"] * slice_count, dtype=pl.String),
-        ]
+    expected = [
+        pl.Series("line_val", ["line_val"] * slice_count, dtype=pl.String),
+    ]
+    assert_frame_equal(df, pl.DataFrame(expected))
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("schema", [{"line_val": pl.Int64}, None])
+def test_scan_ndjson_streaming_decompression(
+    corrupt_compressed_ndjson: bytes, schema: Any
+) -> None:
+    slice_count = 11
+
+    df = (
+        pl.scan_ndjson(io.BytesIO(corrupt_compressed_ndjson), schema=schema)
+        .slice(0, slice_count)
+        .collect(engine="streaming")
     )
-    assert_frame_equal(df, expected)
+
+    expected = [
+        pl.Series("line_val", [45] * slice_count, dtype=pl.Int64),
+    ]
+    assert_frame_equal(df, pl.DataFrame(expected))
+
+
+def test_scan_file_uri_hostname_component() -> None:
+    q = pl.scan_parquet("file://hostname:80/data.parquet")
+
+    with pytest.raises(
+        ComputeError,
+        match="unsupported: non-empty hostname for 'file:' URI: 'hostname:80'",
+    ):
+        q.collect()
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("polars_force_async", ["0", "1"])
+@pytest.mark.parametrize("n_repeats", [1, 2])
+def test_scan_path_expansion_sorting_24528(
+    tmp_path: Path,
+    polars_force_async: str,
+    n_repeats: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", polars_force_async)
+
+    relpaths = ["a.parquet", "a/a.parquet", "ab.parquet"]
+
+    for p in relpaths:
+        Path(tmp_path / p).parent.mkdir(exist_ok=True, parents=True)
+        pl.DataFrame({"relpath": p}).write_parquet(tmp_path / p)
+
+    assert_frame_equal(
+        pl.scan_parquet(n_repeats * [tmp_path]).collect(),
+        pl.DataFrame({"relpath": n_repeats * relpaths}),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(n_repeats * [f"{tmp_path}/**/*"]).collect(),
+        pl.DataFrame({"relpath": n_repeats * relpaths}),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(n_repeats * [format_file_uri(tmp_path) + "/"]).collect(),
+        pl.DataFrame({"relpath": n_repeats * relpaths}),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(n_repeats * [format_file_uri(f"{tmp_path}/**/*")]).collect(),
+        pl.DataFrame({"relpath": n_repeats * relpaths}),
+    )

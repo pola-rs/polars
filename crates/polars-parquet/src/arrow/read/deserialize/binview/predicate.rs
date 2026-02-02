@@ -113,8 +113,10 @@ pub fn decode_is_in_no_values_inlinable(
         values,
         |value| {
             let length = value.len() as u32;
-            let value = &value[..value.len().min(View::MAX_INLINE_SIZE as usize)];
-            // SAFETY: We capped the length to the maximum inline size;
+            if length > View::MAX_INLINE_SIZE {
+                return false;
+            }
+            // SAFETY: we made sure length <= View::MAX_INLINE_SIZE.
             let mut view = unsafe { View::new_inline_unchecked(value) };
             view.length = length;
             needles.contains(&view)
@@ -146,11 +148,15 @@ pub fn decode_is_in_inlinable(
             return Err(super::invalid_input_err());
         }
 
+        // Always advance the slice before checking length.
         let value;
         (value, values) = values.split_at(length as usize);
 
-        let value = &value[..value.len().min(View::MAX_INLINE_SIZE as usize)];
-        // SAFETY: We capped the length to the maximum inline size;
+        // Non-inlinable views can't match inlinable needles.
+        if length > View::MAX_INLINE_SIZE {
+            continue;
+        }
+        // SAFETY: we made sure length <= View::MAX_INLINE_SIZE.
         let mut view = unsafe { View::new_inline_unchecked(value) };
         view.length = length;
 

@@ -20,7 +20,14 @@ mod predicate;
 mod required;
 mod required_masked;
 
-type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, BitmapBuilder);
+pub struct DecodedState {
+    binview: MutableBinaryViewArray<[u8]>,
+    validity: BitmapBuilder,
+
+    // Used to store the needles for EqualsOneOf::Set that were inserted
+    // into the buffers (but not the views).
+    needle_views: Vec<View>,
+}
 
 impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
     type PlainDecoder = BinaryIter<'a>;
@@ -70,22 +77,22 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
     }
 }
 
-enum EqualsOneOfState {
+enum EqualsOneOf {
     Empty,
     Inlinable([View; 4]),
-    Set(PlIndexSet<Box<[u8]>>, Vec<View>),
+    Set(PlIndexSet<Box<[u8]>>),
 }
 
 pub(crate) struct BinViewDecoder {
     is_string: bool,
-    equals_one_of_state: Option<Box<EqualsOneOfState>>,
+    equals_one_of: Option<Box<EqualsOneOf>>,
 }
 
 impl BinViewDecoder {
     pub fn new(is_string: bool) -> Self {
         Self {
             is_string,
-            equals_one_of_state: None,
+            equals_one_of: None,
         }
     }
 
@@ -93,13 +100,10 @@ impl BinViewDecoder {
         Self::new(true)
     }
 
-    fn initialize_predicate_equals_one_of_state(
-        &mut self,
-        needles: &[ParquetScalar],
-    ) -> &EqualsOneOfState {
-        self.equals_one_of_state.get_or_insert_with(|| {
+    fn initialize_predicate_equals_one_of(&mut self, needles: &[ParquetScalar]) -> &EqualsOneOf {
+        self.equals_one_of.get_or_insert_with(|| {
             if needles.is_empty() {
-                return Box::new(EqualsOneOfState::Empty);
+                return Box::new(EqualsOneOf::Empty);
             }
 
             let is_inlinable = needles.len() <= 4
@@ -125,7 +129,7 @@ impl BinViewDecoder {
                 for i in needles.len()..4 {
                     views[i] = views[0];
                 }
-                EqualsOneOfState::Inlinable(views)
+                EqualsOneOf::Inlinable(views)
             } else {
                 let mut needle_set = PlIndexSet::<Box<_>>::default();
                 needle_set.extend(needles.iter().map(|needle| {
@@ -137,31 +141,25 @@ impl BinViewDecoder {
                     };
                     needle.into()
                 }));
-                EqualsOneOfState::Set(needle_set, Vec::new())
+                EqualsOneOf::Set(needle_set)
             })
         })
     }
 
     fn initialize_decode_equals_one_of_state(
         &mut self,
-        target: &mut MutableBinaryViewArray<[u8]>,
-    ) -> Option<&EqualsOneOfState> {
-        if let Some(equals_one_of_state) = self.equals_one_of_state.as_deref_mut() {
-            match equals_one_of_state {
-                EqualsOneOfState::Set(needles, views) => {
-                    if needles.len() != views.len() {
-                        assert!(views.is_empty());
-                        views.extend(
-                            needles
-                                .iter()
-                                .map(|needle| target.push_value_into_buffer(needle)),
-                        );
-                    }
-                },
-                EqualsOneOfState::Empty | EqualsOneOfState::Inlinable(_) => {},
+        target: &mut DecodedState,
+    ) -> Option<&EqualsOneOf> {
+        if let Some(EqualsOneOf::Set(needles)) = self.equals_one_of.as_deref_mut() {
+            if target.needle_views.is_empty() {
+                target.needle_views.extend(
+                    needles
+                        .iter()
+                        .map(|needle| target.binview.push_value_into_buffer(needle)),
+                );
             }
         }
-        self.equals_one_of_state.as_deref()
+        self.equals_one_of.as_deref()
     }
 }
 
@@ -174,18 +172,19 @@ pub(crate) enum StateTranslation<'a> {
     DeltaBytes(delta_byte_array::Decoder<'a>),
 }
 
-impl utils::Decoded for DecodedStateTuple {
+impl utils::Decoded for DecodedState {
     fn len(&self) -> usize {
-        self.0.len()
+        self.binview.len()
     }
 
     fn extend_nulls(&mut self, n: usize) {
-        self.0.extend_constant(n, Some(&[]));
-        self.1.extend_constant(n, false);
+        self.binview.extend_constant(n, Some(&[]));
+        self.validity.extend_constant(n, false);
     }
 
     fn remaining_capacity(&self) -> usize {
-        (self.0.capacity() - self.0.len()).min(self.1.capacity() - self.1.len())
+        (self.binview.capacity() - self.binview.len())
+            .min(self.validity.capacity() - self.validity.len())
     }
 }
 
@@ -193,19 +192,22 @@ impl utils::Decoded for DecodedStateTuple {
 fn decode_plain(
     values: &[u8],
     max_num_values: usize,
-    target: &mut MutableBinaryViewArray<[u8]>,
-
+    state: &mut DecodedState,
     is_optional: bool,
-    validity: &mut BitmapBuilder,
 
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
 
-    equals_one_of_state: Option<&EqualsOneOfState>,
+    equals_one_of_state: Option<&EqualsOneOf>,
     verify_utf8: bool,
 ) -> ParquetResult<()> {
     if is_optional {
-        append_validity(page_validity, filter.as_ref(), validity, max_num_values);
+        append_validity(
+            page_validity,
+            filter.as_ref(),
+            &mut state.validity,
+            max_num_values,
+        );
     }
 
     if let Some(equals_one_of_state) = equals_one_of_state
@@ -213,34 +215,34 @@ fn decode_plain(
     {
         let mut total_bytes_len = 0;
         match equals_one_of_state {
-            EqualsOneOfState::Empty => {},
-            EqualsOneOfState::Inlinable(views) => {
+            EqualsOneOf::Empty => {},
+            EqualsOneOf::Inlinable(views) => {
                 predicate::decode_is_in_inlinable(
                     max_num_values,
                     values,
                     views,
-                    unsafe { target.views_mut() },
+                    unsafe { state.binview.views_mut() },
                     &mut total_bytes_len,
                 )?;
             },
-            EqualsOneOfState::Set(needles, views) => {
+            EqualsOneOf::Set(needles) => {
                 predicate::decode_is_in_non_inlinable(
                     max_num_values,
                     values,
                     needles,
-                    views,
-                    unsafe { target.views_mut() },
+                    &state.needle_views,
+                    unsafe { state.binview.views_mut() },
                     &mut total_bytes_len,
                 )?;
             },
         }
 
-        let new_total_bytes_len = target.total_bytes_len() + total_bytes_len;
+        let new_total_bytes_len = state.binview.total_bytes_len() + total_bytes_len;
 
         // SAFETY: We know that the view is valid since we added it safely and we
         // update the total_bytes_len afterwards. The total_buffer_len is not affected.
         unsafe {
-            target.set_total_bytes_len(new_total_bytes_len);
+            state.binview.set_total_bytes_len(new_total_bytes_len);
         }
 
         return Ok(());
@@ -249,31 +251,45 @@ fn decode_plain(
     let page_validity = constrain_page_validity(max_num_values, page_validity, filter.as_ref());
 
     match (filter, page_validity) {
-        (None, None) => required::decode(max_num_values, values, None, target, verify_utf8),
-        (Some(Filter::Range(rng)), None) if rng.start == 0 => {
-            required::decode(max_num_values, values, Some(rng.end), target, verify_utf8)
-        },
+        (None, None) => required::decode(
+            max_num_values,
+            values,
+            None,
+            &mut state.binview,
+            verify_utf8,
+        ),
+        (Some(Filter::Range(rng)), None) if rng.start == 0 => required::decode(
+            max_num_values,
+            values,
+            Some(rng.end),
+            &mut state.binview,
+            verify_utf8,
+        ),
         (None, Some(page_validity)) => optional::decode(
             page_validity.set_bits(),
             values,
-            target,
+            &mut state.binview,
             &page_validity,
             verify_utf8,
         ),
         (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => optional::decode(
             page_validity.set_bits(),
             values,
-            target,
+            &mut state.binview,
             &page_validity,
             verify_utf8,
         ),
-        (Some(Filter::Mask(mask)), None) => {
-            required_masked::decode(max_num_values, values, target, &mask, verify_utf8)
-        },
+        (Some(Filter::Mask(mask)), None) => required_masked::decode(
+            max_num_values,
+            values,
+            &mut state.binview,
+            &mask,
+            verify_utf8,
+        ),
         (Some(Filter::Mask(mask)), Some(page_validity)) => optional_masked::decode(
             page_validity.set_bits(),
             values,
-            target,
+            &mut state.binview,
             &page_validity,
             &mask,
             verify_utf8,
@@ -281,14 +297,14 @@ fn decode_plain(
         (Some(Filter::Range(rng)), None) => required_masked::decode(
             max_num_values,
             values,
-            target,
+            &mut state.binview,
             &filter_from_range(rng),
             verify_utf8,
         ),
         (Some(Filter::Range(rng)), Some(page_validity)) => optional_masked::decode(
             page_validity.set_bits(),
             values,
-            target,
+            &mut state.binview,
             &page_validity,
             &filter_from_range(rng),
             verify_utf8,
@@ -467,14 +483,15 @@ pub fn decode_plain_generic(
 impl utils::Decoder for BinViewDecoder {
     type Translation<'a> = StateTranslation<'a>;
     type Dict = BinaryViewArray;
-    type DecodedState = DecodedStateTuple;
+    type DecodedState = DecodedState;
     type Output = Box<dyn Array>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
-        (
-            MutableBinaryViewArray::with_capacity(capacity),
-            BitmapBuilder::with_capacity(capacity),
-        )
+        DecodedState {
+            binview: MutableBinaryViewArray::with_capacity(capacity),
+            validity: BitmapBuilder::with_capacity(capacity),
+            needle_views: Vec::new(),
+        }
     }
 
     fn evaluate_dict_predicate(
@@ -532,13 +549,13 @@ impl utils::Decoder for BinViewDecoder {
                 predicate::decode_equals(iter.max_num_values, iter.values, needle, pred_true_mask)?;
             },
             (St::Plain(iter), Spce::EqualOneOf(needles)) => {
-                let e = self.initialize_predicate_equals_one_of_state(needles);
+                let e = self.initialize_predicate_equals_one_of(needles);
 
                 match e {
-                    EqualsOneOfState::Empty => {
+                    EqualsOneOf::Empty => {
                         pred_true_mask.extend_constant(iter.max_num_values, false)
                     },
-                    EqualsOneOfState::Inlinable(views) => {
+                    EqualsOneOf::Inlinable(views) => {
                         predicate::decode_is_in_no_values_inlinable(
                             iter.max_num_values,
                             iter.values,
@@ -546,7 +563,7 @@ impl utils::Decoder for BinViewDecoder {
                             pred_true_mask,
                         )?;
                     },
-                    EqualsOneOfState::Set(needle_set, _) => {
+                    EqualsOneOf::Set(needle_set) => {
                         predicate::decode_is_in_no_values_non_inlinable(
                             iter.max_num_values,
                             iter.values,
@@ -582,16 +599,16 @@ impl utils::Decoder for BinViewDecoder {
 
     fn apply_dictionary(
         &mut self,
-        (values, _): &mut Self::DecodedState,
+        state: &mut Self::DecodedState,
         dict: &Self::Dict,
     ) -> ParquetResult<()> {
-        if values.completed_buffers().len() < dict.data_buffers().len() {
+        if state.binview.completed_buffers().len() < dict.data_buffers().len() {
             for buffer in dict.data_buffers().as_ref() {
-                values.push_buffer(buffer.clone());
+                state.binview.push_buffer(buffer.clone());
             }
         }
 
-        assert!(values.completed_buffers().len() == dict.data_buffers().len());
+        assert!(state.binview.completed_buffers().len() == dict.data_buffers().len());
 
         Ok(())
     }
@@ -618,12 +635,12 @@ impl utils::Decoder for BinViewDecoder {
             let mut array = array.to_binview();
 
             if let Some(validity) = array.take_validity() {
-                decoded.0.extend_from_array(&array);
-                decoded.1.extend_from_bitmap(&validity);
+                decoded.binview.extend_from_array(&array);
+                decoded.validity.extend_from_bitmap(&validity);
             } else {
-                decoded.0.extend_from_array(&array);
+                decoded.binview.extend_from_array(&array);
                 if is_optional {
-                    decoded.1.extend_constant(array.len(), true);
+                    decoded.validity.extend_constant(array.len(), true);
                 }
             }
         } else {
@@ -634,12 +651,12 @@ impl utils::Decoder for BinViewDecoder {
             let mut array = array.clone();
 
             if let Some(validity) = array.take_validity() {
-                decoded.0.extend_from_array(&array);
-                decoded.1.extend_from_bitmap(&validity);
+                decoded.binview.extend_from_array(&array);
+                decoded.validity.extend_from_bitmap(&validity);
             } else {
-                decoded.0.extend_from_array(&array);
+                decoded.binview.extend_from_array(&array);
                 if is_optional {
-                    decoded.1.extend_constant(array.len(), true);
+                    decoded.validity.extend_constant(array.len(), true);
                 }
             }
         }
@@ -655,14 +672,13 @@ impl utils::Decoder for BinViewDecoder {
         _chunks: &mut Vec<Self::Output>,
     ) -> ParquetResult<()> {
         let is_string = self.is_string;
-        let equals_one_of_state = self.initialize_decode_equals_one_of_state(&mut decoded.0);
+        let equals_one_of_state = self.initialize_decode_equals_one_of_state(decoded);
         match state.translation {
             StateTranslation::Plain(iter) => decode_plain(
                 iter.values,
                 iter.max_num_values,
-                &mut decoded.0,
+                decoded,
                 state.is_optional,
-                &mut decoded.1,
                 state.page_validity.as_ref(),
                 filter,
                 equals_one_of_state,
@@ -671,7 +687,7 @@ impl utils::Decoder for BinViewDecoder {
             StateTranslation::Dictionary(ref mut indexes) => {
                 let dict = state.dict.unwrap();
 
-                let start_length = decoded.0.views().len();
+                let start_length = decoded.binview.views().len();
 
                 dictionary_encoded::decode_dict(
                     indexes.clone(),
@@ -679,12 +695,12 @@ impl utils::Decoder for BinViewDecoder {
                     state.is_optional,
                     state.page_validity.as_ref(),
                     filter,
-                    &mut decoded.1,
-                    unsafe { decoded.0.views_mut() },
+                    &mut decoded.validity,
+                    unsafe { decoded.binview.views_mut() },
                 )?;
 
                 let total_length: usize = decoded
-                    .0
+                    .binview
                     .views()
                     .iter()
                     .skip(start_length)
@@ -692,8 +708,8 @@ impl utils::Decoder for BinViewDecoder {
                     .sum();
                 unsafe {
                     decoded
-                        .0
-                        .set_total_bytes_len(decoded.0.total_bytes_len() + total_length);
+                        .binview
+                        .set_total_bytes_len(decoded.binview.total_bytes_len() + total_length);
                 }
 
                 Ok(())
@@ -737,8 +753,8 @@ impl utils::Decoder for BinViewDecoder {
                     filter,
                     state.page_validity,
                     state.is_optional,
-                    &mut decoded.1,
-                    &mut decoded.0,
+                    &mut decoded.validity,
+                    &mut decoded.binview,
                 )
             },
             StateTranslation::DeltaBytes(mut decoder) => {
@@ -758,8 +774,8 @@ impl utils::Decoder for BinViewDecoder {
                     filter,
                     state.page_validity,
                     state.is_optional,
-                    &mut decoded.1,
-                    &mut decoded.0,
+                    &mut decoded.validity,
+                    &mut decoded.binview,
                 )
             },
         }
@@ -782,8 +798,8 @@ impl utils::Decoder for BinViewDecoder {
             _ => unreachable!(),
         };
 
-        decoded.0.extend_constant(length, Some(value));
-        decoded.1.extend_constant(length, true);
+        decoded.binview.extend_constant(length, Some(value));
+        decoded.validity.extend_constant(length, true);
 
         Ok(())
     }
@@ -792,11 +808,11 @@ impl utils::Decoder for BinViewDecoder {
         &self,
         dtype: ArrowDataType,
         _dict: Option<Self::Dict>,
-        (values, validity): Self::DecodedState,
+        state: Self::DecodedState,
     ) -> ParquetResult<Box<dyn Array>> {
-        let mut array: BinaryViewArray = values.freeze();
+        let mut array: BinaryViewArray = state.binview.freeze();
 
-        let validity = freeze_validity(validity);
+        let validity = freeze_validity(state.validity);
         array = array.with_validity(validity);
 
         match dtype.to_physical_type() {
@@ -809,7 +825,7 @@ impl utils::Decoder for BinViewDecoder {
                         array.views().clone(),
                         array.data_buffers().clone(),
                         array.validity().cloned(),
-                        array.total_bytes_len(),
+                        array.try_total_bytes_len(),
                         array.total_buffer_len(),
                     )
                     .boxed())

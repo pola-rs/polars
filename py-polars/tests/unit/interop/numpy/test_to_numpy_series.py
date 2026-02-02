@@ -297,7 +297,7 @@ def test_series_to_numpy_list(chunked: bool) -> None:
     result = s.to_numpy()
 
     expected = np.array([np.array(v, dtype=np.int64) for v in values], dtype=np.object_)
-    for res, exp in zip(result, expected):
+    for res, exp in zip(result, expected, strict=True):
         assert_array_equal(res, exp)
     assert result.dtype == expected.dtype
     assert_allow_copy_false_raises(s)

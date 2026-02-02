@@ -54,7 +54,7 @@ impl Executor for StreamingQueryExecutor {
             .map(|x| x.unwrap_single())?;
 
         if self.rechunk {
-            df.as_single_chunk_par();
+            df.rechunk_mut_par();
         }
 
         Ok(df)

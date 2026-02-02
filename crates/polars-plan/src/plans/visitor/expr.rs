@@ -51,11 +51,18 @@ impl TreeWalker for Expr {
             },
             Cast { expr, dtype, options: strict } => Cast { expr: am(expr, f)?, dtype, options: strict },
             Sort { expr, options } => Sort { expr: am(expr, f)?, options },
-            Gather { expr, idx, returns_scalar } => Gather { expr: am(expr, &mut f)?, idx: am(idx, f)?, returns_scalar },
+            Gather { expr, idx, returns_scalar, null_on_oob } => Gather {
+                expr: am(expr, &mut f)?,
+                idx: am(idx, f)?,
+                returns_scalar,
+                null_on_oob,
+            },
             SortBy { expr, by, sort_options } => SortBy { expr: am(expr, &mut f)?, by: by.into_iter().map(f).collect::<Result<_, _>>()?, sort_options },
             Agg(agg_expr) => Agg(match agg_expr {
                 Min { input, propagate_nans } => Min { input: am(input, f)?, propagate_nans },
                 Max { input, propagate_nans } => Max { input: am(input, f)?, propagate_nans },
+                MinBy { input, by } => MinBy { input: am(input, &mut f)?, by: am(by, f)? },
+                MaxBy { input, by } =>  MaxBy { input: am(input, &mut f)?, by: am(by, f)? },
                 Median(x) => Median(am(x, f)?),
                 NUnique(x) => NUnique(am(x, f)?),
                 First(x) => First(am(x, f)?),
@@ -71,6 +78,7 @@ impl TreeWalker for Expr {
                 AggGroups(x) => AggGroups(am(x, f)?),
                 Std(x, ddf) => Std(am(x, f)?, ddf),
                 Var(x, ddf) => Var(am(x, f)?, ddf),
+
             }),
             Ternary { predicate, truthy, falsy } => Ternary { predicate: am(predicate, &mut f)?, truthy: am(truthy, &mut f)?, falsy: am(falsy, f)? },
             Function { input, function } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function },
@@ -91,6 +99,10 @@ impl TreeWalker for Expr {
                 AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options, fmt_str }
             },
             Eval { expr: input, evaluation, variant } => Eval { expr: am(input, &mut f)?, evaluation: am(evaluation, f)?, variant },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr: input, evaluation } => {
+                StructEval { expr: am(input, &mut f)?, evaluation: evaluation.into_iter().map(f).collect::<Result<_, _>>()?  }
+            },
             SubPlan(_, _) => self,
             Selector(_) => self,
         };
@@ -238,7 +250,43 @@ impl AExpr {
                     all_same_name
                 }
             },
-            (AnonymousFunction { .. }, AnonymousFunction { .. }) => false,
+            (
+                AnonymousFunction {
+                    function: l1,
+                    options: l2,
+                    fmt_str: l3,
+                    input: _,
+                },
+                AnonymousFunction {
+                    function: r1,
+                    options: r2,
+                    fmt_str: r3,
+                    input: _,
+                },
+            ) => {
+                l2 == r2 && l3 == r3 && {
+                    use LazySerde as L;
+                    match (l1, r1) {
+                        // We only check the pointers, so this works for python
+                        // functions that are on the same address.
+                        (L::Deserialized(l0), L::Deserialized(r0)) => l0 == r0,
+                        (L::Bytes(l0), L::Bytes(r0)) => l0 == r0,
+                        (
+                            L::Named {
+                                name: l_name,
+                                payload: l_payload,
+                                value: l_value,
+                            },
+                            L::Named {
+                                name: r_name,
+                                payload: r_payload,
+                                value: r_value,
+                            },
+                        ) => l_name == r_name && l_payload == r_payload && l_value == r_value,
+                        _ => false,
+                    }
+                }
+            },
             (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
             _ => false,
         }

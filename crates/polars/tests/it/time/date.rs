@@ -25,7 +25,7 @@ fn test_datetime_parse_overflow_7631() {
     );
     let actual = df.collect().unwrap();
 
-    let expected = DataFrame::new(vec![
+    let expected = DataFrame::new_infer_height(vec![
         Column::new("year".into(), &[2020, 2021, 2022]),
         Column::new("month".into(), &[1, 2, 3]),
         Column::new("day".into(), &[1, 2, 3]),

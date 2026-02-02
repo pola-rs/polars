@@ -6,8 +6,7 @@ from polars._utils.unstable import issue_unstable_warning
 
 if TYPE_CHECKING:
     from collections.abc import Collection
-
-    from typing_extensions import TypeAlias
+    from typing import TypeAlias
 
 
 FloatCastOption: TypeAlias = Literal["upcast", "downcast"]

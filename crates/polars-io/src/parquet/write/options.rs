@@ -1,13 +1,13 @@
+use arrow::datatypes::ArrowSchemaRef;
 use polars_parquet::write::{
     BrotliLevel, CompressionOptions, GzipLevel, StatisticsOptions, ZstdLevel,
 };
-use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::KeyValueMetadata;
 
-#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[derive(Default, Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct ParquetWriteOptions {
@@ -21,40 +21,7 @@ pub struct ParquetWriteOptions {
     pub data_page_size: Option<usize>,
     /// Custom file-level key value metadata
     pub key_value_metadata: Option<KeyValueMetadata>,
-
-    /// Per-field overwrites for writing properties.
-    pub field_overwrites: Vec<ParquetFieldOverwrites>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub enum ChildFieldOverwrites {
-    /// Flat datatypes
-    None,
-    /// List / Array
-    ListLike(Box<ParquetFieldOverwrites>),
-    Struct(Vec<ParquetFieldOverwrites>),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct MetadataKeyValue {
-    pub key: PlSmallStr,
-    pub value: Option<PlSmallStr>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct ParquetFieldOverwrites {
-    pub name: Option<PlSmallStr>,
-    pub children: ChildFieldOverwrites,
-
-    pub required: Option<bool>,
-    pub field_id: Option<i32>,
-    pub metadata: Option<Vec<MetadataKeyValue>>,
+    pub arrow_schema: Option<ArrowSchemaRef>,
 }
 
 /// The compression strategy to use for writing Parquet files.

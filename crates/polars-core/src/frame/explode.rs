@@ -65,22 +65,14 @@ impl DataFrame {
     ) -> PolarsResult<DataFrame> {
         polars_ensure!(!columns.is_empty(), InvalidOperation: "no columns provided in explode");
         let mut df = self.clone();
-        if self.is_empty() {
+        if self.shape_has_zero() {
             for s in &columns {
-                df.with_column(s.as_materialized_series().explode(options)?)?;
+                df.with_column(s.as_materialized_series().explode(options)?.into_column())?;
             }
             return Ok(df);
         }
-        columns.sort_by(|sa, sb| {
-            self.check_name_to_idx(sa.name().as_str())
-                .expect("checked above")
-                .partial_cmp(
-                    &self
-                        .check_name_to_idx(sb.name().as_str())
-                        .expect("checked above"),
-                )
-                .expect("cmp usize -> Ordering")
-        });
+
+        columns.sort_by_key(|c| self.try_get_column_index(c.name()).unwrap());
 
         // first remove all the exploded columns
         for s in &columns {
@@ -100,9 +92,13 @@ impl DataFrame {
             df: &mut DataFrame,
             exploded: Column,
         ) -> PolarsResult<()> {
-            if exploded.len() == df.height() || df.width() == 0 {
-                let col_idx = original_df.check_name_to_idx(exploded.name().as_str())?;
-                df.columns.insert(col_idx, exploded);
+            if df.shape() == (0, 0) {
+                unsafe { df.set_height(exploded.len()) };
+            }
+
+            if exploded.len() == df.height() {
+                let col_idx = original_df.try_get_column_index(exploded.name().as_str())?;
+                unsafe { df.columns_mut() }.insert(col_idx, exploded);
             } else {
                 polars_bail!(
                     ShapeMismatch: "exploded column(s) {:?} doesn't have the same length: {} \
@@ -174,7 +170,7 @@ impl DataFrame {
     ///
     /// let s0 = Series::new("B".into(), [1, 2, 3]);
     /// let s1 = Series::new("C".into(), [1, 1, 1]);
-    /// let df = DataFrame::new(vec![list, s0, s1])?;
+    /// let df = DataFrame::new_infer_height(vec![list, s0, s1])?;
     /// let exploded = df.explode(["foo"])?;
     ///
     /// println!("{:?}", df);
@@ -223,11 +219,11 @@ impl DataFrame {
     pub fn explode<I, S>(&self, columns: I, options: ExplodeOptions) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
-        S: Into<PlSmallStr>,
+        S: AsRef<str>,
     {
         // We need to sort the column by order of original occurrence. Otherwise the insert by index
         // below will panic
-        let columns = self.select_columns(columns)?;
+        let columns = self.select_to_vec(columns)?;
         self.explode_impl(columns, options)
     }
 }
@@ -247,7 +243,7 @@ mod test {
 
         let s0 = Column::new(PlSmallStr::from_static("B"), [1, 2, 3]);
         let s1 = Column::new(PlSmallStr::from_static("C"), [1, 1, 1]);
-        let df = DataFrame::new(vec![list, s0, s1]).unwrap();
+        let df = DataFrame::new_infer_height(vec![list, s0, s1]).unwrap();
         let exploded = df
             .explode(
                 ["foo"],
@@ -301,7 +297,7 @@ mod test {
         );
         let s0 = Column::new(PlSmallStr::from_static("B"), [1, 2, 3]);
         let s1 = Column::new(PlSmallStr::from_static("C"), [1, 1, 1]);
-        let df = DataFrame::new(vec![list, s0.clone(), s1.clone()])?;
+        let df = DataFrame::new_infer_height(vec![list, s0.clone(), s1.clone()])?;
 
         let out = df.explode(
             ["foo"],
@@ -326,7 +322,7 @@ mod test {
                 s1.as_materialized_series().clone(),
             ],
         );
-        let df = DataFrame::new(vec![list, s0, s1])?;
+        let df = DataFrame::new_infer_height(vec![list, s0, s1])?;
         let out = df.explode(
             ["foo"],
             ExplodeOptions {
@@ -350,7 +346,7 @@ mod test {
         let s0 = Series::new(PlSmallStr::from_static("a"), &[1i32, 2, 3]);
         let s1 = Series::new(PlSmallStr::from_static("b"), &[1i32, 1, 1]);
         let list = Column::new(PlSmallStr::from_static("foo"), &[s0, s1]);
-        let df = DataFrame::new(vec![list])?;
+        let df = DataFrame::new_infer_height(vec![list])?;
 
         let out = df.explode(
             ["foo"],

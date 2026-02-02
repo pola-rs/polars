@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import io
 from datetime import datetime
-from typing import IO, Any, Callable
+from typing import IO, TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @pytest.mark.parametrize(

@@ -1,13 +1,13 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek, SeekFrom};
 
+use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 
 use super::super::compression;
 use super::super::endianness::is_native_little_endian;
 use super::{Compression, IpcBuffer, Node, OutOfSpecKind};
 use crate::bitmap::Bitmap;
-use crate::buffer::Buffer;
 use crate::types::NativeType;
 
 fn read_swapped<T: NativeType, R: Read + Seek>(
@@ -101,12 +101,13 @@ fn read_uncompressed_buffer<T: NativeType, R: Read + Seek>(
 fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
     reader: &mut R,
     buffer_length: usize,
-    output_length: Option<usize>,
+    // Upper bound for the number of rows to be returned.
+    row_limit: Option<usize>,
     is_little_endian: bool,
     compression: Compression,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Vec<T>> {
-    if output_length == Some(0) {
+    if row_limit == Some(0) {
         return Ok(vec![]);
     }
 
@@ -135,11 +136,9 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
         })?
     };
 
-    polars_ensure!(decompressed_bytes.is_multiple_of(size_of::<T>()), ComputeError: "Malformed IPC file: got decompressed buffer length which is not a multiple of the data type");
-    let real_output_len = decompressed_bytes / size_of::<T>();
-    if let Some(output_length) = output_length {
-        polars_ensure!(output_length == real_output_len, ComputeError: "Malformed IPC file: got unexpected decompressed buffer size {real_output_len}, expected {output_length}");
-    }
+    polars_ensure!(decompressed_bytes.is_multiple_of(size_of::<T>()),
+            ComputeError: "Malformed IPC file: got decompressed buffer length which is not a multiple of the data type");
+    let n_rows_in_array = decompressed_bytes / size_of::<T>();
 
     if decompressed_len_field == -1 {
         return Ok(bytemuck::cast_slice(&scratch[8..]).to_vec());
@@ -147,7 +146,12 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
 
     // It is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
     // see also https://github.com/MaikKlein/ash/issues/354#issue-781730580
-    let mut buffer = vec![T::default(); real_output_len];
+
+    let n_rows_exact = row_limit
+        .map(|limit| std::cmp::min(limit, n_rows_in_array))
+        .unwrap_or(n_rows_in_array);
+
+    let mut buffer = vec![T::default(); n_rows_exact];
     let out_slice = bytemuck::cast_slice_mut(&mut buffer);
 
     let compression = compression
@@ -261,14 +265,14 @@ pub fn read_buffer<T: NativeType, R: Read + Seek>(
 }
 
 fn read_uncompressed_bitmap<R: Read + Seek>(
-    length: usize,
+    row_limit: usize,
     bytes: usize,
     reader: &mut R,
 ) -> PolarsResult<Vec<u8>> {
-    if length > bytes * 8 {
+    if row_limit > bytes * 8 {
         polars_bail!(
             oos = OutOfSpecKind::InvalidBitmap {
-                length,
+                length: row_limit,
                 number_of_bits: bytes * 8,
             }
         )
@@ -287,7 +291,7 @@ fn read_uncompressed_bitmap<R: Read + Seek>(
 }
 
 fn read_compressed_bitmap<R: Read + Seek>(
-    length: usize,
+    row_limit: usize,
     bytes: usize,
     compression: Compression,
     reader: &mut R,
@@ -309,7 +313,11 @@ fn read_compressed_bitmap<R: Read + Seek>(
         })?
     };
 
-    polars_ensure!(length.div_ceil(8) == decompressed_bytes, ComputeError: "Malformed IPC file: got unexpected decompressed output length {decompressed_bytes}, expected {}", length.div_ceil(8));
+    // In addition to the slicing use case, we allow for excess bytes in untruncated buffers,
+    // see https://github.com/pola-rs/polars/issues/26126
+    // and https://github.com/apache/arrow/issues/48883
+    polars_ensure!(decompressed_bytes >= row_limit.div_ceil(8),
+        ComputeError: "Malformed IPC file: got unexpected decompressed output length {decompressed_bytes}, expected {}", row_limit.div_ceil(8));
 
     if decompressed_len_field == -1 {
         return Ok(bytemuck::cast_slice(&scratch[8..]).to_vec());
@@ -336,7 +344,7 @@ fn read_compressed_bitmap<R: Read + Seek>(
 
 pub fn read_bitmap<R: Read + Seek>(
     buf: &mut VecDeque<IpcBuffer>,
-    length: usize,
+    row_limit: usize,
     reader: &mut R,
     block_offset: u64,
     _: bool,
@@ -360,12 +368,12 @@ pub fn read_bitmap<R: Read + Seek>(
     reader.seek(SeekFrom::Start(block_offset + offset))?;
 
     let buffer = if let Some(compression) = compression {
-        read_compressed_bitmap(length, bytes, compression, reader, scratch)
+        read_compressed_bitmap(row_limit, bytes, compression, reader, scratch)
     } else {
-        read_uncompressed_bitmap(length, bytes, reader)
+        read_uncompressed_bitmap(row_limit, bytes, reader)
     }?;
 
-    Bitmap::try_new(buffer, length)
+    Bitmap::try_new(buffer, row_limit)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -383,12 +391,12 @@ pub fn read_validity<R: Read + Seek>(
         .length()
         .try_into()
         .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
-    let length = limit.map(|limit| limit.min(length)).unwrap_or(length);
+    let row_limit = limit.map(|limit| limit.min(length)).unwrap_or(length);
 
     Ok(if field_node.null_count() > 0 {
         Some(read_bitmap(
             buffers,
-            length,
+            row_limit,
             reader,
             block_offset,
             is_little_endian,

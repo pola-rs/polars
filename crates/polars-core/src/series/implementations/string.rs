@@ -69,6 +69,16 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
         self.0.agg_max(groups)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        self.0.agg_arg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        self.0.agg_arg_max(groups)
+    }
+
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         NumOpsDispatch::subtract(&self.0, rhs)
     }

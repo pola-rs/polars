@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Literal,
     TypeVar,
     overload,
@@ -43,7 +42,13 @@ from polars.datatypes import (
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, MutableMapping, Reversible
+    from collections.abc import (
+        Callable,
+        Iterator,
+        MutableMapping,
+        Reversible,
+    )
+    from typing import ParamSpec, Protocol, TypeGuard
 
     from polars import DataFrame, Expr
     from polars._typing import PolarsDataType, SizeUnit
@@ -53,13 +58,13 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import TypeIs
 
-    if sys.version_info >= (3, 10):
-        from typing import ParamSpec, TypeGuard
-    else:
-        from typing_extensions import ParamSpec, TypeGuard
-
     P = ParamSpec("P")
     T = TypeVar("T")
+
+    class IdentityFunction(Protocol):
+        # Use as a return type for signature preserving decorators
+        def __call__(self, fn: Callable[P, T], /) -> Callable[P, T]: ...
+
 
 # note: reversed views don't match as instances of MappingView
 if sys.version_info >= (3, 11):

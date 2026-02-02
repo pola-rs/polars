@@ -235,8 +235,8 @@ where
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
     let out = if left_by.width() == 1 {
-        let left_by_s = left_by.get_columns()[0].to_physical_repr();
-        let right_by_s = right_by.get_columns()[0].to_physical_repr();
+        let left_by_s = left_by.columns()[0].to_physical_repr();
+        let right_by_s = right_by.columns()[0].to_physical_repr();
         let left_dtype = left_by_s.dtype();
         let right_dtype = right_by_s.dtype();
         polars_ensure!(left_dtype == right_dtype,
@@ -308,7 +308,7 @@ where
             },
         }
     } else {
-        for (lhs, rhs) in left_by.get_columns().iter().zip(right_by.get_columns()) {
+        for (lhs, rhs) in left_by.columns().iter().zip(right_by.columns()) {
             polars_ensure!(lhs.dtype() == rhs.dtype(),
                 ComputeError: "mismatching dtypes in 'by' parameter of asof-join: `{}` and `{}`", lhs.dtype(), rhs.dtype()
             );
@@ -554,15 +554,12 @@ pub trait AsofJoinBy: IntoDf {
         let mut left_by = self_df.select(left_by)?;
         let mut right_by = other_df.select(right_by)?;
 
-        unsafe {
-            for (l, r) in left_by
-                .get_columns_mut()
-                .iter_mut()
-                .zip(right_by.get_columns_mut().iter_mut())
-            {
-                *l = l.to_physical_repr();
-                *r = r.to_physical_repr();
-            }
+        for (l, r) in unsafe { left_by.columns_mut() }
+            .iter_mut()
+            .zip(unsafe { right_by.columns_mut() }.iter_mut())
+        {
+            *l = l.to_physical_repr();
+            *r = r.to_physical_repr();
         }
 
         let right_join_tuples = dispatch_join_type(
@@ -581,12 +578,12 @@ pub trait AsofJoinBy: IntoDf {
         }
 
         let cols = other_df
-            .get_columns()
+            .columns()
             .iter()
             .filter(|s| !drop_these.contains(&s.name()))
             .cloned()
             .collect();
-        let proj_other_df = unsafe { DataFrame::new_no_checks(other_df.height(), cols) };
+        let proj_other_df = unsafe { DataFrame::new_unchecked(other_df.height(), cols) };
 
         let left = self_df.clone();
 

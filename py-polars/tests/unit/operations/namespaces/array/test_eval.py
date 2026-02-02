@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from typing import Callable
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def set_nulls(s: pl.Series, mask: list[bool]) -> pl.Series:

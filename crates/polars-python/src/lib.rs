@@ -10,8 +10,6 @@
 )] // Maybe be caused by some feature
 // combinations
 
-#[cfg(feature = "csv")]
-pub mod batched_csv;
 #[cfg(feature = "catalog")]
 pub mod catalog;
 #[cfg(feature = "polars_cloud_client")]

@@ -9,6 +9,7 @@ repository = { workspace = true }
 description = "Enable running Polars workloads in Python"
 
 [dependencies]
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["python"] }
 polars-dtype = { workspace = true }
@@ -42,7 +43,7 @@ ndarray = { workspace = true }
 num-traits = { workspace = true }
 numpy = { workspace = true }
 parking_lot = { workspace = true }
-pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "chrono-tz", "multiple-pymethods"] }
+pyo3 = { workspace = true, features = ["abi3-py310", "chrono", "chrono-tz", "multiple-pymethods"] }
 rayon = { workspace = true }
 recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
@@ -139,12 +140,20 @@ c_api = []
 
 # Features below are only there to enable building a slim binary during development.
 avro = ["polars/avro"]
+async = ["polars-lazy/async", "polars-io/async"]
 catalog = ["polars-lazy/catalog"]
 parquet = ["polars/parquet", "polars-parquet", "polars-mem-engine/parquet"]
 ipc = ["polars/ipc", "polars-mem-engine/ipc"]
 ipc_streaming = ["polars/ipc_streaming"]
 is_in = ["polars/is_in"]
-json = ["polars/serde", "serde_json", "polars/json", "polars-utils/serde", "polars-mem-engine/json"]
+json = [
+  "polars/serde",
+  "polars-buffer/serde",
+  "serde_json",
+  "polars/json",
+  "polars-utils/serde",
+  "polars-mem-engine/json",
+]
 scan_lines = ["polars/scan_lines", "polars-mem-engine/scan_lines"]
 trigonometry = ["polars/trigonometry"]
 sign = ["polars/sign"]
@@ -279,6 +288,7 @@ pymethods = []
 allow_unused = []
 
 full = [
+  "async",
   "pymethods",
   "optimizations",
   "io",

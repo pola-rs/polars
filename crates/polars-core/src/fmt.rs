@@ -590,7 +590,7 @@ impl Display for DataFrame {
         {
             let height = self.height();
             assert!(
-                self.columns.iter().all(|s| s.len() == height),
+                self.columns().iter().all(|s| s.len() == height),
                 "The column lengths in the DataFrame are not equal."
             );
 
@@ -666,7 +666,7 @@ impl Display for DataFrame {
 
                     for i in 0..(half + rest) {
                         let row = self
-                            .get_columns()
+                            .columns()
                             .iter()
                             .map(|c| c.str_value(i).unwrap())
                             .collect();
@@ -687,7 +687,7 @@ impl Display for DataFrame {
 
                     for i in (height - half)..height {
                         let row = self
-                            .get_columns()
+                            .columns()
                             .iter()
                             .map(|c| c.str_value(i).unwrap())
                             .collect();
@@ -728,7 +728,7 @@ impl Display for DataFrame {
                     }
                 }
             } else if height > 0 {
-                let dots: Vec<String> = vec![ellipsis; self.columns.len()];
+                let dots: Vec<String> = vec![ellipsis; self.width()];
                 table.add_row(dots);
             }
             let tbl_fallback_width = 100;

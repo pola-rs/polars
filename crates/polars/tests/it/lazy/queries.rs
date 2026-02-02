@@ -7,7 +7,7 @@ fn test_with_duplicate_column_empty_df() {
     let a = Int32Chunked::from_slice("a".into(), &[]);
 
     assert_eq!(
-        DataFrame::new(vec![a.into_column()])
+        DataFrame::new_infer_height(vec![a.into_column()])
             .unwrap()
             .lazy()
             .with_columns([lit(true).alias("a")])
@@ -247,7 +247,7 @@ fn test_group_by_on_lists() -> PolarsResult<()> {
     builder.append_series(s1.as_materialized_series()).unwrap();
     let s2 = builder.finish().into_column();
 
-    let df = DataFrame::new(vec![s1, s2])?;
+    let df = DataFrame::new_infer_height(vec![s1, s2])?;
     let out = df
         .clone()
         .lazy()

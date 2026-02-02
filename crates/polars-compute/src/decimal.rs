@@ -457,7 +457,7 @@ fn divrem_256_128(lo: u128, hi: u128, d: u128) -> Option<(u128, u128)> {
 /// Returns whether the given Decimal128 fits in the given precision.
 #[inline]
 pub fn dec128_fits(x: i128, p: usize) -> bool {
-    x.abs() < POW10_I128[p]
+    (-POW10_I128[p] < x) & (x < POW10_I128[p])
 }
 
 #[inline]
@@ -1063,6 +1063,7 @@ mod test {
     }
 
     #[test]
+    #[ignore = "very slow, meant for development"]
     fn test_str_to_dec_against_ref() {
         let exps = [0, 1, 3, 20, 50, 150];
         let digits = [0, 4, 5, 6, 9];
@@ -1097,6 +1098,7 @@ mod test {
     }
 
     #[test]
+    #[ignore = "very slow, meant for development"]
     fn test_str_dec_roundtrip() {
         let mut buf = DecimalFmtBuffer::new();
         for &p in &INTERESTING_SCALE_PREC {
@@ -1120,6 +1122,7 @@ mod test {
     }
 
     #[test]
+    #[ignore = "very slow, meant for development"]
     fn test_mul() {
         for &p in &INTERESTING_SCALE_PREC {
             for &s in &INTERESTING_SCALE_PREC {
@@ -1145,6 +1148,7 @@ mod test {
     }
 
     #[test]
+    #[ignore = "very slow, meant for development"]
     fn test_div() {
         for &p in &INTERESTING_SCALE_PREC {
             for &s in &INTERESTING_SCALE_PREC {

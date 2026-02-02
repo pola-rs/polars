@@ -86,7 +86,7 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
             Series::from_chunk_and_dtype(self.column_name.clone(), values.to_boxed(), &self.dtype)
                 .unwrap();
         let column = series.into_column();
-        let df = unsafe { DataFrame::new_no_checks(values.len(), vec![column]) };
+        let df = unsafe { DataFrame::new_unchecked(values.len(), vec![column]) };
 
         // @TODO: Probably these unwraps should be removed.
         let true_mask = self.expr.evaluate_io(&df).unwrap();
@@ -102,7 +102,7 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
     }
     fn evaluate_null(&self) -> bool {
         let column = Column::full_null(self.column_name.clone(), 1, &self.dtype);
-        let df = unsafe { DataFrame::new_no_checks(1, vec![column]) };
+        let df = unsafe { DataFrame::new_unchecked(1, vec![column]) };
 
         // @TODO: Probably these unwraps should be removed.
         let true_mask = self.expr.evaluate_io(&df).unwrap();
@@ -166,14 +166,14 @@ pub fn apply_predicate(
     predicate: Option<&dyn PhysicalIoExpr>,
     parallel: bool,
 ) -> PolarsResult<()> {
-    if let (Some(predicate), false) = (&predicate, df.get_columns().is_empty()) {
+    if let (Some(predicate), false) = (&predicate, df.columns().is_empty()) {
         let s = predicate.evaluate_io(df)?;
         let mask = s.bool().expect("filter predicates was not of type boolean");
 
         if parallel {
             *df = df.filter(mask)?;
         } else {
-            *df = df._filter_seq(mask)?;
+            *df = df.filter_seq(mask)?;
         }
     }
     Ok(())
@@ -392,7 +392,7 @@ pub trait SkipBatchPredicate: Send + Sync {
         // SAFETY:
         // * Each column is length = 1
         // * We have an IndexSet, so each column name is unique
-        let df = unsafe { DataFrame::new_no_checks(1, columns) };
+        let df = unsafe { DataFrame::new_unchecked(1, columns) };
         Ok(self.evaluate_with_stat_df(&df)?.get_bit(0))
     }
     fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap>;

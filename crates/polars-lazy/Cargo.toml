@@ -12,6 +12,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 arrow = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true, optional = true }
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-expr = { workspace = true }
@@ -50,7 +51,6 @@ parquet = [
   "polars-stream?/parquet",
 ]
 async = [
-  "polars-plan/async",
   "polars-io/cloud",
   "polars-mem-engine/async",
 ]
@@ -119,6 +119,7 @@ dtype-categorical = [
 ]
 dtype-date = [
   "polars-plan/dtype-date",
+  "polars-stream?/dtype-date",
   "polars-time/dtype-date",
   "temporal",
   "polars-expr/dtype-date",
@@ -126,6 +127,7 @@ dtype-date = [
 ]
 dtype-datetime = [
   "polars-plan/dtype-datetime",
+  "polars-stream?/dtype-datetime",
   "polars-time/dtype-datetime",
   "temporal",
   "polars-expr/dtype-datetime",
@@ -134,10 +136,12 @@ dtype-datetime = [
 dtype-decimal = [
   "polars-plan/dtype-decimal",
   "polars-expr/dtype-decimal",
+  "polars-stream?/dtype-decimal",
   "polars-mem-engine/dtype-decimal",
 ]
 dtype-duration = [
   "polars-plan/dtype-duration",
+  "polars-stream?/dtype-duration",
   "polars-time/dtype-duration",
   "temporal",
   "polars-expr/dtype-duration",
@@ -154,7 +158,12 @@ dtype-i16 = [
   "polars-mem-engine/dtype-i16",
   "polars-stream?/dtype-i16",
 ]
-dtype-i128 = ["polars-plan/dtype-i128", "polars-expr/dtype-i128", "polars-stream?/dtype-i128"]
+dtype-i128 = [
+  "polars-plan/dtype-i128",
+  "polars-stream?/dtype-i128",
+  "polars-expr/dtype-i128",
+  "polars-stream?/dtype-i128",
+]
 dtype-i8 = ["polars-plan/dtype-i8", "polars-expr/dtype-i8", "polars-mem-engine/dtype-i8", "polars-stream?/dtype-i8"]
 dtype-struct = [
   "polars-plan/dtype-struct",
@@ -164,6 +173,7 @@ dtype-struct = [
 ]
 dtype-time = [
   "polars-plan/dtype-time",
+  "polars-stream?/dtype-time",
   "polars-time/dtype-time",
   "temporal",
   "polars-expr/dtype-time",
@@ -295,6 +305,7 @@ regex = ["polars-expr/regex"]
 serde = [
   "polars-plan/serde",
   "arrow/serde",
+  "polars-buffer/serde",
   "polars-core/serde-lazy",
   "polars-time?/serde",
   "polars-io/serde",

@@ -497,7 +497,9 @@ def test_add_aggstates_in_binary_expr_24504(
     if n_rows in [1, 2, 3]:
         data = df.to_dict(as_series=False)
         result: dict[int, Any] = {}
-        for gg, ll, rr in zip(data["g"][:n_rows], lhs[2][:n_rows], rhs[2][:n_rows]):
+        for gg, ll, rr in zip(
+            data["g"][:n_rows], lhs[2][:n_rows], rhs[2][:n_rows], strict=True
+        ):
             result.setdefault(gg, []).append(ll + rr)
         if lhs[1] and rhs[1]:
             # expect scalar result

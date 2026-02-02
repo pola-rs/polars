@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import warnings
-from typing import TYPE_CHECKING, Any, Callable, overload
+from typing import TYPE_CHECKING, Any, overload
 
 import polars._reexport as pl
 import polars.functions as F
@@ -36,7 +36,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Awaitable, Collection, Iterable, Sequence
+    from collections.abc import Awaitable, Callable, Collection, Iterable, Sequence
     from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -2009,6 +2009,46 @@ def arg_sort_by(
     )
 
 
+@overload
+def collect_all(
+    lazy_frames: Iterable[LazyFrame],
+    *,
+    type_coercion: bool = True,
+    predicate_pushdown: bool = True,
+    projection_pushdown: bool = True,
+    simplify_expression: bool = True,
+    no_optimization: bool = False,
+    slice_pushdown: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    engine: EngineType = "auto",
+    lazy: Literal[False] = False,
+) -> list[DataFrame]: ...
+
+
+@overload
+def collect_all(
+    lazy_frames: Iterable[LazyFrame],
+    *,
+    type_coercion: bool = True,
+    predicate_pushdown: bool = True,
+    projection_pushdown: bool = True,
+    simplify_expression: bool = True,
+    no_optimization: bool = False,
+    slice_pushdown: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    engine: EngineType = "auto",
+    lazy: Literal[True],
+) -> LazyFrame: ...
+
+
 @deprecate_streaming_parameter()
 @forward_old_opt_flags()
 def collect_all(
@@ -2026,7 +2066,8 @@ def collect_all(
     collapse_joins: bool = True,
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     engine: EngineType = "auto",
-) -> list[DataFrame]:
+    lazy: bool = False,
+) -> list[DataFrame] | LazyFrame:
     """
     Collect multiple LazyFrames at the same time.
 
@@ -2107,6 +2148,13 @@ def collect_all(
         .. note::
            The GPU engine does not support async, or running in the
            background. If either are enabled, then GPU execution is switched off.
+    lazy:
+        Return as LazyFrame that can be collected later.
+        This is only correct if all inputs sink to disk.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Returns
     -------
@@ -2114,10 +2162,20 @@ def collect_all(
         The collected DataFrames, returned in the same order as the input LazyFrames.
 
     """
-    if engine == "streaming":
-        issue_unstable_warning("streaming mode is considered unstable.")
-
     lfs = [lf._ldf for lf in lazy_frames]
+    if lazy:
+        msg = "the `lazy` parameter of `collect_all` is considered unstable."
+        issue_unstable_warning(msg)
+
+        from polars.lazyframe import LazyFrame
+
+        ldf = plr.collect_all_lazy(lfs, optimizations._pyoptflags)
+        lf = LazyFrame._from_pyldf(ldf)
+        return lf
+
+    from polars.lazyframe.frame import _select_engine
+
+    engine = _select_engine(engine)
     out = plr.collect_all(lfs, engine, optimizations._pyoptflags)
 
     # wrap the pydataframes into dataframe

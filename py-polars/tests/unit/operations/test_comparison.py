@@ -29,7 +29,7 @@ def test_comparison_order_null_broadcasting() -> None:
         pl.col("null") >= pl.col("v"),
     ]
 
-    kwargs = {f"out{i}": e for i, e in zip(range(len(exprs)), exprs)}
+    kwargs = {f"out{i}": e for i, e in zip(range(len(exprs)), exprs, strict=True)}
 
     # single value, hits broadcasting branch
     df = pl.DataFrame({"v": [42], "null": [None]})
@@ -505,3 +505,17 @@ def test_compare_list_broadcast_empty_first_chunk_20165(dtype: pl.DataType) -> N
         pl.select(pl.lit(pl.Series([[1], [2]]), dtype=dtype) == pl.lit(s)).to_series(),
         pl.Series([True, False]),
     )
+
+
+def test_date_duration_comparison_error_25517() -> None:
+    date = pl.Series("date", [1], pl.Date)
+    duration = pl.Series("duration", [1], pl.Duration("ns"))
+
+    with pytest.raises(ComputeError, match="cannot compare date with duration"):
+        _ = date > duration
+
+    with pytest.raises(ComputeError, match="cannot compare date with duration"):
+        _ = duration > date
+
+    with pytest.raises(ComputeError, match="cannot compare date with duration"):
+        _ = date == duration

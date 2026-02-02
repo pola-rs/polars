@@ -58,8 +58,9 @@ You can extract data features such as the year or day from a date column using t
 
 ## Mixed offsets
 
-If you have mixed offsets (say, due to crossing daylight saving time), then you can use `utc=True`
-and then convert to your time zone:
+If your data contains datetimes with mixed UTC offsets (for example due to daylight-saving
+transitions), Polars parses them in UTC. You can either pass a target `time_zone` to
+`str.to_datetime`, or call `str.convert_time_zone` after parsing:
 
 {{code_block('user-guide/transformations/time-series/parsing','mixed',['str.to_datetime','dt.convert_time_zone'])}}
 

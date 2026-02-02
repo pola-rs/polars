@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 
 
 def _cluster(iterable: Iterable[Any], n: int = 2) -> Iterable[Any]:
-    return zip(*[iter(iterable)] * n)
+    return zip(*[iter(iterable)] * n, strict=True)
 
 
 _XL_DEFAULT_FLOAT_FORMAT_ = "#,##0.000;[Red]-#,##0.000"
