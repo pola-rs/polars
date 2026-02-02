@@ -616,14 +616,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ArrowSchema> {
             )));
         };
 
-        if field.metadata.is_some_and(|x| !x.is_empty()) {
-            return Err(to_py_err(polars_err!(
-                ComputeError:
-                "not implemented: arrow schema contained schema-level metadata"
-            )));
-        }
+        let mut schema = ArrowSchema::from_iter_check_duplicates(fields).map_err(to_py_err)?;
 
-        let schema = ArrowSchema::from_iter_check_duplicates(fields).map_err(to_py_err)?;
+        if let Some(md) = field.metadata {
+            *schema.metadata_mut() = Arc::unwrap_or_clone(md);
+        }
 
         Ok(Wrap(schema))
     }

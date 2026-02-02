@@ -252,6 +252,10 @@ impl IRFunctionExpr {
                 DataType::UInt64 | DataType::UInt32 => DataType::Int64,
                 DataType::UInt16 => DataType::Int32,
                 DataType::UInt8 => DataType::Int16,
+                #[cfg(feature = "dtype-decimal")]
+                DataType::Decimal(_, scale) => {
+                    DataType::Decimal(polars_compute::decimal::DEC128_MAX_PREC, *scale)
+                },
                 dt => dt.clone(),
             }),
             #[cfg(feature = "pct_change")]
