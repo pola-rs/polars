@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
-use arrow::bitmap::MutableBitmap;
 use polars_core::prelude::{PlHashSet, PlIndexMap};
-use polars_core::schema::Schema;
-use polars_utils::aliases::{InitHashMaps, PlHashMap};
+use polars_utils::aliases::InitHashMaps;
 use polars_utils::arena::{Arena, Node};
 
 use super::aexpr::AExpr;
@@ -41,7 +39,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         let [current_ir, input_ir] = lp_arena.get_many_mut([current, input]);
 
         let IR::HStack {
-            input: current_input,
+            input: _,
             exprs: current_exprs,
             schema: current_schema,
             options: current_options,
@@ -51,10 +49,10 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         };
 
         let IR::HStack {
-            input: input_input,
+            input: _,
             exprs: input_exprs,
             schema: input_schema,
-            options: input_options,
+            options: _,
         } = input_ir
         else {
             continue;
