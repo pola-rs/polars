@@ -441,7 +441,6 @@ features = [
   "nightly",
   "object",
   "offset_by",
-  "panic_on_schema",
   "parquet",
   "pct_change",
   "peaks",
