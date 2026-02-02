@@ -6,7 +6,6 @@ use num_traits::ToBytes;
 use polars_compute::cast::SerPrimitive;
 use polars_error::feature_gated;
 use polars_utils::float16::pf16;
-use polars_utils::total_ord::ToTotalOrd;
 
 use super::*;
 use crate::CHEAP_SERIES_HASH_LIMIT;
@@ -1229,9 +1228,9 @@ impl AnyValue<'_> {
             (Int32(l), Int32(r)) => *l == *r,
             (Int64(l), Int64(r)) => *l == *r,
             (Int128(l), Int128(r)) => *l == *r,
-            (Float16(l), Float16(r)) => l.to_total_ord() == r.to_total_ord(),
-            (Float32(l), Float32(r)) => l.to_total_ord() == r.to_total_ord(),
-            (Float64(l), Float64(r)) => l.to_total_ord() == r.to_total_ord(),
+            (Float16(l), Float16(r)) => *l == *r,
+            (Float32(l), Float32(r)) => *l == *r,
+            (Float64(l), Float64(r)) => *l == *r,
             (String(l), String(r)) => l == r,
             (Binary(l), Binary(r)) => l == r,
             #[cfg(feature = "dtype-time")]
@@ -1318,9 +1317,7 @@ impl AnyValue<'_> {
             },
 
             (l, r) if l.to_i128().is_some() && r.to_i128().is_some() => l.to_i128() == r.to_i128(),
-            (l, r) if l.to_f64().is_some() && r.to_f64().is_some() => {
-                l.to_f64().unwrap().to_total_ord() == r.to_f64().unwrap().to_total_ord()
-            },
+            (l, r) if l.to_f64().is_some() && r.to_f64().is_some() => l.to_f64() == r.to_f64(),
 
             (_, _) => {
                 unimplemented!(
@@ -1386,9 +1383,9 @@ impl PartialOrd for AnyValue<'_> {
             (Int32(l), Int32(r)) => l.partial_cmp(r),
             (Int64(l), Int64(r)) => l.partial_cmp(r),
             (Int128(l), Int128(r)) => l.partial_cmp(r),
-            (Float16(l), Float16(r)) => Some(l.tot_cmp(r)),
-            (Float32(l), Float32(r)) => Some(l.tot_cmp(r)),
-            (Float64(l), Float64(r)) => Some(l.tot_cmp(r)),
+            (Float16(l), Float16(r)) => l.partial_cmp(r),
+            (Float32(l), Float32(r)) => l.partial_cmp(r),
+            (Float64(l), Float64(r)) => l.partial_cmp(r),
             (String(l), String(r)) => l.partial_cmp(r),
             (Binary(l), Binary(r)) => l.partial_cmp(r),
             #[cfg(feature = "dtype-date")]
