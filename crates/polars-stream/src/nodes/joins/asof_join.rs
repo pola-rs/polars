@@ -1,23 +1,19 @@
 use std::collections::VecDeque;
-use std::sync::atomic::AtomicUsize;
 
 use polars_core::prelude::*;
 use polars_core::utils::Container;
 use polars_ops::frame::{AsOfOptions, AsofStrategy, JoinArgs, JoinType};
 use polars_utils::format_pl_smallstr;
-use polars_utils::itertools::Itertools;
-use polars_utils::parma::raw::Key;
 
+use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
+use crate::async_primitives::distributor_channel as dc;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::Morsel;
 use crate::nodes::ComputeNode;
-use crate::nodes::io_sources::multi_scan::reader_interface::output;
 use crate::nodes::joins::utils::DataFrameBuffer;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
-
-// TODO [amber]: Distribute the AsOf work across a pool of workers
 
 pub const KEY_COL_NAME: &'static str = "__POLARS_JOIN_KEY";
 
@@ -123,18 +119,15 @@ impl ComputeNode for AsOfJoinNode {
         &mut self,
         recv: &mut [PortState],
         send: &mut [PortState],
-        state: &StreamingExecutionState,
+        _state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         assert!(recv.len() == 2 && send.len() == 1);
-
-        let left_input_channel_done = recv[0] == PortState::Done;
-        let right_input_channel_done = recv[1] == PortState::Done;
 
         if send[0] == PortState::Done {
             self.state = AsOfJoinState::Done;
         }
 
-        if self.state == AsOfJoinState::Running && left_input_channel_done {
+        if self.state == AsOfJoinState::Running && recv[0] == PortState::Done {
             self.state = AsOfJoinState::FlushInputBuffer;
         }
 
@@ -188,7 +181,7 @@ impl ComputeNode for AsOfJoinNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        state: &'s StreamingExecutionState,
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(recv_ports.len() == 2 && send_ports.len() == 1);
@@ -201,22 +194,29 @@ impl ComputeNode for AsOfJoinNode {
                     _ => None,
                 };
                 let recv_right = recv_ports[1].take().map(RecvPort::serial);
-                let send = send_ports[0].take().unwrap().serial();
+                let send = send_ports[0].take().unwrap().parallel();
+                let (distributor, dist_recv) =
+                    dc::distributor_channel(send.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
                 let left_buffer = &mut self.left_buffer;
                 let right_buffer = &mut self.right_buffer;
                 let last_left_row = &mut self.last_left_row;
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                    process_asof_join_task(
+                    distribute_work_task(
                         recv_left,
                         recv_right,
-                        send,
+                        distributor,
                         left_buffer,
                         right_buffer,
                         last_left_row,
                         params,
                     )
-                    .await?;
-                    Ok(())
+                    .await
+                }));
+
+                join_handles.extend(dist_recv.into_iter().zip(send).map(|(recv, send)| {
+                    scope.spawn_task(TaskPriority::High, async move {
+                        compute_and_emit_task(recv, send, params).await
+                    })
                 }));
             },
             AsOfJoinState::Done => {
@@ -241,10 +241,10 @@ where
     }
 }
 
-async fn process_asof_join_task(
+async fn distribute_work_task(
     mut recv_left: Option<PortReceiver>,
     mut recv_right: Option<PortReceiver>,
-    mut send: PortSender,
+    mut distributor: dc::Sender<(Morsel, DataFrameBuffer, bool)>,
     left_buffer: &mut VecDeque<Morsel>,
     right_buffer: &mut DataFrameBuffer,
     last_left_row: &mut Option<DataFrame>,
@@ -263,9 +263,8 @@ async fn process_asof_join_task(
         }
     };
 
-    while let Ok(morsel) = recv_left_morsel(recv_left.as_mut()).await {
-        let (mut left_df, seq, st, wt) = morsel.into_inner();
-        while need_more_right_side(&left_df, right_buffer, params)? && !right_done {
+    while let Ok(mut morsel) = recv_left_morsel(recv_left.as_mut()).await {
+        while need_more_right_side(morsel.df(), right_buffer, params)? && !right_done {
             if let Some(ref mut recv) = recv_right
                 && let Ok(morsel_right) = recv.recv().await
             {
@@ -273,10 +272,6 @@ async fn process_asof_join_task(
             } else {
                 // The right pipe is empty at this stage, we will need to wait for
                 // a new stage and try again.
-                let mut morsel = Morsel::new(left_df, seq, st);
-                if let Some(wt) = wt {
-                    morsel.set_consume_token(wt);
-                }
                 left_buffer.push_back(morsel);
                 stop_and_buffer_pipe_contents(recv_left.as_mut(), |m| left_buffer.push_back(m))
                     .await;
@@ -284,48 +279,16 @@ async fn process_asof_join_task(
             }
         }
 
-        let right_df = right_buffer.clone().into_df();
-        {
-            // Compute AsOf join
-            let mut drop_first_out_row = false;
-            if let Some(llr) = last_left_row.take() {
-                left_df = llr.vstack(&left_df).unwrap();
-                drop_first_out_row = true;
-            }
-
-            let left_key = left_df.column(&params.left.key_col).unwrap();
-            let right_key = right_df.column(&params.right.key_col).unwrap();
-            let mut out = polars_ops::frame::AsofJoin::_join_asof(
-                &left_df,
-                &right_df,
-                left_key.as_materialized_series(),
-                right_key.as_materialized_series(),
-                options.strategy,
-                options.tolerance.clone().map(Scalar::into_value),
-                params.args.suffix.clone(),
-                None,
-                params.args.coalesce.coalesce(&params.args.how),
-                options.allow_eq,
-                options.check_sortedness,
-            )
-            .unwrap();
-
-            let right_key_col_name =
-                format_pl_smallstr!("{}{}", KEY_COL_NAME, params.args.suffix());
-            out = out.drop_many([KEY_COL_NAME, &right_key_col_name]);
-
-            if drop_first_out_row {
-                out = out.slice(1, out.height() - 1);
-            }
-
-            let mut m = Morsel::new(out, seq, st);
-            if let Some(wt) = wt {
-                m.set_consume_token(wt);
-            }
-            if send.send(m).await.is_err() {
-                return Ok(());
-            }
+        let mut drop_first_out_row = false;
+        if let Some(llr) = last_left_row.take() {
+            *(morsel.df_mut()) = llr.vstack(morsel.df()).unwrap();
+            drop_first_out_row = true;
         }
+        let left_df = morsel.df().clone();
+        distributor
+            .send((morsel, right_buffer.clone(), drop_first_out_row))
+            .await
+            .unwrap();
 
         // The Backward strategy keeps the position of the last non-null &&
         // non-NaN value in its internal state, which is emitted whenever the
@@ -427,4 +390,49 @@ fn get_last_total_ord_row(
         debug_assert!(!is_partial_ord(&left_key.get(first_nan_idx - 1).unwrap()));
         Ok(Some(left.slice((first_nan_idx - 1) as i64, 1)))
     }
+}
+
+async fn compute_and_emit_task(
+    mut dist_recv: dc::Receiver<(Morsel, DataFrameBuffer, bool)>,
+    mut send: PortSender,
+    params: &AsOfJoinParams,
+) -> PolarsResult<()> {
+    let options = params.as_of_options();
+    while let Ok((morsel, right_buffer, drop_first_out_row)) = dist_recv.recv().await {
+        let (left_df, seq, st, wt) = morsel.into_inner();
+        let right_df = right_buffer.into_df();
+
+        let left_key = left_df.column(&params.left.key_col).unwrap();
+        let right_key = right_df.column(&params.right.key_col).unwrap();
+        let mut out = polars_ops::frame::AsofJoin::_join_asof(
+            &left_df,
+            &right_df,
+            left_key.as_materialized_series(),
+            right_key.as_materialized_series(),
+            options.strategy,
+            options.tolerance.clone().map(Scalar::into_value),
+            params.args.suffix.clone(),
+            None,
+            params.args.coalesce.coalesce(&params.args.how),
+            options.allow_eq,
+            options.check_sortedness,
+        )
+        .unwrap();
+
+        let right_key_col_name = format_pl_smallstr!("{}{}", KEY_COL_NAME, params.args.suffix());
+        out = out.drop_many([KEY_COL_NAME, &right_key_col_name]);
+
+        if drop_first_out_row {
+            out = out.slice(1, out.height() - 1);
+        }
+
+        let mut m = Morsel::new(out, seq, st);
+        if let Some(wt) = wt {
+            m.set_consume_token(wt);
+        }
+        if send.send(m).await.is_err() {
+            return Ok(());
+        }
+    }
+    Ok(())
 }

@@ -1,10 +1,8 @@
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
 
 use polars_core::POOL;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
-use polars_core::utils::Container;
 use polars_ops::frame::merge_join::*;
 use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_utils::UnitVec;
