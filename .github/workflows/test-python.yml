@@ -161,3 +161,23 @@ jobs:
             pip uninstall "$d" -y
             python -c 'import polars'
           done
+
+      # Run on Narwhals test suite.
+      # We skip tests in "tests/testing/" and "tests/expr_and_series/is_close_test.py"
+      # See related issue: https://github.com/pola-rs/polars/issues/19692
+      - name: Clone & install Narwhals 
+        run: |
+          git clone https://github.com/narwhals-dev/narwhals.git --depth=1
+          cd narwhals
+          uv pip install -e . --group tests
+          git log
+      - name: Run Narwhals test suite (default engine)
+        run: |
+          cd narwhals
+          pytest tests --constructors "polars[eager],polars[lazy]" --runslow --ignore "tests/testing/" --ignore "tests/expr_and_series/is_close_test.py"
+      - name: Run Narwhals test suite (streaming engine)
+        env:
+          NARWHALS_POLARS_NEW_STREAMING: true
+        run: |
+          cd narwhals
+          pytest tests --constructors "polars[eager],polars[lazy]" --runslow --ignore "tests/testing/" --ignore "tests/expr_and_series/is_close_test.py"
