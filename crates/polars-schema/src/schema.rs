@@ -312,7 +312,7 @@ impl<Field, Metadata> Schema<Field, Metadata> {
     pub fn sort_by_key<T, F>(&mut self, sort_key: F)
     where
         T: Ord,
-        F: FnMut(&PlSmallStr, &D) -> T,
+        F: FnMut(&PlSmallStr, &Field) -> T,
     {
         self.fields.sort_by_key(sort_key);
     }
