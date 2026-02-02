@@ -249,6 +249,37 @@ pub(crate) fn det_join_schema(
     }
 }
 
+pub(crate) fn validate_arrow_schema_conversion(
+    input_schema: &Schema,
+    expected_arrow_schema: &ArrowSchema,
+    compat_level: CompatLevel,
+) -> PolarsResult<()> {
+    polars_ensure!(
+        input_schema.len() == expected_arrow_schema.len()
+        && input_schema
+            .iter_names()
+            .zip(expected_arrow_schema.iter_names())
+            .all(|(l, r)| l == r),
+        SchemaMismatch:
+        "schema names in arrow_schema differ: {:?} != arrow schema names: {:?}",
+        input_schema.iter_names().collect::<Vec<_>>().as_slice(),
+        expected_arrow_schema.iter_names().collect::<Vec<_>>().as_slice(),
+    );
+
+    for (input_pl_dtype, output_arrow_field) in input_schema
+        .iter_values()
+        .zip(expected_arrow_schema.iter_values())
+    {
+        Series::new_empty(PlSmallStr::EMPTY, input_pl_dtype).to_arrow_with_field(
+            0,
+            compat_level,
+            Some(output_arrow_field),
+        )?;
+    }
+
+    Ok(())
+}
+
 fn join_suffix_duplicate_help_msg(column_name: &str) -> PolarsError {
     polars_err!(
         Duplicate:
