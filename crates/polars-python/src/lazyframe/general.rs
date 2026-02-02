@@ -705,7 +705,6 @@ impl PyLazyFrame {
             compat_level: compat_level.0,
             record_batch_size,
             record_batch_statistics,
-            ..Default::default()
         };
 
         let target = target.extract_file_sink_destination()?;
