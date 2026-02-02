@@ -17,8 +17,6 @@ pub struct LiveTimer {
     /// for which the timer was not ticking. Otherwise, this represents the total amount of
     /// nanoseconds for which this timer was ticking.
     state_ns: AtomicU64,
-    /// Used by `total_time_live_ns` to ensure it returns monotonically nondecreasing values.
-    max_measured_ns: AtomicU64,
 }
 
 impl Default for LiveTimer {
@@ -33,7 +31,6 @@ impl LiveTimer {
             base_timestamp: Instant::now(),
             live_sessions: AtomicU64::new(0),
             state_ns: AtomicU64::new(0),
-            max_measured_ns: AtomicU64::new(0),
         }
     }
 
@@ -110,14 +107,30 @@ impl LiveTimer {
     pub fn total_time_live_ns(&self) -> u64 {
         let state_ns = self.state_ns.load(Ordering::Relaxed);
 
-        let active_time = if state_ns & TICKING_BIT == 0 {
-            state_ns
-        } else {
-            self.base_timestamp.elapsed().as_nanos() as u64 - (state_ns & !TICKING_BIT)
-        };
+        if state_ns & TICKING_BIT == 0 {
+            return state_ns;
+        }
 
-        self.max_measured_ns
-            .fetch_max(active_time, Ordering::Relaxed)
+        let curr_ns = self.base_timestamp.elapsed().as_nanos() as u64;
+
+        // It could be that `stop_session()` performs a store on `state_ns` calculated against a
+        // timestamp earlier than `curr_ns`, but this store was not yet visible to our earlier load
+        // of `state_ns`. If we would report the elapsed time against `curr_ns` in this case, out
+        // output on a subsequent call would report a decreased time.
+        //
+        // To handle this case, we perform the following spin in the hopes that it stalls for enough
+        // time such that the store on `state_ns` from `stop_session()` becomes visible to us.
+        for _ in 0..4 {
+            let state_ns = self.state_ns.load(Ordering::Relaxed);
+
+            if state_ns & TICKING_BIT == 0 {
+                return state_ns;
+            }
+
+            std::hint::spin_loop();
+        }
+
+        curr_ns - (state_ns & !TICKING_BIT)
     }
 }
 
@@ -211,6 +224,4 @@ fn main() {
 
     dbg!(timer.total_time_live_ns());
     dbg!(timer.state_ns.load(Ordering::Relaxed));
-    dbg!(timer.max_measured_ns.load(Ordering::Relaxed));
-    dbg!(timer.max_measured_ns.load(Ordering::Relaxed) - timer.state_ns.load(Ordering::Relaxed));
 }
