@@ -207,7 +207,9 @@ class PySeries:
     def mean(self) -> Any: ...
     def median(self) -> Any: ...
     def product(self) -> Any: ...
-    def quantile(self, quantile: float, interpolation: QuantileMethod) -> Any: ...
+    def quantile(
+        self, quantile: float | Sequence[float], interpolation: QuantileMethod
+    ) -> Any: ...
     def std(self, ddof: int) -> Any: ...
     def var(self, ddof: int) -> Any: ...
     def sum(self) -> Any: ...
@@ -828,8 +830,6 @@ class PyLazyFrame:
         include_file_paths: str | None,
         cloud_options: dict[str, Any] | None,
         credential_provider: Any | None,
-        retries: int,
-        file_cache_ttl: int | None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_csv(
@@ -863,8 +863,6 @@ class PyLazyFrame:
         schema: Any | None,
         cloud_options: dict[str, Any] | None,
         credential_provider: Any | None,
-        retries: int,
-        file_cache_ttl: int | None,
         include_file_paths: str | None,
     ) -> PyLazyFrame: ...
     @staticmethod
@@ -879,8 +877,8 @@ class PyLazyFrame:
     @staticmethod
     def new_from_ipc(
         sources: Any,
+        record_batch_statistics: bool | None,
         scan_options: ScanOptions,
-        file_cache_ttl: int | None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_scan_lines(
@@ -888,7 +886,6 @@ class PyLazyFrame:
         *,
         name: str,
         scan_options: ScanOptions,
-        file_cache_ttl: int | None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_dataset_object(dataset_object: Any) -> PyLazyFrame: ...
@@ -968,6 +965,7 @@ class PyLazyFrame:
         compression: IpcCompression | None,
         compat_level: CompatLevel,
         record_batch_size: int | None,
+        record_batch_statistics: bool | None,
     ) -> PyLazyFrame: ...
     def sink_csv(
         self,
@@ -991,9 +989,12 @@ class PyLazyFrame:
         null_value: str | None,
         quote_style: QuoteStyle | None,
     ) -> PyLazyFrame: ...
-    def sink_json(
+    def sink_ndjson(
         self,
         target: SinkTarget,
+        compression: Literal["uncompressed", "gzip", "zstd"],
+        compression_level: int | None,
+        check_extension: bool,
         sink_options: Any,
     ) -> PyLazyFrame: ...
     def sink_batches(
@@ -2227,7 +2228,7 @@ def concat_df_horizontal(dfs: Any, strict: bool = False) -> PyDataFrame: ...
 # functions.io
 def read_ipc_schema(py_f: Any) -> dict[str, Any]: ...
 def read_parquet_metadata(
-    py_f: Any, storage_options: Any, credential_provider: Any, retries: int
+    py_f: Any, storage_options: Any, credential_provider: Any
 ) -> dict[str, str]: ...
 def read_clipboard_string() -> str: ...
 def write_clipboard_string(s: str) -> None: ...
@@ -2397,7 +2398,6 @@ class PyCatalogClient:
         table_name: str,
         cloud_options: dict[str, str] | None,
         credential_provider: Any | None,
-        retries: int,
     ) -> PyLazyFrame: ...
     def create_catalog(
         self, catalog_name: str, comment: str | None, storage_root: str | None

@@ -175,7 +175,6 @@ impl From<IRAggExpr> for GroupByMethod {
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
             AggGroups(_) => GroupByMethod::Groups,
-
             // Multi-input aggregations.
             Quantile { .. } | MinBy { .. } | MaxBy { .. } => unreachable!(),
         }
@@ -457,6 +456,8 @@ impl AExpr {
                     IRArrayFunction::Get(false) => true,
                     _ => false,
                 },
+                #[cfg(feature = "replace")]
+                IRFunctionExpr::ReplaceStrict { .. } => true,
                 #[cfg(all(feature = "strings", feature = "temporal"))]
                 IRFunctionExpr::StringExpr(f) => match f {
                     IRStringFunction::Strptime(_, strptime_options) => {

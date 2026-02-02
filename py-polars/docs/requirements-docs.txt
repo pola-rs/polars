@@ -13,7 +13,6 @@ sphinx-autosummary-accessors==2023.4.0
 sphinx-copybutton==0.5.2
 sphinx-design==0.6.1
 sphinx-favicon==1.0.1
-sphinx-llms-txt==0.6.0
 sphinx-reredirects==0.1.5
 sphinx-toolbox==3.8.1
 

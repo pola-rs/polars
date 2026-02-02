@@ -357,10 +357,6 @@ rust:
     name: JsonReader
     link: https://docs.pola.rs/api/rust/dev/polars_io/json/struct.JsonReader.html
     feature_flags: [json]
-  read_ndjson:
-    name: JsonLineReader
-    link: https://docs.pola.rs/api/rust/dev/polars_io/ndjson/core/struct.JsonLineReader.html
-    feature_flags: [json]
   read_parquet:
     name: ParquetReader
     link: https://docs.pola.rs/api/rust/dev/polars/prelude/struct.ParquetReader.html

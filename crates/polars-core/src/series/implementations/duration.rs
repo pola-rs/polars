@@ -94,6 +94,16 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_max(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
         self.0
             .physical()
@@ -549,6 +559,25 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             self.dtype().clone(),
             v.as_duration(self.0.time_unit()),
         ))
+    }
+
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let result = self.0.physical().quantiles_reduce(quantiles, method)?;
+        if let AnyValue::List(float_s) = result.value() {
+            let float_ca = float_s.f64().unwrap();
+            let int_s = float_ca
+                .iter()
+                .map(|v: Option<f64>| v.map(|f| f as i64))
+                .collect::<Int64Chunked>()
+                .into_duration(self.0.time_unit())
+                .into_series();
+            Ok(Scalar::new(
+                DataType::List(Box::new(self.dtype().clone())),
+                AnyValue::List(int_s),
+            ))
+        } else {
+            polars_bail!(ComputeError: "expected list scalar from quantiles_reduce")
+        }
     }
 
     #[cfg(feature = "approx_unique")]

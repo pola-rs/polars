@@ -265,14 +265,14 @@ pub fn read_buffer<T: NativeType, R: Read + Seek>(
 }
 
 fn read_uncompressed_bitmap<R: Read + Seek>(
-    length: usize,
+    row_limit: usize,
     bytes: usize,
     reader: &mut R,
 ) -> PolarsResult<Vec<u8>> {
-    if length > bytes * 8 {
+    if row_limit > bytes * 8 {
         polars_bail!(
             oos = OutOfSpecKind::InvalidBitmap {
-                length,
+                length: row_limit,
                 number_of_bits: bytes * 8,
             }
         )
@@ -291,7 +291,7 @@ fn read_uncompressed_bitmap<R: Read + Seek>(
 }
 
 fn read_compressed_bitmap<R: Read + Seek>(
-    length: usize,
+    row_limit: usize,
     bytes: usize,
     compression: Compression,
     reader: &mut R,
@@ -313,7 +313,11 @@ fn read_compressed_bitmap<R: Read + Seek>(
         })?
     };
 
-    polars_ensure!(length.div_ceil(8) == decompressed_bytes, ComputeError: "Malformed IPC file: got unexpected decompressed output length {decompressed_bytes}, expected {}", length.div_ceil(8));
+    // In addition to the slicing use case, we allow for excess bytes in untruncated buffers,
+    // see https://github.com/pola-rs/polars/issues/26126
+    // and https://github.com/apache/arrow/issues/48883
+    polars_ensure!(decompressed_bytes >= row_limit.div_ceil(8),
+        ComputeError: "Malformed IPC file: got unexpected decompressed output length {decompressed_bytes}, expected {}", row_limit.div_ceil(8));
 
     if decompressed_len_field == -1 {
         return Ok(bytemuck::cast_slice(&scratch[8..]).to_vec());
@@ -340,7 +344,7 @@ fn read_compressed_bitmap<R: Read + Seek>(
 
 pub fn read_bitmap<R: Read + Seek>(
     buf: &mut VecDeque<IpcBuffer>,
-    length: usize,
+    row_limit: usize,
     reader: &mut R,
     block_offset: u64,
     _: bool,
@@ -364,12 +368,12 @@ pub fn read_bitmap<R: Read + Seek>(
     reader.seek(SeekFrom::Start(block_offset + offset))?;
 
     let buffer = if let Some(compression) = compression {
-        read_compressed_bitmap(length, bytes, compression, reader, scratch)
+        read_compressed_bitmap(row_limit, bytes, compression, reader, scratch)
     } else {
-        read_uncompressed_bitmap(length, bytes, reader)
+        read_uncompressed_bitmap(row_limit, bytes, reader)
     }?;
 
-    Bitmap::try_new(buffer, length)
+    Bitmap::try_new(buffer, row_limit)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -387,12 +391,12 @@ pub fn read_validity<R: Read + Seek>(
         .length()
         .try_into()
         .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
-    let length = limit.map(|limit| limit.min(length)).unwrap_or(length);
+    let row_limit = limit.map(|limit| limit.min(length)).unwrap_or(length);
 
     Ok(if field_node.null_count() > 0 {
         Some(read_bitmap(
             buffers,
-            length,
+            row_limit,
             reader,
             block_offset,
             is_little_endian,

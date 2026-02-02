@@ -1203,9 +1203,7 @@ def test_cpse_predicates_25030() -> None:
     q4 = q3.group_by("key").len().join(q3, on="key")
 
     got = q4.collect()
-    expected = q4.collect(
-        optimizations=pl.lazyframe.opt_flags.QueryOptFlags(comm_subplan_elim=False)
-    )
+    expected = q4.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False))
 
     assert_frame_equal(got, expected)
     assert q4.explain().count("CACHE") == 2
@@ -1221,3 +1219,38 @@ def test_asof_join_25699() -> None:
         df.join_asof(df, on="b").collect(),
         pl.DataFrame({"a": [10], "b": [10], "a_right": [10]}),
     )
+
+
+def test_csee_python_function() -> None:
+    # Make sure to use the same expression
+    # This only works for functions on the same address
+    expr = pl.col("a").map_elements(lambda x: hash(x))
+    q = pl.LazyFrame({"a": [10], "b": [10]}).with_columns(
+        a=expr * 10,
+        b=expr * 100,
+    )
+
+    assert "__POLARS_CSER" in q.explain()
+    assert_frame_equal(
+        q.collect(), q.collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=False))
+    )
+
+
+def test_csee_streaming() -> None:
+    lf = pl.LazyFrame({"a": [10], "b": [10]})
+
+    # elementwise is allowed
+    expr = pl.col("a") * pl.col("b")
+    q = lf.with_columns(
+        a=expr * 10,
+        b=expr * 100,
+    )
+    assert "__POLARS_CSER" in q.explain(engine="streaming")
+
+    # non-elementwise not
+    expr = pl.col("a").sum()
+    q = lf.with_columns(
+        a=expr * 10,
+        b=expr * 100,
+    )
+    assert "__POLARS_CSER" not in q.explain(engine="streaming")

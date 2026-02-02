@@ -4,26 +4,32 @@ use std::sync::Arc;
 use arrow::io::ipc::read::FileMetadata;
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
+use polars_io::ipc::IpcScanOptions;
 use polars_plan::dsl::ScanSource;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::{DynByteSourceBuilder, IpcFileReader};
 use crate::async_primitives::wait_group::WaitGroup;
+#[cfg(feature = "ipc")]
+use crate::metrics::IOMetrics;
 use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 
 pub struct IpcReaderBuilder {
     pub first_metadata: Option<Arc<FileMetadata>>,
+    pub options: Arc<IpcScanOptions>,
     pub prefetch_limit: RelaxedCell<usize>,
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
+    pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
 }
 
 impl std::fmt::Debug for IpcReaderBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("IpcBuilder")
             .field("first_metadata", &self.first_metadata)
+            .field("options", &self.options)
             .field("prefetch_semaphore", &self.prefetch_semaphore)
             .finish()
     }
@@ -68,15 +74,21 @@ impl FileReaderBuilder for IpcReaderBuilder {
             .unwrap()
     }
 
+    fn set_io_metrics(&self, io_metrics: Arc<IOMetrics>) {
+        self.io_metrics.set(io_metrics).ok().unwrap()
+    }
+
     fn build_file_reader(
         &self,
         source: ScanSource,
         cloud_options: Option<Arc<CloudOptions>>,
         scan_source_idx: usize,
     ) -> Box<dyn FileReader> {
+        use crate::metrics::OptIOMetrics;
         use crate::nodes::io_sources::ipc::RecordBatchPrefetchSync;
 
         let scan_source = source;
+        let config = self.options.clone();
         let verbose = config::verbose();
 
         let metadata = if scan_source_idx == 0 {
@@ -94,6 +106,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
         let reader = IpcFileReader {
             scan_source,
             cloud_options,
+            config,
             metadata,
             byte_source_builder,
             record_batch_prefetch_sync: RecordBatchPrefetchSync {
@@ -103,8 +116,10 @@ impl FileReaderBuilder for IpcReaderBuilder {
                 prev_all_spawned: None,
                 current_all_spawned: None,
             },
+            io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
             verbose,
             init_data: None,
+            checked: self.options.checked,
         };
 
         Box::new(reader) as Box<dyn FileReader>

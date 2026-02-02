@@ -1,3 +1,4 @@
+use core::panic;
 use std::marker::PhantomData;
 
 use polars_utils::IdxSize;
@@ -9,8 +10,8 @@ use super::*;
 pub struct RankWindow<'a, T, Out, P> {
     slice: &'a [T],
     validity: &'a Bitmap,
-    last_start: usize,
-    last_end: usize,
+    start: usize,
+    end: usize,
     ost: OrderStatisticTree<&'a T>,
     policy: P,
     _out: PhantomData<Out>,
@@ -42,8 +43,8 @@ where
         let mut this = RankWindow {
             slice,
             validity,
-            last_start: 0,
-            last_end: 0,
+            start: 0,
+            end: 0,
             ost,
             policy: P::new(&params.unwrap()),
             _out: PhantomData,
@@ -55,21 +56,21 @@ where
         this
     }
 
-    unsafe fn update(&mut self, new_start: usize, new_end: usize) -> Option<Out> {
-        debug_assert!(self.last_start <= self.last_end);
-        debug_assert!(self.last_end <= self.slice.len());
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        debug_assert!(self.start <= self.end);
+        debug_assert!(self.end <= self.slice.len());
         debug_assert!(new_start <= new_end);
         debug_assert!(new_end <= self.slice.len());
-        debug_assert!(self.last_start <= new_start);
-        debug_assert!(self.last_end <= new_end);
+        debug_assert!(self.start <= new_start);
+        debug_assert!(self.end <= new_end);
 
-        for i in self.last_end..new_end {
+        for i in self.end..new_end {
             if !self.validity.get(i).unwrap() {
                 continue;
             }
             self.ost.insert(unsafe { self.slice.get_unchecked(i) });
         }
-        for i in self.last_start..new_start {
+        for i in self.start..new_start {
             if !self.validity.get(i).unwrap() {
                 continue;
             }
@@ -77,20 +78,19 @@ where
                 .remove(&unsafe { self.slice.get_unchecked(i) })
                 .expect("previously added value is missing");
         }
-        self.last_start = new_start;
-        self.last_end = new_end;
+        self.start = new_start;
+        self.end = new_end;
+    }
 
-        if self.last_end == 0 {
-            return None;
+    fn get_agg(&self, idx: usize) -> Option<Out> {
+        if !(self.start..self.end).contains(&idx) {
+            panic!("index out of bounds");
         }
-        // SAFETY: We checked that `last_end` is not zero and the caller MUST uphold the function
-        // safety contract.
-        let cur = unsafe { self.slice.get_unchecked(self.last_end - 1) };
-        self.policy.rank(&self.ost, cur)
+        self.policy.rank(&self.ost, &self.slice[idx])
     }
 
     fn is_valid(&self, _min_periods: usize) -> bool {
-        self.validity.get(self.last_end - 1).unwrap()
+        self.validity.get(self.end - 1).unwrap()
     }
 
     fn slice_len(&self) -> usize {

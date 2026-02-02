@@ -219,6 +219,33 @@ impl EncodeNullability {
     }
 }
 
+/// `data_page_size`: Set a target threshold for the approximate encoded size of data
+/// pages within a column chunk (in bytes). If None, use the default data page size of 1MByte.
+/// See: https://arrow.apache.org/docs/python/generated/pyarrow.parquet.write_table.html
+pub(crate) fn row_slice_ranges(
+    number_of_rows: usize,
+    byte_size: usize,
+    options: WriteOptions,
+) -> impl Iterator<Item = (usize, usize)> {
+    const DEFAULT_PAGE_SIZE: usize = 1024 * 1024; // 1 MB
+    let max_page_size = options.data_page_size.unwrap_or(DEFAULT_PAGE_SIZE);
+    let max_page_size = max_page_size.min(2usize.pow(31) - 2usize.pow(25)); // allowed maximum page size
+
+    let bytes_per_row = if number_of_rows == 0 {
+        0
+    } else {
+        ((byte_size as f64) / (number_of_rows as f64)) as usize
+    };
+    let rows_per_page = (max_page_size / (bytes_per_row + 1)).max(1);
+
+    (0..number_of_rows)
+        .step_by(rows_per_page)
+        .map(move |offset| {
+            let length = (offset + rows_per_page).min(number_of_rows) - offset;
+            (offset, length)
+        })
+}
+
 /// returns offset and length to slice the leaf values
 pub fn slice_nested_leaf(nested: &[Nested]) -> (usize, usize) {
     // find the deepest recursive dremel structure as that one determines how many values we must
@@ -384,49 +411,26 @@ pub fn array_to_pages(
     }
 
     let nested = nested.to_vec();
-
     let number_of_rows = nested[0].len();
-
     // note: this is not correct if the array is sliced - the estimation should happen on the
     // primitive after sliced for parquet
     let byte_size = estimated_bytes_size(primitive_array);
-
-    const DEFAULT_PAGE_SIZE: usize = 1024 * 1024;
-    let max_page_size = options.data_page_size.unwrap_or(DEFAULT_PAGE_SIZE);
-    let max_page_size = max_page_size.min(2usize.pow(31) - 2usize.pow(25)); // allowed maximum page size
-    let bytes_per_row = if number_of_rows == 0 {
-        0
-    } else {
-        ((byte_size as f64) / (number_of_rows as f64)) as usize
-    };
-    let rows_per_page = (max_page_size / (bytes_per_row + 1)).max(1);
-
-    let row_iter = (0..number_of_rows)
-        .step_by(rows_per_page)
-        .map(move |offset| {
-            let length = if offset + rows_per_page > number_of_rows {
-                number_of_rows - offset
-            } else {
-                rows_per_page
-            };
-            (offset, length)
-        });
-
     let primitive_array = primitive_array.to_boxed();
 
-    let pages = row_iter.map(move |(offset, length)| {
-        let mut right_array = primitive_array.clone();
-        let mut right_nested = nested.clone();
-        slice_parquet_array(right_array.as_mut(), &mut right_nested, offset, length);
+    let pages =
+        row_slice_ranges(number_of_rows, byte_size, options).map(move |(offset, length)| {
+            let mut right_array = primitive_array.clone();
+            let mut right_nested = nested.clone();
+            slice_parquet_array(right_array.as_mut(), &mut right_nested, offset, length);
 
-        array_to_page(
-            right_array.as_ref(),
-            type_.clone(),
-            &right_nested,
-            options,
-            encoding,
-        )
-    });
+            array_to_page(
+                right_array.as_ref(),
+                type_.clone(),
+                &right_nested,
+                options,
+                encoding,
+            )
+        });
     Ok(DynIter::new(pages))
 }
 

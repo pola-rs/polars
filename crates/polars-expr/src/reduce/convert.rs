@@ -25,6 +25,7 @@ pub fn into_reduction(
     node: Node,
     expr_arena: &mut Arena<AExpr>,
     schema: &Schema,
+    is_aggregation_context: bool,
 ) -> PolarsResult<(Box<dyn GroupedReduction>, Vec<Node>)> {
     let get_dt = |node| {
         expr_arena
@@ -94,6 +95,12 @@ pub fn into_reduction(
                 //   project to the height of the DataFrame (in the PhysicalExpr impl).
                 // * This approach is not sound for `update_groups()`, but currently that case is
                 //   not hit (it would need group-by -> len on empty morsels).
+                polars_ensure!(
+                    !is_aggregation_context,
+                    ComputeError:
+                    "not implemented: len() of groups with no columns"
+                );
+
                 let out: Box<dyn GroupedReduction> = new_sum_reduction(DataType::IDX_DTYPE)?;
                 let expr = expr_arena.add(AExpr::Len);
 

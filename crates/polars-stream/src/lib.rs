@@ -14,11 +14,12 @@ mod graph;
 pub use graph::{GraphNodeKey, LogicalPipe, LogicalPipeKey};
 pub use skeleton::{QueryResult, StreamingQuery};
 mod metrics;
+mod metrics_io;
 pub use metrics::{GraphMetrics, NodeMetrics};
 mod morsel;
 mod nodes;
 mod physical_plan;
-pub use physical_plan::{PhysNode, PhysNodeKey, PhysNodeKind, ZipBehavior};
+pub use physical_plan::{NodeStyle, PhysNode, PhysNodeKey, PhysNodeKind, ZipBehavior};
 mod pipe;
 mod utils;
 

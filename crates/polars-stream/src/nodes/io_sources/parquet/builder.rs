@@ -10,6 +10,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::{FileReader, ParquetFileReader};
 use crate::async_primitives::wait_group::WaitGroup;
+use crate::metrics::{IOMetrics, OptIOMetrics};
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 
@@ -20,6 +21,7 @@ pub struct ParquetReaderBuilder {
     pub prefetch_limit: RelaxedCell<usize>,
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
+    pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
 }
 
 impl std::fmt::Debug for ParquetReaderBuilder {
@@ -82,6 +84,10 @@ impl FileReaderBuilder for ParquetReaderBuilder {
             .unwrap()
     }
 
+    fn set_io_metrics(&self, io_metrics: Arc<IOMetrics>) {
+        let _ = self.io_metrics.set(io_metrics);
+    }
+
     fn build_file_reader(
         &self,
         source: ScanSource,
@@ -119,6 +125,7 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                 prev_all_spawned: None,
                 current_all_spawned: None,
             },
+            io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
             verbose,
 
             init_data: None,

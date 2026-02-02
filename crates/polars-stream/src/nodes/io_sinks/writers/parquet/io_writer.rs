@@ -54,11 +54,12 @@ impl IOWriter {
 
         while let Some(handle) = encoded_row_group_rx.recv().await {
             let EncodedRowGroup {
+                num_rows,
                 data,
                 morsel_permit,
             } = handle.await?;
             assert_eq!(data.len(), num_leaf_columns);
-            parquet_writer.write_row_group(&data)?;
+            parquet_writer.write_row_group(num_rows as u64, &data)?;
             drop(data);
             drop(morsel_permit);
         }

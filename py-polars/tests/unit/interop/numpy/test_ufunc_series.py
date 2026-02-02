@@ -125,7 +125,7 @@ def test_numpy_string_array() -> None:
 
 
 def make_add_one() -> Callable[[pl.Series], pl.Series]:
-    numba = pytest.importorskip("numba")
+    numba = pytest.importorskip("numba", exc_type=ImportError)
 
     @numba.guvectorize([(numba.float64[:], numba.float64[:])], "(n)->(n)")  # type: ignore[misc]
     def add_one(arr: Any, result: Any) -> None:
@@ -163,7 +163,7 @@ def test_generalized_ufunc_missing_data() -> None:
 
 
 def make_divide_by_sum() -> Callable[[pl.Series, pl.Series], pl.Series]:
-    numba = pytest.importorskip("numba")
+    numba = pytest.importorskip("numba", exc_type=ImportError)
     float64 = numba.float64
 
     @numba.guvectorize([(float64[:], float64[:], float64[:])], "(n),(m)->(m)")  # type: ignore[misc]

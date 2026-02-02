@@ -1,7 +1,7 @@
 use std::cmp::Reverse;
 
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
-use polars_utils::mmap::MemSlice;
 use polars_utils::priority::Priority;
 
 use super::chunk_reader::ChunkReader;
@@ -17,9 +17,6 @@ pub(super) struct LineBatchProcessor {
     /// Mainly for logging
     pub(super) worker_idx: usize,
 
-    /// We need to hold a ref to this as `LineBatch` we receive contains `&[u8]`
-    /// references to it.
-    pub(super) global_bytes: MemSlice,
     pub(super) chunk_reader: ChunkReader,
     pub(super) count_rows_fn: fn(&[u8]) -> usize,
 
@@ -40,7 +37,6 @@ impl LineBatchProcessor {
     pub(super) async fn run(self) -> PolarsResult<usize> {
         let LineBatchProcessor {
             worker_idx,
-            global_bytes: _global_bytes,
             chunk_reader,
             count_rows_fn,
             mut line_batch_rx,
@@ -61,7 +57,7 @@ impl LineBatchProcessor {
 
         if !matches!(output_port, LineBatchProcessorOutputPort::Closed) {
             while let Ok(LineBatch { bytes, chunk_idx }) = line_batch_rx.recv().await {
-                let df = chunk_reader.read_chunk(bytes)?;
+                let df = chunk_reader.read_chunk(&bytes)?;
 
                 n_rows_processed = n_rows_processed.saturating_add(df.height());
 
@@ -83,7 +79,7 @@ impl LineBatchProcessor {
                 chunk_idx: _,
             }) = line_batch_rx.recv().await
             {
-                n_rows_processed = n_rows_processed.saturating_add(count_rows_fn(bytes));
+                n_rows_processed = n_rows_processed.saturating_add(count_rows_fn(&bytes));
             }
         }
 
@@ -97,8 +93,8 @@ impl LineBatchProcessor {
 
 /// Represents a complete chunk of NDJSON data (i.e. no partial lines).
 pub(super) struct LineBatch {
-    /// Safety: This is sent between 2 places that both hold a reference to the underlying MemSlice.
-    pub(super) bytes: &'static [u8],
+    /// Safety: This is sent between 2 places that both hold a reference to the underlying Buffer.
+    pub(super) bytes: Buffer<u8>,
     pub(super) chunk_idx: usize,
 }
 

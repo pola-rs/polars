@@ -15,7 +15,6 @@ pub use hint::*;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_io::cloud::CloudOptions;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -43,7 +42,6 @@ pub enum FunctionIR {
     FastCount {
         sources: ScanSources,
         scan_type: Box<FileScanIR>,
-        cloud_options: Option<CloudOptions>,
         alias: Option<PlSmallStr>,
     },
 
@@ -89,12 +87,10 @@ impl Hash for FunctionIR {
             FunctionIR::FastCount {
                 sources,
                 scan_type,
-                cloud_options,
                 alias,
             } => {
                 sources.hash(state);
                 scan_type.hash(state);
-                cloud_options.hash(state);
                 alias.hash(state);
             },
             FunctionIR::Unnest { columns, separator } => {
@@ -202,9 +198,8 @@ impl FunctionIR {
             FastCount {
                 sources,
                 scan_type,
-                cloud_options,
                 alias,
-            } => count::count_rows(sources, scan_type, cloud_options.as_ref(), alias.clone()),
+            } => count::count_rows(sources, scan_type, alias.clone()),
             Rechunk => {
                 df.rechunk_mut_par();
                 Ok(df)
@@ -324,7 +319,6 @@ impl Display for FunctionIR {
             FastCount {
                 sources,
                 scan_type,
-                cloud_options: _,
                 alias,
             } => {
                 let scan_type: &str = (&(**scan_type)).into();

@@ -3,6 +3,7 @@ use std::borrow::{Borrow, Cow};
 use arrow_format::ipc;
 use arrow_format::ipc::KeyValue;
 use arrow_format::ipc::planus::Builder;
+use bytes::Bytes;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::compression::ZstdLevel;
 
@@ -68,9 +69,7 @@ pub fn dictionaries_to_encode(
             let array = array.as_any().downcast_ref::<StructArray>().unwrap();
             let fields = field.fields.as_slice();
             if array.fields().len() != fields.len() {
-                polars_bail!(InvalidOperation:
-                    "The number of fields in a struct must equal the number of children in IpcField".to_string(),
-                );
+                polars_bail!(InvalidOperation: "The number of fields in a struct must equal the number of children in IpcField");
             }
             fields
                 .iter()
@@ -90,7 +89,7 @@ pub fn dictionaries_to_encode(
                 .downcast_ref::<ListArray<i32>>()
                 .unwrap()
                 .values();
-            let field = &field.fields[0]; // todo: error instead
+            let field = field.fields.first().ok_or_else(|| polars_err!(ComputeError: "Invalid IPC field structure: expected nested field but fields vector is empty"))?;
             dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
         LargeList => {
@@ -99,7 +98,7 @@ pub fn dictionaries_to_encode(
                 .downcast_ref::<ListArray<i64>>()
                 .unwrap()
                 .values();
-            let field = &field.fields[0]; // todo: error instead
+            let field = field.fields.first().ok_or_else(|| polars_err!(ComputeError: "Invalid IPC field structure: expected nested field but fields vector is empty"))?;
             dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
         FixedSizeList => {
@@ -108,7 +107,7 @@ pub fn dictionaries_to_encode(
                 .downcast_ref::<FixedSizeListArray>()
                 .unwrap()
                 .values();
-            let field = &field.fields[0]; // todo: error instead
+            let field = field.fields.first().ok_or_else(|| polars_err!(ComputeError: "Invalid IPC field structure: expected nested field but fields vector is empty"))?;
             dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
         Union => {
@@ -117,7 +116,7 @@ pub fn dictionaries_to_encode(
                 .downcast_ref::<UnionArray>()
                 .unwrap()
                 .fields();
-            let fields = &field.fields[..]; // todo: error instead
+            let fields = field.fields.as_slice();
             if values.len() != fields.len() {
                 polars_bail!(InvalidOperation:
                     "The number of fields in a union must equal the number of children in IpcField"
@@ -137,7 +136,7 @@ pub fn dictionaries_to_encode(
         },
         Map => {
             let values = array.as_any().downcast_ref::<MapArray>().unwrap().field();
-            let field = &field.fields[0]; // todo: error instead
+            let field = field.fields.first().ok_or_else(|| polars_err!(ComputeError: "Invalid IPC field structure: expected nested field but fields vector is empty"))?;
             dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
     }
@@ -518,6 +517,15 @@ pub struct EncodedData {
     pub arrow_data: Vec<u8>,
 }
 
+/// Stores the encoded data, which is an ipc::Schema::Message, and optional Arrow data
+#[derive(Debug, Default)]
+pub struct EncodedDataBytes {
+    /// An encoded ipc::Schema::Message
+    pub ipc_message: Bytes,
+    /// Arrow buffers to be written, should be an empty vec for schema messages
+    pub arrow_data: Bytes,
+}
+
 /// Calculate an 8-byte boundary and return the number of bytes needed to pad to 8 bytes
 #[inline]
 pub(crate) fn pad_to_64(len: usize) -> usize {
@@ -573,5 +581,18 @@ where
             columns: Cow::Borrowed(columns),
             fields: fields.map(|f| f.into()),
         }
+    }
+}
+
+/// Create an IPC Block. Will panic when size limitations are not met.
+pub fn arrow_ipc_block(
+    offset: usize,
+    meta_data_length: usize,
+    body_length: usize,
+) -> arrow_format::ipc::Block {
+    arrow_format::ipc::Block {
+        offset: i64::try_from(offset).unwrap(),
+        meta_data_length: i32::try_from(meta_data_length).unwrap(),
+        body_length: i64::try_from(body_length).unwrap(),
     }
 }

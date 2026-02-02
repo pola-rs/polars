@@ -2,6 +2,7 @@ use std::any::Any;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
+use std::process::abort;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -107,6 +108,7 @@ impl<T> Drop for SharedStorageInner<T> {
     }
 }
 
+#[repr(transparent)]
 pub struct SharedStorage<T> {
     inner: NonNull<SharedStorageInner<T>>,
     phantom: PhantomData<SharedStorageInner<T>>,
@@ -122,7 +124,8 @@ impl<T> Default for SharedStorage<T> {
 }
 
 impl<T> SharedStorage<T> {
-    const fn empty() -> Self {
+    /// Creates an empty SharedStorage.
+    pub const fn empty() -> Self {
         assert!(align_of::<T>() <= 1 << 30);
         static INNER: SharedStorageInner<()> = SharedStorageInner {
             ref_count: AtomicU64::new(1),
@@ -138,7 +141,18 @@ impl<T> SharedStorage<T> {
         }
     }
 
+    /// Creates a SharedStorage backed by this static slice.
     pub fn from_static(slice: &'static [T]) -> Self {
+        // SAFETY: the slice has a static lifetime.
+        unsafe { Self::from_slice_unchecked(slice) }
+    }
+
+    /// Creates a SharedStorage backed by this slice.
+    ///
+    /// # Safety
+    /// You must ensure this SharedStorage or any of its clones does not outlive
+    /// this slice.
+    pub unsafe fn from_slice_unchecked(slice: &[T]) -> Self {
         #[expect(clippy::manual_slice_size_calculation)]
         let length_in_bytes = slice.len() * size_of::<T>();
         let ptr = slice.as_ptr().cast_mut();
@@ -153,6 +167,46 @@ impl<T> SharedStorage<T> {
             inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
             phantom: PhantomData,
         }
+    }
+
+    /// Calls f with a `SharedStorage` backed by this slice.
+    ///
+    /// Aborts if any clones of the SharedStorage still live when `f` returns.
+    pub fn with_slice<R, F: FnOnce(SharedStorage<T>) -> R>(slice: &[T], f: F) -> R {
+        struct AbortIfNotExclusive<T>(SharedStorage<T>);
+        impl<T> Drop for AbortIfNotExclusive<T> {
+            fn drop(&mut self) {
+                if !self.0.is_exclusive() {
+                    abort()
+                }
+            }
+        }
+
+        unsafe {
+            let ss = AbortIfNotExclusive(Self::from_slice_unchecked(slice));
+            f(ss.0.clone())
+        }
+    }
+
+    /// Calls f with a `SharedStorage` backed by this vec.
+    ///
+    /// # Panics
+    /// Panics if any clones of the SharedStorage still live when `f` returns.
+    pub fn with_vec<R, F: FnOnce(SharedStorage<T>) -> R>(vec: &mut Vec<T>, f: F) -> R {
+        // TODO: this function is intended to allow exclusive conversion back to
+        // a vec, but we need some kind of weak reference for this (that is, two
+        // tiers of 'is_exclusive', one for access and one for keeping the inner
+        // state alive).
+        struct RestoreVec<'a, T>(&'a mut Vec<T>, SharedStorage<T>);
+        impl<'a, T> Drop for RestoreVec<'a, T> {
+            fn drop(&mut self) {
+                *self.0 = self.1.try_take_vec().unwrap();
+            }
+        }
+
+        let tmp = core::mem::take(vec);
+        let ss = RestoreVec(vec, Self::from_vec(tmp));
+        f(ss.1.clone())
     }
 
     /// # Safety
@@ -214,6 +268,17 @@ impl<T> SharedStorage<T> {
             ));
         }
     }
+
+    /// # Safety
+    /// The caller is responsible for ensuring the resulting slice is valid and aligned for U.
+    pub unsafe fn transmute_unchecked<U>(self) -> SharedStorage<U> {
+        let storage = SharedStorage {
+            inner: self.inner.cast(),
+            phantom: PhantomData,
+        };
+        std::mem::forget(self);
+        storage
+    }
 }
 
 pub struct SharedStorageAsVecMut<'a, T> {
@@ -248,22 +313,22 @@ impl<T> Drop for SharedStorageAsVecMut<'_, T> {
 
 impl<T> SharedStorage<T> {
     #[inline(always)]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.inner().length_in_bytes / size_of::<T>()
     }
 
     #[inline(always)]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.inner().length_in_bytes == 0
     }
 
     #[inline(always)]
-    pub fn as_ptr(&self) -> *const T {
+    pub const fn as_ptr(&self) -> *const T {
         self.inner().ptr
     }
 
     #[inline(always)]
-    pub fn is_exclusive(&mut self) -> bool {
+    pub fn is_exclusive(&self) -> bool {
         // Ordering semantics copied from Arc<T>.
         self.inner().ref_count.load(Ordering::Acquire) == 1
     }
@@ -280,7 +345,13 @@ impl<T> SharedStorage<T> {
     }
 
     pub fn try_as_mut_slice(&mut self) -> Option<&mut [T]> {
-        self.is_exclusive().then(|| {
+        // We don't know if what we're created from may be mutated unless we're
+        // backed by an exclusive Vec. Perhaps in the future we can add a
+        // mutability bit?
+        let inner = self.inner();
+        let may_mut = inner.ref_count.load(Ordering::Acquire) == 1
+            && matches!(inner.backing, BackingStorage::Vec { .. });
+        may_mut.then(|| {
             let inner = self.inner();
             let len = inner.length_in_bytes / size_of::<T>();
             unsafe { core::slice::from_raw_parts_mut(inner.ptr, len) }
@@ -336,7 +407,7 @@ impl<T> SharedStorage<T> {
     }
 
     #[inline(always)]
-    fn inner(&self) -> &SharedStorageInner<T> {
+    const fn inner(&self) -> &SharedStorageInner<T> {
         unsafe { &*self.inner.as_ptr() }
     }
 
@@ -366,12 +437,7 @@ impl<T: Pod> SharedStorage<T> {
             return Err(self);
         }
 
-        let storage = SharedStorage {
-            inner: self.inner.cast(),
-            phantom: PhantomData,
-        };
-        std::mem::forget(self);
-        Ok(storage)
+        Ok(unsafe { self.transmute_unchecked::<U>() })
     }
 }
 

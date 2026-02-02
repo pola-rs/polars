@@ -14,7 +14,7 @@ use tokio::task::JoinHandle;
 
 use crate::async_executor;
 use crate::graph::{Graph, GraphNode, GraphNodeKey, LogicalPipeKey, PortState};
-use crate::metrics::GraphMetrics;
+use crate::metrics::{GraphMetrics, MetricsBuilder};
 use crate::pipe::PhysicalPipe;
 
 #[derive(Clone)]
@@ -212,6 +212,14 @@ fn run_subgraph(
 
             // Spawn the tasks.
             let pre_spawn_offset = join_handles.len();
+
+            if let Some(graph_metrics) = metrics.clone() {
+                node.compute.set_metrics_builder(MetricsBuilder {
+                    graph_key: node_key,
+                    graph_metrics,
+                });
+            }
+
             node.compute.spawn(
                 scope,
                 &mut recv_ports[..],

@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import pickle
 from datetime import datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import pytest
 
@@ -113,7 +113,6 @@ def test_dtypes_picklable() -> None:
 def test_dtypes_hashable() -> None:
     # ensure that all the types can be hashed, and that their hashes
     # are sufficient to ensure distinct entries in a dictionary/set
-
     all_dtypes = [
         getattr(datatypes, d)
         for d in dir(datatypes)
@@ -122,6 +121,15 @@ def test_dtypes_hashable() -> None:
     assert len(set(all_dtypes + all_dtypes)) == len(all_dtypes)
     assert len({pl.Datetime("ms"), pl.Datetime("us"), pl.Datetime("ns")}) == 3
     assert len({pl.List, pl.List(pl.Int16), pl.List(pl.Int32), pl.List(pl.Int64)}) == 4
+
+
+@pytest.mark.parametrize(
+    "python_type",
+    [int, int | None, Optional[int], Union[int, None]],  # noqa: UP007,UP045
+)
+def test_inference_from_python_type(python_type: Any) -> None:
+    polars_type = pl.DataType.from_python(python_type)
+    assert polars_type == pl.Int64
 
 
 @pytest.mark.parametrize(

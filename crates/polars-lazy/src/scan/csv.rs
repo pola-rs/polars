@@ -9,7 +9,7 @@ use polars_io::csv::read::{
 use polars_io::path_utils::expand_paths;
 use polars_io::utils::compression::CompressedReader;
 use polars_io::{HiveOptions, RowIndex};
-use polars_utils::mmap::MemSlice;
+use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::slice_enum::Slice;
 
@@ -255,7 +255,7 @@ impl LazyCsvReader {
     {
         let n_threads = self.read_options.n_threads;
 
-        let infer_schema = |bytes: MemSlice| {
+        let infer_schema = |bytes: Buffer<u8>| {
             let mut reader = CompressedReader::try_new(bytes)?;
 
             let (inferred_schema, _) =
@@ -268,27 +268,31 @@ impl LazyCsvReader {
             ScanSources::Paths(paths) => {
                 // TODO: Path expansion should happen when converting to the IR
                 // https://github.com/pola-rs/polars/issues/17634
-                let paths = expand_paths(
+
+                use polars_io::pl_async::get_runtime;
+
+                let paths = get_runtime().block_on(expand_paths(
                     &paths[..],
                     self.glob(),
                     &[], // hidden_file_prefix
                     &mut self.cloud_options,
-                )?;
+                ))?;
 
                 let Some(path) = paths.first() else {
                     polars_bail!(ComputeError: "no paths specified for this reader");
                 };
 
-                infer_schema(MemSlice::from_file(&polars_utils::open_file(
-                    path.as_std_path(),
-                )?)?)?
+                let file = polars_utils::open_file(path.as_std_path())?;
+                let mmap = MMapSemaphore::new_from_file(&file)?;
+                infer_schema(Buffer::from_owner(mmap))?
             },
             ScanSources::Files(files) => {
                 let Some(file) = files.first() else {
                     polars_bail!(ComputeError: "no buffers specified for this reader");
                 };
 
-                infer_schema(MemSlice::from_file(file)?)?
+                let mmap = MMapSemaphore::new_from_file(file)?;
+                infer_schema(Buffer::from_owner(mmap))?
             },
             ScanSources::Buffers(buffers) => {
                 let Some(buffer) = buffers.first() else {

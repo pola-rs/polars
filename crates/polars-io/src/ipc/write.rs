@@ -20,6 +20,9 @@ pub struct IpcWriterOptions {
     pub compat_level: CompatLevel,
     /// Number of rows per record batch
     pub record_batch_size: Option<usize>,
+    /// Write record batch StatisticsFlags as custom metadata into the record batch header.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub record_batch_statistics: bool,
     /// Size of each written chunk.
     pub chunk_size: IdxSize,
 }
@@ -30,6 +33,7 @@ impl Default for IpcWriterOptions {
             compression: None,
             compat_level: CompatLevel::newest(),
             record_batch_size: None,
+            record_batch_statistics: false,
             chunk_size: 1 << 18,
         }
     }
@@ -40,6 +44,7 @@ impl IpcWriterOptions {
         IpcWriter::new(writer)
             .with_compression(self.compression)
             .with_record_batch_size(self.record_batch_size)
+            .with_record_batch_statistics(self.record_batch_statistics)
     }
 }
 
@@ -76,6 +81,7 @@ pub struct IpcWriter<W> {
     /// Polars' flavor of arrow. This might be temporary.
     pub(super) compat_level: CompatLevel,
     pub(super) record_batch_size: Option<usize>,
+    pub(super) record_batch_statistics: bool,
     pub(super) parallel: bool,
     pub(super) custom_schema_metadata: Option<Arc<Metadata>>,
 }
@@ -94,6 +100,11 @@ impl<W: Write> IpcWriter<W> {
 
     pub fn with_record_batch_size(mut self, record_batch_size: Option<usize>) -> Self {
         self.record_batch_size = record_batch_size;
+        self
+    }
+
+    pub fn with_record_batch_statistics(mut self, record_batch_statistics: bool) -> Self {
+        self.record_batch_statistics = record_batch_statistics;
         self
     }
 
@@ -140,6 +151,7 @@ where
             compression: None,
             compat_level: CompatLevel::newest(),
             record_batch_size: None,
+            record_batch_statistics: false,
             parallel: true,
             custom_schema_metadata: None,
         }

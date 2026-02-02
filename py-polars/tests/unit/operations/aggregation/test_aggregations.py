@@ -26,6 +26,15 @@ def test_quantile_expr_input() -> None:
         df.select(pl.col("a").quantile(0.6)),
     )
 
+    df = pl.DataFrame({"x": [1, 2, 3, 4], "y": [0.25, 0.3, 0.4, 0.75]})
+
+    assert_frame_equal(
+        df.select(
+            pl.col.x.quantile(pl.concat_list(pl.col.y.min(), pl.col.y.max().first()))
+        ),
+        df.select(pl.col.x.quantile([0.25, 0.75])),
+    )
+
 
 def test_boolean_aggs() -> None:
     df = pl.DataFrame({"bool": [True, False, None, True]})
@@ -107,6 +116,23 @@ def test_quantile() -> None:
     assert s.quantile(0.5, "nearest") == 2
     assert s.quantile(0.5, "lower") == 2
     assert s.quantile(0.5, "higher") == 2
+    assert s.quantile([0.25, 0.75], "linear") == [1.5, 2.5]
+
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0]})
+    expected = pl.DataFrame({"a": [[2.0]]})
+    assert_frame_equal(
+        df.select(pl.col("a").quantile([0.5], interpolation="linear")), expected
+    )
+
+
+def test_quantile_error_checking() -> None:
+    s = pl.Series([1, 2, 3])
+    with pytest.raises(pl.exceptions.ComputeError):
+        s.quantile(-0.1)
+    with pytest.raises(pl.exceptions.ComputeError):
+        s.quantile(1.1)
+    with pytest.raises(pl.exceptions.ComputeError):
+        s.quantile([0.0, 1.2])
 
 
 def test_quantile_date() -> None:
@@ -293,6 +319,16 @@ def test_quantile_vs_numpy(tp: type, n: int) -> None:
             pl.Series(a).quantile(q, interpolation="linear"),  # type: ignore[arg-type]
             np_result,  # type: ignore[arg-type]
         )
+
+    df = pl.DataFrame({"a": a})
+
+    expected = df.select(
+        pl.col.a.quantile(0.25).alias("low"), pl.col.a.quantile(0.75).alias("high")
+    ).select(pl.concat_list(["low", "high"]).alias("quantiles"))
+
+    result = df.select(pl.col.a.quantile([0.25, 0.75]).alias("quantiles"))
+
+    assert_frame_equal(expected, result)
 
 
 def test_mean_overflow() -> None:

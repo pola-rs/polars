@@ -11,7 +11,7 @@ use polars_utils::{format_pl_smallstr, pl_serialize};
 use tokio::sync::RwLock;
 
 use super::{CloudLocation, CloudOptions, CloudType, PolarsObjectStore};
-use crate::cloud::CloudConfig;
+use crate::cloud::{CloudConfig, CloudRetryConfig};
 
 /// Object stores must be cached. Every object-store will do DNS lookups and
 /// get rate limited when querying the DNS (can take up to 5s).
@@ -38,19 +38,20 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Vec<u
     // We include credentials as they can expire, so users will send new credentials for the same url.
     let cloud_options = options.map(
         |CloudOptions {
+             max_retries: _,
              // Destructure to ensure this breaks if anything changes.
-             max_retries,
              #[cfg(feature = "file_cache")]
              file_cache_ttl,
              config,
+             retry_config,
              #[cfg(feature = "cloud")]
              credential_provider,
          }| {
-            CloudOptions2 {
-                max_retries: *max_retries,
+            CloudOptionsKey {
                 #[cfg(feature = "file_cache")]
                 file_cache_ttl: *file_cache_ttl,
                 config: config.clone(),
+                retry_config: *retry_config,
                 #[cfg(feature = "cloud")]
                 credential_provider: credential_provider.as_ref().map_or(0, |x| x.func_addr()),
             }
@@ -75,18 +76,18 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Vec<u
     #[cfg_attr(feature = "serde", derive(serde::Serialize))]
     struct CacheKey {
         url_base: PlSmallStr,
-        cloud_options: Option<CloudOptions2>,
+        cloud_options: Option<CloudOptionsKey>,
     }
 
     /// Variant of CloudOptions for serializing to a cache key. The credential
     /// provider is replaced by the function address.
     #[derive(Clone, Debug, PartialEq, Hash, Eq)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-    struct CloudOptions2 {
-        max_retries: usize,
+    struct CloudOptionsKey {
         #[cfg(feature = "file_cache")]
         file_cache_ttl: u64,
         config: Option<CloudConfig>,
+        retry_config: CloudRetryConfig,
         #[cfg(feature = "cloud")]
         credential_provider: usize,
     }

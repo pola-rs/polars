@@ -1,5 +1,5 @@
-#![allow(unsafe_op_in_unsafe_fn)]
-use std::ops::Deref;
+use std::ops::{Deref, Range, RangeBounds};
+use std::sync::LazyLock;
 
 use bytemuck::{Pod, Zeroable};
 use either::Either;
@@ -84,19 +84,19 @@ impl<T: std::fmt::Debug> std::fmt::Debug for Buffer<T> {
 impl<T> Default for Buffer<T> {
     #[inline]
     fn default() -> Self {
-        Vec::new().into()
+        Self::new()
     }
 }
 
 impl<T> Buffer<T> {
     /// Creates an empty [`Buffer`].
     #[inline]
-    pub fn new() -> Self {
-        Self::default()
+    pub const fn new() -> Self {
+        Self::from_storage(SharedStorage::empty())
     }
 
-    /// Auxiliary method to create a new Buffer
-    pub fn from_storage(storage: SharedStorage<T>) -> Self {
+    /// Auxiliary method to create a new Buffer.
+    pub const fn from_storage(storage: SharedStorage<T>) -> Self {
         let ptr = storage.as_ptr();
         let length = storage.len();
         Buffer {
@@ -106,8 +106,39 @@ impl<T> Buffer<T> {
         }
     }
 
+    /// Creates a [`Buffer`] backed by static data.
     pub fn from_static(data: &'static [T]) -> Self {
         Self::from_storage(SharedStorage::from_static(data))
+    }
+
+    /// Creates a [`Buffer`] backed by a vec.
+    pub fn from_vec(data: Vec<T>) -> Self {
+        Self::from_storage(SharedStorage::from_vec(data))
+    }
+
+    /// Creates a [`Buffer`] backed by `owner`.
+    pub fn from_owner<O: Send + AsRef<[T]> + 'static>(owner: O) -> Self {
+        Self::from_storage(SharedStorage::from_owner(owner))
+    }
+
+    /// Calls f with a [`Buffer`] backed by this slice.
+    ///
+    /// Aborts if any clones of the [`Buffer`] still live when `f` returns.
+    pub fn with_slice<R, F: FnOnce(Buffer<T>) -> R>(slice: &[T], f: F) -> R {
+        SharedStorage::with_slice(slice, |ss| f(Self::from_storage(ss)))
+    }
+
+    /// Calls f with a [`Buffer`] backed by this vec.
+    ///
+    /// # Panics
+    /// Panics if any clones of the [`Buffer`] still live when `f` returns.
+    pub fn with_vec<R, F: FnOnce(Buffer<T>) -> R>(vec: &mut Vec<T>, f: F) -> R {
+        SharedStorage::with_vec(vec, |ss| f(Self::from_storage(ss)))
+    }
+
+    /// Returns the storage backing this [`Buffer`].
+    pub fn into_storage(self) -> SharedStorage<T> {
+        self.storage
     }
 
     /// Returns the number of bytes in the buffer
@@ -146,61 +177,61 @@ impl<T> Buffer<T> {
     /// Returns the byte slice stored in this buffer.
     #[inline]
     pub fn as_slice(&self) -> &[T] {
-        // SAFETY:
-        // invariant of this struct `offset + length <= data.len()`
+        // SAFETY: invariant of this struct `offset + length <= data.len()`.
         debug_assert!(self.offset() + self.length <= self.storage.len());
         unsafe { std::slice::from_raw_parts(self.ptr, self.length) }
     }
 
-    /// Returns a new [`Buffer`] that is a slice of this buffer starting at `offset`.
-    /// Doing so allows the same memory region to be shared between buffers.
-    /// # Panics
-    /// Panics iff `offset + length` is larger than `len`.
-    #[inline]
-    pub fn sliced(self, offset: usize, length: usize) -> Self {
-        assert!(
-            offset + length <= self.len(),
-            "the offset of the new Buffer cannot exceed the existing length"
-        );
-        // SAFETY: we just checked bounds
-        unsafe { self.sliced_unchecked(offset, length) }
-    }
-
-    /// Slices this buffer starting at `offset`.
-    /// # Panics
-    /// Panics iff `offset + length` is larger than `len`.
-    #[inline]
-    pub fn slice(&mut self, offset: usize, length: usize) {
-        assert!(
-            offset + length <= self.len(),
-            "the offset of the new Buffer cannot exceed the existing length"
-        );
-        // SAFETY: we just checked bounds
-        unsafe { self.slice_unchecked(offset, length) }
-    }
-
-    /// Returns a new [`Buffer`] that is a slice of this buffer starting at `offset`.
+    /// Returns a new [`Buffer`] that is a slice of this buffer.
     /// Doing so allows the same memory region to be shared between buffers.
     ///
-    /// # Safety
-    /// The caller must ensure `offset + length <= self.len()`
+    /// # Panics
+    /// Panics iff the range is out of bounds.
     #[inline]
     #[must_use]
-    pub unsafe fn sliced_unchecked(mut self, offset: usize, length: usize) -> Self {
-        debug_assert!(offset + length <= self.len());
-
-        self.slice_unchecked(offset, length);
+    pub fn sliced<R: RangeBounds<usize>>(mut self, range: R) -> Self {
+        self.slice_in_place(range);
         self
     }
 
-    /// Slices this buffer starting at `offset`.
+    /// Returns a new [`Buffer`] that is a slice of this buffer starting at `offset`.
+    /// Doing so allows the same memory region to be shared between buffers.
     ///
     /// # Safety
-    /// The caller must ensure `offset + length <= self.len()`
+    /// The caller must ensure the range is in-bounds.
     #[inline]
-    pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
-        self.ptr = self.ptr.add(offset);
-        self.length = length;
+    #[must_use]
+    pub unsafe fn sliced_unchecked<R: RangeBounds<usize>>(mut self, range: R) -> Self {
+        unsafe {
+            self.slice_in_place_unchecked(range);
+        }
+        self
+    }
+
+    /// Slices this buffer to the given range.
+    ///
+    /// # Panics
+    /// Panics iff the range is out of bounds.
+    #[inline]
+    pub fn slice_in_place<R: RangeBounds<usize>>(&mut self, range: R) {
+        unsafe {
+            let Range { start, end } = crate::check_range(range, ..self.len());
+            self.ptr = self.ptr.add(start);
+            self.length = end - start;
+        }
+    }
+
+    /// Slices this buffer to the given range.
+    ///
+    /// # Safety
+    /// The caller must ensure the range is in-bounds.
+    #[inline]
+    pub unsafe fn slice_in_place_unchecked<R: RangeBounds<usize>>(&mut self, range: R) {
+        unsafe {
+            let Range { start, end } = crate::decode_range_unchecked(range, ..self.len());
+            self.ptr = self.ptr.add(start);
+            self.length = end - start;
+        }
     }
 
     /// Returns a pointer to the start of the storage underlying this buffer.
@@ -298,16 +329,46 @@ impl<T: Clone> Buffer<T> {
     }
 }
 
-impl<T: Zeroable + Copy> Buffer<T> {
-    pub fn zeroed(len: usize) -> Self {
-        vec![T::zeroed(); len].into()
+#[repr(C, align(4096))]
+#[derive(Copy, Clone)]
+struct Aligned([u8; 4096]);
+
+// We intentionally leak 8MiB of zeroed memory once so we don't have to
+// refcount it.
+const GLOBAL_ZERO_SIZE: usize = 8 * 1024 * 1024;
+static GLOBAL_ZEROES: LazyLock<SharedStorage<Aligned>> = LazyLock::new(|| {
+    assert!(GLOBAL_ZERO_SIZE.is_multiple_of(size_of::<Aligned>()));
+    let chunks = GLOBAL_ZERO_SIZE / size_of::<Aligned>();
+    let v = vec![Aligned([0; _]); chunks];
+    let mut ss = SharedStorage::from_vec(v);
+    ss.leak();
+    ss
+});
+
+impl<T: Zeroable> Buffer<T> {
+    pub fn zeroed(length: usize) -> Self {
+        let bytes_needed = length * size_of::<T>();
+        if align_of::<T>() <= align_of::<Aligned>() && bytes_needed <= GLOBAL_ZERO_SIZE {
+            unsafe {
+                // SAFETY: we checked the alignment of T, that it fits, and T is zeroable.
+                let storage = GLOBAL_ZEROES.clone().transmute_unchecked::<T>();
+                let ptr = storage.as_ptr();
+                Buffer {
+                    storage,
+                    ptr,
+                    length,
+                }
+            }
+        } else {
+            bytemuck::zeroed_vec(length).into()
+        }
     }
 }
 
 impl<T> From<Vec<T>> for Buffer<T> {
     #[inline]
     fn from(v: Vec<T>) -> Self {
-        Self::from_storage(SharedStorage::from_vec(v))
+        Self::from_vec(v)
     }
 }
 

@@ -48,6 +48,7 @@ n_workers = 4
 [observatory]
 enabled = true
 max_metrics_bytes_total = 0
+database_path = "/opt/db/observatory.db"
 
 [monitoring]
 enabled = true
@@ -72,10 +73,8 @@ memory_limit = 10737418240 # 10 GiB
 [worker]
 enabled = true
 shuffle_location.local.path = "/opt/shuffle-data-path"
-
-[observatory]
-enabled = true
-max_metrics_bytes_total = 0
+task_service.public_addr = "192.168.1.2"
+shuffle_service.public_addr = "192.168.1.2"
 
 [monitoring]
 enabled = true

@@ -1,9 +1,12 @@
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::rewrite_projections;
+use futures::stream::FuturesUnordered;
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
+use polars_io::ExternalCompression;
+use polars_io::pl_async::get_runtime;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_path::PlRefPath;
@@ -16,6 +19,7 @@ use crate::constants::get_pl_element_name;
 use crate::dsl::PartitionedSinkOptions;
 use crate::dsl::file_provider::{FileProviderType, HivePathProvider};
 use crate::dsl::functions::{all_horizontal, col};
+use crate::plans::conversion::dsl_to_ir::scans::SourcesToFileInfo;
 
 mod concat;
 mod datatype_fn_to_ir;
@@ -100,6 +104,41 @@ fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> Polars
     Ok(lp_node)
 }
 
+async fn fetch_metadata(
+    lp: &DslPlan,
+    cache_file_info: SourcesToFileInfo,
+    verbose: bool,
+) -> PolarsResult<()> {
+    use futures::stream::StreamExt;
+    let mut futures = lp
+        .into_iter()
+        .filter_map(|dsl| {
+            let DslPlan::Scan {
+                sources,
+                unified_scan_args,
+                scan_type,
+                cached_ir,
+            } = dsl
+            else {
+                return None;
+            };
+            Some(scans::dsl_to_ir(
+                sources.clone(),
+                unified_scan_args.clone(),
+                scan_type.clone(),
+                cached_ir.clone(),
+                cache_file_info.clone(),
+                verbose,
+            ))
+        })
+        .collect::<FuturesUnordered<_>>();
+
+    while let Some(result) = futures.next().await {
+        result?
+    }
+    Ok::<(), PolarsError>(())
+}
+
 /// converts LogicalPlan to IR
 /// it adds expressions & lps to the respective arenas as it traverses the plan
 /// finally it returns the top node of the logical plan
@@ -107,13 +146,27 @@ fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> Polars
 pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult<Node> {
     let owned = Arc::unwrap_or_clone;
 
+    // First do a pass to collect all scans and fetch all metadata concurrently.
+    {
+        let verbose = ctxt.verbose;
+        let cache_file_info = ctxt.cache_file_info.clone();
+        use tokio::runtime::Handle;
+
+        let fut = fetch_metadata(&lp, cache_file_info, verbose);
+        if let Ok(_handle) = Handle::try_current() {
+            get_runtime().block_in_place_on(fut)?;
+        } else {
+            get_runtime().block_on(fut)?;
+        }
+    }
+
     let v = match lp {
         DslPlan::Scan {
-            sources,
-            unified_scan_args,
-            scan_type,
+            sources: _,
+            unified_scan_args: _,
+            scan_type: _,
             cached_ir,
-        } => scans::dsl_to_ir(sources, unified_scan_args, scan_type, cached_ir, ctxt)?,
+        } => cached_ir.lock().unwrap().clone().unwrap(),
         #[cfg(feature = "python")]
         DslPlan::PythonScan { options } => {
             use crate::dsl::python_dsl::PythonOptionsDsl;
@@ -1249,14 +1302,27 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 SinkType::Memory => SinkTypeIR::Memory,
                 SinkType::Callback(f) => SinkTypeIR::Callback(f),
                 SinkType::File(options) => {
+                    let mut compression_opt = None::<ExternalCompression>;
+
                     #[cfg(feature = "csv")]
-                    if let FileWriteFormat::Csv(csv_options) = &options.file_format {
-                        if let SinkTarget::Path(path) = &options.target
-                            && csv_options.check_extension
-                        {
+                    if let FileWriteFormat::Csv(csv_options) = &options.file_format
+                        && csv_options.check_extension
+                    {
+                        compression_opt = Some(csv_options.compression);
+                    }
+
+                    #[cfg(feature = "json")]
+                    if let FileWriteFormat::NDJson(ndjson_options) = &options.file_format
+                        && ndjson_options.check_extension
+                    {
+                        compression_opt = Some(ndjson_options.compression);
+                    }
+
+                    if let Some(compression) = compression_opt {
+                        if let SinkTarget::Path(path) = &options.target {
                             let path_str = path.as_str();
 
-                            if let Some(suffix) = csv_options.compression.file_suffix() {
+                            if let Some(suffix) = compression.file_suffix() {
                                 polars_ensure!(
                                     path_str.ends_with(suffix) || !path_str.contains('.'),
                                     InvalidOperation: "the path ({}) does not conform to standard naming, expected suffix: ({}), set `check_extension` to `False` if you don't want this behavior", path, suffix
@@ -1296,6 +1362,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             keys_pre_grouped,
                         } => {
                             let keys = to_expr_irs(keys, expr_to_ir_cx)?;
+
+                            polars_ensure!(
+                                keys.iter().all(|e| is_elementwise_rec(e.node(), ctxt.expr_arena)),
+                                InvalidOperation:
+                                "cannot use non-elementwise expressions for PartitionBy keys"
+                            );
 
                             PartitionStrategyIR::Keyed {
                                 keys,
