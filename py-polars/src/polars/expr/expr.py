@@ -9598,16 +9598,35 @@ Consider using {self}.implode() instead"""
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [0.0]})
+        >>> from math import pi
+        >>> df = pl.DataFrame({"a": [0.0, pi / 2]})
         >>> df.select(pl.col("a").sin())
-        shape: (1, 1)
+        shape: (2, 1)
         ┌─────┐
         │ a   │
         │ --- │
         │ f64 │
         ╞═════╡
         │ 0.0 │
+        │ 1.0 │
         └─────┘
+        >>> df = pl.DataFrame({"a": [0.0, 90]})
+        >>> df.select(pl.col("a").radians().sin())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 0.0 │
+        │ 1.0 │
+        └─────┘
+
+        Notes
+        -----
+        The argument must be in radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Expr.radians>`.
         """
         return wrap_expr(self._pyexpr.sin())
 
@@ -9622,16 +9641,36 @@ Consider using {self}.implode() instead"""
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [0.0]})
+        >>> from math import pi
+        >>> df = pl.DataFrame({"a": [0.0, pi / 2]})
         >>> df.select(pl.col("a").cos())
-        shape: (1, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ f64 │
-        ╞═════╡
-        │ 1.0 │
-        └─────┘
+        shape: (2, 1)
+        ┌────────────┐
+        │ a          │
+        │ ---        │
+        │ f64        │
+        ╞════════════╡
+        │ 1.0        │
+        │ 6.1232e-17 │
+        └────────────┘
+        >>> df = pl.DataFrame({"a": [0.0, 90]})
+        >>> df.select(pl.col("a").radians().cos())
+        shape: (2, 1)
+        ┌────────────┐
+        │ a          │
+        │ ---        │
+        │ f64        │
+        ╞════════════╡
+        │ 1.0        │
+        │ 6.1232e-17 │
+        └────────────┘
+
+
+        Notes
+        -----
+        The argument must be in radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Expr.radians>`.
         """
         return wrap_expr(self._pyexpr.cos())
 
@@ -9646,16 +9685,35 @@ Consider using {self}.implode() instead"""
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1.0]})
-        >>> df.select(pl.col("a").tan().round(2))
-        shape: (1, 1)
-        ┌──────┐
-        │ a    │
-        │ ---  │
-        │ f64  │
-        ╞══════╡
-        │ 1.56 │
-        └──────┘
+        >>> from math import pi
+        >>> df = pl.DataFrame({"a": [0.0, pi / 4]})
+        >>> df.select(pl.col("a").tan())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 0.0 │
+        │ 1.0 │
+        └─────┘
+        >>> df = pl.DataFrame({"a": [0.0, 45]})
+        >>> df.select(pl.col("a").radians().tan())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 0.0 │
+        │ 1.0 │
+        └─────┘
+
+        Notes
+        -----
+        The argument must be in radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Expr.radians>`.
         """
         return wrap_expr(self._pyexpr.tan())
 
@@ -9670,16 +9728,35 @@ Consider using {self}.implode() instead"""
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1.0]})
-        >>> df.select(pl.col("a").cot().round(2))
-        shape: (1, 1)
-        ┌──────┐
-        │ a    │
-        │ ---  │
-        │ f64  │
-        ╞══════╡
-        │ 0.64 │
-        └──────┘
+        >>> from math import pi
+        >>> df = pl.DataFrame({"a": [0.0, pi / 4]})
+        >>> df.select(pl.col("a").cot())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ inf │
+        │ 1.0 │
+        └─────┘
+        >>> df = pl.DataFrame({"a": [0.0, 45]})
+        >>> df.select(pl.col("a").radians().cot())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ inf │
+        │ 1.0 │
+        └─────┘
+
+        Notes
+        -----
+        The argument must be in radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Expr.radians>`.
         """
         return wrap_expr(self._pyexpr.cot())
 
@@ -9690,20 +9767,38 @@ Consider using {self}.implode() instead"""
         Returns
         -------
         Expr
-            Expression of data type :class:`Float64`.
+            Expression of data type :class:`Float64`, measuring an angle in radians.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1.0]})
+        >>> df = pl.DataFrame({"a": [1.0, 0.5, 0]})
         >>> df.select(pl.col("a").arcsin())
-        shape: (1, 1)
+        shape: (3, 1)
         ┌──────────┐
         │ a        │
         │ ---      │
         │ f64      │
         ╞══════════╡
         │ 1.570796 │
+        │ 0.523599 │
+        │ 0.0      │
         └──────────┘
+        >>> df.select(pl.col("a").arcsin().degrees())
+        shape: (3, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 90.0 │
+        │ 30.0 │
+        │ 0.0  │
+        └──────┘
+
+        Notes
+        -----
+        To convert the result from radians to degrees,
+        call :meth:`.degrees() <polars.Expr.degrees>`.
         """
         return wrap_expr(self._pyexpr.arcsin())
 
@@ -9718,16 +9813,35 @@ Consider using {self}.implode() instead"""
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [0.0]})
+        >>> df = pl.DataFrame({"a": [1.0, 0.5, 0]})
         >>> df.select(pl.col("a").arccos())
-        shape: (1, 1)
+        shape: (3, 1)
         ┌──────────┐
         │ a        │
         │ ---      │
         │ f64      │
         ╞══════════╡
+        │ 0.0      │
+        │ 1.047198 │
         │ 1.570796 │
         └──────────┘
+        >>> df.select(pl.col("a").arccos().degrees())
+        shape: (3, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 0.0  │
+        │ 60.0 │
+        │ 90.0 │
+        └──────┘
+
+
+        Notes
+        -----
+        To convert the result from radians to degrees,
+        call :meth:`.degrees() <polars.Expr.degrees>`.
         """
         return wrap_expr(self._pyexpr.arccos())
 
@@ -9742,16 +9856,34 @@ Consider using {self}.implode() instead"""
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1.0]})
+        >>> df = pl.DataFrame({"a": [float("Inf"), 1, 0]})
         >>> df.select(pl.col("a").arctan())
-        shape: (1, 1)
+        shape: (3, 1)
         ┌──────────┐
         │ a        │
         │ ---      │
         │ f64      │
         ╞══════════╡
+        │ 1.570796 │
         │ 0.785398 │
+        │ 0.0      │
         └──────────┘
+        >>> df.select(pl.col("a").arctan().degrees())
+        shape: (3, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 90.0 │
+        │ 45.0 │
+        │ 0.0  │
+        └──────┘
+
+        Notes
+        -----
+        To convert the result from radians to degrees,
+        call :meth:`.degrees() <polars.Expr.degrees>`.
         """
         return wrap_expr(self._pyexpr.arctan())
 
