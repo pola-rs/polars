@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::sync::atomic::AtomicUsize;
 
 use polars_core::prelude::*;
 use polars_core::utils::Container;
@@ -302,7 +303,7 @@ async fn process_asof_join_task(
                 options.strategy,
                 options.tolerance.clone().map(Scalar::into_value),
                 params.args.suffix.clone(),
-                None, // slice: Option<(i64, usize)>
+                None,
                 params.args.coalesce.coalesce(&params.args.how),
                 options.allow_eq,
                 options.check_sortedness,
@@ -335,8 +336,7 @@ async fn process_asof_join_task(
         {
             *last_left_row = Some(row);
         }
-
-        // TODO [amber]: Prune the right buffer
+        prune_right_side(&left_df, right_buffer, params)?;
     }
     stop_and_buffer_pipe_contents(recv_right.as_mut(), |m| right_buffer.push_df(m.into_df())).await;
     Ok(())
@@ -351,23 +351,22 @@ fn need_more_right_side(
 ) -> PolarsResult<bool> {
     let options = params.as_of_options();
     let left_key = left.column(&params.left.key_col)?.as_materialized_series();
-
     if left_key.is_empty() {
         return Ok(false);
     }
     // SAFETY: We just checked that left_key is not empty
-    let left_last = unsafe { left_key.get_unchecked(left_key.len() - 1) };
+    let left_last_val = unsafe { left_key.get_unchecked(left_key.len() - 1) };
     let right_range_end = match (options.strategy, options.allow_eq) {
         (AsofStrategy::Forward, true) => {
-            right.binary_search(|x: &_| *x >= left_last, &params.right.key_col, false)
+            right.binary_search(|x| *x >= left_last_val, &params.right.key_col, false)
         },
         (AsofStrategy::Forward, false) | (AsofStrategy::Backward, true) => {
-            right.binary_search(|x: &_| *x > left_last, &params.right.key_col, false)
+            right.binary_search(|x| *x > left_last_val, &params.right.key_col, false)
         },
         (AsofStrategy::Backward, false) | (AsofStrategy::Nearest, _) => {
-            let fst_greater: usize =
-                right.binary_search(|x: &_| *x > left_last, &params.right.key_col, false);
-            if fst_greater >= right.height() {
+            let first_greater =
+                right.binary_search(|x| *x > left_last_val, &params.right.key_col, false);
+            if first_greater >= right.height() {
                 return Ok(true);
             }
             // In the Backward/Nearest cases, there may be a chunk of consecutive equal
@@ -376,11 +375,29 @@ fn need_more_right_side(
 
             // SAFETY: We just checked that right_range_end is in bounds
             let fst_greater_val =
-                unsafe { right.get_bypass_validity(&params.right.key_col, fst_greater, false) };
-            right.binary_search(|x: &_| *x > fst_greater_val, &params.right.key_col, false)
+                unsafe { right.get_bypass_validity(&params.right.key_col, first_greater, false) };
+            right.binary_search(|x| *x > fst_greater_val, &params.right.key_col, false)
         },
     };
     Ok(right_range_end >= right.height())
+}
+
+fn prune_right_side(
+    left: &DataFrame,
+    right: &mut DataFrameBuffer,
+    params: &AsOfJoinParams,
+) -> PolarsResult<()> {
+    let left_key = left.column(&params.left.key_col)?.as_materialized_series();
+    if left.len() == 0 {
+        return Ok(());
+    }
+    // SAFETY: We just checked that left_key is not empty
+    let left_first_val = unsafe { left_key.get_unchecked(0) };
+    let right_range_start = right
+        .binary_search(|x| *x >= left_first_val, &params.right.key_col, false)
+        .saturating_sub(1);
+    right.split_at(right_range_start);
+    Ok(())
 }
 
 fn get_last_total_ord_row(

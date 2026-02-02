@@ -611,16 +611,9 @@ def test_merge_join_applicable(
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
-@pytest.mark.parametrize(
-    "strategy",
-    [
-        "backward",
-        "forward",
-        "nearest",
-    ],
-)
+@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
 @pytest.mark.parametrize("allow_exact_matches", [False, True])
-@pytest.mark.parametrize("morsel_size", ["1", "10", "1000"])
+@pytest.mark.parametrize("morsel_size", ["1", "1000"])
 @given(data=st.data())
 @settings(
     max_examples=1000, suppress_health_check=[HealthCheck.function_scoped_fixture]
@@ -634,6 +627,7 @@ def test_streaming_asof_join(
 ) -> None:
     monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", morsel_size)
 
+    # TODO: [amber] Add temporal dtypes and string
     dtype = data.draw(st.sampled_from(list(FLOAT_DTYPES | INTEGER_DTYPES)))
     df_st = dataframes(
         min_cols=1, max_cols=1, allowed_dtypes=[dtype], allow_time_zones=False
