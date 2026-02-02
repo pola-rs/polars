@@ -5,7 +5,7 @@ use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 
 use super::compute_node_prelude::*;
-use crate::utils::in_memory_linearize::linearize;
+use crate::utils::in_memory_linearize::linearize_into;
 
 pub struct InMemorySinkNode {
     morsels_per_pipe: Mutex<Vec<Vec<(MorselSeq, DataFrame)>>>,
@@ -75,11 +75,11 @@ impl ComputeNode for InMemorySinkNode {
 
     fn get_output(&mut self) -> PolarsResult<Option<DataFrame>> {
         let morsels_per_pipe = core::mem::take(&mut *self.morsels_per_pipe.get_mut());
-        let dataframes = linearize(morsels_per_pipe);
-        if dataframes.is_empty() {
-            Ok(Some(DataFrame::empty_with_schema(&self.schema)))
-        } else {
-            Ok(Some(accumulate_dataframes_vertical_unchecked(dataframes)))
-        }
+
+        // We add an empty dataframe with the right schema so full-null or empty
+        // dataframes are converted to the right datatype.
+        let mut dataframes = vec![DataFrame::empty_with_schema(&self.schema)];
+        linearize_into(morsels_per_pipe, &mut dataframes);
+        Ok(Some(accumulate_dataframes_vertical_unchecked(dataframes)))
     }
 }
