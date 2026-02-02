@@ -19,6 +19,7 @@ mod config;
 pub mod small_bytes;
 pub use config::check_allow_importing_interval_as_struct;
 pub mod arg_min_max;
+pub mod bool;
 pub mod cpuid;
 pub mod error;
 pub mod float16;
@@ -53,7 +54,6 @@ pub mod sys;
 pub mod total_ord;
 pub mod unique_id;
 pub mod with_drop;
-
 pub use functions::*;
 pub mod compression;
 pub mod file;

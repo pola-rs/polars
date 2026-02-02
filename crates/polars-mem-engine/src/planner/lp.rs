@@ -544,10 +544,17 @@ fn create_physical_plan_impl(
                 let builder = get_streaming_executor_builder();
 
                 let input = recurse!(input, state)?;
+
+                let gb_root = if state.has_cache_parent {
+                    lp_arena.add(lp_arena.get(root).clone())
+                } else {
+                    root
+                };
+
                 let executor = Box::new(GroupByStreamingExec::new(
                     input,
                     builder,
-                    root,
+                    gb_root,
                     lp_arena,
                     expr_arena,
                     phys_keys,
