@@ -3,6 +3,7 @@ from __future__ import annotations
 import gc
 import importlib.util
 import os
+import platform
 import random
 import string
 import sys
@@ -29,6 +30,8 @@ load_profile(
 def _has_module(name: str) -> bool:
     return importlib.util.find_spec(name) is not None
 
+
+IS_WASM = (sys.platform == "emscripten" or platform.machine() in ["wasm32", "wasm64"])
 
 HAS_BOTO3 = _has_module("boto3")
 HAS_MOTO = _has_module("moto")
