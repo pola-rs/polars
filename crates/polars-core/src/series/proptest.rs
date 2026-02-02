@@ -1,11 +1,10 @@
 use std::ops::RangeInclusive;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use arrow::bitmap::bitmask::nth_set_bit_u32;
 #[cfg(feature = "dtype-categorical")]
-use polars_dtype::categorical::{CategoricalMapping, Categories, FrozenCategories};
+use polars_dtype::categorical::{Categories, FrozenCategories};
 use proptest::prelude::*;
 
 use crate::chunked_array::builder::AnonymousListBuilder;
@@ -337,9 +336,10 @@ fn series_categorical_strategy(
         })
         .prop_map(|categories| {
             // Using Categorical8Type (u8 backing) which supports up to 256 unique categories
+            let mapping = Categories::global().mapping();
             let mut builder = CategoricalChunkedBuilder::<Categorical8Type>::new(
                 next_column_name().into(),
-                DataType::Categorical(Categories::global(), Arc::new(CategoricalMapping::new(256))),
+                DataType::Categorical(Categories::global(), mapping),
             );
 
             for category in categories {

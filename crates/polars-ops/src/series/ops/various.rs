@@ -60,7 +60,7 @@ pub trait SeriesMethods: SeriesSealed {
 
     #[cfg(feature = "hash")]
     fn hash(&self, build_hasher: PlSeedableRandomStateQuality) -> UInt64Chunked {
-        let s = self.as_series().to_physical_repr();
+        let s = self.as_series();
         let mut h = vec![];
         s.0.vec_hash(build_hasher, &mut h).unwrap();
         UInt64Chunked::from_vec(s.name().clone(), h)
