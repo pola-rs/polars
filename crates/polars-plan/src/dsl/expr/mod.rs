@@ -735,8 +735,11 @@ pub enum Operator {
     Plus,
     Minus,
     Multiply,
-    Divide,
+    /// Rust division semantics, this is what Rust interface `/` fispatches to
+    RustDivide,
+    /// Python division semantics, converting to floats. This is what python `/` operator dispatches to
     TrueDivide,
+    /// Floor division semantics, this is what python `//` dispatches to
     FloorDivide,
     Modulus,
     And,
@@ -761,9 +764,9 @@ impl Display for Operator {
             Plus => "+",
             Minus => "-",
             Multiply => "*",
-            Divide => "//",
+            RustDivide => "rust_div",
             TrueDivide => "/",
-            FloorDivide => "floor_div",
+            FloorDivide => "//",
             Modulus => "%",
             And | LogicalAnd => "&",
             Or | LogicalOr => "|",
@@ -810,7 +813,7 @@ impl Operator {
             Operator::EqValidity => Operator::EqValidity,
             Operator::NotEqValidity => Operator::NotEqValidity,
             // Operator::Divide requires modifying the right operand: left / right == 1/right * left
-            Operator::Divide => unimplemented!(),
+            Operator::RustDivide => unimplemented!(),
             Operator::Multiply => Operator::Multiply,
             Operator::And => Operator::And,
             Operator::Plus => Operator::Plus,
