@@ -6407,17 +6407,20 @@ Consider using {self}.implode() instead"""
         k3 = seed_3 if seed_3 is not None else seed
         return wrap_expr(self._pyexpr.hash(k0, k1, k2, k3))
 
-    def reinterpret(self, *, signed: bool = True) -> Expr:
+    def reinterpret(
+        self,
+        dtype: PolarsDataType,
+    ) -> Expr:
         """
-        Reinterpret the underlying bits as a signed/unsigned integer.
+        Reinterpret the underlying bits as a signed/unsigned integer or float.
 
-        This operation is only allowed for 64bit integers. For lower bits integers,
-        you can safely use that cast operation.
+        This operation is only allowed for numeric typesof the same size.
+        For lower bits numbers, you can safely use the cast operation.
 
         Parameters
         ----------
-        signed
-            If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
+        dtype
+            DataType to reinterpret to.
 
         Examples
         --------
@@ -6425,7 +6428,7 @@ Consider using {self}.implode() instead"""
         >>> df = pl.DataFrame([s])
         >>> df.select(
         ...     [
-        ...         pl.col("a").reinterpret(signed=True).alias("reinterpreted"),
+        ...         pl.col("a").reinterpret(pl.Int64).alias("reinterpreted"),
         ...         pl.col("a").alias("original"),
         ...     ]
         ... )
@@ -6440,7 +6443,7 @@ Consider using {self}.implode() instead"""
         │ 2             ┆ 2        │
         └───────────────┴──────────┘
         """
-        return wrap_expr(self._pyexpr.reinterpret(signed))
+        return wrap_expr(self._pyexpr.reinterpret(dtype))
 
     def inspect(self, fmt: str = "{}") -> Expr:
         """

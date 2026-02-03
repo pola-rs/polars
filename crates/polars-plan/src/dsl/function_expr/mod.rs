@@ -367,7 +367,7 @@ pub enum FunctionExpr {
         offset: usize,
     },
     #[cfg(feature = "reinterpret")]
-    Reinterpret(bool),
+    Reinterpret(DataType),
     ExtendConstant,
 
     RowEncode(RowEncodingVariant),

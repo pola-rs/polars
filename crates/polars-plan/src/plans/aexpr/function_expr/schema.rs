@@ -433,14 +433,7 @@ impl IRFunctionExpr {
             FillNullWithStrategy(_) => mapper.with_same_dtype(),
             GatherEvery { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "reinterpret")]
-            Reinterpret(signed) => {
-                let dt = if *signed {
-                    DataType::Int64
-                } else {
-                    DataType::UInt64
-                };
-                mapper.with_dtype(dt)
-            },
+            Reinterpret(dtype) => mapper.with_dtype(dtype.clone()),
             ExtendConstant => mapper.with_same_dtype(),
 
             RowEncode(..) => mapper.try_map_field(|_| {

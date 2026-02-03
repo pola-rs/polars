@@ -381,7 +381,7 @@ pub enum IRFunctionExpr {
         offset: usize,
     },
     #[cfg(feature = "reinterpret")]
-    Reinterpret(bool),
+    Reinterpret(DataType),
     ExtendConstant,
 
     RowEncode(Vec<DataType>, RowEncodingVariant),
