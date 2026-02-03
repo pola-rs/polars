@@ -794,26 +794,32 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
         let a = a.drop_nulls();
         let b = b.drop_nulls();
 
-        let a_rank = a
-            .as_materialized_series()
-            .rank(
-                RankOptions {
-                    method: RankMethod::Average,
-                    ..Default::default()
-                },
-                None,
-            )
-            .into();
-        let b_rank = b
-            .as_materialized_series()
-            .rank(
-                RankOptions {
-                    method: RankMethod::Average,
-                    ..Default::default()
-                },
-                None,
-            )
-            .into();
+        let a_rank = a.as_materialized_series().rank(
+            RankOptions {
+                method: RankMethod::Average,
+                ..Default::default()
+            },
+            None,
+        );
+        let b_rank = b.as_materialized_series().rank(
+            RankOptions {
+                method: RankMethod::Average,
+                ..Default::default()
+            },
+            None,
+        );
+
+        // Because rank results in f64, we may need to restore the dtype
+        let a_rank = if a.dtype().is_float() {
+            a_rank.cast(a.dtype())?.into()
+        } else {
+            a_rank.into()
+        };
+        let b_rank = if b.dtype().is_float() {
+            b_rank.cast(b.dtype())?.into()
+        } else {
+            b_rank.into()
+        };
 
         pearson_corr(&[a_rank, b_rank])
     }
