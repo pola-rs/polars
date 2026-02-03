@@ -1025,121 +1025,6 @@ pub fn lower_ir(
             left_on,
             right_on,
             options,
-        } if matches!(options.args.how, JoinType::AsOf(_)) => {
-            assert_eq!(left_on.len(), 1);
-            assert_eq!(right_on.len(), 1);
-
-            let JoinType::AsOf(asof_options) = options.args.how.clone() else {
-                unreachable!()
-            };
-            let input_left = *input_left;
-            let input_right = *input_right;
-            let left_on = left_on[0].clone();
-            let right_on = right_on[0].clone();
-            let left_on_name = left_on.output_name();
-            let right_on_name = right_on.output_name();
-            let args = options.args.clone();
-            let options = options.options.clone();
-
-            let phys_left = lower_ir!(input_left)?;
-            let phys_right = lower_ir!(input_right)?;
-
-            if asof_options.left_by.is_none() && asof_options.right_by.is_none() {
-                // When lowering the expressions for the keys we need to ensure we keep around the
-                // payload columns, otherwise the input nodes can get replaced by input-independent
-                // nodes since the lowering code does not see we access any non-literal expressions.
-                // So we add dummy expressions before lowering and remove them afterwards.
-
-                let mut aug_left_on = Vec::new();
-                for name in phys_sm[phys_left.node].output_schema.iter_names() {
-                    let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-                    aug_left_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
-                }
-                aug_left_on.push(left_on.clone());
-                let mut aug_right_on = Vec::new();
-                for name in phys_sm[phys_right.node].output_schema.iter_names() {
-                    let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-                    aug_right_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
-                }
-                aug_right_on.push(right_on.clone());
-
-                let (mut trans_input_left, mut trans_left_on) = lower_exprs(
-                    phys_left,
-                    &aug_left_on,
-                    expr_arena,
-                    phys_sm,
-                    expr_cache,
-                    ctx,
-                )?;
-                let (mut trans_input_right, mut trans_right_on) = lower_exprs(
-                    phys_right,
-                    &aug_right_on,
-                    expr_arena,
-                    phys_sm,
-                    expr_cache,
-                    ctx,
-                )?;
-                let mut trans_left_on = trans_left_on.pop().unwrap();
-                let mut trans_right_on = trans_right_on.pop().unwrap();
-
-                if !matches!(expr_arena.get(left_on.node()), AExpr::Column(..)) {
-                    trans_left_on =
-                        trans_left_on.with_alias(PlSmallStr::from_str(asof_join::KEY_COL_NAME));
-                    trans_input_left = build_hstack_stream(
-                        phys_left,
-                        &[trans_left_on.clone()],
-                        expr_arena,
-                        phys_sm,
-                        expr_cache,
-                        ctx,
-                    )?;
-                }
-                if !matches!(expr_arena.get(right_on.node()), AExpr::Column(..)) {
-                    trans_right_on =
-                        trans_right_on.with_alias(PlSmallStr::from_str(asof_join::KEY_COL_NAME));
-                    trans_input_right = build_hstack_stream(
-                        phys_right,
-                        &[trans_right_on.clone()],
-                        expr_arena,
-                        phys_sm,
-                        expr_cache,
-                        ctx,
-                    )?;
-                }
-
-                let node = phys_sm.insert(PhysNode::new(
-                    output_schema,
-                    PhysNodeKind::AsOfJoin {
-                        input_left: trans_input_left,
-                        input_right: trans_input_right,
-                        left_on: left_on_name.clone(),
-                        right_on: right_on_name.clone(),
-                        args: args.clone(),
-                    },
-                ));
-                let mut stream = PhysStream::first(node);
-                if let Some((offset, len)) = args.slice {
-                    stream = build_slice_stream(stream, offset, len, phys_sm);
-                }
-                return Ok(stream);
-            } else {
-                PhysNodeKind::InMemoryJoin {
-                    input_left: phys_left,
-                    input_right: phys_right,
-                    left_on: vec![left_on],
-                    right_on: vec![right_on],
-                    args,
-                    options,
-                }
-            }
-        },
-        IR::Join {
-            input_left,
-            input_right,
-            schema: _,
-            left_on,
-            right_on,
-            options,
         } => {
             let input_left = *input_left;
             let input_right = *input_right;
@@ -1151,6 +1036,10 @@ pub fn lower_ir(
             let left_on_names = left_on.iter().map(get_expr_name).collect_vec();
             let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
             let args = options.args.clone();
+            let unwrap_asof_options = || match &args.how {
+                JoinType::AsOf(asof_options) => asof_options,
+                _ => panic!("join type is not AsOf"),
+            };
             let options = options.options.clone();
             let left_df_sortedness = is_sorted(input_left, ir_arena, expr_arena);
             let left_on_sorted = are_keys_sorted_any(
@@ -1185,11 +1074,19 @@ pub fn lower_ir(
             let mut right_key_descending = right_sorted_descending.as_ref().map(|v| v[0]);
             let left_key_nulls_last = left_sorted_nulls_last.as_ref().map(|v| v[0]);
             let right_key_nulls_last = right_sorted_nulls_last.as_ref().map(|v| v[0]);
+            let key_expr_is_trivial =
+                |c: &ExprIR, ea: &mut Arena<AExpr>| matches!(ea.get(c.node()), AExpr::Column(_));
+            let use_merge_join = args.how.is_equi() && join_keys_sorted_together;
+            let use_asof_join = args.how.is_equi()
+                && unwrap_asof_options().left_by.is_none()
+                && unwrap_asof_options().right_by.is_none();
 
             let phys_left = lower_ir!(input_left)?;
             let phys_right = lower_ir!(input_right)?;
 
-            if (args.how.is_equi() || args.how.is_semi_anti()) && !args.validation.needs_checks() {
+            if (args.how.is_equi() || args.how.is_semi_anti() || use_asof_join)
+                && !args.validation.needs_checks()
+            {
                 // When lowering the expressions for the keys we need to ensure we keep around the
                 // payload columns, otherwise the input nodes can get replaced by input-independent
                 // nodes since the lowering code does not see we access any non-literal expressions.
@@ -1229,17 +1126,11 @@ pub fn lower_ir(
                 let mut hstack_key_col_left = false;
                 let mut hstack_key_col_right = false;
 
-                let use_merge_join = args.how.is_equi() && join_keys_sorted_together;
-
                 if use_merge_join {
                     // For merge-joins, evaluate key expressions if they are non-trivial,
                     // row-encode them if there are multiple, and append them as new columns
                     // to the input dataframes.
                     let row_encode_key_cols = left_on_names.len() > 1;
-                    let key_expr_is_trivial = |c: &ExprIR, ea: &mut Arena<AExpr>| {
-                        matches!(ea.get(c.node()), AExpr::Column(_))
-                    };
-
                     if row_encode_key_cols {
                         let tfc = ToFieldContext::new(expr_arena, &input_left_schema);
                         let expr_dtype = |e: &ExprIR| expr_arena.get(e.node()).to_dtype(&tfc);
@@ -1284,6 +1175,35 @@ pub fn lower_ir(
                     } else if !key_expr_is_trivial(&right_on[0], expr_arena) {
                         trans_right_on[0] = trans_right_on[0]
                             .with_alias(PlSmallStr::from_str(merge_join::KEY_COL_NAME));
+                        hstack_key_col_right = true;
+                    }
+                }
+
+                if use_asof_join {
+                    if !key_expr_is_trivial(&left_on[0], expr_arena) {
+                        trans_left_on[0] = trans_left_on[0]
+                            .with_alias(PlSmallStr::from_str(asof_join::KEY_COL_NAME));
+                        trans_input_left = build_hstack_stream(
+                            phys_left,
+                            &trans_left_on,
+                            expr_arena,
+                            phys_sm,
+                            expr_cache,
+                            ctx,
+                        )?;
+                        hstack_key_col_left = true;
+                    }
+                    if !key_expr_is_trivial(&right_on[0], expr_arena) {
+                        trans_right_on[0] = trans_right_on[0]
+                            .with_alias(PlSmallStr::from_str(asof_join::KEY_COL_NAME));
+                        trans_input_right = build_hstack_stream(
+                            phys_right,
+                            &trans_right_on,
+                            expr_arena,
+                            phys_sm,
+                            expr_cache,
+                            ctx,
+                        )?;
                         hstack_key_col_right = true;
                     }
                 }
@@ -1337,6 +1257,18 @@ pub fn lower_ir(
                             args: args.clone(),
                         },
                     ))
+                } else if args.how.is_asof() {
+                    assert!(left_on_names.len() == 1 && right_on_names.len() == 1);
+                    phys_sm.insert(PhysNode::new(
+                        output_schema,
+                        PhysNodeKind::AsOfJoin {
+                            input_left: trans_input_left,
+                            input_right: trans_input_right,
+                            left_on: left_on_names[0].clone(),
+                            right_on: right_on_names[0].clone(),
+                            args: args.clone(),
+                        },
+                    ))
                 } else {
                     phys_sm.insert(PhysNode::new(
                         output_schema,
@@ -1355,8 +1287,6 @@ pub fn lower_ir(
                     stream = build_slice_stream(stream, offset, len, phys_sm);
                 }
                 return Ok(stream);
-            } else if args.how.is_asof() {
-                todo!()
             } else if args.how.is_cross() {
                 let node = phys_sm.insert(PhysNode::new(
                     output_schema,
