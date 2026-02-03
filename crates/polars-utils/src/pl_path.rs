@@ -372,7 +372,7 @@ macro_rules! impl_cloud_scheme {
     };
 }
 
-/// This must be at least the length of the longest scheme listed below.
+// This must be at least the 3+ length of the longest scheme listed below.
 const MAX_SCHEME_LEN: usize = 8;
 impl_cloud_scheme! {
     Abfs = "abfs",
