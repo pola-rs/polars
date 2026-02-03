@@ -105,25 +105,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 }
                 .into()
             },
-            IRAggExpr::MinBy { input, by } => {
-                let input_exp = node_to_expr(input, expr_arena);
-                let by_exp = node_to_expr(by, expr_arena);
-                AggExpr::MinBy {
-                    input: Arc::new(input_exp),
-                    by: Arc::new(by_exp),
-                }
-                .into()
-            },
-
-            IRAggExpr::MaxBy { input, by } => {
-                let input_exp = node_to_expr(input, expr_arena);
-                let by_exp = node_to_expr(by, expr_arena);
-                AggExpr::MaxBy {
-                    input: Arc::new(input_exp),
-                    by: Arc::new(by_exp),
-                }
-                .into()
-            },
 
             IRAggExpr::Mean(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
@@ -960,6 +941,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             descending,
             nulls_last,
         },
+        IF::MinBy => F::MinBy,
+        IF::MaxBy => F::MaxBy,
         IF::Product => F::Product,
         #[cfg(feature = "rank")]
         IF::Rank { options, seed } => F::Rank { options, seed },
