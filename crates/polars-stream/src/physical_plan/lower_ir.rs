@@ -1070,14 +1070,15 @@ pub fn lower_ir(
             let right_sorted_nulls_last = right_on_sorted
                 .as_ref()
                 .and_then(|v| v.iter().map(|s| s.nulls_last).collect::<Option<Vec<_>>>());
-            let mut left_key_descending = left_sorted_descending.as_ref().map(|v| v[0]);
-            let mut right_key_descending = right_sorted_descending.as_ref().map(|v| v[0]);
-            let left_key_nulls_last = left_sorted_nulls_last.as_ref().map(|v| v[0]);
-            let right_key_nulls_last = right_sorted_nulls_last.as_ref().map(|v| v[0]);
+            let sorted_get_first = |ov: Option<&Vec<bool>>| ov.and_then(|v| v.get(0).cloned());
+            let mut left_key_descending = sorted_get_first(left_sorted_descending.as_ref());
+            let mut right_key_descending = sorted_get_first(right_sorted_descending.as_ref());
+            let left_key_nulls_last = sorted_get_first(left_sorted_nulls_last.as_ref());
+            let right_key_nulls_last = sorted_get_first(right_sorted_nulls_last.as_ref());
             let key_expr_is_trivial =
                 |c: &ExprIR, ea: &mut Arena<AExpr>| matches!(ea.get(c.node()), AExpr::Column(_));
             let use_merge_join = args.how.is_equi() && join_keys_sorted_together;
-            let use_asof_join = args.how.is_equi()
+            let use_asof_join = args.how.is_asof()
                 && unwrap_asof_options().left_by.is_none()
                 && unwrap_asof_options().right_by.is_none();
 
