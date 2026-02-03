@@ -34,7 +34,7 @@ impl Expr {
         Expr::n_ary(FunctionExpr::MinBy, vec![self, by])
     }
 
-    /// Get minimum value, ordered by another expression.
+    /// Get maximum value, ordered by another expression.
     pub fn max_by(self, by: Self) -> Self {
         Expr::n_ary(FunctionExpr::MaxBy, vec![self, by])
     }
