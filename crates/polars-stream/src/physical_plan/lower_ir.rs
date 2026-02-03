@@ -1070,7 +1070,7 @@ pub fn lower_ir(
             let right_sorted_nulls_last = right_on_sorted
                 .as_ref()
                 .and_then(|v| v.iter().map(|s| s.nulls_last).collect::<Option<Vec<_>>>());
-            let sorted_get_first = |ov: Option<&Vec<bool>>| ov.and_then(|v| v.get(0).cloned());
+            let sorted_get_first = |ov: Option<&Vec<bool>>| ov.and_then(|v| v.first().cloned());
             let mut left_key_descending = sorted_get_first(left_sorted_descending.as_ref());
             let mut right_key_descending = sorted_get_first(right_sorted_descending.as_ref());
             let left_key_nulls_last = sorted_get_first(left_sorted_nulls_last.as_ref());

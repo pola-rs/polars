@@ -22,7 +22,7 @@ from polars.testing.parametric.strategies.core import dataframes
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import JoinStrategy, MaintainOrderJoin
+    from polars._typing import AsofJoinStrategy, JoinStrategy, MaintainOrderJoin
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -612,9 +612,13 @@ def test_merge_join_applicable(
         INTEGER_DTYPES,
         {pl.String, pl.Binary},
         {pl.Date},
-        {pl.Datetime(tu, time_zone="Europe/Amsterdam") for tu in {"ms", "us", "ns"}},
+        {
+            pl.Datetime("ms", time_zone="Europe/Amsterdam"),
+            pl.Datetime("us", time_zone="Europe/Amsterdam"),
+            pl.Datetime("ns", time_zone="Europe/Amsterdam"),
+        },
         {pl.Time},
-        {pl.Duration(tu) for tu in {"ms", "us", "ns"}},
+        {pl.Duration("ms"), pl.Duration("us"), pl.Duration("ns")},
     ],
 )
 @pytest.mark.parametrize("morsel_size", ["1", "1000"])
