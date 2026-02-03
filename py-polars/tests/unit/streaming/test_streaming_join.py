@@ -606,13 +606,22 @@ def test_merge_join_applicable(
 @pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
 @pytest.mark.parametrize("allow_exact_matches", [False, True])
 @pytest.mark.parametrize(
-    "dtypes", [FLOAT_DTYPES, INTEGER_DTYPES, {pl.String, pl.Binary}]
-)  # TODO: [amber] Add datetime dtypes
+    "dtypes",
+    [
+        FLOAT_DTYPES,
+        INTEGER_DTYPES,
+        {pl.String, pl.Binary},
+        {pl.Date},
+        {pl.Datetime(tu, time_zone="Europe/Amsterdam") for tu in {"ms", "us", "ns"}},
+        {pl.Time},
+        {pl.Duration(tu) for tu in {"ms", "us", "ns"}},
+    ],
+)
 @pytest.mark.parametrize("morsel_size", ["1", "1000"])
 @given(data=st.data())
 @settings(
-    max_examples=1000, suppress_health_check=[HealthCheck.function_scoped_fixture]
-)
+    suppress_health_check=[HealthCheck.function_scoped_fixture]
+)  # morsel_size is not based on hypothesis
 def test_streaming_asof_join(
     data: st.DataObject,
     strategy: AsofJoinStrategy,
@@ -626,7 +635,6 @@ def test_streaming_asof_join(
     if dtypes & {pl.String, pl.Binary} and strategy == "nearest":
         pytest.skip("asof join with string/binary only supports 'nearest' strategy")
 
-    # TODO: [amber] Add temporal dtypes and string
     dtype = data.draw(st.sampled_from(list(dtypes)))
     df_st = dataframes(
         min_cols=1, max_cols=1, allowed_dtypes=[dtype], allow_time_zones=False
@@ -646,12 +654,4 @@ def test_streaming_asof_join(
     )
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
-
-    import sys
-
-    print(f"{left.collect() = }", file=sys.stderr)
-    print(f"{right.collect() = }", file=sys.stderr)
-    print(f"{actual = }", file=sys.stderr)
-    print(f"{expected = }", file=sys.stderr)
-
     assert_frame_equal(actual, expected)
