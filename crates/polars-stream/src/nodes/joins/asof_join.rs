@@ -20,7 +20,6 @@ pub const KEY_COL_NAME: &'static str = "__POLARS_JOIN_KEY";
 #[derive(Debug)]
 pub struct AsOfJoinSideParams {
     pub input_schema: SchemaRef,
-    pub on: PlSmallStr,
     pub key_col: PlSmallStr,
 }
 
@@ -28,7 +27,6 @@ pub struct AsOfJoinSideParams {
 struct AsOfJoinParams {
     left: AsOfJoinSideParams,
     right: AsOfJoinSideParams,
-    key_dtype: DataType,
     args: JoinArgs,
 }
 
@@ -82,24 +80,16 @@ impl AsOfJoinNode {
         let left_key_dtype = left_input_schema.get(&left_key_col).unwrap();
         let right_key_dtype = right_input_schema.get(&right_key_col).unwrap();
         assert_eq!(left_key_dtype, right_key_dtype);
-        let key_dtype = left_key_dtype.clone();
         let left = AsOfJoinSideParams {
             input_schema: left_input_schema.clone(),
-            on: left_on,
             key_col: left_key_col,
         };
         let right = AsOfJoinSideParams {
             input_schema: right_input_schema.clone(),
-            on: right_on,
             key_col: right_key_col,
         };
 
-        let params = AsOfJoinParams {
-            left,
-            right,
-            key_dtype,
-            args,
-        };
+        let params = AsOfJoinParams { left, right, args };
         AsOfJoinNode {
             params,
             state: AsOfJoinState::default(),
