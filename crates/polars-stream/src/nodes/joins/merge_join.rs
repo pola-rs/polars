@@ -8,6 +8,7 @@ use polars_core::utils::Container;
 use polars_ops::frame::merge_join::*;
 use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_utils::UnitVec;
+use polars_utils::total_ord::TotalOrd;
 use rayon::slice::ParallelSliceMut;
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
@@ -804,7 +805,7 @@ fn binary_search_upper(
 }
 
 fn keys_cmp(lhs: &AnyValue, rhs: &AnyValue, params: &MergeJoinParams) -> Ordering {
-    match AnyValue::partial_cmp(lhs, rhs).unwrap() {
+    match AnyValue::tot_cmp(lhs, rhs) {
         Ordering::Equal => Ordering::Equal,
         _ if lhs.is_null() && params.key_nulls_last => Ordering::Greater,
         _ if rhs.is_null() && params.key_nulls_last => Ordering::Less,

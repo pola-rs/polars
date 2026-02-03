@@ -429,6 +429,8 @@ pub(super) fn arg_where(s: &mut [Column]) -> PolarsResult<Column> {
 pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
     use polars_core::series::IsSorted;
     use polars_ops::series::index_of as index_of_op;
+    use polars_utils::total_ord::TotalEq;
+
     let series = if let Column::Scalar(ref sc) = s[0] {
         // We only care about the first value:
         &sc.as_single_value_series()
@@ -464,7 +466,11 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
             .and_then(|idx| {
                 // search_sorted() gives an index even if it's not an exact
                 // match! So we want to make sure it actually found the value.
-                if series.get(idx as usize).ok()? == needle.as_any_value() {
+                if series
+                    .get(idx as usize)
+                    .ok()?
+                    .tot_eq(&needle.as_any_value())
+                {
                     Some(idx as usize)
                 } else {
                     None
