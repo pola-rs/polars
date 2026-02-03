@@ -402,7 +402,7 @@ impl CloudScheme {
         }
 
         if path.len() > MAX_SCHEME_LEN {
-            path = &path[..MAX_SCHEME_LEN]
+            path = path.get(..MAX_SCHEME_LEN)?;
         }
 
         Self::from_scheme_str(&path[..path.find("://")?])
