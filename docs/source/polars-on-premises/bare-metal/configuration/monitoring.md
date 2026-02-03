@@ -40,7 +40,7 @@ a cluster with 32 worker nodes, with a history of 1 hour, you would need around
 The host metrics exporter supports collecting CPU and memory usage metrics from the process tree,
 and cgroups v1 and v2. Since traversing the process tree, and collecting metrics for each process is
 quite compute expensive, and a cgroup's usage can be instantly queries, we recommend to always run
-Polars On-Premises in a cgroup.
+Polars on-premises in a cgroup.
 
 If you don't use the dashboard's host metrics feature, we recommend disabling the host metrics
 exporter.

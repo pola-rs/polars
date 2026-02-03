@@ -28,10 +28,10 @@ shuffle_location.local.path = "/mnt/storage/polars/shuffle"
 ## Worker shared storage
 
 If your infrastructure has some shared storage file system, such as NFS (or CephFs, etc.), Polars
-can use that for its shuffle data too. This reduces shuffle complexity, as Polars can directly write
-to the remote shared disk, and any worker can directly read from it. This setup can lead to improved
-performance when the network storage provider is fast enough. In addition, it provides automatic
-shuffle data persistence in case of worker node failure.
+on-premises can use that for its shuffle data too. This reduces shuffle complexity, as Polars can
+directly write to the remote shared disk, and any worker can directly read from it. This setup can
+lead to improved performance when the network storage provider is fast enough. In addition, it
+provides automatic shuffle data persistence in case of worker node failure.
 
 ```
 worker_1 -[net]-> shared storage -[fs]-> disk

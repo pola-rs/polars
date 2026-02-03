@@ -6,7 +6,7 @@ a node on a specific network interface or when preventing port collisions. Most 
 configured by default, except:
 
 - The worker services require a public address when the bind address is `0.0.0.0`.
-- The static_leader section requires the public address of both the scheduler and observatory
+- The `static_leader` section requires the public address of both the scheduler and observatory
   services.
 
 ## Scheduler
