@@ -56,11 +56,11 @@ if sys.version_info < (3, 12):
     )
 
 # associate specific doctest method names with optional modules.
-# if the module is found in the environment those doctests will
+# if the module is found in the environment, those doctests will
 # run; if the module is not found, their doctests are skipped.
 OPTIONAL_MODULES_AND_METHODS: dict[str, set[str]] = {
     "jax": {"to_jax"},
-    "torch": {"to_torch"},
+    "torch": {"to_torch", "from_torch"},
 }
 OPTIONAL_MODULES: set[str] = set()
 SKIP_METHODS: set[str] = set()
