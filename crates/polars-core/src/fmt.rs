@@ -2,6 +2,7 @@
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter, Write};
+use std::num::IntErrorKind;
 use std::str::FromStr;
 use std::sync::RwLock;
 use std::{fmt, str};
@@ -102,12 +103,19 @@ fn parse_env_var<T: FromStr>(name: &str) -> Option<T> {
 ///
 /// Negative values (e.g. -1) are parsed as 'no limit' or [`usize::MAX`].
 fn parse_env_var_limit(name: &str, default: usize) -> usize {
-    parse_env_var(name).map_or(
-        default,
-        |n: i64| {
-            if n < 0 { usize::MAX } else { n as usize }
+    let Ok(v) = std::env::var(name) else {
+        return default;
+    };
+
+    let n = match v.parse::<i64>() {
+        Ok(n) => n,
+        Err(e) => match e.kind() {
+            IntErrorKind::PosOverflow | IntErrorKind::NegOverflow => -1,
+            _ => return default,
         },
-    )
+    };
+
+    if n < 0 { usize::MAX } else { n as usize }
 }
 
 fn get_row_limit() -> usize {
