@@ -387,7 +387,6 @@ fn get_last_total_ord_row(
     if first_nan_idx == 0 {
         Ok(None)
     } else {
-        debug_assert!(!is_partial_ord(&left_key.get(first_nan_idx - 1).unwrap()));
         Ok(Some(left.slice((first_nan_idx - 1) as i64, 1)))
     }
 }
@@ -398,14 +397,14 @@ async fn compute_and_emit_task(
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
     let options = params.as_of_options();
-    while let Ok((morsel, right_buffer, drop_first_out_row)) = dist_recv.recv().await {
-        let (left_df, seq, st, wt) = morsel.into_inner();
+    while let Ok((mut morsel, right_buffer, drop_first_out_row)) = dist_recv.recv().await {
+        let left_df = morsel.df();
         let right_df = right_buffer.into_df();
 
-        let left_key = left_df.column(&params.left.key_col).unwrap();
-        let right_key = right_df.column(&params.right.key_col).unwrap();
+        let left_key = left_df.column(&params.left.key_col)?;
+        let right_key = right_df.column(&params.right.key_col)?;
         let mut out = polars_ops::frame::AsofJoin::_join_asof(
-            &left_df,
+            left_df,
             &right_df,
             left_key.as_materialized_series(),
             right_key.as_materialized_series(),
@@ -416,17 +415,13 @@ async fn compute_and_emit_task(
             params.args.coalesce.coalesce(&params.args.how),
             options.allow_eq,
             options.check_sortedness,
-        )
-        .unwrap();
+        )?;
 
         let right_key_col_name = format_pl_smallstr!("{}{}", KEY_COL_NAME, params.args.suffix());
         out = out.drop_many([KEY_COL_NAME, &right_key_col_name]);
 
-        let mut m = Morsel::new(out, seq, st);
-        if let Some(wt) = wt {
-            m.set_consume_token(wt);
-        }
-        if send.send(m).await.is_err() {
+        *morsel.df_mut() = out;
+        if send.send(morsel).await.is_err() {
             return Ok(());
         }
     }
