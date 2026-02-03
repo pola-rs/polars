@@ -28,7 +28,7 @@ use polars_core::prelude::*;
 use polars_io::RowIndex;
 use polars_mem_engine::scan_predicate::functions::apply_scan_predicate_to_scan_ir;
 use polars_mem_engine::{Executor, create_multiple_physical_plans, create_physical_plan};
-use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
+use polars_ops::frame::{JoinBuildSide, JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
@@ -1473,6 +1473,7 @@ impl LazyFrame {
             nulls_equal,
             coalesce,
             maintain_order,
+            build_side,
         } = args;
 
         if slice.is_some() {
@@ -1488,7 +1489,8 @@ impl LazyFrame {
             .validate(validation)
             .join_nulls(nulls_equal)
             .coalesce(coalesce)
-            .maintain_order(maintain_order);
+            .maintain_order(maintain_order)
+            .build_side(build_side);
 
         if let Some(suffix) = suffix {
             builder = builder.suffix(suffix);
@@ -2220,6 +2222,7 @@ pub struct JoinBuilder {
     nulls_equal: bool,
     coalesce: JoinCoalesce,
     maintain_order: MaintainOrderJoin,
+    build_side: Option<JoinBuildSide>,
 }
 impl JoinBuilder {
     /// Create the `JoinBuilder` with the provided `LazyFrame` as the left table.
@@ -2237,6 +2240,7 @@ impl JoinBuilder {
             nulls_equal: false,
             coalesce: Default::default(),
             maintain_order: Default::default(),
+            build_side: None,
         }
     }
 
@@ -2323,6 +2327,12 @@ impl JoinBuilder {
         self
     }
 
+    /// Whether to prefer a specific build side.
+    pub fn build_side(mut self, build_side: Option<JoinBuildSide>) -> Self {
+        self.build_side = build_side;
+        self
+    }
+
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
         let opt_state = self.lf.opt_state;
@@ -2336,6 +2346,7 @@ impl JoinBuilder {
             nulls_equal: self.nulls_equal,
             coalesce: self.coalesce,
             maintain_order: self.maintain_order,
+            build_side: self.build_side,
         };
 
         let lp = self
@@ -2427,6 +2438,7 @@ impl JoinBuilder {
             nulls_equal: self.nulls_equal,
             coalesce: self.coalesce,
             maintain_order: self.maintain_order,
+            build_side: self.build_side,
         };
         let options = JoinOptions {
             allow_parallel: self.allow_parallel,
