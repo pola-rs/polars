@@ -95,10 +95,6 @@ pub fn set_trim_decimal_zeros(trim: Option<bool>) {
     arrow::compute::decimal::set_trim_decimal_zeros(trim)
 }
 
-/// Parses an environment variable value.
-fn parse_env_var<T: FromStr>(name: &str) -> Option<T> {
-    std::env::var(name).ok().and_then(|v| v.parse().ok())
-}
 /// Parses an environment variable value as a limit or set a default.
 ///
 /// Negative values (e.g. -1) are parsed as 'no limit' or [`usize::MAX`].
