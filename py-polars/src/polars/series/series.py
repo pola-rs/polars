@@ -384,6 +384,103 @@ class Series:
             )
             raise TypeError(msg)
 
+    @property
+    def bin(self) -> BinaryNameSpace:
+        """Create an object namespace of all binary related methods."""
+        return BinaryNameSpace(self)
+
+    @property
+    def cat(self) -> CatNameSpace:
+        """Create an object namespace of all categorical related methods."""
+        return CatNameSpace(self)
+
+    @property
+    def dt(self) -> DateTimeNameSpace:
+        """Create an object namespace of all datetime related methods."""
+        return DateTimeNameSpace(self)
+
+    @property
+    def list(self) -> ListNameSpace:
+        """Create an object namespace of all list related methods."""
+        return ListNameSpace(self)
+
+    @property
+    def arr(self) -> ArrayNameSpace:
+        """Create an object namespace of all array related methods."""
+        return ArrayNameSpace(self)
+
+    @property
+    def str(self) -> StringNameSpace:
+        """Create an object namespace of all string related methods."""
+        return StringNameSpace(self)
+
+    @property
+    def struct(self) -> StructNameSpace:
+        """Create an object namespace of all struct related methods."""
+        return StructNameSpace(self)
+
+    @property
+    def ext(self) -> ExtensionNameSpace:
+        """Create an object namespace of all extension type related methods."""
+        return ExtensionNameSpace(self)
+
+    @property
+    @unstable()
+    def plot(self) -> SeriesPlot:
+        """
+        Create a plot namespace.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+
+        .. versionchanged:: 1.6.0
+            In prior versions of Polars, HvPlot was the plotting backend. If you would
+            like to restore the previous plotting functionality, all you need to do
+            is add `import hvplot.polars` at the top of your script and replace
+            `df.plot` with `df.hvplot`.
+
+        Polars does not implement plotting logic itself, but instead defers to
+        Altair:
+
+        - `s.plot.hist(**kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame()).mark_bar(tooltip=True).encode(x=alt.X(f'{s.name}:Q', bin=True), y='count()', **kwargs).interactive()`
+        - `s.plot.kde(**kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area(tooltip=True).encode(x=s.name, y='density:Q', **kwargs).interactive()`
+        - for any other attribute `attr`, `s.plot.attr(**kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame().with_row_index()).mark_attr(tooltip=True).encode(x='index', y=s.name, **kwargs).interactive()`
+
+        For configuration, we suggest reading
+        `Chart Configuration <https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html>`_.
+        For example, you can:
+
+        - Change the width/height/title with ``.properties(width=500, height=350, title="My amazing plot")``.
+        - Change the x-axis label rotation with ``.configure_axisX(labelAngle=30)``.
+        - Change the opacity of the points in your scatter plot with ``.configure_point(opacity=.5)``.
+
+        Examples
+        --------
+        Histogram:
+
+        >>> s = pl.Series([1, 4, 4, 6, 2, 4, 3, 5, 5, 7, 1])
+        >>> s.plot.hist()  # doctest: +SKIP
+
+        KDE plot:
+
+        >>> s.plot.kde()  # doctest: +SKIP
+
+        Line plot:
+
+        >>> s.plot.line()  # doctest: +SKIP
+        """  # noqa: W505
+        if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
+            msg = "altair>=5.4.0 is required for `.plot`"
+            raise ModuleUpgradeRequiredError(msg)
+        return SeriesPlot(self)
+
     @classmethod
     def _from_pyseries(cls, pyseries: PySeries) -> Self:
         series = cls.__new__(cls)
@@ -9438,103 +9535,6 @@ class Series:
             Expression of data type List, where the inner data type is equal to the
             original data type.
         """
-
-    @property
-    def bin(self) -> BinaryNameSpace:
-        """Create an object namespace of all binary related methods."""
-        return BinaryNameSpace(self)
-
-    @property
-    def cat(self) -> CatNameSpace:
-        """Create an object namespace of all categorical related methods."""
-        return CatNameSpace(self)
-
-    @property
-    def dt(self) -> DateTimeNameSpace:
-        """Create an object namespace of all datetime related methods."""
-        return DateTimeNameSpace(self)
-
-    @property
-    def list(self) -> ListNameSpace:
-        """Create an object namespace of all list related methods."""
-        return ListNameSpace(self)
-
-    @property
-    def arr(self) -> ArrayNameSpace:
-        """Create an object namespace of all array related methods."""
-        return ArrayNameSpace(self)
-
-    @property
-    def str(self) -> StringNameSpace:
-        """Create an object namespace of all string related methods."""
-        return StringNameSpace(self)
-
-    @property
-    def struct(self) -> StructNameSpace:
-        """Create an object namespace of all struct related methods."""
-        return StructNameSpace(self)
-
-    @property
-    def ext(self) -> ExtensionNameSpace:
-        """Create an object namespace of all extension type related methods."""
-        return ExtensionNameSpace(self)
-
-    @property
-    @unstable()
-    def plot(self) -> SeriesPlot:
-        """
-        Create a plot namespace.
-
-        .. warning::
-            This functionality is currently considered **unstable**. It may be
-            changed at any point without it being considered a breaking change.
-
-        .. versionchanged:: 1.6.0
-            In prior versions of Polars, HvPlot was the plotting backend. If you would
-            like to restore the previous plotting functionality, all you need to do
-            is add `import hvplot.polars` at the top of your script and replace
-            `df.plot` with `df.hvplot`.
-
-        Polars does not implement plotting logic itself, but instead defers to
-        Altair:
-
-        - `s.plot.hist(**kwargs)`
-          is shorthand for
-          `alt.Chart(s.to_frame()).mark_bar(tooltip=True).encode(x=alt.X(f'{s.name}:Q', bin=True), y='count()', **kwargs).interactive()`
-        - `s.plot.kde(**kwargs)`
-          is shorthand for
-          `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area(tooltip=True).encode(x=s.name, y='density:Q', **kwargs).interactive()`
-        - for any other attribute `attr`, `s.plot.attr(**kwargs)`
-          is shorthand for
-          `alt.Chart(s.to_frame().with_row_index()).mark_attr(tooltip=True).encode(x='index', y=s.name, **kwargs).interactive()`
-
-        For configuration, we suggest reading
-        `Chart Configuration <https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html>`_.
-        For example, you can:
-
-        - Change the width/height/title with ``.properties(width=500, height=350, title="My amazing plot")``.
-        - Change the x-axis label rotation with ``.configure_axisX(labelAngle=30)``.
-        - Change the opacity of the points in your scatter plot with ``.configure_point(opacity=.5)``.
-
-        Examples
-        --------
-        Histogram:
-
-        >>> s = pl.Series([1, 4, 4, 6, 2, 4, 3, 5, 5, 7, 1])
-        >>> s.plot.hist()  # doctest: +SKIP
-
-        KDE plot:
-
-        >>> s.plot.kde()  # doctest: +SKIP
-
-        Line plot:
-
-        >>> s.plot.line()  # doctest: +SKIP
-        """  # noqa: W505
-        if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
-            msg = "altair>=5.4.0 is required for `.plot`"
-            raise ModuleUpgradeRequiredError(msg)
-        return SeriesPlot(self)
 
 
 def _resolve_temporal_dtype(

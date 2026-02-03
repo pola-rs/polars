@@ -150,6 +150,147 @@ class Expr:
         "struct",
     }
 
+    @property
+    def bin(self) -> ExprBinaryNameSpace:
+        """
+        Create an object namespace of all binary related methods.
+
+        See the individual method pages for full details
+        """
+        return ExprBinaryNameSpace(self)
+
+    @property
+    def cat(self) -> ExprCatNameSpace:
+        """
+        Create an object namespace of all categorical related methods.
+
+        See the individual method pages for full details
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": ["a", "b"]}).select(
+        ...     pl.col("values").cast(pl.Categorical)
+        ... )
+        >>> df.select(pl.col("values").cat.get_categories())
+        shape: (2, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │ a      │
+        │ b      │
+        └────────┘
+        """
+        return ExprCatNameSpace(self)
+
+    @property
+    def dt(self) -> ExprDateTimeNameSpace:
+        """Create an object namespace of all datetime related methods."""
+        return ExprDateTimeNameSpace(self)
+
+    @property
+    def list(self) -> ExprListNameSpace:
+        """
+        Create an object namespace of all list related methods.
+
+        See the individual method pages for full details.
+        """
+        return ExprListNameSpace(self)
+
+    @property
+    def arr(self) -> ExprArrayNameSpace:
+        """
+        Create an object namespace of all array related methods.
+
+        See the individual method pages for full details.
+        """
+        return ExprArrayNameSpace(self)
+
+    @property
+    def meta(self) -> ExprMetaNameSpace:
+        """
+        Create an object namespace of all meta related expression methods.
+
+        This can be used to modify and traverse existing expressions.
+        """
+        return ExprMetaNameSpace(self)
+
+    @property
+    def name(self) -> ExprNameNameSpace:
+        """
+        Create an object namespace of all expressions that modify expression names.
+
+        See the individual method pages for full details.
+        """
+        return ExprNameNameSpace(self)
+
+    @property
+    def str(self) -> ExprStringNameSpace:
+        """
+        Create an object namespace of all string related methods.
+
+        See the individual method pages for full details.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"letters": ["a", "b"]})
+        >>> df.select(pl.col("letters").str.to_uppercase())
+        shape: (2, 1)
+        ┌─────────┐
+        │ letters │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ A       │
+        │ B       │
+        └─────────┘
+        """
+        return ExprStringNameSpace(self)
+
+    @property
+    def struct(self) -> ExprStructNameSpace:
+        """
+        Create an object namespace of all struct related methods.
+
+        See the individual method pages for full details.
+
+        Examples
+        --------
+        >>> df = (
+        ...     pl.DataFrame(
+        ...         {
+        ...             "int": [1, 2],
+        ...             "str": ["a", "b"],
+        ...             "bool": [True, None],
+        ...             "list": [[1, 2], [3]],
+        ...         }
+        ...     )
+        ...     .to_struct("my_struct")
+        ...     .to_frame()
+        ... )
+        >>> df.select(pl.col("my_struct").struct.field("str"))
+        shape: (2, 1)
+        ┌─────┐
+        │ str │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ a   │
+        │ b   │
+        └─────┘
+        """
+        return ExprStructNameSpace(self)
+
+    @property
+    def ext(self) -> ExprExtensionNameSpace:
+        """
+        Create an object namespace of all extension type related expressions.
+
+        See the individual method pages for full details.
+        """
+        return ExprExtensionNameSpace(self)
+
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
         expr = cls.__new__(cls)
@@ -11670,147 +11811,6 @@ Consider using {self}.implode() instead"""
             version="0.20.11",
         )
         return cls.deserialize(StringIO(value), format="json")
-
-    @property
-    def bin(self) -> ExprBinaryNameSpace:
-        """
-        Create an object namespace of all binary related methods.
-
-        See the individual method pages for full details
-        """
-        return ExprBinaryNameSpace(self)
-
-    @property
-    def cat(self) -> ExprCatNameSpace:
-        """
-        Create an object namespace of all categorical related methods.
-
-        See the individual method pages for full details
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"values": ["a", "b"]}).select(
-        ...     pl.col("values").cast(pl.Categorical)
-        ... )
-        >>> df.select(pl.col("values").cat.get_categories())
-        shape: (2, 1)
-        ┌────────┐
-        │ values │
-        │ ---    │
-        │ str    │
-        ╞════════╡
-        │ a      │
-        │ b      │
-        └────────┘
-        """
-        return ExprCatNameSpace(self)
-
-    @property
-    def dt(self) -> ExprDateTimeNameSpace:
-        """Create an object namespace of all datetime related methods."""
-        return ExprDateTimeNameSpace(self)
-
-    @property
-    def list(self) -> ExprListNameSpace:
-        """
-        Create an object namespace of all list related methods.
-
-        See the individual method pages for full details.
-        """
-        return ExprListNameSpace(self)
-
-    @property
-    def arr(self) -> ExprArrayNameSpace:
-        """
-        Create an object namespace of all array related methods.
-
-        See the individual method pages for full details.
-        """
-        return ExprArrayNameSpace(self)
-
-    @property
-    def meta(self) -> ExprMetaNameSpace:
-        """
-        Create an object namespace of all meta related expression methods.
-
-        This can be used to modify and traverse existing expressions.
-        """
-        return ExprMetaNameSpace(self)
-
-    @property
-    def name(self) -> ExprNameNameSpace:
-        """
-        Create an object namespace of all expressions that modify expression names.
-
-        See the individual method pages for full details.
-        """
-        return ExprNameNameSpace(self)
-
-    @property
-    def str(self) -> ExprStringNameSpace:
-        """
-        Create an object namespace of all string related methods.
-
-        See the individual method pages for full details.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"letters": ["a", "b"]})
-        >>> df.select(pl.col("letters").str.to_uppercase())
-        shape: (2, 1)
-        ┌─────────┐
-        │ letters │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ A       │
-        │ B       │
-        └─────────┘
-        """
-        return ExprStringNameSpace(self)
-
-    @property
-    def struct(self) -> ExprStructNameSpace:
-        """
-        Create an object namespace of all struct related methods.
-
-        See the individual method pages for full details.
-
-        Examples
-        --------
-        >>> df = (
-        ...     pl.DataFrame(
-        ...         {
-        ...             "int": [1, 2],
-        ...             "str": ["a", "b"],
-        ...             "bool": [True, None],
-        ...             "list": [[1, 2], [3]],
-        ...         }
-        ...     )
-        ...     .to_struct("my_struct")
-        ...     .to_frame()
-        ... )
-        >>> df.select(pl.col("my_struct").struct.field("str"))
-        shape: (2, 1)
-        ┌─────┐
-        │ str │
-        │ --- │
-        │ str │
-        ╞═════╡
-        │ a   │
-        │ b   │
-        └─────┘
-        """
-        return ExprStructNameSpace(self)
-
-    @property
-    def ext(self) -> ExprExtensionNameSpace:
-        """
-        Create an object namespace of all extension type related expressions.
-
-        See the individual method pages for full details.
-        """
-        return ExprExtensionNameSpace(self)
 
     def _skip_batch_predicate(self, schema: SchemaDict) -> Expr | None:
         result = self._pyexpr.skip_batch_predicate(schema)
