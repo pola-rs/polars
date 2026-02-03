@@ -2,7 +2,6 @@ pub mod compression;
 mod other;
 
 pub use other::*;
-#[cfg(feature = "cloud")]
 pub mod byte_source;
 pub mod file;
 pub mod mkdir;

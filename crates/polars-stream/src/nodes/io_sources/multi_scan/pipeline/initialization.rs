@@ -5,8 +5,10 @@ use futures::StreamExt;
 use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
 use polars_io::pl_async::get_runtime;
+use polars_io::utils::byte_source::{ByteSource, DynByteSourceBuilder};
+use polars_io::utils::compression::SupportedCompression;
 use polars_mem_engine::scan_predicate::initialize_scan_predicate;
-use polars_plan::dsl::PredicateFileSkip;
+use polars_plan::dsl::{PredicateFileSkip, ScanSourceRef};
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
@@ -161,6 +163,31 @@ async fn finish_initialize_multi_scan_pipeline(
         );
     }
 
+    fn is_compressed_source(
+        scan_source: ScanSourceRef<'_>,
+        config: &MultiScanConfig,
+    ) -> PolarsResult<bool> {
+        let byte_source_builder = if scan_source.is_cloud_url() {
+            DynByteSourceBuilder::ObjectStore
+        } else {
+            DynByteSourceBuilder::Mmap
+        };
+
+        let rt = tokio::runtime::Builder::new_current_thread().build()?;
+
+        rt.block_on(async {
+            let dyn_bytes_source = scan_source
+                .to_dyn_byte_source(&byte_source_builder, config.cloud_options.as_deref())
+                .await?;
+
+            let Ok(first_4_bytes) = dyn_bytes_source.get_range(0..4).await else {
+                return Ok(false);
+            };
+
+            Ok(SupportedCompression::check(&first_4_bytes).is_some())
+        })
+    }
+
     let ResolvedSliceInfo {
         scan_source_idx,
         row_index,
@@ -175,7 +202,8 @@ async fn finish_initialize_multi_scan_pipeline(
                 && (config.row_index.is_none()
                     || reader_capabilities.contains(ReaderCapabilities::ROW_INDEX))
                 && (config.deletion_files.is_none()
-                    || reader_capabilities.contains(ReaderCapabilities::EXTERNAL_FILTER_MASK)) =>
+                    || reader_capabilities.contains(ReaderCapabilities::EXTERNAL_FILTER_MASK))
+                && !is_compressed_source(config.sources.get(0).unwrap(), &config)? =>
         {
             if verbose {
                 eprintln!("[MultiScanTaskInit]: Single file negative slice");
