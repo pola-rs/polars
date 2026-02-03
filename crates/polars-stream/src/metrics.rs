@@ -1,12 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+pub use polars_io::metrics::{IOMetrics, OptIOMetrics};
 use slotmap::{SecondaryMap, SlotMap};
 
 use crate::LogicalPipe;
 use crate::async_executor::TaskMetrics;
 use crate::graph::{GraphNodeKey, LogicalPipeKey};
-pub use crate::metrics_io::{IOMetrics, OptIOMetrics};
 use crate::pipe::PipeMetrics;
 
 #[derive(Default, Clone)]
@@ -27,9 +27,9 @@ pub struct NodeMetrics {
     pub rows_received: u64,
     pub largest_morsel_received: u64,
 
-    pub download_total_active_ns: u64,
-    pub download_total_bytes_requested: u64,
-    pub download_total_bytes_received: u64,
+    pub io_total_active_ns: u64,
+    pub io_total_bytes_requested: u64,
+    pub io_total_bytes_received: u64,
 
     pub state_update_in_progress: bool,
     pub num_running_tasks: u32,
@@ -48,9 +48,9 @@ impl NodeMetrics {
     }
 
     fn add_io_recv(&mut self, io_metrics: &IOMetrics) {
-        self.download_total_active_ns += io_metrics.active_io_time_metrics.active_io_total_ns();
-        self.download_total_bytes_requested += io_metrics.bytes_requested.load();
-        self.download_total_bytes_received += io_metrics.bytes_received.load();
+        self.io_total_active_ns += io_metrics.io_timer.total_time_live_ns();
+        self.io_total_bytes_requested += io_metrics.bytes_requested.load();
+        self.io_total_bytes_received += io_metrics.bytes_received.load();
     }
 
     fn start_state_update(&mut self) {
@@ -86,7 +86,7 @@ impl NodeMetrics {
 #[derive(Default, Clone)]
 pub struct GraphMetrics {
     node_metrics: SecondaryMap<GraphNodeKey, NodeMetrics>,
-    in_progress_download_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<IOMetrics>>>,
+    in_progress_io_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<IOMetrics>>>,
     in_progress_task_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<TaskMetrics>>>,
     in_progress_pipe_metrics: SecondaryMap<LogicalPipeKey, Vec<Arc<PipeMetrics>>>,
 }
@@ -129,11 +129,11 @@ impl GraphMetrics {
             }
         }
 
-        for (key, in_progress_download_metrics) in self.in_progress_download_metrics.iter_mut() {
+        for (key, in_progress_io_metrics) in self.in_progress_io_metrics.iter_mut() {
             let this_node_metrics = self.node_metrics.entry(key).unwrap().or_default();
             this_node_metrics.num_running_tasks = 0;
-            for download_metrics in in_progress_download_metrics.drain(..) {
-                this_node_metrics.add_io_recv(&download_metrics);
+            for io_metrics in in_progress_io_metrics.drain(..) {
+                this_node_metrics.add_io_recv(&io_metrics);
             }
         }
 
@@ -169,12 +169,12 @@ pub struct MetricsBuilder {
 }
 
 impl MetricsBuilder {
-    pub fn new_download_metrics(&self) -> Arc<IOMetrics> {
+    pub fn new_io_metrics(&self) -> Arc<IOMetrics> {
         let io_metrics: Arc<IOMetrics> = Default::default();
 
         self.graph_metrics
             .lock()
-            .in_progress_download_metrics
+            .in_progress_io_metrics
             .entry(self.graph_key)
             .unwrap()
             .or_default()
