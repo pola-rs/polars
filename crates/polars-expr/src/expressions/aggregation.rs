@@ -6,9 +6,9 @@ use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{_split_offsets, NoNull};
-use polars_ops::prelude::ArgAgg;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
+use polars_ops::prelude::{ArgAgg, lst_get};
 use rayon::prelude::*;
 
 use super::*;
@@ -624,6 +624,115 @@ impl PhysicalExpr for AggQuantileExpr {
             },
             Err(_) => Ok(input_field),
         }
+    }
+
+    fn is_scalar(&self) -> bool {
+        true
+    }
+}
+
+pub struct AggMinMaxByExpr {
+    input: Arc<dyn PhysicalExpr>,
+    by: Arc<dyn PhysicalExpr>,
+    is_max_by: bool,
+}
+
+impl AggMinMaxByExpr {
+    pub fn new_min_by(input: Arc<dyn PhysicalExpr>, by: Arc<dyn PhysicalExpr>) -> Self {
+        Self {
+            input,
+            by,
+            is_max_by: false,
+        }
+    }
+
+    pub fn new_max_by(input: Arc<dyn PhysicalExpr>, by: Arc<dyn PhysicalExpr>) -> Self {
+        Self {
+            input,
+            by,
+            is_max_by: true,
+        }
+    }
+}
+
+impl PhysicalExpr for AggMinMaxByExpr {
+    fn as_expression(&self) -> Option<&Expr> {
+        None
+    }
+
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+        let input = self.input.evaluate(df, state)?;
+        let by = self.by.evaluate(df, state)?;
+        polars_ensure!(
+            input.len() == by.len(),
+            ShapeMismatch: "input and by expressions must be of the same length"
+        );
+        let arg_extremum = if self.is_max_by {
+            by.as_materialized_series_maintain_scalar().arg_max()
+        } else {
+            by.as_materialized_series_maintain_scalar().arg_min()
+        };
+        let out = if let Some(idx) = arg_extremum {
+            input.slice(idx as i64, 1)
+        } else {
+            let dtype = input.dtype().clone();
+            Column::new_scalar(input.name().clone(), Scalar::null(dtype), 1)
+        };
+        Ok(out)
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupPositions,
+        state: &ExecutionState,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
+        let mut ac_by = self.by.evaluate_on_groups(df, groups, state)?;
+        assert!(ac.groups.len() == ac_by.groups.len());
+
+        // [amber] Do I need to deal with a case that AggState is LiteralScalar?
+
+        // AggregatedScalar has no defined group structure. We fix it up here, so that we can
+        // reliably call `agg_*` functions with the groups.
+        // [amber] Do I also need this?
+        ac.set_groups_for_undefined_agg_states();
+        ac_by.set_groups_for_undefined_agg_states();
+
+        // Don't change names by aggregations as is done in polars-core
+        let keep_name = ac.get_values().name().clone();
+
+        let ac_groups = ac.groups();
+        let ac_by_groups = ac_by.groups();
+        GroupsType::check_lengths(ac_groups, ac_by_groups)?;
+
+        for (g, g_by) in Iterator::zip(ac_groups.iter(), ac_by_groups.iter()) {
+            if g.len() != g_by.len() {
+                polars_bail!(ShapeMismatch: "group length is different from 'by' group length ({} != {})", g.len(), g_by.len());
+            }
+        }
+
+        // Dispatch to arg_min/arg_max and then gather
+        let ac_list = ac.aggregated_as_list();
+        let (c_by, groups_by) = ac_by.get_final_aggregation();
+        let idx = unsafe {
+            if self.is_max_by {
+                c_by.agg_arg_max(&groups_by)
+            } else {
+                c_by.agg_arg_min(&groups_by)
+            }
+        };
+        let taken =
+            lst_get(&ac_list, idx.cast(&DataType::Int64)?.i64()?, false)?.with_name(keep_name);
+
+        ac.with_values_and_args(taken, true, None, false, true)?; // [amber] Should expr be something?
+        ac.with_update_groups(UpdateGroups::No);
+        Ok(ac)
+    }
+
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
+        self.input.to_field(input_schema)
     }
 
     fn is_scalar(&self) -> bool {
