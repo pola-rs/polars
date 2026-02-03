@@ -55,7 +55,7 @@ impl LineBatchDistributor {
             // Since decompression doesn't support reverse decompression, we have to fully
             // decompress the input. It's crucial for the streaming property that this doesn't get
             // called in the non-reverse case.
-            assert!(
+            debug_assert!(
                 !reader.is_compressed(),
                 "Negative slicing and decompression risk OOM, should be handled on higher level."
             );
