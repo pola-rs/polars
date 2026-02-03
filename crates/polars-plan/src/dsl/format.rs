@@ -149,12 +149,6 @@ impl fmt::Debug for Expr {
                             write!(f, "{input:?}.max()")
                         }
                     },
-                    MinBy { input, by } => {
-                        write!(f, "{input:?}.min_by({by:?})")
-                    },
-                    MaxBy { input, by } => {
-                        write!(f, "{input:?}.max_by({by:?})")
-                    },
                     Median(expr) => write!(f, "{expr:?}.median()"),
                     Mean(expr) => write!(f, "{expr:?}.mean()"),
                     First(expr) => write!(f, "{expr:?}.first()"),

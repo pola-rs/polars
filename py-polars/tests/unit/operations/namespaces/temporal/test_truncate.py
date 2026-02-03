@@ -169,7 +169,7 @@ def test_truncate_invalid() -> None:
 
 
 @pytest.mark.parametrize(
-    "dtype", [pl.Date, pl.Datetime, pl.Datetime("ms", time_zone="EST")]
+    "dtype", [pl.Date, pl.Datetime, pl.Datetime("ms", time_zone="America/New_York")]
 )
 def test_truncate_invalid_duration(dtype: PolarsTemporalType) -> None:
     df = pl.DataFrame(

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -13,6 +13,9 @@ from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from typing import Any
+
     import numpy.typing as npt
 
     from polars._typing import PolarsDataType, TimeUnit
@@ -1392,3 +1395,28 @@ def test_grouped_minmax_after_reverse_on_sorted_column_26141(
         }
     )
     assert_frame_equal(out, expected_df)
+
+
+@pytest.mark.may_fail_auto_streaming
+@pytest.mark.xfail(reason="#26049")
+@pytest.mark.parametrize("agg_by", [pl.Expr.min_by, pl.Expr.max_by])
+def test_min_max_by_series_length_mismatch(
+    agg_by: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    lf = pl.LazyFrame(
+        {"value": [1, 2, 3], "group": ["A", "B", "C"], "filter": [False, True, True]}
+    )
+    q = lf.with_columns(
+        agg_by(pl.col("group").filter(pl.col("filter")), pl.col("value"))
+    )
+
+    with pytest.raises(
+        pl.exceptions.ShapeError,
+        match=r"^'by' column in `(min|max)_by` operation has incorrect length",
+    ):
+        q.collect(engine="in-memory")
+    with pytest.raises(
+        pl.exceptions.ShapeError,
+        match=r"^zip node received non-equal length inputs$",
+    ):
+        q.collect(engine="streaming")

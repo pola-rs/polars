@@ -98,7 +98,7 @@ impl<'py> IntoPyObject<'py> for Wrap<Operator> {
             Operator::Plus => PyOperator::Plus,
             Operator::Minus => PyOperator::Minus,
             Operator::Multiply => PyOperator::Multiply,
-            Operator::Divide => PyOperator::Divide,
+            Operator::RustDivide => PyOperator::Divide,
             Operator::TrueDivide => PyOperator::TrueDivide,
             Operator::FloorDivide => PyOperator::FloorDivide,
             Operator::Modulus => PyOperator::Modulus,
@@ -666,16 +666,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 name: "max".into_py_any(py)?,
                 arguments: vec![input.0],
                 options: propagate_nans.into_py_any(py)?,
-            },
-            IRAggExpr::MinBy { input, by } => Agg {
-                name: "min_by".into_py_any(py)?,
-                arguments: vec![input.0, by.0],
-                options: py.None(),
-            },
-            IRAggExpr::MaxBy { input, by } => Agg {
-                name: "max_by".into_py_any(py)?,
-                arguments: vec![input.0, by.0],
-                options: py.None(),
             },
             IRAggExpr::Median(n) => Agg {
                 name: "median".into_py_any(py)?,
@@ -1252,6 +1242,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::ArgUnique => ("arg_unique",).into_py_any(py),
                 IRFunctionExpr::ArgMin => ("arg_min",).into_py_any(py),
                 IRFunctionExpr::ArgMax => ("arg_max",).into_py_any(py),
+                IRFunctionExpr::MinBy => ("min_by",).into_py_any(py),
+                IRFunctionExpr::MaxBy => ("max_by",).into_py_any(py),
                 IRFunctionExpr::ArgSort {
                     descending,
                     nulls_last,

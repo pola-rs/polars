@@ -168,6 +168,8 @@ pub enum FunctionExpr {
         descending: bool,
         nulls_last: bool,
     },
+    MinBy,
+    MaxBy,
     Product,
     #[cfg(feature = "rank")]
     Rank {
@@ -474,7 +476,7 @@ impl Hash for FunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill | Rechunk => {},
+            | ArgMax | Product | Shift | ShiftAndFill | Rechunk | MinBy | MaxBy => {},
             Append { upcast } => upcast.hash(state),
             ArgSort {
                 descending,
@@ -743,6 +745,8 @@ impl Display for FunctionExpr {
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             ArgSort { .. } => "arg_sort",
+            MinBy => "min_by",
+            MaxBy => "max_by",
             Product => "product",
             Repeat => "repeat",
             #[cfg(feature = "rank")]

@@ -1126,6 +1126,7 @@ fn lower_exprs_with_ctx(
                         nulls_equal,
                         coalesce: Default::default(),
                         maintain_order: Default::default(),
+                        build_side: None,
                     },
                     output_bool: true,
                 };
@@ -1891,8 +1892,6 @@ fn lower_exprs_with_ctx(
                 // Change agg mutably so we can share the codepath for all of these.
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }
-                | IRAggExpr::MinBy { .. }
-                | IRAggExpr::MaxBy { .. }
                 | IRAggExpr::First(_)
                 | IRAggExpr::FirstNonNull(_)
                 | IRAggExpr::Last(_)
@@ -1988,6 +1987,8 @@ fn lower_exprs_with_ctx(
                     IRFunctionExpr::Boolean(
                         IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. },
                     )
+                    | IRFunctionExpr::MinBy
+                    | IRFunctionExpr::MaxBy
                     | IRFunctionExpr::NullCount,
                 ..
             } => {
