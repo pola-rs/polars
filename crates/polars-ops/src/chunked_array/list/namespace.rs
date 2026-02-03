@@ -246,16 +246,34 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn lst_sort(&self, options: SortOptions) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        // SAFETY: `sort_with`` doesn't change the dtype
-        let out = unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().sort_with(options))? };
+        // When inner dtype contains categoricals or enums (e.g., struct with categorical field),
+        // the amortized iterator converts structs to physical types which strips metadata.
+        // Using try_apply_amortized_same_type would cause a dtype mismatch panic,
+        // so we fall back to the more flexible try_apply_amortized + same_type approach.
+        let inner_dtype = ca.inner_dtype();
+        let out = if inner_dtype.contains_categoricals() || inner_dtype.contains_enums() {
+            ca.try_apply_amortized(|s| s.as_ref().sort_with(options))?
+        } else {
+            // SAFETY: `sort_with` doesn't change the dtype for types without special metadata
+            unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().sort_with(options))? }
+        };
         Ok(self.same_type(out))
     }
 
     #[must_use]
     fn lst_reverse(&self) -> ListChunked {
         let ca = self.as_list();
-        // SAFETY: `reverse` doesn't change the dtype
-        unsafe { ca.apply_amortized_same_type(|s| s.as_ref().reverse()) }
+        let inner_dtype = ca.inner_dtype();
+        if inner_dtype.contains_categoricals() || inner_dtype.contains_enums() {
+            // Use try_apply_amortized which infers dtype from collected values
+            let out = ca
+                .try_apply_amortized(|s| Ok(s.as_ref().reverse()))
+                .unwrap();
+            self.same_type(out)
+        } else {
+            // SAFETY: `reverse` doesn't change the dtype for types without special metadata
+            unsafe { ca.apply_amortized_same_type(|s| s.as_ref().reverse()) }
+        }
     }
 
     fn lst_n_unique(&self) -> PolarsResult<IdxCa> {
@@ -268,15 +286,25 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn lst_unique(&self) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        // SAFETY: `unique` doesn't change the dtype
-        let out = unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().unique())? };
+        let inner_dtype = ca.inner_dtype();
+        let out = if inner_dtype.contains_categoricals() || inner_dtype.contains_enums() {
+            ca.try_apply_amortized(|s| s.as_ref().unique())?
+        } else {
+            // SAFETY: `unique` doesn't change the dtype for types without special metadata
+            unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().unique())? }
+        };
         Ok(self.same_type(out))
     }
 
     fn lst_unique_stable(&self) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        // SAFETY: `unique_stable` doesn't change the dtype
-        let out = unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().unique_stable())? };
+        let inner_dtype = ca.inner_dtype();
+        let out = if inner_dtype.contains_categoricals() || inner_dtype.contains_enums() {
+            ca.try_apply_amortized(|s| s.as_ref().unique_stable())?
+        } else {
+            // SAFETY: `unique_stable` doesn't change the dtype for types without special metadata
+            unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().unique_stable())? }
+        };
         Ok(self.same_type(out))
     }
 
@@ -320,11 +348,20 @@ pub trait ListNameSpaceImpl: AsList {
         }
         let ca = ca.as_ref();
 
+        let inner_dtype = ca.inner_dtype();
+        let has_special_metadata =
+            inner_dtype.contains_categoricals() || inner_dtype.contains_enums();
         let out = match periods.len() {
             1 => {
                 if let Some(periods) = periods.get(0) {
-                    // SAFETY: `shift` doesn't change the dtype
-                    unsafe { ca.apply_amortized_same_type(|s| s.as_ref().shift(periods)) }
+                    if has_special_metadata {
+                        // Use try_apply_amortized which infers dtype from collected values
+                        ca.try_apply_amortized(|s| Ok(s.as_ref().shift(periods)))
+                            .unwrap()
+                    } else {
+                        // SAFETY: `shift` doesn't change the dtype for types without special metadata
+                        unsafe { ca.apply_amortized_same_type(|s| s.as_ref().shift(periods)) }
+                    }
                 } else {
                     ListChunked::full_null_with_dtype(ca.name().clone(), ca.len(), ca.inner_dtype())
                 }
@@ -341,8 +378,17 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn lst_slice(&self, offset: i64, length: usize) -> ListChunked {
         let ca = self.as_list();
-        // SAFETY: `slice` doesn't change the dtype
-        unsafe { ca.apply_amortized_same_type(|s| s.as_ref().slice(offset, length)) }
+        let inner_dtype = ca.inner_dtype();
+        if inner_dtype.contains_categoricals() || inner_dtype.contains_enums() {
+            // Use try_apply_amortized which infers dtype from collected values
+            let out = ca
+                .try_apply_amortized(|s| Ok(s.as_ref().slice(offset, length)))
+                .unwrap();
+            self.same_type(out)
+        } else {
+            // SAFETY: `slice` doesn't change the dtype for types without special metadata
+            unsafe { ca.apply_amortized_same_type(|s| s.as_ref().slice(offset, length)) }
+        }
     }
 
     fn lst_lengths(&self) -> IdxCa {
@@ -391,13 +437,24 @@ pub trait ListNameSpaceImpl: AsList {
     #[cfg(feature = "list_gather")]
     fn lst_gather_every(&self, n: &IdxCa, offset: &IdxCa) -> PolarsResult<Series> {
         let list_ca = self.as_list();
+        let inner_dtype = list_ca.inner_dtype();
+        let has_special_metadata =
+            inner_dtype.contains_categoricals() || inner_dtype.contains_enums();
         let out = match (n.len(), offset.len()) {
             (1, 1) => match (n.get(0), offset.get(0)) {
-                (Some(n), Some(offset)) => unsafe {
-                    // SAFETY: `gather_every` doesn't change the dtype
-                    list_ca.try_apply_amortized_same_type(|s| {
-                        s.as_ref().gather_every(n as usize, offset as usize)
-                    })?
+                (Some(n), Some(offset)) => {
+                    if has_special_metadata {
+                        list_ca.try_apply_amortized(|s| {
+                            s.as_ref().gather_every(n as usize, offset as usize)
+                        })?
+                    } else {
+                        // SAFETY: `gather_every` doesn't change the dtype for types without special metadata
+                        unsafe {
+                            list_ca.try_apply_amortized_same_type(|s| {
+                                s.as_ref().gather_every(n as usize, offset as usize)
+                            })?
+                        }
+                    }
                 },
                 _ => ListChunked::full_null_with_dtype(
                     list_ca.name().clone(),
@@ -454,6 +511,7 @@ pub trait ListNameSpaceImpl: AsList {
                 polars_bail!(ComputeError: "The lengths of `n` and `offset` should be 1 or equal to the length of list.")
             },
         };
+        let out = self.same_type(out);
         Ok(out.into_series())
     }
 
@@ -580,9 +638,17 @@ pub trait ListNameSpaceImpl: AsList {
     #[cfg(feature = "list_drop_nulls")]
     fn lst_drop_nulls(&self) -> ListChunked {
         let list_ca = self.as_list();
-
-        // SAFETY: `drop_nulls` doesn't change the dtype
-        unsafe { list_ca.apply_amortized_same_type(|s| s.as_ref().drop_nulls()) }
+        let inner_dtype = list_ca.inner_dtype();
+        if inner_dtype.contains_categoricals() || inner_dtype.contains_enums() {
+            // Use try_apply_amortized which infers dtype from collected values
+            let out = list_ca
+                .try_apply_amortized(|s| Ok(s.as_ref().drop_nulls()))
+                .unwrap();
+            self.same_type(out)
+        } else {
+            // SAFETY: `drop_nulls` doesn't change the dtype for types without special metadata
+            unsafe { list_ca.apply_amortized_same_type(|s| s.as_ref().drop_nulls()) }
+        }
     }
 
     #[cfg(feature = "list_sample")]
@@ -615,15 +681,25 @@ pub trait ListNameSpaceImpl: AsList {
         }
         let ca = ca.as_ref();
 
+        let inner_dtype = ca.inner_dtype();
+        let has_special_metadata =
+            inner_dtype.contains_categoricals() || inner_dtype.contains_enums();
         let out = match n.len() {
             1 => {
                 if let Some(n) = n.get(0) {
-                    unsafe {
-                        // SAFETY: `sample_n` doesn't change the dtype
-                        ca.try_apply_amortized_same_type(|s| {
+                    if has_special_metadata {
+                        ca.try_apply_amortized(|s| {
                             s.as_ref()
                                 .sample_n(n as usize, with_replacement, shuffle, seed)
                         })
+                    } else {
+                        // SAFETY: `sample_n` doesn't change the dtype for types without special metadata
+                        unsafe {
+                            ca.try_apply_amortized_same_type(|s| {
+                                s.as_ref()
+                                    .sample_n(n as usize, with_replacement, shuffle, seed)
+                            })
+                        }
                     }
                 } else {
                     Ok(ListChunked::full_null_with_dtype(
@@ -674,15 +750,25 @@ pub trait ListNameSpaceImpl: AsList {
         }
         let ca = ca.as_ref();
 
+        let inner_dtype = ca.inner_dtype();
+        let has_special_metadata =
+            inner_dtype.contains_categoricals() || inner_dtype.contains_enums();
         let out = match fraction.len() {
             1 => {
                 if let Some(fraction) = fraction.get(0) {
-                    unsafe {
-                        // SAFETY: `sample_n` doesn't change the dtype
-                        ca.try_apply_amortized_same_type(|s| {
+                    if has_special_metadata {
+                        ca.try_apply_amortized(|s| {
                             let n = (s.as_ref().len() as f64 * fraction) as usize;
                             s.as_ref().sample_n(n, with_replacement, shuffle, seed)
                         })
+                    } else {
+                        // SAFETY: `sample_n` doesn't change the dtype for types without special metadata
+                        unsafe {
+                            ca.try_apply_amortized_same_type(|s| {
+                                let n = (s.as_ref().len() as f64 * fraction) as usize;
+                                s.as_ref().sample_n(n, with_replacement, shuffle, seed)
+                            })
+                        }
                     }
                 } else {
                     Ok(ListChunked::full_null_with_dtype(
