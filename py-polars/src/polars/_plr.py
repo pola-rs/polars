@@ -8,7 +8,7 @@ import sys
 from polars._cpu_check import check_cpu_flags
 
 # example: 1.35.0-beta.1
-PKG_VERSION = "1.37.1"
+PKG_VERSION = "1.38.0"
 
 
 def rt_compat() -> None:

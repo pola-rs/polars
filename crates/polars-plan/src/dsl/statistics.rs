@@ -31,20 +31,12 @@ impl Expr {
 
     /// Get minimum value, ordered by another expression.
     pub fn min_by(self, by: Self) -> Self {
-        AggExpr::MinBy {
-            input: Arc::new(self),
-            by: Arc::new(by),
-        }
-        .into()
+        Expr::n_ary(FunctionExpr::MinBy, vec![self, by])
     }
 
-    /// Get minimum value, ordered by another expression.
+    /// Get maximum value, ordered by another expression.
     pub fn max_by(self, by: Self) -> Self {
-        AggExpr::MaxBy {
-            input: Arc::new(self),
-            by: Arc::new(by),
-        }
-        .into()
+        Expr::n_ary(FunctionExpr::MaxBy, vec![self, by])
     }
 
     /// Reduce groups to minimal value.

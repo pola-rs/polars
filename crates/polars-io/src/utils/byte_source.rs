@@ -4,14 +4,15 @@ use std::sync::Arc;
 
 use polars_buffer::Buffer;
 use polars_core::prelude::PlHashMap;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, feature_gated};
 use polars_utils::_limit_path_len_io_err;
 use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_path::PlRefPath;
 
+use crate::cloud::options::CloudOptions;
+#[cfg(feature = "cloud")]
 use crate::cloud::{
-    CloudLocation, CloudOptions, ObjectStorePath, PolarsObjectStore, build_object_store,
-    object_path_from_str,
+    CloudLocation, ObjectStorePath, PolarsObjectStore, build_object_store, object_path_from_str,
 };
 
 #[allow(async_fn_in_trait)]
@@ -70,11 +71,13 @@ impl ByteSource for BufferByteSource {
     }
 }
 
+#[cfg(feature = "cloud")]
 pub struct ObjectStoreByteSource {
     store: PolarsObjectStore,
     path: ObjectStorePath,
 }
 
+#[cfg(feature = "cloud")]
 impl ObjectStoreByteSource {
     async fn try_new_from_path(
         path: PlRefPath,
@@ -88,6 +91,7 @@ impl ObjectStoreByteSource {
     }
 }
 
+#[cfg(feature = "cloud")]
 impl ByteSource for ObjectStoreByteSource {
     async fn get_size(&self) -> PolarsResult<usize> {
         Ok(self.store.head(&self.path).await?.size as usize)
@@ -108,6 +112,7 @@ impl ByteSource for ObjectStoreByteSource {
 /// Dynamic dispatch to async functions.
 pub enum DynByteSource {
     Buffer(BufferByteSource),
+    #[cfg(feature = "cloud")]
     Cloud(ObjectStoreByteSource),
 }
 
@@ -115,6 +120,7 @@ impl DynByteSource {
     pub fn variant_name(&self) -> &str {
         match self {
             Self::Buffer(_) => "Buffer",
+            #[cfg(feature = "cloud")]
             Self::Cloud(_) => "Cloud",
         }
     }
@@ -130,6 +136,7 @@ impl ByteSource for DynByteSource {
     async fn get_size(&self) -> PolarsResult<usize> {
         match self {
             Self::Buffer(v) => v.get_size().await,
+            #[cfg(feature = "cloud")]
             Self::Cloud(v) => v.get_size().await,
         }
     }
@@ -137,6 +144,7 @@ impl ByteSource for DynByteSource {
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
         match self {
             Self::Buffer(v) => v.get_range(range).await,
+            #[cfg(feature = "cloud")]
             Self::Cloud(v) => v.get_range(range).await,
         }
     }
@@ -147,6 +155,7 @@ impl ByteSource for DynByteSource {
     ) -> PolarsResult<PlHashMap<usize, Buffer<u8>>> {
         match self {
             Self::Buffer(v) => v.get_ranges(ranges).await,
+            #[cfg(feature = "cloud")]
             Self::Cloud(v) => v.get_ranges(ranges).await,
         }
     }
@@ -158,6 +167,7 @@ impl From<BufferByteSource> for DynByteSource {
     }
 }
 
+#[cfg(feature = "cloud")]
 impl From<ObjectStoreByteSource> for DynByteSource {
     fn from(value: ObjectStoreByteSource) -> Self {
         Self::Cloud(value)
@@ -173,7 +183,7 @@ impl From<Buffer<u8>> for DynByteSource {
 #[derive(Clone, Debug)]
 pub enum DynByteSourceBuilder {
     Mmap,
-    /// Supports both cloud and local files.
+    /// Supports both cloud and local files, requires cloud feature.
     ObjectStore,
 }
 
@@ -189,9 +199,12 @@ impl DynByteSourceBuilder {
                     .await?
                     .into()
             },
-            Self::ObjectStore => ObjectStoreByteSource::try_new_from_path(path, cloud_options)
-                .await?
-                .into(),
+            Self::ObjectStore => feature_gated!(
+                "cloud",
+                ObjectStoreByteSource::try_new_from_path(path, cloud_options)
+                    .await?
+                    .into()
+            ),
         })
     }
 }

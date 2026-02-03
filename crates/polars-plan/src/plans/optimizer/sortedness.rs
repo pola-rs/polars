@@ -439,7 +439,7 @@ pub fn aexpr_sortedness(
         | AExpr::SortBy { .. }
         | AExpr::Agg(_)
         | AExpr::Ternary { .. }
-        | AExpr::AnonymousStreamingAgg { .. }
+        | AExpr::AnonymousAgg { .. }
         | AExpr::AnonymousFunction { .. }
         | AExpr::Eval { .. }
         | AExpr::Over { .. } => None,

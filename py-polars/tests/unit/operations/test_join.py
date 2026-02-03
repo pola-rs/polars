@@ -1480,6 +1480,7 @@ def test_join_preserve_order_full() -> None:
         ["UInt16", "UInt16", "UInt8"],
 
         ["Float64", "Float64", "Float32"],
+        ["Float32", "Float32", "Float16"],
     ],
 )  # fmt: skip
 @pytest.mark.parametrize("swap", [True, False])
@@ -3974,3 +3975,50 @@ def test_join_lazyframe_with_itself_after_sort_25395() -> None:
     result = lf.sort("a").join(lf, on="a").collect()
 
     assert_frame_equal(result, pl.DataFrame({"a": [1]}))
+
+
+def test_join_right_with_cast_predicate_pushdown() -> None:
+    lhs = pl.LazyFrame({"x": [0, 1], "z": [4, 5]})
+    rhs = pl.LazyFrame({"y": [2, 3]}).cast(pl.Int32)
+
+    out = (
+        lhs.join(rhs, left_on="x", right_on="y", how="right")
+        .filter(pl.col("z") >= 6)
+        .collect()
+    )
+
+    ret = pl.DataFrame(
+        {
+            "z": [],
+            "y": [],
+        },
+        schema={"z": pl.Int64, "y": pl.Int64},
+    )
+    assert_frame_equal(out, ret, check_column_order=True, check_row_order=False)
+
+
+def test_full_join_rewrite_to_right_with_cast() -> None:
+    lhs = pl.LazyFrame({"x": [0, 1], "a": [10, 20]})
+    rhs = pl.LazyFrame({"y": [2, 3], "b": [30, 40]}).cast(pl.Int32)
+
+    out = (
+        lhs.join(rhs, left_on="x", right_on="y", how="full")
+        .filter(pl.col("b") >= 0)
+        .collect()
+    )
+
+    ret = pl.DataFrame(
+        {
+            "x": [None, None],
+            "a": [None, None],
+            "y": [2, 3],
+            "b": [30, 40],
+        },
+        schema={
+            "x": pl.Int64,
+            "a": pl.Int64,
+            "y": pl.Int32,
+            "b": pl.Int32,
+        },
+    )
+    assert_frame_equal(out, ret, check_column_order=True, check_row_order=False)

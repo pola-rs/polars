@@ -16,7 +16,7 @@ pub const LIST_ELEMENT_DEFAULT_ID: u32 = u32::MAX;
 
 /// Maps Iceberg physical IDs to columns.
 ///
-/// Note: This doesn't use `Schema<D>` as the keys are u32's.
+/// Note: This doesn't use `Schema<F>` as the keys are u32's.
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
