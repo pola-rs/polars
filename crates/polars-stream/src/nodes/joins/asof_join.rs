@@ -412,7 +412,7 @@ async fn compute_and_emit_task(
             options.strategy,
             options.tolerance.clone().map(Scalar::into_value),
             params.args.suffix.clone(),
-            None,
+            Some((drop_first_out_row as i64, left_df.height())),
             params.args.coalesce.coalesce(&params.args.how),
             options.allow_eq,
             options.check_sortedness,
@@ -421,10 +421,6 @@ async fn compute_and_emit_task(
 
         let right_key_col_name = format_pl_smallstr!("{}{}", KEY_COL_NAME, params.args.suffix());
         out = out.drop_many([KEY_COL_NAME, &right_key_col_name]);
-
-        if drop_first_out_row {
-            out = out.slice(1, out.height() - 1);
-        }
 
         let mut m = Morsel::new(out, seq, st);
         if let Some(wt) = wt {
