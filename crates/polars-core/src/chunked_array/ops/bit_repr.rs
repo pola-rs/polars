@@ -395,6 +395,28 @@ impl Reinterpret for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-f16")]
+impl UInt16Chunked {
+    #[doc(hidden)]
+    pub fn _reinterpret_float(&self) -> Float16Chunked {
+        reinterpret_chunked_array(self)
+    }
+}
+
+impl UInt32Chunked {
+    #[doc(hidden)]
+    pub fn _reinterpret_float(&self) -> Float32Chunked {
+        reinterpret_chunked_array(self)
+    }
+}
+
+impl UInt64Chunked {
+    #[doc(hidden)]
+    pub fn _reinterpret_float(&self) -> Float64Chunked {
+        reinterpret_chunked_array(self)
+    }
+}
+
 /// Used to save compilation paths. Use carefully. Although this is safe,
 /// if misused it can lead to incorrect results.
 #[cfg(feature = "dtype-f16")]
@@ -409,7 +431,7 @@ impl Float16Chunked {
         let s = s.into_series();
         let out = f(&s);
         let out = out.u16().unwrap();
-        out.reinterpret_float()
+        out._reinterpret_float().into()
     }
 }
 
@@ -424,7 +446,7 @@ impl Float32Chunked {
         let s = s.into_series();
         let out = f(&s);
         let out = out.u32().unwrap();
-        out.reinterpret_float()
+        out._reinterpret_float().into()
     }
 }
 impl Float64Chunked {
@@ -438,6 +460,6 @@ impl Float64Chunked {
         let s = s.into_series();
         let out = f(&s);
         let out = out.u64().unwrap();
-        out.reinterpret_float()
+        out._reinterpret_float().into()
     }
 }
