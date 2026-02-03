@@ -22,7 +22,7 @@ from polars.testing.parametric.strategies.core import dataframes
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import AsofJoinStrategy, JoinStrategy, MaintainOrderJoin
+    from polars._typing import JoinStrategy, MaintainOrderJoin
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -605,6 +605,9 @@ def test_merge_join_applicable(
 
 @pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
 @pytest.mark.parametrize("allow_exact_matches", [False, True])
+@pytest.mark.parametrize(
+    "dtypes", [FLOAT_DTYPES, INTEGER_DTYPES, {pl.String, pl.Binary}]
+)  # TODO: [amber] Add datetime dtypes
 @pytest.mark.parametrize("morsel_size", ["1", "1000"])
 @given(data=st.data())
 @settings(
@@ -614,13 +617,17 @@ def test_streaming_asof_join(
     data: st.DataObject,
     strategy: AsofJoinStrategy,
     allow_exact_matches: bool,
+    dtypes: set[pl.DataType],
     morsel_size: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", morsel_size)
 
+    if dtypes & {pl.String, pl.Binary} and strategy == "nearest":
+        pytest.skip("asof join with string/binary only supports 'nearest' strategy")
+
     # TODO: [amber] Add temporal dtypes and string
-    dtype = data.draw(st.sampled_from(list(FLOAT_DTYPES | INTEGER_DTYPES)))
+    dtype = data.draw(st.sampled_from(list(dtypes)))
     df_st = dataframes(
         min_cols=1, max_cols=1, allowed_dtypes=[dtype], allow_time_zones=False
     )
