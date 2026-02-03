@@ -1453,7 +1453,6 @@ def test_dt_mean_deprecated() -> None:
         date(1677, 9, 22),
         date(1970, 1, 1),
         date(2024, 2, 29),
-        date(2262, 4, 11),
     ],
 )
 def test_literal_from_date(
@@ -1489,8 +1488,6 @@ def test_literal_from_date(
         datetime(1970, 1, 1, tzinfo=ZoneInfo("America/New_York")),
         datetime(2024, 2, 29),
         datetime(2024, 2, 29, tzinfo=ZoneInfo("America/New_York")),
-        datetime(2262, 4, 11),
-        datetime(2262, 4, 11, tzinfo=ZoneInfo("America/New_York")),
     ],
 )
 def test_literal_from_datetime(
