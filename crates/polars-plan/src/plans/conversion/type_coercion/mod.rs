@@ -375,6 +375,53 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
+            #[cfg(feature = "hist")]
+            AExpr::Function {
+                function: ref function @ IRFunctionExpr::Hist { .. },
+                ref input,
+                options,
+            } => {
+                let s_dt = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                polars_ensure!(s_dt.is_primitive_numeric(), InvalidOperation: "'hist' is only supported for numeric data");
+                let s_requires_cast = !matches!(s_dt, DataType::Float64);
+                let mut edges_requires_cast = false;
+                let mut edges_dt: Option<DataType> = None;
+                if input.len() == 2 {
+                    let dt = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                    edges_requires_cast = !matches!(dt, DataType::Float64);
+                    edges_dt = Some(dt);
+                }
+
+                if s_requires_cast || edges_requires_cast {
+                    let function = function.clone();
+                    let mut input = input.clone();
+                    if s_requires_cast {
+                        cast_expr_ir(
+                            &mut input[0],
+                            &s_dt,
+                            &DataType::Float64,
+                            expr_arena,
+                            CastOptions::NonStrict,
+                        )?;
+                    }
+                    if edges_requires_cast {
+                        cast_expr_ir(
+                            &mut input[1],
+                            &edges_dt.unwrap(),
+                            &DataType::Float64,
+                            expr_arena,
+                            CastOptions::NonStrict,
+                        )?;
+                    }
+                    Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    })
+                } else {
+                    return Ok(None);
+                }
+            },
             // shift and fill should only cast left and fill value to super type.
             AExpr::Function {
                 function: IRFunctionExpr::ShiftAndFill,
