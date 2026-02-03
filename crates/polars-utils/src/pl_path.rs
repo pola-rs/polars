@@ -372,8 +372,6 @@ macro_rules! impl_cloud_scheme {
     };
 }
 
-// This must be at least the 3+ length of the longest scheme listed below.
-const MAX_SCHEME_LEN: usize = 8;
 impl_cloud_scheme! {
     Abfs = "abfs",
     Abfss = "abfss",
@@ -392,17 +390,13 @@ impl_cloud_scheme! {
 }
 
 impl CloudScheme {
-    pub fn from_path(mut path: &str) -> Option<Self> {
+    pub fn from_path(path: &str) -> Option<Self> {
         if let Some(stripped) = path.strip_prefix("file:") {
             return Some(if stripped.starts_with("//") {
                 Self::File
             } else {
                 Self::FileNoHostname
             });
-        }
-
-        if path.len() > MAX_SCHEME_LEN {
-            path = path.get(..MAX_SCHEME_LEN)?;
         }
 
         Self::from_scheme_str(&path[..path.find("://")?])
