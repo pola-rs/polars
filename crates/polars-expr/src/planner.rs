@@ -379,53 +379,14 @@ fn create_physical_expr_inner(
                 .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
 
-            // Special case: Quantile, MinBy and MaxBy supports multiple inputs.
+            // Special case: Quantile supports multiple inputs.
             // TODO refactor to FunctionExpr.
-            match agg {
-                IRAggExpr::Quantile {
-                    quantile,
-                    method: interpol,
-                    ..
-                } => {
-                    let quantile = create_physical_expr_inner(quantile, expr_arena, schema, state)?;
-                    return Ok(Arc::new(AggQuantileExpr::new(input, quantile, interpol)));
-                },
-                IRAggExpr::MinBy { input, by } => {
-                    let arg_min_aexpr = AExpr::Function {
-                        input: vec![ExprIR::from_node(by, expr_arena)],
-                        function: IRFunctionExpr::ArgMin,
-                        options: FunctionOptions::aggregation(),
-                    };
-                    let arg_min = expr_arena.add(arg_min_aexpr);
-                    let gather_aexpr = AExpr::Gather {
-                        expr: input,
-                        idx: arg_min,
-                        returns_scalar: true,
-                        null_on_oob: false,
-                    };
-                    let gather = expr_arena.add(gather_aexpr);
-
-                    return create_physical_expr_inner(gather, expr_arena, schema, state);
-                },
-
-                IRAggExpr::MaxBy { input, by } => {
-                    let arg_min_aexpr = AExpr::Function {
-                        input: vec![ExprIR::from_node(by, expr_arena)],
-                        function: IRFunctionExpr::ArgMax,
-                        options: FunctionOptions::aggregation(),
-                    };
-                    let arg_min = expr_arena.add(arg_min_aexpr);
-                    let gather_aexpr = AExpr::Gather {
-                        expr: input,
-                        idx: arg_min,
-                        returns_scalar: true,
-                        null_on_oob: false,
-                    };
-                    let gather = expr_arena.add(gather_aexpr);
-
-                    return create_physical_expr_inner(gather, expr_arena, schema, state);
-                },
-                _ => {},
+            if let IRAggExpr::Quantile {
+                quantile, method, ..
+            } = agg
+            {
+                let quantile = create_physical_expr_inner(quantile, expr_arena, schema, state)?;
+                return Ok(Arc::new(AggQuantileExpr::new(input, quantile, method)));
             }
 
             let groupby = GroupByMethod::from(agg.clone());
@@ -470,6 +431,36 @@ fn create_physical_expr_inner(
                 agg_type,
                 output_field,
             )))
+        },
+        Function {
+            input: inputs,
+            function: function @ (IRFunctionExpr::MinBy | IRFunctionExpr::MaxBy),
+            options: _,
+        } => {
+            assert!(inputs.len() == 2);
+            let input = inputs[0].node();
+            let by = inputs[1].node();
+            let arg_fn = match function {
+                IRFunctionExpr::MinBy => IRFunctionExpr::ArgMin,
+                IRFunctionExpr::MaxBy => IRFunctionExpr::ArgMax,
+                _ => unreachable!(), // guaranteed by pattern
+            };
+
+            let arg_min_aexpr = AExpr::Function {
+                input: vec![ExprIR::from_node(by, expr_arena)],
+                function: arg_fn,
+                options: FunctionOptions::aggregation(),
+            };
+            let arg_min = expr_arena.add(arg_min_aexpr);
+            let gather_aexpr = AExpr::Gather {
+                expr: input,
+                idx: arg_min,
+                returns_scalar: true,
+                null_on_oob: false,
+            };
+            let gather = expr_arena.add(gather_aexpr);
+
+            return create_physical_expr_inner(gather, expr_arena, schema, state);
         },
         Cast {
             expr,

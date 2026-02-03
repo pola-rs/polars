@@ -245,10 +245,6 @@ impl AExpr {
                         *expr = inputs[0];
                         *quantile = inputs[1];
                     },
-                    IRAggExpr::MinBy { input, by } | IRAggExpr::MaxBy { input, by } => {
-                        *input = inputs[0];
-                        *by = inputs[1];
-                    },
                     _ => {
                         a.set_input(inputs[0]);
                     },
@@ -362,22 +358,16 @@ impl AExpr {
                 return self;
             },
             Agg(a) => {
-                match a {
-                    IRAggExpr::Quantile { expr, quantile, .. } => {
-                        *expr = inputs[0];
-                        *quantile = inputs[1];
-                    },
-                    IRAggExpr::MinBy { input, by } => {
-                        *input = inputs[0];
-                        *by = inputs[1];
-                    },
-                    IRAggExpr::MaxBy { input, by } => {
-                        *input = inputs[0];
-                        *by = inputs[1];
-                    },
-                    _ => {
-                        a.set_input(inputs[0]);
-                    },
+                if let IRAggExpr::Quantile {
+                    expr,
+                    quantile,
+                    method: _,
+                } = a
+                {
+                    *expr = inputs[0];
+                    *quantile = inputs[1];
+                } else {
+                    a.set_input(inputs[0]);
                 }
                 return self;
             },
@@ -469,8 +459,6 @@ impl IRAggExpr {
         match self {
             Min { input, .. } => Single(*input),
             Max { input, .. } => Single(*input),
-            MinBy { input, by } => Many(vec![*input, *by]),
-            MaxBy { input, by } => Many(vec![*input, *by]),
             Median(input) => Single(*input),
             NUnique(input) => Single(*input),
             First(input) => Single(*input),
@@ -508,10 +496,6 @@ impl IRAggExpr {
             Std(input, _) => input,
             Var(input, _) => input,
             AggGroups(input) => input,
-
-            // Multi-input aggregations.
-            MinBy { .. } => unreachable!(),
-            MaxBy { .. } => unreachable!(),
         };
         *node = input;
     }

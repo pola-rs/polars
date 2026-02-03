@@ -541,7 +541,7 @@ def test_write_delta_w_compatible_schema(series: pl.Series, tmp_path: Path) -> N
     "expr",
     [
         pl.datetime(2010, 1, 1, time_unit="us", time_zone="UTC"),
-        pl.datetime(2010, 1, 1, time_unit="ns", time_zone="EST"),
+        pl.datetime(2010, 1, 1, time_unit="ns", time_zone="America/New_York"),
         pl.datetime(2010, 1, 1, time_unit="ms", time_zone="Europe/Amsterdam"),
     ],
 )
