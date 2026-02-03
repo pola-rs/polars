@@ -20,6 +20,7 @@ pub const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY";
 #[derive(Debug)]
 pub struct AsOfJoinSideParams {
     pub input_schema: SchemaRef,
+    pub on: PlSmallStr,
     pub key_col: PlSmallStr,
 }
 
@@ -82,10 +83,12 @@ impl AsOfJoinNode {
         assert_eq!(left_key_dtype, right_key_dtype);
         let left = AsOfJoinSideParams {
             input_schema: left_input_schema.clone(),
+            on: left_on,
             key_col: left_key_col,
         };
         let right = AsOfJoinSideParams {
             input_schema: right_input_schema.clone(),
+            on: right_on,
             key_col: right_key_col,
         };
 
@@ -393,6 +396,8 @@ async fn compute_and_emit_task(
 
         let left_key = left_df.column(&params.left.key_col)?;
         let right_key = right_df.column(&params.right.key_col)?;
+        let any_key_is_temporary_col =
+            params.left.key_col != params.left.on || params.right.key_col != params.right.on;
         let mut out = polars_ops::frame::AsofJoin::_join_asof(
             left_df,
             &right_df,
@@ -402,13 +407,25 @@ async fn compute_and_emit_task(
             options.tolerance.clone().map(Scalar::into_value),
             params.args.suffix.clone(),
             Some((drop_first_out_row as i64, left_df.height())),
-            params.args.coalesce.coalesce(&params.args.how),
+            any_key_is_temporary_col || params.args.should_coalesce(),
             options.allow_eq,
             options.check_sortedness,
         )?;
 
-        let right_key_col_name = format_pl_smallstr!("{}{}", KEY_COL_NAME, params.args.suffix());
-        out = out.drop_many([KEY_COL_NAME, &right_key_col_name]);
+        // Drop any temporary key columns that were added
+        if out.schema().contains(KEY_COL_NAME) {
+            out.drop_in_place(KEY_COL_NAME)?;
+        }
+
+        // If the join key passed to _join_asof() was a temporary key column,
+        // we still need to coalesce the real 'on' columns ourselves.
+        if any_key_is_temporary_col
+            && params.args.should_coalesce()
+            && params.left.on == params.right.on
+        {
+            let right_on_name = format_pl_smallstr!("{}{}", params.right.on, params.args.suffix());
+            out.drop_in_place(&right_on_name)?;
+        }
 
         *morsel.df_mut() = out;
         if send.send(morsel).await.is_err() {

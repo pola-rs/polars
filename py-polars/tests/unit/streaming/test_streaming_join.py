@@ -605,6 +605,7 @@ def test_merge_join_applicable(
 
 @pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
 @pytest.mark.parametrize("allow_exact_matches", [False, True])
+@pytest.mark.parametrize("coalesce", [False, True])
 @pytest.mark.parametrize(
     "dtypes",
     [
@@ -630,6 +631,7 @@ def test_streaming_asof_join(
     data: st.DataObject,
     strategy: AsofJoinStrategy,
     allow_exact_matches: bool,
+    coalesce: bool,
     dtypes: set[pl.DataType],
     morsel_size: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -654,7 +656,7 @@ def test_streaming_asof_join(
         on="key",
         strategy=strategy,
         allow_exact_matches=allow_exact_matches,
-        coalesce=False,
+        coalesce=coalesce,
     )
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
