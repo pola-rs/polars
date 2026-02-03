@@ -5,32 +5,24 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
 import hypothesis.strategies as st
-from hypothesis import HealthCheck, given, settings
-from polars._typing import AsofJoinStrategy
-from polars.datatypes.group import (
-    DATETIME_DTYPES,
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
-    NUMERIC_DTYPES,
-    TEMPORAL_DTYPES,
-)
 import numpy as np
 import pandas as pd
-from polars.testing.parametric.strategies.core import dataframes
-from polars.testing.parametric.strategies.data import floats, nulls
 import pytest
-from hypothesis import given, settings
-from hypothesis import strategies as st
+from hypothesis import HealthCheck, given, settings
 
 import polars as pl
 from polars._typing import AsofJoinStrategy
+from polars.datatypes.group import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.testing.parametric.strategies.core import column, dataframes
+from polars.testing.parametric.strategies.core import dataframes
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import JoinStrategy, MaintainOrderJoin
+    from polars._typing import AsofJoinStrategy, JoinStrategy, MaintainOrderJoin
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -632,11 +624,11 @@ def test_streaming_asof_join(
     df_st = dataframes(
         min_cols=1, max_cols=1, allowed_dtypes=[dtype], allow_time_zones=False
     )
-    left = data.draw(df_st)
-    right = data.draw(df_st)
+    left_df = data.draw(df_st)
+    right_df = data.draw(df_st)
 
-    left = left.rename(lambda _: "key").sort("key").with_row_index().lazy()
-    right = right.rename(lambda _: "key").sort("key").with_row_index().lazy()
+    left = left_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
+    right = right_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
 
     q = left.join_asof(
         right,

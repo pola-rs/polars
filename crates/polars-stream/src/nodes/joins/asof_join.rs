@@ -15,7 +15,7 @@ use crate::nodes::ComputeNode;
 use crate::nodes::joins::utils::DataFrameBuffer;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
-pub const KEY_COL_NAME: &'static str = "__POLARS_JOIN_KEY";
+pub const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY";
 
 #[derive(Debug)]
 pub struct AsOfJoinSideParams {
@@ -129,7 +129,7 @@ impl ComputeNode for AsOfJoinNode {
         let recv1_blocked = recv[1] == PortState::Blocked;
         let send_blocked = send[0] == PortState::Blocked;
         match self.state {
-            AsOfJoinState::Running { .. } => {
+            AsOfJoinState::Running => {
                 recv[0] = PortState::Ready;
                 recv[1] = PortState::Ready;
                 send[0] = PortState::Ready;
@@ -146,7 +146,7 @@ impl ComputeNode for AsOfJoinNode {
                     recv[1] = PortState::Blocked;
                 }
             },
-            AsOfJoinState::FlushInputBuffer { .. } => {
+            AsOfJoinState::FlushInputBuffer => {
                 recv[0] = PortState::Done;
                 recv[1] = PortState::Ready;
                 send[0] = PortState::Ready;
