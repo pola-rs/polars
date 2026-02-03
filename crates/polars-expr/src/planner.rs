@@ -7,6 +7,7 @@ use recursive::recursive;
 use crate::dispatch::{function_expr_to_groups_udf, function_expr_to_udf};
 use crate::expressions as phys_expr;
 use crate::expressions::*;
+use crate::reduce::GroupedReduction;
 
 pub fn get_expr_depth_limit() -> PolarsResult<u16> {
     let depth = if let Ok(d) = std::env::var("POLARS_MAX_EXPR_DEPTH") {
@@ -508,6 +509,30 @@ fn create_physical_expr_inner(
                 is_scalar,
             )))
         },
+        AExpr::AnonymousAgg {
+            input,
+            fmt_str: _,
+            function,
+        } => {
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+
+            let inputs = create_physical_expressions_from_irs(&input, expr_arena, schema, state)?;
+            let grouped_reduction = function
+                .clone()
+                .materialize()?
+                .as_any()
+                .downcast_ref::<Box<dyn GroupedReduction>>()
+                .unwrap()
+                .new_empty();
+
+            Ok(Arc::new(AnonymousAggregationExpr::new(
+                inputs,
+                grouped_reduction,
+                output_field,
+            )))
+        },
         AnonymousFunction {
             input,
             function,
@@ -671,9 +696,6 @@ fn create_physical_expr_inner(
                 false,
                 false,
             )))
-        },
-        AnonymousStreamingAgg { .. } => {
-            polars_bail!(ComputeError: "anonymous agg not supported in in-memory engine")
         },
     }
 }

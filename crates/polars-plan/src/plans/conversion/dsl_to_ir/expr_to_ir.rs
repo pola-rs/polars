@@ -374,6 +374,41 @@ pub(super) fn to_aexpr_impl(
                 output_name,
             )
         },
+        Expr::AnonymousAgg {
+            input,
+            function,
+            fmt_str,
+        } => {
+            let input = to_expr_irs(input, ctx)?;
+            let output_name = if input.is_empty() {
+                fmt_str.as_ref().clone()
+            } else {
+                input[0].output_name().clone()
+            };
+
+            let fields = input
+                .iter()
+                .map(|e| e.field(ctx.schema, ctx.arena))
+                .collect::<PolarsResult<Vec<_>>>()?;
+
+            let function = function.materialize()?;
+            let out = function.get_field(ctx.schema, &fields)?;
+            let output_dtype = out.dtype();
+
+            assert!(
+                output_dtype.is_known(),
+                "output type of anonymous functions must bet set"
+            );
+
+            (
+                AExpr::AnonymousAgg {
+                    input,
+                    function: LazySerde::Deserialized(function),
+                    fmt_str,
+                },
+                output_name,
+            )
+        },
         Expr::AnonymousFunction {
             input,
             function,

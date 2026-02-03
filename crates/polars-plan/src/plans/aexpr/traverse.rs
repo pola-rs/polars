@@ -45,9 +45,7 @@ impl AExpr {
             },
             AnonymousFunction { input, .. }
             | Function { input, .. }
-            | AnonymousStreamingAgg { input, .. } => {
-                container.extend(input.iter().rev().map(|e| e.node()))
-            },
+            | AnonymousAgg { input, .. } => container.extend(input.iter().rev().map(|e| e.node())),
             Explode { expr: e, .. } => container.extend([*e]),
             #[cfg(feature = "dynamic_group_by")]
             Rolling {
@@ -163,9 +161,7 @@ impl AExpr {
             },
             AnonymousFunction { input, .. }
             | Function { input, .. }
-            | AnonymousStreamingAgg { input, .. } => {
-                container.extend(input.iter().rev().map(|e| e.node()))
-            },
+            | AnonymousAgg { input, .. } => container.extend(input.iter().rev().map(|e| e.node())),
             Explode { expr: e, .. } => container.extend([*e]),
             #[cfg(feature = "dynamic_group_by")]
             Rolling {
@@ -271,7 +267,7 @@ impl AExpr {
             },
             AnonymousFunction { input, .. }
             | Function { input, .. }
-            | AnonymousStreamingAgg { input, .. } => {
+            | AnonymousAgg { input, .. } => {
                 assert_eq!(input.len(), inputs.len());
                 for (e, node) in input.iter_mut().zip(inputs.iter()) {
                     e.set_node(*node);
@@ -395,7 +391,7 @@ impl AExpr {
                 *predicate = inputs[2];
                 return self;
             },
-            AnonymousStreamingAgg { input, .. }
+            AnonymousAgg { input, .. }
             | AnonymousFunction { input, .. }
             | Function { input, .. } => {
                 assert_eq!(input.len(), inputs.len());

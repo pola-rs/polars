@@ -164,7 +164,7 @@ pub fn into_reduction(
                 _ => unreachable!(),
             }
         },
-        AExpr::AnonymousStreamingAgg {
+        AExpr::AnonymousAgg {
             input: inner_exprs,
             fmt_str: _,
             function,

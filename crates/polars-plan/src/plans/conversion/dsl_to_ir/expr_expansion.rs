@@ -839,6 +839,29 @@ fn expand_expression_rec(
             )?
         },
         Expr::Len => out.push(Expr::Len),
+        Expr::AnonymousAgg {
+            input,
+            function,
+            fmt_str,
+        } => {
+            let function = function.clone().materialize()?;
+
+            let mut expanded_input = Vec::with_capacity(input.len());
+            for e in input {
+                expand_expression_rec(
+                    e,
+                    ignored_selector_columns,
+                    schema,
+                    &mut expanded_input,
+                    opt_flags,
+                )?;
+            }
+            out.push(Expr::AnonymousAgg {
+                input: expanded_input,
+                function: LazySerde::Deserialized(function.clone()),
+                fmt_str: fmt_str.clone(),
+            });
+        },
         Expr::AnonymousFunction {
             input,
             function,

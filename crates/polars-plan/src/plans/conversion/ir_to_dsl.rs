@@ -222,6 +222,15 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 falsy: Arc::new(f),
             }
         },
+        AExpr::AnonymousAgg {
+            input,
+            fmt_str,
+            function,
+        } => Expr::AnonymousAgg {
+            input: expr_irs_to_exprs(input, expr_arena),
+            function,
+            fmt_str,
+        },
         AExpr::AnonymousFunction {
             input,
             function,
@@ -300,7 +309,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             length: Arc::new(node_to_expr(length, expr_arena)),
         },
         AExpr::Len => Expr::Len,
-        AExpr::AnonymousStreamingAgg { .. } => unreachable!("should not be hit"),
     }
 }
 
