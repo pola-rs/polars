@@ -114,6 +114,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
+    # typing aliases for builtin names shadowed by Series accessors
     from builtins import list as list_
     from builtins import set as set_
     from builtins import str as str_
