@@ -37,7 +37,9 @@ use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
-use crate::nodes::joins::{asof_join, merge_join};
+#[cfg(feature = "asof_join")]
+use crate::nodes::joins::asof_join;
+use crate::nodes::joins::merge_join;
 use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_expr::{ExprCache, build_select_stream, lower_exprs};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
@@ -1180,6 +1182,7 @@ pub fn lower_ir(
                     }
                 }
 
+                #[cfg(feature = "asof_join")]
                 if use_asof_join {
                     if !key_expr_is_trivial(&left_on[0], expr_arena) {
                         trans_left_on[0] = trans_left_on[0]
@@ -1258,7 +1261,7 @@ pub fn lower_ir(
                             args: args.clone(),
                         },
                     ))
-                } else if args.how.is_asof() {
+                } else if use_asof_join {
                     assert!(left_on_names.len() == 1 && right_on_names.len() == 1);
                     phys_sm.insert(PhysNode::new(
                         output_schema,

@@ -1175,20 +1175,26 @@ fn to_graph_rec<'a>(
             let right_input_key = to_graph_rec(input_right.node, ctx)?;
             let left_input_schema = ctx.phys_sm[input_left.node].output_schema.clone();
             let right_input_schema = ctx.phys_sm[input_right.node].output_schema.clone();
-
-            ctx.graph.add_node(
-                nodes::joins::asof_join::AsOfJoinNode::new(
-                    left_input_schema,
-                    right_input_schema,
-                    left_on.clone(),
-                    right_on.clone(),
-                    args,
-                ),
-                [
-                    (left_input_key, input_left.port),
-                    (right_input_key, input_right.port),
-                ],
-            )
+            #[cfg(feature = "asof_join")]
+            {
+                ctx.graph.add_node(
+                    nodes::joins::asof_join::AsOfJoinNode::new(
+                        left_input_schema,
+                        right_input_schema,
+                        left_on.clone(),
+                        right_on.clone(),
+                        args,
+                    ),
+                    [
+                        (left_input_key, input_left.port),
+                        (right_input_key, input_right.port),
+                    ],
+                )
+            }
+            #[cfg(not(feature = "asof_join"))]
+            {
+                unreachable!("asof_join feature is disabled")
+            }
         },
 
         #[cfg(feature = "merge_sorted")]
