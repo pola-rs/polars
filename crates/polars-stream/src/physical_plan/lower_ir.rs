@@ -1039,6 +1039,7 @@ pub fn lower_ir(
             let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
             let args = options.args.clone();
             let unwrap_asof_options = || match &args.how {
+                #[cfg(feature = "asof_join")]
                 JoinType::AsOf(asof_options) => asof_options,
                 _ => panic!("join type is not AsOf"),
             };
