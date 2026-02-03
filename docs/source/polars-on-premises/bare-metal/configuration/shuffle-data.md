@@ -1,7 +1,7 @@
 # Shuffle data
 
 When running distributed queries, data needs to be transferred in between the nodes. Polars
-On-Premises requires a configuration for this storage location. You should decide and benchmark
+on-premises requires a configuration for this storage location. You should decide and benchmark
 which location is the best for your infrastructure, as it has a large impact on query execution
 times.
 

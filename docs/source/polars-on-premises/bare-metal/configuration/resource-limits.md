@@ -11,7 +11,7 @@ executor process. Polars on-premises will already automatically configure `oom-s
 executor process.
 
 If there are other system critical processes, we recommend either delegating a cgroup to Polars
-On-Premises, or manually setting up cgroup limits for the entire Polars on-premises service.
+on-premises, or manually setting up cgroup limits for the entire Polars on-premises service.
 
 ### Delegating cgroup to Polars on-premises
 
