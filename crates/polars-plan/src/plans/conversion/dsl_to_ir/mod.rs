@@ -611,11 +611,38 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             predicates,
             options,
         } => {
+            let input_left_node = to_alp_impl(owned(input_left.clone()), ctxt)
+                .map_err(|e| e.context(failed_here!(filter)))?;
+            let input_left_schema = ctxt.lp_arena.get(input_left_node).schema(ctxt.lp_arena);
+            let mut expanded_left_on = Vec::with_capacity(8);
+            for e in left_on {
+                expr_expansion::expand_expression(
+                    &e,
+                    &PlHashSet::default(),
+                    input_left_schema.as_ref(),
+                    &mut expanded_left_on,
+                    ctxt.opt_flags,
+                )?;
+            }
+            let input_right_node = to_alp_impl(owned(input_right.clone()), ctxt)
+                .map_err(|e| e.context(failed_here!(filter)))?;
+            let input_right_schema = ctxt.lp_arena.get(input_right_node).schema(ctxt.lp_arena);
+            let mut expanded_right_on = Vec::with_capacity(8);
+            for e in right_on {
+                expr_expansion::expand_expression(
+                    &e,
+                    &PlHashSet::default(),
+                    input_right_schema.as_ref(),
+                    &mut expanded_right_on,
+                    ctxt.opt_flags,
+                )?;
+            }
+
             return join::resolve_join(
                 Either::Left(input_left),
                 Either::Left(input_right),
-                left_on,
-                right_on,
+                expanded_left_on,
+                expanded_right_on,
                 predicates,
                 JoinOptionsIR::from(Arc::unwrap_or_clone(options)),
                 ctxt,
