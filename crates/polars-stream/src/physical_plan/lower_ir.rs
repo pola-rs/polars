@@ -1038,11 +1038,6 @@ pub fn lower_ir(
             let left_on_names = left_on.iter().map(get_expr_name).collect_vec();
             let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
             let args = options.args.clone();
-            let unwrap_asof_options = || match &args.how {
-                #[cfg(feature = "asof_join")]
-                JoinType::AsOf(asof_options) => asof_options,
-                _ => panic!("join type is not AsOf"),
-            };
             let options = options.options.clone();
             let left_df_sortedness = is_sorted(input_left, ir_arena, expr_arena);
             let left_on_sorted = are_keys_sorted_any(
@@ -1081,9 +1076,14 @@ pub fn lower_ir(
             let key_expr_is_trivial =
                 |c: &ExprIR, ea: &mut Arena<AExpr>| matches!(ea.get(c.node()), AExpr::Column(_));
             let use_merge_join = args.how.is_equi() && join_keys_sorted_together;
-            let use_asof_join = args.how.is_asof()
-                && unwrap_asof_options().left_by.is_none()
-                && unwrap_asof_options().right_by.is_none();
+            #[cfg(feature = "asof_join")]
+            let use_asof_join = if let JoinType::AsOf(ref asof_options) = args.how {
+                asof_options.left_by.is_none() && asof_options.right_by.is_none()
+            } else {
+                false
+            };
+            #[cfg(not(feature = "asof_join"))]
+            let use_asof_join = false;
 
             let phys_left = lower_ir!(input_left)?;
             let phys_right = lower_ir!(input_right)?;
