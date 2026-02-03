@@ -146,7 +146,7 @@ impl LiveTimerInner {
                         stopped_at_ns = self.base_timestamp.elapsed().as_nanos() as u64;
                     }
                     let new_state_ns = stopped_at_ns.saturating_sub(orig_state_ns & !TICKING_BIT);
-                    self.state_ns.store(new_state_ns, Ordering::Release); // See (2).
+                    self.state_ns.store(new_state_ns, Ordering::Relaxed);
                     stopped = true;
                 } else if !should_stop && stopped {
                     self.state_ns.store(orig_state_ns, Ordering::Release); // See (2).
@@ -159,8 +159,8 @@ impl LiveTimerInner {
     }
 
     fn total_time_live_ns(&self) -> u64 {
-        // (2) Loading this with Acquire improves monotonicity in our elapsed() call, forcing it (barring platform bugs)
-        // to be >= than the stored state.
+        // (2) Acquire ensures the elapsed() call by this function is sequenced after the elapsed()
+        // call that state_ns value was calculated against if it is currently ticking.
         let state_ns = self.state_ns.load(Ordering::Acquire);
         let active_time = if state_ns & TICKING_BIT == 0 {
             state_ns
