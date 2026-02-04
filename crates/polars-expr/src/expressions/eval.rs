@@ -173,12 +173,13 @@ impl EvalExpr {
 
             // We didn't have any groups for the `null` values so we have to reinsert them.
             if let Some(validity) = validity {
-                    let expected_len = validity.set_bits();
-                    if values.len() < expected_len {
-                        let null_count = expected_len - values.len();
-                        let nulls = Column::full_null(values.name().clone(), null_count, values.dtype());
-                        values = values.extend(&nulls)?;
-                    }
+                let expected_len = validity.set_bits();
+                if values.len() < expected_len {
+                    let null_count = expected_len - values.len();
+                    let nulls =
+                        Column::full_null(values.name().clone(), null_count, values.dtype());
+                    values = values.extend(&nulls)?;
+                }
                 values = values.deposit(&validity);
             }
 
@@ -243,7 +244,6 @@ impl EvalExpr {
             );
 
             if let Some(validity) = validity {
-
                 out.set_validity(&validity);
             }
 
@@ -339,7 +339,8 @@ impl EvalExpr {
                 // Pad missing scalar results with nulls so `deposit` can succeed.
                 if values.len() < expected_len {
                     let null_count = expected_len - values.len();
-                    let nulls = Column::full_null(values.name().clone(), null_count, values.dtype());
+                    let nulls =
+                        Column::full_null(values.name().clone(), null_count, values.dtype());
                     values = values.extend(&nulls)?;
                 }
 
