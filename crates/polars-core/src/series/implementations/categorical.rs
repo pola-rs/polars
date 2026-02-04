@@ -86,8 +86,7 @@ macro_rules! impl_cat_series {
                 random_state: PlSeedableRandomStateQuality,
                 buf: &mut Vec<u64>,
             ) -> PolarsResult<()> {
-                self.0.physical().vec_hash(random_state, buf)?;
-                Ok(())
+                self.0.vec_hash(random_state, buf)
             }
 
             fn vec_hash_combine(
@@ -95,8 +94,7 @@ macro_rules! impl_cat_series {
                 build_hasher: PlSeedableRandomStateQuality,
                 hashes: &mut [u64],
             ) -> PolarsResult<()> {
-                self.0.physical().vec_hash_combine(build_hasher, hashes)?;
-                Ok(())
+                self.0.vec_hash_combine(build_hasher, hashes)
             }
 
             #[cfg(feature = "algorithm_group_by")]

@@ -6,16 +6,16 @@ use polars_lazy::prelude::*;
 use polars_ops::frame::JoinCoalesce;
 use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::prelude::*;
-use polars_utils::aliases::PlIndexSet;
+use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator, CreateTable, CreateTableLikeKind, Delete, Distinct, ExcludeSelectItem,
     Expr as SQLExpr, FromTable, FunctionArg, GroupByExpr, Ident, JoinConstraint, JoinOperator,
-    LimitClause, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectNamePart, ObjectType,
-    OrderBy, OrderByKind, Query, RenameSelectItem, Select, SelectItem,
-    SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias,
-    TableFactor, TableWithJoins, Truncate, UnaryOperator, Value as SQLValue, ValueWithSpan, Values,
-    Visit, WildcardAdditionalOptions, WindowSpec,
+    LimitClause, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectType, OrderBy,
+    OrderByKind, Query, RenameSelectItem, Select, SelectItem, SelectItemQualifiedWildcardKind,
+    SetExpr, SetOperator, SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins,
+    Truncate, UnaryOperator, Value as SQLValue, ValueWithSpan, Values, Visit,
+    WildcardAdditionalOptions, WindowSpec,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -57,6 +57,86 @@ impl SelectModifiers {
             .map(|(before, after)| col(before.clone()).alias(after.clone()))
             .collect()
     }
+}
+
+/// For SELECT projection items; helps simplify any required disambiguation.
+enum ProjectionItem {
+    QualifiedExprs(PlSmallStr, Vec<Expr>),
+    Exprs(Vec<Expr>),
+}
+
+/// Extract the output column name from an expression (if it has one).
+fn expr_output_name(expr: &Expr) -> Option<&PlSmallStr> {
+    match expr {
+        Expr::Column(name) | Expr::Alias(_, name) => Some(name),
+        _ => None,
+    }
+}
+
+/// Disambiguate qualified wildcard columns that conflict with each other or other projections.
+fn disambiguate_projection_cols(
+    items: Vec<ProjectionItem>,
+    schema: &Schema,
+) -> PolarsResult<Vec<Expr>> {
+    // Establish qualified wildcard names (with counts), and other expression names
+    let mut qualified_wildcard_names: PlHashMap<PlSmallStr, usize> = PlHashMap::new();
+    let mut other_names: PlHashSet<PlSmallStr> = PlHashSet::new();
+    for item in &items {
+        match item {
+            ProjectionItem::QualifiedExprs(_, exprs) => {
+                for expr in exprs {
+                    if let Some(name) = expr_output_name(expr) {
+                        *qualified_wildcard_names.entry(name.clone()).or_insert(0) += 1;
+                    }
+                }
+            },
+            ProjectionItem::Exprs(exprs) => {
+                for expr in exprs {
+                    if let Some(name) = expr_output_name(expr) {
+                        other_names.insert(name.clone());
+                    }
+                }
+            },
+        }
+    }
+
+    // Names requiring disambiguation (duplicates across wildcards, eg: `tbl1.*`,`tbl2.*`)
+    let needs_suffix: PlHashSet<PlSmallStr> = qualified_wildcard_names
+        .into_iter()
+        .filter(|(name, count)| *count > 1 || other_names.contains(name))
+        .map(|(name, _)| name)
+        .collect();
+
+    // Output, applying suffixes where needed
+    let mut result: Vec<Expr> = Vec::new();
+    for item in items {
+        match item {
+            ProjectionItem::QualifiedExprs(tbl_name, exprs) if !needs_suffix.is_empty() => {
+                for expr in exprs {
+                    if let Some(name) = expr_output_name(&expr) {
+                        if needs_suffix.contains(name) {
+                            let suffixed = format_pl_smallstr!("{}:{}", name, tbl_name);
+                            if schema.contains(suffixed.as_str()) {
+                                result.push(col(suffixed));
+                                continue;
+                            }
+                            if other_names.contains(name) {
+                                polars_bail!(
+                                    SQLInterface:
+                                    "column '{}' is duplicated in the SELECT (explicitly, and via the `*` wildcard)", name
+                                );
+                            }
+                        }
+                    }
+                    result.push(expr);
+                }
+            },
+            ProjectionItem::QualifiedExprs(_, exprs) | ProjectionItem::Exprs(exprs) => {
+                result.extend(exprs);
+            },
+        }
+    }
+    Ok(result)
 }
 
 /// The SQLContext is the main entry point for executing SQL queries.
@@ -1278,6 +1358,7 @@ impl SQLContext {
                                 nulls_equal: false,
                                 coalesce: Default::default(),
                                 maintain_order: polars_ops::frame::MaintainOrderJoin::Left,
+                                build_side: None,
                             },
                         );
                 }
@@ -1370,27 +1451,41 @@ impl SQLContext {
         schema: &SchemaRef,
         select_modifiers: &mut SelectModifiers,
     ) -> PolarsResult<Vec<Expr>> {
-        let parsed_items: PolarsResult<Vec<Vec<Expr>>> = select_stmt
-            .projection
-            .iter()
-            .map(|select_item| match select_item {
+        let mut items: Vec<ProjectionItem> = Vec::with_capacity(select_stmt.projection.len());
+        let mut has_qualified_wildcard = false;
+
+        for select_item in &select_stmt.projection {
+            match select_item {
                 SelectItem::UnnamedExpr(expr) => {
-                    Ok(vec![parse_sql_expr(expr, self, Some(schema))?])
+                    items.push(ProjectionItem::Exprs(vec![parse_sql_expr(
+                        expr,
+                        self,
+                        Some(schema),
+                    )?]));
                 },
                 SelectItem::ExprWithAlias { expr, alias } => {
                     let expr = parse_sql_expr(expr, self, Some(schema))?;
-                    Ok(vec![expr.alias(PlSmallStr::from_str(alias.value.as_str()))])
+                    items.push(ProjectionItem::Exprs(vec![
+                        expr.alias(PlSmallStr::from_str(alias.value.as_str())),
+                    ]));
                 },
                 SelectItem::QualifiedWildcard(kind, wildcard_options) => match kind {
-                    // eg: `alias.*` or `schema.table.*`
-                    SelectItemQualifiedWildcardKind::ObjectName(obj_name) => self
-                        .process_qualified_wildcard(
+                    SelectItemQualifiedWildcardKind::ObjectName(obj_name) => {
+                        let tbl_name = obj_name
+                            .0
+                            .last()
+                            .and_then(|p| p.as_ident())
+                            .map(|i| PlSmallStr::from_str(&i.value))
+                            .unwrap_or_default();
+                        let exprs = self.process_qualified_wildcard(
                             obj_name,
                             wildcard_options,
                             select_modifiers,
                             Some(schema),
-                        ),
-                    // eg: `STRUCT<STRING>('foo').*`
+                        )?;
+                        items.push(ProjectionItem::QualifiedExprs(tbl_name, exprs));
+                        has_qualified_wildcard = true;
+                    },
                     SelectItemQualifiedWildcardKind::Expr(_) => {
                         polars_bail!(SQLSyntax: "qualified wildcard on expressions not yet supported: {:?}", select_item)
                     },
@@ -1401,19 +1496,33 @@ impl SQLContext {
                         .map(|name| col(name.clone()))
                         .collect::<Vec<_>>();
 
-                    self.process_wildcard_additional_options(
-                        cols,
-                        wildcard_options,
-                        select_modifiers,
-                        Some(schema),
-                    )
+                    items.push(ProjectionItem::Exprs(
+                        self.process_wildcard_additional_options(
+                            cols,
+                            wildcard_options,
+                            select_modifiers,
+                            Some(schema),
+                        )?,
+                    ));
                 },
-            })
-            .collect();
+            }
+        }
 
-        let flattened_exprs: Vec<Expr> = parsed_items?
+        // Disambiguate qualified wildcards (if any) and flatten expressions
+        let exprs = if has_qualified_wildcard {
+            disambiguate_projection_cols(items, schema)?
+        } else {
+            items
+                .into_iter()
+                .flat_map(|item| match item {
+                    ProjectionItem::Exprs(exprs) | ProjectionItem::QualifiedExprs(_, exprs) => {
+                        exprs
+                    },
+                })
+                .collect()
+        };
+        let flattened_exprs = exprs
             .into_iter()
-            .flatten()
             .flat_map(|expr| expand_exprs(expr, schema))
             .collect();
 
@@ -2124,16 +2233,14 @@ impl SQLContext {
         modifiers: &mut SelectModifiers,
         schema: Option<&Schema>,
     ) -> PolarsResult<Vec<Expr>> {
-        let mut new_idents = idents.clone();
-        new_idents.push(ObjectNamePart::Identifier(Ident::new("*")));
+        let mut idents_with_wildcard: Vec<Ident> = idents
+            .iter()
+            .filter_map(|p| p.as_ident().cloned())
+            .collect();
+        idents_with_wildcard.push(Ident::new("*"));
 
-        let ident_refs: Vec<&Ident> = new_idents.iter().filter_map(|p| p.as_ident()).collect();
-        let expr = resolve_compound_identifier(
-            self,
-            &ident_refs.iter().map(|&i| i.clone()).collect::<Vec<_>>(),
-            schema,
-        );
-        self.process_wildcard_additional_options(expr?, options, modifiers, schema)
+        let exprs = resolve_compound_identifier(self, &idents_with_wildcard, schema)?;
+        self.process_wildcard_additional_options(exprs, options, modifiers, schema)
     }
 
     fn process_wildcard_additional_options(

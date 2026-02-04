@@ -510,3 +510,23 @@ def test_sink_partitioned_no_columns_in_file_25535(
     assert sum(1 for _ in max_size_root.iterdir()) == 5
     assert scan_func(max_size_root).collect().shape == (10, 0)
     assert scan_func(max_size_root).select(pl.len()).collect().item() == 10
+
+
+def test_partition_by_scalar_expr_26294(tmp_path: Path) -> None:
+    pl.LazyFrame(height=5).sink_parquet(
+        pl.PartitionBy(tmp_path, key=pl.lit(1, dtype=pl.Int64))
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).collect(),
+        pl.DataFrame({"literal": [1, 1, 1, 1, 1]}),
+    )
+
+
+def test_partition_by_diff_expr_26370(tmp_path: Path) -> None:
+    q = pl.LazyFrame({"x": [1, 2]}).cast(pl.Decimal(precision=1))
+    q = q.with_columns(pl.col("x").diff().alias("y"), pl.lit(1).alias("z"))
+
+    q.sink_parquet(pl.PartitionBy(tmp_path, key="z"))
+
+    assert_frame_equal(pl.scan_parquet(tmp_path).collect(), q.collect())

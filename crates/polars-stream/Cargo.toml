@@ -13,6 +13,7 @@ async-channel = { workspace = true }
 async-trait = { workspace = true }
 atomic-waker = { workspace = true }
 bitflags = { workspace = true }
+bytes = { workspace = true }
 chrono-tz = { workspace = true }
 crossbeam-channel = { workspace = true }
 crossbeam-deque = { workspace = true }

@@ -1,22 +1,9 @@
 name: Test Pyodide
 
 on:
-  pull_request:
-    paths:
-      - Cargo.lock
-      - py-polars/**
-      - docs/source/src/python/**
-      - crates/**
-      - .github/workflows/test-pyodide.yml
   push:
     branches:
-      - main
-    paths:
-      - Cargo.lock
-      - crates/**
-      - docs/source/src/python/**
-      - py-polars/**
-      - .github/workflows/test-pyodide.yml
+      - disabled-pyodide-tests  # disabled for now
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

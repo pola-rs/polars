@@ -50,6 +50,7 @@ pub mod udf;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+mod iter;
 mod plan;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
@@ -218,6 +219,10 @@ impl Expr {
     }
 
     /// Alias for `explode`.
+    #[deprecated(
+        since = "0.53.0",
+        note = "Use `explode()` with `ExplodeOptions { empty_as_null: false, keep_nulls: false }` instead. Will be removed in version 2.0."
+    )]
     pub fn flatten(self) -> Self {
         self.explode(ExplodeOptions {
             empty_as_null: true,

@@ -34,7 +34,7 @@ impl AExpr {
             Rolling { .. } => false,
 
             Agg { .. }
-            | AnonymousStreamingAgg { .. }
+            | AnonymousAgg { .. }
             | Explode { .. }
             | Filter { .. }
             | Gather { .. }
@@ -327,8 +327,6 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
                             agg_e,
                             IRAggExpr::Min { .. }
                                 | IRAggExpr::Max { .. }
-                                | IRAggExpr::MinBy { .. }
-                                | IRAggExpr::MaxBy { .. }
                                 | IRAggExpr::Sum(_)
                                 | IRAggExpr::Last(_)
                                 | IRAggExpr::First(_)
@@ -453,7 +451,7 @@ pub(crate) fn predicate_non_null_column_outputs(
                 use Operator::*;
 
                 match op {
-                    Eq | NotEq | Lt | LtEq | Gt | GtEq | Plus | Minus | Multiply | Divide
+                    Eq | NotEq | Lt | LtEq | Gt | GtEq | Plus | Minus | Multiply | RustDivide
                     | TrueDivide | FloorDivide | Modulus | Xor => true,
 
                     // These can turn NULLs into true/false. E.g.:

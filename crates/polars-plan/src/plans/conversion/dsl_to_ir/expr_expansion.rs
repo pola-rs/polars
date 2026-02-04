@@ -443,32 +443,6 @@ fn expand_expression_rec(
                         })
                     },
                 )?,
-                AggExpr::MinBy { input, by } => expand_expression_by_combination(
-                    &[input.as_ref().clone(), by.as_ref().clone()],
-                    ignored_selector_columns,
-                    schema,
-                    out,
-                    opt_flags,
-                    |e| {
-                        Expr::Agg(AggExpr::MinBy {
-                            input: Arc::new(e[0].clone()),
-                            by: Arc::new(e[1].clone()),
-                        })
-                    },
-                )?,
-                AggExpr::MaxBy { input, by } => expand_expression_by_combination(
-                    &[input.as_ref().clone(), by.as_ref().clone()],
-                    ignored_selector_columns,
-                    schema,
-                    out,
-                    opt_flags,
-                    |e| {
-                        Expr::Agg(AggExpr::MaxBy {
-                            input: Arc::new(e[0].clone()),
-                            by: Arc::new(e[1].clone()),
-                        })
-                    },
-                )?,
                 AggExpr::Median(expr) => expand_single(
                     expr.as_ref(),
                     ignored_selector_columns,
@@ -839,6 +813,29 @@ fn expand_expression_rec(
             )?
         },
         Expr::Len => out.push(Expr::Len),
+        Expr::AnonymousAgg {
+            input,
+            function,
+            fmt_str,
+        } => {
+            let function = function.clone().materialize()?;
+
+            let mut expanded_input = Vec::with_capacity(input.len());
+            for e in input {
+                expand_expression_rec(
+                    e,
+                    ignored_selector_columns,
+                    schema,
+                    &mut expanded_input,
+                    opt_flags,
+                )?;
+            }
+            out.push(Expr::AnonymousAgg {
+                input: expanded_input,
+                function: LazySerde::Deserialized(function.clone()),
+                fmt_str: fmt_str.clone(),
+            });
+        },
         Expr::AnonymousFunction {
             input,
             function,

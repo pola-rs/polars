@@ -332,6 +332,7 @@ impl PyLazyFrame {
     ) -> PyResult<Self> {
         let options = IpcScanOptions {
             record_batch_statistics,
+            checked: Default::default(),
         };
 
         let sources = sources.0;
@@ -641,7 +642,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[pyo3(signature = (
         target, sink_options, compression, compression_level, statistics, row_group_size, data_page_size,
-        metadata, field_overwrites,
+        metadata, arrow_schema
     ))]
     fn sink_parquet(
         &self,
@@ -654,7 +655,7 @@ impl PyLazyFrame {
         row_group_size: Option<usize>,
         data_page_size: Option<usize>,
         metadata: Wrap<Option<KeyValueMetadata>>,
-        field_overwrites: Vec<Wrap<ParquetFieldOverwrites>>,
+        arrow_schema: Option<Wrap<ArrowSchema>>,
     ) -> PyResult<PyLazyFrame> {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
@@ -664,7 +665,7 @@ impl PyLazyFrame {
             row_group_size,
             data_page_size,
             key_value_metadata: metadata.0,
-            field_overwrites: field_overwrites.into_iter().map(|f| f.0).collect(),
+            arrow_schema: arrow_schema.map(|x| Arc::new(x.0)),
         };
 
         let target = target.extract_file_sink_destination()?;
@@ -704,7 +705,6 @@ impl PyLazyFrame {
             compat_level: compat_level.0,
             record_batch_size,
             record_batch_statistics,
-            ..Default::default()
         };
 
         let target = target.extract_file_sink_destination()?;
@@ -1532,63 +1532,6 @@ impl PyLazyFrame {
             .hint(HintIR::Sorted(sorted.into()))
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
-    }
-}
-
-#[cfg(feature = "parquet")]
-impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<polars_io::parquet::write::ParquetFieldOverwrites> {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        use polars_io::parquet::write::ParquetFieldOverwrites;
-
-        let parsed = ob.extract::<pyo3::Bound<'_, PyDict>>()?;
-
-        let name = PyDictMethods::get_item(&parsed, "name")?
-            .map(|v| PyResult::Ok(v.extract::<String>()?.into()))
-            .transpose()?;
-        let children = PyDictMethods::get_item(&parsed, "children")?.map_or(
-            PyResult::Ok(ChildFieldOverwrites::None),
-            |v| {
-                Ok(
-                    if let Ok(overwrites) = v.extract::<Vec<Wrap<ParquetFieldOverwrites>>>() {
-                        ChildFieldOverwrites::Struct(overwrites.into_iter().map(|v| v.0).collect())
-                    } else {
-                        ChildFieldOverwrites::ListLike(Box::new(
-                            v.extract::<Wrap<ParquetFieldOverwrites>>()?.0,
-                        ))
-                    },
-                )
-            },
-        )?;
-
-        let field_id = PyDictMethods::get_item(&parsed, "field_id")?
-            .map(|v| v.extract::<i32>())
-            .transpose()?;
-
-        let metadata = PyDictMethods::get_item(&parsed, "metadata")?
-            .map(|v| v.extract::<Vec<(String, Option<String>)>>())
-            .transpose()?;
-        let metadata = metadata.map(|v| {
-            v.into_iter()
-                .map(|v| MetadataKeyValue {
-                    key: v.0.into(),
-                    value: v.1.map(|v| v.into()),
-                })
-                .collect()
-        });
-
-        let required = PyDictMethods::get_item(&parsed, "required")?
-            .map(|v| v.extract::<bool>())
-            .transpose()?;
-
-        Ok(Wrap(ParquetFieldOverwrites {
-            name,
-            children,
-            field_id,
-            metadata,
-            required,
-        }))
     }
 }
 

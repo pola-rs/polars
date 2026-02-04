@@ -269,12 +269,14 @@ impl LazyCsvReader {
                 // TODO: Path expansion should happen when converting to the IR
                 // https://github.com/pola-rs/polars/issues/17634
 
-                let paths = expand_paths(
+                use polars_io::pl_async::get_runtime;
+
+                let paths = get_runtime().block_on(expand_paths(
                     &paths[..],
                     self.glob(),
                     &[], // hidden_file_prefix
                     &mut self.cloud_options,
-                )?;
+                ))?;
 
                 let Some(path) = paths.first() else {
                     polars_bail!(ComputeError: "no paths specified for this reader");

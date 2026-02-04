@@ -61,8 +61,6 @@ impl TreeWalker for Expr {
             Agg(agg_expr) => Agg(match agg_expr {
                 Min { input, propagate_nans } => Min { input: am(input, f)?, propagate_nans },
                 Max { input, propagate_nans } => Max { input: am(input, f)?, propagate_nans },
-                MinBy { input, by } => MinBy { input: am(input, &mut f)?, by: am(by, f)? },
-                MaxBy { input, by } =>  MaxBy { input: am(input, &mut f)?, by: am(by, f)? },
                 Median(x) => Median(am(x, f)?),
                 NUnique(x) => NUnique(am(x, f)?),
                 First(x) => First(am(x, f)?),
@@ -95,6 +93,9 @@ impl TreeWalker for Expr {
             Element => Element,
             Len => Len,
             RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
+            AnonymousAgg { input, function, fmt_str } => {
+                AnonymousAgg { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, fmt_str }
+            },
             AnonymousFunction { input, function, options, fmt_str } => {
                 AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options, fmt_str }
             },
