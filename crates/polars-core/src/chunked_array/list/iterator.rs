@@ -464,6 +464,53 @@ impl ListChunked {
         }
         Ok(ca)
     }
+
+    /// Apply a closure `F` to each list element, automatically choosing the appropriate
+    /// method based on whether the inner dtype contains categoricals or enums.
+    ///
+    /// For types with special metadata (categoricals/enums), uses `try_apply_amortized`
+    /// which infers dtype from collected values. For other types, uses the more
+    /// efficient `apply_amortized_same_type`.
+    ///
+    /// This method exists because `amortized_iter` converts structs to physical types,
+    /// which strips categorical/enum metadata. Using `apply_amortized_same_type` in those
+    /// cases would cause a dtype mismatch panic.
+    #[must_use]
+    pub fn apply_amortized_with_dtype_check<F>(&self, mut f: F) -> Self
+    where
+        F: FnMut(AmortSeries) -> Series,
+    {
+        let inner_dtype = self.inner_dtype();
+        if inner_dtype.contains_categoricals() || inner_dtype.contains_enums() {
+            self.try_apply_amortized(|s| Ok(f(s))).unwrap()
+        } else {
+            // SAFETY: For types without special metadata, the closure doesn't change the dtype
+            unsafe { self.apply_amortized_same_type(f) }
+        }
+    }
+
+    /// Try apply a closure `F` to each list element, automatically choosing the appropriate
+    /// method based on whether the inner dtype contains categoricals or enums.
+    ///
+    /// For types with special metadata (categoricals/enums), uses `try_apply_amortized`
+    /// which infers dtype from collected values. For other types, uses the more
+    /// efficient `try_apply_amortized_same_type`.
+    ///
+    /// This method exists because `amortized_iter` converts structs to physical types,
+    /// which strips categorical/enum metadata. Using `try_apply_amortized_same_type` in those
+    /// cases would cause a dtype mismatch panic.
+    pub fn try_apply_amortized_with_dtype_check<F>(&self, f: F) -> PolarsResult<Self>
+    where
+        F: FnMut(AmortSeries) -> PolarsResult<Series>,
+    {
+        let inner_dtype = self.inner_dtype();
+        if inner_dtype.contains_categoricals() || inner_dtype.contains_enums() {
+            self.try_apply_amortized(f)
+        } else {
+            // SAFETY: For types without special metadata, the closure doesn't change the dtype
+            unsafe { self.try_apply_amortized_same_type(f) }
+        }
+    }
 }
 
 fn to_arr(s: &Series) -> ArrayRef {
