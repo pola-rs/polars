@@ -212,6 +212,7 @@ pub enum Expr {
         expr: Arc<Expr>,
         evaluation: Vec<Expr>,
     },
+    /// SQL SubQueries
     SubPlan(SpecialEq<Arc<DslPlan>>, Vec<PlSmallStr>),
     RenameAlias {
         function: RenameAliasFn,

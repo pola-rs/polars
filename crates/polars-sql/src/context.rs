@@ -1648,7 +1648,7 @@ impl SQLContext {
                         "multiple columns in subqueries not yet supported"
                     );
                     subplans.push(LazyFrame::from((**lp).clone()));
-                    Expr::Column(names[0].clone())
+                    Expr::Column(names[0].clone()).first()
                 } else {
                     e
                 }
