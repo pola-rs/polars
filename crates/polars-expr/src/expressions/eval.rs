@@ -173,6 +173,12 @@ impl EvalExpr {
 
             // We didn't have any groups for the `null` values so we have to reinsert them.
             if let Some(validity) = validity {
+                    let expected_len = validity.set_bits();
+                    if values.len() < expected_len {
+                        let null_count = expected_len - values.len();
+                        let nulls = Column::full_null(values.name().clone(), null_count, values.dtype());
+                        values = values.extend(&nulls)?;
+                    }
                 values = values.deposit(&validity);
             }
 
@@ -237,6 +243,7 @@ impl EvalExpr {
             );
 
             if let Some(validity) = validity {
+
                 out.set_validity(&validity);
             }
 
@@ -325,6 +332,18 @@ impl EvalExpr {
 
             // We didn't have any groups for the `null` values so we have to reinsert them.
             if let Some(validity) = validity {
+                // Ensure the number of scalar outputs matches the number of valid groups.
+                // Some aggregations (e.g. `first()` on empty lists) may produce fewer values.
+                let expected_len = validity.set_bits();
+
+                // Pad missing scalar results with nulls so `deposit` can succeed.
+                if values.len() < expected_len {
+                    let null_count = expected_len - values.len();
+                    let nulls = Column::full_null(values.name().clone(), null_count, values.dtype());
+                    values = values.extend(&nulls)?;
+                }
+
+                // Reinsert nulls according to the original validity bitmap.
                 values = values.deposit(&validity);
             }
 
