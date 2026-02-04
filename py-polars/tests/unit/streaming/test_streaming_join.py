@@ -622,24 +622,24 @@ def test_merge_join_applicable(
         {pl.Duration("ms"), pl.Duration("us"), pl.Duration("ns")},
     ],
 )
-@pytest.mark.parametrize("morsel_size", ["1", "1000"])
+@pytest.mark.parametrize("ideal_morsel_size", ["1", "1000"])
 @given(data=st.data())
 @settings(
     suppress_health_check=[HealthCheck.function_scoped_fixture]
-)  # morsel_size is not based on hypothesis
+)  # ideal_morsel_size is not based on hypothesis
 def test_streaming_asof_join(
     data: st.DataObject,
     strategy: AsofJoinStrategy,
     allow_exact_matches: bool,
     coalesce: bool,
     dtypes: set[pl.DataType],
-    morsel_size: str,
+    ideal_morsel_size: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", morsel_size)
+    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", ideal_morsel_size)
 
     if dtypes & {pl.String, pl.Binary} and strategy == "nearest":
-        pytest.skip("asof join with string/binary only supports 'nearest' strategy")
+        pytest.skip("asof join with string/binary does not support 'nearest' strategy")
 
     dtype = data.draw(st.sampled_from(list(dtypes)))
     df_st = dataframes(
