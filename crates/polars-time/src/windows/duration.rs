@@ -946,67 +946,82 @@ impl Duration {
         let d = self;
 
         if d.months > 0 {
-            let ts = match tz {
-                #[cfg(feature = "timezones")]
-                // for UTC, use fastpath below (same as naive)
-                Some(tz) if tz != &chrono_tz::UTC => {
-                    unlocalize_datetime(timestamp_to_datetime(t), tz)
-                },
-                _ => timestamp_to_datetime(t),
-            };
-            let dt = Self::add_month(ts, d.months, d.negative);
             t = match tz {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
-                Some(tz) if tz != &chrono_tz::UTC => datetime_to_timestamp(
-                    try_localize_datetime(dt, tz, Ambiguous::Raise, NonExistent::Raise)?
-                        .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
-                ),
-                _ => datetime_to_timestamp(dt),
+                Some(tz) if tz != &chrono_tz::UTC => {
+                    let original_dt_utc = timestamp_to_datetime(t);
+                    let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
+                    let result_dt_local = Self::add_month(original_dt_local, d.months, d.negative);
+                    datetime_to_timestamp(self.localize_result(
+                        original_dt_local,
+                        original_dt_utc,
+                        result_dt_local,
+                        tz,
+                    )?)
+                },
+                _ => datetime_to_timestamp(Self::add_month(
+                    timestamp_to_datetime(t),
+                    d.months,
+                    d.negative,
+                )),
             };
         }
 
         if d.weeks > 0 {
             let t_weeks = nsecs_to_unit(NS_WEEK) * self.weeks;
-            match tz {
+            t = match tz {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => {
-                    t = datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
-                    t += if d.negative { -t_weeks } else { t_weeks };
-                    t = datetime_to_timestamp(
-                        try_localize_datetime(
-                            timestamp_to_datetime(t),
-                            tz,
-                            Ambiguous::Raise,
-                            NonExistent::Raise,
-                        )?
-                        .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
-                    );
+                    let original_dt_utc = timestamp_to_datetime(t);
+                    let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
+                    let mut result_timestamp_local = datetime_to_timestamp(original_dt_local);
+                    result_timestamp_local += if d.negative { -t_weeks } else { t_weeks };
+                    let result_dt_local = timestamp_to_datetime(result_timestamp_local);
+                    datetime_to_timestamp(self.localize_result(
+                        original_dt_local,
+                        original_dt_utc,
+                        result_dt_local,
+                        tz,
+                    )?)
                 },
-                _ => t += if d.negative { -t_weeks } else { t_weeks },
+                _ => {
+                    if d.negative {
+                        t - t_weeks
+                    } else {
+                        t + t_weeks
+                    }
+                },
             };
         }
 
         if d.days > 0 {
             let t_days = nsecs_to_unit(NS_DAY) * self.days;
-            match tz {
+            t = match tz {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => {
-                    t = datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
+                    let original_dt_utc = timestamp_to_datetime(t);
+                    let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
+                    t = datetime_to_timestamp(original_dt_local);
                     t += if d.negative { -t_days } else { t_days };
-                    t = datetime_to_timestamp(
-                        try_localize_datetime(
-                            timestamp_to_datetime(t),
-                            tz,
-                            Ambiguous::Raise,
-                            NonExistent::Raise,
-                        )?
-                        .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
-                    );
+                    let result_dt_local = timestamp_to_datetime(t);
+                    let result_dt_utc = self.localize_result(
+                        original_dt_local,
+                        original_dt_utc,
+                        result_dt_local,
+                        tz,
+                    )?;
+                    datetime_to_timestamp(result_dt_utc)
                 },
-                _ => t += if d.negative { -t_days } else { t_days },
+                _ => {
+                    if d.negative {
+                        t - t_days
+                    } else {
+                        t + t_days
+                    }
+                },
             };
         }
 
