@@ -614,6 +614,11 @@ def test_merge_join_applicable(
         {pl.String, pl.Binary},
         {pl.Date},
         {
+            pl.Datetime("ms"),
+            pl.Datetime("us"),
+            pl.Datetime("ns"),
+        },
+        {
             pl.Datetime("ms", time_zone="Europe/Amsterdam"),
             pl.Datetime("us", time_zone="Europe/Amsterdam"),
             pl.Datetime("ns", time_zone="Europe/Amsterdam"),
