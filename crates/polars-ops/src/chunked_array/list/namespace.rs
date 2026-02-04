@@ -389,11 +389,9 @@ pub trait ListNameSpaceImpl: AsList {
         let list_ca = self.as_list();
         let out = match (n.len(), offset.len()) {
             (1, 1) => match (n.get(0), offset.get(0)) {
-                (Some(n), Some(offset)) => {
-                    list_ca.try_apply_amortized_with_dtype_check(|s| {
-                        s.as_ref().gather_every(n as usize, offset as usize)
-                    })?
-                },
+                (Some(n), Some(offset)) => list_ca.try_apply_amortized_with_dtype_check(|s| {
+                    s.as_ref().gather_every(n as usize, offset as usize)
+                })?,
                 _ => ListChunked::full_null_with_dtype(
                     list_ca.name().clone(),
                     list_ca.len(),
