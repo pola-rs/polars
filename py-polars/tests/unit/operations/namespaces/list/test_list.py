@@ -1341,7 +1341,6 @@ def test_list_get_decimal_25830() -> None:
 
 
 def test_list_sort_struct_with_categorical_26383() -> None:
-    # https://github.com/pola-rs/polars/issues/26383
     # List sort on struct containing categorical should not panic.
     df = pl.DataFrame({"x": ["a", "b"]}).cast(pl.Categorical)
     result = df.select(pl.col("x").value_counts().sort().over(1))
@@ -1352,7 +1351,6 @@ def test_list_sort_struct_with_categorical_26383() -> None:
 
 
 def test_list_sort_struct_with_enum_26383() -> None:
-    # https://github.com/pola-rs/polars/issues/26383
     # List sort on struct containing enum should not panic.
     df = pl.DataFrame({"x": ["a", "b"]}).cast(pl.Enum(["a", "b", "c"]))
     result = df.select(pl.col("x").value_counts().sort().over(1))
