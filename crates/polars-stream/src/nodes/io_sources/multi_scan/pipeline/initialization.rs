@@ -152,11 +152,16 @@ async fn finish_initialize_multi_scan_pipeline(
         let cloud_options = config.cloud_options.clone();
 
         get_runtime()
-            .spawn_blocking(move || {
-                get_runtime().block_on(polars_io::file_cache::init_entries_from_uri_list(
-                    sources.as_paths().unwrap().iter().cloned(),
+            .spawn(async move {
+                let sources = sources.clone();
+                assert!(sources.as_paths().is_some());
+
+                polars_io::file_cache::init_entries_from_uri_list(
+                    (0..sources.len())
+                        .map(move |i| sources.as_paths().unwrap().get(i).unwrap().clone()),
                     cloud_options.as_deref(),
-                ))
+                )
+                .await
             })
             .await
             .unwrap()?;

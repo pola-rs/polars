@@ -361,10 +361,14 @@ pub async fn csv_file_info(
 
     let cache_entries = {
         if run_async {
+            let sources = sources.clone();
+            assert!(sources.as_paths().is_some());
+
             feature_gated!("cloud", {
                 Some(
                     polars_io::file_cache::init_entries_from_uri_list(
-                        sources.as_paths().unwrap().iter().cloned(),
+                        (0..sources.len())
+                            .map(move |i| sources.as_paths().unwrap().get(i).unwrap().clone()),
                         cloud_options,
                     )
                     .await?,
@@ -461,10 +465,14 @@ pub async fn ndjson_file_info(
 
     let cache_entries = {
         if run_async {
+            let sources = sources.clone();
+            assert!(sources.as_paths().is_some());
+
             feature_gated!("cloud", {
                 Some(
                     polars_io::file_cache::init_entries_from_uri_list(
-                        sources.as_paths().unwrap().iter().cloned(),
+                        (0..sources.len())
+                            .map(move |i| sources.as_paths().unwrap().get(i).unwrap().clone()),
                         cloud_options,
                     )
                     .await?,

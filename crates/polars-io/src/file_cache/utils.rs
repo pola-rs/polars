@@ -48,14 +48,14 @@ pub(super) fn update_last_accessed(file: &std::fs::File) {
 }
 
 pub async fn init_entries_from_uri_list(
-    mut uri_list: impl ExactSizeIterator<Item = PlRefPath>,
+    mut uri_list: impl ExactSizeIterator<Item = PlRefPath> + Send + 'static,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<Vec<Arc<FileCacheEntry>>> {
-    init_entries_from_uri_list_impl(&mut uri_list, cloud_options).await
+    init_entries_from_uri_list_impl(Box::new(uri_list), cloud_options).await
 }
 
 async fn init_entries_from_uri_list_impl(
-    uri_list: &mut dyn ExactSizeIterator<Item = PlRefPath>,
+    uri_list: Box<dyn ExactSizeIterator<Item = PlRefPath> + Send + 'static>,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<Vec<Arc<FileCacheEntry>>> {
     #[allow(clippy::len_zero)]
