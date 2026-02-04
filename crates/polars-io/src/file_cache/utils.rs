@@ -48,7 +48,7 @@ pub(super) fn update_last_accessed(file: &std::fs::File) {
 }
 
 pub async fn init_entries_from_uri_list(
-    mut uri_list: impl ExactSizeIterator<Item = PlRefPath> + Send + 'static,
+    uri_list: impl ExactSizeIterator<Item = PlRefPath> + Send + 'static,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<Vec<Arc<FileCacheEntry>>> {
     init_entries_from_uri_list_impl(Box::new(uri_list), cloud_options).await
