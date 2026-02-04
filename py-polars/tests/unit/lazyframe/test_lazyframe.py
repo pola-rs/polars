@@ -1262,10 +1262,11 @@ def test_from_epoch(input_dtype: PolarsDataType) -> None:
     exp_dt = datetime(2006, 5, 17, 15, 34, 4)
     expected = pl.DataFrame(
         [
+            # 'd' → Date, 'ns' → Datetime('ns'), otherwise → Datetime('us')
             pl.Series("timestamp_d", [date(2006, 5, 17)]),
-            pl.Series("timestamp_s", [exp_dt]),  # s is no Polars dtype, defaults to us
-            pl.Series("timestamp_ms", [exp_dt]).cast(pl.Datetime("ms")),
-            pl.Series("timestamp_us", [exp_dt]),  # us is Polars Datetime default
+            pl.Series("timestamp_s", [exp_dt]),
+            pl.Series("timestamp_ms", [exp_dt]),
+            pl.Series("timestamp_us", [exp_dt]),
             pl.Series("timestamp_ns", [exp_dt]).cast(pl.Datetime("ns")),
         ]
     )
