@@ -10,7 +10,7 @@ use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::async_primitives::distributor_channel as dc;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
-use crate::morsel::Morsel;
+use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::ComputeNode;
 use crate::nodes::joins::utils::DataFrameBuffer;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
@@ -55,7 +55,7 @@ pub struct AsOfJoinNode {
     /// We may need to stash a morsel on the left side whenever we do not
     /// have enough data on the right side, but the right side is empty.
     /// In these cases, we stash that morsel here.
-    left_buffer: VecDeque<Morsel>,
+    left_buffer: VecDeque<(DataFrame, MorselSeq)>,
     /// Buffer of the live range of right AsOf join rows.
     right_buffer: DataFrameBuffer,
     /// Last row that was processed on the left side.
@@ -220,9 +220,9 @@ impl ComputeNode for AsOfJoinNode {
 }
 
 /// Tell the sender to this port to stop, and buffer everything that is still in the pipe.
-async fn stop_and_buffer_pipe_contents<F>(port: Option<&mut PortReceiver>, mut buffer_morsel: F)
+async fn stop_and_buffer_pipe_contents<F>(port: Option<&mut PortReceiver>, buffer_morsel: &mut F)
 where
-    F: FnMut(Morsel),
+    F: FnMut(DataFrame, MorselSeq),
 {
     let Some(port) = port else {
         return;
@@ -230,34 +230,53 @@ where
 
     while let Ok(morsel) = port.recv().await {
         morsel.source_token().stop();
-        buffer_morsel(morsel);
+        let (df, seq, _, _) = morsel.into_inner();
+        buffer_morsel(df, seq);
     }
 }
 
 async fn distribute_work_task(
     mut recv_left: Option<PortReceiver>,
     mut recv_right: Option<PortReceiver>,
-    mut distributor: dc::Sender<(Morsel, DataFrameBuffer, bool)>,
-    left_buffer: &mut VecDeque<Morsel>,
+    mut distributor: dc::Sender<(DataFrame, DataFrameBuffer, MorselSeq, SourceToken, bool)>,
+    left_buffer: &mut VecDeque<(DataFrame, MorselSeq)>,
     right_buffer: &mut DataFrameBuffer,
     last_left_row: &mut Option<DataFrame>,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
     let options = params.as_of_options();
+    let source_token = SourceToken::new();
     let right_done = recv_right.is_none();
 
-    let mut recv_left_morsel = async |recv: Option<&mut PortReceiver>| {
-        if let Some(m) = left_buffer.pop_front() {
-            Ok(m)
-        } else if let Some(recv) = recv {
-            recv.recv().await
-        } else {
-            Err(())
+    loop {
+        if source_token.stop_requested() {
+            stop_and_buffer_pipe_contents(recv_left.as_mut(), &mut |df, seq| {
+                left_buffer.push_back((df, seq))
+            })
+            .await;
+            stop_and_buffer_pipe_contents(recv_right.as_mut(), &mut |df, _| {
+                right_buffer.push_df(df)
+            })
+            .await;
+            return Ok(());
         }
-    };
 
-    while let Ok(mut morsel) = recv_left_morsel(recv_left.as_mut()).await {
-        while need_more_right_side(morsel.df(), right_buffer, params)? && !right_done {
+        let (mut left_df, seq, st) = if let Some((df, seq)) = left_buffer.pop_front() {
+            (df, seq, source_token.clone())
+        } else if let Some(ref mut recv) = recv_left
+            && let Ok(m) = recv.recv().await
+        {
+            let (df, seq, st, _) = m.into_inner();
+            (df, seq, st)
+        } else {
+            stop_and_buffer_pipe_contents(recv_right.as_mut(), &mut |df, _| {
+                right_buffer.push_df(df)
+            })
+            .await;
+            return Ok(());
+        };
+
+        while need_more_right_side(&left_df, right_buffer, params)? && !right_done {
             if let Some(ref mut recv) = recv_right
                 && let Ok(morsel_right) = recv.recv().await
             {
@@ -265,21 +284,28 @@ async fn distribute_work_task(
             } else {
                 // The right pipe is empty at this stage, we will need to wait for
                 // a new stage and try again.
-                left_buffer.push_back(morsel);
-                stop_and_buffer_pipe_contents(recv_left.as_mut(), |m| left_buffer.push_back(m))
-                    .await;
+                left_buffer.push_back((left_df, seq));
+                stop_and_buffer_pipe_contents(recv_left.as_mut(), &mut |df, seq| {
+                    left_buffer.push_back((df, seq))
+                })
+                .await;
                 return Ok(());
             }
         }
 
         let mut drop_first_out_row = false;
         if let Some(llr) = last_left_row.take() {
-            *(morsel.df_mut()) = llr.vstack(morsel.df()).unwrap();
+            left_df = llr.vstack(&left_df)?;
             drop_first_out_row = true;
         }
-        let left_df = morsel.df().clone();
         distributor
-            .send((morsel, right_buffer.clone(), drop_first_out_row))
+            .send((
+                left_df.clone(),
+                right_buffer.clone(),
+                seq,
+                st,
+                drop_first_out_row,
+            ))
             .await
             .unwrap();
 
@@ -294,8 +320,6 @@ async fn distribute_work_task(
         }
         prune_right_side(&left_df, right_buffer, params)?;
     }
-    stop_and_buffer_pipe_contents(recv_right.as_mut(), |m| right_buffer.push_df(m.into_df())).await;
-    Ok(())
 }
 
 /// Do we need more values on the right side before we can compute the AsOf join
@@ -385,13 +409,12 @@ fn get_last_total_ord_row(
 }
 
 async fn compute_and_emit_task(
-    mut dist_recv: dc::Receiver<(Morsel, DataFrameBuffer, bool)>,
+    mut dist_recv: dc::Receiver<(DataFrame, DataFrameBuffer, MorselSeq, SourceToken, bool)>,
     mut send: PortSender,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
     let options = params.as_of_options();
-    while let Ok((mut morsel, right_buffer, drop_first_out_row)) = dist_recv.recv().await {
-        let left_df = morsel.df();
+    while let Ok((left_df, right_buffer, seq, st, drop_first_out_row)) = dist_recv.recv().await {
         let right_df = right_buffer.into_df();
 
         let left_key = left_df.column(&params.left.key_col)?;
@@ -399,7 +422,7 @@ async fn compute_and_emit_task(
         let any_key_is_temporary_col =
             params.left.key_col != params.left.on || params.right.key_col != params.right.on;
         let mut out = polars_ops::frame::AsofJoin::_join_asof(
-            left_df,
+            &left_df,
             &right_df,
             left_key.as_materialized_series(),
             right_key.as_materialized_series(),
@@ -427,7 +450,7 @@ async fn compute_and_emit_task(
             out.drop_in_place(&right_on_name)?;
         }
 
-        *morsel.df_mut() = out;
+        let morsel = Morsel::new(out, seq, st);
         if send.send(morsel).await.is_err() {
             return Ok(());
         }
