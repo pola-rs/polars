@@ -178,7 +178,7 @@ impl EvalExpr {
                     let null_count = expected_len - values.len();
                     let nulls =
                         Column::full_null(values.name().clone(), null_count, values.dtype());
-                    values = values.extend(&nulls)?;
+                    values.extend(&nulls)?;
                 }
                 values = values.deposit(&validity);
             }
@@ -341,7 +341,7 @@ impl EvalExpr {
                     let null_count = expected_len - values.len();
                     let nulls =
                         Column::full_null(values.name().clone(), null_count, values.dtype());
-                    values = values.extend(&nulls)?;
+                    values.extend(&nulls)?;
                 }
 
                 // Reinsert nulls according to the original validity bitmap.
