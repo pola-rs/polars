@@ -1637,24 +1637,36 @@ impl SQLContext {
     }
 
     fn process_subqueries(&self, lf: LazyFrame, exprs: Vec<&mut Expr>) -> LazyFrame {
-        let mut contexts = vec![];
-        for expr in exprs {
-            *expr = expr.clone().map_expr(|e| match e {
-                Expr::SubPlan(lp, names) => {
-                    contexts.push(<LazyFrame>::from((**lp).clone()));
-                    if names.len() == 1 {
-                        Expr::Column(names[0].as_str().into())
-                    } else {
-                        Expr::SubPlan(lp, names)
-                    }
-                },
-                e => e,
-            })
+        let mut subplans = vec![];
+
+        for e in exprs {
+            *e = e.clone().map_expr(|e| {
+                if let Expr::SubPlan(lp, names) = e {
+                    assert_eq!(
+                        names.len(),
+                        1,
+                        "multiple columns in subqueries not yet supported"
+                    );
+                    subplans.push(LazyFrame::from((**lp).clone()));
+                    Expr::Column(names[0].clone()).first()
+                } else {
+                    e
+                }
+            });
         }
-        if contexts.is_empty() {
+
+        if subplans.is_empty() {
             lf
         } else {
-            lf.with_context(contexts)
+            subplans.insert(0, lf);
+            concat_lf_horizontal(
+                subplans,
+                HConcatOptions {
+                    broadcast_unit_length: true,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
         }
     }
 
