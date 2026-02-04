@@ -629,9 +629,6 @@ def test_merge_join_applicable(
 )
 @pytest.mark.parametrize("ideal_morsel_size", ["1", "1000"])
 @given(data=st.data())
-@settings(
-    suppress_health_check=[HealthCheck.function_scoped_fixture]
-)  # ideal_morsel_size is not based on hypothesis
 def test_streaming_asof_join(
     data: st.DataObject,
     strategy: AsofJoinStrategy,
@@ -639,30 +636,32 @@ def test_streaming_asof_join(
     coalesce: bool,
     dtypes: set[pl.DataType],
     ideal_morsel_size: str,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", ideal_morsel_size)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("POLARS_IDEAL_MORSEL_SIZE", ideal_morsel_size)
 
-    if dtypes & {pl.String, pl.Binary} and strategy == "nearest":
-        pytest.skip("asof join with string/binary does not support 'nearest' strategy")
+        if dtypes & {pl.String, pl.Binary} and strategy == "nearest":
+            pytest.skip(
+                "asof join with string/binary does not support 'nearest' strategy"
+            )
 
-    dtype = data.draw(st.sampled_from(list(dtypes)))
-    df_st = dataframes(
-        min_cols=1, max_cols=1, allowed_dtypes=[dtype], allow_time_zones=False
-    )
-    left_df = data.draw(df_st)
-    right_df = data.draw(df_st)
+        dtype = data.draw(st.sampled_from(list(dtypes)))
+        df_st = dataframes(
+            min_cols=1, max_cols=1, allowed_dtypes=[dtype], allow_time_zones=False
+        )
+        left_df = data.draw(df_st)
+        right_df = data.draw(df_st)
 
-    left = left_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
-    right = right_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
+        left = left_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
+        right = right_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
 
-    q = left.join_asof(
-        right,
-        on="key",
-        strategy=strategy,
-        allow_exact_matches=allow_exact_matches,
-        coalesce=coalesce,
-    )
-    expected = q.collect(engine="in-memory")
-    actual = q.collect(engine="streaming")
-    assert_frame_equal(actual, expected)
+        q = left.join_asof(
+            right,
+            on="key",
+            strategy=strategy,
+            allow_exact_matches=allow_exact_matches,
+            coalesce=coalesce,
+        )
+        expected = q.collect(engine="in-memory")
+        actual = q.collect(engine="streaming")
+        assert_frame_equal(actual, expected)
