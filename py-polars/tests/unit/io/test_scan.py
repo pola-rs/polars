@@ -1222,6 +1222,39 @@ def test_scan_with_schema_skips_schema_inference(
     assert_frame_equal(q.collect(engine="streaming"), pl.DataFrame(schema=schema))
 
 
+@pytest.mark.parametrize("format_name", ["csv", "ndjson", "lines"])
+def test_scan_negative_slice_decompress(format_name: str) -> None:
+    col_name = "x"
+
+    # We could go through sink, but not for lines and this way we are testing
+    # more narrowly.
+    def format_line(val: int) -> str:
+        if format_name == "csv":
+            return f"{val}\n"
+        elif format_name == "ndjson":
+            return f'{{"{col_name}":{val}}}\n'
+        elif format_name == "lines":
+            return f"{val}\n"
+        else:
+            pytest.fail("unreachable")
+
+    buf = bytearray()
+    if format_name == "csv":
+        buf.extend(f"{col_name}\n".encode())
+    for val in range(47):
+        buf.extend(format_line(val).encode())
+
+    compressed_data = zlib.compress(buf, level=1)
+
+    lf = getattr(pl, f"scan_{format_name}")(compressed_data).slice(-9, 5)
+    if format_name == "lines":
+        lf = lf.select(pl.col("lines").alias(col_name).str.to_integer())
+
+    expected = [pl.Series("x", [38, 39, 40, 41, 42])]
+    got = lf.collect(engine="streaming")
+    assert_frame_equal(got, pl.DataFrame(expected))
+
+
 def corrupt_compressed_impl(base_line: bytes, target_size: int) -> bytes:
     large_and_simple_data = base_line * round(target_size / len(base_line))
     compressed_data = zlib.compress(large_and_simple_data, level=0)
