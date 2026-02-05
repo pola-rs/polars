@@ -14,8 +14,7 @@ use polars_lazy::prelude::*;
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::typed_lit;
 use polars_time::Duration;
-use rand::Rng;
-use rand::distr::Alphanumeric;
+use polars_utils::unique_column_name;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
@@ -300,7 +299,7 @@ impl SQLExprVisitor<'_> {
         }
         // note: we have to execute subqueries in an isolated scope to prevent
         // propagating any context/arena mutation into the rest of the query
-        let (mut lf, schema) = self
+        let (lf, schema) = self
             .ctx
             .execute_isolated(|ctx| ctx.execute_query_no_ctes(subquery))?;
 
@@ -308,16 +307,12 @@ impl SQLExprVisitor<'_> {
             if schema.len() != 1 {
                 polars_bail!(SQLSyntax: "SQL subquery returns more than one column");
             }
-            let rand_string: String = rand::rng()
-                .sample_iter(&Alphanumeric)
-                .take(16)
-                .map(char::from)
-                .collect();
 
             let schema_entry = schema.get_at_index(0);
             if let Some((old_name, _)) = schema_entry {
-                let new_name = String::from(old_name.as_str()) + rand_string.as_str();
-                lf = lf.rename([old_name.to_string()], [new_name.clone()], true);
+                let new_name = unique_column_name();
+                // TODO: pass the implode depending on expr.
+                let lf = lf.select([col(old_name.clone()).implode().alias(new_name.clone())]);
                 return Ok(Expr::SubPlan(
                     SpecialEq::new(Arc::new(lf.logical_plan)),
                     vec![new_name],
@@ -1082,9 +1077,7 @@ impl SQLExprVisitor<'_> {
         subquery: &Subquery,
         negated: bool,
     ) -> PolarsResult<Expr> {
-        let subquery_result = self
-            .visit_subquery(subquery, SubqueryRestriction::SingleColumn)?
-            .implode();
+        let subquery_result = self.visit_subquery(subquery, SubqueryRestriction::SingleColumn)?;
         let expr = self.visit_expr(expr)?;
         Ok(if negated {
             expr.is_in(subquery_result, false).not()

@@ -1,7 +1,7 @@
 [package]
 name = "polars-runtime-32"
 # example: 1.35.0-beta.1
-version = "1.37.1"
+version = "1.38.0"
 edition = "2021"
 
 [lib]

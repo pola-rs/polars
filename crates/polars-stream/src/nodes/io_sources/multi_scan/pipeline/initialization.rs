@@ -18,6 +18,7 @@ use crate::nodes::io_sources::multi_scan::components::row_deletions::{
     DeletionFilesProvider, ExternalFilterMask, RowDeletionsInit,
 };
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
+use crate::nodes::io_sources::multi_scan::functions::is_compressed_source;
 use crate::nodes::io_sources::multi_scan::functions::resolve_slice::resolve_to_positive_slice;
 use crate::nodes::io_sources::multi_scan::pipeline::models::{
     ExtraOperations, InitializedPipelineState, ResolvedSliceInfo, StartReaderArgsConstant,
@@ -147,10 +148,23 @@ async fn finish_initialize_multi_scan_pipeline(
     {
         // In cloud execution the entries may not exist at this point due to DSL resolution
         // happening on a separate machine.
-        get_runtime().block_in_place_on(polars_io::file_cache::init_entries_from_uri_list(
-            config.sources.as_paths().unwrap().iter().cloned(),
-            config.cloud_options.as_deref(),
-        ))?;
+        let sources = config.sources.clone();
+        let cloud_options = config.cloud_options.clone();
+
+        get_runtime()
+            .spawn(async move {
+                let sources = sources.clone();
+                assert!(sources.as_paths().is_some());
+
+                polars_io::file_cache::init_entries_from_uri_list(
+                    (0..sources.len())
+                        .map(move |i| sources.as_paths().unwrap().get(i).unwrap().clone()),
+                    cloud_options.as_deref(),
+                )
+                .await
+            })
+            .await
+            .unwrap()?;
     }
 
     // Row index should only be pushed if we have a predicate or negative slice as there is a
@@ -175,7 +189,14 @@ async fn finish_initialize_multi_scan_pipeline(
                 && (config.row_index.is_none()
                     || reader_capabilities.contains(ReaderCapabilities::ROW_INDEX))
                 && (config.deletion_files.is_none()
-                    || reader_capabilities.contains(ReaderCapabilities::EXTERNAL_FILTER_MASK)) =>
+                    || reader_capabilities.contains(ReaderCapabilities::EXTERNAL_FILTER_MASK))
+                && !get_runtime()
+                    .spawn(is_compressed_source(
+                        config.sources.get(0).unwrap().into_owned()?,
+                        config.cloud_options.clone(),
+                    ))
+                    .await
+                    .unwrap()? =>
         {
             if verbose {
                 eprintln!("[MultiScanTaskInit]: Single file negative slice");

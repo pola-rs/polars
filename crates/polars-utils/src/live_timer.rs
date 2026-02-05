@@ -171,6 +171,45 @@ impl LiveTimerInner {
 
         // Needed to ensure monotonicity, our load above interleaved with stops/restarts
         // could otherwise be non-monotonic.
-        self.max_live_ns.fetch_max(active_time, Ordering::Relaxed)
+        u64::max(
+            active_time,
+            self.max_live_ns.fetch_max(active_time, Ordering::Relaxed),
+        )
+    }
+}
+
+impl std::fmt::Debug for LiveTimer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let refcount = unsafe { (&*self.inner).refcount.load(Ordering::Relaxed) };
+        let active_sessions = refcount & SESSION_MASK;
+        let total_time_live_ns = self.total_time_live_ns();
+
+        return std::fmt::Debug::fmt(
+            &display::LiveTimer {
+                active_sessions,
+                total_time_live_ns,
+            },
+            f,
+        );
+
+        mod display {
+            #[derive(Debug)]
+            #[expect(unused)]
+            pub struct LiveTimer {
+                pub active_sessions: u64,
+                pub total_time_live_ns: u64,
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for LiveTimerSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        return std::fmt::Debug::fmt(&display::LiveTimerSession {}, f);
+
+        mod display {
+            #[derive(Debug)]
+            pub struct LiveTimerSession {}
+        }
     }
 }
