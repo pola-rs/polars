@@ -1,3 +1,4 @@
 mypy[faster-cache]==1.14.1
 ruff==0.14.3
 typos==1.39.0
+types-pytz
