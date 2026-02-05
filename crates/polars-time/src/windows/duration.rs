@@ -984,11 +984,8 @@ impl Duration {
                     t = datetime_to_timestamp(original_dt_local);
                     t += if d.negative { -t_days } else { t_days };
                     let result_dt_local = timestamp_to_datetime(t);
-                    let result_dt_utc = self.localize_result_preserving_fold(
-                        original_dt_utc,
-                        result_dt_local,
-                        tz,
-                    )?;
+                    let result_dt_utc =
+                        self.localize_result_preserving_fold(original_dt_utc, result_dt_local, tz)?;
                     datetime_to_timestamp(result_dt_utc)
                 },
                 _ => {
