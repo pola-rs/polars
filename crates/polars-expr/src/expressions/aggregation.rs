@@ -665,7 +665,7 @@ impl PhysicalExpr for AggMinMaxByExpr {
         let by = self.by.evaluate(df, state)?;
         polars_ensure!(
             input.len() == by.len(),
-            ShapeMismatch: "input and by expressions must be of the same length"
+            ShapeMismatch: "'by' column in `(min|max)_by` operation has incorrect length"
         );
         let arg_extremum = if self.is_max_by {
             by.as_materialized_series_maintain_scalar().arg_max()
