@@ -405,7 +405,6 @@ impl PolarsObjectStore {
                             io_metrics.add_bytes_requested(bytes.len() as u64);
                             io_metrics.add_bytes_received(bytes.len() as u64);
                             file.write_all(&bytes).await?;
-                            io_metrics.add_bytes_sent(bytes.len() as u64);
                         }
 
                         drop(io_session);
