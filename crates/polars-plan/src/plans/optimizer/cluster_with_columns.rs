@@ -121,11 +121,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             .map(|x| (x.0.clone(), x.1.clone()))
         {
             input_exprs.push(e);
-
-            if !input_schema.contains(&output_name) {
-                let dtype = current_schema.get(&output_name).unwrap().clone();
-                Arc::make_mut(input_schema).insert(output_name, dtype);
-            }
+            let dtype = current_schema.get(&output_name).unwrap().clone();
+            Arc::make_mut(input_schema).insert(output_name, dtype);
         }
 
         if new_current_exprs.is_empty() {
