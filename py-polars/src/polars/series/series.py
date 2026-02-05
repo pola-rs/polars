@@ -2259,7 +2259,7 @@ class Series:
         return self._s.min()
 
     @unstable()
-    def min_by(self, by: IntoExpr) -> Expr:
+    def min_by(self, by: IntoExpr) -> Any | None:
         """
         Get the minimum value in this Series, ordered by an expression.
 
@@ -2297,7 +2297,7 @@ class Series:
         return self._s.max()
 
     @unstable()
-    def max_by(self, by: IntoExpr) -> Expr:
+    def max_by(self, by: IntoExpr) -> Any | None:
         """
         Get the maximum value in this Series, ordered by an expression.
 
