@@ -110,7 +110,7 @@
   "ParallelStrategy": "18f11b0b9ebd4048510a9580e6ee13d7d0410b9dc75ee0c97bb3b1a5b62108b0",
   "ParquetCompression": "3cda42fb3b12983a3e62f0e238383fe60d94946305d9d27c1cbdde519f761427",
   "ParquetOptions": "db47ebd2bb9b389f372932d8c0b7b1882fdf333a7c11a8a9e87d920c6f108b65",
-  "ParquetWriteOptions": "5071431381bcc769eecc6ba519ac46f813e7dbeb77ed051b5f2daacb96fdf199",
+  "ParquetWriteOptions": "04196fdf5e136dc18278b5d0ef1054fa398a0a1a60147e40085ecd0180e89637",
   "PartitionStrategy": "0e4535031aa9acf22fdf96ab10483f76e2f6ae6d5e5cd756be9adca490e0d05b",
   "PartitionedSinkOptions": "bc7885b2bb87dc5fad4c5cf96c5a9b381403f8f9db6edefc81899dc9b9227934",
   "PlCredentialProvider": "5bbddd4f899afa592c318b20bb8d0bdfe2877fa5bf1a63d9cd0da908ac3aec0e",

@@ -1311,7 +1311,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         validate_arrow_schema_conversion(
                             input_schema.as_ref(),
                             arrow_schema,
-                            CompatLevel::newest(),
+                            options.compat_level(),
                         )?;
                     }
 
@@ -1413,7 +1413,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         validate_arrow_schema_conversion(
                             file_schema.as_ref(),
                             arrow_schema,
-                            CompatLevel::newest(),
+                            parquet_options.compat_level(),
                         )?;
                     }
 
