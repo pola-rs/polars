@@ -1576,15 +1576,18 @@ def test_sink_parquet_writes_strings_as_largeutf8_by_default() -> None:
 
     f = io.BytesIO()
 
-    df.lazy().sink_parquet(
-        f,
-        arrow_schema=pa.schema(
-            [
-                pa.field("string", pa.large_string()),
-                pa.field("binary", pa.large_binary()),
-            ]
-        ),
+    arrow_schema = pa.schema(
+        [
+            pa.field("string", pa.large_string()),
+            pa.field("binary", pa.large_binary()),
+        ]
     )
+
+    df.lazy().sink_parquet(f, arrow_schema=arrow_schema)
+
+    f.seek(0)
+
+    assert pq.read_schema(f) == arrow_schema
 
     f.seek(0)
 
