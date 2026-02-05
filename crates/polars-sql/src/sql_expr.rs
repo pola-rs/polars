@@ -299,25 +299,20 @@ impl SQLExprVisitor<'_> {
         }
         // note: we have to execute subqueries in an isolated scope to prevent
         // propagating any context/arena mutation into the rest of the query
-        let (lf, schema) = self
+        let lf = self
             .ctx
             .execute_isolated(|ctx| ctx.execute_query_no_ctes(subquery))?;
 
         if restriction == SubqueryRestriction::SingleColumn {
-            if schema.len() != 1 {
-                polars_bail!(SQLSyntax: "SQL subquery returns more than one column");
-            }
-
-            let schema_entry = schema.get_at_index(0);
-            if let Some((old_name, _)) = schema_entry {
-                let new_name = unique_column_name();
+            let new_name = unique_column_name();
+            return Ok(Expr::SubPlan(
+                SpecialEq::new(Arc::new(lf.logical_plan)),
                 // TODO: pass the implode depending on expr.
-                let lf = lf.select([col(old_name.clone()).implode().alias(new_name.clone())]);
-                return Ok(Expr::SubPlan(
-                    SpecialEq::new(Arc::new(lf.logical_plan)),
-                    vec![new_name],
-                ));
-            }
+                vec![(
+                    new_name.clone(),
+                    first().as_expr().implode().alias(new_name.clone()),
+                )],
+            ));
         };
         polars_bail!(SQLInterface: "subquery type not supported");
     }
