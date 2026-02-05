@@ -1598,13 +1598,17 @@ def test_sink_parquet_pyarrow_filter_string_type_26435() -> None:
     df = pl.DataFrame({"string": ["A", None, "B"], "int": [0, 1, 2]})
 
     f = io.BytesIO()
+
     df.write_parquet(f)
+
     f.seek(0)
 
     assert_frame_equal(
         pl.DataFrame(pq.read_table(f, filters=[("int", "=", 0)])),
         pl.DataFrame({"string": "A", "int": 0}),
     )
+
+    f.seek(0)
 
     assert_frame_equal(
         pl.DataFrame(pq.read_table(f, filters=[("string", "=", "A")])),
