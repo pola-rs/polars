@@ -946,10 +946,18 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 }
             }
 
-            let keys = index
+            let keys: Vec<_> = index
                 .into_iter()
                 .map(|i| AExprBuilder::col(i.clone(), ctxt.expr_arena).expr_ir(i))
                 .collect();
+
+            let mut uniq_names = PlHashSet::new();
+            for expr in keys.iter().chain(aggs.iter()) {
+                let name = expr.output_name();
+                let is_uniq = uniq_names.insert(name.clone());
+                polars_ensure!(is_uniq, duplicate = name);
+            }
+
             IRBuilder::new(input, ctxt.expr_arena, ctxt.lp_arena)
                 .group_by(keys, aggs, None, maintain_order, Default::default())
                 .build()
