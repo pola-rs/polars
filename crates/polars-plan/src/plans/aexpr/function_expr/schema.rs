@@ -153,6 +153,8 @@ impl IRFunctionExpr {
                     T::UInt64 => T::UInt64,
                     #[cfg(feature = "dtype-i128")]
                     T::Int128 => T::Int128,
+                    #[cfg(feature = "dtype-u128")]
+                    T::UInt128 => T::UInt128,
                     _ => T::Int64,
                 }
             }),
