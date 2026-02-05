@@ -13,7 +13,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
     let mut ir_stack = Vec::with_capacity(16);
     ir_stack.push(root);
 
-    let mut input_name_to_expr_map: PlIndexMap<PlSmallStr, ExprIR> = PlIndexMap::new();
+    // (expr, is_original)
+    let mut input_name_to_expr_map: PlIndexMap<PlSmallStr, (ExprIR, bool)> = PlIndexMap::new();
     let mut accessed_input_names: PlHashSet<PlSmallStr> = PlHashSet::new();
     let mut push_candidate_idxs: Vec<usize> = vec![];
     let mut new_current_exprs: Vec<ExprIR> = vec![];
@@ -66,7 +67,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         input_name_to_expr_map.extend(
             input_exprs
                 .iter()
-                .map(|e| (e.output_name().clone(), e.clone())),
+                .map(|e| (e.output_name().clone(), (e.clone(), true))),
         );
 
         if input_name_to_expr_map.len() != input_exprs.len() {
@@ -102,7 +103,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                     && aexpr_to_leaf_names_iter(e.node(), expr_arena)
                         .all(|name| !accessed_input_names.contains(name))
                 {
-                    input_name_to_expr_map.insert(e.output_name().clone(), e.clone());
+                    input_name_to_expr_map.insert(e.output_name().clone(), (e.clone(), false));
                     continue;
                 }
             }
@@ -116,13 +117,16 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
         input_exprs.clear();
 
-        for (output_name, e) in input_name_to_expr_map
+        for (output_name, (e, is_original)) in input_name_to_expr_map
             .iter()
             .map(|x| (x.0.clone(), x.1.clone()))
         {
             input_exprs.push(e);
-            let dtype = current_schema.get(&output_name).unwrap().clone();
-            Arc::make_mut(input_schema).insert(output_name, dtype);
+
+            if !is_original {
+                let dtype = current_schema.get(&output_name).unwrap().clone();
+                Arc::make_mut(input_schema).insert(output_name, dtype);
+            }
         }
 
         if new_current_exprs.is_empty() {
