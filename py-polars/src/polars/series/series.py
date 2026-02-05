@@ -2421,7 +2421,7 @@ class Series:
     ) -> float | None: ...
 
     def quantile(
-        self, quantile: float, interpolation: QuantileMethod = "nearest"
+        self, quantile: float | list_[float], interpolation: QuantileMethod = "nearest"
     ) -> float | None | list_[float] | list_[None]:
         """
         Get the quantile value of this Series.
