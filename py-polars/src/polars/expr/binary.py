@@ -486,9 +486,9 @@ class ExprBinaryNameSpace:
         r"""
         Get the byte value at the given index.
 
-        So index `0` would return the first byte of every binary value
-        and index `-1` would return the last byte of every binary value
-        if an index is out of bounds, it will return a `None`.
+        For example, index `0` would return the first byte of every binary value
+        and index `-1` would return the last byte of every binary value.
+        If an index is out of bounds, it will return a `None`.
 
         Parameters
         ----------
