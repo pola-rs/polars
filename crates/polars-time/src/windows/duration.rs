@@ -3,13 +3,16 @@ use std::fmt::{Display, Formatter};
 use std::ops::{Mul, Neg};
 
 #[cfg(feature = "timezones")]
-use arrow::legacy::kernels::{Ambiguous, NonExistent};
+use arrow::legacy::kernels::Ambiguous;
 use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::{
     MICROSECONDS, MILLISECONDS, NANOSECONDS, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
     timestamp_us_to_datetime,
 };
+#[cfg(feature = "timezones")]
+use chrono::TimeZone as ChronoTimeZone;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use chrono_tz::OffsetComponents;
 use polars_core::datatypes::DataType;
 use polars_core::prelude::{
     PolarsResult, TimeZone, datetime_to_timestamp_ms, datetime_to_timestamp_ns,
@@ -24,7 +27,7 @@ use super::calendar::{
     NTE_NS_WEEK,
 };
 #[cfg(feature = "timezones")]
-use crate::utils::{localize_datetime_opt, try_localize_datetime, unlocalize_datetime};
+use crate::utils::{localize_datetime_opt, unlocalize_datetime};
 use crate::windows::calendar::{DAYS_PER_MONTH, is_leap_year};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -601,51 +604,35 @@ impl Duration {
     #[cfg(feature = "timezones")]
     fn localize_result(
         &self,
-        original_dt_local: NaiveDateTime,
         original_dt_utc: NaiveDateTime,
         result_dt_local: NaiveDateTime,
         tz: &Tz,
     ) -> PolarsResult<NaiveDateTime> {
-        match localize_datetime_opt(result_dt_local, tz, Ambiguous::Raise) {
-            Some(dt) => Ok(dt.expect("we didn't use Ambiguous::Null")),
-            None => {
-                if try_localize_datetime(
-                    original_dt_local,
-                    tz,
-                    Ambiguous::Earliest,
-                    NonExistent::Raise,
-                )?
-                .expect("we didn't use Ambiguous::Null or NonExistent::Null")
-                    == original_dt_utc
-                {
-                    Ok(try_localize_datetime(
-                        result_dt_local,
-                        tz,
-                        Ambiguous::Earliest,
-                        NonExistent::Raise,
-                    )?
-                    .expect("we didn't use Ambiguous::Null or NonExistent::Null"))
-                } else if try_localize_datetime(
-                    original_dt_local,
-                    tz,
-                    Ambiguous::Latest,
-                    NonExistent::Raise,
-                )?
-                .expect("we didn't use Ambiguous::Null or NonExistent::Null")
-                    == original_dt_utc
-                {
-                    Ok(try_localize_datetime(
-                        result_dt_local,
-                        tz,
-                        Ambiguous::Latest,
-                        NonExistent::Raise,
-                    )?
-                    .expect("we didn't use Ambiguous::Null or NonExistent::Null"))
-                } else {
-                    unreachable!()
-                }
-            },
+        if let Some(dt) = localize_datetime_opt(result_dt_local, tz, Ambiguous::Raise) {
+            return Ok(dt.expect("we didn't use Ambiguous::Null"));
         }
+
+        let original_localized = tz.from_utc_datetime(&original_dt_utc);
+        let original_dst_offset = original_localized.offset().dst_offset();
+
+        let result_localized = tz.from_local_datetime(&result_dt_local);
+        // Try with `earliest`...
+        if let Some(result_earliest) = result_localized.earliest() {
+            let earliest_offset = result_earliest.offset();
+            if earliest_offset.dst_offset() == original_dst_offset {
+                return Ok(result_earliest.naive_utc());
+            }
+        }
+
+        // ...and then with `latest`
+        if let Some(result_latest) = result_localized.latest() {
+            let latest_offset = result_latest.offset();
+            if latest_offset.dst_offset() == original_dst_offset {
+                return Ok(result_latest.naive_utc());
+            }
+        }
+
+        polars_bail!(ComputeError: "datetime '{}' is non-existent in time zone '{}'", result_dt_local, tz);
     }
 
     fn truncate_subweekly<G, J>(
@@ -673,8 +660,7 @@ impl Duration {
                 }
                 let result_timestamp = t - remainder;
                 let result_dt_local = _timestamp_to_datetime(result_timestamp);
-                let result_dt_utc =
-                    self.localize_result(original_dt_local, original_dt_utc, result_dt_local, tz)?;
+                let result_dt_utc = self.localize_result(original_dt_utc, result_dt_local, tz)?;
                 Ok(_datetime_to_timestamp(result_dt_utc))
             },
             _ => {
@@ -730,12 +716,8 @@ impl Duration {
             // for UTC, use fastpath below (same as naive)
             Some(tz) if tz != &chrono_tz::UTC => {
                 let result_dt_local = _timestamp_to_datetime(result_t_local);
-                let result_dt_utc = self.localize_result(
-                    _original_dt_local.unwrap(),
-                    _original_dt_utc.unwrap(),
-                    result_dt_local,
-                    tz,
-                )?;
+                let result_dt_utc =
+                    self.localize_result(_original_dt_utc.unwrap(), result_dt_local, tz)?;
                 Ok(_datetime_to_timestamp(result_dt_utc))
             },
             _ => Ok(result_t_local),
@@ -817,8 +799,7 @@ impl Duration {
             // for UTC, use fastpath below (same as naive)
             Some(tz) if tz != &chrono_tz::UTC => {
                 let result_dt_local = timestamp_to_datetime(t - remainder_days * daily_duration);
-                let result_dt_utc =
-                    self.localize_result(original_dt_local, original_dt_utc, result_dt_local, tz)?;
+                let result_dt_utc = self.localize_result(original_dt_utc, result_dt_local, tz)?;
                 Ok(datetime_to_timestamp(result_dt_utc))
             },
             _ => Ok(t - remainder_days * daily_duration),
@@ -954,7 +935,6 @@ impl Duration {
                     let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
                     let result_dt_local = Self::add_month(original_dt_local, d.months, d.negative);
                     datetime_to_timestamp(self.localize_result(
-                        original_dt_local,
                         original_dt_utc,
                         result_dt_local,
                         tz,
@@ -980,7 +960,6 @@ impl Duration {
                     result_timestamp_local += if d.negative { -t_weeks } else { t_weeks };
                     let result_dt_local = timestamp_to_datetime(result_timestamp_local);
                     datetime_to_timestamp(self.localize_result(
-                        original_dt_local,
                         original_dt_utc,
                         result_dt_local,
                         tz,
@@ -1007,12 +986,8 @@ impl Duration {
                     t = datetime_to_timestamp(original_dt_local);
                     t += if d.negative { -t_days } else { t_days };
                     let result_dt_local = timestamp_to_datetime(t);
-                    let result_dt_utc = self.localize_result(
-                        original_dt_local,
-                        original_dt_utc,
-                        result_dt_local,
-                        tz,
-                    )?;
+                    let result_dt_utc =
+                        self.localize_result(original_dt_utc, result_dt_local, tz)?;
                     datetime_to_timestamp(result_dt_utc)
                 },
                 _ => {

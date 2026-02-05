@@ -171,3 +171,23 @@ def test_offset_by_unequal_length_22018() -> None:
         pl.Series([datetime(2088, 8, 8, 8, 8, 8, 8)] * 2).dt.offset_by(
             pl.Series([f"{h}y" for h in range(3)])
         )
+
+
+@pytest.mark.parametrize(
+    ("start", "by", "ambiguous"),
+    [
+        (datetime(2025, 10, 25, 2), "1d", "earliest"),
+        (datetime(2025, 10, 27, 2), "-1d", "latest"),
+        (datetime(2024, 10, 26, 2), "1y", "earliest"),
+        (datetime(2026, 10, 26, 2), "-1y", "latest"),
+    ],
+)
+def test_offset_by_rfc_5545_boundaries(
+    start: datetime, by: str, ambiguous: str
+) -> None:
+    s = pl.Series([start]).dt.replace_time_zone("Europe/Amsterdam")
+    result = s.dt.offset_by(by)
+    expected = pl.Series([datetime(2025, 10, 26, 2)]).dt.replace_time_zone(
+        "Europe/Amsterdam", ambiguous=ambiguous
+    )
+    assert_series_equal(result, expected)
