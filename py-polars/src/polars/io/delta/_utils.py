@@ -3,7 +3,7 @@ from __future__ import annotations
 import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from polars._dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars._utils.logging import eprint

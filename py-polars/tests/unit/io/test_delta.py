@@ -19,7 +19,6 @@ from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
 from polars.io.delta._dataset import DeltaDataset
-
 from polars.io.delta._utils import _extract_table_statistics_from_delta_add_actions
 from polars.testing import assert_frame_equal, assert_frame_not_equal
 
