@@ -19,6 +19,8 @@ from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
 from polars.io.delta._dataset import DeltaDataset
+
+from polars.io.delta._utils import _extract_table_statistics_from_delta_add_actions
 from polars.testing import assert_frame_equal, assert_frame_not_equal
 
 
@@ -960,7 +962,7 @@ endpoint_url = http://127.0.0.1:54321
     ],
 )
 @pytest.mark.write_disk
-def test_parquet_filter_on_file_statistics_23780(
+def test_scan_delta_filter_delta_log_statistics_23780(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capfd: pytest.CaptureFixture[str],
@@ -1016,7 +1018,7 @@ def test_parquet_filter_on_file_statistics_23780(
     ],
 )
 @pytest.mark.write_disk
-def test_parquet_filter_on_file_statistics_partial_23780(
+def test_scan_delta_filter_delta_log_statistics_partial_23780(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capfd: pytest.CaptureFixture[str],
@@ -1050,7 +1052,7 @@ def test_parquet_filter_on_file_statistics_partial_23780(
 
 
 @pytest.mark.write_disk
-def test_parquet_filter_on_file_statistics_delete_partition_23780(
+def test_scan_delta_filter_delta_log_statistics_delete_partition_23780(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capfd: pytest.CaptureFixture[str],
@@ -1225,4 +1227,64 @@ def test_scan_delta_collect_without_version_scans_latest(
 
     assert (
         "DeltaDataset: to_dataset_scan(): early return (version_key = '1')" in capture
+    )
+
+
+def test_scan_delta_filter_delta_log_statistics_missing_26444(tmp_path: Path) -> None:
+    pl.DataFrame({"x": [1, 2], "y": [True, False]}).write_delta(tmp_path)
+
+    assert_frame_equal(
+        pl.scan_delta(tmp_path).filter("y").collect(),
+        pl.DataFrame({"x": 1, "y": True}),
+    )
+
+
+def test_extract_table_statistics_from_delta_add_actions_26444() -> None:
+    schema = {
+        "bool": pl.Boolean,
+        "string": pl.String,
+        "binary": pl.Binary,
+        "int8": pl.Int8,
+        "null": pl.Null,
+    }
+
+    df = _extract_table_statistics_from_delta_add_actions(
+        pl.DataFrame({"num_records": [1, 2, 3]}),
+        filter_columns=[*schema],
+        schema=schema,
+        verbose=False,
+    )
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            [
+                pl.Series("len", [1, 2, 3], dtype=pl.Int64),
+                pl.Series("bool_nc", [None, None, None], dtype=pl.UInt32),
+                pl.Series("bool_min", [None, None, None], dtype=pl.Boolean),
+                pl.Series("bool_max", [None, None, None], dtype=pl.Boolean),
+                pl.Series("string_nc", [None, None, None], dtype=pl.UInt32),
+                pl.Series("string_min", [None, None, None], dtype=pl.String),
+                pl.Series("string_max", [None, None, None], dtype=pl.String),
+                pl.Series("binary_nc", [None, None, None], dtype=pl.UInt32),
+                pl.Series("binary_min", [None, None, None], dtype=pl.Binary),
+                pl.Series("binary_max", [None, None, None], dtype=pl.Binary),
+                pl.Series("int8_nc", [None, None, None], dtype=pl.UInt32),
+                pl.Series("int8_min", [None, None, None], dtype=pl.Int8),
+                pl.Series("int8_max", [None, None, None], dtype=pl.Int8),
+                pl.Series("null_nc", [None, None, None], dtype=pl.UInt32),
+                pl.Series("null_min", [None, None, None], dtype=pl.Null),
+                pl.Series("null_max", [None, None, None], dtype=pl.Null),
+            ]
+        ),
+    )
+
+    assert (
+        _extract_table_statistics_from_delta_add_actions(
+            pl.DataFrame(),
+            filter_columns=[*schema],
+            schema=schema,
+            verbose=False,
+        )
+        is None
     )
