@@ -528,7 +528,7 @@ class Selector(Expr):
 
     def exclude(
         self,
-        columns: str | PolarsDataType | Collection[str] | Collection[PolarsDataType],
+        columns: str | PolarsDataType | Collection[str | PolarsDataType],
         *more_columns: str | PolarsDataType,
     ) -> Selector:
         """
