@@ -1,9 +1,6 @@
 # Tests for the optimization pass cluster WITH_COLUMNS
 
-import pytest
-
 import polars as pl
-from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 
 
