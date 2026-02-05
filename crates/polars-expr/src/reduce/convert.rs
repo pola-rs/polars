@@ -68,14 +68,6 @@ pub fn into_reduction(
                 let count = Box::new(CountReduce::new(*include_nulls)) as Box<_>;
                 (count, *input)
             },
-            IRAggExpr::MinBy { input, by } => {
-                let gr = new_min_by_reduction(get_dt(*input)?, get_dt(*by)?)?;
-                return Ok((gr, vec![*input, *by]));
-            },
-            IRAggExpr::MaxBy { input, by } => {
-                let gr = new_max_by_reduction(get_dt(*input)?, get_dt(*by)?)?;
-                return Ok((gr, vec![*input, *by]));
-            },
             IRAggExpr::Quantile { .. } => todo!(),
             IRAggExpr::Median(_) => todo!(),
             IRAggExpr::NUnique(_) => todo!(),
@@ -164,7 +156,32 @@ pub fn into_reduction(
                 _ => unreachable!(),
             }
         },
-        AExpr::AnonymousStreamingAgg {
+
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::MinBy,
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 2);
+            let input = inner_exprs[0].node();
+            let by = inner_exprs[1].node();
+            let gr = new_min_by_reduction(get_dt(input)?, get_dt(by)?)?;
+            return Ok((gr, vec![input, by]));
+        },
+
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::MaxBy,
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 2);
+            let input = inner_exprs[0].node();
+            let by = inner_exprs[1].node();
+            let gr = new_max_by_reduction(get_dt(input)?, get_dt(by)?)?;
+            return Ok((gr, vec![input, by]));
+        },
+
+        AExpr::AnonymousAgg {
             input: inner_exprs,
             fmt_str: _,
             function,
