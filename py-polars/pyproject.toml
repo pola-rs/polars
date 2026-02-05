@@ -133,7 +133,6 @@ module = [
   "pyarrow.*",
   "pydantic",
   "pyiceberg.*",
-  "pytz.*",
   "sqlalchemy.*",
   "torch.*",
   "xlsx2csv",
