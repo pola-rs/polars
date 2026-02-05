@@ -9,7 +9,7 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import TimeUnit
+    from polars._typing import Ambiguous, TimeUnit
 
 
 @pytest.mark.parametrize(
@@ -178,6 +178,8 @@ def test_offset_by_unequal_length_22018() -> None:
     [
         (datetime(2025, 10, 25, 2), "1d", "earliest"),
         (datetime(2025, 10, 27, 2), "-1d", "latest"),
+        (datetime(2025, 10, 19, 2), "1w", "earliest"),
+        (datetime(2025, 11, 2, 2), "-1w", "latest"),
         (datetime(2024, 10, 26, 2), "1y", "earliest"),
         (datetime(2026, 10, 26, 2), "-1y", "latest"),
         (datetime(2025, 9, 26, 2), "1mo", "earliest"),
@@ -185,7 +187,7 @@ def test_offset_by_unequal_length_22018() -> None:
     ],
 )
 def test_offset_by_rfc_5545_boundaries(
-    start: datetime, by: str, ambiguous: str
+    start: datetime, by: str, ambiguous: Ambiguous
 ) -> None:
     s = pl.Series([start]).dt.replace_time_zone("Europe/Amsterdam")
     result = s.dt.offset_by(by)
