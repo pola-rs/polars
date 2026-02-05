@@ -1245,43 +1245,49 @@ def test_scan_delta_filter_delta_log_statistics_missing_26444(tmp_path: Path) ->
         "null": pl.Null,
     }
 
-    df = _extract_table_statistics_from_delta_add_actions(
+    for actions_df in [
         pl.DataFrame({"num_records": [1, 2, 3]}),
-        filter_columns=[*schema],
-        schema=schema,
-        verbose=False,
-    )
-
-    assert_frame_equal(
-        df,
-        pl.DataFrame(
-            [
-                pl.Series("len", [1, 2, 3], dtype=pl.Int64),
-                pl.Series("bool_nc", [None, None, None], dtype=pl.UInt32),
-                pl.Series("bool_min", [None, None, None], dtype=pl.Boolean),
-                pl.Series("bool_max", [None, None, None], dtype=pl.Boolean),
-                pl.Series("string_nc", [None, None, None], dtype=pl.UInt32),
-                pl.Series("string_min", [None, None, None], dtype=pl.String),
-                pl.Series("string_max", [None, None, None], dtype=pl.String),
-                pl.Series("binary_nc", [None, None, None], dtype=pl.UInt32),
-                pl.Series("binary_min", [None, None, None], dtype=pl.Binary),
-                pl.Series("binary_max", [None, None, None], dtype=pl.Binary),
-                pl.Series("int8_nc", [None, None, None], dtype=pl.UInt32),
-                pl.Series("int8_min", [None, None, None], dtype=pl.Int8),
-                pl.Series("int8_max", [None, None, None], dtype=pl.Int8),
-                pl.Series("null_nc", [None, None, None], dtype=pl.UInt32),
-                pl.Series("null_min", [None, None, None], dtype=pl.Null),
-                pl.Series("null_max", [None, None, None], dtype=pl.Null),
-            ]
-        ),
-    )
-
-    assert (
-        _extract_table_statistics_from_delta_add_actions(
-            pl.DataFrame(),
+        pl.DataFrame({"num_records": [1, 2, 3], "min": [{}, {}, {}]}),
+        pl.DataFrame({"num_records": [1, 2, 3], "max": [{}, {}, {}]}),
+        pl.DataFrame({"num_records": [1, 2, 3], "null_count": [{}, {}, {}]}),
+    ]:
+        df = _extract_table_statistics_from_delta_add_actions(
+            actions_df,
             filter_columns=[*schema],
             schema=schema,
             verbose=False,
         )
-        is None
-    )
+
+        assert_frame_equal(
+            df,
+            pl.DataFrame(
+                [
+                    pl.Series("len", [1, 2, 3], dtype=pl.Int64),
+                    pl.Series("bool_nc", [None, None, None], dtype=pl.UInt32),
+                    pl.Series("bool_min", [None, None, None], dtype=pl.Boolean),
+                    pl.Series("bool_max", [None, None, None], dtype=pl.Boolean),
+                    pl.Series("string_nc", [None, None, None], dtype=pl.UInt32),
+                    pl.Series("string_min", [None, None, None], dtype=pl.String),
+                    pl.Series("string_max", [None, None, None], dtype=pl.String),
+                    pl.Series("binary_nc", [None, None, None], dtype=pl.UInt32),
+                    pl.Series("binary_min", [None, None, None], dtype=pl.Binary),
+                    pl.Series("binary_max", [None, None, None], dtype=pl.Binary),
+                    pl.Series("int8_nc", [None, None, None], dtype=pl.UInt32),
+                    pl.Series("int8_min", [None, None, None], dtype=pl.Int8),
+                    pl.Series("int8_max", [None, None, None], dtype=pl.Int8),
+                    pl.Series("null_nc", [None, None, None], dtype=pl.UInt32),
+                    pl.Series("null_min", [None, None, None], dtype=pl.Null),
+                    pl.Series("null_max", [None, None, None], dtype=pl.Null),
+                ]
+            ),
+        )
+
+        assert (
+            _extract_table_statistics_from_delta_add_actions(
+                pl.DataFrame(),
+                filter_columns=[*schema],
+                schema=schema,
+                verbose=False,
+            )
+            is None
+        )
