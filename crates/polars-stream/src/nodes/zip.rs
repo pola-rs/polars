@@ -116,7 +116,7 @@ impl InputHead {
     }
 
     fn null_shape(&self) -> bool {
-        self.schema.len() == 0 && self.total_len == 0
+        self.schema.is_empty() && self.total_len == 0
     }
 
     fn clear(&mut self) {
@@ -134,7 +134,6 @@ pub struct ZipNode {
 
 impl ZipNode {
     pub fn new(zip_behavior: ZipBehavior, schemas: Vec<Arc<Schema>>) -> Self {
-        dbg!(&schemas);
         let input_heads = schemas
             .into_iter()
             .map(|s| InputHead::new(s, matches!(zip_behavior, ZipBehavior::Broadcast)))
