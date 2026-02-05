@@ -1553,3 +1553,57 @@ def test_sink_parquet_arrow_schema_nested_types() -> None:
             ],
         ),
     )
+
+
+def test_sink_parquet_writes_strings_as_largeutf8_by_default() -> None:
+    df = pl.DataFrame({"string": "A", "binary": [b"A"]})
+
+    with pytest.raises(
+        SchemaError,
+        match=r"provided dtype \(Utf8View\) does not match output dtype \(LargeUtf8\)",
+    ):
+        df.lazy().select("string").sink_parquet(
+            io.BytesIO(), arrow_schema=pa.schema([pa.field("string", pa.string_view())])
+        )
+
+    with pytest.raises(
+        SchemaError,
+        match=r"provided dtype \(BinaryView\) does not match output dtype \(LargeBinary\)",
+    ):
+        df.lazy().select("binary").sink_parquet(
+            io.BytesIO(), arrow_schema=pa.schema([pa.field("binary", pa.binary_view())])
+        )
+
+    f = io.BytesIO()
+
+    df.lazy().sink_parquet(
+        f,
+        arrow_schema=pa.schema(
+            [
+                pa.field("string", pa.large_string()),
+                pa.field("binary", pa.large_binary()),
+            ]
+        ),
+    )
+
+    f.seek(0)
+
+    assert_frame_equal(pl.scan_parquet(f).collect(), df)
+
+
+def test_sink_parquet_pyarrow_filter_string_type_26435() -> None:
+    df = pl.DataFrame({"string": ["A", None, "B"], "int": [0, 1, 2]})
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.DataFrame(pq.read_table(f, filters=[("int", "=", 0)])),
+        pl.DataFrame({"string": "A", "int": 0}),
+    )
+
+    assert_frame_equal(
+        pl.DataFrame(pq.read_table(f, filters=[("string", "=", "A")])),
+        pl.DataFrame({"string": "A", "int": 0}),
+    )
