@@ -180,6 +180,8 @@ def test_offset_by_unequal_length_22018() -> None:
         (datetime(2025, 10, 27, 2), "-1d", "latest"),
         (datetime(2024, 10, 26, 2), "1y", "earliest"),
         (datetime(2026, 10, 26, 2), "-1y", "latest"),
+        (datetime(2025, 9, 26, 2), "1mo", "earliest"),
+        (datetime(2025, 11, 26, 2), "-1mo", "latest"),
     ],
 )
 def test_offset_by_rfc_5545_boundaries(
