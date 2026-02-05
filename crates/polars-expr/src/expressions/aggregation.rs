@@ -14,6 +14,7 @@ use rayon::prelude::*;
 use super::*;
 use crate::expressions::AggState::AggregatedScalar;
 use crate::expressions::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
+use crate::reduce::GroupedReduction;
 
 #[derive(Debug, Clone, Copy)]
 pub struct AggregationType {
@@ -189,6 +190,7 @@ impl PhysicalExpr for AggregationExpr {
             },
         }
     }
+
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
@@ -622,6 +624,128 @@ impl PhysicalExpr for AggQuantileExpr {
             },
             Err(_) => Ok(input_field),
         }
+    }
+
+    fn is_scalar(&self) -> bool {
+        true
+    }
+}
+
+pub(crate) struct AnonymousAggregationExpr {
+    pub(crate) inputs: Vec<Arc<dyn PhysicalExpr>>,
+    pub(crate) grouped_reduction: Box<dyn GroupedReduction>,
+    pub(crate) output_field: Field,
+}
+
+impl AnonymousAggregationExpr {
+    pub fn new(
+        inputs: Vec<Arc<dyn PhysicalExpr>>,
+        grouped_reduction: Box<dyn GroupedReduction>,
+        output_field: Field,
+    ) -> Self {
+        Self {
+            inputs,
+            grouped_reduction,
+            output_field,
+        }
+    }
+}
+
+impl PhysicalExpr for AnonymousAggregationExpr {
+    fn as_expression(&self) -> Option<&Expr> {
+        None
+    }
+
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+        polars_ensure!(
+            self.inputs.len() == 1,
+            ComputeError: "AnonymousAggregationExpr with more than one input is not supported"
+        );
+
+        let col = self.inputs[0].evaluate(df, state)?;
+        let mut gr = self.grouped_reduction.new_empty();
+        gr.resize(1);
+        gr.update_group(&[&col], 0, 0)?;
+        let out_series = gr.finalize()?;
+        Ok(Column::new(col.name().clone(), out_series))
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupPositions,
+        state: &ExecutionState,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        polars_ensure!(
+            self.inputs.len() == 1,
+            ComputeError: "AnonymousAggregationExpr with more than one input is not supported"
+        );
+
+        let input = &self.inputs[0];
+        let mut ac = input.evaluate_on_groups(df, groups, state)?;
+
+        // don't change names by aggregations as is done in polars-core
+        let input_column_name = ac.get_values().name().clone();
+
+        if let AggState::LiteralScalar(input_column) = &mut ac.state {
+            *input_column = self.evaluate(df, state)?;
+            return Ok(ac);
+        }
+
+        let (input_column, resolved_groups) = ac.get_final_aggregation();
+
+        let mut gr = self.grouped_reduction.new_empty();
+        gr.resize(groups.len() as IdxSize);
+
+        assert!(
+            !resolved_groups.is_overlapping(),
+            "Aggregating with overlapping groups is a logic error"
+        );
+
+        let subset = (0..input_column.len() as IdxSize).collect::<Vec<IdxSize>>();
+
+        let mut group_idxs = Vec::with_capacity(input_column.len());
+        match &**resolved_groups {
+            GroupsType::Idx(group_indices) => {
+                group_idxs.resize(input_column.len(), 0);
+                for (group_idx, indices_in_group) in group_indices.all().iter().enumerate() {
+                    for pos in indices_in_group.iter() {
+                        group_idxs[*pos as usize] = group_idx as IdxSize;
+                    }
+                }
+            },
+            GroupsType::Slice { groups, .. } => {
+                for (group_idx, [_start, len]) in groups.iter().enumerate() {
+                    group_idxs.extend(std::iter::repeat_n(group_idx as IdxSize, *len as usize));
+                }
+            },
+        };
+        assert_eq!(group_idxs.len(), input_column.len());
+
+        // `update_groups_subset` needs a single chunk.
+        let input_column_rechunked = input_column.rechunk();
+
+        // Single call so no need to resolve ordering.
+        let seq_id = 0;
+
+        // SAFETY:
+        // - `subset` is in-bounds because it is 0..N
+        // - `group_idxs` is in-bounds because we checked that it matches `input_column.len()` *and*
+        //   is filled with values <= `input_column.len()` since they are derived from it via
+        //   `enumerate`.
+        unsafe {
+            gr.update_groups_subset(&[&input_column_rechunked], &subset, &group_idxs, seq_id)?;
+        }
+
+        let out_series = gr.finalize()?;
+        let out = AggregatedScalar(Column::new(input_column_name, out_series));
+
+        Ok(AggregationContext::from_agg_state(out, resolved_groups))
+    }
+
+    fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
+        Ok(self.output_field.clone())
     }
 
     fn is_scalar(&self) -> bool {

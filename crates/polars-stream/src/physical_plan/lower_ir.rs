@@ -564,6 +564,8 @@ pub fn lower_ir(
         } => {
             let zip_behavior = if options.strict {
                 ZipBehavior::Strict
+            } else if options.broadcast_unit_length {
+                ZipBehavior::Broadcast
             } else {
                 ZipBehavior::NullExtend
             };

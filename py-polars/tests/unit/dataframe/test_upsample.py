@@ -76,7 +76,7 @@ def test_upsample(time_zone: str | None, tzinfo: ZoneInfo | timezone | None) -> 
     assert_frame_equal(up, expected)
 
 
-@pytest.mark.parametrize("time_zone", [None, "US/Central"])
+@pytest.mark.parametrize("time_zone", [None, "America/Chicago"])
 def test_upsample_crossing_dst(time_zone: str | None) -> None:
     df = pl.DataFrame(
         {

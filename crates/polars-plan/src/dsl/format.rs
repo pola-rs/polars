@@ -149,12 +149,6 @@ impl fmt::Debug for Expr {
                             write!(f, "{input:?}.max()")
                         }
                     },
-                    MinBy { input, by } => {
-                        write!(f, "{input:?}.min_by({by:?})")
-                    },
-                    MaxBy { input, by } => {
-                        write!(f, "{input:?}.max_by({by:?})")
-                    },
                     Median(expr) => write!(f, "{expr:?}.median()"),
                     Mean(expr) => write!(f, "{expr:?}.mean()"),
                     First(expr) => write!(f, "{expr:?}.first()"),
@@ -214,6 +208,23 @@ impl fmt::Debug for Expr {
                     0 => write!(f, "{function}()"),
                     1 => write!(f, "{:?}.{function}()", input[0]),
                     _ => write!(f, "{:?}.{function}({:?})", input[0], &input[1..]),
+                }
+            },
+            AnonymousAgg {
+                input,
+                fmt_str,
+                function,
+                ..
+            } => {
+                let name = match function {
+                    LazySerde::Named { name, .. } => name.as_str(),
+                    _ => fmt_str.as_str(),
+                };
+
+                match input.len() {
+                    0 => write!(f, "{name}()"),
+                    1 => write!(f, "{:?}.{name}()", input[0]),
+                    _ => write!(f, "{:?}.{name}({:?})", input[0], &input[1..]),
                 }
             },
             AnonymousFunction {

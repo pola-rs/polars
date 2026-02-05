@@ -263,16 +263,6 @@ pub(super) fn to_aexpr_impl(
                         output_name,
                     )
                 },
-                AggExpr::MinBy { input, by } => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    let (by, _) = to_aexpr_mat_lit_arc!(by)?;
-                    (IRAggExpr::MinBy { input, by }, output_name)
-                },
-                AggExpr::MaxBy { input, by } => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    let (by, _) = to_aexpr_mat_lit_arc!(by)?;
-                    (IRAggExpr::MaxBy { input, by }, output_name)
-                },
                 AggExpr::Median(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Median(input), output_name)
@@ -370,6 +360,41 @@ pub(super) fn to_aexpr_impl(
                     predicate: p,
                     truthy: t,
                     falsy: f,
+                },
+                output_name,
+            )
+        },
+        Expr::AnonymousAgg {
+            input,
+            function,
+            fmt_str,
+        } => {
+            let input = to_expr_irs(input, ctx)?;
+            let output_name = if input.is_empty() {
+                fmt_str.as_ref().clone()
+            } else {
+                input[0].output_name().clone()
+            };
+
+            let fields = input
+                .iter()
+                .map(|e| e.field(ctx.schema, ctx.arena))
+                .collect::<PolarsResult<Vec<_>>>()?;
+
+            let function = function.materialize()?;
+            let out = function.get_field(ctx.schema, &fields)?;
+            let output_dtype = out.dtype();
+
+            assert!(
+                output_dtype.is_known(),
+                "output type of anonymous functions must bet set"
+            );
+
+            (
+                AExpr::AnonymousAgg {
+                    input,
+                    function: LazySerde::Deserialized(function),
+                    fmt_str,
                 },
                 output_name,
             )

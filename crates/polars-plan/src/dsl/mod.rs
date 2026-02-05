@@ -198,7 +198,7 @@ impl Expr {
         .into()
     }
 
-    /// GroupBy the group to a Series.
+    /// Implode into a list scalar.
     pub fn implode(self) -> Self {
         AggExpr::Implode(Arc::new(self)).into()
     }
@@ -219,6 +219,10 @@ impl Expr {
     }
 
     /// Alias for `explode`.
+    #[deprecated(
+        since = "0.53.0",
+        note = "Use `explode()` with `ExplodeOptions { empty_as_null: false, keep_nulls: false }` instead. Will be removed in version 2.0."
+    )]
     pub fn flatten(self) -> Self {
         self.explode(ExplodeOptions {
             empty_as_null: true,
