@@ -2410,9 +2410,14 @@ class Series:
         """
         return self._s.median()
 
+    @overload
     def quantile(
-        self, quantile: float | list_[float], interpolation: QuantileMethod = "nearest"
-    ) -> float | list_[float] | None:
+        self, quantile: list_[float], interpolation: QuantileMethod = ...
+    ) -> list_[float] | list_[None]: ...
+
+    def quantile(
+        self, quantile: float, interpolation: QuantileMethod = "nearest"
+    ) -> float | None:
         """
         Get the quantile value of this Series.
 
@@ -2425,7 +2430,7 @@ class Series:
 
         Returns
         -------
-        float | list[float] | None
+        float | None | list[float] | list[None]
             A single quantile value if a float is provided, or a list of quantile values if a list is provided.
 
         Examples
