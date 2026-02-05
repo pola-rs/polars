@@ -13,7 +13,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
     let mut ir_stack = Vec::with_capacity(16);
     ir_stack.push(root);
 
-    // (expr, is_original)
+    // key: output_name, value: (expr, is_original)
     let mut input_name_to_expr_map: PlIndexMap<PlSmallStr, (ExprIR, bool)> = PlIndexMap::new();
     let mut accessed_input_names: PlHashSet<PlSmallStr> = PlHashSet::new();
     let mut push_candidate_idxs: Vec<usize> = vec![];
