@@ -33,9 +33,9 @@ impl LineBatchDistributor {
 
         let fixed_read_size = std::env::var("POLARS_FORCE_NDJSON_CHUNK_SIZE")
             .map(|x| {
-                x.parse::<NonZeroUsize>().ok().unwrap_or_else(|| {
-                    panic!("invalid value for POLARS_FORCE_NDJSON_CHUNK_SIZE: {x}")
-                })
+                x.parse::<NonZeroUsize>()
+                    .ok()
+                    .expect("invalid value for POLARS_FORCE_NDJSON_CHUNK_SIZE: {x}")
             })
             .ok();
 
