@@ -115,7 +115,7 @@ def _extract_table_statistics_from_delta_add_actions(
 ) -> DataFrame | None:
     import polars as pl
 
-    if "num_records" not in add_actions_df.schema:
+    if "num_records" not in add_actions_df:
         if verbose:
             eprint(
                 "scan_delta: statistics load failed: 'num_records' column not present"
@@ -126,7 +126,7 @@ def _extract_table_statistics_from_delta_add_actions(
     out: dict[str, pl.Series] = {"len": add_actions_df["num_records"]}
 
     null_count_cols = (
-        (add_actions_df["null_count"].struct.unnest().to_dict(as_series=True))
+        add_actions_df["null_count"].struct.unnest().to_dict(as_series=True)
         if "null_count" in add_actions_df
         else {}
     )
