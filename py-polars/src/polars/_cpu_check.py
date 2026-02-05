@@ -248,7 +248,7 @@ def check_cpu_flags(feature_flags: str) -> None:
     expected_cpu_flags = [
         f
         for f in expected_cpu_flags
-        if f != "ctr-static"  # Not actually a CPU flag.
+        if f and f != "ctr-static"  # Not actually a CPU flag.
     ]
 
     if not expected_cpu_flags or os.environ.get("POLARS_SKIP_CPU_CHECK"):
