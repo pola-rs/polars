@@ -1389,7 +1389,7 @@ def test_sink_parquet_arrow_schema_logical_types() -> None:
         }
     )
 
-    with pytest.raises(SchemaError, match=r"Dictionary\(UInt32, Utf8View, false\)"):
+    with pytest.raises(SchemaError, match=r"Dictionary\(UInt32, LargeUtf8, false\)"):
         df.select("categorical").lazy().sink_parquet(
             io.BytesIO(),
             arrow_schema=pa.schema(
@@ -1400,7 +1400,7 @@ def test_sink_parquet_arrow_schema_logical_types() -> None:
     df.select("categorical").lazy().sink_parquet(
         io.BytesIO(),
         arrow_schema=pa.schema(
-            [pa.field("categorical", pa.dictionary(pa.uint32(), pa.string_view()))],
+            [pa.field("categorical", pa.dictionary(pa.uint32(), pa.large_string()))],
         ),
     )
 
@@ -1433,11 +1433,11 @@ def test_sink_parquet_arrow_schema_logical_types() -> None:
             ) -> Any:
                 return PythonTestExtensionPyarrow(storage_type[0].type)
 
-        return PythonTestExtensionPyarrow(pa.string_view())
+        return PythonTestExtensionPyarrow(pa.large_string())
 
     with pytest.raises(
         SchemaError,
-        match=r'Extension\(ExtensionType { name: "testing.python_test_extension", inner: Utf8View, metadata: None }\)',
+        match=r'Extension\(ExtensionType { name: "testing.python_test_extension", inner: LargeUtf8, metadata: None }\)',
     ):
         df.select("extension[str]").lazy().sink_parquet(
             io.BytesIO(),
