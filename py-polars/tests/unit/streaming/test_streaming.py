@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from datetime import date
 from pathlib import Path
@@ -82,7 +83,8 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
 @pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: timing
 def test_cross_join_stack() -> None:
-    a = pl.Series(np.arange(100_000)).to_frame().lazy()
+    morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
+    a = pl.Series(np.arange(morsel_size or 100000)).to_frame().lazy()
     t0 = time.time()
     assert a.join(a, how="cross").head().collect(engine="streaming").shape == (5, 2)
     t1 = time.time()
