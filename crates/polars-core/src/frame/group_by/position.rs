@@ -753,8 +753,7 @@ impl GroupPositions {
         slice_groups(
             self.original.clone(),
             offset,
-            // invariant that len should be in bounds, so truncate if not
-            if len > self.len { self.len } else { len },
+            len
         )
     }
 

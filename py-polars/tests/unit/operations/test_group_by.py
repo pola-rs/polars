@@ -2938,3 +2938,15 @@ def test_group_by_sum_on_strings_should_error_24659() -> None:
         match=r"`sum`.*operation not supported for dtype.*str",
     ):
         pl.DataFrame({"str": ["a", "b"]}).group_by(1).agg(pl.col.str.sum())
+
+
+@pytest.mark.parametrize("tail", [0, 1, 4, 5, 6, 10])
+def test_unique_head_tail_26429(tail: int) -> None:
+    df = pl.DataFrame(
+        {
+            "x": [1, 2, 3, 4, 5],
+        }
+    )
+    out = df.lazy().unique().tail(tail).collect()
+    expected = min(tail, df.height)
+    assert len(out) == expected
