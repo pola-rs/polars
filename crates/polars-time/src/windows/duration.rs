@@ -595,9 +595,6 @@ impl Duration {
     /// For example, 2022-11-06 01:30:00 CST truncated by 1 hour becomes 2022-11-06 01:00:00 CST,
     /// whereas 2022-11-06 01:30:00 CDT truncated by 1 hour becomes 2022-11-06 01:00:00 CDT.
     ///
-    /// * `original_dt_local` - original datetime, without time zone.
-    ///   E.g. if the original datetime was 2022-11-06 01:30:00 CST, then this would
-    ///   be 2022-11-06 01:30:00.
     /// * `original_dt_utc` - original datetime converted to UTC. E.g. if the
     ///   original datetime was 2022-11-06 01:30:00 CST, then this would
     ///   be 2022-11-06 07:30:00.
