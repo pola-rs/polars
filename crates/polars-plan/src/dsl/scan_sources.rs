@@ -8,6 +8,9 @@ use polars_error::polars_err;
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "cloud")]
 use polars_io::file_cache::FileCacheEntry;
+#[cfg(feature = "cloud")]
+use polars_io::metrics::IOMetrics;
+#[cfg(feature = "cloud")]
 use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};
 use polars_io::{expand_paths, expand_paths_hive, expanded_from_single_directory};
 use polars_utils::mmap::MMapSemaphore;
@@ -482,11 +485,12 @@ impl ScanSourceRef<'_> {
         &self,
         builder: &DynByteSourceBuilder,
         cloud_options: Option<&CloudOptions>,
+        io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<DynByteSource> {
         match self {
             Self::Path(path) => {
                 builder
-                    .try_build_from_path((*path).clone(), cloud_options)
+                    .try_build_from_path((*path).clone(), cloud_options, io_metrics)
                     .await
             },
             Self::File(file) => Ok(DynByteSource::from(Buffer::from_owner(
