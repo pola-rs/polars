@@ -82,7 +82,7 @@ if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
         import polars._plr as plr
 
-    # typing aliases for builtin names shadowed by Expr accessors
+    # Typing aliases for builtin names shadowed by Expr accessors.
     from builtins import list as list_
     from builtins import str as str_
     from collections.abc import Callable, Iterable
