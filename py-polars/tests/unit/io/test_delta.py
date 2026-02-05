@@ -1237,8 +1237,6 @@ def test_scan_delta_filter_delta_log_statistics_missing_26444(tmp_path: Path) ->
         pl.DataFrame({"x": 1, "y": True}),
     )
 
-
-def test_extract_table_statistics_from_delta_add_actions_26444() -> None:
     schema = {
         "bool": pl.Boolean,
         "string": pl.String,
