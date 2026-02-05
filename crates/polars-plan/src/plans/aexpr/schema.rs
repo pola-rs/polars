@@ -636,6 +636,12 @@ fn get_arithmetic_field(
         _ => {
             let right_type = right_ae.to_field_impl(ctx)?.dtype;
 
+            if matches!(op, Operator::FloorDivide)
+                && (left_field.dtype == Boolean || right_type == Boolean)
+            {
+                polars_bail!(op = "floor_div", Boolean);
+            }
+
             match (&left_field.dtype, &right_type) {
                 #[cfg(feature = "dtype-struct")]
                 (Struct(_), Struct(_)) => {
