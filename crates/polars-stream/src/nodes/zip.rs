@@ -115,6 +115,10 @@ impl InputHead {
         out
     }
 
+    fn null_shape(&self) -> bool {
+        self.schema.len() == 0 && self.total_len == 0
+    }
+
     fn clear(&mut self) {
         self.total_len = 0;
         self.is_broadcast = Some(false);
@@ -130,6 +134,7 @@ pub struct ZipNode {
 
 impl ZipNode {
     pub fn new(zip_behavior: ZipBehavior, schemas: Vec<Arc<Schema>>) -> Self {
+        dbg!(&schemas);
         let input_heads = schemas
             .into_iter()
             .map(|s| InputHead::new(s, matches!(zip_behavior, ZipBehavior::Broadcast)))
@@ -191,7 +196,11 @@ impl ComputeNode for ZipNode {
             },
             ZipBehavior::Strict => {
                 if let Some(first_len) = self.input_heads.first().map(|h| h.total_len) {
-                    let all_len_equal = self.input_heads.iter().all(|h| h.total_len == first_len);
+                    let all_len_equal = self
+                        .input_heads
+                        .iter()
+                        .filter(|h| !h.null_shape())
+                        .all(|h| h.total_len == first_len);
                     polars_ensure!(
                         all_len_equal,
                         ShapeMismatch: "zip node received non-equal length inputs"

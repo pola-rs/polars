@@ -104,6 +104,7 @@ pub fn concat_df_horizontal(
 
         owned_df = dfs
             .iter()
+            .filter(|df| df.shape() != (0, 0))
             .cloned()
             .map(|mut df| {
                 out_width += df.width();
