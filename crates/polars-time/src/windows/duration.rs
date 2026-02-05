@@ -603,7 +603,7 @@ impl Duration {
     ///   be 2022-11-06 07:30:00.
     /// * `result_dt_local` - result, without time zone.
     #[cfg(feature = "timezones")]
-    fn localize_result_preserving_offset(
+    fn localize_result_preserving_fold(
         &self,
         original_dt_utc: NaiveDateTime,
         result_dt_local: NaiveDateTime,
@@ -654,7 +654,7 @@ impl Duration {
                 let result_timestamp = t - remainder;
                 let result_dt_local = _timestamp_to_datetime(result_timestamp);
                 let result_dt_utc =
-                    self.localize_result_preserving_offset(original_dt_utc, result_dt_local, tz)?;
+                    self.localize_result_preserving_fold(original_dt_utc, result_dt_local, tz)?;
                 Ok(_datetime_to_timestamp(result_dt_utc))
             },
             _ => {
@@ -710,7 +710,7 @@ impl Duration {
             // for UTC, use fastpath below (same as naive)
             Some(tz) if tz != &chrono_tz::UTC => {
                 let result_dt_local = _timestamp_to_datetime(result_t_local);
-                let result_dt_utc = self.localize_result_preserving_offset(
+                let result_dt_utc = self.localize_result_preserving_fold(
                     _original_dt_utc.unwrap(),
                     result_dt_local,
                     tz,
@@ -797,7 +797,7 @@ impl Duration {
             Some(tz) if tz != &chrono_tz::UTC => {
                 let result_dt_local = timestamp_to_datetime(t - remainder_days * daily_duration);
                 let result_dt_utc =
-                    self.localize_result_preserving_offset(original_dt_utc, result_dt_local, tz)?;
+                    self.localize_result_preserving_fold(original_dt_utc, result_dt_local, tz)?;
                 Ok(datetime_to_timestamp(result_dt_utc))
             },
             _ => Ok(t - remainder_days * daily_duration),
@@ -932,7 +932,7 @@ impl Duration {
                     let original_dt_utc = timestamp_to_datetime(t);
                     let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
                     let result_dt_local = Self::add_month(original_dt_local, d.months, d.negative);
-                    datetime_to_timestamp(self.localize_result_preserving_offset(
+                    datetime_to_timestamp(self.localize_result_preserving_fold(
                         original_dt_utc,
                         result_dt_local,
                         tz,
@@ -957,7 +957,7 @@ impl Duration {
                     let mut result_timestamp_local = datetime_to_timestamp(original_dt_local);
                     result_timestamp_local += if d.negative { -t_weeks } else { t_weeks };
                     let result_dt_local = timestamp_to_datetime(result_timestamp_local);
-                    datetime_to_timestamp(self.localize_result_preserving_offset(
+                    datetime_to_timestamp(self.localize_result_preserving_fold(
                         original_dt_utc,
                         result_dt_local,
                         tz,
@@ -984,7 +984,7 @@ impl Duration {
                     t = datetime_to_timestamp(original_dt_local);
                     t += if d.negative { -t_days } else { t_days };
                     let result_dt_local = timestamp_to_datetime(t);
-                    let result_dt_utc = self.localize_result_preserving_offset(
+                    let result_dt_utc = self.localize_result_preserving_fold(
                         original_dt_utc,
                         result_dt_local,
                         tz,
