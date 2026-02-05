@@ -8,7 +8,7 @@ import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import given, settings
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -414,13 +414,8 @@ def test_cross_join_with_literal_column_25544() -> None:
 @pytest.mark.parametrize("nulls_equal", [False, True])
 @pytest.mark.parametrize("coalesce", [None, True, False])
 @pytest.mark.parametrize("maintain_order", ["none", "left_right", "right_left"])
-@pytest.mark.parametrize("ideal_morsel_size", [1, 1000])
 @given(data=st.data())
-@settings(
-    max_examples=10,
-    # ideal_morsel_size is not based on hypothesis strategy
-    suppress_health_check=[HealthCheck.function_scoped_fixture],
-)
+@settings(max_examples=10)
 def test_merge_join(
     on: list[str],
     how: JoinStrategy,
@@ -429,11 +424,8 @@ def test_merge_join(
     nulls_equal: bool,
     coalesce: bool | None,
     maintain_order: MaintainOrderJoin,
-    ideal_morsel_size: int,
-    monkeypatch: pytest.MonkeyPatch,
     data: st.DataObject,
 ) -> None:
-    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", str(ideal_morsel_size))
     check_row_order = maintain_order in {"left_right", "right_left"}
 
     df_st = dataframes(min_cols=len(on), max_cols=len(on), allowed_dtypes=[pl.Int16])

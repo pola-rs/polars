@@ -5,10 +5,8 @@ use futures::StreamExt;
 use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
 use polars_io::pl_async::get_runtime;
-use polars_io::utils::byte_source::{ByteSource, DynByteSourceBuilder};
-use polars_io::utils::compression::SupportedCompression;
 use polars_mem_engine::scan_predicate::initialize_scan_predicate;
-use polars_plan::dsl::{PredicateFileSkip, ScanSourceRef};
+use polars_plan::dsl::PredicateFileSkip;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
@@ -20,6 +18,7 @@ use crate::nodes::io_sources::multi_scan::components::row_deletions::{
     DeletionFilesProvider, ExternalFilterMask, RowDeletionsInit,
 };
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
+use crate::nodes::io_sources::multi_scan::functions::is_compressed_source;
 use crate::nodes::io_sources::multi_scan::functions::resolve_slice::resolve_to_positive_slice;
 use crate::nodes::io_sources::multi_scan::pipeline::models::{
     ExtraOperations, InitializedPipelineState, ResolvedSliceInfo, StartReaderArgsConstant,
@@ -149,10 +148,23 @@ async fn finish_initialize_multi_scan_pipeline(
     {
         // In cloud execution the entries may not exist at this point due to DSL resolution
         // happening on a separate machine.
-        get_runtime().block_in_place_on(polars_io::file_cache::init_entries_from_uri_list(
-            config.sources.as_paths().unwrap().iter().cloned(),
-            config.cloud_options.as_deref(),
-        ))?;
+        let sources = config.sources.clone();
+        let cloud_options = config.cloud_options.clone();
+
+        get_runtime()
+            .spawn(async move {
+                let sources = sources.clone();
+                assert!(sources.as_paths().is_some());
+
+                polars_io::file_cache::init_entries_from_uri_list(
+                    (0..sources.len())
+                        .map(move |i| sources.as_paths().unwrap().get(i).unwrap().clone()),
+                    cloud_options.as_deref(),
+                )
+                .await
+            })
+            .await
+            .unwrap()?;
     }
 
     // Row index should only be pushed if we have a predicate or negative slice as there is a
@@ -178,7 +190,13 @@ async fn finish_initialize_multi_scan_pipeline(
                     || reader_capabilities.contains(ReaderCapabilities::ROW_INDEX))
                 && (config.deletion_files.is_none()
                     || reader_capabilities.contains(ReaderCapabilities::EXTERNAL_FILTER_MASK))
-                && !is_compressed_source(config.sources.get(0).unwrap(), &config)? =>
+                && !get_runtime()
+                    .spawn(is_compressed_source(
+                        config.sources.get(0).unwrap().into_owned()?,
+                        config.cloud_options.clone(),
+                    ))
+                    .await
+                    .unwrap()? =>
         {
             if verbose {
                 eprintln!("[MultiScanTaskInit]: Single file negative slice");
@@ -419,29 +437,4 @@ async fn finish_initialize_multi_scan_pipeline(
     reader_starter_handle.await?;
 
     Ok(())
-}
-
-fn is_compressed_source(
-    scan_source: ScanSourceRef<'_>,
-    config: &MultiScanConfig,
-) -> PolarsResult<bool> {
-    let byte_source_builder = if scan_source.is_cloud_url() {
-        DynByteSourceBuilder::ObjectStore
-    } else {
-        DynByteSourceBuilder::Mmap
-    };
-
-    let rt = tokio::runtime::Builder::new_current_thread().build()?;
-
-    rt.block_on(async {
-        let dyn_bytes_source = scan_source
-            .to_dyn_byte_source(&byte_source_builder, config.cloud_options.as_deref())
-            .await?;
-
-        let Ok(first_4_bytes) = dyn_bytes_source.get_range(0..4).await else {
-            return Ok(false);
-        };
-
-        Ok(SupportedCompression::check(&first_4_bytes).is_some())
-    })
 }
