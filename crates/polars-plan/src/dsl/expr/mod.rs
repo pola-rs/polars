@@ -728,7 +728,7 @@ pub enum Operator {
     Plus,
     Minus,
     Multiply,
-    /// Rust division semantics, this is what Rust interface `/` fispatches to
+    /// Rust division semantics, this is what Rust interface `/` dispatches to
     RustDivide,
     /// Python division semantics, converting to floats. This is what python `/` operator dispatches to
     TrueDivide,
