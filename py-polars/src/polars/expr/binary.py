@@ -505,15 +505,15 @@ class ExprBinaryNameSpace:
         >>> df = pl.DataFrame({"a": [b"\x01\x02\x03", b"", b"\x04\x05"]})
         >>> df.with_columns(get=pl.col("a").bin.get(0, null_on_oob=True))
         shape: (3, 2)
-        ┌──────────────────┬──────┐
-        │ a                ┆ get  │
-        │ ---              ┆ ---  │
-        │ binary           ┆ u8   │
-        ╞══════════════════╪══════╡
-        │ b"\x01\x02\x03"  ┆ 1    │
-        │ b""              ┆ null │
-        │ b"\x04\x05"      ┆ 4    │
-        └──────────────────┴──────┘
+        ┌─────────────────┬──────┐
+        │ a               ┆ get  │
+        │ ---             ┆ ---  │
+        │ binary          ┆ u8   │
+        ╞═════════════════╪══════╡
+        │ b"\x01\x02\x03" ┆ 1    │
+        │ b""             ┆ null │
+        │ b"\x04\x05"     ┆ 4    │
+        └─────────────────┴──────┘
         """
         index_pyexpr = parse_into_expression(index)
         return wrap_expr(self._pyexpr.bin_get(index_pyexpr, null_on_oob))
