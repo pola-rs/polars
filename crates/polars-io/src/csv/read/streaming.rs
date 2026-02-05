@@ -212,7 +212,6 @@ fn for_each_line_from_reader(
     let fixed_read_size = std::env::var("POLARS_FORCE_CSV_INFER_CHUNK_SIZE")
         .map(|x| {
             x.parse::<NonZeroUsize>()
-                .ok()
                 .expect("invalid value for POLARS_FORCE_CSV_INFER_CHUNK_SIZE: {x}")
                 .get()
         })

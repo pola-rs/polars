@@ -12,8 +12,7 @@ pub fn calc_n_readers_pre_init(
 ) -> usize {
     if let Ok(v) = std::env::var("POLARS_NUM_READERS_PRE_INIT").map(|x| {
         x.parse::<NonZeroUsize>()
-            .ok()
-            .unwrap_or_else(|| panic!("invalid value for POLARS_NUM_READERS_PRE_INIT: {x}"))
+            .expect("invalid value for POLARS_NUM_READERS_PRE_INIT: {x}")
             .get()
     }) {
         return v;
@@ -36,8 +35,7 @@ pub fn calc_n_readers_pre_init(
 pub fn calc_max_concurrent_scans(num_pipelines: usize, num_sources: usize) -> usize {
     if let Ok(v) = std::env::var("POLARS_MAX_CONCURRENT_SCANS").map(|x| {
         x.parse::<NonZeroUsize>()
-            .ok()
-            .unwrap_or_else(|| panic!("invalid value for POLARS_MAX_CONCURRENT_SCANS: {x}"))
+            .expect("invalid value for POLARS_MAX_CONCURRENT_SCANS: {x}")
             .get()
     }) {
         return v;
