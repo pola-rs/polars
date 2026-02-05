@@ -1258,6 +1258,8 @@ def test_scan_delta_filter_delta_log_statistics_missing_26444(tmp_path: Path) ->
             verbose=False,
         )
 
+        assert df is not None
+
         assert_frame_equal(
             df,
             pl.DataFrame(

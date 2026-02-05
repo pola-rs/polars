@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from deltalake import DeltaTable
 
     from polars import DataFrame, DataType
-    from polars._typing import SchemaDefinition, StorageOptionsDict
+    from polars._typing import SchemaDict, StorageOptionsDict
 
 
 def _resolve_delta_lake_uri(table_uri: str | Path, *, strict: bool = True) -> str:
@@ -110,7 +110,7 @@ def _extract_table_statistics_from_delta_add_actions(
     add_actions_df: DataFrame,
     *,
     filter_columns: list[str],
-    schema: SchemaDefinition,
+    schema: SchemaDict,
     verbose: bool,
 ) -> DataFrame | None:
     import polars as pl
