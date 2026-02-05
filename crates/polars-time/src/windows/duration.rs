@@ -12,6 +12,7 @@ use arrow::temporal_conversions::{
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as ChronoTimeZone;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+#[cfg(feature = "timezones")]
 use chrono_tz::OffsetComponents;
 use polars_core::datatypes::DataType;
 use polars_core::prelude::{
