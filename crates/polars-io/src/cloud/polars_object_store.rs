@@ -396,11 +396,7 @@ impl PolarsObjectStore {
                         let mut stream = store.get(path).await?.into_stream();
                         let mut len = 0;
 
-                        loop {
-                            let Some(bytes) = stream.try_next().await? else {
-                                break;
-                            };
-
+                        while let Some(bytes) = stream.try_next().await? {
                             len += bytes.len();
                             io_metrics.add_bytes_requested(bytes.len() as u64);
                             io_metrics.add_bytes_received(bytes.len() as u64);
