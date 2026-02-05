@@ -1026,6 +1026,8 @@ def test_scan_delta_extract_table_statistics_df(tmp_path: Path) -> None:
         verbose=False,
     )
 
+    assert statistics_df is not None
+
     assert_frame_equal(
         statistics_df,
         pl.DataFrame(
