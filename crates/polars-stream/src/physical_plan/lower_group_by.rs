@@ -85,7 +85,6 @@ fn build_group_by_fallback(
 #[allow(clippy::too_many_arguments)]
 fn replace_agg_uniq(
     expr: Node,
-    outer_name: Option<PlSmallStr>,
     expr_merger: &NaiveExprMerger,
     _expr_cache: &mut ExprCache,
     expr_arena: &mut Arena<AExpr>,
@@ -118,13 +117,9 @@ fn replace_agg_uniq(
             let trans_agg_node = expr_arena.add(aexpr.replace_inputs(&input_cols));
 
             // Add to aggregation expressions and replace with a reference to its output.
-            let agg_expr = if let Some(name) = outer_name {
-                ExprIR::new(trans_agg_node, OutputName::Alias(name))
-            } else {
-                ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()))
-            };
+            let agg_expr = ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()));
             agg_exprs.push(agg_expr.clone());
-            (agg_expr.clone(), input_ids)
+            (agg_expr, input_ids)
         })
         .0
         .output_name()
@@ -141,7 +136,6 @@ fn replace_agg_uniq(
 #[allow(clippy::too_many_arguments)]
 fn try_lower_elementwise_scalar_agg_expr(
     expr: Node,
-    outer_name: Option<PlSmallStr>,
     expr_merger: &mut NaiveExprMerger,
     expr_cache: &mut ExprCache,
     expr_arena: &mut Arena<AExpr>,
@@ -154,7 +148,6 @@ fn try_lower_elementwise_scalar_agg_expr(
         ($input:expr) => {
             try_lower_elementwise_scalar_agg_expr(
                 $input,
-                None,
                 expr_merger,
                 expr_cache,
                 expr_arena,
@@ -169,7 +162,6 @@ fn try_lower_elementwise_scalar_agg_expr(
         ($input:expr) => {
             replace_agg_uniq(
                 $input,
-                outer_name,
                 expr_merger,
                 expr_cache,
                 expr_arena,
@@ -394,16 +386,18 @@ fn try_lower_elementwise_scalar_agg_expr(
             }
         },
         AExpr::Len => {
-            let agg_expr = if let Some(name) = outer_name {
-                ExprIR::new(expr, OutputName::Alias(name))
-            } else {
-                ExprIR::new(expr, OutputName::Alias(unique_column_name()))
-            };
-            let result_node = expr_arena.add(AExpr::Column(agg_expr.output_name().clone()));
             let agg_id = expr_merger.get_uniq_id(expr).unwrap();
-            uniq_agg_exprs.insert(agg_id, (agg_expr.clone(), Vec::new()));
-            agg_exprs.push(agg_expr);
-            Some(result_node)
+            let name = uniq_agg_exprs
+                .entry(agg_id)
+                .or_insert_with(|| {
+                    let agg_expr = ExprIR::new(expr, OutputName::Alias(unique_column_name()));
+                    agg_exprs.push(agg_expr.clone());
+                    (agg_expr, Vec::new())
+                })
+                .0
+                .output_name()
+                .clone();
+            Some(expr_arena.add(AExpr::Column(name)))
         },
     }
 }
@@ -500,7 +494,6 @@ fn try_build_streaming_group_by(
     for agg in aggs {
         let Some(trans_node) = try_lower_elementwise_scalar_agg_expr(
             agg.node(),
-            Some(agg.output_name().clone()),
             &mut expr_merger,
             expr_cache,
             expr_arena,
@@ -671,7 +664,7 @@ fn try_build_streaming_group_by(
             group_by_output_schema,
             PhysNodeKind::Sort {
                 input: PhysStream::first(agg_node),
-                by_column: vec![ExprIR::from_node(row_idx_node, expr_arena)],
+                by_column: vec![trans_output_exprs.last().unwrap().clone()],
                 slice: None,
                 sort_options: SortMultipleOptions::new(),
             },

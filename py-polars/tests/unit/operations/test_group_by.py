@@ -2950,3 +2950,17 @@ def test_unique_head_tail_26429(tail: int) -> None:
     out = df.lazy().unique().tail(tail).collect()
     expected = min(tail, df.height)
     assert len(out) == expected
+
+
+def test_group_by_cse_alias_26423() -> None:
+    df = pl.LazyFrame({"a": [1, 2, 1, 2, 3, 4]})
+    result = df.group_by("a").agg(pl.len(), pl.len().alias("len_a")).collect()
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3, 4], "len": [2, 2, 1, 1], "len_a": [2, 2, 1, 1]},
+        schema={
+            "a": pl.Int64,
+            "len": pl.get_index_type(),
+            "len_a": pl.get_index_type(),
+        },
+    )
+    assert_frame_equal(result, expected, check_row_order=False)
