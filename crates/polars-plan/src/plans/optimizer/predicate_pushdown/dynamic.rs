@@ -2,6 +2,7 @@ use std::fmt::{Debug, Formatter};
 use std::sync::RwLock;
 use std::sync::atomic::AtomicBool;
 
+use polars_core::frame::column::ScalarColumn;
 use polars_utils::unique_id::UniqueId;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -10,7 +11,9 @@ use super::*;
 
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 struct Inner {
-    pred: RwLock<Option<Node>>,
+    #[cfg_attr(feature = "ir_serde", serde(skip))]
+    pred: RwLock<Option<Box<dyn Fn(&[Column]) -> PolarsResult<Column> + Send + Sync>>>,
+    #[cfg_attr(feature = "ir_serde", serde(skip))]
     is_set: AtomicBool,
     id: UniqueId,
 }
@@ -38,8 +41,22 @@ impl DynamicPred {
         &self.inner.id
     }
 
-    fn set(&self, node: Node) {
-        let mut guard = self.inner.pred.write().unwrap();
-        *guard = Some(node);
+    pub fn evaluate(&self, columns: &[Column]) -> PolarsResult<Column> {
+        polars_ensure!(columns.len() > 1, ComputeError: "expected at least 1 argument");
+
+        let h = columns[0].len();
+
+        if self.inner.is_set.load(std::sync::atomic::Ordering::Relaxed) {
+            let guard = self.inner.pred.read().unwrap();
+            let dyn_func = guard.as_ref().unwrap();
+            dyn_func(columns)
+        } else {
+            let s = Scalar::new(DataType::Boolean, AnyValue::Boolean(true));
+            Ok(Column::Scalar(ScalarColumn::new(
+                columns[0].name().clone(),
+                s,
+                h,
+            )))
+        }
     }
 }
