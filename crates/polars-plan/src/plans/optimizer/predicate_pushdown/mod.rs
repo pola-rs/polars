@@ -1,8 +1,10 @@
+mod dynamic;
 mod group_by;
 mod join;
 mod keys;
 mod utils;
 
+pub use dynamic::DynamicPred;
 use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
