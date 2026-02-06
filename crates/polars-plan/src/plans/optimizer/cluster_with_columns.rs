@@ -119,7 +119,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         });
 
         names_set.clear();
-        let all_accessed_input_names_from_residual = &mut names_set;
+        let all_accessed_input_names_from_non_candidates = &mut names_set;
 
         let mut candidate_idx: usize = 0;
 
@@ -130,13 +130,13 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             }
 
             for name in aexpr_to_leaf_names_iter(e.node(), expr_arena) {
-                all_accessed_input_names_from_residual.insert(name.clone());
+                all_accessed_input_names_from_non_candidates.insert(name.clone());
             }
         }
 
         push_candidate_idxs.retain(|&i| {
             let e = &current_exprs[i];
-            !all_accessed_input_names_from_residual.contains(e.output_name())
+            !all_accessed_input_names_from_non_candidates.contains(e.output_name())
         });
 
         let mut candidate_idx: usize = 0;
