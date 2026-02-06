@@ -78,7 +78,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             continue;
         }
 
-        let accessed_input_expr_output_names = &mut names_set;
+        // Only tracks names originating from hstack exprs in the input.
+        let accessed_input_names_expr_only = &mut names_set;
 
         for (i, e) in current_exprs.iter().enumerate() {
             // Ignore col()
@@ -90,17 +91,17 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
             let mut accessed_upper_expr = false;
 
-            let exclude_output_name = !accessed_input_expr_output_names.contains(e.output_name());
+            let exclude_output_name = !accessed_input_names_expr_only.contains(e.output_name());
 
             for name in aexpr_to_leaf_names_iter(e.node(), expr_arena) {
                 if input_name_to_expr_map.contains_key(name) {
                     accessed_upper_expr = true;
-                    accessed_input_expr_output_names.insert(name.clone());
+                    accessed_input_names_expr_only.insert(name.clone());
                 }
             }
 
             if exclude_output_name {
-                accessed_input_expr_output_names.remove(e.output_name());
+                accessed_input_names_expr_only.remove(e.output_name());
             }
 
             if !accessed_upper_expr {
@@ -112,13 +113,13 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         push_candidate_idxs.retain(|i| {
             let e = &current_exprs[*i];
 
-            !accessed_input_expr_output_names.contains(e.output_name())
+            !accessed_input_names_expr_only.contains(e.output_name())
                 && aexpr_to_leaf_names_iter(e.node(), expr_arena)
-                    .all(|name| !accessed_input_expr_output_names.contains(name))
+                    .all(|name| !accessed_input_names_expr_only.contains(name))
         });
 
         names_set.clear();
-        let accessed_input_existing_column_names = &mut names_set;
+        let all_accessed_input_names_from_residual = &mut names_set;
 
         let mut candidate_idx: usize = 0;
 
@@ -129,13 +130,13 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             }
 
             for name in aexpr_to_leaf_names_iter(e.node(), expr_arena) {
-                accessed_input_existing_column_names.insert(name.clone());
+                all_accessed_input_names_from_residual.insert(name.clone());
             }
         }
 
         push_candidate_idxs.retain(|&i| {
             let e = &current_exprs[i];
-            !accessed_input_existing_column_names.contains(e.output_name())
+            !all_accessed_input_names_from_residual.contains(e.output_name())
         });
 
         let mut candidate_idx: usize = 0;
