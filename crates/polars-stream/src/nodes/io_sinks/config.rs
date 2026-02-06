@@ -23,8 +23,9 @@ impl IOSinkNodeConfig {
 
     pub fn inflight_morsel_limit(&self, num_pipelines: NonZeroUsize) -> NonZeroUsize {
         if let Ok(v) = std::env::var("POLARS_INFLIGHT_SINK_MORSEL_LIMIT").map(|x| {
-            x.parse::<NonZeroUsize>()
-                .expect("invalid value for POLARS_INFLIGHT_SINK_MORSEL_LIMIT: {x}")
+            x.parse::<NonZeroUsize>().unwrap_or_else(|_| {
+                panic!("invalid value for POLARS_INFLIGHT_SINK_MORSEL_LIMIT: {x}")
+            })
         }) {
             return v;
         };
@@ -39,7 +40,7 @@ impl IOSinkNodeConfig {
     pub fn max_open_sinks(&self) -> NonZeroUsize {
         if let Ok(v) = std::env::var("POLARS_MAX_OPEN_SINKS").map(|x| {
             x.parse::<NonZeroUsize>()
-                .expect("invalid value for POLARS_MAX_OPEN_SINKS: {x}")
+                .unwrap_or_else(|_| panic!("invalid value for POLARS_MAX_OPEN_SINKS: {x}"))
         }) {
             return v;
         }
@@ -58,7 +59,9 @@ impl IOSinkNodeConfig {
     pub fn partitioned_cloud_upload_chunk_size(&self) -> usize {
         if let Ok(v) = std::env::var("POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE").map(|x| {
             x.parse::<NonZeroUsize>()
-                .expect("invalid value for POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE: {x}")
+                .unwrap_or_else(|_| {
+                    panic!("invalid value for POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE: {x}")
+                })
                 .get()
         }) {
             return v;
@@ -74,7 +77,9 @@ impl IOSinkNodeConfig {
     pub fn partitioned_upload_concurrency(&self) -> usize {
         if let Ok(v) = std::env::var("POLARS_PARTITIONED_UPLOAD_CONCURRENCY").map(|x| {
             x.parse::<NonZeroUsize>()
-                .expect("invalid value for POLARS_PARTITIONED_UPLOAD_CONCURRENCY: {x}")
+                .unwrap_or_else(|_| {
+                    panic!("invalid value for POLARS_PARTITIONED_UPLOAD_CONCURRENCY: {x}")
+                })
                 .get()
         }) {
             return v;
