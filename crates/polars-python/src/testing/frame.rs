@@ -1,8 +1,11 @@
-use polars_testing::asserts::{DataFrameEqualOptions, assert_dataframe_equal};
+use std::sync::Arc;
+
+use polars_core::schema::SchemaRef;
+use polars_testing::asserts::{DataFrameEqualOptions, assert_dataframe_equal, assert_schema_equal};
 use pyo3::prelude::*;
 
-use crate::PyDataFrame;
 use crate::error::PyPolarsErr;
+use crate::{PyDataFrame, PySchema};
 
 #[pyfunction]
 #[pyo3(signature = (left, right, *, check_row_order, check_column_order, check_dtypes, check_exact, rel_tol, abs_tol, categorical_as_str))]
@@ -31,4 +34,24 @@ pub fn assert_dataframe_equal_py(
     };
 
     assert_dataframe_equal(left_df, right_df, options).map_err(|e| PyPolarsErr::from(e).into())
+}
+
+#[pyfunction]
+#[pyo3(signature = (left_schema, right_schema, check_dtypes, check_column_order))]
+pub fn assert_schema_equal_py(
+    left_schema: PySchema,
+    right_schema: PySchema,
+    check_dtypes: bool,
+    check_column_order: bool,
+) -> PyResult<()> {
+    let left_schema_ref: SchemaRef = Arc::new(left_schema.0);
+    let right_schema_ref: SchemaRef = Arc::new(right_schema.0);
+
+    assert_schema_equal(
+        &left_schema_ref,
+        &right_schema_ref,
+        check_dtypes,
+        check_column_order,
+    )
+    .map_err(|e| PyPolarsErr::from(e).into())
 }
