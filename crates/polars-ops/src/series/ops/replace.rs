@@ -166,7 +166,7 @@ pub fn replace_strict(
     }
     validate_old(&old)?;
 
-    if !matches!(old.dtype().can_cast_to(s.dtype()), Some(true)) {
+    if old.dtype().can_cast_to(s.dtype()) != Some(true) {
         polars_bail!(
             InvalidOperation: "cannot use values of type `{}` to replace values in a column of type `{}`",
             old.dtype(),
