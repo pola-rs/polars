@@ -101,11 +101,11 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             }
 
             if exclude_output_name {
+                // Self-access (i.e. output name is same as input name) can still potentially push.
                 accessed_input_names_expr_only.remove(e.output_name());
             }
 
             if !accessed_upper_expr {
-                // Self-access (i.e. output name is same as input name) can still potentially push.
                 push_candidate_idxs.push(i);
             }
         }
