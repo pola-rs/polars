@@ -15,7 +15,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
     // key: output_name, value: (expr, is_original)
     let mut input_name_to_expr_map: PlIndexMap<PlSmallStr, (ExprIR, bool)> = PlIndexMap::new();
-    let mut accessed_input_names: PlHashSet<PlSmallStr> = PlHashSet::new();
+    let mut names_set: PlHashSet<PlSmallStr> = PlHashSet::new();
     let mut push_candidate_idxs: Vec<usize> = vec![];
     let mut new_current_exprs: Vec<ExprIR> = vec![];
     let mut visited_caches = PlHashSet::new();
@@ -60,7 +60,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         };
 
         input_name_to_expr_map.clear();
-        accessed_input_names.clear();
+        names_set.clear();
         push_candidate_idxs.clear();
         new_current_exprs.clear();
 
@@ -78,34 +78,80 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             continue;
         }
 
+        let accessed_input_expr_output_names = &mut names_set;
+
         for (i, e) in current_exprs.iter().enumerate() {
+            // Ignore col()
+            if let AExpr::Column(name) = expr_arena.get(e.node())
+                && name == e.output_name()
+            {
+                continue;
+            }
+
             let mut accessed_upper_expr = false;
+
+            let exclude_output_name = !accessed_input_expr_output_names.contains(e.output_name());
 
             for name in aexpr_to_leaf_names_iter(e.node(), expr_arena) {
                 if input_name_to_expr_map.contains_key(name) {
                     accessed_upper_expr = true;
-                    accessed_input_names.insert(name.clone());
+                    accessed_input_expr_output_names.insert(name.clone());
                 }
             }
 
+            if exclude_output_name {
+                accessed_input_expr_output_names.remove(e.output_name());
+            }
+
             if !accessed_upper_expr {
+                // Self-access (i.e. output name is same as input name) can still potentially push.
                 push_candidate_idxs.push(i);
             }
         }
+
+        push_candidate_idxs.retain(|i| {
+            let e = &current_exprs[*i];
+
+            !accessed_input_expr_output_names.contains(e.output_name())
+                && aexpr_to_leaf_names_iter(e.node(), expr_arena)
+                    .all(|name| !accessed_input_expr_output_names.contains(name))
+        });
+
+        names_set.clear();
+        let accessed_input_existing_column_names = &mut names_set;
 
         let mut candidate_idx: usize = 0;
 
         for (i, e) in current_exprs.iter().enumerate() {
             if push_candidate_idxs.get(candidate_idx) == Some(&i) {
                 candidate_idx += 1;
+                continue;
+            }
 
-                if !accessed_input_names.contains(e.output_name())
-                    && aexpr_to_leaf_names_iter(e.node(), expr_arena)
-                        .all(|name| !accessed_input_names.contains(name))
-                {
-                    input_name_to_expr_map.insert(e.output_name().clone(), (e.clone(), false));
-                    continue;
-                }
+            for name in aexpr_to_leaf_names_iter(e.node(), expr_arena) {
+                accessed_input_existing_column_names.insert(name.clone());
+            }
+        }
+
+        push_candidate_idxs.retain(|&i| {
+            let e = &current_exprs[i];
+            !accessed_input_existing_column_names.contains(e.output_name())
+        });
+
+        let mut candidate_idx: usize = 0;
+
+        for (i, e) in current_exprs.iter().enumerate() {
+            // Prune col()
+            if let AExpr::Column(name) = expr_arena.get(e.node())
+                && name == e.output_name()
+            {
+                continue;
+            }
+
+            if push_candidate_idxs.get(candidate_idx) == Some(&i) {
+                candidate_idx += 1;
+                input_name_to_expr_map.insert(e.output_name().clone(), (e.clone(), false));
+                continue;
             }
 
             new_current_exprs.push(e.clone());

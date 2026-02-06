@@ -1,6 +1,9 @@
 # Tests for the optimization pass cluster WITH_COLUMNS
 
+import pytest
+
 import polars as pl
+from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal
 
 
@@ -300,3 +303,62 @@ def test_cluster_with_columns_schema_update_26417() -> None:
             ]
         ),
     )
+
+
+def test_cluster_with_columns_use_existing_names_26456() -> None:
+    lf1 = pl.DataFrame({"a": ["42"], "b": ["b1"]}).lazy()
+    lf2 = pl.DataFrame({"b": ["b1"]}).lazy()
+
+    lf3 = (
+        lf1.with_columns((pl.col("a").str.to_integer()).alias("c"))
+        .with_columns(
+            [
+                pl.when(pl.col("a").is_in(["32"]))
+                .then(65)
+                .otherwise(pl.col("c"))
+                .alias("c")
+            ]
+        )
+        .with_columns(pl.col("a").cast(pl.Float64))
+    )
+
+    lf4 = lf3.join(lf2, on="b", how="left")
+
+    assert_frame_equal(
+        lf4.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a", [42.0], dtype=pl.Float64),
+                pl.Series("b", ["b1"], dtype=pl.String),
+                pl.Series("c", [42], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+
+def test_cluster_with_columns_prune_col() -> None:
+    q = (
+        pl.LazyFrame({"foo": [0.5, 1.7, 3.2], "bar": [4.1, 1.5, 9.2]})
+        .with_columns(pl.col("foo").alias("buzz"))
+        .with_columns(pl.col("buzz"), pl.col("foo") * 2.0)
+    )
+
+    plan = q.explain()
+
+    assert plan.count("WITH_COLUMNS") == 1
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("foo", [1.0, 3.4, 6.4], dtype=pl.Float64),
+                pl.Series("bar", [4.1, 1.5, 9.2], dtype=pl.Float64),
+                pl.Series("buzz", [0.5, 1.7, 3.2], dtype=pl.Float64),
+            ]
+        ),
+    )
+
+    q = pl.LazyFrame({"a": 1}).with_columns(pl.col("a")).with_columns(pl.col("b"))
+
+    with pytest.raises(ColumnNotFoundError, match='unable to find column "b"'):
+        q.collect()

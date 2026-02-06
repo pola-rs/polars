@@ -611,7 +611,6 @@ fn test_cluster_with_columns_partial() -> Result<(), Box<dyn std::error::Error>>
 
     assert!(unoptimized.contains(r#"[col("buzz"), [(col("foo")) * (2.0)]]"#));
     assert!(unoptimized.contains(r#"[col("foo").alias("buzz")]"#));
-    assert!(optimized.contains(r#"[col("buzz")]"#));
     assert!(optimized.contains(r#"[col("foo").alias("buzz"), [(col("foo")) * (2.0)]]"#));
 
     Ok(())
