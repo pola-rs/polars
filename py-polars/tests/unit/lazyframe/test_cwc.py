@@ -280,3 +280,23 @@ def test_cluster_with_columns_collect_all_panic_26092() -> None:
 
     assert_frame_equal(a, pl.DataFrame({"numbers1": 1.0, "numbers2": 2.0}))
     assert_frame_equal(b, pl.DataFrame({"numbers1": 1.0, "numbers2": 2.0}))
+
+
+def test_cluster_with_columns_schema_update_26417() -> None:
+    lf = pl.LazyFrame({"x": [[0.0, 1.0]], "y": [[2.0]]})
+
+    q = (
+        lf.with_columns(pl.col("x").cast(pl.Array(pl.Float64, shape=2)))
+        .with_columns(pl.col("y").cast(pl.Array(pl.Float64, shape=1)))
+        .with_columns(pl.col("y").arr.get(0))
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("x", [[0.0, 1.0]], dtype=pl.Array(pl.Float64, shape=(2,))),
+                pl.Series("y", [2.0], dtype=pl.Float64),
+            ]
+        ),
+    )
