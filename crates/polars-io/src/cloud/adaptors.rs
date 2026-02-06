@@ -3,12 +3,12 @@
 use std::sync::Arc;
 
 use object_store::ObjectStore;
-use object_store::buffered::BufWriter;
 use object_store::path::Path;
 use polars_error::PolarsResult;
 use polars_utils::pl_path::PlRefPath;
 use tokio::io::AsyncWriteExt;
 
+use super::arrow_rs_object_store::BufWriter;
 use super::{CloudOptions, object_path_from_str};
 use crate::pl_async::get_runtime;
 use crate::utils::file::WriteableTrait;

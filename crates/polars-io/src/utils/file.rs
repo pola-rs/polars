@@ -263,7 +263,7 @@ mod async_writeable {
     pub enum AsyncWriteable {
         Dyn(AsyncDynWriteable),
         Local(tokio::fs::File),
-        Cloud(object_store::buffered::BufWriter),
+        Cloud(crate::cloud::arrow_rs_object_store::BufWriter),
     }
 
     impl AsyncWriteable {
