@@ -163,7 +163,7 @@ and use the storage account keys from Azure CLI to authenticate"
         }
     }
 
-    /// Execution context that attaches information to errors.
+    /// Execution context that attaches path information to errors.
     #[derive(Clone)]
     pub struct ObjectStoreExecutionContext {
         store: Arc<dyn ObjectStore>,
