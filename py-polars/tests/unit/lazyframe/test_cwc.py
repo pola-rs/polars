@@ -306,31 +306,18 @@ def test_cluster_with_columns_schema_update_26417() -> None:
 
 
 def test_cluster_with_columns_use_existing_names_26456() -> None:
-    lf1 = pl.DataFrame({"a": ["42"], "b": ["b1"]}).lazy()
-    lf2 = pl.DataFrame({"b": ["b1"]}).lazy()
-
-    lf3 = (
-        lf1.with_columns((pl.col("a").str.to_integer()).alias("c"))
-        .with_columns(
-            [
-                pl.when(pl.col("a").is_in(["32"]))
-                .then(65)
-                .otherwise(pl.col("c"))
-                .alias("c")
-            ]
-        )
-        .with_columns(pl.col("a").cast(pl.Float64))
+    q = (
+        pl.LazyFrame({"a": [1, 2, 3]})
+        .with_columns(pl.lit(1).alias("b"))
+        .with_columns(pl.col("a") + 1, pl.col("b") + pl.col("a"))
     )
 
-    lf4 = lf3.join(lf2, on="b", how="left")
-
     assert_frame_equal(
-        lf4.collect(),
+        q.collect(),
         pl.DataFrame(
             [
-                pl.Series("a", [42.0], dtype=pl.Float64),
-                pl.Series("b", ["b1"], dtype=pl.String),
-                pl.Series("c", [42], dtype=pl.Int64),
+                pl.Series("a", [2, 3, 4], dtype=pl.Int64),
+                pl.Series("b", [2, 3, 4], dtype=pl.Int64),
             ]
         ),
     )

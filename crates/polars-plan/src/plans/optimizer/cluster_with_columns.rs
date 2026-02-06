@@ -15,7 +15,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
     // key: output_name, value: (expr, is_original)
     let mut input_name_to_expr_map: PlIndexMap<PlSmallStr, (ExprIR, bool)> = PlIndexMap::new();
-    let mut names_set: PlHashSet<PlSmallStr> = PlHashSet::new();
+    let mut input_names_accessed_by_non_candidates: PlHashSet<PlSmallStr> = PlHashSet::new();
     let mut push_candidate_idxs: Vec<usize> = vec![];
     let mut new_current_exprs: Vec<ExprIR> = vec![];
     let mut visited_caches = PlHashSet::new();
@@ -60,7 +60,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         };
 
         input_name_to_expr_map.clear();
-        names_set.clear();
+        input_names_accessed_by_non_candidates.clear();
         push_candidate_idxs.clear();
         new_current_exprs.clear();
 
@@ -78,9 +78,6 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             continue;
         }
 
-        // Only tracks names originating from hstack exprs in the input.
-        let accessed_input_names_expr_only = &mut names_set;
-
         for (i, e) in current_exprs.iter().enumerate() {
             // Ignore col()
             if let AExpr::Column(name) = expr_arena.get(e.node())
@@ -89,27 +86,12 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                 continue;
             }
 
-            let mut accessed_upper_expr = false;
-
-            for name in aexpr_to_leaf_names_iter(e.node(), expr_arena) {
-                if input_name_to_expr_map.contains_key(name) {
-                    accessed_upper_expr = true;
-                    accessed_input_names_expr_only.insert(name.clone());
-                }
-            }
-
-            if !accessed_upper_expr {
+            if aexpr_to_leaf_names_iter(e.node(), expr_arena)
+                .all(|name| !input_name_to_expr_map.contains_key(name))
+            {
                 push_candidate_idxs.push(i);
             }
         }
-
-        push_candidate_idxs.retain(|i| {
-            let e = &current_exprs[*i];
-            !accessed_input_names_expr_only.contains(e.output_name())
-        });
-
-        names_set.clear();
-        let all_accessed_input_names_from_non_candidates = &mut names_set;
 
         let mut candidate_idx: usize = 0;
 
@@ -120,13 +102,13 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             }
 
             for name in aexpr_to_leaf_names_iter(e.node(), expr_arena) {
-                all_accessed_input_names_from_non_candidates.insert(name.clone());
+                input_names_accessed_by_non_candidates.insert(name.clone());
             }
         }
 
         push_candidate_idxs.retain(|&i| {
             let e = &current_exprs[i];
-            !all_accessed_input_names_from_non_candidates.contains(e.output_name())
+            !input_names_accessed_by_non_candidates.contains(e.output_name())
         });
 
         let mut candidate_idx: usize = 0;
