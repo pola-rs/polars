@@ -206,17 +206,6 @@ pub fn optimize(
         )?;
     }
 
-    // Make sure its before slice pushdown.
-    if opt_flags.fast_projection() {
-        rules.push(Box::new(SimpleProjectionAndCollapse::new(
-            opt_flags.eager(),
-        )));
-    }
-
-    if !opt_flags.eager() {
-        rules.push(Box::new(DelayRechunk::new()));
-    }
-
     if opt_flags.slice_pushdown() {
         let mut slice_pushdown_opt = SlicePushDown::new(
             // We don't maintain errors on slice as the behavior is much more predictable that way.
@@ -224,7 +213,6 @@ pub fn optimize(
             // Even if we enable maintain_errors (thereby preventing the slice from being pushed),
             // the new-streaming engine still may not error due to early-stopping.
             false, // maintain_errors
-            opt_flags.new_streaming(),
         );
         let ir = ir_arena.take(root);
         let ir = slice_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
@@ -233,6 +221,16 @@ pub fn optimize(
 
         // Expressions use the stack optimizer.
         rules.push(Box::new(slice_pushdown_opt));
+    }
+
+    if opt_flags.fast_projection() {
+        rules.push(Box::new(SimpleProjectionAndCollapse::new(
+            opt_flags.eager(),
+        )));
+    }
+
+    if !opt_flags.eager() {
+        rules.push(Box::new(DelayRechunk::new()));
     }
 
     // This optimization removes branches, so we must do it when type coercion
