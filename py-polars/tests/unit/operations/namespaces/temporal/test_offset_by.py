@@ -195,3 +195,21 @@ def test_offset_by_rfc_5545_boundaries(
         "Europe/Amsterdam", ambiguous=ambiguous
     )
     assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("start", "by", "expected_dt"),
+    [
+        (datetime(2025, 3, 29, 2, 30), "1d", datetime(2025, 3, 30, 1, 30)),
+        (datetime(2025, 3, 31, 2, 30), "-1d", datetime(2025, 3, 30, 3, 30)),
+        (datetime(2025, 1, 30, 2, 30), "2mo", datetime(2025, 3, 30, 1, 30)),
+        (datetime(2025, 4, 30, 2, 30), "-1mo", datetime(2025, 3, 30, 3, 30)),
+    ],
+)
+def test_offset_by_rfc_5545_boundaries_non_existest(
+    start: datetime, by: str, expected_dt: datetime
+) -> None:
+    s = pl.Series([start]).dt.replace_time_zone("Europe/Amsterdam")
+    result = s.dt.offset_by(by)
+    expected = pl.Series([expected_dt]).dt.replace_time_zone("Europe/Amsterdam")
+    assert_series_equal(result, expected)
