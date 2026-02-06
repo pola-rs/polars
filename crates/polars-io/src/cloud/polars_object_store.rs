@@ -20,6 +20,8 @@ mod inner {
     use std::ops::Range;
     use std::sync::Arc;
 
+    use bytes::Bytes;
+    use futures::stream::BoxStream;
     use futures::{StreamExt, TryStreamExt};
     use object_store::path::Path;
     use object_store::{ObjectStore, ObjectStoreExt as _};
@@ -168,19 +170,16 @@ and use the storage account keys from Azure CLI to authenticate"
     }
 
     impl ObjectStoreExecutionContext {
-        pub async fn exec_with_store<'a, F, Fut, O>(&'a self, func: F) -> object_store::Result<O>
+        fn attach_err_info(&self, err: object_store::Error) -> std::io::Error {
+            err.into()
+        }
+
+        pub async fn exec_with_store<'a, F, Fut, O>(&'a self, func: F) -> std::io::Result<O>
         where
             F: FnOnce(&'a Arc<dyn ObjectStore>) -> Fut,
             Fut: Future<Output = object_store::Result<O>> + 'a,
         {
-            self.wrap_fut(func(&self.store)).await
-        }
-
-        pub async fn wrap_fut<'a, Fut, O>(&'a self, fut: Fut) -> object_store::Result<O>
-        where
-            Fut: Future<Output = object_store::Result<O>> + 'a,
-        {
-            fut.await
+            func(&self.store).await.map_err(|e| self.attach_err_info(e))
         }
 
         pub fn build_buffered_ranges_stream<'a, T: Iterator<Item = Range<usize>>>(
@@ -188,11 +187,11 @@ and use the storage account keys from Azure CLI to authenticate"
             path: &'a Path,
             ranges: T,
             io_metrics: OptIOMetrics,
-        ) -> impl StreamExt<Item = object_store::Result<Buffer<u8>>>
+        ) -> impl StreamExt<Item = std::io::Result<Buffer<u8>>>
         + TryStreamExt<
             Ok = Buffer<u8>,
-            Error = object_store::Error,
-            Item = object_store::Result<Buffer<u8>>,
+            Error = std::io::Error,
+            Item = std::io::Result<Buffer<u8>>,
         > + use<'a, T> {
             futures::stream::iter(ranges.map(move |range| {
                 let io_metrics = io_metrics.clone();
@@ -216,6 +215,21 @@ and use the storage account keys from Azure CLI to authenticate"
             }))
             // Add a limit locally as this gets run inside a single `tune_with_concurrency_budget`.
             .buffered(get_concurrency_limit() as usize)
+        }
+
+        pub async fn get_into_stream(
+            &self,
+            path: &Path,
+        ) -> std::io::Result<BoxStream<'static, std::io::Result<Bytes>>> {
+            Ok(self
+                .exec_with_store(|s| s.get(path))
+                .await?
+                .into_stream()
+                .map({
+                    let slf = self.clone();
+                    move |v| v.map_err(|e| slf.attach_err_info(e))
+                })
+                .boxed())
         }
     }
 }
@@ -432,13 +446,10 @@ impl PolarsObjectStore {
                     tune_with_concurrency_budget(1, || async {
                         let io_session = io_metrics.start_io_session();
 
-                        let mut stream = store_cx
-                            .exec_with_store(|s| s.get(path))
-                            .await?
-                            .into_stream();
+                        let mut stream = store_cx.get_into_stream(path).await?;
                         let mut len = 0;
 
-                        while let Some(bytes) = store_cx.wrap_fut(stream.try_next()).await? {
+                        while let Some(bytes) = stream.try_next().await? {
                             len += bytes.len();
                             io_metrics.add_bytes_requested(bytes.len() as u64);
                             io_metrics.add_bytes_received(bytes.len() as u64);
