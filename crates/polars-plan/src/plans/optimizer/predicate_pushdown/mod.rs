@@ -16,15 +16,11 @@ use crate::utils::{check_input_node, has_aexpr};
 
 /// The struct is wrapped in a mod to prevent direct member access of `nodes_scratch`
 mod inner {
-    use polars_core::config::verbose;
     use polars_utils::arena::Node;
     use polars_utils::idx_vec::UnitVec;
     use polars_utils::unitvec;
 
     pub struct PredicatePushDown {
-        // TODO: Remove unused
-        #[expect(unused)]
-        pub(super) verbose: bool,
         // How many cache nodes a predicate may be pushed down to.
         // Normally this is 0. Only needed for CSPE.
         pub(super) caches_pass_allowance: u32,
@@ -37,7 +33,6 @@ mod inner {
     impl PredicatePushDown {
         pub fn new(maintain_errors: bool, new_streaming: bool) -> Self {
             Self {
-                verbose: verbose(),
                 caches_pass_allowance: 0,
                 nodes_scratch: unitvec![],
                 new_streaming,
