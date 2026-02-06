@@ -112,10 +112,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
         push_candidate_idxs.retain(|i| {
             let e = &current_exprs[*i];
-
             !accessed_input_names_expr_only.contains(e.output_name())
-                && aexpr_to_leaf_names_iter(e.node(), expr_arena)
-                    .all(|name| !accessed_input_names_expr_only.contains(name))
         });
 
         names_set.clear();
