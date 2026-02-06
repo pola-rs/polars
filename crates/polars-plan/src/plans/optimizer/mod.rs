@@ -120,14 +120,8 @@ pub fn optimize(
     // This can be turned on again during ir-conversion.
     #[allow(clippy::eq_op)]
     #[cfg(feature = "cse")]
-    {
-        if opt_flags.contains(OptFlags::EAGER) {
-            opt_flags &= !(OptFlags::COMM_SUBEXPR_ELIM | OptFlags::COMM_SUBEXPR_ELIM);
-        } else if opt_flags.contains(OptFlags::NEW_STREAMING) {
-            // The new streaming engine can't deal with the way the common
-            // subexpression elimination adds length-incorrect with_columns.
-            opt_flags &= !OptFlags::COMM_SUBEXPR_ELIM;
-        }
+    if opt_flags.contains(OptFlags::EAGER) {
+        opt_flags &= !(OptFlags::COMM_SUBEXPR_ELIM | OptFlags::COMM_SUBEXPR_ELIM);
     }
     let mut root = to_alp(logical_plan, expr_arena, ir_arena, &mut opt_flags)?;
 
@@ -212,17 +206,6 @@ pub fn optimize(
         )?;
     }
 
-    // Make sure its before slice pushdown.
-    if opt_flags.fast_projection() {
-        rules.push(Box::new(SimpleProjectionAndCollapse::new(
-            opt_flags.eager(),
-        )));
-    }
-
-    if !opt_flags.eager() {
-        rules.push(Box::new(DelayRechunk::new()));
-    }
-
     if opt_flags.slice_pushdown() {
         let mut slice_pushdown_opt = SlicePushDown::new(
             // We don't maintain errors on slice as the behavior is much more predictable that way.
@@ -230,7 +213,6 @@ pub fn optimize(
             // Even if we enable maintain_errors (thereby preventing the slice from being pushed),
             // the new-streaming engine still may not error due to early-stopping.
             false, // maintain_errors
-            opt_flags.new_streaming(),
         );
         let ir = ir_arena.take(root);
         let ir = slice_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
@@ -239,6 +221,16 @@ pub fn optimize(
 
         // Expressions use the stack optimizer.
         rules.push(Box::new(slice_pushdown_opt));
+    }
+
+    if opt_flags.fast_projection() {
+        rules.push(Box::new(SimpleProjectionAndCollapse::new(
+            opt_flags.eager(),
+        )));
+    }
+
+    if !opt_flags.eager() {
+        rules.push(Box::new(DelayRechunk::new()));
     }
 
     // This optimization removes branches, so we must do it when type coercion
@@ -260,7 +252,8 @@ pub fn optimize(
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
     if comm_subexpr_elim && !get_or_init_members!().has_ext_context {
-        let mut optimizer = CommonSubExprOptimizer::new();
+        let mut optimizer =
+            CommonSubExprOptimizer::new(opt_flags.contains(OptFlags::NEW_STREAMING));
         let ir_node = IRNode::new_mutate(root);
 
         root = try_with_ir_arena(ir_arena, expr_arena, |arena| {

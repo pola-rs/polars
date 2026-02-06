@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from polars._dependencies import _DELTALAKE_AVAILABLE, deltalake
+from polars._utils.logging import eprint
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
 from polars.io.cloud._utils import POLARS_STORAGE_CONFIG_KEYS, _get_path_scheme
@@ -13,8 +14,8 @@ from polars.io.cloud._utils import POLARS_STORAGE_CONFIG_KEYS, _get_path_scheme
 if TYPE_CHECKING:
     from deltalake import DeltaTable
 
-    from polars import DataType
-    from polars._typing import StorageOptionsDict
+    from polars import DataFrame, DataType
+    from polars._typing import SchemaDict, StorageOptionsDict
 
 
 def _resolve_delta_lake_uri(table_uri: str | Path, *, strict: bool = True) -> str:
@@ -103,3 +104,60 @@ def _check_for_unsupported_types(dtypes: list[DataType]) -> None:
     if overlap := schema_dtypes & unsupported_types:
         msg = f"dataframe contains unsupported data types: {overlap!r}"
         raise TypeError(msg)
+
+
+def _extract_table_statistics_from_delta_add_actions(
+    add_actions_df: DataFrame,
+    *,
+    filter_columns: list[str],
+    schema: SchemaDict,
+    verbose: bool,
+) -> DataFrame | None:
+    import polars as pl
+
+    if "num_records" not in add_actions_df:
+        if verbose:
+            eprint(
+                "scan_delta: statistics load failed: 'num_records' column not present"
+            )
+
+        return None
+
+    out: dict[str, pl.Series] = {"len": add_actions_df["num_records"]}
+
+    null_count_cols = (
+        add_actions_df["null_count"].struct.unnest().to_dict(as_series=True)
+        if "null_count" in add_actions_df
+        else {}
+    )
+    min_cols = (
+        add_actions_df["min"].struct.unnest().to_dict(as_series=True)
+        if "min" in add_actions_df
+        else {}
+    )
+    max_cols = (
+        add_actions_df["max"].struct.unnest().to_dict(as_series=True)
+        if "max" in add_actions_df
+        else {}
+    )
+
+    for col_name in filter_columns:
+        if (col_nc := null_count_cols.get(col_name)) is None:
+            col_nc = pl.Series([None], dtype=pl.get_index_type()).new_from_index(
+                0, add_actions_df.height
+            )
+        if (col_min := min_cols.get(col_name)) is None:
+            col_min = pl.Series([None], dtype=schema[col_name]).new_from_index(
+                0, add_actions_df.height
+            )
+
+        if (col_max := max_cols.get(col_name)) is None:
+            col_max = pl.Series([None], dtype=schema[col_name]).new_from_index(
+                0, add_actions_df.height
+            )
+
+        out[f"{col_name}_nc"] = col_nc
+        out[f"{col_name}_min"] = col_min
+        out[f"{col_name}_max"] = col_max
+
+    return pl.DataFrame(out, height=add_actions_df.height)

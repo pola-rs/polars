@@ -5,6 +5,7 @@ use arrow_format::ipc::FooterRef;
 use arrow_format::ipc::planus::ReadAsRoot;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
+use polars_utils::bool::UnsafeBool;
 
 use super::super::{ARROW_MAGIC_V1, ARROW_MAGIC_V2, CONTINUATION_MARKER};
 use super::common::*;
@@ -78,6 +79,7 @@ pub(crate) fn get_dictionary_batch<'a>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn read_dictionary_block<R: Read + Seek>(
     reader: &mut R,
     metadata: &FileMetadata,
@@ -88,6 +90,7 @@ pub fn read_dictionary_block<R: Read + Seek>(
     dictionaries: &mut Dictionaries,
     message_scratch: &mut Vec<u8>,
     dictionary_scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<()> {
     let offset: u64 = if force_zero_offset {
         0
@@ -114,6 +117,7 @@ pub fn read_dictionary_block<R: Read + Seek>(
         reader,
         offset + length,
         dictionary_scratch,
+        checked,
     )
 }
 
@@ -123,6 +127,7 @@ pub fn read_file_dictionaries<R: Read + Seek>(
     reader: &mut R,
     metadata: &FileMetadata,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<Dictionaries> {
     let mut dictionaries = Default::default();
 
@@ -143,6 +148,7 @@ pub fn read_file_dictionaries<R: Read + Seek>(
             &mut dictionaries,
             &mut message_scratch,
             scratch,
+            checked,
         )?;
     }
     Ok(dictionaries)
@@ -349,6 +355,7 @@ pub fn read_batch<R: Read + Seek>(
     force_zero_offset: bool,
     message_scratch: &mut Vec<u8>,
     data_scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
     let block = metadata.blocks[index];
 
@@ -382,5 +389,6 @@ pub fn read_batch<R: Read + Seek>(
         reader,
         offset + length,
         data_scratch,
+        checked,
     )
 }

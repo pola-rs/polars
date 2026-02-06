@@ -23,7 +23,7 @@ impl IOSinkNodeConfig {
 
     pub fn inflight_morsel_limit(&self, num_pipelines: NonZeroUsize) -> NonZeroUsize {
         if let Ok(v) = std::env::var("POLARS_INFLIGHT_SINK_MORSEL_LIMIT").map(|x| {
-            x.parse::<NonZeroUsize>().ok().unwrap_or_else(|| {
+            x.parse::<NonZeroUsize>().unwrap_or_else(|_| {
                 panic!("invalid value for POLARS_INFLIGHT_SINK_MORSEL_LIMIT: {x}")
             })
         }) {
@@ -40,8 +40,7 @@ impl IOSinkNodeConfig {
     pub fn max_open_sinks(&self) -> NonZeroUsize {
         if let Ok(v) = std::env::var("POLARS_MAX_OPEN_SINKS").map(|x| {
             x.parse::<NonZeroUsize>()
-                .ok()
-                .unwrap_or_else(|| panic!("invalid value for POLARS_MAX_OPEN_SINKS: {x}"))
+                .unwrap_or_else(|_| panic!("invalid value for POLARS_MAX_OPEN_SINKS: {x}"))
         }) {
             return v;
         }
@@ -60,8 +59,7 @@ impl IOSinkNodeConfig {
     pub fn partitioned_cloud_upload_chunk_size(&self) -> usize {
         if let Ok(v) = std::env::var("POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE").map(|x| {
             x.parse::<NonZeroUsize>()
-                .ok()
-                .unwrap_or_else(|| {
+                .unwrap_or_else(|_| {
                     panic!("invalid value for POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE: {x}")
                 })
                 .get()
@@ -70,6 +68,25 @@ impl IOSinkNodeConfig {
         }
 
         6 * 1024 * 1024
+    }
+
+    pub fn upload_concurrency(&self) -> usize {
+        polars_io::get_upload_concurrency()
+    }
+
+    pub fn partitioned_upload_concurrency(&self) -> usize {
+        if let Ok(v) = std::env::var("POLARS_PARTITIONED_UPLOAD_CONCURRENCY").map(|x| {
+            x.parse::<NonZeroUsize>()
+                .unwrap_or_else(|_| {
+                    panic!("invalid value for POLARS_PARTITIONED_UPLOAD_CONCURRENCY: {x}")
+                })
+                .get()
+        }) {
+            return v;
+        }
+
+        // For now, same default as the underlying object_store::BufWriter default.
+        8
     }
 }
 

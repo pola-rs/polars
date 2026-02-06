@@ -2,7 +2,7 @@ pub mod compression;
 mod other;
 
 pub use other::*;
-#[cfg(feature = "cloud")]
+#[cfg(any(feature = "async", feature = "cloud"))]
 pub mod byte_source;
 pub mod file;
 pub mod mkdir;

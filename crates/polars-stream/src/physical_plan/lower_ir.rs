@@ -157,10 +157,15 @@ pub fn lower_ir(
     expr_cache: &mut ExprCache,
     cache_nodes: &mut PlHashMap<UniqueId, PhysStream>,
     ctx: StreamingLowerIRContext,
+    mut disable_morsel_split: Option<bool>,
 ) -> PolarsResult<PhysStream> {
     // Helper macro to simplify recursive calls.
     macro_rules! lower_ir {
-        ($input:expr) => {
+        ($input:expr) => {{
+            // Disable for remaining execution graph if it wasn't explicitly set
+            // by the current IR.
+            disable_morsel_split.get_or_insert(false);
+
             lower_ir(
                 $input,
                 ir_arena,
@@ -170,14 +175,21 @@ pub fn lower_ir(
                 expr_cache,
                 cache_nodes,
                 ctx,
+                disable_morsel_split,
             )
-        };
+        }};
+    }
+
+    // Require the code below to explicitly set this to `true`
+    if disable_morsel_split == Some(true) {
+        disable_morsel_split.take();
     }
 
     let ir_node = ir_arena.get(node);
     let output_schema = IR::schema_with_cache(node, ir_arena, schema_cache);
     let node_kind = match ir_node {
         IR::SimpleProjection { input, columns } => {
+            disable_morsel_split.get_or_insert(true);
             let columns = columns.iter_names_cloned().collect::<Vec<_>>();
             let phys_input = lower_ir!(*input)?;
             PhysNodeKind::SimpleProjection {
@@ -188,6 +200,14 @@ pub fn lower_ir(
 
         IR::Select { input, expr, .. } => {
             let selectors = expr.clone();
+
+            if selectors
+                .iter()
+                .all(|e| matches!(expr_arena.get(e.node()), AExpr::Len | AExpr::Column(_)))
+            {
+                disable_morsel_split.get_or_insert(true);
+            }
+
             let phys_input = lower_ir!(*input)?;
             return build_select_stream(
                 phys_input, &selectors, expr_arena, phys_sm, expr_cache, ctx,
@@ -222,7 +242,10 @@ pub fn lower_ir(
             ..
         } => {
             let schema = schema.clone(); // This is initially the schema of df, but can change with the projection.
-            let mut node_kind = PhysNodeKind::InMemorySource { df: df.clone() };
+            let mut node_kind = PhysNodeKind::InMemorySource {
+                df: df.clone(),
+                disable_morsel_split: disable_morsel_split.unwrap_or(true),
+            };
 
             // Do we need to apply a projection?
             if let Some(projection_schema) = projection {
@@ -245,6 +268,7 @@ pub fn lower_ir(
 
         IR::Sink { input, payload } => match payload {
             SinkTypeIR::Memory => {
+                disable_morsel_split.get_or_insert(true);
                 let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::InMemorySink { input: phys_input }
             },
@@ -279,6 +303,7 @@ pub fn lower_ir(
         },
 
         IR::SinkMultiple { inputs } => {
+            disable_morsel_split.get_or_insert(true);
             let mut sinks = Vec::with_capacity(inputs.len());
             for input in inputs.clone() {
                 let phys_node_stream = match ir_arena.get(input) {
@@ -504,23 +529,31 @@ pub fn lower_ir(
 
             return Ok(stream);
         },
-
         IR::Union { inputs, options } => {
             let options = *options;
+
             let inputs = inputs
                 .clone() // Needed to borrow ir_arena mutably.
                 .into_iter()
                 .map(|input| lower_ir!(input))
                 .collect::<Result<_, _>>()?;
 
+            let kind = if options.maintain_order {
+                PhysNodeKind::OrderedUnion { inputs }
+            } else {
+                PhysNodeKind::UnorderedUnion { inputs }
+            };
+
             let node = phys_sm.insert(PhysNode {
                 output_schema,
-                kind: PhysNodeKind::OrderedUnion { inputs },
+                kind,
             });
             let mut stream = PhysStream::first(node);
+
             if let Some((offset, length)) = options.slice {
                 stream = build_slice_stream(stream, offset, length, phys_sm);
             }
+
             return Ok(stream);
         },
 
@@ -531,6 +564,8 @@ pub fn lower_ir(
         } => {
             let zip_behavior = if options.strict {
                 ZipBehavior::Strict
+            } else if options.broadcast_unit_length {
+                ZipBehavior::Broadcast
             } else {
                 ZipBehavior::NullExtend
             };
@@ -575,6 +610,7 @@ pub fn lower_ir(
                 // schema.
                 PhysNodeKind::InMemorySource {
                     df: Arc::new(DataFrame::empty_with_schema(output_schema.as_ref())),
+                    disable_morsel_split: disable_morsel_split.unwrap_or(true),
                 }
             } else if output_schema.is_empty()
                 && let Some((physical_rows, deleted_rows)) = unified_scan_args.row_count
@@ -595,6 +631,7 @@ pub fn lower_ir(
 
                 PhysNodeKind::InMemorySource {
                     df: Arc::new(DataFrame::empty_with_height(num_rows)),
+                    disable_morsel_split: disable_morsel_split.unwrap_or(true),
                 }
             } else {
                 let file_reader_builder: Arc<dyn FileReaderBuilder> = match &*scan_type {
@@ -609,18 +646,21 @@ pub fn lower_ir(
                             prefetch_limit: RelaxedCell::new_usize(0),
                             prefetch_semaphore: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
+                            io_metrics: std::sync::OnceLock::new(),
                         },
                     ) as _,
 
                     #[cfg(feature = "ipc")]
                     FileScanIR::Ipc {
-                        options: polars_io::ipc::IpcScanOptions {},
+                        options,
                         metadata: first_metadata,
                     } => Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
+                        options: Arc::new(options.clone()),
                         first_metadata: first_metadata.clone(),
                         prefetch_limit: RelaxedCell::new_usize(0),
                         prefetch_semaphore: std::sync::OnceLock::new(),
                         shared_prefetch_wait_group_slot: Default::default(),
+                        io_metrics: std::sync::OnceLock::new(),
                     }) as _,
 
                     #[cfg(feature = "csv")]
@@ -704,6 +744,7 @@ pub fn lower_ir(
                     );
 
                     let pre_slice = unified_scan_args.pre_slice.clone();
+                    let disable_morsel_split = disable_morsel_split.unwrap_or(true);
 
                     let mut multi_scan_node = PhysNodeKind::MultiScan {
                         scan_sources,
@@ -726,6 +767,7 @@ pub fn lower_ir(
                         ),
                         table_statistics: unified_scan_args.table_statistics,
                         file_schema,
+                        disable_morsel_split,
                     };
 
                     let PhysNodeKind::MultiScan {
@@ -876,6 +918,7 @@ pub fn lower_ir(
                     // Fallback to in-memory engine.
                     let input = PhysNodeKind::InMemorySource {
                         df: Arc::new(DataFrame::default()),
+                        disable_morsel_split: disable_morsel_split.unwrap_or(true),
                     };
                     let input_key =
                         phys_sm.insert(PhysNode::new(Arc::new(Schema::default()), input));

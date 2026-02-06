@@ -13,6 +13,7 @@ pub struct FileProvider {
     pub cloud_options: Option<Arc<CloudOptions>>,
     pub provider_type: FileProviderType,
     pub upload_chunk_size: usize,
+    pub upload_max_concurrency: usize,
 }
 
 impl FileProvider {
@@ -47,6 +48,11 @@ impl FileProvider {
                 .await;
         }
 
-        Writeable::try_new(path, self.cloud_options.as_deref(), self.upload_chunk_size)
+        Writeable::try_new(
+            path,
+            self.cloud_options.as_deref(),
+            self.upload_chunk_size,
+            self.upload_max_concurrency,
+        )
     }
 }

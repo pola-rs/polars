@@ -6,7 +6,7 @@ use polars::prelude::{ColumnMapping, PredicateFileSkip};
 use polars_core::prelude::IdxSize;
 use polars_io::cloud::CloudOptions;
 use polars_ops::prelude::JoinType;
-use polars_plan::plans::IR;
+use polars_plan::plans::{HintIR, IR};
 use polars_plan::prelude::{FileScanIR, FunctionIR, PythonPredicate, UnifiedScanArgs};
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
@@ -654,7 +654,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 FunctionIR::FastCount {
                     sources,
                     scan_type,
-                    cloud_options,
                     alias,
                 } => {
                     let sources = sources
@@ -667,7 +666,10 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                         .collect::<Vec<_>>()
                         .into_py_any(py)?;
 
-                    let scan_type = scan_type_to_pyobject(py, scan_type, cloud_options)?;
+                    // FastCount does not support cloud options.
+                    let cloud_options = None;
+
+                    let scan_type = scan_type_to_pyobject(py, scan_type, &cloud_options)?;
 
                     let alias = alias
                         .as_ref()
@@ -676,7 +678,15 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
 
                     ("fast_count", sources, scan_type, alias).into_py_any(py)?
                 },
-                FunctionIR::Hint(_) => return Err(PyNotImplementedError::new_err("hint ir")),
+                FunctionIR::Hint(hint) => match hint {
+                    HintIR::Sorted(sorted_vec) => {
+                        let sorted_info: Vec<_> = sorted_vec
+                            .iter()
+                            .map(|s| (s.column.as_str(), s.descending, s.nulls_last))
+                            .collect();
+                        ("hint_sorted", sorted_info).into_py_any(py)?
+                    },
+                },
             },
         }
         .into_py_any(py),

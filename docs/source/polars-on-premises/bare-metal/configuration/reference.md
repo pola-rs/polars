@@ -4,14 +4,13 @@ This page describes the different configuration options for Polars on-premises. 
 standard TOML file with different sections. Any of the configuration can be overridden using
 environment variables in the following format: `PC_CUBLET__section_name__key`.
 
+Example configuration files can be found at
+[Example Configurations](/polars-on-premises/bare-metal/configuration/example-configurations).
+
+See the sidebar for extensive documentation on important components and their configuration
+together.
+
 ### Top-level configuration
-
-The `polars-on-premises` binary requires a license which path is provided as a configuration option,
-listed below. The license itself has the following shape:
-
-```json
-{ "params": { "expiry": "2026-01-31T23:59:59Z", "name": "Company" }, "signature": "..." }
-```
 
 | Key            | Type    | Description                                                                                                                                              |
 | -------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -20,28 +19,7 @@ listed below. The license itself has the following shape:
 | `license`      | path    | Absolute path to the Polars on-premises license file required to start the process.<br>e.g. `/etc/polars/license.json`.                                  |
 | `memory_limit` | integer | Hard memory budget for all components in this node; enforced via cgroups when delegated.<br>e.g. `1073741824` (1 GiB), `10737418240` (10 GiB).           |
 
-Example:
-
-```toml
-cluster_id = "polars-cluster-dev"
-instance_id = "scheduler"
-license = "/etc/polars/license.json"
-memory_limit = 1073741824 # 1 GiB
-```
-
 ### `[scheduler]` section
-
-For remote Polars queries without a specific output sink, Polars on-premises can automatically add
-persistent sink. We call these sinks "anonymous results" sinks. Infrastructure-wise, these sinks are
-backed by S3-compatible storage accessible from all worker nodes and the Python client. The data
-written to this location is not automatically deleted, so you need to configure a retention policy
-for this data yourself.
-
-You may configure the credentials using the options listed below; the key names correspond to the
-[`storage_options` parameter from the `scan_parquet()` method](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html)
-(_e.g._ `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`, `aws_region`). We
-currently only support the AWS keys of the `storage_options` dictionary, but note that you can use
-any other cloud provider that supports the S3 API, such as MinIO or DigitalOcean Spaces.
 
 | Key                                                  | Type    | Description                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -68,37 +46,7 @@ any other cloud provider that supports the S3 API, such as MinIO or DigitalOcean
 | `worker_service.bind_addr.port`                      | integer | Port for the worker service bind address.<br>e.g. `5050`.                                                                                                                                                                                                                                                                                           |
 | `worker_service.bind_addr.hostname`                  | string  | Alternative to `ip`, resolved once at startup.<br>e.g. `my-host-2`.                                                                                                                                                                                                                                                                                 |
 
-Example:
-
-```toml
-[scheduler]
-enabled = true
-allow_local_sinks = false
-n_workers = 4
-anonymous_result_location.s3.url = "s3://bucket/path/to/key"
-anonymous_result_location.s3.aws_secret_access_key = "YOURSECRETKEY"
-anonymous_result_location.s3.aws_access_key_id = "YOURACCESSKEY"
-client_service.bind_addr = "0.0.0.0:5051"
-worker_service.bind_addr.hostname = "my-host-2"
-```
-
-Example with mounted local disk as anonymous result destination:
-
-```toml
-[scheduler]
-enabled = true
-allow_local_sinks = true
-anonymous_result_location = "/mnt/storage/polars/results"
-```
-
 ### `[worker]` section
-
-During distributed query execution, data may be shuffled between workers. A local path can be
-provided, but shuffles can also be configured to use S3-compatible storage (accessible from all
-worker nodes). You may configure the credentials using the options listed below; the key names
-correspond to the
-[`storage_options` parameter from the `scan_parquet()` method](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html)
-(_e.g._ `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`, `aws_region`).
 
 | Key                                         | Type    | Description                                                                                                                                                                                                                                              |
 | ------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -107,6 +55,8 @@ correspond to the
 | `shuffle_location`                          | object  | Object used for shuffle data storage.                                                                                                                                                                                                                    |
 | `shuffle_location.local`                    | object  | Object used for local disk-backed shuffle data storage.                                                                                                                                                                                                  |
 | `shuffle_location.local.path`               | path    | Local path where shuffle/intermediate data is stored; fast local SSD is recommended.<br>e.g. `/mnt/storage/polars/shuffle`.                                                                                                                              |
+| `shuffle_location.shared_filesystem`        | object  | Object used for shared filesystem-backed shuffle data storage.                                                                                                                                                                                           |
+| `shuffle_location.shared_filesystem.path`   | path    | Shared filesystem path where shuffle/intermediate data is stored. Must be accessible by all workers on the same path.<br>e.g. `/mnt/storage/polars/shuffle`.                                                                                             |
 | `shuffle_location.s3`                       | object  | Object used for S3-backed shuffle data storage.                                                                                                                                                                                                          |
 | `shuffle_location.s3.url`                   | path    | Destination for shuffle/intermediate data.<br>e.g. `s3://bucket/path/to/key`.                                                                                                                                                                            |
 | `shuffle_location.s3.aws_endpoint_url`      | string  | Storage option configuration, see [`scan_parquet()`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html).                                                                                                                     |
@@ -132,52 +82,32 @@ correspond to the
 | `shuffle_service.public_addr.port`          | integer | Port for the task service public address.<br>e.g. `5053`.                                                                                                                                                                                                |
 | `shuffle_service.public_addr.hostname`      | string  | Alternative to `ip`, resolved once at startup.<br>e.g. `my-host-2`.                                                                                                                                                                                      |
 
-Example:
-
-```toml
-[worker]
-enabled = true
-heartbeat_period = "5 secs"
-task_service.bind_addr = "0.0.0.0:1234"
-task_service.public_addr.hostname = "my-host-2"
-shuffle_service.public_addr.hostname = "my-host-2"
-shuffle_location.local.path = "/mnt/storage/polars/shuffle"
-```
-
 ### `[observatory]` section
 
-| Key                          | Type    | Description                                                                                                                                                                                                                                                           |
-| ---------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enabled`                    | boolean | Enable sending/receiving profiling data so clients can call `result.await_profile()`.<br> `true` on both scheduler and workers if you want profiles on queries; `false` to disable.                                                                                   |
-| `max_metrics_bytes_total`    | integer | How many bytes all the worker host metrics will consume in total. If a system-wide memory limit is specified then this is added to the share that the scheduler takes. Note that the worker host metrics is not yet available, so this configuration can be set to 0. |
-| `database_path`              | string  | Location to use for storing profiling data. An SQLite database file will be created here, or if a file already exists it will be opened. If left unspecified an in-memory database will be used.                                                                      |
-| `service`                    | object  | Object used for configuring the bind address of the observatory service. This is an internal service in the scheduler for receiving profiling data from all nodes. Defaults to `0.0.0.0:5049`.                                                                        |
-| `service.bind_addr`          | string  | Bind address for the observatory service.<br>e.g. `0.0.0.0:5049`.                                                                                                                                                                                                     |
-| `service.bind_addr.ip`       | string  | IP address for the observatory service bind address.<br>e.g. `192.168.1.1`.                                                                                                                                                                                           |
-| `service.bind_addr.port`     | integer | Port for the observatory service bind address.<br>e.g. `5049`.                                                                                                                                                                                                        |
-| `service.bind_addr.hostname` | string  | Alternative to `ip`, resolved once at startup.<br>e.g. `my-host-2`.                                                                                                                                                                                                   |
-
-Example:
-
-```toml
-[observatory]
-enabled = true
-max_metrics_bytes_total = 0
-database_path = "/opt/db/observatory.db"
-```
+| Key                                   | Type    | Description                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`                             | boolean | Enable sending/receiving profiling data so clients can call `result.await_profile()`.<br> `true` on both scheduler and workers if you want profiles on queries; `false` to disable.                                                                                                                                                       |
+| `max_metrics_bytes_total`             | integer | How many bytes all the worker host metrics will consume in total. If a system-wide memory limit is specified then this is added to the share that the scheduler takes. For every worker, about 50 bytes of metrics are stored per second.                                                                                                 |
+| `database_path`                       | string  | Location to use for storing profiling data. An SQLite database file will be created here, or if a file already exists it will be opened. If this points to a directory, a file in that directory will be created. Polars on-premises will automatically add the `cluster_id` to this file name to ensure uniqueness within the directory. |
+| `service`                             | object  | Object used for configuring the bind address of the observatory service. This is an internal service in the scheduler for receiving profiling data from all nodes. Defaults to `0.0.0.0:5049`.                                                                                                                                            |
+| `service.bind_addr`                   | string  | Bind address for the observatory service.<br>e.g. `0.0.0.0:5049`.                                                                                                                                                                                                                                                                         |
+| `service.bind_addr.ip`                | string  | IP address for the observatory service bind address.<br>e.g. `192.168.1.1`.                                                                                                                                                                                                                                                               |
+| `service.bind_addr.port`              | integer | Port for the observatory service bind address.<br>e.g. `5049`.                                                                                                                                                                                                                                                                            |
+| `service.bind_addr.hostname`          | string  | Alternative to `ip`, resolved once at startup.<br>e.g. `my-host-2`.                                                                                                                                                                                                                                                                       |
+| `rest_api.enabled`                    | boolean | By default enabled for exposing the observatory REST API. This is a public service for accessing the profiling data and host metrics data through a web interface.                                                                                                                                                                        |
+| `rest_api.service`                    | object  | Object used for configuring the bind address of the observatory REST API service. Defaults to `0.0.0.0:3001`.                                                                                                                                                                                                                             |
+| `rest_api.service.bind_addr`          | string  | Bind address for the observatory REST API service.<br>e.g. `0.0.0.0:3001`.                                                                                                                                                                                                                                                                |
+| `rest_api.service.bind_addr.ip`       | string  | IP address for the observatory REST API service bind address.<br>e.g. `192.168.1.1`.                                                                                                                                                                                                                                                      |
+| `rest_api.service.bind_addr.port`     | integer | Port for the observatory REST API service bind address.<br>e.g. `3001`.                                                                                                                                                                                                                                                                   |
+| `rest_api.service.bind_addr.hostname` | string  | Alternative to `ip`, resolved once at startup.<br>e.g. `my-host-2`.                                                                                                                                                                                                                                                                       |
 
 ### `[monitoring]` section
 
-| Key       | Type    | Description                                                                                                                                              |
-| --------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enabled` | boolean | Enable sending/receiving monitoring data to the observatory service. If enabled, it will use the address specified in `observatory_service.public_addr`. |
-
-Example:
-
-```toml
-[monitoring]
-enabled = true
-```
+| Key                    | Type    | Description                                                                                                                                              |
+| ---------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`              | boolean | Enable sending/receiving monitoring data to the observatory service. If enabled, it will use the address specified in `observatory_service.public_addr`. |
+| `host_metrics`         | object  | Object used for configuring the host metrics exporter.                                                                                                   |
+| `host_metrics.enabled` | boolean | Enable/disable exporting host metrics from this node                                                                                                     |
 
 ### `[static_leader]` section
 
@@ -192,12 +122,3 @@ enabled = true
 | `observatory_service.public_addr.ip`       | string  | IP address for the observatory service public address.<br>e.g. `192.168.1.1`.                                             |
 | `observatory_service.public_addr.port`     | integer | Port for the observatory service public address.<br>e.g. `5049`.                                                          |
 | `observatory_service.public_addr.hostname` | string  | Alternative to `ip`, resolved once at startup.<br>e.g. `my-host-2`.                                                       |
-
-Example:
-
-```toml
-[static_leader]
-leader_instance_id = "scheduler"
-observatory_service.public_addr = "127.0.0.1"
-scheduler_service.public_addr = "127.0.0.1"
-```

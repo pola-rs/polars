@@ -66,8 +66,8 @@ impl<T> Splitable for Buffer<T> {
     }
 
     unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
-        let left = self.clone().sliced_unchecked(0, offset);
-        let right = self.clone().sliced_unchecked(offset, self.len() - offset);
+        let left = self.clone().sliced_unchecked(..offset);
+        let right = self.clone().sliced_unchecked(offset..);
         (left, right)
     }
 }

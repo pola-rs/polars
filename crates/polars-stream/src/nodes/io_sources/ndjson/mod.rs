@@ -7,12 +7,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use line_batch_processor::{LineBatchProcessor, LineBatchProcessorOutputPort};
 use negative_slice_pass::MorselStreamReverser;
+use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_io::utils::compression::CompressedReader;
 use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
-use polars_utils::mmap::MemSlice;
 use polars_utils::priority::Priority;
 use polars_utils::slice_enum::Slice;
 use row_index_limit_pass::ApplyRowIndexOrLimit;
@@ -44,7 +44,7 @@ pub struct NDJsonFileReader {
     pub chunk_reader_builder: ChunkReaderBuilder,
     pub count_rows_fn: fn(&[u8]) -> usize,
     // Cached on first access - we may be called multiple times e.g. on negative slice.
-    pub cached_bytes: Option<MemSlice>,
+    pub cached_bytes: Option<Buffer<u8>>,
     pub verbose: bool,
 }
 
@@ -54,7 +54,7 @@ impl FileReader for NDJsonFileReader {
         let memslice = self
             .scan_source
             .as_scan_source_ref()
-            .to_memslice_async_assume_latest(self.scan_source.run_async())?;
+            .to_buffer_async_assume_latest(self.scan_source.run_async())?;
 
         // Note: We do not decompress in `initialize()`.
         self.cached_bytes = Some(memslice);
@@ -74,6 +74,7 @@ impl FileReader for NDJsonFileReader {
             pre_slice,
 
             num_pipelines,
+            disable_morsel_split: _,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx,

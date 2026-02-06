@@ -65,6 +65,7 @@ impl ParquetReadImpl {
         let rg_prefetch_prev_all_spawned = Option::take(&mut self.rg_prefetch_prev_all_spawned);
         let rg_prefetch_current_all_spawned =
             Option::take(&mut self.rg_prefetch_current_all_spawned);
+        let io_metrics = self.io_metrics.clone();
 
         let prefetch_task = AbortOnDropHandle(io_runtime.spawn(async move {
             polars_ensure!(
@@ -140,6 +141,7 @@ impl ParquetReadImpl {
                 memory_prefetch_func,
                 metadata,
                 byte_source,
+                io_metrics,
                 row_group_slice,
                 row_group_mask,
                 row_offset,
@@ -185,6 +187,7 @@ impl ParquetReadImpl {
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
         let last_morsel_min_split = self.config.num_pipelines;
+        let disable_morsel_split = self.disable_morsel_split;
         let distribute_task = async_executor::spawn(TaskPriority::High, async move {
             let mut morsel_seq = MorselSeq::default();
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
@@ -200,6 +203,20 @@ impl ParquetReadImpl {
                 if df.height() == 0 {
                     continue;
                 }
+
+                if disable_morsel_split {
+                    if morsel_sender
+                        .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
+                        .await
+                        .is_err()
+                    {
+                        return Ok(());
+                    }
+                    drop(permit);
+                    morsel_seq = morsel_seq.successor();
+                    continue;
+                }
+
                 next = Some((df, permit));
                 break;
             }

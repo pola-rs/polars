@@ -117,6 +117,7 @@ pub enum ZipBehavior {
 pub enum PhysNodeKind {
     InMemorySource {
         df: Arc<DataFrame>,
+        disable_morsel_split: bool,
     },
 
     Select {
@@ -268,6 +269,10 @@ pub enum PhysNodeKind {
         inputs: Vec<PhysStream>,
     },
 
+    UnorderedUnion {
+        inputs: Vec<PhysStream>,
+    },
+
     Zip {
         inputs: Vec<PhysStream>,
         zip_behavior: ZipBehavior,
@@ -305,6 +310,7 @@ pub enum PhysNodeKind {
 
         /// Schema of columns contained in the file. Does not contain external columns (e.g. hive / row_index).
         file_schema: SchemaRef,
+        disable_morsel_split: bool,
     },
 
     #[cfg(feature = "python")]
@@ -563,6 +569,7 @@ fn visit_node_inputs_mut(
 
             PhysNodeKind::GroupBy { inputs, .. }
             | PhysNodeKind::OrderedUnion { inputs }
+            | PhysNodeKind::UnorderedUnion { inputs }
             | PhysNodeKind::Zip { inputs, .. } => {
                 for input in inputs {
                     rec!(input.node);
@@ -634,6 +641,7 @@ pub fn build_physical_plan(
         &mut expr_cache,
         &mut cache_nodes,
         ctx,
+        None,
     )?;
     insert_multiplexers(vec![phys_root.node], phys_sm);
     Ok(phys_root.node)

@@ -324,9 +324,16 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[staticmethod]
-    #[pyo3(signature = (sources, scan_options))]
-    fn new_from_ipc(sources: Wrap<ScanSources>, scan_options: PyScanOptions) -> PyResult<Self> {
-        let options = IpcScanOptions;
+    #[pyo3(signature = (sources, record_batch_statistics, scan_options))]
+    fn new_from_ipc(
+        sources: Wrap<ScanSources>,
+        record_batch_statistics: bool,
+        scan_options: PyScanOptions,
+    ) -> PyResult<Self> {
+        let options = IpcScanOptions {
+            record_batch_statistics,
+            checked: Default::default(),
+        };
 
         let sources = sources.0;
         let first_path = sources.first_path().cloned();
@@ -635,7 +642,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[pyo3(signature = (
         target, sink_options, compression, compression_level, statistics, row_group_size, data_page_size,
-        metadata, field_overwrites,
+        metadata, arrow_schema
     ))]
     fn sink_parquet(
         &self,
@@ -648,7 +655,7 @@ impl PyLazyFrame {
         row_group_size: Option<usize>,
         data_page_size: Option<usize>,
         metadata: Wrap<Option<KeyValueMetadata>>,
-        field_overwrites: Vec<Wrap<ParquetFieldOverwrites>>,
+        arrow_schema: Option<Wrap<ArrowSchema>>,
     ) -> PyResult<PyLazyFrame> {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
@@ -658,7 +665,8 @@ impl PyLazyFrame {
             row_group_size,
             data_page_size,
             key_value_metadata: metadata.0,
-            field_overwrites: field_overwrites.into_iter().map(|f| f.0).collect(),
+            arrow_schema: arrow_schema.map(|x| Arc::new(x.0)),
+            compat_level: None,
         };
 
         let target = target.extract_file_sink_destination()?;
@@ -681,7 +689,7 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[pyo3(signature = (
-        target, sink_options, compression, compat_level, record_batch_size
+        target, sink_options, compression, compat_level, record_batch_size, record_batch_statistics
     ))]
     fn sink_ipc(
         &self,
@@ -691,12 +699,13 @@ impl PyLazyFrame {
         compression: Wrap<Option<IpcCompression>>,
         compat_level: PyCompatLevel,
         record_batch_size: Option<usize>,
+        record_batch_statistics: bool,
     ) -> PyResult<PyLazyFrame> {
         let options = IpcWriterOptions {
             compression: compression.0,
             compat_level: compat_level.0,
             record_batch_size,
-            ..Default::default()
+            record_batch_statistics,
         };
 
         let target = target.extract_file_sink_destination()?;
@@ -762,26 +771,10 @@ impl PyLazyFrame {
             quote_style,
         };
 
-        let compression = match compression {
-            "uncompressed" => CsvCompression::Uncompressed,
-            "gzip" => CsvCompression::Gzip {
-                level: compression_level,
-            },
-            "zstd" => CsvCompression::Zstd {
-                level: compression_level,
-            },
-            _ => {
-                return Err(PyErr::from(PyPolarsErr::from(
-                    PolarsError::InvalidOperation(
-                        format!("Invalid compression lvel: ({compression})").into(),
-                    ),
-                )));
-            },
-        };
-
         let options = CsvWriterOptions {
             include_bom,
-            compression,
+            compression: ExternalCompression::try_from(compression, compression_level)
+                .map_err(PyPolarsErr::from)?,
             check_extension,
             include_header,
             batch_size,
@@ -804,14 +797,21 @@ impl PyLazyFrame {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "json")]
-    #[pyo3(signature = (target, sink_options))]
-    fn sink_json(
+    #[pyo3(signature = (target, compression, compression_level, check_extension, sink_options))]
+    fn sink_ndjson(
         &self,
         py: Python<'_>,
         target: PyFileSinkDestination,
+        compression: &str,
+        compression_level: Option<u32>,
+        check_extension: bool,
         sink_options: PySinkOptions,
     ) -> PyResult<PyLazyFrame> {
-        let options = JsonWriterOptions {};
+        let options = NDJsonWriterOptions {
+            compression: ExternalCompression::try_from(compression, compression_level)
+                .map_err(PyPolarsErr::from)?,
+            check_extension,
+        };
 
         let target = target.extract_file_sink_destination()?;
         let unified_sink_args = sink_options.extract_unified_sink_args(target.cloud_scheme())?;
@@ -1533,63 +1533,6 @@ impl PyLazyFrame {
             .hint(HintIR::Sorted(sorted.into()))
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
-    }
-}
-
-#[cfg(feature = "parquet")]
-impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<polars_io::parquet::write::ParquetFieldOverwrites> {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        use polars_io::parquet::write::ParquetFieldOverwrites;
-
-        let parsed = ob.extract::<pyo3::Bound<'_, PyDict>>()?;
-
-        let name = PyDictMethods::get_item(&parsed, "name")?
-            .map(|v| PyResult::Ok(v.extract::<String>()?.into()))
-            .transpose()?;
-        let children = PyDictMethods::get_item(&parsed, "children")?.map_or(
-            PyResult::Ok(ChildFieldOverwrites::None),
-            |v| {
-                Ok(
-                    if let Ok(overwrites) = v.extract::<Vec<Wrap<ParquetFieldOverwrites>>>() {
-                        ChildFieldOverwrites::Struct(overwrites.into_iter().map(|v| v.0).collect())
-                    } else {
-                        ChildFieldOverwrites::ListLike(Box::new(
-                            v.extract::<Wrap<ParquetFieldOverwrites>>()?.0,
-                        ))
-                    },
-                )
-            },
-        )?;
-
-        let field_id = PyDictMethods::get_item(&parsed, "field_id")?
-            .map(|v| v.extract::<i32>())
-            .transpose()?;
-
-        let metadata = PyDictMethods::get_item(&parsed, "metadata")?
-            .map(|v| v.extract::<Vec<(String, Option<String>)>>())
-            .transpose()?;
-        let metadata = metadata.map(|v| {
-            v.into_iter()
-                .map(|v| MetadataKeyValue {
-                    key: v.0.into(),
-                    value: v.1.map(|v| v.into()),
-                })
-                .collect()
-        });
-
-        let required = PyDictMethods::get_item(&parsed, "required")?
-            .map(|v| v.extract::<bool>())
-            .transpose()?;
-
-        Ok(Wrap(ParquetFieldOverwrites {
-            name,
-            children,
-            field_id,
-            metadata,
-            required,
-        }))
     }
 }
 
