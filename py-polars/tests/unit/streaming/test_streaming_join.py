@@ -565,9 +565,7 @@ def test_merge_join_exprs(ignore_nulls: bool) -> None:
     q = left.join(
         right,
         left_on="key",
-        right_on=pl.concat_str(
-            pl.lit("zzz"), pl.col("key"), pl.lit("aaa"), ignore_nulls=ignore_nulls
-        ),
+        right_on=pl.concat_str(pl.col("key"), ignore_nulls=ignore_nulls),
         how="full",
         maintain_order="none",
     )
