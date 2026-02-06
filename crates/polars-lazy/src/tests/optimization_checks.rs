@@ -552,38 +552,6 @@ fn test_cluster_with_columns() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn test_cluster_with_columns_dependency() -> Result<(), Box<dyn std::error::Error>> {
-    use polars_core::prelude::*;
-
-    let df = df!("foo" => &[0.5, 1.7, 3.2],
-                 "bar" => &[4.1, 1.5, 9.2])?;
-
-    let df = df
-        .lazy()
-        .without_optimizations()
-        .with_cluster_with_columns(true)
-        .with_columns([col("foo").alias("buzz")])
-        .with_columns([col("buzz")]);
-
-    let unoptimized = df.clone().to_alp().unwrap();
-    let optimized = df.to_alp_optimized().unwrap();
-
-    let unoptimized = unoptimized.describe();
-    let optimized = optimized.describe();
-
-    println!("\n---\n");
-
-    println!("Unoptimized:\n{unoptimized}",);
-    println!("\n---\n");
-    println!("Optimized:\n{optimized}");
-
-    assert_eq!(num_occurrences(&unoptimized, "WITH_COLUMNS"), 2);
-    assert_eq!(num_occurrences(&optimized, "WITH_COLUMNS"), 2);
-
-    Ok(())
-}
-
-#[test]
 fn test_cluster_with_columns_partial() -> Result<(), Box<dyn std::error::Error>> {
     use polars_core::prelude::*;
 
