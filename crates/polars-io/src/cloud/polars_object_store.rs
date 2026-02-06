@@ -17,15 +17,20 @@ use crate::pl_async::{
 
 mod inner {
     use std::future::Future;
+    use std::ops::Range;
     use std::sync::Arc;
 
-    use object_store::ObjectStore;
+    use futures::{StreamExt, TryStreamExt};
+    use object_store::path::Path;
+    use object_store::{ObjectStore, ObjectStoreExt as _};
+    use polars_buffer::Buffer;
     use polars_core::config;
     use polars_error::PolarsResult;
     use polars_utils::relaxed_cell::RelaxedCell;
 
     use crate::cloud::PolarsObjectStoreBuilder;
     use crate::metrics::{IOMetrics, OptIOMetrics};
+    use crate::pl_async::get_concurrency_limit;
 
     #[derive(Debug)]
     struct Inner {
@@ -106,12 +111,15 @@ mod inner {
 
         pub async fn try_exec_rebuild_on_err<Fn, Fut, O>(&self, mut func: Fn) -> PolarsResult<O>
         where
-            Fn: FnMut(&Arc<dyn ObjectStore>) -> Fut,
+            Fn: for<'a> FnMut(ObjectStoreExecutionContext) -> Fut,
             Fut: Future<Output = PolarsResult<O>>,
         {
             let store = self.to_dyn_object_store().await;
 
-            let out = func(&store).await;
+            let out = func(ObjectStoreExecutionContext {
+                store: Arc::clone(&store),
+            })
+            .await;
 
             let orig_err = match out {
                 Ok(v) => return Ok(v),
@@ -130,24 +138,83 @@ mod inner {
                 .await
                 .map_err(|e| e.wrap_msg(|e| format!("{e}; original error: {orig_err}")))?;
 
-            func(&store).await.map_err(|e| {
-                if self.inner.builder.is_azure()
-                    && std::env::var("POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY").as_deref()
-                        != Ok("1")
-                {
-                    // Note: This error is intended for Python audiences. The logic for retrieving
-                    // these keys exist only on the Python side.
-                    e.wrap_msg(|e| {
-                        format!(
-                            "{e}; note: if you are using Python, consider setting \
+            func(ObjectStoreExecutionContext { store })
+                .await
+                .map_err(|e| {
+                    if self.inner.builder.is_azure()
+                        && std::env::var("POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY").as_deref()
+                            != Ok("1")
+                    {
+                        // Note: This error is intended for Python audiences. The logic for retrieving
+                        // these keys exist only on the Python side.
+                        e.wrap_msg(|e| {
+                            format!(
+                                "{e}; note: if you are using Python, consider setting \
 POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY=1 if you would like polars to try to retrieve \
 and use the storage account keys from Azure CLI to authenticate"
+                            )
+                        })
+                    } else {
+                        e
+                    }
+                })
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct ObjectStoreExecutionContext {
+        store: Arc<dyn ObjectStore>,
+    }
+
+    impl ObjectStoreExecutionContext {
+        pub async fn exec_with_store<'a, F, Fut, O>(&'a self, func: F) -> object_store::Result<O>
+        where
+            F: FnOnce(&'a Arc<dyn ObjectStore>) -> Fut,
+            Fut: Future<Output = object_store::Result<O>> + 'a,
+        {
+            self.wrap_fut(func(&self.store)).await
+        }
+
+        pub async fn wrap_fut<'a, Fut, O>(&'a self, fut: Fut) -> object_store::Result<O>
+        where
+            Fut: Future<Output = object_store::Result<O>> + 'a,
+        {
+            fut.await
+        }
+
+        pub fn build_buffered_ranges_stream<'a, T: Iterator<Item = Range<usize>>>(
+            &'a self,
+            path: &'a Path,
+            ranges: T,
+            io_metrics: OptIOMetrics,
+        ) -> impl StreamExt<Item = object_store::Result<Buffer<u8>>>
+        + TryStreamExt<
+            Ok = Buffer<u8>,
+            Error = object_store::Error,
+            Item = object_store::Result<Buffer<u8>>,
+        > + use<'a, T> {
+            futures::stream::iter(ranges.map(move |range| {
+                let io_metrics = io_metrics.clone();
+
+                async move {
+                    if range.is_empty() {
+                        return Ok(Buffer::new());
+                    }
+
+                    let out = io_metrics
+                        .record_io_read(
+                            range.len() as u64,
+                            self.exec_with_store(|s| {
+                                s.get_range(path, range.start as u64..range.end as u64)
+                            }),
                         )
-                    })
-                } else {
-                    e
+                        .await?;
+
+                    Ok(Buffer::from_owner(out))
                 }
-            })
+            }))
+            // Add a limit locally as this gets run inside a single `tune_with_concurrency_budget`.
+            .buffered(get_concurrency_limit() as usize)
         }
     }
 }
@@ -157,37 +224,6 @@ pub use inner::PolarsObjectStore;
 pub type ObjectStorePath = object_store::path::Path;
 
 impl PolarsObjectStore {
-    /// Returns a buffered stream that downloads concurrently up to the concurrency limit.
-    fn get_buffered_ranges_stream<'a, T: Iterator<Item = Range<usize>>>(
-        store: &'a dyn ObjectStore,
-        path: &'a Path,
-        ranges: T,
-        io_metrics: OptIOMetrics,
-    ) -> impl StreamExt<Item = PolarsResult<Buffer<u8>>>
-    + TryStreamExt<Ok = Buffer<u8>, Error = PolarsError, Item = PolarsResult<Buffer<u8>>>
-    + use<'a, T> {
-        futures::stream::iter(ranges.map(move |range| {
-            let io_metrics = io_metrics.clone();
-
-            async move {
-                if range.is_empty() {
-                    return Ok(Buffer::new());
-                }
-
-                let out = io_metrics
-                    .record_io_read(
-                        range.len() as u64,
-                        store.get_range(path, range.start as u64..range.end as u64),
-                    )
-                    .await?;
-
-                Ok(Buffer::from_owner(out))
-            }
-        }))
-        // Add a limit locally as this gets run inside a single `tune_with_concurrency_budget`.
-        .buffered(get_concurrency_limit() as usize)
-    }
-
     pub async fn get_range(&self, path: &Path, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
         if range.is_empty() {
             return Ok(Buffer::new());
@@ -195,13 +231,13 @@ impl PolarsObjectStore {
 
         let io_metrics = self.io_metrics();
 
-        self.try_exec_rebuild_on_err(move |store| {
+        self.try_exec_rebuild_on_err(move |store_cx| {
             let range = range.clone();
-            let st = store.clone();
+            let cx = store_cx.clone();
             let io_metrics = io_metrics.clone();
 
             async move {
-                let store = st;
+                let store_cx = cx;
                 let parts = split_range(range.clone());
 
                 if parts.len() == 1 {
@@ -209,7 +245,9 @@ impl PolarsObjectStore {
                         let bytes = io_metrics
                             .record_io_read(
                                 range.len() as u64,
-                                store.get_range(path, range.start as u64..range.end as u64),
+                                store_cx.exec_with_store(|s| {
+                                    s.get_range(path, range.start as u64..range.end as u64)
+                                }),
                             )
                             .await?;
 
@@ -222,7 +260,8 @@ impl PolarsObjectStore {
                     let parts = tune_with_concurrency_budget(
                         parts.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
                         || {
-                            Self::get_buffered_ranges_stream(&store, path, parts, io_metrics)
+                            store_cx
+                                .build_buffered_ranges_stream(path, parts, io_metrics)
                                 .try_collect::<Vec<Buffer<u8>>>()
                         },
                     )
@@ -263,16 +302,15 @@ impl PolarsObjectStore {
         let (merged_ranges, merged_ends): (Vec<_>, Vec<_>) = merge_ranges(ranges).unzip();
         let io_metrics = self.io_metrics();
 
-        self.try_exec_rebuild_on_err(|store| {
-            let st = store.clone();
+        self.try_exec_rebuild_on_err(|store_cx| {
+            let cx = store_cx.clone();
             let io_metrics = io_metrics.clone();
 
             async {
-                let store = st;
+                let store_cx = cx;
                 let mut out = PlHashMap::with_capacity(ranges_len);
 
-                let mut stream = Self::get_buffered_ranges_stream(
-                    &store,
+                let mut stream = store_cx.build_buffered_ranges_stream(
                     path,
                     merged_ranges.iter().cloned(),
                     io_metrics,
@@ -356,8 +394,8 @@ impl PolarsObjectStore {
         let initial_pos = file.stream_position().await?;
         let io_metrics = self.io_metrics();
 
-        self.try_exec_rebuild_on_err(|store| {
-            let st = store.clone();
+        self.try_exec_rebuild_on_err(|store_cx| {
+            let cx = store_cx.clone();
             let io_metrics = io_metrics.clone();
 
             // Workaround for "can't move captured variable".
@@ -366,7 +404,7 @@ impl PolarsObjectStore {
             async {
                 file.set_len(initial_pos).await?; // Reset if this function was called again.
 
-                let store = st;
+                let store_cx = cx;
                 let parts = opt_size
                     .map(|x| split_range(0..x as usize))
                     .filter(|x| x.len() > 1);
@@ -376,7 +414,7 @@ impl PolarsObjectStore {
                         parts.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
                         || async {
                             let mut stream =
-                                Self::get_buffered_ranges_stream(&store, path, parts, io_metrics);
+                                store_cx.build_buffered_ranges_stream(path, parts, io_metrics);
                             let mut len = 0;
                             while let Some(bytes) = stream.try_next().await? {
                                 len += bytes.len();
@@ -393,10 +431,13 @@ impl PolarsObjectStore {
                     tune_with_concurrency_budget(1, || async {
                         let io_session = io_metrics.start_io_session();
 
-                        let mut stream = store.get(path).await?.into_stream();
+                        let mut stream = store_cx
+                            .exec_with_store(|s| s.get(path))
+                            .await?
+                            .into_stream();
                         let mut len = 0;
 
-                        while let Some(bytes) = stream.try_next().await? {
+                        while let Some(bytes) = store_cx.wrap_fut(stream.try_next()).await? {
                             len += bytes.len();
                             io_metrics.add_bytes_requested(bytes.len() as u64);
                             io_metrics.add_bytes_received(bytes.len() as u64);
@@ -424,15 +465,18 @@ impl PolarsObjectStore {
     pub async fn head(&self, path: &Path) -> PolarsResult<ObjectMeta> {
         let io_metrics = self.io_metrics();
 
-        self.try_exec_rebuild_on_err(|store| {
-            let st = store.clone();
+        self.try_exec_rebuild_on_err(|store_cx| {
+            let cx = store_cx.clone();
             let io_metrics = io_metrics.clone();
 
             async move {
                 with_concurrency_budget(1, || async {
-                    let store = st;
+                    let store_cx = cx;
                     let head_result = io_metrics
-                        .record_io_read(HEAD_RESPONSE_SIZE_ESTIMATE, store.head(path))
+                        .record_io_read(
+                            HEAD_RESPONSE_SIZE_ESTIMATE,
+                            store_cx.exec_with_store(|s| s.head(path)),
+                        )
                         .await;
 
                     if head_result.is_err() {
@@ -441,13 +485,15 @@ impl PolarsObjectStore {
                         let get_range_0_1_result = io_metrics
                             .record_io_read(
                                 HEAD_RESPONSE_SIZE_ESTIMATE + 1,
-                                store.get_opts(
-                                    path,
-                                    object_store::GetOptions {
-                                        range: Some((0..1).into()),
-                                        ..Default::default()
-                                    },
-                                ),
+                                store_cx.exec_with_store(|s| {
+                                    s.get_opts(
+                                        path,
+                                        object_store::GetOptions {
+                                            range: Some((0..1).into()),
+                                            ..Default::default()
+                                        },
+                                    )
+                                }),
                             )
                             .await;
 

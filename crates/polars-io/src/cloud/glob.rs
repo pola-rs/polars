@@ -242,13 +242,15 @@ pub async fn glob(
             async {
                 let store = st;
                 store
-                    .list(path)
-                    .try_filter_map(|x| async move {
-                        let out = (x.size > 0 && matcher.is_matching(x.location.as_ref()))
-                            .then_some(x.location);
-                        Ok(out)
+                    .exec_with_store(|s| {
+                        s.list(path)
+                            .try_filter_map(|x| async move {
+                                let out = (x.size > 0 && matcher.is_matching(x.location.as_ref()))
+                                    .then_some(x.location);
+                                Ok(out)
+                            })
+                            .try_collect::<Vec<_>>()
                     })
-                    .try_collect::<Vec<_>>()
                     .await
                     .map_err(to_compute_err)
             }
