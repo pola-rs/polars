@@ -549,7 +549,7 @@ def test_join_dtypes(
 def test_merge_join_exprs(ignore_nulls: bool) -> None:
     left = pl.LazyFrame(
         {
-            "key": ["zzzaaa", "zzzaaaa", "zzzcaaa"],
+            "key": ["", "a", "c"],
             "key_ext": [1, 2, 3],
             "value": [1, 2, 3],
         }
