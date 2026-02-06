@@ -424,8 +424,10 @@ class Selector(Expr):
             return dtype_selector | selector
 
     @classmethod
-    def _by_name(cls, names: builtins.list[str], *, strict: bool) -> Selector:
-        return cls._from_pyselector(PySelector.by_name(names, strict))
+    def _by_name(
+        cls, names: builtins.list[str], *, strict: bool, expand_patterns: bool
+    ) -> Selector:
+        return cls._from_pyselector(PySelector.by_name(names, strict, expand_patterns))
 
     def __invert__(cls) -> Selector:
         """Invert the selector."""
@@ -566,12 +568,19 @@ class Selector(Expr):
                 raise TypeError(msg)
 
         if exclude_cols and exclude_dtypes:
-            msg = "cannot exclude by both column name and dtype; use a selector instead"
+            msg = "cannot exclude by both column name and dtype"
             raise TypeError(msg)
-        elif exclude_dtypes:
-            return self - by_dtype(exclude_dtypes)
-        else:
-            return self - by_name(exclude_cols, require_all=False)
+
+        excluded = (
+            by_dtype(exclude_dtypes)
+            if exclude_dtypes
+            else Selector._by_name(
+                exclude_cols,
+                strict=False,
+                expand_patterns=True,
+            )
+        )
+        return self - excluded
 
     def as_expr(self) -> Expr:
         """
@@ -1200,6 +1209,7 @@ def by_name(*names: str | Collection[str], require_all: bool = True) -> Selector
     --------
     by_dtype : Select all columns matching the given dtypes.
     by_index : Select all columns matching the given indices.
+    matches: Select columns matching the given regex pattern.
 
     Examples
     --------
@@ -1266,7 +1276,7 @@ def by_name(*names: str | Collection[str], require_all: bool = True) -> Selector
             msg = f"invalid name: {nm!r}"
             raise TypeError(msg)
 
-    return Selector._by_name(all_names, strict=require_all)
+    return Selector._by_name(all_names, strict=require_all, expand_patterns=False)
 
 
 def empty() -> Selector:

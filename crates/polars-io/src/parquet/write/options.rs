@@ -1,4 +1,5 @@
 use arrow::datatypes::ArrowSchemaRef;
+use polars_core::prelude::CompatLevel;
 use polars_parquet::write::{
     BrotliLevel, CompressionOptions, GzipLevel, StatisticsOptions, ZstdLevel,
 };
@@ -22,6 +23,14 @@ pub struct ParquetWriteOptions {
     /// Custom file-level key value metadata
     pub key_value_metadata: Option<KeyValueMetadata>,
     pub arrow_schema: Option<ArrowSchemaRef>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub compat_level: Option<CompatLevel>,
+}
+
+impl ParquetWriteOptions {
+    pub fn compat_level(&self) -> CompatLevel {
+        self.compat_level.unwrap_or(CompatLevel::oldest())
+    }
 }
 
 /// The compression strategy to use for writing Parquet files.
