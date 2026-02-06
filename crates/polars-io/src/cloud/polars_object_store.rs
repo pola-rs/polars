@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use futures::{StreamExt, TryStreamExt};
+use futures::TryStreamExt;
 use hashbrown::hash_map::RawEntryMut;
 use object_store::path::Path;
 use object_store::{ObjectMeta, ObjectStore, ObjectStoreExt};
@@ -9,10 +9,10 @@ use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_error::{PolarsError, PolarsResult};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
-use crate::metrics::{HEAD_RESPONSE_SIZE_ESTIMATE, OptIOMetrics};
+use crate::metrics::HEAD_RESPONSE_SIZE_ESTIMATE;
 use crate::pl_async::{
-    self, MAX_BUDGET_PER_REQUEST, get_concurrency_limit, get_download_chunk_size,
-    tune_with_concurrency_budget, with_concurrency_budget,
+    self, MAX_BUDGET_PER_REQUEST, get_download_chunk_size, tune_with_concurrency_budget,
+    with_concurrency_budget,
 };
 
 mod inner {
