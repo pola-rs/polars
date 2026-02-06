@@ -91,18 +91,11 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
             let mut accessed_upper_expr = false;
 
-            let exclude_output_name = !accessed_input_names_expr_only.contains(e.output_name());
-
             for name in aexpr_to_leaf_names_iter(e.node(), expr_arena) {
                 if input_name_to_expr_map.contains_key(name) {
                     accessed_upper_expr = true;
                     accessed_input_names_expr_only.insert(name.clone());
                 }
-            }
-
-            if exclude_output_name {
-                // Self-access (i.e. output name is same as input name) can still potentially push.
-                accessed_input_names_expr_only.remove(e.output_name());
             }
 
             if !accessed_upper_expr {
