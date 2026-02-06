@@ -206,11 +206,13 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         AExpr::AnonymousAgg {
             input,
             fmt_str,
-            function,
-        } => Expr::AnonymousAgg {
-            input: expr_irs_to_exprs(input, expr_arena),
-            function,
-            fmt_str,
+            function: _,
+        } => {
+            let inputs = expr_irs_to_exprs(input.clone(), expr_arena);
+            Expr::Display {
+                inputs,
+                fmt_str: fmt_str.clone(),
+            }
         },
         AExpr::AnonymousFunction {
             input,
