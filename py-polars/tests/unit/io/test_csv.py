@@ -34,14 +34,19 @@ def foods_file_path(io_files_path: Path) -> Path:
     return io_files_path / "foods1.csv"
 
 
-@pytest.fixture(params=[None, "7"])
+@pytest.fixture(params=["chunk-size-default", "chunk-size-7"])
 def chunk_override(request: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     env_var_name = "POLARS_FORCE_CSV_INFER_CHUNK_SIZE"
 
-    if request.param is None:
+    if request.param == "chunk-size-default":
         monkeypatch.delenv(env_var_name, raising=False)
+    elif request.param == "chunk-size-7":
+        # 7 is good because it can contain some test lines fully but not all
+        # and it tests chunks merging. The chunks in question are only the ones
+        # for schema inference and start point finding.
+        monkeypatch.setenv(env_var_name, "7")
     else:
-        monkeypatch.setenv(env_var_name, request.param)
+        pytest.fail("unreachable")
 
 
 def test_quoted_date(chunk_override: None) -> None:
