@@ -41,6 +41,16 @@ impl DynamicPred {
         &self.inner.id
     }
 
+    pub fn set(&self, pred: Box<dyn Fn(&[Column]) -> PolarsResult<Column> + Send + Sync>) {
+        {
+            let mut guard = self.inner.pred.write().unwrap();
+            *guard = Some(pred);
+        }
+        self.inner
+            .is_set
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
     pub fn evaluate(&self, columns: &[Column]) -> PolarsResult<Column> {
         polars_ensure!(columns.len() > 1, ComputeError: "expected at least 1 argument");
 
