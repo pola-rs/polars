@@ -228,7 +228,7 @@ def _parse_inputs_as_iterable(
     return inputs
 
 
-def _is_iterable(input: Any | Iterable[Any]) -> bool:
+def _is_iterable(input: Any) -> bool:
     return isinstance(input, Iterable) and not isinstance(
         input, (str, bytes, pl.Series)
     )

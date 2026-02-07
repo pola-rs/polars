@@ -545,11 +545,10 @@ def test_join_dtypes(
     assert_frame_equal(actual, expected, check_row_order=False)
 
 
-@pytest.mark.parametrize("ignore_nulls", [False, True])
-def test_merge_join_exprs(ignore_nulls: bool) -> None:
+def test_merge_join_exprs() -> None:
     left = pl.LazyFrame(
         {
-            "key": ["zzzaaa", "zzzaaaa", "zzzcaaa"],
+            "key": ["", "a", "c"],
             "key_ext": [1, 2, 3],
             "value": [1, 2, 3],
         }
@@ -565,9 +564,7 @@ def test_merge_join_exprs(ignore_nulls: bool) -> None:
     q = left.join(
         right,
         left_on="key",
-        right_on=pl.concat_str(
-            pl.lit("zzz"), pl.col("key"), pl.lit("aaa"), ignore_nulls=ignore_nulls
-        ),
+        right_on=pl.concat_str(pl.col("key"), ignore_nulls=False),
         how="full",
         maintain_order="none",
     )

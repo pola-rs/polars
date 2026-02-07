@@ -164,8 +164,9 @@ def test_max_size_partition_lambda(
         lf,
         pl.PartitionBy(
             tmp_path,
-            file_path_provider=lambda args: tmp_path
-            / f"abc-{args.index_in_partition:08}.{io_type['ext']}",
+            file_path_provider=lambda args: (
+                tmp_path / f"abc-{args.index_in_partition:08}.{io_type['ext']}"
+            ),
             max_rows_per_file=max_size,
         ),
         engine=engine,
@@ -201,7 +202,9 @@ def test_partition_by_key(
         lf,
         pl.PartitionBy(
             tmp_path,
-            file_path_provider=lambda args: f"{args.partition_keys.item()}.{io_type['ext']}",
+            file_path_provider=lambda args: (
+                f"{args.partition_keys.item()}.{io_type['ext']}"
+            ),
             key="a",
         ),
         engine=engine,
@@ -239,7 +242,9 @@ def test_partition_by_key(
         lf,
         pl.PartitionBy(
             tmp_path,
-            file_path_provider=lambda args: f"{args.partition_keys.item()}.{io_type['ext']}",
+            file_path_provider=lambda args: (
+                f"{args.partition_keys.item()}.{io_type['ext']}"
+            ),
             key=pl.col.a.cast(pl.String()),
         ),
         engine=engine,

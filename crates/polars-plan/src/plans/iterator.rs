@@ -73,7 +73,7 @@ macro_rules! push_expr {
             },
             // we iterate in reverse order, so that the lhs is popped first and will be found
             // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
-            AnonymousAgg { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
+            Display { inputs, .. } => inputs.$iter().rev().for_each(|e| $push_owned($c, e)),
             AnonymousFunction { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
             Eval {
                 expr, evaluation, ..
