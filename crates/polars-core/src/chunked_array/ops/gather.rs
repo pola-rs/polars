@@ -383,7 +383,7 @@ impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
             }
         });
 
-        let mut out = ChunkedArray::from_chunks(ca.name().clone(), chunks.collect());
+        let mut out = ca.with_chunks(chunks.collect());
         let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), indices.is_sorted_flag());
         out.set_sorted_flag(sorted_flag);
         out
