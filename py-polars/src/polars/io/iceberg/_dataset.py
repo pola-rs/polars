@@ -125,7 +125,9 @@ class IcebergDataset:
             )
 
         verbose_print_sensitive(
-            lambda: f"IcebergDataset: to_dataset_scan(): {pyarrow_predicate = }, {iceberg_table_filter = }"
+            lambda: (
+                f"IcebergDataset: to_dataset_scan(): {pyarrow_predicate = }, {iceberg_table_filter = }"
+            )
         )
 
         tbl = self.table()

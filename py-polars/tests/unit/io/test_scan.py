@@ -1270,7 +1270,7 @@ def corrupt_compressed_impl(base_line: bytes, target_size: int) -> bytes:
     )
     # ~1.8MB of valid zlib compressed data to read before the corrupted data
     # appears.
-    return corrupted_data
+    return bytes(corrupted_data)
 
 
 @pytest.fixture(scope="session")
