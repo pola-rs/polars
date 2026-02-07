@@ -581,7 +581,7 @@ impl PredicatePushDown {
                 slice,
                 sort_options,
             } => {
-                if let Some((offset, len)) = slice
+                if let Some((offset, len, None)) = slice
                     && by_column.len() == 1
                 {
                     let n = by_column[0].node();

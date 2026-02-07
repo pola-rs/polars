@@ -15,7 +15,7 @@ use polars_plan::dsl::{
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
-use polars_plan::plans::{AExpr, DataFrameUdf, IR};
+use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, IR};
 
 mod fmt;
 mod io;
@@ -239,6 +239,7 @@ pub enum PhysNodeKind {
         by_column: Vec<ExprIR>,
         reverse: Vec<bool>,
         nulls_last: Vec<bool>,
+        dyn_pred: Option<DynamicPred>,
     },
 
     Repeat {

@@ -89,7 +89,7 @@ pub enum IR {
     Sort {
         input: Node,
         by_column: Vec<ExprIR>,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, usize, Option<DynamicPred>)>,
         sort_options: SortMultipleOptions,
     },
     Cache {

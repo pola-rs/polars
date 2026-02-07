@@ -368,6 +368,7 @@ fn visualize_plan_rec(
             by_column,
             reverse,
             nulls_last: _,
+            dyn_pred: _,
         } => {
             let name = if reverse.iter().all(|r| *r) {
                 "bottom-k"

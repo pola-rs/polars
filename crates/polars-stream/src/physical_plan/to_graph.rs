@@ -552,7 +552,7 @@ fn to_graph_rec<'a>(
             let sort_node = lp_arena.add(IR::Sort {
                 input: df_node,
                 by_column: by_column.clone(),
-                slice: *slice,
+                slice: slice.map(|t| (t.0, t.1, None)),
                 sort_options: sort_options.clone(),
             });
             let executor = Mutex::new(create_physical_plan(
@@ -582,6 +582,7 @@ fn to_graph_rec<'a>(
             by_column,
             reverse,
             nulls_last,
+            dyn_pred: _,
         } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             let k_key = to_graph_rec(k.node, ctx)?;

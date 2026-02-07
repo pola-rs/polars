@@ -490,7 +490,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let lp = IR::Sort {
                 input,
                 by_column,
-                slice,
+                slice: slice.map(|t| (t.0, t.1, None)),
                 sort_options,
             };
 
