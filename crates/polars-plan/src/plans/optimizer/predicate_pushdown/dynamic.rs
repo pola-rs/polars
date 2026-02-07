@@ -37,6 +37,16 @@ impl PartialEq for DynamicPred {
 }
 
 impl DynamicPred {
+    fn new() -> Self {
+        Self {
+            inner: Arc::new(Inner {
+                pred: Default::default(),
+                is_set: Default::default(),
+                id: UniqueId::new(),
+            }),
+        }
+    }
+
     pub fn id(&self) -> &UniqueId {
         &self.inner.id
     }
@@ -69,4 +79,17 @@ impl DynamicPred {
             )))
         }
     }
+}
+
+pub fn new_dynamic_pred(node: Node, arena: &mut Arena<AExpr>) -> (Node, DynamicPred) {
+    let pred = DynamicPred::new();
+    let function = IRFunctionExpr::DynamicExpr { pred: pred.clone() };
+    let options = function.function_options();
+    let aexpr = AExpr::Function {
+        input: vec![ExprIR::from_node(node, arena)],
+        function,
+        options,
+    };
+
+    (arena.add(aexpr), pred)
 }
