@@ -12,6 +12,7 @@ use recursive::recursive;
 use utils::*;
 
 use super::*;
+use crate::plans::optimizer::predicate_pushdown::dynamic::new_dynamic_pred;
 use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::utils::{check_input_node, has_aexpr};
@@ -574,7 +575,28 @@ impl PredicatePushDown {
             lp @ Union { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
-            lp @ Sort { .. } => {
+            Sort {
+                input,
+                by_column,
+                slice,
+                sort_options,
+            } => {
+                if let Some((offset, len)) = slice
+                    && by_column.len() == 1
+                {
+                    let n = by_column[0].node();
+                    if let AExpr::Column(_) = expr_arena.get(n) {
+                        let (node, pred) = new_dynamic_pred(n, expr_arena);
+                        // todo
+                    }
+                }
+
+                let lp = Sort {
+                    input,
+                    by_column,
+                    slice,
+                    sort_options,
+                };
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
             },
             lp @ Sink { .. } | lp @ SinkMultiple { .. } => {
