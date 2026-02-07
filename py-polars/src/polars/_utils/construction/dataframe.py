@@ -492,7 +492,7 @@ def _sequence_to_pydf_dispatcher(
     # third-party libraries (such as numpy/pandas) should be identified inline (below)
     # and THEN registered for dispatch (here) so as not to break lazy-loading behaviour.
 
-    common_params = {
+    common_params: dict[str, Any] = {
         "data": data,
         "schema": schema,
         "schema_overrides": schema_overrides,

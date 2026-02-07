@@ -553,7 +553,7 @@ class ConnectionExecutor:
         # note: some cursors execute in-place, some access results via a property
         result = self.cursor if (result is None or result is True) else result
         if self.driver_name == "duckdb" and self._is_alchemy_result(result):
-            result = result.cursor
+            result = result.cursor  # type: ignore[union-attr]
 
         self.result = result
         return self
