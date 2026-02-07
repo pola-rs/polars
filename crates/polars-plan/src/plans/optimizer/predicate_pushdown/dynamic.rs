@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Formatter};
+use std::hash::Hash;
 use std::sync::RwLock;
 use std::sync::atomic::AtomicBool;
 
@@ -33,6 +34,12 @@ impl Debug for DynamicPred {
 impl PartialEq for DynamicPred {
     fn eq(&self, other: &Self) -> bool {
         self.id() == other.id()
+    }
+}
+
+impl Hash for DynamicPred {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.inner.id.hash(state);
     }
 }
 
