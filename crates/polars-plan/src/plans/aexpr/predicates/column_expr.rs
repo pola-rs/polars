@@ -268,9 +268,28 @@ pub fn aexpr_to_column_predicates(
                                     get_binary_expr_col_and_lv(*left, *right, expr_arena, schema)?;
                                 let lv = lv?;
                                 let av = lv.to_any_value()?;
-                                if av.dtype() != dtype {
-                                    return None;
-                                }
+                                let av = match (&dtype, &av.dtype()) {
+                                    (col_dtype, val_dtype) if col_dtype == val_dtype => av,
+                                    (col_dtype, val_dtype) if
+                                        (col_dtype.is_integer() && val_dtype.is_integer()) ||
+                                        (col_dtype.is_datetime() && val_dtype.is_datetime()) ||
+                                        (col_dtype.is_duration() && val_dtype.is_duration()) =>
+                                    {
+                                        // Try round-trip casting. If we get the
+                                        // same value, that means the value fits
+                                        // in the column's dtype, so casting is
+                                        // not lossy and we can safely cast it.
+                                        let cast_av = av.cast(col_dtype);
+                                        if cast_av.cast(val_dtype) == av {
+                                            cast_av
+                                        } else {
+                                            return None;
+                                        }
+                                    },
+                                    _ => {
+                                        return None;
+                                    }
+                                };
                                 let scalar = Scalar::new(dtype.clone(), av.into_static());
                                 use Operator as O;
                                 match (op, lv_node == *right) {
@@ -366,7 +385,7 @@ mod tests {
 
     use super::*;
     use crate::dsl::Expr;
-    use crate::dsl::functions::col;
+    use crate::dsl::functions::{col, lit};
     use crate::plans::{ExprToIRContext, to_expr_ir, typed_lit};
 
     /// Given a single-column `Expr`, call `aexpr_to_column_predicates()` and
@@ -392,6 +411,141 @@ mod tests {
         };
         assert_eq!(col_name, col_name2);
         Ok(predicate)
+    }
+
+    /// Create a simple equality Expr and return the corresponding column's
+    /// `SpecializedColumnPredicate` from `aexpr_to_column_predicates()`.
+    fn equality_column_predicate(
+        col_dtype: DataType,
+        comparison_value: Expr,
+    ) -> PolarsResult<Option<SpecializedColumnPredicate>> {
+        let expr = col("test").eq(comparison_value);
+        column_predicate_for_expr(col_dtype, "test", expr)
+    }
+
+    fn assert_column_predicates_creation_equality(
+        col_dtype: DataType,
+        comparison_value: Expr,
+        expected_predicate_value: AnyValue,
+    ) -> PolarsResult<()> {
+        let predicate = equality_column_predicate(col_dtype, comparison_value)?;
+        let Some(SpecializedColumnPredicate::Equal(scalar)) = predicate else {
+            panic!("didn't get equality predicate, got {predicate:?}")
+        };
+        assert_eq!(scalar.value(), &expected_predicate_value);
+        Ok(())
+    }
+
+    #[test]
+    fn column_predicates_creation_string_equality() -> PolarsResult<()> {
+        assert_column_predicates_creation_equality(
+            DataType::String,
+            lit("hello"),
+            AnyValue::StringOwned("hello".into()),
+        )
+    }
+
+    #[cfg(feature = "dtype-datetime")]
+    #[test]
+    fn column_predicates_creation_datetime_casting() -> PolarsResult<()> {
+        use polars_core::prelude::TimeUnit::*;
+        let ms_dtype = DataType::Datetime(Milliseconds, None);
+
+        // Higher resolution datetimes that can be cast losslessly are cast losslessly:
+        assert_column_predicates_creation_equality(
+            ms_dtype.clone(),
+            lit(Scalar::new_datetime(17_000_000i64, Nanoseconds, None)),
+            AnyValue::Datetime(17, Milliseconds, None),
+        )?;
+
+        // Values that can't be cast losslessly result in no predicate:
+        assert!(
+            equality_column_predicate(
+                ms_dtype,
+                lit(Scalar::new_datetime(17_123_456i64, Nanoseconds, None))
+            )?
+            .is_none()
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "dtype-duration")]
+    #[test]
+    fn column_predicates_creation_duration_casting() -> PolarsResult<()> {
+        use polars_core::prelude::TimeUnit::*;
+        let ms_dtype = DataType::Duration(Milliseconds);
+
+        // Higher resolution durations that can be cast losslessly are cast losslessly:
+        assert_column_predicates_creation_equality(
+            ms_dtype.clone(),
+            lit(Scalar::new_duration(17_000_000i64, Nanoseconds)),
+            AnyValue::Duration(17, Milliseconds),
+        )?;
+
+        // Values that can't be cast losslessly result in no predicate:
+        assert!(
+            equality_column_predicate(
+                ms_dtype,
+                lit(Scalar::new_duration(17_123_456i64, Nanoseconds))
+            )?
+            .is_none()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn column_predicates_creation_integer_equality() -> PolarsResult<()> {
+        // The same datatype.
+        assert_column_predicates_creation_equality(
+            DataType::Int64,
+            typed_lit(123i64),
+            AnyValue::Int64(123),
+        )?;
+        // A smaller, losslessly castable datatype:
+        assert_column_predicates_creation_equality(
+            DataType::Int64,
+            typed_lit(123i32),
+            AnyValue::Int64(123),
+        )?;
+        // A dynamic literal that fits in the range:
+        assert_column_predicates_creation_equality(
+            DataType::Int64,
+            lit(123),
+            AnyValue::Int64(123),
+        )?;
+        // A larger, potentially lossy-if-casted datatype (Int64), but the number fits
+        // in the range so casting works:
+        assert_column_predicates_creation_equality(
+            DataType::Int8,
+            typed_lit(100i64),
+            AnyValue::Int8(100),
+        )?;
+        assert_column_predicates_creation_equality(
+            DataType::Int8,
+            typed_lit(-100i64),
+            AnyValue::Int8(-100),
+        )?;
+        Ok(())
+    }
+
+    /// If casting losslessly is not possible, no equality predicate will be
+    /// created by `aexpr_to_column_predicates()`.
+    #[test]
+    fn column_predicates_equality_lossy_integer_casting() -> PolarsResult<()> {
+        // Can't cast too-high or too-low typed numbers losslessly:
+        assert!(equality_column_predicate(DataType::Int8, typed_lit(300i64))?.is_none());
+        assert!(equality_column_predicate(DataType::Int8, typed_lit(-300i64))?.is_none());
+        // Can't cast too-high or too-low dynamic number to losslessly:
+        assert!(equality_column_predicate(DataType::Int8, lit(300))?.is_none());
+        assert!(equality_column_predicate(DataType::Int8, lit(-300))?.is_none());
+        Ok(())
+    }
+
+    /// Can't cast across different categories of dtypes.
+    #[test]
+    fn column_predicates_equality_different_dtype() -> PolarsResult<()> {
+        assert!(equality_column_predicate(DataType::Int8, lit("hello"))?.is_none());
+        Ok(())
     }
 
     #[test]
