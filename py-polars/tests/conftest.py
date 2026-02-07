@@ -60,10 +60,12 @@ def _patched_cloud(
 
             return prev_collect(
                 with_timeout(
-                    lambda: lf.remote(plan_type="plain")
-                    .distributed()
-                    .execute()
-                    .await_result()
+                    lambda: (
+                        lf.remote(plan_type="plain")
+                        .distributed()
+                        .execute()
+                        .await_result()
+                    )
                 ).lazy()
             )
 
@@ -165,7 +167,7 @@ def _patched_cloud(
                 if args[0] == "placeholder-path" or isinstance(args[0], pl.PartitionBy):
                     prev_lazy = kwargs.get("lazy", False)
                     kwargs["lazy"] = True
-                    lf = prev_sink(lf, *args, **kwargs)
+                    lf = prev_sink(lf, *args, **kwargs)  # type: ignore[assignment]
 
                     class SimpleLazyExe:
                         def __init__(self, query: pl.LazyFrame) -> None:

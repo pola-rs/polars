@@ -27,10 +27,12 @@ SQL Clauses
      - Filter rows in a query based on window function results.
    * - :ref:`ORDER BY <order_by>`
      - Sort the query result based on one or more specified columns.
-   * - :ref:`LIMIT <limit>`
-     - Specify the number of rows returned.
    * - :ref:`OFFSET <offset>`
      - Skip a specified number of rows.
+   * - :ref:`LIMIT <limit>`
+     - Specify the number of rows returned.
+   * - :ref:`FETCH <fetch>`
+     - Limit the number of rows returned (alternative to LIMIT).
 
 
 .. _select:
@@ -412,6 +414,35 @@ Sort the query result based on one or more specified columns.
     # │ a   ┆ 10  │
     # └─────┴─────┘
 
+.. _offset:
+
+OFFSET
+------
+Skip a number of rows before starting to return rows from the query.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+      {
+        "foo": ["b", "a", "c", "b"],
+        "bar": [20, 10, 40, 30],
+      }
+    )
+    df.sql("""
+      SELECT foo, bar FROM self LIMIT 2 OFFSET 2
+    """)
+    # shape: (2, 2)
+    # ┌─────┬─────┐
+    # │ foo ┆ bar │
+    # │ --- ┆ --- │
+    # │ str ┆ i64 │
+    # ╞═════╪═════╡
+    # │ c   ┆ 40  │
+    # │ b   ┆ 30  │
+    # └─────┴─────┘
+
 .. _limit:
 
 LIMIT
@@ -441,11 +472,13 @@ Limit the number of rows returned by the query.
     # │ a   ┆ 10  │
     # └─────┴─────┘
 
-.. _offset:
+.. _fetch:
 
-OFFSET
-------
-Skip a number of rows before starting to return rows from the query.
+FETCH
+-----
+Limit the number of rows returned by the query; this is the ANSI SQL standard
+alternative to the ``LIMIT`` clause, and can be combined with ``OFFSET``. The
+`WITH TIES` and `PERCENT` modifiers are not currently supported.
 
 **Example:**
 
@@ -458,7 +491,10 @@ Skip a number of rows before starting to return rows from the query.
       }
     )
     df.sql("""
-      SELECT foo, bar FROM self LIMIT 2 OFFSET 2
+      SELECT foo, bar
+      FROM self
+      ORDER BY bar
+      OFFSET 1 FETCH NEXT 2 ROWS ONLY
     """)
     # shape: (2, 2)
     # ┌─────┬─────┐
@@ -466,6 +502,6 @@ Skip a number of rows before starting to return rows from the query.
     # │ --- ┆ --- │
     # │ str ┆ i64 │
     # ╞═════╪═════╡
-    # │ c   ┆ 40  │
+    # │ b   ┆ 20  │
     # │ b   ┆ 30  │
     # └─────┴─────┘
