@@ -7,6 +7,7 @@ use polars_core::prelude::*;
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_plan::plans::DynamicPred;
 use polars_utils::IdxSize;
 use polars_utils::priority::Priority;
 use polars_utils::sort::ReorderWithNulls;
@@ -399,6 +400,7 @@ pub struct TopKNode {
     key_schema: Arc<Schema>,
     key_selectors: Vec<StreamExpr>,
     state: TopKState,
+    dyn_pred: Option<DynamicPred>,
 }
 
 impl TopKNode {
@@ -408,6 +410,7 @@ impl TopKNode {
         nulls_last: Vec<bool>,
         key_schema: Arc<Schema>,
         key_selectors: Vec<StreamExpr>,
+        dyn_pred: Option<DynamicPred>,
     ) -> Self {
         Self {
             reverse,
@@ -415,6 +418,7 @@ impl TopKNode {
             key_schema,
             key_selectors,
             state: TopKState::WaitingForK(InMemorySinkNode::new(k_schema)),
+            dyn_pred,
         }
     }
 }

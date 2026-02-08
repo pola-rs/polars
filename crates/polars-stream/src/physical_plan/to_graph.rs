@@ -582,7 +582,7 @@ fn to_graph_rec<'a>(
             by_column,
             reverse,
             nulls_last,
-            dyn_pred: _,
+            dyn_pred,
         } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             let k_key = to_graph_rec(k.node, ctx)?;
@@ -603,6 +603,7 @@ fn to_graph_rec<'a>(
                     nulls_last.clone(),
                     key_schema,
                     key_selectors,
+                    dyn_pred,
                 ),
                 [(input_key, input.port), (k_key, k.port)],
             )

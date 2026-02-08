@@ -196,17 +196,7 @@ pub fn optimize(
         true
     };
 
-    if run_pushdowns {
-        run_projection_predicate_pushdown(
-            root,
-            ir_arena,
-            expr_arena,
-            pushdown_maintain_errors,
-            &opt_flags,
-        )?;
-    }
-
-    if opt_flags.slice_pushdown() {
+    if dbg!(opt_flags.slice_pushdown()) {
         let mut slice_pushdown_opt = SlicePushDown::new(
             // We don't maintain errors on slice as the behavior is much more predictable that way.
             //
@@ -221,6 +211,16 @@ pub fn optimize(
 
         // Expressions use the stack optimizer.
         rules.push(Box::new(slice_pushdown_opt));
+    }
+
+    if dbg!(run_pushdowns) {
+        run_projection_predicate_pushdown(
+            root,
+            ir_arena,
+            expr_arena,
+            pushdown_maintain_errors,
+            &opt_flags,
+        )?;
     }
 
     if opt_flags.fast_projection() {
