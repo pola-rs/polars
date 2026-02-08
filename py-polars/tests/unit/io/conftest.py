@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 def io_files_path() -> Path:
     return Path(__file__).parent / "files"
 
+
 # Doing this with a very rudimentary way by checking over
 # file paths because I am too lazy for this right now
 def pytest_collection_modifyitems(
