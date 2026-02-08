@@ -1246,10 +1246,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                         if (c in has_numeric_result)
                         else (
                             f"{int(v):,}".replace(",", thousands_sep)
-                            if (
-                                thousands_sep
-                                and metric in ("count", "null_count")
-                            )
+                            if (thousands_sep and metric in ("count", "null_count"))
                             else str(v)
                         )
                     )
