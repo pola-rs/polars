@@ -13,8 +13,9 @@ from unittest.mock import Mock, patch
 with suppress(ModuleNotFoundError):  # not available on windows
     import adbc_driver_sqlite.dbapi
 import pytest
-import sqlalchemy
+
 pa = pytest.importorskip("pyarrow")
+sqlalchemy = pytest.importorskip("sqlalchemy")
 from sqlalchemy import Integer, MetaData, Table, create_engine, func, select, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import cast as alchemy_cast
