@@ -3140,17 +3140,26 @@ def test_read_csv_parquet_file_error(tmp_path: Path) -> None:
     parquet_file = tmp_path / "test.parquet"
     df.write_parquet(parquet_file)
 
-    # Test reading parquet file with read_csv (file path)
+    # Test reading parquet file with read_csv (file path, detected by extension)
     with pytest.raises(
         ValueError,
-        match=r"appears to be a Parquet file[\s\S]*Use `pl\.read_parquet\(\)` or `pl\.scan_parquet\(\)`",
+        match=r"appears to be a Parquet file.*Use `pl\.read_parquet\(\)`",
     ):
         pl.read_csv(parquet_file)
+
+    # Test reading parquet file with non-.parquet extension (detected by magic bytes)
+    parquet_file_no_ext = tmp_path / "test.dat"
+    parquet_file_no_ext.write_bytes(parquet_file.read_bytes())
+    with pytest.raises(
+        ValueError,
+        match=r"appears to be a Parquet file.*Use `pl\.read_parquet\(\)`",
+    ):
+        pl.read_csv(parquet_file_no_ext)
 
     # Test reading parquet bytes with read_csv
     parquet_bytes = parquet_file.read_bytes()
     with pytest.raises(
         ValueError,
-        match=r"appears to be a Parquet file[\s\S]*Use `pl\.read_parquet\(\)` or `pl\.scan_parquet\(\)`",
+        match=r"appears to be in Parquet format.*Use `pl\.read_parquet\(\)`",
     ):
         pl.read_csv(parquet_bytes)
