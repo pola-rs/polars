@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 import subprocess
 import sys
@@ -15,7 +16,7 @@ import pytest
 pq = pytest.importorskip("pyarrow.parquet")
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, SchemaError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -1259,3 +1260,357 @@ def test_scan_parquet_prefilter_is_between_non_column_input_26283() -> None:
     )
 
     assert_frame_equal(q.collect(), df)
+
+
+def test_sink_parquet_arrow_schema() -> None:
+    df = pl.DataFrame({"x": [0, 1, None]})
+
+    f = io.BytesIO()
+    df.lazy().sink_parquet(
+        f,
+        arrow_schema=pa.schema(
+            [
+                pa.field(
+                    "x",
+                    pa.int64(),
+                    metadata={"custom_field_md_key": "custom_field_md_value"},
+                )
+            ],
+        ),
+    )
+
+    f.seek(0)
+
+    assert (
+        pq.read_schema(f).field("x").metadata[b"custom_field_md_key"]
+        == b"custom_field_md_value"
+    )
+
+    f = io.BytesIO()
+
+    df.lazy().sink_parquet(
+        f,
+        arrow_schema=pa.schema(
+            [pa.field("x", pa.int64())],
+            metadata={"custom_schema_md_key": "custom_schema_md_value"},
+        ),
+        metadata={"custom_footer_md_key": "custom_footer_md_value"},
+    )
+
+    f.seek(0)
+
+    assert pq.read_schema(f).metadata == {
+        b"custom_schema_md_key": b"custom_schema_md_value"
+    }
+    assert (
+        pq.read_metadata(f).metadata[b"custom_footer_md_key"]
+        == b"custom_footer_md_value"
+    )
+    assert (
+        pl.read_parquet_metadata(f)["custom_footer_md_key"] == "custom_footer_md_value"
+    )
+    assert pa.ipc.read_schema(
+        pa.BufferReader(base64.b64decode(pq.read_metadata(f).metadata[b"ARROW:schema"]))
+    ).metadata == {b"custom_schema_md_key": b"custom_schema_md_value"}
+
+    with pytest.raises(
+        SchemaError,
+        match=r"provided dtype \(Int32\) does not match output dtype \(Int64\)",
+    ):
+        df.lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [pa.field("x", pa.int32())],
+            ),
+        )
+
+    with pytest.raises(
+        SchemaError,
+        match="nullable is false but array contained 1 NULL",
+    ):
+        df.lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [pa.field("x", pa.int64(), nullable=False)],
+            ),
+        )
+
+    with pytest.raises(
+        SchemaError,
+        match=r"schema names in arrow_schema differ",
+    ):
+        df.lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [pa.field("z", pa.int64())],
+            ),
+        )
+
+    with pytest.raises(
+        SchemaError,
+        match="schema names in arrow_schema differ",
+    ):
+        df.lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema([]),
+        )
+
+    with pytest.raises(
+        SchemaError,
+        match="schema names in arrow_schema differ",
+    ):
+        df.lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [
+                    pa.field(
+                        "x",
+                        pa.int64(),
+                    ),
+                    pa.field(
+                        "y",
+                        pa.int64(),
+                    ),
+                ],
+            ),
+        )
+
+
+def test_sink_parquet_arrow_schema_logical_types() -> None:
+    from tests.unit.datatypes.test_extension import PythonTestExtension
+
+    df = pl.DataFrame(
+        {
+            "categorical": pl.Series(
+                ["A"], dtype=pl.Categorical(pl.Categories.random())
+            ),
+            "datetime": pl.Series([datetime(2026, 1, 1)], dtype=pl.Datetime("ns")),
+            "extension[str]": pl.Series(["A"], dtype=PythonTestExtension(pl.String)),
+        }
+    )
+
+    with pytest.raises(SchemaError, match=r"Dictionary\(UInt32, LargeUtf8, false\)"):
+        df.select("categorical").lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [pa.field("categorical", pa.null())],
+            ),
+        )
+
+    df.select("categorical").lazy().sink_parquet(
+        io.BytesIO(),
+        arrow_schema=pa.schema(
+            [pa.field("categorical", pa.dictionary(pa.uint32(), pa.large_string()))],
+        ),
+    )
+
+    with pytest.raises(SchemaError, match=r"Timestamp\(Nanosecond, None\)"):
+        df.select("datetime").lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [pa.field("datetime", pa.null())],
+            ),
+        )
+
+    df.select("datetime").lazy().sink_parquet(
+        io.BytesIO(),
+        arrow_schema=pa.schema(
+            [pa.field("datetime", pa.timestamp("ns"))],
+        ),
+    )
+
+    def build_pyarrow_extension_type(name: str) -> Any:
+        class PythonTestExtensionPyarrow(pa.ExtensionType):  # type: ignore[misc]
+            def __init__(self, data_type: pa.DataType) -> None:
+                super().__init__(data_type, name)
+
+            def __arrow_ext_serialize__(self) -> bytes:
+                return b""
+
+            @classmethod
+            def __arrow_ext_deserialize__(
+                cls, storage_type: Any, serialized: Any
+            ) -> Any:
+                return PythonTestExtensionPyarrow(storage_type[0].type)
+
+        return PythonTestExtensionPyarrow(pa.large_string())
+
+    with pytest.raises(
+        SchemaError,
+        match=r'Extension\(ExtensionType { name: "testing.python_test_extension", inner: LargeUtf8, metadata: None }\)',
+    ):
+        df.select("extension[str]").lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [pa.field("extension[str]", build_pyarrow_extension_type("name"))],
+            ),
+        )
+
+    df.select("extension[str]").lazy().sink_parquet(
+        io.BytesIO(),
+        arrow_schema=pa.schema(
+            [
+                pa.field(
+                    "extension[str]",
+                    build_pyarrow_extension_type("testing.python_test_extension"),
+                )
+            ],
+        ),
+    )
+
+
+def test_sink_parquet_arrow_schema_nested_types() -> None:
+    df = pl.DataFrame(
+        {
+            "list[struct{a:int64}]": pl.Series(
+                [[{"a": 1}, {"a": None}]], dtype=pl.List(pl.Struct({"a": pl.Int64}))
+            ),
+            "array[int64, 2]": pl.Series([[0, None]], dtype=pl.Array(pl.Int64, 2)),
+        }
+    )
+
+    with pytest.raises(SchemaError, match="struct dtype mismatch"):
+        df.select("list[struct{a:int64}]").lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [
+                    pa.field(
+                        "list[struct{a:int64}]",
+                        pa.large_list(pa.struct([])),
+                    )
+                ],
+            ),
+        )
+
+    with pytest.raises(SchemaError, match="struct dtype mismatch"):
+        df.select("list[struct{a:int64}]").lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [
+                    pa.field(
+                        "list[struct{a:int64}]",
+                        pa.large_list(
+                            pa.struct(
+                                [pa.field("a", pa.int64()), pa.field("b", pa.int64())]
+                            )
+                        ),
+                    )
+                ],
+            ),
+        )
+
+    with pytest.raises(
+        SchemaError,
+        match="nullable is false but array contained 1 NULL",
+    ):
+        df.select("list[struct{a:int64}]").lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [
+                    pa.field(
+                        "list[struct{a:int64}]",
+                        pa.large_list(
+                            pa.struct([pa.field("a", pa.int64(), nullable=False)])
+                        ),
+                    )
+                ],
+            ),
+        )
+
+    df.select("list[struct{a:int64}]").lazy().sink_parquet(
+        io.BytesIO(),
+        arrow_schema=pa.schema(
+            [
+                pa.field(
+                    "list[struct{a:int64}]",
+                    pa.large_list(pa.struct([pa.field("a", pa.int64())])),
+                )
+            ],
+        ),
+    )
+
+    with pytest.raises(SchemaError, match="fixed-size list dtype mismatch:"):
+        df.select("array[int64, 2]").lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [
+                    pa.field(
+                        "array[int64, 2]",
+                        pa.list_(pa.int64(), 0),
+                    )
+                ],
+            ),
+        )
+
+    df.select("array[int64, 2]").lazy().sink_parquet(
+        io.BytesIO(),
+        arrow_schema=pa.schema(
+            [
+                pa.field(
+                    "array[int64, 2]",
+                    pa.list_(pa.int64(), 2),
+                )
+            ],
+        ),
+    )
+
+
+def test_sink_parquet_writes_strings_as_largeutf8_by_default() -> None:
+    df = pl.DataFrame({"string": "A", "binary": [b"A"]})
+
+    with pytest.raises(
+        SchemaError,
+        match=r"provided dtype \(Utf8View\) does not match output dtype \(LargeUtf8\)",
+    ):
+        df.lazy().select("string").sink_parquet(
+            io.BytesIO(), arrow_schema=pa.schema([pa.field("string", pa.string_view())])
+        )
+
+    with pytest.raises(
+        SchemaError,
+        match=r"provided dtype \(BinaryView\) does not match output dtype \(LargeBinary\)",
+    ):
+        df.lazy().select("binary").sink_parquet(
+            io.BytesIO(), arrow_schema=pa.schema([pa.field("binary", pa.binary_view())])
+        )
+
+    f = io.BytesIO()
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("string", pa.large_string()),
+            pa.field("binary", pa.large_binary()),
+        ]
+    )
+
+    df.lazy().sink_parquet(f, arrow_schema=arrow_schema)
+
+    f.seek(0)
+
+    assert pq.read_schema(f) == arrow_schema
+
+    f.seek(0)
+
+    assert_frame_equal(pl.scan_parquet(f).collect(), df)
+
+
+def test_sink_parquet_pyarrow_filter_string_type_26435() -> None:
+    df = pl.DataFrame({"string": ["A", None, "B"], "int": [0, 1, 2]})
+
+    f = io.BytesIO()
+
+    df.write_parquet(f)
+
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.DataFrame(pq.read_table(f, filters=[("int", "=", 0)])),
+        pl.DataFrame({"string": "A", "int": 0}),
+    )
+
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.DataFrame(pq.read_table(f, filters=[("string", "=", "A")])),
+        pl.DataFrame({"string": "A", "int": 0}),
+    )

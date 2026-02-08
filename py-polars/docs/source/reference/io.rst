@@ -56,6 +56,7 @@ Delta Lake
    read_delta
    scan_delta
    DataFrame.write_delta
+   LazyFrame.sink_delta
 
 Excel / ODS
 ~~~~~~~~~~~
@@ -137,15 +138,6 @@ Parquet
    scan_parquet
    DataFrame.write_parquet
    LazyFrame.sink_parquet
-
-.. currentmodule:: polars.io.parquet
-
-.. autosummary::
-   :toctree: api/
-
-   ParquetFieldOverwrites
-
-.. currentmodule:: polars
 
 PyArrow Datasets
 ~~~~~~~~~~~~~~~~

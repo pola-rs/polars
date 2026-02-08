@@ -26,6 +26,7 @@ pub enum BinaryFunction {
     Slice,
     Head,
     Tail,
+    Get(bool),
 }
 
 impl Display for BinaryFunction {
@@ -49,6 +50,7 @@ impl Display for BinaryFunction {
             Slice => "slice",
             Head => "head",
             Tail => "tail",
+            Get(_) => "get",
         };
         write!(f, "bin.{s}")
     }

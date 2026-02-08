@@ -51,8 +51,8 @@ fn test_lazy_unpivot() {
     let df = get_df();
 
     let args = UnpivotArgsDSL {
-        on: Some(by_name(["sepal_length", "sepal_width"], true)),
-        index: by_name(["petal_width", "petal_length"], true),
+        on: Some(by_name(["sepal_length", "sepal_width"], true, false)),
+        index: by_name(["petal_width", "petal_length"], true, false),
         variable_name: None,
         value_name: None,
     };
@@ -288,7 +288,7 @@ fn test_lazy_query_4() -> PolarsResult<()> {
                 .alias("diff_cases"),
         ])
         .explode(
-            by_name(["day", "diff_cases"], true),
+            by_name(["day", "diff_cases"], true, false),
             ExplodeOptions {
                 empty_as_null: true,
                 keep_nulls: true,
@@ -1114,7 +1114,7 @@ fn test_multiple_explode() -> PolarsResult<()> {
         .group_by([col("a")])
         .agg([col("b").alias("b_list"), col("c").alias("c_list")])
         .explode(
-            by_name(["c_list", "b_list"], true),
+            by_name(["c_list", "b_list"], true, false),
             ExplodeOptions {
                 empty_as_null: true,
                 keep_nulls: true,

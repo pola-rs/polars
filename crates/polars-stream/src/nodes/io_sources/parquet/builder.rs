@@ -61,8 +61,7 @@ impl FileReaderBuilder for ParquetReaderBuilder {
         let prefetch_limit = std::env::var("POLARS_ROW_GROUP_PREFETCH_SIZE")
             .map(|x| {
                 x.parse::<NonZeroUsize>()
-                    .ok()
-                    .unwrap_or_else(|| {
+                    .unwrap_or_else(|_| {
                         panic!("invalid value for POLARS_ROW_GROUP_PREFETCH_SIZE: {x}")
                     })
                     .get()

@@ -142,6 +142,7 @@ if TYPE_CHECKING:
 
     from polars import DataType, Expr, LazyFrame, Series
     from polars._typing import (
+        ArrowSchemaExportable,
         AsofJoinStrategy,
         AvroCompression,
         ClosedInterval,
@@ -4117,6 +4118,7 @@ class DataFrame:
         ) = "auto",
         retries: int | None = None,
         metadata: ParquetMetadata | None = None,
+        arrow_schema: ArrowSchemaExportable | None = None,
         mkdir: bool = False,
     ) -> None:
         """
@@ -4213,6 +4215,15 @@ class DataFrame:
             .. warning::
                 This functionality is considered **experimental**. It may be removed or
                 changed at any point without it being considered a breaking change.
+
+        arrow_schema
+            Provide a custom arrow schema to write to the file. This allows
+            setting custom schema and field-level metadata. Names and dtypes
+            must match.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         mkdir: bool
             Recursively create all the directories in the path.
 
@@ -4336,6 +4347,7 @@ class DataFrame:
             credential_provider=credential_provider,
             retries=retries,
             metadata=metadata,
+            arrow_schema=arrow_schema,
             engine=engine,
             mkdir=mkdir,
             optimizations=QueryOptFlags._eager(),
@@ -6863,8 +6875,8 @@ class DataFrame:
         self,
         column_names: str | Sequence[str] | pl.Selector,
         function: Callable[[Series], Series],
-        *args: P.args,
-        **kwargs: P.kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> DataFrame:
         """
         Apply eager functions to columns of a DataFrame.
@@ -8579,7 +8591,7 @@ class DataFrame:
 
         Return a DataFrame with a single column by mapping each row to a scalar:
 
-        >>> df.map_rows(lambda t: (t[0] * 2 + t[1]))
+        >>> df.map_rows(lambda t: t[0] * 2 + t[1])
         shape: (3, 1)
         ┌─────┐
         │ map │

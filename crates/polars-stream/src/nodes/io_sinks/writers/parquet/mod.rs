@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_io::pl_async;
-use polars_io::prelude::{ParquetWriteOptions, get_column_write_options};
+use polars_io::prelude::{ParquetWriteOptions, get_encodings};
 use polars_parquet::write::{
-    ColumnWriteOptions, CompressedPage, SchemaDescriptor, Version, WriteOptions, to_parquet_schema,
+    CompressedPage, Encoding, SchemaDescriptor, Version, WriteOptions, to_parquet_schema,
 };
 use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
@@ -33,7 +34,7 @@ pub struct ParquetWriterStarter {
 
 #[derive(Clone)]
 pub struct InitializedState {
-    column_options: Arc<Vec<ColumnWriteOptions>>,
+    encodings: Buffer<Vec<Encoding>>,
     schema_descriptor: Arc<SchemaDescriptor>,
 }
 
@@ -81,22 +82,17 @@ impl FileWriterStarter for ParquetWriterStarter {
         num_pipelines: std::num::NonZeroUsize,
     ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>> {
         let InitializedState {
-            column_options,
+            encodings,
             schema_descriptor,
         } = {
             let mut initialized_state = self.initialized_state.lock().unwrap();
 
             if initialized_state.is_none() {
-                let column_options: Arc<Vec<ColumnWriteOptions>> = Arc::new(
-                    get_column_write_options(&self.arrow_schema, &self.options.field_overwrites),
-                );
-                let schema_descriptor = Arc::new(to_parquet_schema(
-                    &self.arrow_schema,
-                    column_options.as_ref(),
-                )?);
+                let schema_descriptor = Arc::new(to_parquet_schema(&self.arrow_schema)?);
+                let encodings = get_encodings(&self.arrow_schema);
 
                 *initialized_state = Some(InitializedState {
-                    column_options,
+                    encodings,
                     schema_descriptor,
                 })
             };
@@ -127,7 +123,7 @@ impl FileWriterStarter for ParquetWriterStarter {
                     arrow_schema,
                     schema_descriptor: Arc::clone(&schema_descriptor),
                     write_options,
-                    column_options: Arc::clone(&column_options),
+                    encodings: Buffer::clone(&encodings),
                     key_value_metadata,
                     num_leaf_columns,
                 }
@@ -135,14 +131,18 @@ impl FileWriterStarter for ParquetWriterStarter {
             ),
         );
 
+        let arrow_schema = Arc::clone(&self.arrow_schema);
+        let compat_level = self.options.compat_level();
         let compute_handle = async_executor::AbortOnDropHandle::new(async_executor::spawn(
             TaskPriority::High,
             row_group_encoder::RowGroupEncoder {
                 morsel_rx,
                 encoded_row_group_tx,
+                arrow_schema,
+                compat_level,
                 schema_descriptor,
                 write_options,
-                column_options,
+                encodings,
                 num_leaf_columns,
             }
             .run(),

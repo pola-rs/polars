@@ -591,3 +591,48 @@ def test_binary_context_nested(maintain_order: bool) -> None:
         {"groups": [1, 2, 3], "vals": [[14, 90], [90, 90], [7, 90]]}
     )
     assert_frame_equal(out, expected, check_row_order=maintain_order)
+
+
+def test_get() -> None:
+    # N binary, scalar index (N to 1).
+    df = pl.DataFrame({"a": [b"\x01\x02\x03", b"", b"\x04\x05"]})
+    result = df.select(pl.col("a").bin.get(0, null_on_oob=True))
+    expected = pl.DataFrame({"a": [1, None, 4]}, schema={"a": pl.UInt8})
+    assert_frame_equal(result, expected)
+
+    # Negative index.
+    result = df.select(pl.col("a").bin.get(-1, null_on_oob=True))
+    expected = pl.DataFrame({"a": [3, None, 5]}, schema={"a": pl.UInt8})
+    assert_frame_equal(result, expected)
+
+    # Null index.
+    result = df.select(
+        pl.col("a").bin.get(pl.lit(None, dtype=pl.Int64), null_on_oob=True)
+    )
+    expected = pl.DataFrame({"a": [None, None, None]}, schema={"a": pl.UInt8})
+    assert_frame_equal(result, expected)
+
+    # N binary, N indices (N to N).
+    df = pl.DataFrame(
+        {
+            "a": [b"\x01\x02\x03", b"\x04\x05", b"\x06"],
+            "idx": [2, 0, 0],
+        }
+    )
+    result = df.select(pl.col("a").bin.get(pl.col("idx"), null_on_oob=True))
+    expected = pl.DataFrame({"a": [3, 4, 6]}, schema={"a": pl.UInt8})
+    assert_frame_equal(result, expected)
+
+    # 1 binary, N indices (1 to N).
+    result = pl.select(
+        pl.lit(pl.Series("a", [b"\x01\x02\x03"])).bin.get(
+            pl.Series("idx", [0, 1, 2]), null_on_oob=True
+        )
+    )
+    expected = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.UInt8})
+    assert_frame_equal(result, expected)
+
+    # OOB raises error.
+    df = pl.DataFrame({"a": [b"\x01\x02"]})
+    with pytest.raises(pl.exceptions.ComputeError, match="out of bounds"):
+        df.select(pl.col("a").bin.get(5))

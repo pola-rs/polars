@@ -51,8 +51,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
         let prefetch_limit = std::env::var("POLARS_RECORD_BATCH_PREFETCH_SIZE")
             .map(|x| {
                 x.parse::<NonZeroUsize>()
-                    .ok()
-                    .unwrap_or_else(|| {
+                    .unwrap_or_else(|_| {
                         panic!("invalid value for POLARS_RECORD_BATCH_PREFETCH_SIZE: {x}")
                     })
                     .get()
@@ -119,6 +118,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
             io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
             verbose,
             init_data: None,
+            checked: self.options.checked,
         };
 
         Box::new(reader) as Box<dyn FileReader>

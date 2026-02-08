@@ -3,6 +3,7 @@ from typing import Any, Literal, TypeAlias, overload
 
 from numpy.typing import NDArray
 
+from polars._typing import ArrowSchemaExportable
 from polars.io.scan_options._options import ScanOptions
 
 # This file mirrors all the definitions made in the polars-python Rust API.
@@ -82,7 +83,6 @@ SetOperation: TypeAlias = Literal[
 ]
 FloatFmt: TypeAlias = Literal["full", "mixed"]
 NDArray1D: TypeAlias = NDArray[Any]
-ParquetFieldOverwrites: TypeAlias = Any
 StatisticsOptions: TypeAlias = Any
 EngineType: TypeAlias = Literal["auto", "in-memory", "streaming", "gpu"]
 PyScanOptions: TypeAlias = Any
@@ -956,7 +956,7 @@ class PyLazyFrame:
         row_group_size: int | None,
         data_page_size: int | None,
         metadata: KeyValueMetadata | None,
-        field_overwrites: Sequence[ParquetFieldOverwrites],
+        arrow_schema: ArrowSchemaExportable | None = None,
     ) -> PyLazyFrame: ...
     def sink_ipc(
         self,
@@ -1483,6 +1483,7 @@ class PyExpr:
     def bin_slice(self, offset: PyExpr, length: PyExpr) -> PyExpr: ...
     def bin_head(self, n: PyExpr) -> PyExpr: ...
     def bin_tail(self, n: PyExpr) -> PyExpr: ...
+    def bin_get(self, index: PyExpr, null_on_oob: bool) -> PyExpr: ...
 
     # bitwise
     def bitwise_count_ones(self) -> PyExpr: ...
@@ -1984,7 +1985,9 @@ class PySelector:
     @staticmethod
     def by_dtype(dtypes: Sequence[Any]) -> PySelector: ...
     @staticmethod
-    def by_name(names: Sequence[str], strict: bool) -> PySelector: ...
+    def by_name(
+        names: Sequence[str], strict: bool, expand_patterns: bool
+    ) -> PySelector: ...
     @staticmethod
     def by_index(indices: Sequence[int], strict: bool) -> PySelector: ...
     @staticmethod

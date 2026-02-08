@@ -33,7 +33,7 @@ impl LineBatchDistributor {
 
         let fixed_read_size = std::env::var("POLARS_FORCE_NDJSON_CHUNK_SIZE")
             .map(|x| {
-                x.parse::<NonZeroUsize>().ok().unwrap_or_else(|| {
+                x.parse::<NonZeroUsize>().unwrap_or_else(|_| {
                     panic!("invalid value for POLARS_FORCE_NDJSON_CHUNK_SIZE: {x}")
                 })
             })
@@ -55,6 +55,10 @@ impl LineBatchDistributor {
             // Since decompression doesn't support reverse decompression, we have to fully
             // decompress the input. It's crucial for the streaming property that this doesn't get
             // called in the non-reverse case.
+            debug_assert!(
+                !reader.is_compressed(),
+                "Negative slicing and decompression risk OOM, should be handled on higher level."
+            );
             let (full_input, _) = reader.read_next_slice(&Buffer::new(), usize::MAX)?;
             let offset = full_input.len();
             Some((full_input, offset))

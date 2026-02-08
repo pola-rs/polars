@@ -208,6 +208,32 @@ impl DataType {
         }
     };
 
+    pub fn pretty_format(&self) -> String {
+        match self {
+            #[cfg(feature = "dtype-struct")]
+            Self::Struct(fields) => {
+                let formatted_fields = fields
+                    .iter()
+                    .map(|field| format!("{}: {}", field.name, field.dtype.pretty_format()))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                format!("struct {{{}}}", formatted_fields)
+            },
+            Self::List(inner_dtype) => {
+                let formatted_dtype = inner_dtype.pretty_format();
+                format!("list[{}]", formatted_dtype)
+            },
+            #[cfg(feature = "dtype-array")]
+            Self::Array(inner_dtype, size) => {
+                let formatted_dtype = inner_dtype.pretty_format();
+                format!("array[{}, {}]", formatted_dtype, size)
+            },
+            _ => {
+                format!("{}", self)
+            },
+        }
+    }
+
     pub fn value_within_range(&self, other: AnyValue) -> bool {
         use DataType::*;
         match self {
@@ -633,7 +659,7 @@ impl DataType {
         use DataType::*;
         match self {
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) | Enum(_, _) => true,
+            Categorical(_, _) => true,
             List(inner) => inner.contains_categoricals(),
             #[cfg(feature = "dtype-array")]
             Array(inner, _) => inner.contains_categoricals(),
@@ -641,6 +667,20 @@ impl DataType {
             Struct(fields) => fields
                 .iter()
                 .any(|field| field.dtype.contains_categoricals()),
+            _ => false,
+        }
+    }
+
+    pub fn contains_enums(&self) -> bool {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "dtype-categorical")]
+            Enum(_, _) => true,
+            List(inner) => inner.contains_enums(),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, _) => inner.contains_enums(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields.iter().any(|field| field.dtype.contains_enums()),
             _ => false,
         }
     }
