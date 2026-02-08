@@ -9,6 +9,7 @@ import polars as pl
 import polars.selectors as cs
 from polars.exceptions import ComputeError, DuplicateError
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import requires_new_streaming
 
 if TYPE_CHECKING:
     from polars._typing import PivotAgg, PolarsIntegerType, PolarsTemporalType
@@ -618,6 +619,7 @@ def test_pivot_invalid() -> None:
     "dtype",
     [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64],
 )
+@requires_new_streaming
 def test_pivot_empty_index_dtypes(dtype: PolarsIntegerType) -> None:
     index = pl.Series([], dtype=dtype)
     df = pl.DataFrame({"index": index, "on": [], "values": []})

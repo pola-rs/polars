@@ -20,7 +20,11 @@ from polars.exceptions import (
     PolarsInefficientMapWarning,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
+from tests.unit.conftest import (
+    FLOAT_DTYPES,
+    NUMERIC_DTYPES,
+    requires_new_streaming,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -280,6 +284,7 @@ def test_apply_custom_function() -> None:
     assert_frame_equal(df, expected)
 
 
+@requires_new_streaming
 def test_group_by() -> None:
     ldf = pl.LazyFrame(
         {
@@ -1549,6 +1554,7 @@ def test_join_bad_input_type() -> None:
     a.join(b, on="a").collect()
 
 
+@skip_wasm_differences
 def test_join_where() -> None:
     east = pl.LazyFrame(
         {

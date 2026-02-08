@@ -6,6 +6,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import requires_new_streaming
 
 if TYPE_CHECKING:
     from polars._typing import EngineType
@@ -27,6 +28,7 @@ def test_engine_selection_invalid_raises(df: pl.LazyFrame) -> None:
         df.collect(engine="unknown")  # type: ignore[call-overload]
 
 
+@requires_new_streaming
 def test_engine_selection_background_warns(
     df: pl.LazyFrame, engine: EngineType
 ) -> None:

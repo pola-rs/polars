@@ -401,6 +401,7 @@ def test_list_drop_nulls_eager() -> None:
         [None, [None, "value", None]],
     ],
 )
+@requires_new_streaming
 def test_list_drop_nulls_lazy(engine: EngineType, data: list[Any]) -> None:
     res = (
         pl.LazyFrame({"foo": data})

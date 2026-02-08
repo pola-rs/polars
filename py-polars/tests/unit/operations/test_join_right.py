@@ -1,5 +1,6 @@
 import polars as pl
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import requires_new_streaming
 
 
 def test_right_join_schemas() -> None:
@@ -121,6 +122,7 @@ def test_join_right_different_multikey() -> None:
     assert result.collect_schema() == expected.schema
 
 
+@requires_new_streaming
 def test_join_right_partial_rechunk_25971() -> None:
     lhs = pl.DataFrame({"x": [0, 0]})
     rhs = pl.concat([pl.select(x=pl.int_range(2000))] * 2)

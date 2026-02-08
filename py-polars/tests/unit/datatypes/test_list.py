@@ -10,7 +10,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
+from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES, requires_new_streaming
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -210,6 +210,7 @@ def test_categorical_list() -> None:
     assert s.explode().to_list() == ["a", "b", "c", "a", "d", "d"]
 
 
+@requires_new_streaming
 def test_group_by_list_column() -> None:
     df = (
         pl.DataFrame({"a": ["a", "b", "a"]})

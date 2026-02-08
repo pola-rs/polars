@@ -77,6 +77,7 @@ def test_asof_join_inline_cast_6438() -> None:
     }
 
 
+@requires_new_streaming
 def test_asof_join_projection_resolution_4606() -> None:
     a = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
     b = pl.DataFrame({"a": [1], "b": [2], "d": [4]}).lazy()

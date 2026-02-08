@@ -18,6 +18,7 @@ from tests.unit.conftest import (
     INTEGER_DTYPES,
     NUMERIC_DTYPES,
     TEMPORAL_DTYPES,
+    requires_new_streaming,
 )
 
 if TYPE_CHECKING:
@@ -103,6 +104,7 @@ def test_filter_where() -> None:
     ]
 
 
+@requires_new_streaming
 def test_len_expr() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 3, 3], "b": ["a", "a", "b", "a", "a"]})
 
@@ -250,6 +252,7 @@ def test_exp_log1p(dtype_in: PolarsDataType, dtype_out: PolarsDataType) -> None:
     assert result.collect_schema() == expected.schema
 
 
+@requires_new_streaming
 def test_dot_in_group_by() -> None:
     df = pl.DataFrame(
         {

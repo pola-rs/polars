@@ -6,6 +6,14 @@ from hypothesis import given
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
+from tests.unit.conftest import IS_WASM
+
+if IS_WASM:
+    pytest.skip(
+        "the new_streaming feature is not enabled on Emscripten/Pyodide builds.",
+        allow_module_level=True,
+    )
+
 
 left = pl.DataFrame({"a": [42, 13, 37], "b": [3, 8, 9]})
 right = pl.DataFrame({"a": [5, 10, 1996], "b": [1, 5, 7]})
