@@ -7,6 +7,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import requires_csv
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -238,6 +239,7 @@ def test_cat_slice(dtype: PolarsDataType) -> None:
     ]
 
 
+@requires_csv
 def test_cat_order_flag_csv_read_23823() -> None:
     data = BytesIO(b"colx,coly\nabc,123\n#not_a_row\nxyz,456")
     lf = pl.scan_csv(

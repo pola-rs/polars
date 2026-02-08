@@ -5,6 +5,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import requires_csv, requires_new_streaming
 
 
 def test_projection_on_semi_join_4789() -> None:
@@ -291,6 +292,7 @@ def test_merge_sorted_projection_pd() -> None:
     }
 
 
+@requires_new_streaming
 def test_distinct_projection_pd_7578() -> None:
     lf = pl.LazyFrame(
         {
@@ -601,6 +603,7 @@ def test_projections_collapse_17781() -> None:
     assert "SELECT " not in lf.explain()  # type: ignore[union-attr]
 
 
+@requires_csv
 def test_with_columns_projection_pushdown() -> None:
     # # Summary
     # `process_hstack` in projection PD incorrectly took a fast-path meant for

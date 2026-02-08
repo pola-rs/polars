@@ -10,6 +10,7 @@ from polars.exceptions import (
     SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import requires_csv
 
 
 def test_transpose_supertype() -> None:
@@ -181,6 +182,7 @@ def test_err_transpose_object() -> None:
         pl.DataFrame([CustomObject()]).transpose()
 
 
+@requires_csv
 def test_transpose_name_from_column_13777() -> None:
     csv_file = io.BytesIO(b"id,kc\nhi,3")
     df = pl.read_csv(csv_file).transpose(column_names="id")

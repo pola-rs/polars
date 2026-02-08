@@ -5,6 +5,7 @@ import pytest
 import polars as pl
 from polars.exceptions import SchemaError
 from polars.testing import assert_series_equal
+from tests.unit.conftest import requires_parquet
 
 
 def test_append() -> None:
@@ -116,6 +117,7 @@ def test_append_null_series() -> None:
     assert a.n_chunks() == 2
 
 
+@requires_parquet
 def test_append_enum_22764() -> None:
     f = io.BytesIO()
     g = io.BytesIO()

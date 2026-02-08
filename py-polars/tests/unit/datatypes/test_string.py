@@ -2,6 +2,7 @@ import json
 
 import polars as pl
 from polars.testing import assert_series_equal
+from tests.unit.conftest import requires_json
 
 
 def test_series_init_string() -> None:
@@ -32,6 +33,7 @@ def test_utf8_alias_lit() -> None:
     assert_series_equal(result, expected)
 
 
+@requires_json
 def test_json_decode_multiple_chunks() -> None:
     a = json.dumps({"x": None})
     b = json.dumps({"x": True})

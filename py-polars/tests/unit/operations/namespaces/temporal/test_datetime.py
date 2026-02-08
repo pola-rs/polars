@@ -13,6 +13,7 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
+from tests.unit.conftest import requires_datetime_range
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -301,6 +302,7 @@ def test_base_utc_offset_lazy_schema() -> None:
     assert result == expected
 
 
+@requires_datetime_range
 def test_base_utc_offset_invalid() -> None:
     ser = pl.datetime_range(datetime(2020, 10, 25), datetime(2020, 10, 26), eager=True)
     with pytest.raises(
@@ -339,6 +341,7 @@ def test_dst_offset_lazy_schema() -> None:
     assert result == expected
 
 
+@requires_datetime_range
 def test_dst_offset_invalid() -> None:
     ser = pl.datetime_range(datetime(2020, 10, 25), datetime(2020, 10, 26), eager=True)
     with pytest.raises(
@@ -408,6 +411,7 @@ def test_duration_extract_times(
     ],
     ids=["milliseconds", "microseconds", "nanoseconds"],
 )
+@requires_datetime_range
 def test_truncate(
     time_unit: TimeUnit,
     every: str | timedelta,
@@ -473,6 +477,7 @@ def test_truncate_negative() -> None:
     ],
     ids=["milliseconds", "microseconds", "nanoseconds"],
 )
+@requires_datetime_range
 def test_round(
     time_unit: TimeUnit,
     every: str | timedelta,

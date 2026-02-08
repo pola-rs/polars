@@ -18,7 +18,12 @@ from polars.meta.index_type import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
 from polars.testing.parametric.strategies.dtype import _time_units
-from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES, TEMPORAL_DTYPES
+from tests.unit.conftest import (
+    INTEGER_DTYPES,
+    NUMERIC_DTYPES,
+    TEMPORAL_DTYPES,
+    requires_datetime_range,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -186,6 +191,7 @@ def test_rolling_rank_needs_closed_right(
         ),
     ],
 )
+@requires_datetime_range
 def test_rolling_negative_offset(
     offset: str, closed: ClosedInterval, expected_values: list[list[int]]
 ) -> None:
@@ -279,6 +285,7 @@ def test_rolling_kurtosis() -> None:
         ("rolling_rank_by", [1.0, 1.0, 1.0, 1.0, 1.0, 1.0], pl.Float64),
     ],
 )
+@requires_datetime_range
 def test_rolling_crossing_dst(
     time_zone: str | None,
     rolling_fn: str,
@@ -863,6 +870,7 @@ def test_rolling_aggregations_unsorted_raise_10991() -> None:
     assert_frame_equal(result, expected)
 
 
+@requires_datetime_range
 def test_rolling_aggregations_with_over_11225() -> None:
     start = datetime(2001, 1, 1)
 
@@ -1140,6 +1148,7 @@ def test_index_expr_output_name_12244() -> None:
 
 
 def test_rolling_median() -> None:
+    pytest.importorskip("pyarrow")
     for n in range(10, 25):
         array = np.random.randint(0, 20, n)
         for k in [3, 5, 7]:

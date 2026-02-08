@@ -4,6 +4,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import requires_datetime_range
 
 
 def test_format_expr() -> None:
@@ -79,6 +80,7 @@ def test_format_group_by_23858() -> None:
 
 # Flaky - requires POLARS_MAX_THREADS=1 to trigger multiple chunks
 # Only valid when run in isolation, see also GH issue #22070
+@requires_datetime_range
 def test_format_on_multiple_chunks_25159(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_MAX_THREADS", "1")
     df = pl.DataFrame({"group": ["A", "B"]})

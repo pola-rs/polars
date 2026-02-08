@@ -24,6 +24,7 @@ from tests.unit.conftest import (
     FLOAT_DTYPES,
     NUMERIC_DTYPES,
     requires_new_streaming,
+    skip_wasm_differences,
 )
 
 if TYPE_CHECKING:

@@ -123,6 +123,7 @@ def test_maintain_order_after_sampling() -> None:
 @pytest.mark.parametrize("descending", [False, True])
 @pytest.mark.parametrize("nulls_last", [False, True])
 @pytest.mark.parametrize("maintain_order", [False, True])
+@requires_new_streaming
 def test_sorted_group_by_optimization(
     descending: bool, nulls_last: bool, maintain_order: bool
 ) -> None:
@@ -356,6 +357,7 @@ def test_none_comparison_4773() -> None:
 
 
 def test_datetime_supertype_5236() -> None:
+    pytest.importorskip("pyarrow")
     df = pd.DataFrame(
         {
             "StartDateTime": [pd.Timestamp.now(tz="UTC"), pd.Timestamp.now(tz="UTC")],

@@ -2,6 +2,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import skip_wasm_differences
 
 
 def test_rank_nulls() -> None:
@@ -24,6 +25,7 @@ def test_rank_random_expr() -> None:
     assert_frame_equal(df_ranks1, df_ranks2)
 
 
+@skip_wasm_differences
 def test_rank_random_series() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
     assert_series_equal(

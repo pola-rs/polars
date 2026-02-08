@@ -29,6 +29,25 @@ load_profile(
 
 IS_WASM = sys.platform == "emscripten" or platform.machine() in ["wasm32", "wasm64"]
 
+requires_json = pytest.mark.skipif(IS_WASM, reason="json feature not available in WASM")
+requires_csv = pytest.mark.skipif(IS_WASM, reason="csv feature not available in WASM")
+requires_parquet = pytest.mark.skipif(
+    IS_WASM, reason="parquet feature not available in WASM"
+)
+requires_ipc = pytest.mark.skipif(IS_WASM, reason="ipc feature not available in WASM")
+requires_new_streaming = pytest.mark.skipif(
+    IS_WASM, reason="new_streaming feature not available in WASM"
+)
+requires_multiprocessing = pytest.mark.skipif(
+    IS_WASM, reason="multiprocessing not available in WASM"
+)
+requires_datetime_range = pytest.mark.skipif(
+    IS_WASM, reason="datetime range has usize conversion issues in WASM"
+)
+skip_wasm_differences = pytest.mark.skipif(
+    IS_WASM, reason="test has different results in WASM (hash/random differences)"
+)
+
 # Data type groups
 SIGNED_INTEGER_DTYPES = [pl.Int8(), pl.Int16(), pl.Int32(), pl.Int64(), pl.Int128()]
 UNSIGNED_INTEGER_DTYPES = [

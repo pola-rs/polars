@@ -5,6 +5,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import requires_parquet
 
 
 def test_collect_all_type_coercion_21805() -> None:
@@ -22,6 +23,7 @@ def test_collect_all(df: pl.DataFrame, optimizations: pl.QueryOptFlags) -> None:
     assert cast("float", out[1].item()) == 12.0
 
 
+@requires_parquet
 def test_collect_all_issue_26097(tmp_path: Path) -> None:
     data = pl.DataFrame({"A": [1]})
     tmp_file = tmp_path / "polars-bug-repr.parquet"

@@ -10,6 +10,8 @@ import pytest
 import polars as pl
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
+from tests.unit.conftest import requires_multiprocessing
+
 pa = pytest.importorskip("pyarrow")
 
 if TYPE_CHECKING:
@@ -384,6 +386,7 @@ def test_from_pandas_pyarrow_not_available_fails() -> None:
         pl.from_pandas(pd.DataFrame({"a": [None, "foo"]}))
 
 
+@requires_multiprocessing
 def test_from_pandas_nan_to_null_16453(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "polars._utils.construction.dataframe._MIN_NUMPY_SIZE_FOR_MULTITHREADING", 2

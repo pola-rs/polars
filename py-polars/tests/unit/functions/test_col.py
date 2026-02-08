@@ -4,6 +4,7 @@ import polars as pl
 from polars import col
 from polars.datatypes.group import NUMERIC_DTYPES
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import requires_multiprocessing
 
 
 def test_col_as_attribute() -> None:
@@ -33,6 +34,7 @@ def test_col_as_attribute_edge_cases() -> None:
         ]
 
 
+@requires_multiprocessing
 def test_col_as_attribute_class_mangling_25129() -> None:
     # note: we have to run this test in a subprocess to prevent pytest
     # itself from managing to inject "_pytestfixturefunction" as the
@@ -47,6 +49,7 @@ def test_col_as_attribute_class_mangling_25129() -> None:
             """\
 from sys import version_info
 import polars as pl
+from tests.unit.conftest import requires_multiprocessing
 df = pl.DataFrame({"__foo": [0]})
 
 class Mangler:

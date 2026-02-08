@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from tests.unit.conftest import requires_new_streaming
 
 
 @pytest.fixture
@@ -25,6 +26,7 @@ def test_show_graph_ir(query: pl.LazyFrame) -> None:
     assert isinstance(out, str)
 
 
+@requires_new_streaming
 def test_show_graph_phys_streaming(query: pl.LazyFrame) -> None:
     # only test raw output, otherwise we need graphviz and matplotlib
     out = query.show_graph(raw_output=True, plan_stage="physical", engine="streaming")
