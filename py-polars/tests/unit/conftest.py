@@ -27,22 +27,7 @@ load_profile(
     profile=os.environ.get("POLARS_HYPOTHESIS_PROFILE", "fast"),  # type: ignore[arg-type]
 )
 
-def _has_module(name: str) -> bool:
-    return importlib.util.find_spec(name) is not None
-
-
-IS_WASM = (sys.platform == "emscripten" or platform.machine() in ["wasm32", "wasm64"])
-
-HAS_BOTO3 = _has_module("boto3")
-HAS_MOTO = _has_module("moto")
-HAS_DELTALAKE = _has_module("deltalake")
-HAS_PYICEBERG = _has_module("pyiceberg")
-HAS_ORJSON = _has_module("orjson")
-HAS_FSSPEC = _has_module("fsspec")
-HAS_PYARROW = _has_module("pyarrow")
-HAS_XLSX2CSV = _has_module("xlsx2csv")
-HAS_SQLALCHEMY = _has_module("sqlalchemy")
-HAS_ZSTANDARD = _has_module("zstandard")
+IS_WASM = sys.platform == "emscripten" or platform.machine() in ["wasm32", "wasm64"]
 
 # Data type groups
 SIGNED_INTEGER_DTYPES = [pl.Int8(), pl.Int16(), pl.Int32(), pl.Int64(), pl.Int128()]
