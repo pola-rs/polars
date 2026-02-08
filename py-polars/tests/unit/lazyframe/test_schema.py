@@ -7,6 +7,7 @@ import pytest
 import polars as pl
 from polars.datatypes.group import NUMERIC_DTYPES, TEMPORAL_DTYPES
 from polars.testing.asserts.frame import assert_frame_equal
+from tests.unit.conftest import requires_new_streaming
 
 # Used by test_lazy_collect_schema_matches_computed_schema
 _TEST_COLLECT_SCHEMA_M_DTYPES = sorted(
@@ -424,6 +425,7 @@ def test_raise_subnodes_18787() -> None:
         )
 
 
+@requires_new_streaming
 def test_scalar_agg_schema_20044() -> None:
     assert (
         pl.DataFrame(None, schema={"a": pl.Int64, "b": pl.String, "c": pl.String})

@@ -11,6 +11,12 @@ from hypothesis import given
 import polars as pl
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
+from tests.unit.conftest import IS_WASM
+
+pytestmark = pytest.mark.skipif(
+    IS_WASM,
+    reason="the aggregations feature is not enabled on emscripten/wasm builds.",
+)
 
 if TYPE_CHECKING:
     import numpy.typing as npt

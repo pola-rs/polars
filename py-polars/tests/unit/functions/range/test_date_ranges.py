@@ -9,9 +9,17 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import IS_WASM
 
 if TYPE_CHECKING:
     from polars._typing import ClosedInterval
+
+# Date/datetime range operations have usize conversion issues in WASM
+if IS_WASM:
+    pytest.skip(
+        "Date range operations not supported in WASM (usize conversion)",
+        allow_module_level=True,
+    )
 
 
 def test_date_ranges_lazy_with_literals() -> None:

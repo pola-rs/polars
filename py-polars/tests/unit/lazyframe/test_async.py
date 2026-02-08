@@ -7,6 +7,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from tests.unit.conftest import IS_WASM
 
 import polars as pl
 from polars._dependencies import gevent
@@ -16,6 +17,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 pytestmark = pytest.mark.slow()
+
+if IS_WASM:
+    pytest.skip(
+        "Async/streaming execution is not supported on wasm builds.",
+        allow_module_level=True,
+    )
 
 
 async def _aio_collect_async(raises: bool = False) -> pl.DataFrame:

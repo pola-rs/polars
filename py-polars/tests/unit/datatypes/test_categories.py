@@ -11,6 +11,12 @@ import polars as pl
 from polars.exceptions import ComputeError, SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 
+from tests.unit.conftest import IS_WASM
+
+if IS_WASM:
+    pytest.skip("Sink operations not available in WASM", allow_module_level=True)
+
+
 CATS = [
     pl.Categories(),
     pl.Categories("foo"),

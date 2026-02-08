@@ -3,9 +3,11 @@ from __future__ import annotations
 import multiprocessing
 from typing import TYPE_CHECKING, Any
 
-import boto3
 import pytest
-from moto.server import ThreadedMotoServer
+
+boto3 = pytest.importorskip("boto3")
+moto = pytest.importorskip("moto")
+ThreadedMotoServer = moto.server.ThreadedMotoServer
 
 import polars as pl
 from polars.testing import assert_frame_equal

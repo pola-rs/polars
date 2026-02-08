@@ -26,6 +26,12 @@ if TYPE_CHECKING:
 if sys.version_info >= (3, 11):
     from enum import StrEnum
 
+from tests.unit.conftest import IS_WASM
+
+# Sink operations (CSV, Parquet, IPC) are not available in WASM builds
+if IS_WASM:
+    pytest.skip("Sink operations not available in WASM", allow_module_level=True)
+
     PyStrEnum: type[enum.Enum] | None = StrEnum
 else:
     PyStrEnum = None

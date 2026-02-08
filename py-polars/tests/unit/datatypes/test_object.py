@@ -11,6 +11,12 @@ import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_series_equal
 
+from tests.unit.conftest import IS_WASM
+
+# Sink operations (CSV, Parquet, IPC) are not available in WASM builds
+if IS_WASM:
+    pytest.skip("Sink operations not available in WASM", allow_module_level=True)
+
 
 def test_series_init_instantiated_object() -> None:
     s = pl.Series([object(), object()], dtype=pl.Object())
