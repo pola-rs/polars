@@ -3865,7 +3865,6 @@ dependencies = [
  "polars-plan",
  "polars-python",
  "proc-macro2",
- "pyo3-polars",
  "quote",
  "syn 2.0.114",
  "trybuild",
