@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-import pyarrow as pa
 import pytest
+
+pa = pytest.importorskip("pyarrow")
+
 from hypothesis import given
 
 import polars as pl

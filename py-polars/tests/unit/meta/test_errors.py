@@ -143,6 +143,7 @@ def test_panic_error() -> None:
 
 
 def test_join_lazy_on_df() -> None:
+    pytest.importorskip("pyarrow")
     df_left = pl.DataFrame(
         {
             "Id": [1, 2, 3, 4],

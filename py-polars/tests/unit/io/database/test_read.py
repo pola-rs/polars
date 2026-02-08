@@ -12,9 +12,9 @@ from unittest.mock import Mock, patch
 
 with suppress(ModuleNotFoundError):  # not available on windows
     import adbc_driver_sqlite.dbapi
-import pyarrow as pa
 import pytest
 import sqlalchemy
+pa = pytest.importorskip("pyarrow")
 from sqlalchemy import Integer, MetaData, Table, create_engine, func, select, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import cast as alchemy_cast

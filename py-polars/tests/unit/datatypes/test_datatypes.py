@@ -155,6 +155,7 @@ def test_repr(dtype: PolarsDataType, representation: str) -> None:
 
 
 def test_conversion_dtype() -> None:
+    pytest.importorskip("pyarrow")
     df = (
         pl.DataFrame(
             {

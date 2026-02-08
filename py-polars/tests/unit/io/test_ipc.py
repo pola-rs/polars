@@ -6,8 +6,10 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any, no_type_check
 
 import pandas as pd
-import pyarrow.feather as paf
 import pytest
+
+paf = pytest.importorskip("pyarrow.feather")
+
 from hypothesis import given
 
 import polars as pl

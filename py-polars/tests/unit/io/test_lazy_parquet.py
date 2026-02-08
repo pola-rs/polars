@@ -10,8 +10,9 @@ from threading import Thread
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
-import pyarrow.parquet as pq
 import pytest
+
+pq = pytest.importorskip("pyarrow.parquet")
 
 import polars as pl
 from polars.exceptions import ComputeError

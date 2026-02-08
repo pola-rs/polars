@@ -13,8 +13,9 @@ from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
 
 import numpy as np
-import pyarrow as pa
 import pytest
+
+pa = pytest.importorskip("pyarrow")
 
 import polars as pl
 import polars.selectors as cs

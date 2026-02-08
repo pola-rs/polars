@@ -10,6 +10,7 @@ import pytest
 import polars as pl
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
+pa = pytest.importorskip("pyarrow")
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType

@@ -100,6 +100,7 @@ def test_decimal() -> None:
 
 
 def test_cast_inner() -> None:
+    pytest.importorskip("pyarrow")
     a = pl.Series([[1, 2]])
     for t in [bool, pl.Boolean]:
         b = a.cast(pl.List(t))

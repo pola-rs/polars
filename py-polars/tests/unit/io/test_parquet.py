@@ -13,10 +13,10 @@ from zoneinfo import ZoneInfo
 import fsspec
 import numpy as np
 import pandas as pd
-import pyarrow as pa
-import pyarrow.dataset as ds
-import pyarrow.parquet as pq
 import pytest
+pa = pytest.importorskip("pyarrow")
+ds = pytest.importorskip("pyarrow.dataset")
+pq = pytest.importorskip("pyarrow.parquet")
 from hypothesis import given
 from hypothesis import strategies as st
 

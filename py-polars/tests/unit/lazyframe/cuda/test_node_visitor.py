@@ -34,6 +34,8 @@ class Timer:
 
 
 def test_run_on_pandas() -> None:
+    pytest.importorskip("pyarrow")
+
     # Simple join example, missing multiple columns, slices, etc.
     def join(
         inputs: list[Callable[[], pd.DataFrame]],

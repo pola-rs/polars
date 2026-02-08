@@ -1,7 +1,8 @@
 import io
 
-import pyarrow.parquet as pq
 import pytest
+
+pq = pytest.importorskip("pyarrow.parquet")
 
 import polars as pl
 from polars.io.parquet import ParquetFieldOverwrites

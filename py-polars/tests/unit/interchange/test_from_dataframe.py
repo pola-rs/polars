@@ -4,8 +4,9 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 
 import pandas as pd
-import pyarrow as pa
 import pytest
+
+pa = pytest.importorskip("pyarrow")
 
 import polars as pl
 from polars.interchange.buffer import PolarsBuffer
