@@ -3836,7 +3836,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3-polars"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "libc",
  "once_cell",
@@ -3857,7 +3857,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3-polars-derive"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "polars-arrow",
  "polars-core",

@@ -134,8 +134,8 @@ polars-stream = { version = "0.53.0", path = "crates/polars-stream", default-fea
 polars-testing = { version = "0.53.0", path = "crates/polars-testing", default-features = false }
 polars-time = { version = "0.53.0", path = "crates/polars-time", default-features = false }
 polars-utils = { version = "0.53.0", path = "crates/polars-utils", default-features = false }
-pyo3-polars = { version = "0.25.0", path = "pyo3-polars/pyo3-polars" }
-pyo3-polars-derive = { version = "0.19.0", path = "pyo3-polars/pyo3-polars-derive" }
+pyo3-polars = { version = "0.26.0", path = "pyo3-polars/pyo3-polars" }
+pyo3-polars-derive = { version = "0.20.0", path = "pyo3-polars/pyo3-polars-derive" }
 
 [workspace.dependencies.arrow-format]
 package = "polars-arrow-format"
