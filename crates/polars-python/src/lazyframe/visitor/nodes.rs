@@ -492,7 +492,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 sort_options.nulls_last.clone(),
                 sort_options.descending.clone(),
             ),
-            slice: *slice,
+            slice: slice.as_ref().map(|t| (t.0, t.1)),
         }
         .into_py_any(py),
         IR::Cache { input, id } => Cache {

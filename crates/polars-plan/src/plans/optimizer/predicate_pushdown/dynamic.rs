@@ -69,11 +69,9 @@ impl DynamicPred {
     }
 
     pub fn evaluate(&self, columns: &[Column]) -> PolarsResult<Column> {
-        polars_ensure!(columns.len() > 1, ComputeError: "expected at least 1 argument");
-
         let h = columns[0].len();
 
-        if self.inner.is_set.load(std::sync::atomic::Ordering::Relaxed) {
+        let out = if self.inner.is_set.load(std::sync::atomic::Ordering::Relaxed) {
             let guard = self.inner.pred.read().unwrap();
             let dyn_func = guard.as_ref().unwrap();
             dyn_func(columns)
@@ -82,9 +80,10 @@ impl DynamicPred {
             Ok(Column::Scalar(ScalarColumn::new(
                 columns[0].name().clone(),
                 s,
-                h,
+                1,
             )))
-        }
+        };
+        dbg!(out)
     }
 }
 

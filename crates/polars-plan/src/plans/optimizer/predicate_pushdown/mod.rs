@@ -578,16 +578,20 @@ impl PredicatePushDown {
             Sort {
                 input,
                 by_column,
-                slice,
+                mut slice,
                 sort_options,
             } => {
+                dbg!(&slice);
                 if let Some((offset, len, None)) = slice
                     && by_column.len() == 1
                 {
                     let n = by_column[0].node();
                     if let AExpr::Column(_) = expr_arena.get(n) {
-                        let (node, pred) = new_dynamic_pred(n, expr_arena);
-                        // todo
+                        let (dyn_pred_node, pred) = new_dynamic_pred(n, expr_arena);
+                        slice = Some((offset, len, Some(pred)));
+
+                        let predicate = ExprIR::from_node(dyn_pred_node, expr_arena);
+                        insert_predicate_dedup(&mut acc_predicates, &predicate, expr_arena);
                     }
                 }
 
