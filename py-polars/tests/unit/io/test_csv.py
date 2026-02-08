@@ -3131,3 +3131,26 @@ def test_provided_schema_mismatch_truncate(chunk_override: None, read_fn: str) -
     )
     expected = [pl.Series("A", [1])]
     assert_frame_equal(df, pl.DataFrame(expected))
+
+
+def test_read_csv_parquet_file_error(tmp_path: Path) -> None:
+    """Test that reading a parquet file with read_csv gives a helpful error."""
+    # Create a simple parquet file
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    parquet_file = tmp_path / "test.parquet"
+    df.write_parquet(parquet_file)
+
+    # Test reading parquet file with read_csv (file path)
+    with pytest.raises(
+        ValueError,
+        match=r"appears to be a Parquet file.*Use `pl\.read_parquet\(\)` or `pl\.scan_parquet\(\)`",
+    ):
+        pl.read_csv(parquet_file)
+
+    # Test reading parquet bytes with read_csv
+    parquet_bytes = parquet_file.read_bytes()
+    with pytest.raises(
+        ValueError,
+        match=r"appears to be a Parquet file.*Use `pl\.read_parquet\(\)` or `pl\.scan_parquet\(\)`",
+    ):
+        pl.read_csv(parquet_bytes)

@@ -637,6 +637,39 @@ def _read_csv_impl(
         if isinstance(source, StringIO):
             source = source.getvalue().encode()
 
+    # Check if the source is a parquet file
+    def _is_parquet_file(file_source: str | Path | bytes) -> bool:
+        """Check if file is a parquet file by checking magic bytes or extension."""
+        # Check file extension first
+        if isinstance(file_source, (str, Path)):
+            if str(file_source).lower().endswith('.parquet'):
+                return True
+            # Try to read the first few bytes
+            try:
+                with open(file_source, 'rb') as f:
+                    magic = f.read(4)
+                    return magic == b'PAR1'
+            except Exception:
+                return False
+        # Check bytes content
+        elif isinstance(file_source, bytes):
+            return file_source[:4] == b'PAR1'
+        return False
+
+    # Check for parquet file and provide helpful error
+    if path and _is_parquet_file(path):
+        msg = (
+            f"The file '{path}' appears to be a Parquet file, but you are trying to read it as CSV.\n\n"
+            "Use `pl.read_parquet()` or `pl.scan_parquet()` instead of `pl.read_csv()`."
+        )
+        raise ValueError(msg)
+    elif not path and isinstance(source, bytes) and _is_parquet_file(source):
+        msg = (
+            "The provided data appears to be a Parquet file, but you are trying to read it as CSV.\n\n"
+            "Use `pl.read_parquet()` or `pl.scan_parquet()` instead of `pl.read_csv()`."
+        )
+        raise ValueError(msg)
+
     dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
     dtype_slice: Sequence[PolarsDataType] | None = None
     if schema_overrides is not None:
