@@ -13,8 +13,9 @@ from typing import TYPE_CHECKING, TypedDict
 
 import numpy as np
 import pytest
-import zstandard
+
 pa = pytest.importorskip("pyarrow")
+zstandard = pytest.importorskip("zstandard")
 
 import polars as pl
 from polars._utils.various import normalize_filepath

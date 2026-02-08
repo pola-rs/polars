@@ -8,10 +8,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from deltalake import DeltaTable, write_deltalake
-from deltalake.exceptions import DeltaError, TableNotFoundError
-from deltalake.table import TableMerger
+
 pa = pytest.importorskip("pyarrow")
+deltalake = pytest.importorskip("deltalake")
+DeltaTable = deltalake.DeltaTable
+write_deltalake = deltalake.write_deltalake
+DeltaError = deltalake.exceptions.DeltaError
+TableNotFoundError = deltalake.exceptions.TableNotFoundError
+TableMerger = deltalake.table.TableMerger
 
 import polars as pl
 from polars.io.cloud._utils import NoPickleOption

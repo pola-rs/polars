@@ -2,6 +2,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import requires_new_streaming
 
 
 def test_cumulative_eval_sum() -> None:
@@ -53,6 +54,7 @@ def test_cumulative_eval_samples() -> None:
     )
 
 
+@requires_new_streaming
 def test_cumulative_eval_length_preserving_streaming_25293() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     q = df.lazy().with_columns(

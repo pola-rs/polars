@@ -12,7 +12,6 @@ from decimal import Decimal as D
 from io import BytesIO
 from typing import TYPE_CHECKING
 
-import zstandard
 from hypothesis import given
 
 from polars.datatypes.group import FLOAT_DTYPES
@@ -20,8 +19,10 @@ from polars.datatypes.group import FLOAT_DTYPES
 if TYPE_CHECKING:
     from pathlib import Path
 
-import orjson
 import pytest
+
+orjson = pytest.importorskip("orjson")
+zstandard = pytest.importorskip("zstandard")
 
 import polars as pl
 from polars.exceptions import ComputeError

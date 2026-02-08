@@ -1170,6 +1170,8 @@ def test_predicate_pushdown_auto_disable_strict() -> None:
 
 @pytest.mark.may_fail_auto_streaming  # IO plugin validate=False schema mismatch
 def test_predicate_pushdown_map_elements_io_plugin_22860() -> None:
+    pytest.importorskip("cloudpickle")
+
     def generator(
         with_columns: list[str] | None,
         predicate: pl.Expr | None,

@@ -16,8 +16,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+
 pa = pytest.importorskip("pyarrow")
 pq = pytest.importorskip("pyarrow.parquet")
+pydantic = pytest.importorskip("pydantic")
+pyiceberg = pytest.importorskip("pyiceberg")
 from pyiceberg.partitioning import (
     BucketTransform,
     IdentityTransform,
