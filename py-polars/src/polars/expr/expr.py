@@ -5092,7 +5092,11 @@ Consider using {self}.implode() instead"""
         from polars._utils.udfs import warn_on_inefficient_map
 
         root_names = self.meta.root_names()
-        if len(root_names) > 0:
+        if (
+            return_dtype is None
+            or isinstance(return_dtype, pl.DataTypeExpr)
+            or (not return_dtype.is_object() and len(root_names) > 0)
+        ):
             warn_on_inefficient_map(function, columns=root_names, map_target="expr")
 
         if pass_name:

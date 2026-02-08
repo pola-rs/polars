@@ -210,31 +210,44 @@ def test_map_elements_skip_nulls(value: Any, return_value: Any) -> None:
     assert result == [return_value, return_value]
 
 
-@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_map_elements_object_dtypes() -> None:
+    assert pl.DataFrame(
+        {"a": pl.Series([1, 2, "a", 4, 5], dtype=pl.Object)}
+    ).with_columns(
+        pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Object),
+        pl.col("a")
+        .map_elements(lambda x: isinstance(x, (int, float)), return_dtype=pl.Boolean)
+        .alias("is_numeric1"),
+        pl.col("a")
+        .map_elements(lambda x: isinstance(x, (int, float)), return_dtype=pl.Boolean)
+        .alias("is_numeric_infer"),
+    ).to_dict(as_series=False) == {
+        "a": [2, 4, "aa", 8, 10],
+        "is_numeric1": [True, True, False, True, True],
+        "is_numeric_infer": [True, True, False, True, True],
+    }
+
+
+def test_raises_warning_using_no_object() -> None:
+    a = pl.Series("a", [10, 20])
+
     with pytest.warns(
         PolarsInefficientMapWarning,
         match=r"(?s)Replace this expression.*lambda x:",
     ):
-        assert pl.DataFrame(
-            {"a": pl.Series([1, 2, "a", 4, 5], dtype=pl.Object)}
-        ).with_columns(
-            pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Object),
-            pl.col("a")
-            .map_elements(
-                lambda x: isinstance(x, (int, float)), return_dtype=pl.Boolean
-            )
-            .alias("is_numeric1"),
-            pl.col("a")
-            .map_elements(
-                lambda x: isinstance(x, (int, float)), return_dtype=pl.Boolean
-            )
-            .alias("is_numeric_infer"),
-        ).to_dict(as_series=False) == {
-            "a": [2, 4, "aa", 8, 10],
-            "is_numeric1": [True, True, False, True, True],
-            "is_numeric_infer": [True, True, False, True, True],
-        }
+        b = a.map_elements(lambda x: x**2, return_dtype=pl.Int32)
+
+
+def test_no_raises_warning_using_object() -> None:
+    import json
+    import warnings
+
+    a = pl.Series("a", ['{"my_custom": "random object"}'])
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", PolarsInefficientMapWarning)
+        b = a.map_elements(json.loads, return_dtype=pl.Object)
+        # If we get here, no warning was raised
 
 
 def test_map_elements_explicit_list_output_type() -> None:

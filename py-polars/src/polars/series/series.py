@@ -6089,7 +6089,8 @@ class Series:
         else:
             pl_return_dtype = parse_into_dtype(return_dtype)
 
-        warn_on_inefficient_map(function, columns=[self.name], map_target="series")
+        if pl_return_dtype is None or not pl_return_dtype.is_object():
+            warn_on_inefficient_map(function, columns=[self.name], map_target="series")
         return self._from_pyseries(
             self._s.map_elements(
                 function, return_dtype=pl_return_dtype, skip_nulls=skip_nulls
