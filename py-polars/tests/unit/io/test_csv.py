@@ -3143,7 +3143,7 @@ def test_read_csv_parquet_file_error(tmp_path: Path) -> None:
     # Test reading parquet file with read_csv (file path)
     with pytest.raises(
         ValueError,
-        match=r"appears to be a Parquet file.*Use `pl\.read_parquet\(\)` or `pl\.scan_parquet\(\)`",
+        match=r"appears to be a Parquet file[\s\S]*Use `pl\.read_parquet\(\)` or `pl\.scan_parquet\(\)`",
     ):
         pl.read_csv(parquet_file)
 
@@ -3151,6 +3151,6 @@ def test_read_csv_parquet_file_error(tmp_path: Path) -> None:
     parquet_bytes = parquet_file.read_bytes()
     with pytest.raises(
         ValueError,
-        match=r"appears to be a Parquet file.*Use `pl\.read_parquet\(\)` or `pl\.scan_parquet\(\)`",
+        match=r"appears to be a Parquet file[\s\S]*Use `pl\.read_parquet\(\)` or `pl\.scan_parquet\(\)`",
     ):
         pl.read_csv(parquet_bytes)

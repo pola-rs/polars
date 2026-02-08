@@ -646,7 +646,7 @@ def _read_csv_impl(
                 return True
             # Try to read the first few bytes
             try:
-                with open(file_source, 'rb') as f:
+                with Path(file_source).open('rb') as f:
                     magic = f.read(4)
                     return magic == b'PAR1'
             except Exception:
