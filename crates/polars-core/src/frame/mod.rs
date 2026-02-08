@@ -1212,6 +1212,7 @@ impl DataFrame {
 
     /// # Safety
     /// The indices must be in-bounds.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn gather_group_unchecked(&self, group: &GroupsIndicator) -> Self {
         match group {
             GroupsIndicator::Idx((_, indices)) => unsafe {
