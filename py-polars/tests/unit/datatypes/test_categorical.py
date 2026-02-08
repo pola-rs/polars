@@ -5,8 +5,6 @@ import operator
 import pickle
 from typing import TYPE_CHECKING
 
-import pyarrow as pa
-import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
