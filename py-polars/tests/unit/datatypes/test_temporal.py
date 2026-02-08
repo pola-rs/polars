@@ -9,8 +9,10 @@ import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
 import pytest
-import pytz
+
 pa = pytest.importorskip("pyarrow")
+pytz = pytest.importorskip("pytz")
+
 from hypothesis import given
 
 import polars as pl
