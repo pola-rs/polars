@@ -6,6 +6,7 @@ use polars_io::csv::read::{
     CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
     read_until_start_and_infer_schema,
 };
+#[cfg(feature = "async")]
 use polars_io::path_utils::expand_paths;
 use polars_io::utils::compression::CompressedReader;
 use polars_io::{HiveOptions, RowIndex};
@@ -269,22 +270,33 @@ impl LazyCsvReader {
                 // TODO: Path expansion should happen when converting to the IR
                 // https://github.com/pola-rs/polars/issues/17634
 
-                use polars_io::pl_async::get_runtime;
+                #[cfg(feature = "async")]
+                {
+                    use polars_io::pl_async::get_runtime;
 
-                let paths = get_runtime().block_on(expand_paths(
-                    &paths[..],
-                    self.glob(),
-                    &[], // hidden_file_prefix
-                    &mut self.cloud_options,
-                ))?;
+                    let paths = get_runtime().block_on(expand_paths(
+                        &paths[..],
+                        self.glob(),
+                        &[], // hidden_file_prefix
+                        &mut self.cloud_options,
+                    ))?;
 
-                let Some(path) = paths.first() else {
-                    polars_bail!(ComputeError: "no paths specified for this reader");
-                };
+                    let Some(path) = paths.first() else {
+                        polars_bail!(ComputeError: "no paths specified for this reader");
+                    };
 
-                let file = polars_utils::open_file(path.as_std_path())?;
-                let mmap = MMapSemaphore::new_from_file(&file)?;
-                infer_schema(Buffer::from_owner(mmap))?
+                    let file = polars_utils::open_file(path.as_std_path())?;
+                    let mmap = MMapSemaphore::new_from_file(&file)?;
+                    infer_schema(Buffer::from_owner(mmap))?
+                }
+                #[cfg(not(feature = "async"))]
+                {
+                    _ = paths;
+                    polars_bail!(
+                        ComputeError:
+                        "csv with_schema_modify on paths requires the `async` feature"
+                    );
+                }
             },
             ScanSources::Files(files) => {
                 let Some(file) = files.first() else {

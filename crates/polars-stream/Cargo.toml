@@ -47,7 +47,7 @@ polars-json = { workspace = true, optional = true }
 polars-mem-engine = { workspace = true }
 polars-ops = { workspace = true, features = ["rle", "peaks", "unique_counts", "dtype-struct", "search_sorted"] }
 polars-parquet = { workspace = true }
-polars-plan = { workspace = true, features = ["cse", "rle", "peaks", "arg_where", "unique_counts", "dtype-struct"] }
+polars-plan = { workspace = true, features = ["async", "cse", "rle", "peaks", "arg_where", "unique_counts", "dtype-struct"] }
 polars-time = { workspace = true }
 polars-utils = { workspace = true }
 
