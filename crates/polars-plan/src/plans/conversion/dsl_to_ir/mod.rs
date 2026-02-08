@@ -1,11 +1,13 @@
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::rewrite_projections;
+#[cfg(feature = "async")]
 use futures::stream::FuturesUnordered;
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
 use polars_io::ExternalCompression;
+#[cfg(feature = "async")]
 use polars_io::pl_async::get_runtime;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
@@ -104,6 +106,7 @@ fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> Polars
     Ok(lp_node)
 }
 
+#[cfg(feature = "async")]
 async fn fetch_metadata(
     lp: &DslPlan,
     cache_file_info: SourcesToFileInfo,
@@ -147,6 +150,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
     let owned = Arc::unwrap_or_clone;
 
     // First do a pass to collect all scans and fetch all metadata concurrently.
+    #[cfg(feature = "async")]
     {
         let verbose = ctxt.verbose;
         let cache_file_info = ctxt.cache_file_info.clone();
@@ -166,7 +170,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             unified_scan_args: _,
             scan_type: _,
             cached_ir,
-        } => cached_ir.lock().unwrap().clone().unwrap(),
+        } => {
+            #[cfg(feature = "async")]
+            {
+                cached_ir.lock().unwrap().clone().unwrap()
+            }
+            #[cfg(not(feature = "async"))]
+            polars_bail!(ComputeError: "file scan operations require the 'async' feature")
+        },
         #[cfg(feature = "python")]
         DslPlan::PythonScan { options } => {
             use crate::dsl::python_dsl::PythonOptionsDsl;

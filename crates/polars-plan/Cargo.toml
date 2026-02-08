@@ -18,7 +18,7 @@ polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-error = { workspace = true }
 polars-ffi = { workspace = true, optional = true }
-polars-io = { workspace = true, features = ["lazy", "csv", "async"] }
+polars-io = { workspace = true, features = ["lazy", "csv"] }
 polars-json = { workspace = true, optional = true }
 polars-ops = { workspace = true, features = [] }
 polars-parquet = { workspace = true, optional = true }
@@ -48,7 +48,7 @@ serde_json = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
 slotmap = { workspace = true }
 strum_macros = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, optional = true }
 
 [build-dependencies]
 sha2 = { workspace = true }
@@ -57,6 +57,7 @@ version_check = { workspace = true }
 [features]
 # debugging utility
 debugging = []
+async = ["dep:tokio", "polars-io/async"]
 python = ["dep:pyo3", "polars-utils/python", "polars-ffi", "polars-core/object", "serde"]
 serde = [
   "dep:serde",

@@ -53,6 +53,7 @@ parquet = [
 async = [
   "polars-io/cloud",
   "polars-mem-engine/async",
+  "polars-plan/async",
 ]
 cloud = [
   "async",
