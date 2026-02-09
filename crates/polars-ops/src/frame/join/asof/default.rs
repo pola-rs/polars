@@ -169,7 +169,10 @@ where
         AsofStrategy::Backward => {
             join_asof_impl::<T, AsofJoinBackwardState, _>(left, right, filter, allow_eq)
         },
-        AsofStrategy::Nearest => unimplemented!(),
+        AsofStrategy::Nearest => polars_bail!(InvalidOperation:
+            "AsOf strategy \"nearest\" is not supported for {} data type",
+            T::get_static_dtype()
+        ),
     })
 }
 

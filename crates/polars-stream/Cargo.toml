@@ -119,6 +119,7 @@ python = [
   "polars-mem-engine/python",
   "polars-error/python",
 ]
+asof_join = ["polars-plan/asof_join", "polars-ops/asof_join"]
 semi_anti_join = ["polars-plan/semi_anti_join", "polars-ops/semi_anti_join"]
 is_in = ["polars-ops/is_in", "polars-plan/is_in", "semi_anti_join"]
 replace = ["polars-ops/replace", "polars-plan/replace"]

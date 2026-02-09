@@ -3179,7 +3179,11 @@ def test_join_filter_pushdown_asof_join() -> None:
         {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
     )
     rhs = pl.LazyFrame(
-        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, None, 5], "c": ["A", "B", "C", "D", "E"]}
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": [1, 2, 3, None, None],
+            "c": ["A", "B", "C", "D", "E"],
+        }
     )
 
     q = lhs.join_asof(
