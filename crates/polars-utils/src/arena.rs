@@ -120,12 +120,24 @@ impl<T> Arena<T> {
     }
 
     #[inline]
-    /// Get mutable references to several items of the Arena.
+    /// Get mutable references to multiple disjoint items of the Arena.
     pub fn get_disjoint_mut<const N: usize>(&mut self, nodes: [Node; N]) -> [&mut T; N] {
-        let mut indices: [usize; N] = [0; _];
-        indices.iter_mut().zip(nodes).for_each(|(i, n)| *i = n.0);
+        return self.items.get_disjoint_mut(to_indices(nodes)).unwrap();
 
-        self.items.get_disjoint_mut(indices).unwrap()
+        const fn to_indices<const N: usize>(nodes: [Node; N]) -> [usize; N] {
+            let mut indices: [usize; N] = [0; _];
+            let mut i: usize = 0;
+
+            loop {
+                if i >= nodes.len() {
+                    break;
+                }
+                indices[i] = nodes[i].0;
+                i += 1;
+            }
+
+            indices
+        }
     }
 
     #[inline]
