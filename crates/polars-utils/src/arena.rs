@@ -123,24 +123,9 @@ impl<T> Arena<T> {
     /// Get mutable references to multiple disjoint items of the Arena.
     ///
     /// # Panics
-    /// Pancics if indices are out of bounds or overlapping.
+    /// Panics if indices are out of bounds or overlapping.
     pub fn get_disjoint_mut<const N: usize>(&mut self, nodes: [Node; N]) -> [&mut T; N] {
-        return self.items.get_disjoint_mut(to_indices(nodes)).unwrap();
-
-        const fn to_indices<const N: usize>(nodes: [Node; N]) -> [usize; N] {
-            let mut indices: [usize; N] = [0; _];
-            let mut i: usize = 0;
-
-            loop {
-                if i >= nodes.len() {
-                    break;
-                }
-                indices[i] = nodes[i].0;
-                i += 1;
-            }
-
-            indices
-        }
+        self.items.get_disjoint_mut(nodes.map(|n| n.0)).unwrap()
     }
 
     #[inline]
