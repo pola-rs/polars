@@ -33,7 +33,7 @@ struct AsOfJoinParams {
 impl AsOfJoinParams {
     fn as_of_options(&self) -> &AsOfOptions {
         let JoinType::AsOf(ref options) = self.args.how else {
-            panic!("incorrect join type");
+            unreachable!("incorrect join type");
         };
         options
     }
@@ -173,7 +173,7 @@ impl ComputeNode for AsOfJoinNode {
     ) {
         assert!(recv_ports.len() == 2 && send_ports.len() == 1);
 
-        match &mut self.state {
+        match &self.state {
             AsOfJoinState::Running | AsOfJoinState::FlushInputBuffer => {
                 let params = &self.params;
                 let recv_left = match self.state {

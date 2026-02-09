@@ -1056,6 +1056,7 @@ pub fn lower_ir(
             let join_keys_sorted_together =
                 Option::zip(left_on_sorted.as_ref(), right_on_sorted.as_ref())
                     .is_some_and(|(ls, rs)| ls == rs);
+            // Option<Vec<Option<bool>>> -> Option<Vec<bool>>, None if any inner options are None.
             let left_sorted_descending = left_on_sorted
                 .as_ref()
                 .and_then(|v| v.iter().map(|s| s.descending).collect::<Option<Vec<_>>>());
@@ -1075,20 +1076,21 @@ pub fn lower_ir(
             let right_key_nulls_last = sorted_get_first(right_sorted_nulls_last.as_ref());
             let key_expr_is_trivial =
                 |c: &ExprIR, ea: &mut Arena<AExpr>| matches!(ea.get(c.node()), AExpr::Column(_));
-            let use_merge_join = args.how.is_equi() && join_keys_sorted_together;
+            let use_streaming_merge_join = args.how.is_equi() && join_keys_sorted_together;
             #[cfg(feature = "asof_join")]
-            let use_asof_join = if let JoinType::AsOf(ref asof_options) = args.how {
+            let use_streaming_asof_join = if let JoinType::AsOf(ref asof_options) = args.how {
+                // Grouped asof-join is not yet supported in the streaming engine.
                 asof_options.left_by.is_none() && asof_options.right_by.is_none()
             } else {
                 false
             };
             #[cfg(not(feature = "asof_join"))]
-            let use_asof_join = false;
+            let use_streaming_asof_join = false;
 
             let phys_left = lower_ir!(input_left)?;
             let phys_right = lower_ir!(input_right)?;
 
-            if (args.how.is_equi() || args.how.is_semi_anti() || use_asof_join)
+            if (args.how.is_equi() || args.how.is_semi_anti() || use_streaming_asof_join)
                 && !args.validation.needs_checks()
             {
                 // When lowering the expressions for the keys we need to ensure we keep around the
@@ -1130,7 +1132,7 @@ pub fn lower_ir(
                 let mut hstack_key_col_left = false;
                 let mut hstack_key_col_right = false;
 
-                if use_merge_join {
+                if use_streaming_merge_join {
                     // For merge-joins, evaluate key expressions if they are non-trivial,
                     // row-encode them if there are multiple, and append them as new columns
                     // to the input dataframes.
@@ -1184,7 +1186,7 @@ pub fn lower_ir(
                 }
 
                 #[cfg(feature = "asof_join")]
-                if use_asof_join {
+                if use_streaming_asof_join {
                     if !key_expr_is_trivial(&left_on[0], expr_arena) {
                         trans_left_on[0] = trans_left_on[0]
                             .with_alias(PlSmallStr::from_str(asof_join::KEY_COL_NAME));
@@ -1234,7 +1236,7 @@ pub fn lower_ir(
                     )?;
                 }
 
-                let node = if use_merge_join {
+                let node = if use_streaming_merge_join {
                     assert!(left_key_descending.unwrap() == right_key_descending.unwrap());
                     assert!(left_key_nulls_last.unwrap() == right_key_nulls_last.unwrap());
                     let keys_row_encoded = left_on_names.len() > 1;
@@ -1262,7 +1264,7 @@ pub fn lower_ir(
                             args: args.clone(),
                         },
                     ))
-                } else if use_asof_join {
+                } else if use_streaming_asof_join {
                     assert!(left_on_names.len() == 1 && right_on_names.len() == 1);
                     phys_sm.insert(PhysNode::new(
                         output_schema,

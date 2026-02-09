@@ -8,7 +8,7 @@ import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import given, settings
 
 import polars as pl
 from polars._typing import AsofJoinStrategy
