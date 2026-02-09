@@ -17,7 +17,7 @@ use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::ComputeNode;
 use crate::nodes::in_memory_source::InMemorySourceNode;
-use crate::nodes::joins::utils::DataFrameBuffer;
+use crate::nodes::joins::utils::DataFrameSearchBuffer;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
 pub const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY_TMP";
@@ -93,8 +93,8 @@ enum MergeJoinState {
 pub struct MergeJoinNode {
     state: MergeJoinState,
     params: MergeJoinParams,
-    build_unmerged: DataFrameBuffer,
-    probe_unmerged: DataFrameBuffer,
+    build_unmerged: DataFrameSearchBuffer,
+    probe_unmerged: DataFrameSearchBuffer,
     unmatched: Vec<(MorselSeq, DataFrame)>,
     output_seq: MorselSeq,
 }
@@ -161,8 +161,8 @@ impl MergeJoinNode {
             true => (&left_input_schema, &right_input_schema),
             false => (&right_input_schema, &left_input_schema),
         };
-        let build_unmerged = DataFrameBuffer::empty_with_schema(build_schema.clone());
-        let probe_unmerged = DataFrameBuffer::empty_with_schema(probe_schema.clone());
+        let build_unmerged = DataFrameSearchBuffer::empty_with_schema(build_schema.clone());
+        let probe_unmerged = DataFrameSearchBuffer::empty_with_schema(probe_schema.clone());
         Ok(MergeJoinNode {
             state,
             params,
@@ -341,11 +341,11 @@ impl ComputeNode for MergeJoinNode {
 async fn find_mergeable_task(
     mut recv_build: Option<PortReceiver>,
     mut recv_probe: Option<PortReceiver>,
-    build_unmerged: &mut DataFrameBuffer,
-    probe_unmerged: &mut DataFrameBuffer,
+    build_unmerged: &mut DataFrameSearchBuffer,
+    probe_unmerged: &mut DataFrameSearchBuffer,
     distributor: &mut distributor_channel::Sender<(
-        DataFrameBuffer,
-        DataFrameBuffer,
+        DataFrameSearchBuffer,
+        DataFrameSearchBuffer,
         MorselSeq,
         SourceToken,
     )>,
@@ -415,7 +415,7 @@ async fn find_mergeable_task(
 /// Tell the sender to this port to stop, and buffer everything that is still in the pipe.
 async fn stop_and_buffer_pipe_contents(
     port: Option<&mut PortReceiver>,
-    unmerged: &mut DataFrameBuffer,
+    unmerged: &mut DataFrameSearchBuffer,
 ) {
     let Some(port) = port else {
         return;
@@ -429,8 +429,8 @@ async fn stop_and_buffer_pipe_contents(
 
 #[allow(clippy::too_many_arguments)]
 async fn compute_join_and_send(
-    build: DataFrameBuffer,
-    probe: DataFrameBuffer,
+    build: DataFrameSearchBuffer,
+    probe: DataFrameSearchBuffer,
     seq: MorselSeq,
     source_token: SourceToken,
     params: &MergeJoinParams,
@@ -558,10 +558,10 @@ struct FindMergeableParams<'a> {
 }
 
 fn find_mergeable(
-    build: &mut DataFrameBuffer,
-    probe: &mut DataFrameBuffer,
+    build: &mut DataFrameSearchBuffer,
+    probe: &mut DataFrameSearchBuffer,
     fmp: FindMergeableParams,
-) -> PolarsResult<Result<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
+) -> PolarsResult<Result<UnitVec<(DataFrameSearchBuffer, DataFrameSearchBuffer)>, NeedMore>> {
     let (build_mergeable, probe_mergeable) =
         match find_mergeable_limiting(build, probe, fmp.clone())? {
             Ok((build, probe)) => (build, probe),
@@ -574,10 +574,10 @@ fn find_mergeable(
 }
 
 fn find_mergeable_limiting(
-    build: &mut DataFrameBuffer,
-    probe: &mut DataFrameBuffer,
+    build: &mut DataFrameSearchBuffer,
+    probe: &mut DataFrameSearchBuffer,
     fmp: FindMergeableParams,
-) -> PolarsResult<Result<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
+) -> PolarsResult<Result<(DataFrameSearchBuffer, DataFrameSearchBuffer), NeedMore>> {
     const SEARCH_LIMIT_BUMP_FACTOR: usize = 2;
     let mut search_limit = get_ideal_morsel_size();
     let mut mergeable = find_mergeable_search(build, probe, search_limit, fmp.clone())?;
@@ -594,10 +594,10 @@ fn find_mergeable_limiting(
 }
 
 fn find_mergeable_partition(
-    build: DataFrameBuffer,
-    probe: DataFrameBuffer,
+    build: DataFrameSearchBuffer,
+    probe: DataFrameSearchBuffer,
     fmp: FindMergeableParams,
-) -> PolarsResult<UnitVec<(DataFrameBuffer, DataFrameBuffer)>> {
+) -> PolarsResult<UnitVec<(DataFrameSearchBuffer, DataFrameSearchBuffer)>> {
     let morsel_size = get_ideal_morsel_size();
 
     if fmp.params.preserve_order_probe() || fmp.params.probe_params().emit_unmatched {
@@ -626,11 +626,11 @@ fn find_mergeable_partition(
 }
 
 fn find_mergeable_search(
-    build: &mut DataFrameBuffer,
-    probe: &mut DataFrameBuffer,
+    build: &mut DataFrameSearchBuffer,
+    probe: &mut DataFrameSearchBuffer,
     search_limit: usize,
     fmp: FindMergeableParams,
-) -> PolarsResult<Result<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
+) -> PolarsResult<Result<(DataFrameSearchBuffer, DataFrameSearchBuffer), NeedMore>> {
     let FindMergeableParams {
         build_done,
         probe_done,
@@ -638,8 +638,10 @@ fn find_mergeable_search(
     } = fmp;
     let build_params = params.build_params();
     let probe_params = params.probe_params();
-    let build_empty_buf = || DataFrameBuffer::empty_with_schema(build_params.input_schema.clone());
-    let probe_empty_buf = || DataFrameBuffer::empty_with_schema(probe_params.input_schema.clone());
+    let build_empty_buf =
+        || DataFrameSearchBuffer::empty_with_schema(build_params.input_schema.clone());
+    let probe_empty_buf =
+        || DataFrameSearchBuffer::empty_with_schema(probe_params.input_schema.clone());
     let build_get = |idx| unsafe {
         build.get_bypass_validity(&build_params.key_col, idx, params.keys_row_encoded)
     };
@@ -745,23 +747,23 @@ fn find_mergeable_search(
 }
 
 fn binary_search_lower(
-    dfb: &DataFrameBuffer,
+    dfsb: &DataFrameSearchBuffer,
     sv: &AnyValue,
     params: &MergeJoinParams,
     sp: &MergeJoinSideParams,
 ) -> usize {
     let predicate = |x: &AnyValue<'_>| keys_cmp(sv, x, params).is_le();
-    dfb.binary_search(predicate, &sp.key_col, params.keys_row_encoded)
+    dfsb.binary_search(predicate, &sp.key_col, params.keys_row_encoded)
 }
 
 fn binary_search_upper(
-    dfb: &DataFrameBuffer,
+    dfsb: &DataFrameSearchBuffer,
     sv: &AnyValue,
     params: &MergeJoinParams,
     sp: &MergeJoinSideParams,
 ) -> usize {
     let predicate = |x: &AnyValue<'_>| keys_cmp(sv, x, params).is_lt();
-    dfb.binary_search(predicate, &sp.key_col, params.keys_row_encoded)
+    dfsb.binary_search(predicate, &sp.key_col, params.keys_row_encoded)
 }
 
 fn keys_cmp(lhs: &AnyValue, rhs: &AnyValue, params: &MergeJoinParams) -> Ordering {

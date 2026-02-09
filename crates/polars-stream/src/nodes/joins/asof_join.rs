@@ -12,7 +12,7 @@ use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::ComputeNode;
-use crate::nodes::joins::utils::DataFrameBuffer;
+use crate::nodes::joins::utils::DataFrameSearchBuffer;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
 pub const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY";
@@ -56,7 +56,7 @@ pub struct AsOfJoinNode {
     /// In these cases, we stash that morsel here.
     left_buffer: VecDeque<(DataFrame, MorselSeq)>,
     /// Buffer of the live range of right AsOf join rows.
-    right_buffer: DataFrameBuffer,
+    right_buffer: DataFrameSearchBuffer,
 }
 
 impl AsOfJoinNode {
@@ -92,7 +92,7 @@ impl AsOfJoinNode {
             params,
             state: AsOfJoinState::default(),
             left_buffer: Default::default(),
-            right_buffer: DataFrameBuffer::empty_with_schema(right_input_schema),
+            right_buffer: DataFrameSearchBuffer::empty_with_schema(right_input_schema),
         }
     }
 }
@@ -230,9 +230,9 @@ where
 async fn distribute_work_task(
     mut recv_left: Option<PortReceiver>,
     mut recv_right: Option<PortReceiver>,
-    mut distributor: dc::Sender<(DataFrame, DataFrameBuffer, MorselSeq, SourceToken)>,
+    mut distributor: dc::Sender<(DataFrame, DataFrameSearchBuffer, MorselSeq, SourceToken)>,
     left_buffer: &mut VecDeque<(DataFrame, MorselSeq)>,
-    right_buffer: &mut DataFrameBuffer,
+    right_buffer: &mut DataFrameSearchBuffer,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
     let source_token = SourceToken::new();
@@ -295,7 +295,7 @@ async fn distribute_work_task(
 /// between the right side and the complete left side?
 fn need_more_right_side(
     left: &DataFrame,
-    right: &DataFrameBuffer,
+    right: &DataFrameSearchBuffer,
     params: &AsOfJoinParams,
 ) -> PolarsResult<bool> {
     let options = params.as_of_options();
@@ -333,7 +333,7 @@ fn need_more_right_side(
 
 fn prune_right_side(
     left: &DataFrame,
-    right: &mut DataFrameBuffer,
+    right: &mut DataFrameSearchBuffer,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
     let left_key = left.column(&params.left.key_col)?.as_materialized_series();
@@ -350,7 +350,7 @@ fn prune_right_side(
 }
 
 async fn compute_and_emit_task(
-    mut dist_recv: dc::Receiver<(DataFrame, DataFrameBuffer, MorselSeq, SourceToken)>,
+    mut dist_recv: dc::Receiver<(DataFrame, DataFrameSearchBuffer, MorselSeq, SourceToken)>,
     mut send: PortSender,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {

@@ -6,7 +6,7 @@ use polars_core::schema::SchemaRef;
 use polars_core::series::Series;
 
 #[derive(Clone, Debug)]
-pub(super) struct DataFrameBuffer {
+pub(super) struct DataFrameSearchBuffer {
     schema: SchemaRef,
     dfs_at_offsets: BTreeMap<usize, DataFrame>,
     total_rows: usize,
@@ -14,9 +14,9 @@ pub(super) struct DataFrameBuffer {
     frozen: bool,
 }
 
-impl DataFrameBuffer {
+impl DataFrameSearchBuffer {
     pub(super) fn empty_with_schema(schema: SchemaRef) -> Self {
-        DataFrameBuffer {
+        DataFrameSearchBuffer {
             schema,
             dfs_at_offsets: BTreeMap::new(),
             total_rows: 0,
