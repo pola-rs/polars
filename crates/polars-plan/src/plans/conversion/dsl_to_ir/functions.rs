@@ -94,6 +94,7 @@ pub(super) fn convert_functions(
                 B::Slice => IB::Slice,
                 B::Head => IB::Head,
                 B::Tail => IB::Tail,
+                B::Get(null_on_oob) => IB::Get(null_on_oob),
             })
         },
         #[cfg(feature = "dtype-categorical")]
@@ -807,6 +808,8 @@ pub(super) fn convert_functions(
             descending,
             nulls_last,
         },
+        F::MinBy => I::MinBy,
+        F::MaxBy => I::MaxBy,
         F::Product => I::Product,
         #[cfg(feature = "rank")]
         F::Rank { options, seed } => I::Rank { options, seed },

@@ -946,10 +946,18 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 }
             }
 
-            let keys = index
+            let keys: Vec<_> = index
                 .into_iter()
                 .map(|i| AExprBuilder::col(i.clone(), ctxt.expr_arena).expr_ir(i))
                 .collect();
+
+            let mut uniq_names = PlHashSet::new();
+            for expr in keys.iter().chain(aggs.iter()) {
+                let name = expr.output_name();
+                let is_uniq = uniq_names.insert(name.clone());
+                polars_ensure!(is_uniq, duplicate = name);
+            }
+
             IRBuilder::new(input, ctxt.expr_arena, ctxt.lp_arena)
                 .group_by(keys, aggs, None, maintain_order, Default::default())
                 .build()
@@ -1304,6 +1312,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 SinkType::File(options) => {
                     let mut compression_opt = None::<ExternalCompression>;
 
+                    #[cfg(feature = "parquet")]
+                    if let FileWriteFormat::Parquet(options) = &options.file_format
+                        && let Some(arrow_schema) = &options.arrow_schema
+                    {
+                        validate_arrow_schema_conversion(
+                            input_schema.as_ref(),
+                            arrow_schema,
+                            options.compat_level(),
+                        )?;
+                    }
+
                     #[cfg(feature = "csv")]
                     if let FileWriteFormat::Csv(csv_options) = &options.file_format
                         && csv_options.check_extension
@@ -1391,6 +1410,20 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         max_rows_per_file,
                         approximate_bytes_per_file,
                     };
+
+                    #[cfg(feature = "parquet")]
+                    if let FileWriteFormat::Parquet(parquet_options) = &options.file_format
+                        && let Some(arrow_schema) = &parquet_options.arrow_schema
+                    {
+                        let file_schema =
+                            options.file_output_schema(&input_schema, ctxt.expr_arena)?;
+
+                        validate_arrow_schema_conversion(
+                            file_schema.as_ref(),
+                            arrow_schema,
+                            parquet_options.compat_level(),
+                        )?;
+                    }
 
                     ctxt.conversion_optimizer
                         .fill_scratch(options.expr_irs_iter(), ctxt.expr_arena);

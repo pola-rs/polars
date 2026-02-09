@@ -207,14 +207,12 @@ def concat(
         )
         lf: LazyFrame = (
             reduce(
-                lambda x, y: (
-                    x.join(
-                        y,
-                        on=common_cols,
-                        how=join_method,
-                        maintain_order="right_left",
-                        coalesce=True,
-                    )
+                lambda x, y: x.join(
+                    y,
+                    on=common_cols,
+                    how=join_method,
+                    maintain_order="right_left",
+                    coalesce=True,
                 ),
                 [df.lazy() for df in elems],
             )
@@ -495,14 +493,12 @@ def union(
         )
         lf: LazyFrame = (
             reduce(
-                lambda x, y: (
-                    x.join(
-                        y,
-                        on=common_cols,
-                        how=join_method,
-                        maintain_order="none",
-                        coalesce=True,
-                    )
+                lambda x, y: x.join(
+                    y,
+                    on=common_cols,
+                    how=join_method,
+                    maintain_order="none",
+                    coalesce=True,
                 ),
                 [df.lazy() for df in elems],
             )

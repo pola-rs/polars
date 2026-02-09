@@ -1174,11 +1174,13 @@ def test_pycapsule_stream_interface_all_types() -> None:
     assert_frame_equal(
         df.map_columns(
             pl.selectors.all(),
-            lambda s: pl.Series(
-                PyCapsuleStreamHolder(pl.select(pl.struct(pl.lit(s))).to_series())
-            )
-            .struct.unnest()
-            .to_series(),
+            lambda s: (
+                pl.Series(
+                    PyCapsuleStreamHolder(pl.select(pl.struct(pl.lit(s))).to_series())
+                )
+                .struct.unnest()
+                .to_series()
+            ),
         ),
         df,
     )

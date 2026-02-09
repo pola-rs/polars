@@ -439,7 +439,7 @@ pub fn aexpr_sortedness(
         | AExpr::SortBy { .. }
         | AExpr::Agg(_)
         | AExpr::Ternary { .. }
-        | AExpr::AnonymousStreamingAgg { .. }
+        | AExpr::AnonymousAgg { .. }
         | AExpr::AnonymousFunction { .. }
         | AExpr::Eval { .. }
         | AExpr::Over { .. } => None,
@@ -459,8 +459,9 @@ pub fn function_expr_sortedness(
     schema: &Schema,
     input_sorted: Option<&[Sorted]>,
 ) -> Option<AExprSorted> {
-    let nth_input =
-        |n: usize| aexpr_sortedness(arena.get(inputs[n].node()), arena, schema, input_sorted);
+    macro_rules! rec_ae {
+        ($node:expr) => {{ aexpr_sortedness(arena.get($node), arena, schema, input_sorted) }};
+    }
 
     match function {
         #[cfg(feature = "rle")]
@@ -485,11 +486,23 @@ pub fn function_expr_sortedness(
         | IRFunctionExpr::DropNans
         | IRFunctionExpr::FillNullWithStrategy(
             FillNullStrategy::Forward(None) | FillNullStrategy::Backward(None),
-        ) => nth_input(0),
+        ) => {
+            let [e] = inputs else {
+                return None;
+            };
+
+            rec_ae!(e.node())
+        },
         #[cfg(feature = "mode")]
         IRFunctionExpr::Mode {
             maintain_order: true,
-        } => nth_input(0),
+        } => {
+            let [e] = inputs else {
+                return None;
+            };
+
+            rec_ae!(e.node())
+        },
 
         #[cfg(feature = "range")]
         IRFunctionExpr::Range(range) => {
@@ -513,7 +526,12 @@ pub fn function_expr_sortedness(
         },
 
         IRFunctionExpr::Reverse => {
-            let mut sortedness = nth_input(0)?;
+            let [e] = inputs else {
+                return None;
+            };
+
+            let mut sortedness = rec_ae!(e.node())?;
+
             if let Some(d) = &mut sortedness.descending {
                 *d = !*d;
             }
@@ -524,36 +542,15 @@ pub fn function_expr_sortedness(
         },
 
         #[cfg(all(feature = "strings", feature = "concat_str"))]
-        IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal { ignore_nulls, .. }) => {
-            // In cases like pl.concat_str(pl.lit("prefix"), pl.col("a"), pl.lit("suffix")),
-            // we always want to return the sortedness of pl.col("a").
-            let scalar_constants = inputs
-                .iter()
-                .map(|e| {
-                    constant_evaluate(e.node(), arena, schema, 0)
-                        .flatten()
-                        .filter(|c| c.is_scalar())
-                })
-                .collect::<Vec<_>>();
-            let scalar_constant_count = scalar_constants.iter().filter(|o| o.is_some()).count();
-            for (idx, sc) in scalar_constants.iter().enumerate() {
-                let Some(sortedness) = nth_input(idx) else {
-                    continue;
-                };
-                if scalar_constant_count == inputs.len() - 1 && sc.is_none() {
-                    return Some(sortedness);
-                }
-            }
-
-            let sortedness = nth_input(0)?;
-            if *ignore_nulls && sortedness.nulls_last? != sortedness.descending? {
+        IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal {
+            ignore_nulls: false,
+            delimiter: _,
+        }) => {
+            let [e] = inputs else {
                 return None;
-            }
-            if (1..inputs.len()).all(|n| nth_input(n).as_ref() == Some(&sortedness)) {
-                Some(sortedness)
-            } else {
-                None
-            }
+            };
+
+            rec_ae!(e.node())
         },
 
         _ => None,

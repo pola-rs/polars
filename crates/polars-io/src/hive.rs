@@ -16,9 +16,9 @@ use crate::utils::HIVE_VALUE_ENCODE_CHARSET;
 /// # Safety
 ///
 /// num_rows equals the height of the df when the df height is non-zero.
-pub(crate) fn materialize_hive_partitions<D>(
+pub(crate) fn materialize_hive_partitions<F, M>(
     df: &mut DataFrame,
-    reader_schema: &polars_schema::Schema<D>,
+    reader_schema: &polars_schema::Schema<F, M>,
     hive_partition_columns: Option<&[Series]>,
 ) {
     let num_rows = df.height();
@@ -73,10 +73,10 @@ pub(crate) fn materialize_hive_partitions<D>(
 ///
 /// # Panics
 /// Panics if either `cols_lhs` or `cols_rhs` is empty.
-pub fn merge_sorted_to_schema_order<'a, D>(
+pub fn merge_sorted_to_schema_order<'a, F, M>(
     cols_lhs: &'a mut dyn Iterator<Item = Column>,
     cols_rhs: &'a mut dyn Iterator<Item = Column>,
-    schema: &polars_schema::Schema<D>,
+    schema: &polars_schema::Schema<F, M>,
     output: &'a mut Vec<Column>,
 ) {
     merge_sorted_to_schema_order_impl(cols_lhs, cols_rhs, output, &|v| schema.index_of(v.name()))

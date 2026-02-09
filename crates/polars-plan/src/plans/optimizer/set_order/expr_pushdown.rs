@@ -3,7 +3,7 @@ use std::ops::{BitOr, BitOrAssign};
 use polars_utils::arena::Arena;
 
 use crate::dsl::EvalVariant;
-use crate::plans::{AExpr, IRAggExpr};
+use crate::plans::{AExpr, IRAggExpr, IRFunctionExpr};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColumnOrderObserved;
@@ -211,11 +211,15 @@ impl<'a> ObservableOrdersResolver<'a> {
                 }
             },
             // Fow now only non-observing aggregations
-            AExpr::AnonymousStreamingAgg {
+            AExpr::AnonymousAgg {
                 input: _,
                 fmt_str: _,
                 function: _,
-            } => O::None,
+            } => {
+                // TODO: Derive this information from the `AnonymousAgg` or re-think named functions
+                // and external Aggs in general.
+                O::None
+            },
             AExpr::Agg(agg) => match agg {
                 // Input order agnostic aggregations.
                 IRAggExpr::Min { input: node, .. }
@@ -230,12 +234,6 @@ impl<'a> ObservableOrdersResolver<'a> {
                 | IRAggExpr::Item { input: node, .. } => {
                     // Input order is disregarded, but must not observe order.
                     _ = rec!(*node);
-                    O::None
-                },
-                IRAggExpr::MinBy { input, by } | IRAggExpr::MaxBy { input, by } => {
-                    // Input and 'by' order is disregarded, but must not observe order.
-                    _ = rec!(*input);
-                    _ = rec!(*by);
                     O::None
                 },
                 IRAggExpr::Quantile { expr, quantile, .. } => {
@@ -266,6 +264,17 @@ impl<'a> ObservableOrdersResolver<'a> {
 
                     O::Independent
                 },
+            },
+
+            AExpr::Function {
+                input,
+                function: IRFunctionExpr::MinBy | IRFunctionExpr::MaxBy,
+                ..
+            } => {
+                // Input and 'by' order is disregarded, but must not observe order.
+                _ = rec!(input[0].node());
+                _ = rec!(input[1].node());
+                O::None
             },
 
             AExpr::Gather {

@@ -166,8 +166,6 @@ impl AExpr {
                 match agg {
                     Max { input: expr, .. }
                     | Min { input: expr, .. }
-                    | MinBy { input: expr, .. }
-                    | MaxBy { input: expr, .. }
                     | First(expr)
                     | FirstNonNull(expr)
                     | Last(expr)
@@ -285,7 +283,7 @@ impl AExpr {
                 let out = function.get_field(ctx.schema, &fields)?;
                 Ok(out)
             },
-            AnonymousStreamingAgg {
+            AnonymousAgg {
                 input,
                 function,
                 fmt_str,
@@ -423,8 +421,6 @@ impl AExpr {
             | Slice { input: expr, .. }
             | Agg(Min { input: expr, .. })
             | Agg(Max { input: expr, .. })
-            | Agg(MinBy { input: expr, .. })
-            | Agg(MaxBy { input: expr, .. })
             | Agg(First(expr))
             | Agg(FirstNonNull(expr))
             | Agg(Last(expr))
@@ -440,8 +436,7 @@ impl AExpr {
             | Agg(Count { input: expr, .. })
             | Agg(AggGroups(expr))
             | Agg(Quantile { expr, .. }) => expr_arena.get(*expr).to_name(expr_arena),
-            AnonymousFunction { input, fmt_str, .. }
-            | AnonymousStreamingAgg { input, fmt_str, .. } => {
+            AnonymousFunction { input, fmt_str, .. } | AnonymousAgg { input, fmt_str, .. } => {
                 if input.is_empty() {
                     fmt_str.as_ref().clone()
                 } else {

@@ -105,25 +105,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 }
                 .into()
             },
-            IRAggExpr::MinBy { input, by } => {
-                let input_exp = node_to_expr(input, expr_arena);
-                let by_exp = node_to_expr(by, expr_arena);
-                AggExpr::MinBy {
-                    input: Arc::new(input_exp),
-                    by: Arc::new(by_exp),
-                }
-                .into()
-            },
-
-            IRAggExpr::MaxBy { input, by } => {
-                let input_exp = node_to_expr(input, expr_arena);
-                let by_exp = node_to_expr(by, expr_arena);
-                AggExpr::MaxBy {
-                    input: Arc::new(input_exp),
-                    by: Arc::new(by_exp),
-                }
-                .into()
-            },
 
             IRAggExpr::Mean(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
@@ -222,6 +203,17 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 falsy: Arc::new(f),
             }
         },
+        AExpr::AnonymousAgg {
+            input,
+            fmt_str,
+            function: _,
+        } => {
+            let inputs = expr_irs_to_exprs(input.clone(), expr_arena);
+            Expr::Display {
+                inputs,
+                fmt_str: fmt_str.clone(),
+            }
+        },
         AExpr::AnonymousFunction {
             input,
             function,
@@ -300,7 +292,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             length: Arc::new(node_to_expr(length, expr_arena)),
         },
         AExpr::Len => Expr::Len,
-        AExpr::AnonymousStreamingAgg { .. } => unreachable!("should not be hit"),
     }
 }
 
@@ -369,6 +360,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::Slice => B::Slice,
                 IB::Head => B::Head,
                 IB::Tail => B::Tail,
+                IB::Get(null_on_oob) => B::Get(null_on_oob),
             })
         },
         #[cfg(feature = "dtype-categorical")]
@@ -952,6 +944,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             descending,
             nulls_last,
         },
+        IF::MinBy => F::MinBy,
+        IF::MaxBy => F::MaxBy,
         IF::Product => F::Product,
         #[cfg(feature = "rank")]
         IF::Rank { options, seed } => F::Rank { options, seed },

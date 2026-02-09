@@ -262,7 +262,7 @@ def test_filter_logical_type_13194() -> None:
 def test_filter_horizontal_selector_15428() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
-    df = df.filter(pl.all_horizontal((cs.by_name("^.*$") & cs.integer()) <= 2))
+    df = df.filter(pl.all_horizontal((cs.matches("^.*$") & cs.integer()) <= 2))
     expected_df = pl.DataFrame({"a": [1, 2]})
 
     assert_frame_equal(df, expected_df)

@@ -263,16 +263,6 @@ pub(super) fn to_aexpr_impl(
                         output_name,
                     )
                 },
-                AggExpr::MinBy { input, by } => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    let (by, _) = to_aexpr_mat_lit_arc!(by)?;
-                    (IRAggExpr::MinBy { input, by }, output_name)
-                },
-                AggExpr::MaxBy { input, by } => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    let (by, _) = to_aexpr_mat_lit_arc!(by)?;
-                    (IRAggExpr::MaxBy { input, by }, output_name)
-                },
                 AggExpr::Median(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Median(input), output_name)
@@ -619,6 +609,13 @@ pub(super) fn to_aexpr_impl(
 
         e @ Expr::SubPlan { .. } | e @ Expr::Selector(_) => {
             polars_bail!(InvalidOperation: "'Expr: {}' not allowed in this context/location", e)
+        },
+        // Should never go from IR -> DSL -> IR
+        Expr::Display {
+            inputs: _,
+            fmt_str: _,
+        } => {
+            unreachable!()
         },
     };
     Ok((ctx.arena.add(v), output_name))

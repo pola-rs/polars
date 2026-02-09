@@ -205,7 +205,7 @@ pub fn is_input_independent_rec(
             options: _,
             fmt_str: _,
         }
-        | AExpr::AnonymousStreamingAgg {
+        | AExpr::AnonymousAgg {
             input,
             function: _,
             fmt_str: _,
@@ -354,7 +354,7 @@ pub fn is_length_preserving_rec(
                 || is_length_preserving_rec(*truthy, arena, cache)
                 || is_length_preserving_rec(*falsy, arena, cache)
         },
-        AExpr::AnonymousStreamingAgg { .. } => false,
+        AExpr::AnonymousAgg { .. } => false,
         AExpr::AnonymousFunction {
             input,
             function: _,
@@ -514,7 +514,6 @@ fn simplify_input_streams(
             } = &ctx.phys_sm[input_stream.node].kind
             {
                 flattened_input_streams.extend(inputs);
-                ctx.phys_sm.remove(input_stream.node);
             } else {
                 flattened_input_streams.insert(input_stream);
             }
@@ -1126,6 +1125,7 @@ fn lower_exprs_with_ctx(
                         nulls_equal,
                         coalesce: Default::default(),
                         maintain_order: Default::default(),
+                        build_side: None,
                     },
                     output_bool: true,
                 };
@@ -1877,7 +1877,7 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
-            AExpr::AnonymousStreamingAgg {
+            AExpr::AnonymousAgg {
                 input: _,
                 fmt_str: _,
                 function: _,
@@ -1891,8 +1891,6 @@ fn lower_exprs_with_ctx(
                 // Change agg mutably so we can share the codepath for all of these.
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }
-                | IRAggExpr::MinBy { .. }
-                | IRAggExpr::MaxBy { .. }
                 | IRAggExpr::First(_)
                 | IRAggExpr::FirstNonNull(_)
                 | IRAggExpr::Last(_)
@@ -1988,6 +1986,8 @@ fn lower_exprs_with_ctx(
                     IRFunctionExpr::Boolean(
                         IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. },
                     )
+                    | IRFunctionExpr::MinBy
+                    | IRFunctionExpr::MaxBy
                     | IRFunctionExpr::NullCount,
                 ..
             } => {

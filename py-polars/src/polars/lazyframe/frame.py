@@ -108,6 +108,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from builtins import slice as slice_
     from collections.abc import Awaitable, Callable, Iterator, Sequence
     from io import IOBase
     from typing import IO, Concatenate, Literal, ParamSpec
@@ -126,6 +127,7 @@ if TYPE_CHECKING:
     from polars import DataFrame, DataType, Expr
     from polars._dependencies import numpy as np
     from polars._typing import (
+        ArrowSchemaExportable,
         AsofJoinStrategy,
         ClosedInterval,
         ColumnNameOrSelector,
@@ -746,7 +748,7 @@ class LazyFrame:
     def __deepcopy__(self, memo: None = None) -> LazyFrame:
         return self.clone()
 
-    def __getitem__(self, item: slice) -> LazyFrame:
+    def __getitem__(self, item: slice_) -> LazyFrame:
         """
         Support slice syntax, returning a new LazyFrame.
 
@@ -2616,6 +2618,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy: Literal[False] = ...,
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
+        arrow_schema: ArrowSchemaExportable | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> None: ...
 
@@ -2640,6 +2643,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy: Literal[True],
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
+        arrow_schema: ArrowSchemaExportable | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame: ...
 
@@ -2660,6 +2664,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         metadata: ParquetMetadata | None = None,
+        arrow_schema: ArrowSchemaExportable | None = None,
         mkdir: bool = False,
         lazy: bool = False,
         engine: EngineType = "auto",
@@ -2760,6 +2765,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **experimental**. It may be removed or
                 changed at any point without it being considered a breaking change.
+        arrow_schema
+            Provide a custom arrow schema to write to the file. This allows
+            setting custom schema and field-level metadata. Names and dtypes
+            must match.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         mkdir: bool
             Recursively create all the directories in the path.
 
@@ -2818,6 +2831,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine = _select_engine(engine)
         if metadata is not None:
             msg = "`metadata` parameter is considered experimental"
+            issue_unstable_warning(msg)
+
+        if arrow_schema is not None:
+            msg = "`arrow_schema` parameter is considered unstable"
             issue_unstable_warning(msg)
 
         if isinstance(statistics, bool) and statistics:
@@ -2882,6 +2899,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             row_group_size=row_group_size,
             data_page_size=data_page_size,
             metadata=metadata,
+            arrow_schema=arrow_schema,
         )
 
         if not lazy:

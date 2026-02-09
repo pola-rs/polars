@@ -21,7 +21,9 @@ use crate::physical_plan::lower_expr::{
     build_hstack_stream, build_select_stream, compute_output_schema, is_elementwise_rec_cached,
     is_fake_elementwise_function, is_input_independent,
 };
-use crate::physical_plan::lower_ir::{build_row_idx_stream, build_slice_stream};
+use crate::physical_plan::lower_ir::{
+    build_filter_stream, build_row_idx_stream, build_slice_stream,
+};
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 #[allow(clippy::too_many_arguments)]
@@ -85,7 +87,6 @@ fn build_group_by_fallback(
 #[allow(clippy::too_many_arguments)]
 fn replace_agg_uniq(
     expr: Node,
-    outer_name: Option<PlSmallStr>,
     expr_merger: &NaiveExprMerger,
     _expr_cache: &mut ExprCache,
     expr_arena: &mut Arena<AExpr>,
@@ -118,13 +119,9 @@ fn replace_agg_uniq(
             let trans_agg_node = expr_arena.add(aexpr.replace_inputs(&input_cols));
 
             // Add to aggregation expressions and replace with a reference to its output.
-            let agg_expr = if let Some(name) = outer_name {
-                ExprIR::new(trans_agg_node, OutputName::Alias(name))
-            } else {
-                ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()))
-            };
+            let agg_expr = ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()));
             agg_exprs.push(agg_expr.clone());
-            (agg_expr.clone(), input_ids)
+            (agg_expr, input_ids)
         })
         .0
         .output_name()
@@ -141,7 +138,6 @@ fn replace_agg_uniq(
 #[allow(clippy::too_many_arguments)]
 fn try_lower_elementwise_scalar_agg_expr(
     expr: Node,
-    outer_name: Option<PlSmallStr>,
     expr_merger: &mut NaiveExprMerger,
     expr_cache: &mut ExprCache,
     expr_arena: &mut Arena<AExpr>,
@@ -154,7 +150,6 @@ fn try_lower_elementwise_scalar_agg_expr(
         ($input:expr) => {
             try_lower_elementwise_scalar_agg_expr(
                 $input,
-                None,
                 expr_merger,
                 expr_cache,
                 expr_arena,
@@ -169,7 +164,6 @@ fn try_lower_elementwise_scalar_agg_expr(
         ($input:expr) => {
             replace_agg_uniq(
                 $input,
-                outer_name,
                 expr_merger,
                 expr_cache,
                 expr_arena,
@@ -304,11 +298,13 @@ fn try_lower_elementwise_scalar_agg_expr(
         AExpr::Function {
             function:
                 IRFunctionExpr::Boolean(IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. })
+                | IRFunctionExpr::MinBy
+                | IRFunctionExpr::MaxBy
                 | IRFunctionExpr::NullCount,
             ..
         } => Some(replace_agg_uniq!(expr)),
 
-        AExpr::AnonymousStreamingAgg { .. } => Some(replace_agg_uniq!(expr)),
+        AExpr::AnonymousAgg { .. } => Some(replace_agg_uniq!(expr)),
 
         node @ AExpr::Function { input, options, .. }
         | node @ AExpr::AnonymousFunction { input, options, .. }
@@ -358,8 +354,6 @@ fn try_lower_elementwise_scalar_agg_expr(
             match agg {
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }
-                | IRAggExpr::MinBy { .. }
-                | IRAggExpr::MaxBy { .. }
                 | IRAggExpr::First(_)
                 | IRAggExpr::FirstNonNull(_)
                 | IRAggExpr::Last(_)
@@ -394,16 +388,18 @@ fn try_lower_elementwise_scalar_agg_expr(
             }
         },
         AExpr::Len => {
-            let agg_expr = if let Some(name) = outer_name {
-                ExprIR::new(expr, OutputName::Alias(name))
-            } else {
-                ExprIR::new(expr, OutputName::Alias(unique_column_name()))
-            };
-            let result_node = expr_arena.add(AExpr::Column(agg_expr.output_name().clone()));
             let agg_id = expr_merger.get_uniq_id(expr).unwrap();
-            uniq_agg_exprs.insert(agg_id, (agg_expr.clone(), Vec::new()));
-            agg_exprs.push(agg_expr);
-            Some(result_node)
+            let name = uniq_agg_exprs
+                .entry(agg_id)
+                .or_insert_with(|| {
+                    let agg_expr = ExprIR::new(expr, OutputName::Alias(unique_column_name()));
+                    agg_exprs.push(agg_expr.clone());
+                    (agg_expr, Vec::new())
+                })
+                .0
+                .output_name()
+                .clone();
+            Some(expr_arena.add(AExpr::Column(name)))
         },
     }
 }
@@ -500,7 +496,6 @@ fn try_build_streaming_group_by(
     for agg in aggs {
         let Some(trans_node) = try_lower_elementwise_scalar_agg_expr(
             agg.node(),
-            Some(agg.output_name().clone()),
             &mut expr_merger,
             expr_cache,
             expr_arena,
@@ -589,6 +584,54 @@ fn try_build_streaming_group_by(
                     other_agg_input_streams.insert(input_id, (input_stream, Vec::new()));
                     all_keys_included_in_other_inputs = true;
                 },
+
+                AExpr::Filter {
+                    input: filter_input,
+                    by: predicate,
+                } => {
+                    if !is_elementwise_rec_cached(*filter_input, expr_arena, expr_cache)
+                        || !is_elementwise_rec_cached(*predicate, expr_arena, expr_cache)
+                    {
+                        return Ok(None);
+                    }
+
+                    // We have to uniquify the keys here to prevent name dupes since we uniquified them elsewhere.
+                    // TODO: use pre-select as input here.
+                    let mut select_exprs = Vec::new();
+                    let predicate_name = unique_column_name();
+                    for key_id in &key_ids {
+                        select_exprs.push(ExprIR::new(
+                            expr_merger.get_node(*key_id).unwrap(),
+                            OutputName::Alias(uniq_input_names[key_id].clone()),
+                        ));
+                    }
+                    select_exprs.push(ExprIR::new(
+                        *filter_input,
+                        OutputName::Alias(input_name.clone()),
+                    ));
+                    select_exprs.push(ExprIR::new(
+                        *predicate,
+                        OutputName::Alias(predicate_name.clone()),
+                    ));
+
+                    let mut stream = build_select_stream(
+                        input,
+                        &select_exprs,
+                        expr_arena,
+                        phys_sm,
+                        expr_cache,
+                        ctx,
+                    )?;
+                    stream = build_filter_stream(
+                        stream,
+                        ExprIR::from_column_name(predicate_name, expr_arena),
+                        expr_arena,
+                        phys_sm,
+                        expr_cache,
+                        ctx,
+                    )?;
+                    other_agg_input_streams.insert(input_id, (stream, Vec::new()));
+                },
                 _ => return Ok(None),
             }
         }
@@ -671,7 +714,7 @@ fn try_build_streaming_group_by(
             group_by_output_schema,
             PhysNodeKind::Sort {
                 input: PhysStream::first(agg_node),
-                by_column: vec![ExprIR::from_node(row_idx_node, expr_arena)],
+                by_column: vec![trans_output_exprs.last().unwrap().clone()],
                 slice: None,
                 sort_options: SortMultipleOptions::new(),
             },
