@@ -174,7 +174,6 @@ jobs:
           -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not benchmark and not ci_only"
           -k 'not test_polars_import'
           --cov --cov-report xml:small-morsel.xml --cov-fail-under=0
-          || true
 
       - name: Run Python tests - async reader
         working-directory: py-polars
