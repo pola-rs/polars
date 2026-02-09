@@ -166,6 +166,7 @@ pub fn replace_strict(
     }
     validate_old(&old)?;
 
+    // Extra check because strict_cast is too permissive, e.g. allows string -> struct cast.
     if old.dtype().can_cast_to(s.dtype()) != Some(true) {
         polars_bail!(
             InvalidOperation: "cannot use values of type `{}` to replace values in a column of type `{}`",
