@@ -20,8 +20,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
     let mut new_current_exprs: Vec<ExprIR> = vec![];
     let mut visited_caches = PlHashSet::new();
 
-    while let Some(current) = ir_stack.pop() {
-        let current_ir = lp_arena.get(current);
+    while let Some(current_node) = ir_stack.pop() {
+        let current_ir = lp_arena.get(current_node);
 
         if let IR::Cache { id, .. } = current_ir {
             if !visited_caches.insert(*id) {
@@ -35,9 +35,9 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             continue;
         };
 
-        let input = *input;
+        let input_node = *input;
 
-        let [current_ir, input_ir] = lp_arena.get_many_mut([current, input]);
+        let [current_ir, input_ir] = lp_arena.get_many_mut([current_node, input_node]);
 
         let IR::HStack {
             input: _,
@@ -150,8 +150,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
         if new_current_exprs.is_empty() {
             let input_ir = input_ir.clone();
-            lp_arena.replace(current, input_ir);
-            *ir_stack.last_mut().unwrap() = current;
+            lp_arena.replace(current_node, input_ir);
             continue;
         }
 
@@ -170,10 +169,10 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             Arc::make_mut(current_schema)
                 .sort_by_key(|name, _| input_schema.index_of(name).unwrap_or(usize::MAX));
 
-            let current_ir = lp_arena.replace(current, IR::Invalid);
+            let current_ir = lp_arena.replace(current_node, IR::Invalid);
             let moved_current_node = lp_arena.add(current_ir);
             lp_arena.replace(
-                current,
+                current_node,
                 IR::SimpleProjection {
                     input: moved_current_node,
                     columns: projection,
