@@ -37,7 +37,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
         let input_node = *input;
 
-        let [current_ir, input_ir] = lp_arena.get_many_mut([current_node, input_node]);
+        let [current_ir, input_ir] = lp_arena.get_disjoint_mut([current_node, input_node]);
 
         let IR::HStack {
             input: _,

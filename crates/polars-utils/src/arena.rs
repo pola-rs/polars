@@ -122,44 +122,13 @@ impl<T> Arena<T> {
     #[inline]
     /// Get mutable references to several items of the Arena
     ///
-    /// The `idxs` is asserted to contain unique `Node` elements which are preferably (not
-    /// necessarily) in order.
-    pub fn get_many_mut<const N: usize>(&mut self, indices: [Node; N]) -> [&mut T; N] {
-        // @NOTE: This implementation is adapted from the Rust Nightly Standard Library. When
-        // `get_many_mut` gets stabilized we should use that.
+    /// The `idxs` is asserted to contain unique `Node` elements.
+    pub fn get_disjoint_mut<const N: usize>(&mut self, nodes: [Node; N]) -> [&mut T; N] {
+        let mut indices: [usize; N] = [0; _];
 
-        let len = self.items.len();
+        indices.iter_mut().zip(nodes).for_each(|(i, n)| *i = n.0);
 
-        // NB: The optimizer should inline the loops into a sequence
-        // of instructions without additional branching.
-        let mut valid = true;
-        for (i, &idx) in indices.iter().enumerate() {
-            valid &= idx.0 < len;
-            for &idx2 in &indices[..i] {
-                valid &= idx != idx2;
-            }
-        }
-
-        assert!(valid, "Duplicate index or out-of-bounds index");
-
-        // NB: This implementation is written as it is because any variation of
-        // `indices.map(|i| self.get_unchecked_mut(i))` would make miri unhappy,
-        // or generate worse code otherwise. This is also why we need to go
-        // through a raw pointer here.
-        let slice: *mut [T] = &mut self.items[..] as *mut _;
-        let mut arr: std::mem::MaybeUninit<[&mut T; N]> = std::mem::MaybeUninit::uninit();
-        let arr_ptr = arr.as_mut_ptr();
-
-        // SAFETY: We expect `indices` to contain disjunct values that are
-        // in bounds of `self`.
-        unsafe {
-            for i in 0..N {
-                let idx = *indices.get_unchecked(i);
-                let slice_ref: &mut [T] = &mut *slice;
-                *(*arr_ptr).get_unchecked_mut(i) = slice_ref.get_unchecked_mut(idx.0);
-            }
-            arr.assume_init()
-        }
+        self.items.get_disjoint_mut(indices).unwrap()
     }
 
     #[inline]
