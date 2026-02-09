@@ -27,6 +27,7 @@ use super::calendar::{
     NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE, NS_SECOND, NS_WEEK, NTE_NS_DAY,
     NTE_NS_WEEK,
 };
+#[cfg(feature = "timezones")]
 use crate::utils::try_localize_datetime;
 #[cfg(feature = "timezones")]
 use crate::utils::unlocalize_datetime;
