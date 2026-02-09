@@ -125,7 +125,10 @@ impl<T> Arena<T> {
     /// # Panics
     /// Pancics if indices are out of bounds or overlapping.
     pub fn get_disjoint_mut<const N: usize>(&mut self, nodes: [Node; N]) -> [&mut T; N] {
-        return self.items.get_disjoint_mut(to_indices(nodes)).unwrap();
+        return self
+            .items
+            .get_disjoint_mut(const { to_indices(nodes) })
+            .unwrap();
 
         const fn to_indices<const N: usize>(nodes: [Node; N]) -> [usize; N] {
             let mut indices: [usize; N] = [0; _];
