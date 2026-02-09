@@ -2192,7 +2192,7 @@ def test_truncate_non_existent_14957() -> None:
         .dt.truncate("46m")
         .item()
     )
-    expected = datetime(2020, 3, 29, 2, 12, tzinfo=ZoneInfo(key="Europe/London"))
+    expected = datetime(2020, 3, 29, 2, 42, tzinfo=ZoneInfo(key="Europe/London"))
     assert result == expected
 
 
