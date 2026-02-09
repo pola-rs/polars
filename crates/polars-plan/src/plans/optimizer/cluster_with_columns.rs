@@ -151,6 +151,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         if new_current_exprs.is_empty() {
             let input_ir = input_ir.clone();
             lp_arena.replace(current_node, input_ir);
+            debug_assert_eq!(ir_stack.last(), Some(&input_node));
             continue;
         }
 
