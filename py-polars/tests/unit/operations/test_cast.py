@@ -1060,3 +1060,15 @@ def test_lit_cast_arithmetic_matrix_schema(
         else df.lazy().select(op(pl.col("a"), pl.lit(1, lit_dtype)))
     )
     assert q.collect_schema() == q.collect().schema
+
+
+def test_strict_cast_nested() -> None:
+    df = pl.DataFrame({"a": ["42", "10a"]})
+    struct = pl.Struct({"x": pl.Int32})
+    with pytest.raises(InvalidOperationError):
+        df.cast(struct, strict=True)
+
+    assert_frame_equal(
+        df.cast(struct, strict=False),
+        pl.DataFrame({"a": [{"x": 42}, {"x": None}]}, schema={"a": struct}),
+    )

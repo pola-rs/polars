@@ -10,7 +10,7 @@ use super::flags::StatisticsFlags;
 #[cfg(feature = "dtype-datetime")]
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
-use crate::utils::handle_casting_failures;
+use crate::utils::{handle_array_casting_failures, handle_casting_failures};
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
@@ -60,10 +60,11 @@ pub(crate) fn cast_chunks(
             let out = polars_compute::cast::cast(arr.as_ref(), &arrow_dtype, options);
             if check_nulls {
                 out.and_then(|new| {
-                    polars_ensure!(arr.null_count() == new.null_count(), ComputeError: "strict cast failed");
+                    if arr.null_count() != new.null_count() {
+                        handle_array_casting_failures(&**arr, &*new)?;
+                    }
                     Ok(new)
                 })
-
             } else {
                 out
             }
