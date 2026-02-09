@@ -3,6 +3,8 @@ use std::sync::Arc;
 use polars_utils::live_timer::{LiveTimer, LiveTimerSession};
 use polars_utils::relaxed_cell::RelaxedCell;
 
+pub const HEAD_RESPONSE_SIZE_ESTIMATE: u64 = 1;
+
 #[derive(Debug, Default, Clone)]
 pub struct IOMetrics {
     pub io_timer: LiveTimer,
@@ -32,7 +34,7 @@ impl IOMetrics {
 pub struct OptIOMetrics(pub Option<Arc<IOMetrics>>);
 
 impl OptIOMetrics {
-    pub fn new_io_session_guard(&self) -> Option<LiveTimerSession> {
+    pub fn start_io_session(&self) -> Option<LiveTimerSession> {
         self.0.as_ref().map(|x| x.io_timer.start_session())
     }
 
@@ -52,17 +54,17 @@ impl OptIOMetrics {
         self.0.as_ref().map(|x| x.bytes_sent.fetch_add(bytes_sent));
     }
 
-    pub async fn record_download<F, O>(&self, num_bytes: u64, fut: F) -> O
+    pub async fn record_io_read<F, O>(&self, num_bytes: u64, fut: F) -> O
     where
         F: Future<Output = O>,
     {
         self.add_bytes_requested(num_bytes);
 
-        let guard = self.new_io_session_guard();
+        let io_session = self.start_io_session();
 
         let out = fut.await;
 
-        drop(guard);
+        drop(io_session);
 
         self.add_bytes_received(num_bytes);
 
