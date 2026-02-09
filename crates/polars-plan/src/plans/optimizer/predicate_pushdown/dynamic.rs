@@ -71,7 +71,9 @@ impl DynamicPred {
     pub fn evaluate(&self, columns: &[Column]) -> PolarsResult<Column> {
         let h = columns[0].len();
 
-        let out = if self.inner.is_set.load(std::sync::atomic::Ordering::Relaxed) {
+        // Can be relaxed, worst thing that can happen is that we read
+        // more data than strictly needed.
+        if self.inner.is_set.load(std::sync::atomic::Ordering::Relaxed) {
             let guard = self.inner.pred.read().unwrap();
             let dyn_func = guard.as_ref().unwrap();
             dyn_func(columns)
@@ -82,8 +84,7 @@ impl DynamicPred {
                 s,
                 1,
             )))
-        };
-        dbg!(out)
+        }
     }
 }
 

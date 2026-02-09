@@ -581,7 +581,6 @@ impl PredicatePushDown {
                 mut slice,
                 sort_options,
             } => {
-                dbg!(&slice);
                 if let Some((offset, len, None)) = slice
                     && by_column.len() == 1
                 {
