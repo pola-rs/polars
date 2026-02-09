@@ -174,8 +174,8 @@ def read_excel(
 
 # note: 'ignore' required as mypy thinks that the return value for
 # Literal[0] overlaps with the return value for other integers
-@overload  # type: ignore[overload-overlap]
-def read_excel(
+@overload
+def read_excel(  # type: ignore[overload-overlap]
     source: FileSource,
     *,
     sheet_id: Literal[0] | Sequence[int],
@@ -477,8 +477,8 @@ def read_ods(
 ) -> NoReturn: ...
 
 
-@overload  # type: ignore[overload-overlap]
-def read_ods(
+@overload
+def read_ods(  # type: ignore[overload-overlap]
     source: FileSource,
     *,
     sheet_id: Literal[0] | Sequence[int],
@@ -1135,7 +1135,7 @@ def _read_spreadsheet_calamine(
         if str_to_temporal:
             lf = lf.with_columns(*str_to_temporal)
         if updated_overrides:
-            lf = lf.cast(dtypes=updated_overrides)
+            lf = lf.cast(dtypes=updated_overrides)  # type: ignore[arg-type]
         df = lf.collect()
 
     # standardise on string dtype for null columns in empty frame

@@ -13,8 +13,9 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
     let mut ir_stack = Vec::with_capacity(16);
     ir_stack.push(root);
 
-    let mut input_name_to_expr_map: PlIndexMap<PlSmallStr, ExprIR> = PlIndexMap::new();
-    let mut accessed_input_names: PlHashSet<PlSmallStr> = PlHashSet::new();
+    // key: output_name, value: (expr, is_original)
+    let mut input_name_to_expr_map: PlIndexMap<PlSmallStr, (ExprIR, bool)> = PlIndexMap::new();
+    let mut input_names_accessed_by_non_candidates: PlHashSet<PlSmallStr> = PlHashSet::new();
     let mut push_candidate_idxs: Vec<usize> = vec![];
     let mut new_current_exprs: Vec<ExprIR> = vec![];
     let mut visited_caches = PlHashSet::new();
@@ -59,14 +60,14 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         };
 
         input_name_to_expr_map.clear();
-        accessed_input_names.clear();
+        input_names_accessed_by_non_candidates.clear();
         push_candidate_idxs.clear();
         new_current_exprs.clear();
 
         input_name_to_expr_map.extend(
             input_exprs
                 .iter()
-                .map(|e| (e.output_name().clone(), e.clone())),
+                .map(|e| (e.output_name().clone(), (e.clone(), true))),
         );
 
         if input_name_to_expr_map.len() != input_exprs.len() {
@@ -78,16 +79,16 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         }
 
         for (i, e) in current_exprs.iter().enumerate() {
-            let mut accessed_upper_expr = false;
-
-            for name in aexpr_to_leaf_names_iter(e.node(), expr_arena) {
-                if input_name_to_expr_map.contains_key(name) {
-                    accessed_upper_expr = true;
-                    accessed_input_names.insert(name.clone());
-                }
+            // Ignore col()
+            if let AExpr::Column(name) = expr_arena.get(e.node())
+                && name == e.output_name()
+            {
+                continue;
             }
 
-            if !accessed_upper_expr {
+            if aexpr_to_leaf_names_iter(e.node(), expr_arena)
+                .all(|name| !input_name_to_expr_map.contains_key(name))
+            {
                 push_candidate_idxs.push(i);
             }
         }
@@ -97,14 +98,33 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         for (i, e) in current_exprs.iter().enumerate() {
             if push_candidate_idxs.get(candidate_idx) == Some(&i) {
                 candidate_idx += 1;
+                continue;
+            }
 
-                if !accessed_input_names.contains(e.output_name())
-                    && aexpr_to_leaf_names_iter(e.node(), expr_arena)
-                        .all(|name| !accessed_input_names.contains(name))
-                {
-                    input_name_to_expr_map.insert(e.output_name().clone(), e.clone());
-                    continue;
-                }
+            for name in aexpr_to_leaf_names_iter(e.node(), expr_arena) {
+                input_names_accessed_by_non_candidates.insert(name.clone());
+            }
+        }
+
+        push_candidate_idxs.retain(|&i| {
+            let e = &current_exprs[i];
+            !input_names_accessed_by_non_candidates.contains(e.output_name())
+        });
+
+        let mut candidate_idx: usize = 0;
+
+        for (i, e) in current_exprs.iter().enumerate() {
+            // Prune col()
+            if let AExpr::Column(name) = expr_arena.get(e.node())
+                && name == e.output_name()
+            {
+                continue;
+            }
+
+            if push_candidate_idxs.get(candidate_idx) == Some(&i) {
+                candidate_idx += 1;
+                input_name_to_expr_map.insert(e.output_name().clone(), (e.clone(), false));
+                continue;
             }
 
             new_current_exprs.push(e.clone());
@@ -116,13 +136,13 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
         input_exprs.clear();
 
-        for (output_name, e) in input_name_to_expr_map
+        for (output_name, (e, is_original)) in input_name_to_expr_map
             .iter()
             .map(|x| (x.0.clone(), x.1.clone()))
         {
             input_exprs.push(e);
 
-            if !input_schema.contains(&output_name) {
+            if !is_original {
                 let dtype = current_schema.get(&output_name).unwrap().clone();
                 Arc::make_mut(input_schema).insert(output_name, dtype);
             }

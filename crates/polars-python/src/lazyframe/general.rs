@@ -666,6 +666,7 @@ impl PyLazyFrame {
             data_page_size,
             key_value_metadata: metadata.0,
             arrow_schema: arrow_schema.map(|x| Arc::new(x.0)),
+            compat_level: None,
         };
 
         let target = target.extract_file_sink_destination()?;
