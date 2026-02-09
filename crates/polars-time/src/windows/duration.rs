@@ -596,9 +596,7 @@ impl Duration {
     /// Localize result to given time zone, respecting RFC5545 to deal with non-existent or
     /// ambiguous results.
     ///
-    /// For ambiguous results, we preserve the DST fold of the original datetime.
-    /// For non-existent results, we try shifting forwards by 30 minutes, and if that fails,
-    /// we shift forwards by 60 minutes.
+    /// For ambiguous and non-existent results, we preserve the DST fold of the original datetime.
     ///
     /// * `original_dt_utc` - original datetime converted to UTC. E.g. if the
     ///   original datetime was 2022-11-06 01:30:00 CST, then this would
