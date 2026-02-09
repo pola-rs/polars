@@ -3684,8 +3684,8 @@ def test_between_prefiltering_parametric(s: pl.Series, start: int, end: int) -> 
     [
         (pl.Null, pa.null()),
         (pl.Boolean, pa.bool_()),
-        (pl.String, pa.string_view()),
-        (pl.Binary, pa.binary_view()),
+        (pl.String, pa.large_string()),
+        (pl.Binary, pa.large_binary()),
         (pl.Int8, pa.int8()),
         (pl.Int16, pa.int16()),
         (pl.Int32, pa.int32()),
@@ -3709,7 +3709,7 @@ def test_between_prefiltering_parametric(s: pl.Series, start: int, end: int) -> 
             pa.struct(
                 [
                     pa.field("x", pa.int32()),
-                    pa.field("y", pa.string_view()),
+                    pa.field("y", pa.large_string()),
                 ]
             ),
         ),

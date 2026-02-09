@@ -247,6 +247,11 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
         cs.by_name("abc", "cde", "def", "eee") & cs.by_name("cde", "eee", "fgg")
     ).columns == ["cde", "eee"]
 
+    # confirm literal name match
+    df_rx = pl.DataFrame({"*": [1], "xxx": [2], "^x+$": [3]})
+    assert df_rx.select(cs.by_name("*")).columns == ["*"]
+    assert df_rx.select(cs.by_name("^x+$")).columns == ["^x+$"]
+
     # expected errors
     with pytest.raises(ColumnNotFoundError, match="xxx"):
         df.select(cs.by_name("xxx", "fgg", "!!!"))
