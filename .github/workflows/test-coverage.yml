@@ -167,7 +167,6 @@ jobs:
           POLARS_AUTO_NEW_STREAMING: 1
           POLARS_IDEAL_MORSEL_SIZE: 4
           POLARS_TIMEOUT_MS: 60000
-        # TODO: fail on error
         run: >
           pytest
           -n auto
