@@ -7,6 +7,7 @@ use default::*;
 pub use groups::AsofJoinBy;
 use polars_core::prelude::*;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::total_ord::TotalOrd;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -15,20 +16,20 @@ use crate::frame::IntoDf;
 use crate::series::SeriesMethods;
 
 #[inline]
-fn ge_allow_eq<T: PartialOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
-    match l.partial_cmp(r) {
-        Some(Ordering::Equal) => allow_eq,
-        Some(Ordering::Greater) => true,
-        _ => false,
+fn ge_allow_eq<T: TotalOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
+    match l.tot_cmp(r) {
+        Ordering::Equal => allow_eq,
+        Ordering::Greater => true,
+        Ordering::Less => false,
     }
 }
 
 #[inline]
-fn lt_allow_eq<T: PartialOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
-    match l.partial_cmp(r) {
-        Some(Ordering::Equal) => allow_eq,
-        Some(Ordering::Less) => true,
-        _ => false,
+fn lt_allow_eq<T: TotalOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
+    match l.tot_cmp(r) {
+        Ordering::Equal => allow_eq,
+        Ordering::Less => true,
+        Ordering::Greater => false,
     }
 }
 
@@ -48,7 +49,7 @@ struct AsofJoinForwardState {
     allow_eq: bool,
 }
 
-impl<T: PartialOrd> AsofJoinState<T> for AsofJoinForwardState {
+impl<T: TotalOrd> AsofJoinState<T> for AsofJoinForwardState {
     fn new(allow_eq: bool) -> Self {
         AsofJoinForwardState {
             scan_offset: Default::default(),
@@ -81,7 +82,7 @@ struct AsofJoinBackwardState {
     allow_eq: bool,
 }
 
-impl<T: PartialOrd> AsofJoinState<T> for AsofJoinBackwardState {
+impl<T: TotalOrd> AsofJoinState<T> for AsofJoinBackwardState {
     fn new(allow_eq: bool) -> Self {
         AsofJoinBackwardState {
             scan_offset: Default::default(),
