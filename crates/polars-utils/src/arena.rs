@@ -120,12 +120,9 @@ impl<T> Arena<T> {
     }
 
     #[inline]
-    /// Get mutable references to several items of the Arena
-    ///
-    /// The `idxs` is asserted to contain unique `Node` elements.
+    /// Get mutable references to several items of the Arena.
     pub fn get_disjoint_mut<const N: usize>(&mut self, nodes: [Node; N]) -> [&mut T; N] {
         let mut indices: [usize; N] = [0; _];
-
         indices.iter_mut().zip(nodes).for_each(|(i, n)| *i = n.0);
 
         self.items.get_disjoint_mut(indices).unwrap()
