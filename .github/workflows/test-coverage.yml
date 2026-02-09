@@ -171,7 +171,7 @@ jobs:
         run: >
           pytest
           -n auto
-          -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not benchmark and not ci_only"
+          -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"
           -k 'not test_polars_import'
           --cov --cov-report xml:small-morsel.xml --cov-fail-under=0
 
