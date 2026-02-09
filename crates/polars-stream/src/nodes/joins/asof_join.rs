@@ -19,7 +19,6 @@ pub const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY";
 
 #[derive(Debug)]
 pub struct AsOfJoinSideParams {
-    pub input_schema: SchemaRef,
     pub on: PlSmallStr,
     pub key_col: PlSmallStr,
 }
@@ -58,8 +57,6 @@ pub struct AsOfJoinNode {
     left_buffer: VecDeque<(DataFrame, MorselSeq)>,
     /// Buffer of the live range of right AsOf join rows.
     right_buffer: DataFrameBuffer,
-    /// Last row that was processed on the left side.
-    last_left_row: Option<DataFrame>,
 }
 
 impl AsOfJoinNode {
@@ -82,12 +79,10 @@ impl AsOfJoinNode {
         let right_key_dtype = right_input_schema.get(&right_key_col).unwrap();
         assert_eq!(left_key_dtype, right_key_dtype);
         let left = AsOfJoinSideParams {
-            input_schema: left_input_schema.clone(),
             on: left_on,
             key_col: left_key_col,
         };
         let right = AsOfJoinSideParams {
-            input_schema: right_input_schema.clone(),
             on: right_on,
             key_col: right_key_col,
         };
@@ -98,7 +93,6 @@ impl AsOfJoinNode {
             state: AsOfJoinState::default(),
             left_buffer: Default::default(),
             right_buffer: DataFrameBuffer::empty_with_schema(right_input_schema),
-            last_left_row: None,
         }
     }
 }
@@ -192,7 +186,6 @@ impl ComputeNode for AsOfJoinNode {
                     dc::distributor_channel(send.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
                 let left_buffer = &mut self.left_buffer;
                 let right_buffer = &mut self.right_buffer;
-                let last_left_row = &mut self.last_left_row;
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     distribute_work_task(
                         recv_left,
@@ -200,7 +193,6 @@ impl ComputeNode for AsOfJoinNode {
                         distributor,
                         left_buffer,
                         right_buffer,
-                        last_left_row,
                         params,
                     )
                     .await
@@ -238,13 +230,11 @@ where
 async fn distribute_work_task(
     mut recv_left: Option<PortReceiver>,
     mut recv_right: Option<PortReceiver>,
-    mut distributor: dc::Sender<(DataFrame, DataFrameBuffer, MorselSeq, SourceToken, bool)>,
+    mut distributor: dc::Sender<(DataFrame, DataFrameBuffer, MorselSeq, SourceToken)>,
     left_buffer: &mut VecDeque<(DataFrame, MorselSeq)>,
     right_buffer: &mut DataFrameBuffer,
-    last_left_row: &mut Option<DataFrame>,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
-    let options = params.as_of_options();
     let source_token = SourceToken::new();
     let right_done = recv_right.is_none();
 
@@ -261,7 +251,7 @@ async fn distribute_work_task(
             return Ok(());
         }
 
-        let (mut left_df, seq, st) = if let Some((df, seq)) = left_buffer.pop_front() {
+        let (left_df, seq, st) = if let Some((df, seq)) = left_buffer.pop_front() {
             (df, seq, source_token.clone())
         } else if let Some(ref mut recv) = recv_left
             && let Ok(m) = recv.recv().await
@@ -293,31 +283,10 @@ async fn distribute_work_task(
             }
         }
 
-        let mut drop_first_out_row = false;
-        if let Some(llr) = last_left_row.take() {
-            left_df = llr.vstack(&left_df)?;
-            drop_first_out_row = true;
-        }
         distributor
-            .send((
-                left_df.clone(),
-                right_buffer.clone(),
-                seq,
-                st,
-                drop_first_out_row,
-            ))
+            .send((left_df.clone(), right_buffer.clone(), seq, st))
             .await
             .unwrap();
-
-        // The Backward strategy keeps the position of the last non-null &&
-        // non-NaN value in its internal state, which is emitted whenever the
-        // left key is null or NaN. We prepend it to the dataframe to seed its
-        // state. Accordingly, we will remove the first row of the join result.
-        if options.strategy == AsofStrategy::Backward
-            && let Some(row) = get_last_total_ord_row(&left_df, params)?
-        {
-            *last_left_row = Some(row);
-        }
         prune_right_side(&left_df, right_buffer, params)?;
     }
 }
@@ -380,41 +349,13 @@ fn prune_right_side(
     Ok(())
 }
 
-fn get_last_total_ord_row(
-    left: &DataFrame,
-    params: &AsOfJoinParams,
-) -> PolarsResult<Option<DataFrame>> {
-    let is_partial_ord = |av: &AnyValue| av.is_float() && av.is_nan();
-    let left_key = left.column(&params.left.key_col)?.as_materialized_series();
-    if left_key.is_empty() {
-        return Ok(None);
-    }
-    // Fast path: first check only the last value
-    // SAFETY: We just checked that left_key is not empty
-    let last_val = unsafe { left_key.get_unchecked(left_key.len() - 1) };
-    if !is_partial_ord(&last_val) {
-        return Ok(Some(left.slice((left.height() - 1) as i64, 1)));
-    }
-    // Backup path: because the last value was NaN, we know that the chunk of
-    // consecutive NaN values fill the tail of the key column.
-    // So we search for the last value that appears *before* those NaNs.
-    let mut left_buf = DataFrameBuffer::empty_with_schema(params.left.input_schema.clone());
-    left_buf.push_df(left.clone());
-    let first_nan_idx = left_buf.binary_search(is_partial_ord, &params.left.key_col, false);
-    if first_nan_idx == 0 {
-        Ok(None)
-    } else {
-        Ok(Some(left.slice((first_nan_idx - 1) as i64, 1)))
-    }
-}
-
 async fn compute_and_emit_task(
-    mut dist_recv: dc::Receiver<(DataFrame, DataFrameBuffer, MorselSeq, SourceToken, bool)>,
+    mut dist_recv: dc::Receiver<(DataFrame, DataFrameBuffer, MorselSeq, SourceToken)>,
     mut send: PortSender,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
     let options = params.as_of_options();
-    while let Ok((left_df, right_buffer, seq, st, drop_first_out_row)) = dist_recv.recv().await {
+    while let Ok((left_df, right_buffer, seq, st)) = dist_recv.recv().await {
         let right_df = right_buffer.into_df();
 
         let left_key = left_df.column(&params.left.key_col)?;
@@ -429,7 +370,7 @@ async fn compute_and_emit_task(
             options.strategy,
             options.tolerance.clone().map(Scalar::into_value),
             params.args.suffix.clone(),
-            Some((drop_first_out_row as i64, left_df.height())),
+            None,
             any_key_is_temporary_col || params.args.should_coalesce(),
             options.allow_eq,
             options.check_sortedness,
