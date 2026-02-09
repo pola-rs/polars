@@ -3,6 +3,7 @@ use arrow::bitmap::Bitmap;
 use num_traits::Zero;
 use polars_core::prelude::*;
 use polars_utils::abs_diff::AbsDiff;
+use polars_utils::total_ord::TotalOrd;
 
 use super::{
     AsofJoinBackwardState, AsofJoinForwardState, AsofJoinNearestState, AsofJoinState, AsofStrategy,
@@ -75,7 +76,7 @@ fn join_asof_forward<'a, T, F>(
 ) -> IdxCa
 where
     T: PolarsDataType,
-    T::Physical<'a>: PartialOrd,
+    T::Physical<'a>: TotalOrd,
     F: FnMut(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
     join_asof_impl::<'a, T, AsofJoinForwardState, _>(left, right, filter, allow_eq)
@@ -89,7 +90,7 @@ fn join_asof_backward<'a, T, F>(
 ) -> IdxCa
 where
     T: PolarsDataType,
-    T::Physical<'a>: PartialOrd,
+    T::Physical<'a>: TotalOrd,
     F: FnMut(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
     join_asof_impl::<'a, T, AsofJoinBackwardState, _>(left, right, filter, allow_eq)
@@ -151,7 +152,7 @@ pub(crate) fn join_asof<T>(
 ) -> PolarsResult<IdxCa>
 where
     T: PolarsDataType,
-    for<'a> T::Physical<'a>: PartialOrd,
+    for<'a> T::Physical<'a>: TotalOrd,
 {
     let other = input_ca.unpack_series_matching_type(other)?;
 
@@ -168,7 +169,10 @@ where
         AsofStrategy::Backward => {
             join_asof_impl::<T, AsofJoinBackwardState, _>(left, right, filter, allow_eq)
         },
-        AsofStrategy::Nearest => unimplemented!(),
+        AsofStrategy::Nearest => polars_bail!(InvalidOperation:
+            "AsOf strategy \"nearest\" is not supported for {} data type",
+            T::get_static_dtype()
+        ),
     })
 }
 

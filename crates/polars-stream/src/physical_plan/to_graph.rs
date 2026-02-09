@@ -1163,6 +1163,40 @@ fn to_graph_rec<'a>(
             )
         },
 
+        AsOfJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+        } => {
+            let args = args.clone();
+            let left_input_key = to_graph_rec(input_left.node, ctx)?;
+            let right_input_key = to_graph_rec(input_right.node, ctx)?;
+            let left_input_schema = ctx.phys_sm[input_left.node].output_schema.clone();
+            let right_input_schema = ctx.phys_sm[input_right.node].output_schema.clone();
+            #[cfg(feature = "asof_join")]
+            {
+                ctx.graph.add_node(
+                    nodes::joins::asof_join::AsOfJoinNode::new(
+                        left_input_schema,
+                        right_input_schema,
+                        left_on.clone(),
+                        right_on.clone(),
+                        args,
+                    ),
+                    [
+                        (left_input_key, input_left.port),
+                        (right_input_key, input_right.port),
+                    ],
+                )
+            }
+            #[cfg(not(feature = "asof_join"))]
+            {
+                unreachable!("asof_join feature is disabled")
+            }
+        },
+
         #[cfg(feature = "merge_sorted")]
         MergeSorted {
             input_left,
