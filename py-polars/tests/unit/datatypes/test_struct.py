@@ -574,6 +574,7 @@ def test_struct_group_by_field_agg_4216() -> None:
 
 
 def test_struct_getitem() -> None:
+    print(pl.Series([{"a": 1, "b": 2}]).struct["b"].name == "")
     assert pl.Series([{"a": 1, "b": 2}]).struct["b"].name == "b"
     assert pl.Series([{"a": 1, "b": 2}]).struct[0].name == "a"
     assert pl.Series([{"a": 1, "b": 2}]).struct[1].name == "b"
