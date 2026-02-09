@@ -107,9 +107,9 @@ impl<T> Arena<T> {
         self.items.get(idx.0).unwrap()
     }
 
-    #[inline]
     /// # Safety
     /// Doesn't do any bound checks
+    #[inline]
     pub unsafe fn get_unchecked(&self, idx: Node) -> &T {
         unsafe { self.items.get_unchecked(idx.0) }
     }
@@ -119,11 +119,11 @@ impl<T> Arena<T> {
         self.items.get_mut(idx.0).unwrap()
     }
 
-    #[inline]
     /// Get mutable references to multiple disjoint items of the Arena.
     ///
     /// # Panics
     /// Panics if indices are out of bounds or overlapping.
+    #[inline]
     pub fn get_disjoint_mut<const N: usize>(&mut self, nodes: [Node; N]) -> [&mut T; N] {
         self.items.get_disjoint_mut(nodes.map(|n| n.0)).unwrap()
     }
