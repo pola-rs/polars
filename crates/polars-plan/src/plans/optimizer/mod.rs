@@ -196,7 +196,7 @@ pub fn optimize(
         true
     };
 
-    if dbg!(opt_flags.slice_pushdown()) {
+    if opt_flags.slice_pushdown() {
         let mut slice_pushdown_opt = SlicePushDown::new(
             // We don't maintain errors on slice as the behavior is much more predictable that way.
             //
@@ -213,7 +213,7 @@ pub fn optimize(
         rules.push(Box::new(slice_pushdown_opt));
     }
 
-    if dbg!(run_pushdowns) {
+    if run_pushdowns {
         run_projection_predicate_pushdown(
             root,
             ir_arena,
