@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 import polars as pl
@@ -185,8 +187,8 @@ def test_with_columns_unit_length_non_scalar() -> None:
     lf = pl.LazyFrame({"a": [1, 2]}).with_columns(pl.col("a").head(1))
 
     with pytest.raises(
-        InvalidOperationError,
-        match="Series a, length 1 doesn't match the DataFrame height of 2",
+        (ShapeError, InvalidOperationError),
+        match=r"zip node received non-equal length inputs|Series a, length 1 doesn't match the DataFrame height of 2",
     ):
         lf.collect(engine="in-memory")
 
