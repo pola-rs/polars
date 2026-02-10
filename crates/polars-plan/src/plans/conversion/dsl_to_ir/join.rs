@@ -58,20 +58,6 @@ pub fn resolve_join(
     let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
     let schema_right = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
 
-    let left_on = expr_expansion::expand_expressions(
-        &left_on,
-        &PlHashSet::default(),
-        schema_left.as_ref(),
-        ctxt.opt_flags,
-    )?;
-
-    let right_on = expr_expansion::expand_expressions(
-        &right_on,
-        &PlHashSet::default(),
-        schema_right.as_ref(),
-        ctxt.opt_flags,
-    )?;
-
     if options.args.how.is_cross() {
         polars_ensure!(left_on.len() + right_on.len() == 0, InvalidOperation: "a 'cross' join doesn't expect any join keys");
     } else {
