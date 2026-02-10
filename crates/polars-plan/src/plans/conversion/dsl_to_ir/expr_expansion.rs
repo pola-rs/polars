@@ -37,21 +37,6 @@ pub fn expand_expression(
     Ok(())
 }
 
-pub fn expand_expressions(
-    expr: &[Expr],
-    ignored_selector_columns: &PlHashSet<PlSmallStr>,
-    schema: &Schema,
-    opt_flags: &mut OptFlags,
-) -> PolarsResult<Vec<Expr>> {
-    let mut out = Vec::with_capacity(expr.len());
-
-    for e in expr {
-        expand_expression(e, ignored_selector_columns, schema, &mut out, opt_flags)?;
-    }
-
-    Ok(out)
-}
-
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
 pub fn rewrite_projections(
