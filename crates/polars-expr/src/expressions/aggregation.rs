@@ -663,9 +663,11 @@ impl PhysicalExpr for AggMinMaxByExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
         let by = self.by.evaluate(df, state)?;
+        let name = if self.is_max_by { "max_by" } else { "min_by" };
         polars_ensure!(
             input.len() == by.len(),
-            ShapeMismatch: "'by' column in `(min|max)_by` operation has incorrect length"
+            ShapeMismatch: "'by' column in {} expression has incorrect length: expected {}, got {}",
+            name, input.len(), by.len()
         );
         let arg_extremum = if self.is_max_by {
             by.as_materialized_series_maintain_scalar().arg_max()
@@ -726,7 +728,8 @@ impl PhysicalExpr for AggMinMaxByExpr {
         let taken =
             lst_get(&ac_list, idx.cast(&DataType::Int64)?.i64()?, false)?.with_name(keep_name);
 
-        ac.with_values_and_args(taken, true, None, false, true)?; // [amber] Should expr be something?
+        // [amber] Should expr (argument 3) be something?
+        ac.with_values_and_args(taken, true, None, false, true)?;
         ac.with_update_groups(UpdateGroups::No);
         Ok(ac)
     }

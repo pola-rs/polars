@@ -1416,7 +1416,7 @@ def test_min_max_by_series_length_mismatch_26049(
 
     with pytest.raises(
         pl.exceptions.ShapeError,
-        match=r"^input and by expressions must be of the same length$",
+        match=r"^'by' column in (min|max)_by expression has incorrect length: expected \d+, got \d+$",
     ):
         q.collect(engine="in-memory")
     with pytest.raises(
@@ -1453,6 +1453,6 @@ def test_min_max_by_series_length_mismatch_26049(
     )
     with pytest.raises(
         pl.exceptions.ShapeError,
-        match=r"^group length is different from 'by' group length \(5 != 2\)$",
+        match=r"^expressions must have matching group lengths$",
     ):
         q.collect(engine="in-memory")
