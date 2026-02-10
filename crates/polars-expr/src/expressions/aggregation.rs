@@ -6,9 +6,10 @@ use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{_split_offsets, NoNull};
+use polars_ops::prelude::ArgAgg;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
-use polars_ops::prelude::{ArgAgg, lst_get};
+use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
 use super::*;
@@ -690,48 +691,45 @@ impl PhysicalExpr for AggMinMaxByExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
-        let mut ac_by = self.by.evaluate_on_groups(df, groups, state)?;
+        let ac = self.input.evaluate_on_groups(df, groups, state)?;
+        let ac_by = self.by.evaluate_on_groups(df, groups, state)?;
         assert!(ac.groups.len() == ac_by.groups.len());
-
-        // [amber] Do I need to deal with a case that AggState is LiteralScalar?
-
-        // AggregatedScalar has no defined group structure. We fix it up here, so that we can
-        // reliably call `agg_*` functions with the groups.
-        // [amber] Do I also need this?
-        ac.set_groups_for_undefined_agg_states();
-        ac_by.set_groups_for_undefined_agg_states();
 
         // Don't change names by aggregations as is done in polars-core
         let keep_name = ac.get_values().name().clone();
 
-        let ac_groups = ac.groups();
-        let ac_by_groups = ac_by.groups();
-        GroupsType::check_lengths(ac_groups, ac_by_groups)?;
-
-        for (g, g_by) in Iterator::zip(ac_groups.iter(), ac_by_groups.iter()) {
-            if g.len() != g_by.len() {
-                polars_bail!(ShapeMismatch: "group length is different from 'by' group length ({} != {})", g.len(), g_by.len());
-            }
-        }
+        let (input_col, input_groups) = ac.get_final_aggregation();
+        let (by_col, by_groups) = ac_by.get_final_aggregation();
+        GroupsType::check_lengths(&input_groups, &by_groups)?;
 
         // Dispatch to arg_min/arg_max and then gather
-        let ac_list = ac.aggregated_as_list();
-        let (c_by, groups_by) = ac_by.get_final_aggregation();
-        let idx = unsafe {
-            if self.is_max_by {
-                c_by.agg_arg_max(&groups_by)
-            } else {
-                c_by.agg_arg_min(&groups_by)
-            }
+        // SAFETY: Groups are correct.
+        let idxs_in_groups = if self.is_max_by {
+            unsafe { by_col.agg_arg_max(&by_groups) }
+        } else {
+            unsafe { by_col.agg_arg_min(&by_groups) }
         };
-        let taken =
-            lst_get(&ac_list, idx.cast(&DataType::Int64)?.i64()?, false)?.with_name(keep_name);
+        let idxs_in_groups: &IdxCa = idxs_in_groups.as_materialized_series().as_ref().as_ref();
+        let flat_gather_idxs = match input_groups.as_ref().as_ref() {
+            GroupsType::Idx(g) => idxs_in_groups
+                .into_no_null_iter()
+                .enumerate()
+                .map(|(group_idx, idx_in_group)| g.all()[group_idx][idx_in_group as usize])
+                .collect_vec(),
+            GroupsType::Slice { groups, .. } => idxs_in_groups
+                .into_no_null_iter()
+                .enumerate()
+                .map(|(group_idx, idx_in_group)| groups[group_idx][0] + idx_in_group)
+                .collect_vec(),
+        };
 
-        // [amber] Should expr (argument 3) be something?
-        ac.with_values_and_args(taken, true, None, false, true)?;
-        ac.with_update_groups(UpdateGroups::No);
-        Ok(ac)
+        // SAFETY: All indices are within input_col's groups.
+        let gathered = unsafe { input_col.take_slice_unchecked(&flat_gather_idxs) };
+        let agg_state = AggregatedScalar(gathered.with_name(keep_name));
+        Ok(AggregationContext::from_agg_state(
+            agg_state,
+            Cow::Borrowed(groups),
+        ))
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
