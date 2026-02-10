@@ -5183,41 +5183,6 @@ Consider using {self}.implode() instead"""
             msg = f"strategy {strategy!r} is not supported"
             raise ValueError(msg)
 
-    @deprecated(
-        "`Expr.flatten()` is deprecated and will be removed in version 2.0. "
-        "Use `Expr.list.explode(keep_nulls=False, empty_as_null=False)` instead."
-    )
-    def flatten(self) -> Expr:
-        """
-        Flatten a list or string column.
-
-        Alias for :func:`Expr.list.explode`.
-
-        .. deprecated:: 1.38
-            `Expr.flatten()` is deprecated and will be removed in version 2.0.
-            Use `Expr.list.explode(keep_nulls=False, empty_as_null=False)` instead,
-            which provides the behavior you likely expect.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "group": ["a", "b", "b"],
-        ...         "values": [[1, 2], [2, 3], [4]],
-        ...     }
-        ... )
-        >>> df.group_by("group").agg(pl.col("values").flatten())  # doctest: +SKIP
-        shape: (2, 2)
-        ┌───────┬───────────┐
-        │ group ┆ values    │
-        │ ---   ┆ ---       │
-        │ str   ┆ list[i64] │
-        ╞═══════╪═══════════╡
-        │ a     ┆ [1, 2]    │
-        │ b     ┆ [2, 3, 4] │
-        └───────┴───────────┘
-        """
-        return self.explode(empty_as_null=True, keep_nulls=True)
 
     def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
         """
