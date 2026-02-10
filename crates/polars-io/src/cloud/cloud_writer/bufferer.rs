@@ -83,17 +83,14 @@ impl BytesBufferer {
         }
 
         if self.tail_coalesce_num_items >= get_coalesce_run_length() {
-            self.coalesce_tail();
+            self.coalesce_tail(self.tail_coalesce_num_items, self.tail_coalesce_byte_offset);
+            self.reset_tail_coalesce_counters();
         }
     }
 
     /// Push borrowed `&[u8]` into this bufferer. This will consume from a mutable reference
     /// via `split_off` until either the slice is fully consumed, or `self` is full.
     pub(super) fn push_slice(&mut self, bytes: &mut &[u8]) {
-        if bytes.is_empty() {
-            return;
-        }
-
         while !bytes.is_empty() {
             let available_capacity = self.available_capacity_current_chunk(bytes.len());
 
@@ -120,21 +117,19 @@ impl BytesBufferer {
         }
     }
 
-    fn coalesce_tail(&mut self) {
+    fn coalesce_tail(&mut self, num_items: usize, byte_offset: usize) {
         assert_eq!(self.copy_buffer.capacity(), 0);
+        assert!(num_items >= 2);
+        assert!(byte_offset < self.target_output_size);
 
         self.copy_buffer.reserve_exact(usize::min(
             self.copy_buffer_reserve_size,
-            self.target_output_size - self.tail_coalesce_byte_offset,
+            self.target_output_size - byte_offset,
         ));
 
-        assert!(
-            self.copy_buffer.capacity()
-                >= (self.num_bytes_buffered - self.tail_coalesce_byte_offset)
-        );
+        assert!(self.copy_buffer.capacity() >= (self.num_bytes_buffered - byte_offset));
 
-        let drain_start = self.buffered_bytes.len() - self.tail_coalesce_num_items;
-        self.reset_tail_coalesce_counters();
+        let drain_start = self.buffered_bytes.len() - num_items;
 
         self.buffered_bytes
             .drain(drain_start..)
