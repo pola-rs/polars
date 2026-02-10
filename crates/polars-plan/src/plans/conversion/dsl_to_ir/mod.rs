@@ -1339,17 +1339,16 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
                     if let Some(compression) = compression_opt {
                         if let SinkTarget::Path(path) = &options.target {
-                            let path_str = path.as_str();
+                            let extension = path.extension();
 
                             if let Some(suffix) = compression.file_suffix() {
                                 polars_ensure!(
-                                    path_str.ends_with(suffix) || !path_str.contains('.'),
+                                    extension.is_none_or(|extension| extension == suffix.strip_prefix(".").unwrap_or(suffix)),
                                     InvalidOperation: "the path ({}) does not conform to standard naming, expected suffix: ({}), set `check_extension` to `False` if you don't want this behavior", path, suffix
                                 );
-                            } else if [".gz", ".zst", ".zstd"]
-                                .iter()
-                                .any(|extension| path_str.ends_with(extension))
-                            {
+                            } else if ["gz", "zst", "zstd"].iter().any(|compression_extension| {
+                                extension == Some(compression_extension)
+                            }) {
                                 polars_bail!(
                                     InvalidOperation: "use the compression parameter to control compression, or set `check_extension` to `False` if you want to suffix an uncompressed filename with an ending intended for compression"
                                 );
