@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
+use polars_io::metrics::IOMetrics;
 use polars_io::pl_async;
 use polars_plan::dsl::UnifiedSinkArgs;
 use polars_utils::pl_str::PlSmallStr;
@@ -22,6 +23,7 @@ pub fn start_single_file_sink_pipeline(
     morsel_rx: connector::Receiver<Morsel>,
     config: IOSinkNodeConfig,
     execution_state: &StreamingExecutionState,
+    io_metrics: Option<Arc<IOMetrics>>,
 ) -> PolarsResult<async_executor::AbortOnDropHandle<PolarsResult<()>>> {
     let num_pipelines: NonZeroUsize = execution_state.num_pipelines.try_into().unwrap();
 
@@ -49,7 +51,8 @@ pub fn start_single_file_sink_pipeline(
     let file_schema = input_schema;
     let verbose = polars_core::config::verbose();
 
-    let file_open_task =
+    let file_open_task = {
+        let io_metrics = io_metrics.clone();
         tokio_handle_ext::AbortOnDropHandle(pl_async::get_runtime().spawn(async move {
             target
                 .open_into_writeable_async(
@@ -57,9 +60,11 @@ pub fn start_single_file_sink_pipeline(
                     mkdir,
                     upload_chunk_size,
                     upload_max_concurrency,
+                    io_metrics,
                 )
                 .await
-        }));
+        }))
+    };
     let file_open_task = FileOpenTaskHandle::new(file_open_task, sync_on_close);
 
     let file_writer_starter: Arc<dyn FileWriterStarter> =
@@ -71,10 +76,12 @@ pub fn start_single_file_sink_pipeline(
             "{node_name}: start_single_file_sink_pipeline: \
             file_writer_starter: {}, \
             takeable_rows_provider: {:?}, \
-            upload_chunk_size: {}",
+            upload_chunk_size: {}, \
+            io_metrics: {}",
             file_writer_starter.writer_name(),
             takeable_rows_provider,
-            upload_chunk_size
+            upload_chunk_size,
+            io_metrics.is_some(),
         )
     }
 
