@@ -15,6 +15,7 @@ doctest = false
 libloading = { workspace = true, optional = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
+polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-error = { workspace = true }
 polars-ffi = { workspace = true, optional = true }
@@ -61,6 +62,7 @@ python = ["dep:pyo3", "polars-utils/python", "polars-ffi", "polars-core/object",
 serde = [
   "dep:serde",
   "polars-buffer/serde",
+  "polars-config/serde",
   "polars-core/serde-lazy",
   "polars-core/serde",
   "polars-time/serde",

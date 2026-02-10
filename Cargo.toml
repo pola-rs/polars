@@ -113,6 +113,7 @@ zstd = "0.13"
 polars = { version = "0.53.0", path = "crates/polars", default-features = false }
 polars-buffer = { version = "0.53.0", path = "crates/polars-buffer", default-features = false }
 polars-compute = { version = "0.53.0", path = "crates/polars-compute", default-features = false }
+polars-config = { version = "0.53.0", path = "crates/polars-config", default-features = false }
 polars-core = { version = "0.53.0", path = "crates/polars-core", default-features = false }
 polars-dtype = { version = "0.53.0", path = "crates/polars-dtype", default-features = false }
 polars-dylib = { version = "0.53.0", path = "crates/polars-dylib", default-features = false }

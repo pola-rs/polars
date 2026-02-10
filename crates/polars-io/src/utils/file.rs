@@ -64,7 +64,7 @@ impl Writeable {
 
                 Self::Cloud(CloudWriterIoTraitWrap::from(writer))
             })
-        } else if config::force_async() {
+        } else if polars_config::config().force_async() {
             feature_gated!("cloud", {
                 let path = resolve_homedir(path.as_std_path());
                 create_file(&path)?;

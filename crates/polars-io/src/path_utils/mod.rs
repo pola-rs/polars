@@ -354,7 +354,9 @@ pub async fn expand_paths_hive(
         check_directory_level,
     };
 
-    if first_path_has_scheme || { cfg!(not(target_family = "windows")) && config::force_async() } {
+    if first_path_has_scheme || {
+        cfg!(not(target_family = "windows")) && polars_config::config().force_async()
+    } {
         #[cfg(feature = "cloud")]
         {
             if first_path.scheme() == Some(CloudScheme::Hf) {

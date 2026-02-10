@@ -1,7 +1,7 @@
 use arrow::datatypes::{IntervalUnit, Metadata};
 use polars_dtype::categorical::CategoricalPhysical;
 use polars_error::feature_gated;
-use polars_utils::check_allow_importing_interval_as_struct;
+use crate::config::check_allow_importing_interval_as_struct;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;

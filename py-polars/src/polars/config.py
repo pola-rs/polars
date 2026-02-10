@@ -515,6 +515,7 @@ class Config(contextlib.ContextDecorator):
         else:
             fmt = "ASCII_FULL_CONDENSED" if active else "UTF8_FULL_CONDENSED"
             os.environ["POLARS_FMT_TABLE_FORMATTING"] = fmt
+        plr.config_reload_env_var("POLARS_FMT_TABLE_FORMATTING")
         return cls
 
     @classmethod
@@ -547,6 +548,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_AUTO_STRUCTIFY", None)
         else:
             os.environ["POLARS_AUTO_STRUCTIFY"] = str(int(active))
+        plr.config_reload_env_var("POLARS_AUTO_STRUCTIFY")
         return cls
 
     @classmethod
@@ -822,6 +824,7 @@ class Config(contextlib.ContextDecorator):
                 raise ValueError(msg)
 
             os.environ["POLARS_FMT_STR_LEN"] = str(n)
+        plr.config_reload_env_var("POLARS_FMT_STR_LEN")
         return cls
 
     @classmethod
@@ -871,6 +874,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_TABLE_CELL_LIST_LEN", None)
         else:
             os.environ["POLARS_FMT_TABLE_CELL_LIST_LEN"] = str(n)
+        plr.config_reload_env_var("POLARS_FMT_TABLE_CELL_LIST_LEN")
         return cls
 
     @classmethod
@@ -897,6 +901,7 @@ class Config(contextlib.ContextDecorator):
                 raise ValueError(msg)
 
             os.environ["POLARS_STREAMING_CHUNK_SIZE"] = str(size)
+        plr.config_reload_env_var("POLARS_STREAMING_CHUNK_SIZE")
         return cls
 
     @classmethod
@@ -942,6 +947,7 @@ class Config(contextlib.ContextDecorator):
             raise ValueError(msg)
         else:
             os.environ["POLARS_FMT_TABLE_CELL_ALIGNMENT"] = format
+        plr.config_reload_env_var("POLARS_FMT_TABLE_CELL_ALIGNMENT")
         return cls
 
     @classmethod
@@ -992,6 +998,7 @@ class Config(contextlib.ContextDecorator):
             raise ValueError(msg)
         else:
             os.environ["POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT"] = format
+        plr.config_reload_env_var("POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT")
         return cls
 
     @classmethod
@@ -1037,6 +1044,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_MAX_COLS", None)
         else:
             os.environ["POLARS_FMT_MAX_COLS"] = str(n)
+        plr.config_reload_env_var("POLARS_FMT_MAX_COLS")
         return cls
 
     @classmethod
@@ -1066,6 +1074,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE", None)
         else:
             os.environ["POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE"] = str(int(active))
+        plr.config_reload_env_var("POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE")
         return cls
 
     @classmethod
@@ -1093,6 +1102,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW", None)
         else:
             os.environ["POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW"] = str(int(active))
+        plr.config_reload_env_var("POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW")
         return cls
 
     @classmethod
@@ -1161,11 +1171,13 @@ class Config(contextlib.ContextDecorator):
                 msg = f"invalid table format name: {format!r}\nExpected one of: {', '.join(valid_format_names)}"
                 raise ValueError(msg)
             os.environ["POLARS_FMT_TABLE_FORMATTING"] = format
+        plr.config_reload_env_var("POLARS_FMT_TABLE_FORMATTING")
 
         if rounded_corners is None:
             os.environ.pop("POLARS_FMT_TABLE_ROUNDED_CORNERS", None)
         else:
             os.environ["POLARS_FMT_TABLE_ROUNDED_CORNERS"] = str(int(rounded_corners))
+        plr.config_reload_env_var("POLARS_FMT_TABLE_ROUNDED_CORNERS")
 
         return cls
 
@@ -1194,6 +1206,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES", None)
         else:
             os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES"] = str(int(active))
+        plr.config_reload_env_var("POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES")
         return cls
 
     @classmethod
@@ -1221,6 +1234,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_TABLE_HIDE_COLUMN_NAMES", None)
         else:
             os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_NAMES"] = str(int(active))
+        plr.config_reload_env_var("POLARS_FMT_TABLE_HIDE_COLUMN_NAMES")
         return cls
 
     @classmethod
@@ -1252,6 +1266,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR", None)
         else:
             os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR"] = str(int(active))
+        plr.config_reload_env_var("POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR")
         return cls
 
     @classmethod
@@ -1281,6 +1296,7 @@ class Config(contextlib.ContextDecorator):
             os.environ["POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION"] = str(
                 int(active)
             )
+        plr.config_reload_env_var("POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION")
         return cls
 
     @classmethod
@@ -1316,6 +1332,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_MAX_ROWS", None)
         else:
             os.environ["POLARS_FMT_MAX_ROWS"] = str(n)
+        plr.config_reload_env_var("POLARS_FMT_MAX_ROWS")
         return cls
 
     @classmethod
@@ -1368,6 +1385,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_TABLE_WIDTH", None)
         else:
             os.environ["POLARS_TABLE_WIDTH"] = str(width)
+        plr.config_reload_env_var("POLARS_TABLE_WIDTH")
         return cls
 
     @classmethod
@@ -1428,6 +1446,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_VERBOSE", None)
         else:
             os.environ["POLARS_VERBOSE"] = str(int(active))
+        plr.config_reload_env_var("POLARS_VERBOSE")
         return cls
 
     @classmethod
@@ -1448,6 +1467,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_WARN_UNSTABLE", None)
         else:
             os.environ["POLARS_WARN_UNSTABLE"] = str(int(active))
+        plr.config_reload_env_var("POLARS_WARN_UNSTABLE")
         return cls
 
     @classmethod
@@ -1462,6 +1482,7 @@ class Config(contextlib.ContextDecorator):
             raise ValueError(msg)
 
         os.environ["POLARS_MAX_EXPR_DEPTH"] = str(limit)
+        plr.config_reload_env_var("POLARS_MAX_EXPR_DEPTH")
         return cls
 
     @classmethod
@@ -1520,6 +1541,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_ENGINE_AFFINITY", None)
         else:
             os.environ["POLARS_ENGINE_AFFINITY"] = engine
+        plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")
         return cls
 
     @classmethod
@@ -1566,3 +1588,15 @@ class Config(contextlib.ContextDecorator):
         )
 
         return cls
+
+    @classmethod
+    @unstable()
+    def reload_env_vars() -> None:
+        """
+        Update the Polars config from the set environment variables.
+
+        Normally you need not call this, it is only necessary when updating
+        undocumented (environment-variable-only) config flags from Python after
+        importing Polars.
+        """
+        plr.config_reload_env_vars()

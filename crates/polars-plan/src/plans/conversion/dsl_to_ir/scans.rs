@@ -357,7 +357,8 @@ pub async fn csv_file_info(
     // * See if we can do this without downloading the entire file
 
     // prints the error message if paths is empty.
-    let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
+    let run_async =
+        sources.is_cloud_url() || (sources.is_paths() && polars_config::config().force_async());
 
     let cache_entries = {
         if run_async {
@@ -461,7 +462,8 @@ pub async fn ndjson_file_info(
     use polars_core::config;
     use polars_core::error::feature_gated;
 
-    let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
+    let run_async =
+        sources.is_cloud_url() || (sources.is_paths() && polars_config::config().force_async());
 
     let cache_entries = {
         if run_async {

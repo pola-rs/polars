@@ -31,7 +31,7 @@ pub fn count_rows(
     skip_rows_before_header: usize,
     skip_rows_after_header: usize,
 ) -> PolarsResult<usize> {
-    let file = if path.has_scheme() || config::force_async() {
+    let file = if path.has_scheme() || polars_config::config().force_async() {
         feature_gated!("cloud", {
             crate::file_cache::FILE_CACHE
                 .get_entry(path)

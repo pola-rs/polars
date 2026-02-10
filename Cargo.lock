@@ -3050,6 +3050,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-config"
+version = "0.53.0"
+dependencies = [
+ "polars-error",
+ "serde",
+]
+
+[[package]]
 name = "polars-core"
 version = "0.53.0"
 dependencies = [
@@ -3071,6 +3079,7 @@ dependencies = [
  "polars-arrow",
  "polars-buffer",
  "polars-compute",
+ "polars-config",
  "polars-core",
  "polars-dtype",
  "polars-error",
@@ -3208,6 +3217,7 @@ dependencies = [
  "polars-arrow",
  "polars-buffer",
  "polars-compute",
+ "polars-config",
  "polars-core",
  "polars-error",
  "polars-json",
@@ -3409,6 +3419,7 @@ dependencies = [
  "polars-arrow",
  "polars-buffer",
  "polars-compute",
+ "polars-config",
  "polars-core",
  "polars-error",
  "polars-ffi",
@@ -3456,6 +3467,7 @@ dependencies = [
  "polars-arrow",
  "polars-buffer",
  "polars-compute",
+ "polars-config",
  "polars-core",
  "polars-dtype",
  "polars-error",
@@ -3581,6 +3593,7 @@ dependencies = [
  "polars-arrow",
  "polars-buffer",
  "polars-compute",
+ "polars-config",
  "polars-core",
  "polars-error",
  "polars-expr",
@@ -3656,6 +3669,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "numpy",
+ "polars-config",
  "polars-error",
  "proptest",
  "pyo3",

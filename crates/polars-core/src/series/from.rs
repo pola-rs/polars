@@ -12,7 +12,7 @@ use polars_compute::cast::cast_unchecked as cast;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::dec128_fits;
 use polars_error::feature_gated;
-use polars_utils::check_allow_importing_interval_as_struct;
+use crate::config::check_allow_importing_interval_as_struct;
 use polars_utils::itertools::Itertools;
 
 use crate::chunked_array::cast::{CastOptions, cast_chunks};
