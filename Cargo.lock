@@ -3647,6 +3647,7 @@ dependencies = [
  "either",
  "flate2",
  "foldhash 0.2.0",
+ "futures",
  "half",
  "hashbrown 0.16.1",
  "indexmap",
@@ -3670,6 +3671,7 @@ dependencies = [
  "slotmap",
  "stacker",
  "sysinfo",
+ "tokio",
  "uuid",
  "version_check",
 ]

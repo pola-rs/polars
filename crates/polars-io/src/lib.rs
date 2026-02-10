@@ -55,7 +55,6 @@ pub fn get_upload_chunk_size() -> usize {
             .map(|x| {
                 x.parse::<usize>()
                     .ok()
-                    .filter(|x| *x > 0)
                     .unwrap_or_else(|| panic!("invalid value for POLARS_UPLOAD_CHUNK_SIZE: {x}"))
             })
             .unwrap_or(64 * 1024 * 1024);

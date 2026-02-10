@@ -124,6 +124,7 @@ async = [
   "tokio",
   "polars-error/regex",
   "polars-parquet?/async",
+  "polars-utils/async-utils",
 ]
 cloud = [
   "object_store",

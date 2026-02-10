@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_error::PolarsResult;
+use polars_io::metrics::IOMetrics;
 use polars_plan::dsl::UnifiedSinkArgs;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -26,6 +27,7 @@ pub fn start_partition_sink_pipeline(
     morsel_rx: connector::Receiver<Morsel>,
     config: IOSinkNodeConfig,
     execution_state: &StreamingExecutionState,
+    io_metrics: Option<Arc<IOMetrics>>,
 ) -> PolarsResult<async_executor::AbortOnDropHandle<PolarsResult<()>>> {
     let num_pipelines: NonZeroUsize = execution_state.num_pipelines.try_into().unwrap();
 
@@ -64,6 +66,7 @@ pub fn start_partition_sink_pipeline(
     let node_name = node_name.clone();
     let verbose = polars_core::config::verbose();
     let in_memory_exec_state = Arc::new(execution_state.in_memory_exec_state.clone());
+    let io_metrics_is_some = io_metrics.is_some();
 
     let file_provider = Arc::new(FileProvider {
         base_path,
@@ -71,6 +74,7 @@ pub fn start_partition_sink_pipeline(
         provider_type: file_path_provider,
         upload_chunk_size,
         upload_max_concurrency,
+        io_metrics,
     });
 
     let file_writer_starter: Arc<dyn FileWriterStarter> =
@@ -92,7 +96,8 @@ pub fn start_partition_sink_pipeline(
             inflight_morsel_limit: {}, \
             takeable_rows_provider: {:?}, \
             file_size_limit: {:?}, \
-            upload_chunk_size: {}",
+            upload_chunk_size: {} \
+            io_metrics: {}",
             partitioner.verbose_display(),
             file_writer_starter.writer_name(),
             &file_provider.provider_type,
@@ -100,7 +105,8 @@ pub fn start_partition_sink_pipeline(
             inflight_morsel_limit,
             takeable_rows_provider,
             file_size_limit,
-            upload_chunk_size
+            upload_chunk_size,
+            io_metrics_is_some,
         );
     }
 
