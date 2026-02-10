@@ -307,7 +307,7 @@ class BinaryNameSpace:
         >>> s = pl.Series("a", [b"\x01\x02\x03", b"", b"\x04\x05"])
         >>> s.bin.get(0, null_on_oob=True)
         shape: (3,)
-        Series: 'data' [u8]
+        Series: 'a' [u8]
         [
             1
             null
