@@ -9,6 +9,8 @@ pub mod abs_diff;
 pub mod algebraic_ops;
 pub mod arena;
 pub mod array;
+#[cfg(feature = "async-utils")]
+pub mod async_utils;
 pub mod binary_search;
 pub mod cache;
 pub mod cardinality_sketch;
