@@ -20,8 +20,6 @@ use crate::nodes::in_memory_source::InMemorySourceNode;
 use crate::nodes::joins::utils::DataFrameSearchBuffer;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
-pub const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY_TMP";
-
 #[derive(Clone, Copy, Debug)]
 enum NeedMore {
     Build,
@@ -115,27 +113,18 @@ impl MergeJoinNode {
         output_schema: SchemaRef,
         left_on: Vec<PlSmallStr>,
         right_on: Vec<PlSmallStr>,
+        left_key_col: PlSmallStr,
+        right_key_col: PlSmallStr,
         descending: bool,
         nulls_last: bool,
         keys_row_encoded: bool,
         args: JoinArgs,
     ) -> PolarsResult<Self> {
-        let state = MergeJoinState::Running;
         assert!(left_on.len() == right_on.len());
-        if keys_row_encoded {
-            assert!(left_input_schema.contains(KEY_COL_NAME));
-            assert!(right_input_schema.contains(KEY_COL_NAME));
-        }
-        let left_key_col = if left_input_schema.contains(&PlSmallStr::from(KEY_COL_NAME)) {
-            PlSmallStr::from(KEY_COL_NAME)
-        } else {
-            left_on[0].clone()
-        };
-        let right_key_col = if right_input_schema.contains(&PlSmallStr::from(KEY_COL_NAME)) {
-            PlSmallStr::from(KEY_COL_NAME)
-        } else {
-            right_on[0].clone()
-        };
+        assert!(left_input_schema.contains(&left_key_col));
+        assert!(right_input_schema.contains(&right_key_col));
+
+        let state = MergeJoinState::Running;
         let left = MergeJoinSideParams {
             input_schema: left_input_schema.clone(),
             on: left_on,

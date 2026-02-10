@@ -1108,6 +1108,8 @@ fn to_graph_rec<'a>(
             input_right,
             left_on,
             right_on,
+            left_key_col_name,
+            right_key_col_name,
             descending,
             nulls_last,
             keys_row_encoded,
@@ -1127,6 +1129,8 @@ fn to_graph_rec<'a>(
                     output_schema,
                     left_on.clone(),
                     right_on.clone(),
+                    left_key_col_name.clone(),
+                    right_key_col_name.clone(),
                     *descending,
                     *nulls_last,
                     *keys_row_encoded,
@@ -1168,6 +1172,8 @@ fn to_graph_rec<'a>(
             input_right,
             left_on,
             right_on,
+            left_key_col_name,
+            right_key_col_name,
             args,
         } => {
             let args = args.clone();
@@ -1183,6 +1189,8 @@ fn to_graph_rec<'a>(
                         right_input_schema,
                         left_on.clone(),
                         right_on.clone(),
+                        left_key_col_name.clone(),
+                        right_key_col_name.clone(),
                         args,
                     ),
                     [

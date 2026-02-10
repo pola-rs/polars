@@ -15,8 +15,6 @@ use crate::nodes::ComputeNode;
 use crate::nodes::joins::utils::DataFrameSearchBuffer;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
-pub const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY";
-
 #[derive(Debug)]
 pub struct AsOfJoinSideParams {
     pub on: PlSmallStr,
@@ -65,16 +63,10 @@ impl AsOfJoinNode {
         right_input_schema: SchemaRef,
         left_on: PlSmallStr,
         right_on: PlSmallStr,
+        left_key_col: PlSmallStr,
+        right_key_col: PlSmallStr,
         args: JoinArgs,
     ) -> Self {
-        let left_key_col = match left_input_schema.contains(KEY_COL_NAME) {
-            true => KEY_COL_NAME.into(),
-            false => left_on.clone(),
-        };
-        let right_key_col = match right_input_schema.contains(KEY_COL_NAME) {
-            true => KEY_COL_NAME.into(),
-            false => right_on.clone(),
-        };
         let left_key_dtype = left_input_schema.get(&left_key_col).unwrap();
         let right_key_dtype = right_input_schema.get(&right_key_col).unwrap();
         assert_eq!(left_key_dtype, right_key_dtype);
@@ -377,8 +369,11 @@ async fn compute_and_emit_task(
         )?;
 
         // Drop any temporary key columns that were added
-        if out.schema().contains(KEY_COL_NAME) {
-            out.drop_in_place(KEY_COL_NAME)?;
+        if out.schema().contains(&params.left.key_col) {
+            out.drop_in_place(&params.left.key_col)?;
+        }
+        if out.schema().contains(&params.right.key_col) {
+            out.drop_in_place(&params.right.key_col)?;
         }
 
         // If the join key passed to _join_asof() was a temporary key column,
