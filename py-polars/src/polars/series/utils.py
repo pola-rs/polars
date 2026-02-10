@@ -109,7 +109,7 @@ def call_expr(func: SeriesMethod) -> SeriesMethod:
 
             f = getattr(expr, func.__name__)
             rhs = f(*args, **kwargs)
-            return pl.select(rhs).to_series().rename(s.name)
+            return pl.select(rhs).to_series()
 
         f = getattr(expr, func.__name__)
         rhs = f(*args, **kwargs)
