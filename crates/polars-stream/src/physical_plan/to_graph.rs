@@ -603,7 +603,7 @@ fn to_graph_rec<'a>(
                     nulls_last.clone(),
                     key_schema,
                     key_selectors,
-                    dyn_pred,
+                    dyn_pred.clone(),
                 ),
                 [(input_key, input.port), (k_key, k.port)],
             )

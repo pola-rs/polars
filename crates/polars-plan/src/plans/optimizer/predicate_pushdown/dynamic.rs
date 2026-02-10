@@ -10,10 +10,15 @@ use serde::{Deserialize, Serialize};
 
 use super::*;
 
+pub trait DynamicExpr: Send + Sync {
+    // Invariant: Output Column must be of type `Boolean`.
+    fn evaluate(&self, columns: &[Column]) -> PolarsResult<Column>;
+}
+
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 struct Inner {
     #[cfg_attr(feature = "ir_serde", serde(skip))]
-    pred: RwLock<Option<Box<dyn Fn(&[Column]) -> PolarsResult<Column> + Send + Sync>>>,
+    pred: RwLock<Option<Box<dyn DynamicExpr>>>,
     #[cfg_attr(feature = "ir_serde", serde(skip))]
     is_set: AtomicBool,
     id: UniqueId,
@@ -58,7 +63,7 @@ impl DynamicPred {
         &self.inner.id
     }
 
-    pub fn set(&self, pred: Box<dyn Fn(&[Column]) -> PolarsResult<Column> + Send + Sync>) {
+    pub fn set(&self, pred: Box<dyn DynamicExpr>) {
         {
             let mut guard = self.inner.pred.write().unwrap();
             *guard = Some(pred);
@@ -76,7 +81,7 @@ impl DynamicPred {
         if self.inner.is_set.load(std::sync::atomic::Ordering::Relaxed) {
             let guard = self.inner.pred.read().unwrap();
             let dyn_func = guard.as_ref().unwrap();
-            dyn_func(columns)
+            dyn_func.evaluate(columns)
         } else {
             let s = Scalar::new(DataType::Boolean, AnyValue::Boolean(true));
             Ok(Column::Scalar(ScalarColumn::new(
