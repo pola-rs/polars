@@ -283,6 +283,39 @@ class BinaryNameSpace:
         ]
         """
 
+    def get(self, index: int | IntoExpr, *, null_on_oob: bool = False) -> Series:
+        r"""
+        Get the byte value at the given index.
+
+        For example, index `0` would return the first byte of every binary value
+        and index `-1` would return the last byte of every binary value.
+        The behavior if an index is out of bounds is determined by the argument
+        `null_on_oob`.
+
+        Parameters
+        ----------
+        index
+            Index to return per binary value
+        null_on_oob
+            Behavior if an index is out of bounds:
+
+            * True -> set as null
+            * False -> raise an error
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [b"\x01\x02\x03", b"", b"\x04\x05"])
+        >>> s.bin.get(0, null_on_oob=True)
+        shape: (3,)
+        Series: 'a' [u8]
+        [
+            1
+            null
+            4
+        ]
+
+        """
+
     def head(self, n: int = 5) -> Series:
         r"""
         Take the first `n` bytes of the binary values.
