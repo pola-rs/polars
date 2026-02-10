@@ -2138,16 +2138,16 @@ def test_from_epoch_seq_input() -> None:
 def test_symmetry_for_max_in_names() -> None:
     # int
     a = pl.Series("a", [1])
-    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
+    assert (a - a.max()).name == (a.max() - a).name == a.name
     # float
     a = pl.Series("a", [1.0])
-    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
+    assert (a - a.max()).name == (a.max() - a).name == a.name
     # duration
     a = pl.Series("a", [1], dtype=pl.Duration("ns"))
-    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
+    assert (a - a.max()).name == (a.max() - a).name == a.name
     # datetime
     a = pl.Series("a", [1], dtype=pl.Datetime("ns"))
-    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
+    assert (a - a.max()).name == (a.max() - a).name == a.name
 
     # TODO: time arithmetic support?
     # a = pl.Series("a", [1], dtype=pl.Time)
