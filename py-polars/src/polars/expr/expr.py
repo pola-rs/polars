@@ -5183,7 +5183,6 @@ Consider using {self}.implode() instead"""
             msg = f"strategy {strategy!r} is not supported"
             raise ValueError(msg)
 
-
     def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
         """
         Explode a list expression.
