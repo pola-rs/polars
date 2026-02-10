@@ -82,6 +82,9 @@ if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
         import polars._plr as plr
 
+    # Typing aliases for builtin names shadowed by Expr accessors.
+    from builtins import list as list_
+    from builtins import str as str_
     from collections.abc import Callable, Iterable
     from io import IOBase
 
@@ -134,7 +137,7 @@ class Expr:
 
     # NOTE: This `= None` is needed to generate the docs with sphinx_accessor.
     _pyexpr: PyExpr = None  # type: ignore[assignment]
-    _accessors: ClassVar[set[str]] = {
+    _accessors: ClassVar[set[str_]] = {
         "arr",
         "bin",
         "cat",
@@ -147,16 +150,157 @@ class Expr:
         "struct",
     }
 
+    @property
+    def bin(self) -> ExprBinaryNameSpace:
+        """
+        Create an object namespace of all binary related methods.
+
+        See the individual method pages for full details
+        """
+        return ExprBinaryNameSpace(self)
+
+    @property
+    def cat(self) -> ExprCatNameSpace:
+        """
+        Create an object namespace of all categorical related methods.
+
+        See the individual method pages for full details
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": ["a", "b"]}).select(
+        ...     pl.col("values").cast(pl.Categorical)
+        ... )
+        >>> df.select(pl.col("values").cat.get_categories())
+        shape: (2, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │ a      │
+        │ b      │
+        └────────┘
+        """
+        return ExprCatNameSpace(self)
+
+    @property
+    def dt(self) -> ExprDateTimeNameSpace:
+        """Create an object namespace of all datetime related methods."""
+        return ExprDateTimeNameSpace(self)
+
+    @property
+    def list(self) -> ExprListNameSpace:
+        """
+        Create an object namespace of all list related methods.
+
+        See the individual method pages for full details.
+        """
+        return ExprListNameSpace(self)
+
+    @property
+    def arr(self) -> ExprArrayNameSpace:
+        """
+        Create an object namespace of all array related methods.
+
+        See the individual method pages for full details.
+        """
+        return ExprArrayNameSpace(self)
+
+    @property
+    def meta(self) -> ExprMetaNameSpace:
+        """
+        Create an object namespace of all meta related expression methods.
+
+        This can be used to modify and traverse existing expressions.
+        """
+        return ExprMetaNameSpace(self)
+
+    @property
+    def name(self) -> ExprNameNameSpace:
+        """
+        Create an object namespace of all expressions that modify expression names.
+
+        See the individual method pages for full details.
+        """
+        return ExprNameNameSpace(self)
+
+    @property
+    def str(self) -> ExprStringNameSpace:
+        """
+        Create an object namespace of all string related methods.
+
+        See the individual method pages for full details.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"letters": ["a", "b"]})
+        >>> df.select(pl.col("letters").str.to_uppercase())
+        shape: (2, 1)
+        ┌─────────┐
+        │ letters │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ A       │
+        │ B       │
+        └─────────┘
+        """
+        return ExprStringNameSpace(self)
+
+    @property
+    def struct(self) -> ExprStructNameSpace:
+        """
+        Create an object namespace of all struct related methods.
+
+        See the individual method pages for full details.
+
+        Examples
+        --------
+        >>> df = (
+        ...     pl.DataFrame(
+        ...         {
+        ...             "int": [1, 2],
+        ...             "str": ["a", "b"],
+        ...             "bool": [True, None],
+        ...             "list": [[1, 2], [3]],
+        ...         }
+        ...     )
+        ...     .to_struct("my_struct")
+        ...     .to_frame()
+        ... )
+        >>> df.select(pl.col("my_struct").struct.field("str"))
+        shape: (2, 1)
+        ┌─────┐
+        │ str │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ a   │
+        │ b   │
+        └─────┘
+        """
+        return ExprStructNameSpace(self)
+
+    @property
+    def ext(self) -> ExprExtensionNameSpace:
+        """
+        Create an object namespace of all extension type related expressions.
+
+        See the individual method pages for full details.
+        """
+        return ExprExtensionNameSpace(self)
+
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
         expr = cls.__new__(cls)
         expr._pyexpr = pyexpr
         return expr
 
-    def _repr_html_(self) -> str:
+    def _repr_html_(self) -> str_:
         return self._pyexpr.to_str()
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> str_:
         if self._pyexpr is not None:
             if len(expr_str := self._pyexpr.to_str()) > 30:
                 expr_str = f"{expr_str[:30]}…"
@@ -164,7 +308,7 @@ class Expr:
         else:
             return "only during sphinx"
 
-    def __str__(self) -> str:
+    def __str__(self) -> str_:
         if self._pyexpr is not None:
             return self._pyexpr.to_str()
         else:
@@ -318,7 +462,7 @@ class Expr:
         self._pyexpr.__setstate__(state)
 
     def __array_ufunc__(
-        self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
+        self, ufunc: Callable[..., Any], method: str_, *inputs: Any, **kwargs: Any
     ) -> Expr:
         """Numpy universal functions."""
         if method != "__call__":
@@ -385,7 +529,7 @@ class Expr:
     @classmethod
     def deserialize(
         cls,
-        source: str | Path | IOBase | bytes,
+        source: str_ | Path | IOBase | bytes,
         *,
         format: SerializationFormat = "binary",
     ) -> Expr:
@@ -720,7 +864,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.exp())
 
-    def alias(self, name: str) -> Expr:
+    def alias(self, name: str_) -> Expr:
         """
         Rename the expression.
 
@@ -782,8 +926,8 @@ class Expr:
 
     def exclude(
         self,
-        columns: str | PolarsDataType | Collection[str] | Collection[PolarsDataType],
-        *more_columns: str | PolarsDataType,
+        columns: str_ | PolarsDataType | Collection[str_ | PolarsDataType],
+        *more_columns: str_ | PolarsDataType,
     ) -> Expr:
         """
         Exclude columns from a multi-column expression.
@@ -1771,7 +1915,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.round_sig_figs(digits))
 
-    def dot(self, other: Expr | str) -> Expr:
+    def dot(self, other: Expr | str_) -> Expr:
         """
         Compute the dot/inner product between two Expressions.
 
@@ -2713,7 +2857,7 @@ class Expr:
         Parameters
         ----------
         index
-            An expression that leads to a UInt32 index.
+            An expression that evaluates to an integer.
             Negative indexing is supported.
 
         null_on_oob
@@ -3138,6 +3282,9 @@ class Expr:
         """
         Get maximum value, ordered by another expression.
 
+        If the by expression has multiple values equal to the maximum it is not
+        defined which value will be chosen.
+
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
@@ -3187,6 +3334,9 @@ class Expr:
     def min_by(self, by: IntoExpr) -> Expr:
         """
         Get minimum value, ordered by another expression.
+
+        If the by expression has multiple values equal to the minimum it is not
+        defined which value will be chosen.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -3871,8 +4021,8 @@ class Expr:
         self,
         index_column: IntoExprColumn,
         *,
-        period: str | timedelta,
-        offset: str | timedelta | None = None,
+        period: str_ | timedelta,
+        offset: str_ | timedelta | None = None,
         closed: ClosedInterval = "right",
     ) -> Expr:
         """
@@ -4126,7 +4276,7 @@ class Expr:
 
     def quantile(
         self,
-        quantile: float | Expr,
+        quantile: float | list_[float] | Expr,
         interpolation: QuantileMethod = "nearest",
     ) -> Expr:
         """
@@ -4135,7 +4285,10 @@ class Expr:
         Parameters
         ----------
         quantile
-            Quantile between 0.0 and 1.0.
+            Quantile(s) between 0.0 and 1.0. Can be a single float or a list of floats.
+
+            - If a single float, returns a single f64 value per row.
+            - If a list of floats, returns a list of f64 values per row (one value per quantile).
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
 
@@ -4187,6 +4340,15 @@ class Expr:
         ╞═════╡
         │ 1.5 │
         └─────┘
+        >>> df.select(pl.col("a").quantile([0.25, 0.75], interpolation="linear"))
+        shape: (1, 1)
+        ┌──────────────┐
+        │ a            │
+        │ ---          │
+        │ list[f64]    │
+        ╞══════════════╡
+        │ [1.25, 3.75] │
+        └──────────────┘
         """  # noqa: W505
         quantile_pyexpr = parse_into_expression(quantile)
         return wrap_expr(self._pyexpr.quantile(quantile_pyexpr, interpolation))
@@ -4196,7 +4358,7 @@ class Expr:
         self,
         breaks: Sequence[float],
         *,
-        labels: Sequence[str] | None = None,
+        labels: Sequence[str_] | None = None,
         left_closed: bool = False,
         include_breaks: bool = False,
     ) -> Expr:
@@ -4277,7 +4439,7 @@ class Expr:
         self,
         quantiles: Sequence[float] | int,
         *,
-        labels: Sequence[str] | None = None,
+        labels: Sequence[str_] | None = None,
         left_closed: bool = False,
         allow_duplicates: bool = False,
         include_breaks: bool = False,
@@ -5021,11 +5183,20 @@ Consider using {self}.implode() instead"""
             msg = f"strategy {strategy!r} is not supported"
             raise ValueError(msg)
 
+    @deprecated(
+        "`Expr.flatten()` is deprecated and will be removed in version 2.0. "
+        "Use `Expr.list.explode(keep_nulls=False, empty_as_null=False)` instead."
+    )
     def flatten(self) -> Expr:
         """
         Flatten a list or string column.
 
         Alias for :func:`Expr.list.explode`.
+
+        .. deprecated:: 1.38
+            `Expr.flatten()` is deprecated and will be removed in version 2.0.
+            Use `Expr.list.explode(keep_nulls=False, empty_as_null=False)` instead,
+            which provides the behavior you likely expect.
 
         Examples
         --------
@@ -6109,7 +6280,7 @@ Consider using {self}.implode() instead"""
         other_pyexpr = parse_into_expression(other)
         return wrap_expr(self._pyexpr.is_in(other_pyexpr, nulls_equal))
 
-    def repeat_by(self, by: pl.Series | Expr | str | int) -> Expr:
+    def repeat_by(self, by: pl.Series | Expr | str_ | int) -> Expr:
         """
         Repeat the elements in this Series as specified in the given expression.
 
@@ -6415,7 +6586,7 @@ Consider using {self}.implode() instead"""
         """
         return wrap_expr(self._pyexpr.reinterpret(signed))
 
-    def inspect(self, fmt: str = "{}") -> Expr:
+    def inspect(self, fmt: str_ = "{}") -> Expr:
         """
         Print the value that this expression evaluates to and pass on the value.
 
@@ -6569,7 +6740,7 @@ Consider using {self}.implode() instead"""
     def rolling_min_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -6697,7 +6868,7 @@ Consider using {self}.implode() instead"""
     def rolling_max_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -6851,7 +7022,7 @@ Consider using {self}.implode() instead"""
     def rolling_mean_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -7012,7 +7183,7 @@ Consider using {self}.implode() instead"""
     def rolling_sum_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -7166,7 +7337,7 @@ Consider using {self}.implode() instead"""
     def rolling_std_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -7329,7 +7500,7 @@ Consider using {self}.implode() instead"""
     def rolling_var_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -7492,7 +7663,7 @@ Consider using {self}.implode() instead"""
     def rolling_median_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -7622,7 +7793,7 @@ Consider using {self}.implode() instead"""
     def rolling_quantile_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         quantile: float,
         interpolation: QuantileMethod = "nearest",
@@ -7764,7 +7935,7 @@ Consider using {self}.implode() instead"""
     def rolling_rank_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         method: RankMethod = "average",
         *,
         seed: int | None = None,
@@ -7861,7 +8032,7 @@ Consider using {self}.implode() instead"""
     def rolling_min(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -7971,7 +8142,7 @@ Consider using {self}.implode() instead"""
     def rolling_max(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8081,7 +8252,7 @@ Consider using {self}.implode() instead"""
     def rolling_mean(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8193,7 +8364,7 @@ Consider using {self}.implode() instead"""
     def rolling_sum(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8303,7 +8474,7 @@ Consider using {self}.implode() instead"""
     def rolling_std(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8419,7 +8590,7 @@ Consider using {self}.implode() instead"""
     def rolling_var(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8535,7 +8706,7 @@ Consider using {self}.implode() instead"""
     def rolling_median(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8647,7 +8818,7 @@ Consider using {self}.implode() instead"""
         quantile: float,
         interpolation: QuantileMethod = "nearest",
         window_size: int = 2,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -9004,7 +9175,7 @@ Consider using {self}.implode() instead"""
         self,
         function: Callable[[Series], Any],
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -10189,9 +10360,9 @@ Consider using {self}.implode() instead"""
 
     def ewm_mean_by(
         self,
-        by: str | IntoExpr,
+        by: str_ | IntoExpr,
         *,
-        half_life: str | timedelta,
+        half_life: str_ | timedelta,
     ) -> Expr:
         r"""
         Compute time-based exponentially weighted moving average.
@@ -10508,7 +10679,7 @@ Consider using {self}.implode() instead"""
         *,
         sort: bool = False,
         parallel: bool = False,
-        name: str | None = None,
+        name: str_ | None = None,
         normalize: bool = False,
     ) -> Expr:
         """
@@ -11501,9 +11672,9 @@ Consider using {self}.implode() instead"""
     def register_plugin(
         self,
         *,
-        lib: str,
-        symbol: str,
-        args: list[IntoExpr] | None = None,
+        lib: str_,
+        symbol: str_,
+        args: list_[IntoExpr] | None = None,
         kwargs: dict[Any, Any] | None = None,
         is_elementwise: bool = False,
         input_wildcard_expansion: bool = False,
@@ -11595,7 +11766,7 @@ Consider using {self}.implode() instead"""
 
     def _row_decode(
         self,
-        names: Sequence[str],
+        names: Sequence[str_],
         dtypes: Sequence[pl.DataTypeExpr | PolarsDataType],
         *,
         unordered: bool = False,
@@ -11619,7 +11790,7 @@ Consider using {self}.implode() instead"""
         return wrap_expr(result)
 
     @classmethod
-    def from_json(cls, value: str) -> Expr:
+    def from_json(cls, value: str_) -> Expr:
         """
         Read an expression from a JSON encoded string to construct an Expression.
 
@@ -11640,150 +11811,6 @@ Consider using {self}.implode() instead"""
             version="0.20.11",
         )
         return cls.deserialize(StringIO(value), format="json")
-
-    @property
-    def bin(self) -> ExprBinaryNameSpace:
-        """
-        Create an object namespace of all binary related methods.
-
-        See the individual method pages for full details
-        """
-        return ExprBinaryNameSpace(self)
-
-    @property
-    def cat(self) -> ExprCatNameSpace:
-        """
-        Create an object namespace of all categorical related methods.
-
-        See the individual method pages for full details
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"values": ["a", "b"]}).select(
-        ...     pl.col("values").cast(pl.Categorical)
-        ... )
-        >>> df.select(pl.col("values").cat.get_categories())
-        shape: (2, 1)
-        ┌────────┐
-        │ values │
-        │ ---    │
-        │ str    │
-        ╞════════╡
-        │ a      │
-        │ b      │
-        └────────┘
-        """
-        return ExprCatNameSpace(self)
-
-    @property
-    def dt(self) -> ExprDateTimeNameSpace:
-        """Create an object namespace of all datetime related methods."""
-        return ExprDateTimeNameSpace(self)
-
-    # Keep the `list` and `str` properties below at the end of the definition of Expr,
-    # as to not confuse mypy with the type annotation `str` and `list`
-
-    @property
-    def list(self) -> ExprListNameSpace:
-        """
-        Create an object namespace of all list related methods.
-
-        See the individual method pages for full details.
-        """
-        return ExprListNameSpace(self)
-
-    @property
-    def arr(self) -> ExprArrayNameSpace:
-        """
-        Create an object namespace of all array related methods.
-
-        See the individual method pages for full details.
-        """
-        return ExprArrayNameSpace(self)
-
-    @property
-    def meta(self) -> ExprMetaNameSpace:
-        """
-        Create an object namespace of all meta related expression methods.
-
-        This can be used to modify and traverse existing expressions.
-        """
-        return ExprMetaNameSpace(self)
-
-    @property
-    def name(self) -> ExprNameNameSpace:
-        """
-        Create an object namespace of all expressions that modify expression names.
-
-        See the individual method pages for full details.
-        """
-        return ExprNameNameSpace(self)
-
-    @property
-    def str(self) -> ExprStringNameSpace:
-        """
-        Create an object namespace of all string related methods.
-
-        See the individual method pages for full details.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"letters": ["a", "b"]})
-        >>> df.select(pl.col("letters").str.to_uppercase())
-        shape: (2, 1)
-        ┌─────────┐
-        │ letters │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ A       │
-        │ B       │
-        └─────────┘
-        """
-        return ExprStringNameSpace(self)
-
-    @property
-    def struct(self) -> ExprStructNameSpace:
-        """
-        Create an object namespace of all struct related methods.
-
-        See the individual method pages for full details.
-
-        Examples
-        --------
-        >>> df = (
-        ...     pl.DataFrame(
-        ...         {
-        ...             "int": [1, 2],
-        ...             "str": ["a", "b"],
-        ...             "bool": [True, None],
-        ...             "list": [[1, 2], [3]],
-        ...         }
-        ...     )
-        ...     .to_struct("my_struct")
-        ...     .to_frame()
-        ... )
-        >>> df.select(pl.col("my_struct").struct.field("str"))
-        shape: (2, 1)
-        ┌─────┐
-        │ str │
-        │ --- │
-        │ str │
-        ╞═════╡
-        │ a   │
-        │ b   │
-        └─────┘
-        """
-        return ExprStructNameSpace(self)
-
-    @property
-    def ext(self) -> ExprExtensionNameSpace:
-        """
-        Create an object namespace of all extension type related expressions.
-
-        See the individual method pages for full details.
-        """
-        return ExprExtensionNameSpace(self)
 
     def _skip_batch_predicate(self, schema: SchemaDict) -> Expr | None:
         result = self._pyexpr.skip_batch_predicate(schema)

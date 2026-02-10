@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -13,6 +13,9 @@ from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from typing import Any
+
     import numpy.typing as npt
 
     from polars._typing import PolarsDataType, TimeUnit
@@ -24,6 +27,15 @@ def test_quantile_expr_input() -> None:
     assert_frame_equal(
         df.select([pl.col("a").quantile(pl.col("b").sum() + 0.1)]),
         df.select(pl.col("a").quantile(0.6)),
+    )
+
+    df = pl.DataFrame({"x": [1, 2, 3, 4], "y": [0.25, 0.3, 0.4, 0.75]})
+
+    assert_frame_equal(
+        df.select(
+            pl.col.x.quantile(pl.concat_list(pl.col.y.min(), pl.col.y.max().first()))
+        ),
+        df.select(pl.col.x.quantile([0.25, 0.75])),
     )
 
 
@@ -107,6 +119,23 @@ def test_quantile() -> None:
     assert s.quantile(0.5, "nearest") == 2
     assert s.quantile(0.5, "lower") == 2
     assert s.quantile(0.5, "higher") == 2
+    assert s.quantile([0.25, 0.75], "linear") == [1.5, 2.5]
+
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0]})
+    expected = pl.DataFrame({"a": [[2.0]]})
+    assert_frame_equal(
+        df.select(pl.col("a").quantile([0.5], interpolation="linear")), expected
+    )
+
+
+def test_quantile_error_checking() -> None:
+    s = pl.Series([1, 2, 3])
+    with pytest.raises(pl.exceptions.ComputeError):
+        s.quantile(-0.1)
+    with pytest.raises(pl.exceptions.ComputeError):
+        s.quantile(1.1)
+    with pytest.raises(pl.exceptions.ComputeError):
+        s.quantile([0.0, 1.2])
 
 
 def test_quantile_date() -> None:
@@ -293,6 +322,16 @@ def test_quantile_vs_numpy(tp: type, n: int) -> None:
             pl.Series(a).quantile(q, interpolation="linear"),  # type: ignore[arg-type]
             np_result,  # type: ignore[arg-type]
         )
+
+    df = pl.DataFrame({"a": a})
+
+    expected = df.select(
+        pl.col.a.quantile(0.25).alias("low"), pl.col.a.quantile(0.75).alias("high")
+    ).select(pl.concat_list(["low", "high"]).alias("quantiles"))
+
+    result = df.select(pl.col.a.quantile([0.25, 0.75]).alias("quantiles"))
+
+    assert_frame_equal(expected, result)
 
 
 def test_mean_overflow() -> None:
@@ -1338,3 +1377,46 @@ def test_min_max_by(agg_funcs: Any, by_col: str) -> None:
         result = df.group_by("g").agg([agg_by(pl.col(c), pl.col(by_col)) for c in cols])
         expected = df.group_by("g").agg([agg(pl.col(c)) for c in cols])
         assert_frame_equal(result, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(("agg", "expected"), [("max", 2), ("min", 0)])
+def test_grouped_minmax_after_reverse_on_sorted_column_26141(
+    agg: str, expected: int
+) -> None:
+    df = pl.DataFrame({"a": [0, 1, 2]}).sort("a")
+
+    expr = getattr(pl.col("a").reverse(), agg)()
+    out = df.group_by(1).agg(expr)
+
+    expected_df = pl.DataFrame(
+        {
+            "literal": pl.Series([1], dtype=pl.Int32),
+            "a": [expected],
+        }
+    )
+    assert_frame_equal(out, expected_df)
+
+
+@pytest.mark.may_fail_auto_streaming
+@pytest.mark.xfail(reason="#26049")
+@pytest.mark.parametrize("agg_by", [pl.Expr.min_by, pl.Expr.max_by])
+def test_min_max_by_series_length_mismatch(
+    agg_by: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    lf = pl.LazyFrame(
+        {"value": [1, 2, 3], "group": ["A", "B", "C"], "filter": [False, True, True]}
+    )
+    q = lf.with_columns(
+        agg_by(pl.col("group").filter(pl.col("filter")), pl.col("value"))
+    )
+
+    with pytest.raises(
+        pl.exceptions.ShapeError,
+        match=r"^'by' column in `(min|max)_by` operation has incorrect length",
+    ):
+        q.collect(engine="in-memory")
+    with pytest.raises(
+        pl.exceptions.ShapeError,
+        match=r"^zip node received non-equal length inputs$",
+    ):
+        q.collect(engine="streaming")

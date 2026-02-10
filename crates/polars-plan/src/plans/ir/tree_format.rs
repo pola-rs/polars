@@ -36,6 +36,8 @@ impl fmt::Display for TreeFmtAExpr<'_> {
                 return f.write_char(')');
             },
             AExpr::Column(name) => return write!(f, "col({name})"),
+            #[cfg(feature = "dtype-struct")]
+            AExpr::StructField(name) => return write!(f, "field({name})"),
             AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
             AExpr::BinaryExpr { op, .. } => return write!(f, "binary: {op}"),
             AExpr::Cast { dtype, options, .. } => {
@@ -73,10 +75,12 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             AExpr::AnonymousFunction { fmt_str, .. } => {
                 return write!(f, "anonymous_function: {fmt_str}");
             },
-            AExpr::AnonymousStreamingAgg { fmt_str, .. } => {
-                return write!(f, "anonymous_streaming_agg: {fmt_str}");
+            AExpr::AnonymousAgg { fmt_str, .. } => {
+                return write!(f, "anonymous_agg: {fmt_str}");
             },
             AExpr::Eval { .. } => "list.eval",
+            #[cfg(feature = "dtype-struct")]
+            AExpr::StructEval { .. } => "struct.with_fields",
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
             #[cfg(feature = "dynamic_group_by")]
             AExpr::Rolling { .. } => "rolling",

@@ -14,6 +14,8 @@ impl AExpr {
 
         match self {
             Element | Column(_) | Literal(_) | Len => {},
+            #[cfg(feature = "dtype-struct")]
+            StructField(_) => {},
             BinaryExpr { left, op: _, right } => {
                 container.extend([*right, *left]);
             },
@@ -43,9 +45,7 @@ impl AExpr {
             },
             AnonymousFunction { input, .. }
             | Function { input, .. }
-            | AnonymousStreamingAgg { input, .. } => {
-                container.extend(input.iter().rev().map(|e| e.node()))
-            },
+            | AnonymousAgg { input, .. } => container.extend(input.iter().rev().map(|e| e.node())),
             Explode { expr: e, .. } => container.extend([*e]),
             #[cfg(feature = "dynamic_group_by")]
             Rolling {
@@ -78,6 +78,12 @@ impl AExpr {
                 _ = evaluation;
                 container.extend([*expr]);
             },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, evaluation } => {
+                // Evaluation is included. In case this is not allowed, use `inputs_rev_strict()`.
+                container.extend(evaluation.iter().rev().map(ExprIR::node));
+                container.extend([*expr]);
+            },
             Slice {
                 input,
                 offset,
@@ -85,6 +91,32 @@ impl AExpr {
             } => {
                 container.extend([*length, *offset, *input]);
             },
+        }
+    }
+
+    /// Push the inputs of this node to the given container, in reverse order.
+    /// This ensures the primary node responsible for the name is pushed last.
+    ///
+    /// Unlike `inputs_rev`, this excludes Eval expressions. These use an extended schema,
+    /// determined by their input, which implies a different traversal order.
+    ///
+    /// This is subtly different from `children_rev` as this only includes the input expressions,
+    /// not expressions used during evaluation.
+    pub fn inputs_rev_strict<E>(&self, container: &mut E)
+    where
+        E: Extend<Node>,
+    {
+        use AExpr::*;
+
+        match self {
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, evaluation } => {
+                // Evaluation is explicitly excluded. It is up to the caller to handle
+                // any tree traversal if required.
+                _ = evaluation;
+                container.extend([*expr]);
+            },
+            expr => expr.inputs_rev(container),
         }
     }
 
@@ -98,6 +130,8 @@ impl AExpr {
 
         match self {
             Element | Column(_) | Literal(_) | Len => {},
+            #[cfg(feature = "dtype-struct")]
+            StructField(_) => {},
             BinaryExpr { left, op: _, right } => {
                 container.extend([*right, *left]);
             },
@@ -127,9 +161,7 @@ impl AExpr {
             },
             AnonymousFunction { input, .. }
             | Function { input, .. }
-            | AnonymousStreamingAgg { input, .. } => {
-                container.extend(input.iter().rev().map(|e| e.node()))
-            },
+            | AnonymousAgg { input, .. } => container.extend(input.iter().rev().map(|e| e.node())),
             Explode { expr: e, .. } => container.extend([*e]),
             #[cfg(feature = "dynamic_group_by")]
             Rolling {
@@ -158,6 +190,11 @@ impl AExpr {
                 evaluation,
                 variant: _,
             } => container.extend([*evaluation, *expr]),
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, evaluation } => {
+                container.extend(evaluation.iter().rev().map(ExprIR::node));
+                container.extend([*expr]);
+            },
             Slice {
                 input,
                 offset,
@@ -172,6 +209,8 @@ impl AExpr {
         use AExpr::*;
         let input = match &mut self {
             Element | Column(_) | Literal(_) | Len => return self,
+            #[cfg(feature = "dtype-struct")]
+            StructField(_) => return self,
             Cast { expr, .. } => expr,
             Explode { expr, .. } => expr,
             BinaryExpr { left, right, .. } => {
@@ -206,10 +245,6 @@ impl AExpr {
                         *expr = inputs[0];
                         *quantile = inputs[1];
                     },
-                    IRAggExpr::MinBy { input, by } | IRAggExpr::MaxBy { input, by } => {
-                        *input = inputs[0];
-                        *by = inputs[1];
-                    },
                     _ => {
                         a.set_input(inputs[0]);
                     },
@@ -228,7 +263,7 @@ impl AExpr {
             },
             AnonymousFunction { input, .. }
             | Function { input, .. }
-            | AnonymousStreamingAgg { input, .. } => {
+            | AnonymousAgg { input, .. } => {
                 assert_eq!(input.len(), inputs.len());
                 for (e, node) in input.iter_mut().zip(inputs.iter()) {
                     e.set_node(*node);
@@ -240,6 +275,12 @@ impl AExpr {
                 evaluation,
                 variant: _,
             } => {
+                *expr = inputs[0];
+                _ = evaluation; // Intentional.
+                return self;
+            },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, evaluation } => {
                 *expr = inputs[0];
                 _ = evaluation; // Intentional.
                 return self;
@@ -290,6 +331,8 @@ impl AExpr {
         use AExpr::*;
         let input = match &mut self {
             Element | Column(_) | Literal(_) | Len => return self,
+            #[cfg(feature = "dtype-struct")]
+            StructField(_) => return self,
             Cast { expr, .. } => expr,
             Explode { expr, .. } => expr,
             BinaryExpr { left, right, .. } => {
@@ -315,22 +358,16 @@ impl AExpr {
                 return self;
             },
             Agg(a) => {
-                match a {
-                    IRAggExpr::Quantile { expr, quantile, .. } => {
-                        *expr = inputs[0];
-                        *quantile = inputs[1];
-                    },
-                    IRAggExpr::MinBy { input, by } => {
-                        *input = inputs[0];
-                        *by = inputs[1];
-                    },
-                    IRAggExpr::MaxBy { input, by } => {
-                        *input = inputs[0];
-                        *by = inputs[1];
-                    },
-                    _ => {
-                        a.set_input(inputs[0]);
-                    },
+                if let IRAggExpr::Quantile {
+                    expr,
+                    quantile,
+                    method: _,
+                } = a
+                {
+                    *expr = inputs[0];
+                    *quantile = inputs[1];
+                } else {
+                    a.set_input(inputs[0]);
                 }
                 return self;
             },
@@ -344,7 +381,7 @@ impl AExpr {
                 *predicate = inputs[2];
                 return self;
             },
-            AnonymousStreamingAgg { input, .. }
+            AnonymousAgg { input, .. }
             | AnonymousFunction { input, .. }
             | Function { input, .. } => {
                 assert_eq!(input.len(), inputs.len());
@@ -360,6 +397,15 @@ impl AExpr {
             } => {
                 *expr = inputs[0];
                 *evaluation = inputs[1];
+                return self;
+            },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, evaluation } => {
+                assert_eq!(inputs.len(), evaluation.len() + 1);
+                *expr = inputs[0];
+                for (e, node) in evaluation.iter_mut().zip(inputs[1..].iter()) {
+                    e.set_node(*node);
+                }
                 return self;
             },
             Slice {
@@ -413,8 +459,6 @@ impl IRAggExpr {
         match self {
             Min { input, .. } => Single(*input),
             Max { input, .. } => Single(*input),
-            MinBy { input, by } => Many(vec![*input, *by]),
-            MaxBy { input, by } => Many(vec![*input, *by]),
             Median(input) => Single(*input),
             NUnique(input) => Single(*input),
             First(input) => Single(*input),
@@ -452,10 +496,6 @@ impl IRAggExpr {
             Std(input, _) => input,
             Var(input, _) => input,
             AggGroups(input) => input,
-
-            // Multi-input aggregations.
-            MinBy { .. } => unreachable!(),
-            MaxBy { .. } => unreachable!(),
         };
         *node = input;
     }

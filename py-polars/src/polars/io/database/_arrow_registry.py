@@ -65,15 +65,6 @@ ARROW_DRIVER_REGISTRY: Final[dict[str, list[ArrowDriverProperties]]] = {
             "minimum_version": None,
         }
     ],
-    "kuzu": [
-        {
-            "fetch_all": "get_as_pl",
-            "fetch_batches": None,
-            "exact_batch_size": None,
-            "repeat_batch_calls": False,
-            "minimum_version": "0.3.2",
-        }
-    ],
     "snowflake": [
         {
             "fetch_all": "fetch_arrow_all",

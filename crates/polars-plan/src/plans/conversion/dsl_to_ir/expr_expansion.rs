@@ -1,7 +1,9 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
 
 use super::*;
-use crate::constants::{POLARS_ELEMENT, get_pl_element_name};
+use crate::constants::{
+    POLARS_ELEMENT, POLARS_STRUCTFIELDS, get_pl_element_name, get_pl_structfields_name,
+};
 
 pub fn prepare_projection(
     exprs: Vec<Expr>,
@@ -99,7 +101,6 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
     #[cfg(feature = "dtype-struct")]
     {
         expand_into_inputs |= matches!(function, F::AsStruct);
-        expand_into_inputs |= matches!(function, F::StructExpr(StructFunction::WithFields));
         expand_into_inputs |= matches!(
             function,
             F::CumReduceHorizontal { .. } | F::CumFoldHorizontal { .. }
@@ -287,9 +288,13 @@ fn expand_expression_rec(
         Expr::Column(_) => out.push(expr.clone()),
         Expr::Selector(selector) => {
             let mut schema = std::borrow::Cow::Borrowed(schema);
-            // Remove `element()` for selectors.
+
+            // Remove `element()` and `field()` for selectors.
             if schema.contains(POLARS_ELEMENT) {
                 schema.to_mut().remove(POLARS_ELEMENT);
+            }
+            if schema.contains(POLARS_STRUCTFIELDS) {
+                schema.to_mut().remove(POLARS_STRUCTFIELDS);
             }
             let columns = selector.into_columns(schema.as_ref(), ignored_selector_columns)?;
             out.extend(columns.into_iter().map(Expr::Column));
@@ -435,32 +440,6 @@ fn expand_expression_rec(
                         Expr::Agg(AggExpr::Max {
                             input: Arc::new(e),
                             propagate_nans: *propagate_nans,
-                        })
-                    },
-                )?,
-                AggExpr::MinBy { input, by } => expand_expression_by_combination(
-                    &[input.as_ref().clone(), by.as_ref().clone()],
-                    ignored_selector_columns,
-                    schema,
-                    out,
-                    opt_flags,
-                    |e| {
-                        Expr::Agg(AggExpr::MinBy {
-                            input: Arc::new(e[0].clone()),
-                            by: Arc::new(e[1].clone()),
-                        })
-                    },
-                )?,
-                AggExpr::MaxBy { input, by } => expand_expression_by_combination(
-                    &[input.as_ref().clone(), by.as_ref().clone()],
-                    ignored_selector_columns,
-                    schema,
-                    out,
-                    opt_flags,
-                    |e| {
-                        Expr::Agg(AggExpr::MaxBy {
-                            input: Arc::new(e[0].clone()),
-                            by: Arc::new(e[1].clone()),
                         })
                     },
                 )?,
@@ -922,6 +901,41 @@ fn expand_expression_rec(
                 }
             }
         },
+        #[cfg(feature = "dtype-struct")]
+        Expr::StructEval { expr, evaluation } => {
+            let mut expr_out = Vec::with_capacity(1);
+            expand_expression_rec(
+                expr,
+                ignored_selector_columns,
+                schema,
+                &mut expr_out,
+                opt_flags,
+            )?;
+
+            for expr in expr_out {
+                let expr = Arc::new(expr);
+
+                let expr_dtype = expr.to_field(schema)?.dtype;
+                let mut evaluation_schema = schema.clone();
+                evaluation_schema.insert(get_pl_structfields_name(), expr_dtype.clone());
+
+                let mut eval = Vec::with_capacity(evaluation.len());
+                for e in evaluation {
+                    _ = expand_expression_rec(
+                        e,
+                        &Default::default(),
+                        &evaluation_schema,
+                        &mut eval,
+                        opt_flags,
+                    )?
+                }
+
+                out.push(Expr::StructEval {
+                    expr,
+                    evaluation: eval,
+                });
+            }
+        },
         Expr::RenameAlias { expr, function } => {
             _ = expand_single(
                 expr.as_ref(),
@@ -938,12 +952,18 @@ fn expand_expression_rec(
 
         #[cfg(feature = "dtype-struct")]
         Expr::Field(names) => {
-            toggle_cse_for_structs(opt_flags);
             out.extend(names.iter().cloned().map(|n| Expr::Field([n].into())));
         },
 
         // SQL only
         Expr::SubPlan(_, _) => unreachable!(),
+        // Should never go from IR -> DSL -> IR
+        Expr::Display {
+            inputs: _,
+            fmt_str: _,
+        } => {
+            unreachable!()
+        },
     };
     Ok(out.len() - start_len)
 }

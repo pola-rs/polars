@@ -7,6 +7,7 @@ mod general;
 mod hash_join;
 #[cfg(feature = "iejoin")]
 mod iejoin;
+pub mod merge_join;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 
@@ -35,6 +36,7 @@ use polars_core::POOL;
 use polars_core::chunked_array::ops::row_encode::{
     encode_rows_vertical_par_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,
 };
+use polars_core::datatypes::DataType;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 pub(super) use polars_core::series::IsSorted;
@@ -220,7 +222,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 ComputeError:
                     format!(
                         "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
-                        l.name(), l.dtype(), r.name(), r.dtype()
+                        l.name(), l.dtype().pretty_format(), r.name(), r.dtype().pretty_format()
                     )
             );
         };

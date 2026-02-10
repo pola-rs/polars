@@ -13,11 +13,12 @@ doctest = false
 
 [dependencies]
 libloading = { workspace = true, optional = true }
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-error = { workspace = true }
 polars-ffi = { workspace = true, optional = true }
-polars-io = { workspace = true, features = ["lazy", "csv"] }
+polars-io = { workspace = true, features = ["lazy", "csv", "async"] }
 polars-json = { workspace = true, optional = true }
 polars-ops = { workspace = true, features = [] }
 polars-parquet = { workspace = true, optional = true }
@@ -32,7 +33,7 @@ bytes = { workspace = true, features = ["serde"] }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 either = { workspace = true }
-futures = { workspace = true, optional = true }
+futures = { workspace = true }
 hashbrown = { workspace = true }
 memmap = { workspace = true }
 num-traits = { workspace = true }
@@ -47,6 +48,7 @@ serde_json = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
 slotmap = { workspace = true }
 strum_macros = { workspace = true }
+tokio = { workspace = true }
 
 [build-dependencies]
 sha2 = { workspace = true }
@@ -58,6 +60,7 @@ debugging = []
 python = ["dep:pyo3", "polars-utils/python", "polars-ffi", "polars-core/object", "serde"]
 serde = [
   "dep:serde",
+  "polars-buffer/serde",
   "polars-core/serde-lazy",
   "polars-core/serde",
   "polars-time/serde",
@@ -69,8 +72,7 @@ serde = [
   "slotmap/serde",
 ]
 parquet = ["polars-io/parquet", "polars-parquet"]
-async = ["polars-io/async", "futures"]
-cloud = ["async", "polars-io/cloud"]
+cloud = ["polars-io/cloud"]
 ipc = ["polars-io/ipc"]
 json = ["polars-io/json", "polars-json"]
 scan_lines = []
@@ -130,15 +132,6 @@ dsl-schema = [
   "polars-ops/dsl-schema",
   "polars-utils/dsl-schema",
   "polars-compute/dsl-schema",
-]
-ir_visualization = [
-  "dep:serde_json",
-  "ir_serde",
-  "serde",
-]
-ir_visualization_schema = [
-  "ir_visualization",
-  "dsl-schema",
 ]
 
 # operations

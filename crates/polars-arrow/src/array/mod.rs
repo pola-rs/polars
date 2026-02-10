@@ -13,7 +13,7 @@
 //!
 //! All immutable arrays implement the trait object [`Array`] and that can be downcast
 //! to a concrete struct based on [`PhysicalType`](crate::datatypes::PhysicalType) available from [`Array::dtype`].
-//! All immutable arrays are backed by [`Buffer`](crate::buffer::Buffer) and thus cloning and slicing them is `O(1)`.
+//! All immutable arrays are backed by [`Buffer`](polars_buffer::Buffer) and thus cloning and slicing them is `O(1)`.
 //!
 //! Most arrays contain a [`MutableArray`] counterpart that is neither cloneable nor sliceable, but
 //! can be operated in-place.
@@ -58,6 +58,18 @@ pub trait Splitable: Sized {
     ///
     /// Safe if `offset <= self.len()`.
     unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self);
+}
+
+impl<T> Splitable for Buffer<T> {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let left = self.clone().sliced_unchecked(..offset);
+        let right = self.clone().sliced_unchecked(offset..);
+        (left, right)
+    }
 }
 
 /// A trait representing an immutable Arrow array. Arrow arrays are trait objects
@@ -713,6 +725,7 @@ pub use iterator::ArrayValuesIter;
 pub use list::{ListArray, ListArrayBuilder, ListValuesIter, MutableListArray};
 pub use map::MapArray;
 pub use null::{MutableNullArray, NullArray, NullArrayBuilder};
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 pub use primitive::*;
 pub use static_array::{ParameterFreeDtypeStaticArray, StaticArray};

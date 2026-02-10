@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 use std::sync::LazyLock;
 
 use hashbrown::hash_map::Entry;
+use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
@@ -9,7 +10,6 @@ use crate::array::binview::{DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE};
 use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
 use crate::array::{Array, BinaryViewArrayGeneric, View, ViewType};
 use crate::bitmap::OptBitmapBuilder;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::pushable::Pushable;
 
@@ -38,6 +38,8 @@ pub struct BinaryViewArrayGenericBuilder<V: ViewType + ?Sized> {
 }
 
 impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
+    pub const MAX_ROW_BYTE_LEN: usize = (u32::MAX - 1) as _;
+
     pub fn new(dtype: ArrowDataType) -> Self {
         Self {
             dtype,
@@ -60,7 +62,7 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
     fn reserve_active_buffer(&mut self, additional: usize) {
         let len = self.active_buffer.len();
         let cap = self.active_buffer.capacity();
-        if additional > cap - len || len + additional >= (u32::MAX - 1) as usize {
+        if additional > cap - len || len + additional >= Self::MAX_ROW_BYTE_LEN {
             self.reserve_active_buffer_slow(additional);
         }
     }
@@ -68,7 +70,7 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
     #[cold]
     fn reserve_active_buffer_slow(&mut self, additional: usize) {
         assert!(
-            additional <= (u32::MAX - 1) as usize,
+            additional <= Self::MAX_ROW_BYTE_LEN,
             "strings longer than 2^32 - 2 are not supported"
         );
 
@@ -240,7 +242,7 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
                 Buffer::from(self.views),
                 Buffer::from(self.buffer_set),
                 self.validity.into_opt_validity(),
-                self.total_bytes_len,
+                Some(self.total_bytes_len),
                 self.total_buffer_len,
             )
         }
@@ -261,7 +263,7 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
                 Buffer::from(core::mem::take(&mut self.views)),
                 Buffer::from(core::mem::take(&mut self.buffer_set)),
                 core::mem::take(&mut self.validity).into_opt_validity(),
-                self.total_bytes_len,
+                Some(self.total_bytes_len),
                 self.total_buffer_len,
             )
         };

@@ -7,7 +7,7 @@ use super::expr_to_ir::ExprToIRContext;
 use super::*;
 use crate::constants::get_literal_name;
 use crate::dsl::{Expr, FunctionExpr};
-use crate::plans::conversion::dsl_to_ir::expr_to_ir::{to_expr_ir, to_expr_irs};
+use crate::plans::conversion::dsl_to_ir::expr_to_ir::to_expr_irs;
 use crate::plans::{AExpr, IRFunctionExpr};
 
 pub(super) fn convert_functions(
@@ -17,45 +17,8 @@ pub(super) fn convert_functions(
 ) -> PolarsResult<(Node, PlSmallStr)> {
     use {FunctionExpr as F, IRFunctionExpr as I};
 
-    #[cfg(feature = "dtype-struct")]
-    if matches!(
-        function,
-        FunctionExpr::StructExpr(StructFunction::WithFields)
-    ) {
-        let mut input = input.into_iter();
-        let struct_input = to_expr_ir(input.next().unwrap(), ctx)?;
-        let dtype = struct_input.to_expr(ctx.arena).to_field(ctx.schema)?.dtype;
-        let DataType::Struct(fields) = &dtype else {
-            polars_bail!(op = "struct.with_fields", dtype);
-        };
-
-        let struct_name = struct_input.output_name().clone();
-        let struct_node = struct_input.node();
-        let struct_schema = Schema::from_iter(fields.iter().cloned());
-
-        let mut e = Vec::with_capacity(input.len());
-        e.push(struct_input);
-
-        let prev = ctx.with_fields.replace((struct_node, struct_schema));
-        for i in input {
-            e.push(to_expr_ir(i, ctx)?);
-        }
-        ctx.with_fields = prev;
-
-        let function = IRFunctionExpr::StructExpr(IRStructFunction::WithFields);
-        let options = function.function_options();
-        let out = ctx.arena.add(AExpr::Function {
-            input: e,
-            function,
-            options,
-        });
-
-        return Ok((out, struct_name));
-    }
-
-    let input_is_empty = input.is_empty();
-
     // Converts inputs
+    let input_is_empty = input.is_empty();
     let e = to_expr_irs(input, ctx)?;
     let mut set_elementwise = false;
 
@@ -131,6 +94,7 @@ pub(super) fn convert_functions(
                 B::Slice => IB::Slice,
                 B::Head => IB::Head,
                 B::Tail => IB::Tail,
+                B::Get(null_on_oob) => IB::Get(null_on_oob),
             })
         },
         #[cfg(feature = "dtype-categorical")]
@@ -309,6 +273,8 @@ pub(super) fn convert_functions(
                 S::SplitExact { n, inclusive } => IS::SplitExact { n, inclusive },
                 #[cfg(feature = "dtype-struct")]
                 S::SplitN(v) => IS::SplitN(v),
+                #[cfg(feature = "regex")]
+                S::SplitRegex { inclusive, strict } => IS::SplitRegex { inclusive, strict },
                 #[cfg(feature = "temporal")]
                 S::Strptime(data_type, strptime_options) => {
                     let is_column_independent = is_column_independent_aexpr(e[0].node(), ctx.arena);
@@ -381,7 +347,6 @@ pub(super) fn convert_functions(
                 S::SelectFields(_) => unreachable!("handled by expression expansion"),
                 #[cfg(feature = "json")]
                 S::JsonEncode => IS::JsonEncode,
-                S::WithFields => unreachable!("handled before"),
                 S::MapFieldNames(f) => IS::MapFieldNames(f),
             })
         },
@@ -843,6 +808,8 @@ pub(super) fn convert_functions(
             descending,
             nulls_last,
         },
+        F::MinBy => I::MinBy,
+        F::MaxBy => I::MaxBy,
         F::Product => I::Product,
         #[cfg(feature = "rank")]
         F::Rank { options, seed } => I::Rank { options, seed },

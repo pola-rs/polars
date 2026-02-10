@@ -481,7 +481,7 @@ fn create_physical_plan_impl(
             keys,
             aggs,
             apply,
-            schema: _,
+            schema: output_schema,
             maintain_order,
             options,
         } => {
@@ -510,6 +510,7 @@ fn create_physical_plan_impl(
                     aggs: phys_aggs,
                     options,
                     input_schema,
+                    output_schema,
                     slice: _slice,
                     apply,
                 }));
@@ -524,6 +525,7 @@ fn create_physical_plan_impl(
                     aggs: phys_aggs,
                     options,
                     input_schema,
+                    output_schema,
                     slice: _slice,
                     apply,
                 }));
@@ -542,15 +544,23 @@ fn create_physical_plan_impl(
                 let builder = get_streaming_executor_builder();
 
                 let input = recurse!(input, state)?;
+
+                let gb_root = if state.has_cache_parent {
+                    lp_arena.add(lp_arena.get(root).clone())
+                } else {
+                    root
+                };
+
                 let executor = Box::new(GroupByStreamingExec::new(
                     input,
                     builder,
-                    root,
+                    gb_root,
                     lp_arena,
                     expr_arena,
                     phys_keys,
                     phys_aggs,
                     maintain_order,
+                    output_schema,
                     _slice,
                     from_partitioned_ds,
                 ));
@@ -565,6 +575,7 @@ fn create_physical_plan_impl(
                     apply,
                     maintain_order,
                     input_schema,
+                    output_schema,
                     options.slice,
                 )))
             }

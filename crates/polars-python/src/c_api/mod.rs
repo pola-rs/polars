@@ -4,7 +4,7 @@ pub mod allocator;
 // Since Python Polars cannot share its version into here and we need to be able to build this
 // package correctly without `py-polars`, we need to mirror the version here.
 // example: 1.35.0-beta.1
-pub static PYPOLARS_VERSION: &str = "1.36.1";
+pub static PYPOLARS_VERSION: &str = "1.38.1";
 
 // We allow multiple features to be set simultaneously so checking with all-features
 // is possible. In the case multiple are set or none at all, we set the repr to "unknown".
@@ -192,6 +192,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::field)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::collect_all))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::collect_all_lazy))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::element)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::explain_all))

@@ -14,6 +14,7 @@ impl Hash for AExpr {
 
         match self {
             AExpr::Column(name) => name.hash(state),
+            AExpr::StructField(name) => name.hash(state),
             AExpr::Literal(lv) => lv.hash(state),
             AExpr::Function {
                 options,
@@ -86,19 +87,23 @@ impl Hash for AExpr {
                 truthy: _,
                 falsy: _,
             } => {},
-            AExpr::AnonymousStreamingAgg {
+            AExpr::AnonymousAgg {
                 input: _,
                 fmt_str,
-                function: _,
+                function,
             } => {
+                function.hash(state);
                 fmt_str.hash(state);
-                // Invariant, fmt_str is unique. Only used in cloud.
             },
             AExpr::Eval {
                 expr: _,
                 evaluation: _,
                 variant,
             } => variant.hash(state),
+            AExpr::StructEval {
+                expr: _,
+                evaluation: _,
+            } => {},
             AExpr::Slice {
                 input: _,
                 offset: _,

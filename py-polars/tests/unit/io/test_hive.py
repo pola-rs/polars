@@ -15,6 +15,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, SchemaFieldNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -498,7 +499,7 @@ def test_hive_partition_schema_inference(tmp_path: Path) -> None:
     for i in range(3):
         paths[i].parent.mkdir(exist_ok=True, parents=True)
         dfs[i].write_parquet(paths[i])
-        out = pl.scan_parquet(tmp_path).collect()
+        out = pl.scan_parquet(tmp_path).sort("x").collect()
 
         assert_series_equal(out["a"], expected[i])
 
@@ -847,20 +848,17 @@ def test_hive_write(tmp_path: Path, df: pl.DataFrame) -> None:
 
 @pytest.mark.slow
 @pytest.mark.write_disk
-@pytest.mark.xfail
 def test_hive_write_multiple_files(tmp_path: Path) -> None:
-    chunk_size = 262_144
-    n_rows = 100_000
+    chunk_size = 1
+    n_rows = 500_000
     df = pl.select(a=pl.repeat(0, n_rows), b=pl.int_range(0, n_rows))
-
-    n_files = int(df.estimated_size() / chunk_size)
-
-    assert n_files > 1, "increase df size or decrease file size"
 
     root = tmp_path
     df.write_parquet(root, partition_by="a", partition_chunk_size_bytes=chunk_size)
 
-    assert sum(1 for _ in (root / "a=0").iterdir()) == n_files
+    n_out = sum(1 for _ in (root / "a=0").iterdir())
+    assert n_out == 5
+
     assert_frame_equal(pl.scan_parquet(root).collect(), df)
 
 
@@ -914,9 +912,16 @@ def test_hive_predicate_dates_14712(
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Test is only for Windows paths")
 @pytest.mark.write_disk
-def test_hive_windows_splits_on_forward_slashes(tmp_path: Path) -> None:
+@pytest.mark.parametrize("prefix", ["", "file:/", "file:///"])
+def test_hive_windows_splits_on_forward_slashes(tmp_path: Path, prefix: str) -> None:
     # Note: This needs to be an absolute path.
     tmp_path = tmp_path.resolve()
+
+    d = str(tmp_path)[:2]
+
+    assert d[0].isalpha()
+    assert d[1] == ":"
+
     path = f"{tmp_path}/a=1/b=1/c=1/d=1/e=1"
     Path(path).mkdir(exist_ok=True, parents=True)
 
@@ -942,16 +947,23 @@ def test_hive_windows_splits_on_forward_slashes(tmp_path: Path) -> None:
     assert_frame_equal(
         pl.scan_parquet(
             [
-                f"{tmp_path}/a=1/b=1/c=1/d=1/e=1/data.parquet",
-                f"{tmp_path}\\a=1\\b=1\\c=1\\d=1\\e=1\\data.parquet",
-                f"{tmp_path}\\a=1/b=1/c=1/d=1/**/*",
-                f"{tmp_path}/a=1/b=1\\c=1/d=1/**/*",
-                f"{tmp_path}/a=1/b=1/c=1/d=1\\e=1/*",
+                f"{prefix}{tmp_path}/a=1/b=1/c=1/d=1/e=1/data.parquet",
+                f"{prefix}{tmp_path}\\a=1\\b=1\\c=1\\d=1\\e=1\\data.parquet",
+                f"{prefix}{tmp_path}\\a=1/b=1/c=1/d=1/**/*",
+                f"{prefix}{tmp_path}/a=1/b=1\\c=1/d=1/**/*",
+                f"{prefix}{tmp_path}/a=1/b=1/c=1/d=1\\e=1/*",
             ],
             hive_partitioning=True,
         ).collect(),
         expect,
     )
+
+    q = pl.scan_parquet("file://C:/")
+
+    with pytest.raises(
+        ComputeError, match="unsupported: non-empty hostname for 'file:' URI: 'C:'"
+    ):
+        q.collect()
 
 
 @pytest.mark.write_disk
@@ -1003,7 +1015,7 @@ def test_hive_file_as_uri_with_hive_start_idx_23830(
     # ensure we have a trailing "/"
     uri = tmp_path.resolve().as_posix().rstrip("/") + "/"
 
-    lf = pl.scan_parquet(f"file://{uri}", hive_schema={"a": pl.UInt8})
+    lf = pl.scan_parquet(format_file_uri(uri), hive_schema={"a": pl.UInt8})
 
     assert_frame_equal(
         lf.collect(),
@@ -1013,18 +1025,17 @@ def test_hive_file_as_uri_with_hive_start_idx_23830(
         ),
     )
 
-    if sys.platform != "win32":
-        # https://github.com/pola-rs/polars/issues/24506
-        # `file:` URI with `//hostname` component omitted
-        lf = pl.scan_parquet(f"file:{uri}", hive_schema={"a": pl.UInt8})
+    # https://github.com/pola-rs/polars/issues/24506
+    # `file:` URI with `//hostname` component omitted
+    lf = pl.scan_parquet(f"file:{uri}", hive_schema={"a": pl.UInt8})
 
-        assert_frame_equal(
-            lf.collect(),
-            pl.select(
-                pl.Series("x", [1]),
-                pl.Series("a", [1], dtype=pl.UInt8),
-            ),
-        )
+    assert_frame_equal(
+        lf.collect(),
+        pl.select(
+            pl.Series("x", [1]),
+            pl.Series("a", [1], dtype=pl.UInt8),
+        ),
+    )
 
 
 @pytest.mark.write_disk
@@ -1126,7 +1137,7 @@ def test_hive_decode_utf8_23241(tmp_path: Path) -> None:
 @pytest.mark.write_disk
 def test_hive_filter_lit_true_24235(tmp_path: Path) -> None:
     df = pl.DataFrame({"p": [1, 2, 3, 4, 5], "x": [1, 1, 2, 2, 3]})
-    df.lazy().sink_parquet(pl.PartitionByKey(tmp_path, by="p"), mkdir=True)
+    df.lazy().sink_parquet(pl.PartitionBy(tmp_path, key="p"), mkdir=True)
 
     assert_frame_equal(
         pl.scan_parquet(tmp_path).filter(True).collect(),

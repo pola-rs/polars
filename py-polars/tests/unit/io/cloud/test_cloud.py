@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import contextlib
+import subprocess
+import sys
 from functools import partial
 
 import pytest
@@ -27,7 +29,7 @@ def test_scan_nonexistent_cloud_path_17444(format: str) -> None:
         # NDJSON does not have a `retries` parameter yet - so use the default
         result = scan_function(path_str)
     else:
-        result = scan_function(path_str, retries=0)
+        result = scan_function(path_str, storage_options={"max_retries": 0})
     assert isinstance(result, pl.LazyFrame)
 
     # Upon collection, it should fail
@@ -83,4 +85,85 @@ def test_is_aws_cloud() -> None:
     assert not _is_aws_cloud(
         scheme="https",
         first_scan_path="https://bucket.s3.eu-west-1.amazonaws.com/key?",
+    )
+
+
+def test_storage_options_retry_config(
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    capture = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
+import contextlib
+import os
+
+import polars as pl
+
+os.environ["POLARS_VERBOSE"] = "1"
+os.environ["POLARS_CLOUD_MAX_RETRIES"] = "1"
+os.environ["POLARS_CLOUD_RETRY_TIMEOUT_MS"] = "1"
+os.environ["POLARS_CLOUD_RETRY_INIT_BACKOFF_MS"] = "2"
+os.environ["POLARS_CLOUD_RETRY_MAX_BACKOFF_MS"] = "10373"
+os.environ["POLARS_CLOUD_RETRY_BASE_MULTIPLIER"] = "6.28"
+
+q = pl.scan_parquet(
+    "s3://.../...",
+    storage_options={"aws_endpoint_url": "https://localhost:333"},
+    credential_provider=None,
+)
+
+with contextlib.suppress(OSError):
+    q.collect()
+
+""",
+        ],
+        stderr=subprocess.STDOUT,
+    ).decode()
+
+    assert (
+        """\
+init_backoff: 2ms, \
+max_backoff: 10.373s, \
+base: 6.28 }, \
+max_retries: 1, \
+retry_timeout: 1ms"""
+        in capture
+    )
+
+    q = pl.scan_parquet(
+        "s3://.../...",
+        storage_options={
+            "file_cache_ttl": 7,
+            "max_retries": 0,
+            "retry_timeout_ms": 23,
+            "retry_init_backoff_ms": 24,
+            "retry_max_backoff_ms": 9875,
+            "retry_base_multiplier": 3.14159,
+            "aws_endpoint_url": "https://localhost:333",
+        },
+        credential_provider=None,
+    )
+
+    capfd.readouterr()
+
+    with pytest.raises(OSError):
+        q.collect()
+
+    capture = capfd.readouterr().err
+
+    assert "file_cache_ttl: 7" in capture
+
+    assert (
+        """\
+init_backoff: 24ms, \
+max_backoff: 9.875s, \
+base: 3.14159 }, \
+max_retries: 0, \
+retry_timeout: 23ms"""
+        in capture
     )

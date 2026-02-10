@@ -458,3 +458,5 @@ class ParquetMetadataContext:
 
 ParquetMetadataFn: TypeAlias = Callable[[ParquetMetadataContext], dict[str, str]]
 ParquetMetadata: TypeAlias = dict[str, str] | ParquetMetadataFn
+
+StorageOptionsDict: TypeAlias = dict[str, Any]

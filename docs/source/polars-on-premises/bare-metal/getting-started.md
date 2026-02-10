@@ -8,7 +8,7 @@ on-premises.
 The license can be read by running the following command:
 
 ```shell
-$ ./polars-on-premise service --print-eula /path/to/license.json
+$ ./polars-on-premises service --print-eula /path/to/license.json
 ```
 
 ## Running the binary
@@ -23,61 +23,49 @@ However, the service requires quite some configuration to get started. Below you
 scheduler and worker config, and you can find the full configuration reference
 [here](/polars-on-premises/bare-metal/config-reference).
 
+## Quick start
+
+To get started fast, you can use the following configuration. It enables the scheduler, worker,
+observatory, and monitoring components. It writes query output data and shuffle data to a local
+directory.
+
+```toml
+cluster_id = "polars-cluster"
+instance_id = "node-0"
+license = "./license.json" # Path to your Polars on-premises license. This is a JSON file containing your company name, license expiry, and license signature.
+
+# Component that receives the Polars queries from the Python client.
+[scheduler]
+enabled = true
+allow_local_sinks = true
+anonymous_result_location.local.path = "./results-data"
+n_workers = 1
+
+# Component that receives and executes tasks from the scheduler.
+[worker]
+enabled = true
+shuffle_location.local.path = "./shuffle-data-path"
+task_service.public_addr = "127.0.0.1"
+shuffle_service.public_addr = "127.0.0.1"
+
+# Component that receives query profiling and host metrics.
+[observatory]
+enabled = true
+max_metrics_bytes_total = 30000
+database_path = "./observatory/"
+
+# Enables exporting query profiles and host metrics to the observatory service.
+[monitoring]
+enabled = true
+
+# Explicitly define that node-0 is the leader node. The leader node should run the observatory and monitoring components.
+[static_leader]
+leader_instance_id = "node-0"
+observatory_service.public_addr = "127.0.0.1"
+scheduler_service.public_addr = "127.0.0.1"
+```
+
 ## Configuration
 
 The complete configuration reference can be found
 [here](/polars-on-premises/bare-metal/config-reference).
-
-### Example scheduler config
-
-Here is a cleaned-up example you can use after the reference tables. It keeps the scheduler
-single-purpose (no worker role) and turns on observability.
-
-```toml
-cluster_id = "polars-cluster"
-cublet_id = "scheduler"
-license = "/etc/polars/license.json"
-memory_limit = 1073741824 # 1 GiB
-
-[scheduler]
-enabled = true
-allow_shared_disk = false
-anonymous_result_dst = "s3://bucket/path/to/key"
-n_workers = 4
-
-[observatory]
-enabled = true
-max_metrics_bytes_total = 0
-
-[static_leader]
-leader_key = "scheduler"
-public_leader_addr = "192.168.1.1"
-```
-
-### Example worker config
-
-And the matching worker config. This example gives the worker a local shuffle path and enables
-observability.
-
-```toml
-cluster_id = "polars-cluster"
-cublet_id = "worker_0"
-license = "/etc/polars/license.json"
-memory_limit = 10737418240 # 10 GiB
-
-[worker]
-enabled = true
-worker_ip = "192.168.1.2"
-flight_port = 5052
-service_port = 5053
-heartbeat_interval_secs = 5
-shuffle_data_path = "/opt/shuffle-data-path"
-
-[observatory]
-enabled = true
-max_metrics_bytes_total = 0
-
-[static_leader]
-leader_key = "scheduler"
-public_leader_addr = "192.168.1.1"
-```

@@ -463,8 +463,9 @@ impl Series {
         }
 
         let new_options = match options {
-            // Strictness is handled on this level to improve error messages.
-            CastOptions::Strict => CastOptions::NonStrict,
+            // Strictness is handled on this level to improve error messages, if not nested.
+            // Nested types could hide cast errors, so have to be done internally.
+            CastOptions::Strict if !dtype.is_nested() => CastOptions::NonStrict,
             opt => opt,
         };
 
@@ -1085,7 +1086,14 @@ impl Series {
             &[self.clone().into_column()],
             &[descending],
             &[nulls_last],
+            false,
         )
+    }
+}
+
+impl Default for Series {
+    fn default() -> Self {
+        NullChunked::new(PlSmallStr::EMPTY, 0).into_series()
     }
 }
 
@@ -1100,12 +1108,6 @@ impl Deref for Series {
 impl<'a> AsRef<dyn SeriesTrait + 'a> for Series {
     fn as_ref(&self) -> &(dyn SeriesTrait + 'a) {
         self.0.as_ref()
-    }
-}
-
-impl Default for Series {
-    fn default() -> Self {
-        Int64Chunked::default().into_series()
     }
 }
 

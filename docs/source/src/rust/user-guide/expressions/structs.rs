@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .select([col("Theatre").value_counts(true, true, "count", false)])
-        .unnest(by_name(["Theatre"], true), None)
+        .unnest(by_name(["Theatre"], true, false), None)
         .collect()?;
     println!("{result}");
     // --8<-- [end:struct_unnest]

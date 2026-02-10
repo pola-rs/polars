@@ -205,15 +205,31 @@ mod tests {
         assert_eq!(
             Slice::Negative {
                 offset_from_end: 3,
-                len: 1
+                len: 2
             }
             .restrict_to_bounds(4),
-            Slice::Positive { offset: 1, len: 1 },
+            Slice::Positive { offset: 1, len: 2 },
         );
         assert_eq!(
             Slice::Negative {
                 offset_from_end: 3,
-                len: 1
+                len: 2
+            }
+            .restrict_to_bounds(3),
+            Slice::Positive { offset: 0, len: 2 },
+        );
+        assert_eq!(
+            Slice::Negative {
+                offset_from_end: 3,
+                len: 2
+            }
+            .restrict_to_bounds(2),
+            Slice::Positive { offset: 0, len: 1 },
+        );
+        assert_eq!(
+            Slice::Negative {
+                offset_from_end: 3,
+                len: 2
             }
             .restrict_to_bounds(1),
             Slice::Positive { offset: 0, len: 0 },

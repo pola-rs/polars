@@ -1,5 +1,7 @@
+import datetime as dt
+import io
 import itertools
-from io import BytesIO
+import typing
 
 import pytest
 
@@ -417,7 +419,7 @@ def test_slice_pushdown_within_concat_24734() -> None:
 
 
 def test_is_between_pushdown_25499() -> None:
-    f = BytesIO()
+    f = io.BytesIO()
     pl.LazyFrame(
         {"a": [0, 1, 2, 3, 4]}, schema_overrides={"a": pl.UInt32}
     ).sink_parquet(f)
@@ -459,3 +461,130 @@ def test_slice_pushdown_expr_25473() -> None:
 
     with pytest.raises(pl.exceptions.ShapeError, match=r"lengths.*5 != 2"):
         q.collect()
+
+
+def test_lazy_groupby_maintain_order_after_asof_join_25973() -> None:
+    # Small target times: 00:00, 00:10, 00:20, 00:30
+    targettime = (
+        pl.DataFrame(
+            {
+                "targettime": pl.time_range(
+                    dt.time(0, 0),
+                    dt.time(0, 30),
+                    interval="10m",
+                    closed="both",
+                    eager=True,
+                )
+            }
+        )
+        .with_columns(
+            targettime=pl.lit(dt.date(2026, 1, 1)).dt.combine(pl.col("targettime")),
+            grp=pl.lit(1),
+        )
+        .lazy()
+    )
+
+    # Small input times: every second from 00:00 to 00:30
+    df = (
+        pl.DataFrame(
+            {
+                "time": pl.time_range(
+                    dt.time(0, 0),
+                    dt.time(0, 30),
+                    interval="1s",
+                    closed="both",
+                    eager=True,
+                )
+            }
+        )
+        .with_row_index("value")
+        .with_columns(
+            time=pl.lit(dt.date(2026, 1, 1)).dt.combine(pl.col("time")),
+            grp=pl.lit(1),
+        )
+        .lazy()
+    )
+
+    # This used to produce out-of-order results.
+    # The optimizer previously cleared maintain_order.
+    q = (
+        df.join_asof(
+            targettime,
+            left_on="time",
+            right_on="targettime",
+            strategy="forward",
+        )
+        .drop_nulls("targettime")
+        .group_by("targettime", maintain_order=True)
+        .agg(pl.col("value").last())
+    )
+
+    # Verify optimizer preserves maintain_order on UNIQUE
+    plan = q.explain()
+    assert "AGGREGATE[maintain_order: true" in plan
+
+    result = q.collect()
+
+    idx_dtype = pl.get_index_type()
+
+    expected = pl.DataFrame(
+        {
+            "targettime": [
+                dt.datetime(2026, 1, 1, 0, 0),
+                dt.datetime(2026, 1, 1, 0, 10),
+                dt.datetime(2026, 1, 1, 0, 20),
+                dt.datetime(2026, 1, 1, 0, 30),
+            ],
+            "value": pl.Series("value", [0, 600, 1200, 1800], dtype=idx_dtype),
+        }
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_fast_count_alias_18581() -> None:
+    f = io.BytesIO()
+    f.write(b"a,b,c\n1,2,3\n4,5,6")
+    f.flush()
+    f.seek(0)
+
+    df = pl.scan_csv(f).select(pl.len().alias("weird_name")).collect()
+
+    # Just check the value, let assert_frame_equal handle dtype matching
+    expected = pl.DataFrame(
+        {"weird_name": [2]}, schema={"weird_name": pl.get_index_type()}
+    )
+    assert_frame_equal(expected, df)
+
+
+def test_flatten_alias() -> None:
+    assert (
+        """len().alias("bar")"""
+        in pl.LazyFrame({"a": [1, 2]})
+        .select(pl.len().alias("foo").alias("bar"))
+        .explain()
+    )
+
+
+def test_concat_str_sortedness_26466() -> None:
+    df = pl.DataFrame({"x": ["", "a", "b"], "y": [1, 2, 3]})
+    lf = df.lazy().set_sorted("x")
+
+    dot = (
+        lf.with_columns(x=pl.concat_str("x"))
+        .group_by("x")
+        .agg(pl.col.y.sum())
+        .show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    )
+
+    assert "sorted-group-by" in typing.cast("str", dot)
+
+    for e in [pl.concat_str("x", pl.lit("c")), pl.concat_str("x", ignore_nulls=True)]:
+        dot = (
+            lf.with_columns(x=e)
+            .group_by("x")
+            .agg(pl.col.y.sum())
+            .show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+        )
+
+        assert "sorted-group-by" not in typing.cast("str", dot)

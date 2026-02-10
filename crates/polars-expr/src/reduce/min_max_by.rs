@@ -3,10 +3,10 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 
 use num_traits::Bounded;
-use polars_core::with_match_physical_integer_polars_type;
-use polars_ops::series::arg_min_max::{
+use polars_core::chunked_array::arg_min_max::{
     arg_max_binary, arg_max_bool, arg_max_numeric, arg_min_binary, arg_min_bool, arg_min_numeric,
 };
+use polars_core::with_match_physical_integer_polars_type;
 use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
@@ -431,7 +431,7 @@ impl<T: PolarsCategoricalType> SelectReducer for CatMinSelector<T> {
     }
 
     fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
-        use polars_ops::series::arg_min_max::arg_min_opt_iter;
+        use polars_core::chunked_array::arg_min_max::arg_min_opt_iter;
         let arg_min = arg_min_opt_iter(ca.iter().map(|cat| self.0.cat_to_str(cat?.as_cat())));
         arg_min.filter(|idx| {
             let val = unsafe { ca.value_unchecked(*idx) };
@@ -489,7 +489,7 @@ impl<T: PolarsCategoricalType> SelectReducer for CatMaxSelector<T> {
     }
 
     fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
-        use polars_ops::series::arg_min_max::arg_max_opt_iter;
+        use polars_core::chunked_array::arg_min_max::arg_max_opt_iter;
         let arg_max = arg_max_opt_iter(ca.iter().map(|cat| self.0.cat_to_str(cat?.as_cat())));
         arg_max.filter(|idx| {
             let val = unsafe { ca.value_unchecked(*idx) };

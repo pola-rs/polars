@@ -100,6 +100,11 @@ pub enum StringFunction {
     #[cfg(feature = "temporal")]
     Strptime(DataTypeExpr, StrptimeOptions),
     Split(bool),
+    #[cfg(feature = "regex")]
+    SplitRegex {
+        inclusive: bool,
+        strict: bool,
+    },
     #[cfg(feature = "dtype-decimal")]
     ToDecimal {
         scale: usize,
@@ -206,6 +211,14 @@ impl Display for StringFunction {
                     "split_inclusive"
                 } else {
                     "split"
+                }
+            },
+            #[cfg(feature = "regex")]
+            SplitRegex { inclusive, .. } => {
+                if *inclusive {
+                    "split_regex_inclusive"
+                } else {
+                    "split_regex"
                 }
             },
             #[cfg(feature = "nightly")]

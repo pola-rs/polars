@@ -3,7 +3,7 @@ use std::ops::{BitOr, BitOrAssign};
 use polars_utils::arena::Arena;
 
 use crate::dsl::EvalVariant;
-use crate::plans::{AExpr, IRAggExpr};
+use crate::plans::{AExpr, IRAggExpr, IRFunctionExpr};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColumnOrderObserved;
@@ -107,26 +107,32 @@ pub fn resolve_observable_orders(
     aexpr: &AExpr,
     expr_arena: &Arena<AExpr>,
 ) -> Result<ObservableOrders, ColumnOrderObserved> {
-    ObservableOrdersResolver::new(ObservableOrders::Column, expr_arena)
+    ObservableOrdersResolver::new(ObservableOrders::Column, expr_arena, None)
         .resolve_observable_orders(aexpr)
 }
 
 pub(super) struct ObservableOrdersResolver<'a> {
     column_ordering: ObservableOrders,
     expr_arena: &'a Arena<AExpr>,
+    structfield_ordering: Option<ObservableOrders>,
 }
 
 impl<'a> ObservableOrdersResolver<'a> {
-    pub(super) fn new(column_ordering: ObservableOrders, expr_arena: &'a Arena<AExpr>) -> Self {
+    pub(super) fn new(
+        column_ordering: ObservableOrders,
+        expr_arena: &'a Arena<AExpr>,
+        structfield_ordering: Option<ObservableOrders>,
+    ) -> Self {
         Self {
             column_ordering,
             expr_arena,
+            structfield_ordering,
         }
     }
 
     #[recursive::recursive]
     pub(super) fn resolve_observable_orders(
-        &self,
+        &mut self,
         aexpr: &AExpr,
     ) -> Result<ObservableOrders, ColumnOrderObserved> {
         macro_rules! rec {
@@ -153,6 +159,13 @@ impl<'a> ObservableOrdersResolver<'a> {
             AExpr::Explode { expr, .. } => rec!(*expr) | O::Independent,
 
             AExpr::Column(_) => self.column_ordering,
+            #[cfg(feature = "dtype-struct")]
+            AExpr::StructField(_) => {
+                let Some(ordering) = self.structfield_ordering else {
+                    unreachable!()
+                };
+                ordering
+            },
             AExpr::Literal(lv) if lv.is_scalar() => O::None,
             AExpr::Literal(_) => O::Independent,
 
@@ -198,11 +211,15 @@ impl<'a> ObservableOrdersResolver<'a> {
                 }
             },
             // Fow now only non-observing aggregations
-            AExpr::AnonymousStreamingAgg {
+            AExpr::AnonymousAgg {
                 input: _,
                 fmt_str: _,
                 function: _,
-            } => O::None,
+            } => {
+                // TODO: Derive this information from the `AnonymousAgg` or re-think named functions
+                // and external Aggs in general.
+                O::None
+            },
             AExpr::Agg(agg) => match agg {
                 // Input order agnostic aggregations.
                 IRAggExpr::Min { input: node, .. }
@@ -217,12 +234,6 @@ impl<'a> ObservableOrdersResolver<'a> {
                 | IRAggExpr::Item { input: node, .. } => {
                     // Input order is disregarded, but must not observe order.
                     _ = rec!(*node);
-                    O::None
-                },
-                IRAggExpr::MinBy { input, by } | IRAggExpr::MaxBy { input, by } => {
-                    // Input and 'by' order is disregarded, but must not observe order.
-                    _ = rec!(*input);
-                    _ = rec!(*by);
                     O::None
                 },
                 IRAggExpr::Quantile { expr, quantile, .. } => {
@@ -253,6 +264,17 @@ impl<'a> ObservableOrdersResolver<'a> {
 
                     O::Independent
                 },
+            },
+
+            AExpr::Function {
+                input,
+                function: IRFunctionExpr::MinBy | IRFunctionExpr::MaxBy,
+                ..
+            } => {
+                // Input and 'by' order is disregarded, but must not observe order.
+                _ = rec!(input[0].node());
+                _ = rec!(input[1].node());
+                O::None
             },
 
             AExpr::Gather {
@@ -315,6 +337,15 @@ impl<'a> ObservableOrdersResolver<'a> {
                 },
             },
 
+            #[cfg(feature = "dtype-struct")]
+            AExpr::StructEval { expr, evaluation } => {
+                let mut zipped = rec!(*expr);
+                self.structfield_ordering = Some(zipped);
+                for e in evaluation {
+                    zipped = zipped.zip_with(rec!(e.node()))?;
+                }
+                zipped
+            },
             #[cfg(feature = "dynamic_group_by")]
             AExpr::Rolling {
                 function,

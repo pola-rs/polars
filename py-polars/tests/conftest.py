@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 import pytest
 
 import polars as pl
-from polars.io.partition import _SinkDirectory
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -61,10 +60,12 @@ def _patched_cloud(
 
             return prev_collect(
                 with_timeout(
-                    lambda: lf.remote(plan_type="plain")
-                    .distributed()
-                    .execute()
-                    .await_result()
+                    lambda: (
+                        lf.remote(plan_type="plain")
+                        .distributed()
+                        .execute()
+                        .await_result()
+                    )
                 ).lazy()
             )
 
@@ -163,10 +164,10 @@ def _patched_cloud(
 
             def _(lf: pl.LazyFrame, *args: Any, **kwargs: Any) -> pl.LazyFrame | None:
                 # The cloud client sinks to a "placeholder-path".
-                if args[0] == "placeholder-path" or isinstance(args[0], _SinkDirectory):
+                if args[0] == "placeholder-path" or isinstance(args[0], pl.PartitionBy):
                     prev_lazy = kwargs.get("lazy", False)
                     kwargs["lazy"] = True
-                    lf = prev_sink(lf, *args, **kwargs)
+                    lf = prev_sink(lf, *args, **kwargs)  # type: ignore[assignment]
 
                     class SimpleLazyExe:
                         def __init__(self, query: pl.LazyFrame) -> None:

@@ -28,7 +28,7 @@ use polars_core::prelude::*;
 use polars_io::RowIndex;
 use polars_mem_engine::scan_predicate::functions::apply_scan_predicate_to_scan_ir;
 use polars_mem_engine::{Executor, create_multiple_physical_plans, create_physical_plan};
-use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
+use polars_ops::frame::{JoinBuildSide, JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
@@ -103,7 +103,7 @@ impl LazyFrame {
         self.opt_state
     }
 
-    fn from_logical_plan(logical_plan: DslPlan, opt_state: OptFlags) -> Self {
+    pub fn from_logical_plan(logical_plan: DslPlan, opt_state: OptFlags) -> Self {
         LazyFrame {
             logical_plan,
             opt_state,
@@ -524,20 +524,9 @@ impl LazyFrame {
         expr_arena: &mut Arena<AExpr>,
         scratch: &mut Vec<Node>,
     ) -> PolarsResult<Node> {
-        #[allow(unused_mut)]
-        let mut opt_state = self.opt_state;
-        let new_streaming = self.opt_state.contains(OptFlags::NEW_STREAMING);
-
-        #[cfg(feature = "cse")]
-        if new_streaming {
-            // The new streaming engine can't deal with the way the common
-            // subexpression elimination adds length-incorrect with_columns.
-            opt_state &= !OptFlags::COMM_SUBEXPR_ELIM;
-        }
-
         let lp_top = optimize(
             self.logical_plan,
-            opt_state,
+            self.opt_state,
             lp_arena,
             expr_arena,
             scratch,
@@ -627,14 +616,28 @@ impl LazyFrame {
     ///
     /// The query is optimized prior to execution.
     pub fn collect_with_engine(mut self, mut engine: Engine) -> PolarsResult<DataFrame> {
-        let payload = if let DslPlan::Sink { payload, .. } = &self.logical_plan {
-            payload.clone()
-        } else {
-            self.logical_plan = DslPlan::Sink {
-                input: Arc::new(self.logical_plan),
-                payload: SinkType::Memory,
-            };
-            SinkType::Memory
+        let payload = match &self.logical_plan {
+            DslPlan::Sink { payload, .. } => payload.clone(),
+            DslPlan::SinkMultiple { .. } => {
+                polars_ensure!(matches!(engine, Engine::Auto | Engine::Streaming), InvalidOperation: "lazy multisinks only supported on streaming engine");
+                feature_gated!("new_streaming", {
+                    let sink_multiple = self.with_new_streaming(true);
+                    let mut alp_plan = sink_multiple.to_alp_optimized()?;
+                    let result = polars_stream::run_query(
+                        alp_plan.lp_top,
+                        &mut alp_plan.lp_arena,
+                        &mut alp_plan.expr_arena,
+                    );
+                    return result.map(|_| DataFrame::empty());
+                })
+            },
+            _ => {
+                self.logical_plan = DslPlan::Sink {
+                    input: Arc::new(self.logical_plan),
+                    payload: SinkType::Memory,
+                };
+                SinkType::Memory
+            },
         };
 
         // Default engine for collect is InMemory, sink_* is Streaming
@@ -977,7 +980,7 @@ impl LazyFrame {
     pub fn sink(
         mut self,
         sink_type: SinkDestination,
-        file_format: impl Into<Arc<FileType>>,
+        file_format: FileWriteFormat,
         unified_sink_args: UnifiedSinkArgs,
     ) -> PolarsResult<Self> {
         polars_ensure!(
@@ -990,22 +993,20 @@ impl LazyFrame {
             payload: match sink_type {
                 SinkDestination::File { target } => SinkType::File(FileSinkOptions {
                     target,
-                    file_format: file_format.into(),
+                    file_format,
                     unified_sink_args,
                 }),
                 SinkDestination::Partitioned {
                     base_path,
                     file_path_provider,
                     partition_strategy,
-                    finish_callback,
                     max_rows_per_file,
                     approximate_bytes_per_file,
                 } => SinkType::Partitioned(PartitionedSinkOptions {
                     base_path,
                     file_path_provider,
                     partition_strategy,
-                    finish_callback,
-                    file_format: file_format.into(),
+                    file_format,
                     unified_sink_args,
                     max_rows_per_file,
                     approximate_bytes_per_file,
@@ -1472,6 +1473,7 @@ impl LazyFrame {
             nulls_equal,
             coalesce,
             maintain_order,
+            build_side,
         } = args;
 
         if slice.is_some() {
@@ -1487,7 +1489,8 @@ impl LazyFrame {
             .validate(validation)
             .join_nulls(nulls_equal)
             .coalesce(coalesce)
-            .maintain_order(maintain_order);
+            .maintain_order(maintain_order)
+            .build_side(build_side);
 
         if let Some(suffix) = suffix {
             builder = builder.suffix(suffix);
@@ -2146,7 +2149,7 @@ impl LazyGroupBy {
             .collect::<Vec<_>>();
 
         self.agg([all().as_expr().head(n)]).explode_impl(
-            all() - by_name(keys.iter().cloned(), false),
+            all() - by_name(keys.iter().cloned(), false, false),
             ExplodeOptions {
                 empty_as_null: true,
                 keep_nulls: true,
@@ -2164,7 +2167,7 @@ impl LazyGroupBy {
             .collect::<Vec<_>>();
 
         self.agg([all().as_expr().tail(n)]).explode_impl(
-            all() - by_name(keys.iter().cloned(), false),
+            all() - by_name(keys.iter().cloned(), false, false),
             ExplodeOptions {
                 empty_as_null: true,
                 keep_nulls: true,
@@ -2219,6 +2222,7 @@ pub struct JoinBuilder {
     nulls_equal: bool,
     coalesce: JoinCoalesce,
     maintain_order: MaintainOrderJoin,
+    build_side: Option<JoinBuildSide>,
 }
 impl JoinBuilder {
     /// Create the `JoinBuilder` with the provided `LazyFrame` as the left table.
@@ -2236,6 +2240,7 @@ impl JoinBuilder {
             nulls_equal: false,
             coalesce: Default::default(),
             maintain_order: Default::default(),
+            build_side: None,
         }
     }
 
@@ -2322,6 +2327,12 @@ impl JoinBuilder {
         self
     }
 
+    /// Whether to prefer a specific build side.
+    pub fn build_side(mut self, build_side: Option<JoinBuildSide>) -> Self {
+        self.build_side = build_side;
+        self
+    }
+
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
         let opt_state = self.lf.opt_state;
@@ -2335,6 +2346,7 @@ impl JoinBuilder {
             nulls_equal: self.nulls_equal,
             coalesce: self.coalesce,
             maintain_order: self.maintain_order,
+            build_side: self.build_side,
         };
 
         let lp = self
@@ -2426,6 +2438,7 @@ impl JoinBuilder {
             nulls_equal: self.nulls_equal,
             coalesce: self.coalesce,
             maintain_order: self.maintain_order,
+            build_side: self.build_side,
         };
         let options = JoinOptions {
             allow_parallel: self.allow_parallel,

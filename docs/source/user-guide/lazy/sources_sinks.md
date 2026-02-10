@@ -21,9 +21,9 @@ a single parquet file, before we generate a new file
 ```python
 lf = scan_csv("my_dataset/*.csv").filter(pl.all().is_not_null())
 lf.sink_parquet(
-    pl.PartitionMaxSize(
-        "my_table_{part}.parquet"
-        max_size=512_000
+    pl.PartitionBy(
+        "output_folder/"
+        max_rows_per_file=512_000
     )
 )
 ```
@@ -31,10 +31,11 @@ lf.sink_parquet(
 This will create the following files on disk:
 
 ```text
-my_table_0.parquet
-my_table_1.parquet
+output_folder/00000000.parquet
+output_folder/00000001.parquet
 ...
-my_table_n.parquet
+output_folder/0000000f.parquet
+output_folder/00000010.parquet
 ```
 
 ## Multiplexing sinks
@@ -44,7 +45,7 @@ snippet below, we take a `LazyFrame` and sink it into 2 sinks at the same time.
 
 ```python
 # Some expensive computation
-lf: LazyFrame 
+lf: LazyFrame
 
 q1 = lf.sink_parquet(.., lazy=True)
 q2 = lf.sink_ipc(.., lazy=True)

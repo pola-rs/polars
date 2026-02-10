@@ -750,12 +750,7 @@ impl Default for GroupPositions {
 impl GroupPositions {
     pub fn slice(&self, offset: i64, len: usize) -> Self {
         let offset = self.offset + offset;
-        slice_groups(
-            self.original.clone(),
-            offset,
-            // invariant that len should be in bounds, so truncate if not
-            if len > self.len { self.len } else { len },
-        )
+        slice_groups(self.original.clone(), offset, len)
     }
 
     pub fn sort(&mut self) {
@@ -805,6 +800,13 @@ impl GroupPositions {
                 monotonic: _,
             } => Some(groups),
         }
+    }
+
+    /// Compare groups based on inner pointer.
+    pub fn is_same(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.original, &other.original)
+            && self.offset == other.offset
+            && self.len == other.len
     }
 }
 

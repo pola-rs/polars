@@ -98,7 +98,7 @@ impl<'py> IntoPyObject<'py> for Wrap<Operator> {
             Operator::Plus => PyOperator::Plus,
             Operator::Minus => PyOperator::Minus,
             Operator::Multiply => PyOperator::Multiply,
-            Operator::Divide => PyOperator::Divide,
+            Operator::RustDivide => PyOperator::Divide,
             Operator::TrueDivide => PyOperator::TrueDivide,
             Operator::FloorDivide => PyOperator::FloorDivide,
             Operator::Modulus => PyOperator::Modulus,
@@ -168,6 +168,7 @@ pub enum PyStringFunction {
     SplitN,
     Strptime,
     Split,
+    SplitRegex,
     ToDecimal,
     Titlecase,
     Uppercase,
@@ -561,6 +562,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
             name: name.into_py_any(py)?,
         }
         .into_py_any(py),
+        AExpr::StructField(_) => Err(PyNotImplementedError::new_err("field")),
         AExpr::Literal(lit) => {
             use polars_core::prelude::AnyValue;
             let dtype: Py<PyAny> = Wrap(lit.get_datatype()).into_py_any(py)?;
@@ -665,16 +667,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 arguments: vec![input.0],
                 options: propagate_nans.into_py_any(py)?,
             },
-            IRAggExpr::MinBy { input, by } => Agg {
-                name: "min_by".into_py_any(py)?,
-                arguments: vec![input.0, by.0],
-                options: py.None(),
-            },
-            IRAggExpr::MaxBy { input, by } => Agg {
-                name: "max_by".into_py_any(py)?,
-                arguments: vec![input.0, by.0],
-                options: py.None(),
-            },
             IRAggExpr::Median(n) => Agg {
                 name: "median".into_py_any(py)?,
                 arguments: vec![n.0],
@@ -773,7 +765,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
         }
         .into_py_any(py),
         AExpr::AnonymousFunction { .. } => Err(PyNotImplementedError::new_err("anonymousfunction")),
-        AExpr::AnonymousStreamingAgg { .. } => {
+        AExpr::AnonymousAgg { .. } => {
             Err(PyNotImplementedError::new_err("anonymous_streaming_agg"))
         },
         AExpr::Function {
@@ -927,6 +919,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRStringFunction::Split(inclusive) => {
                         (PyStringFunction::Split, inclusive).into_py_any(py)
                     },
+                    IRStringFunction::SplitRegex { inclusive, strict } => {
+                        (PyStringFunction::SplitRegex, inclusive, strict).into_py_any(py)
+                    },
                     IRStringFunction::ToDecimal { scale } => {
                         (PyStringFunction::ToDecimal, scale).into_py_any(py)
                     },
@@ -976,9 +971,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     #[cfg(feature = "json")]
                     IRStructFunction::JsonEncode => (PyStructFunction::JsonEncode,).into_py_any(py),
-                    IRStructFunction::WithFields => {
-                        return Err(PyNotImplementedError::new_err("with_fields"));
-                    },
                     IRStructFunction::MapFieldNames(_) => {
                         return Err(PyNotImplementedError::new_err("map_field_names"));
                     },
@@ -1250,6 +1242,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::ArgUnique => ("arg_unique",).into_py_any(py),
                 IRFunctionExpr::ArgMin => ("arg_min",).into_py_any(py),
                 IRFunctionExpr::ArgMax => ("arg_max",).into_py_any(py),
+                IRFunctionExpr::MinBy => ("min_by",).into_py_any(py),
+                IRFunctionExpr::MaxBy => ("max_by",).into_py_any(py),
                 IRFunctionExpr::ArgSort {
                     descending,
                     nulls_last,
@@ -1479,5 +1473,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
         .into_py_any(py),
         AExpr::Len => Len {}.into_py_any(py),
         AExpr::Eval { .. } => Err(PyNotImplementedError::new_err("list.eval")),
+        AExpr::StructEval { .. } => Err(PyNotImplementedError::new_err("struct.with_fields")),
     }
 }

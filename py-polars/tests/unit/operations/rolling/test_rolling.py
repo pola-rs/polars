@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import random
-import sys
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -74,7 +73,6 @@ def test_rolling_kernels_and_rolling(
         pl.col("values")
         .rolling_quantile_by("dt", period, quantile=0.2, closed=closed)
         .alias("quantile"),
-        pl.col("values").rolling_rank_by("dt", period, closed=closed).alias("rank"),
     )
     out2 = (
         example_df.set_sorted("dt")
@@ -86,11 +84,41 @@ def test_rolling_kernels_and_rolling(
                 pl.col("values").mean().alias("mean"),
                 pl.col("values").std().alias("std"),
                 pl.col("values").quantile(quantile=0.2).alias("quantile"),
-                pl.col("values").rank().last().alias("rank"),
             ]
         )
     )
     assert_frame_equal(out1, out2)
+
+
+@pytest.mark.parametrize(
+    "period",
+    ["1d", "2d", "3d", timedelta(days=1), timedelta(days=2), timedelta(days=3)],
+)
+@pytest.mark.parametrize("closed", ["right", "both"])
+def test_rolling_rank_kernels_and_rolling(
+    example_df: pl.DataFrame, period: str | timedelta, closed: ClosedInterval
+) -> None:
+    out1 = example_df.set_sorted("dt").select(
+        pl.col("dt"),
+        pl.col("values").rolling_rank_by("dt", period, closed=closed).alias("rank"),
+    )
+    out2 = (
+        example_df.set_sorted("dt")
+        .rolling("dt", period=period, closed=closed)
+        .agg([pl.col("values").rank().last().alias("rank")])
+    )
+    assert_frame_equal(out1, out2)
+
+
+@pytest.mark.parametrize("closed", ["left", "none"])
+def test_rolling_rank_needs_closed_right(
+    example_df: pl.DataFrame, closed: ClosedInterval
+) -> None:
+    pat = r"`rolling_rank_by` window needs to be closed on the right side \(i.e., `closed` must be `right` or `both`\)"
+    with pytest.raises(InvalidOperationError, match=pat):
+        example_df.set_sorted("dt").select(
+            pl.col("values").rolling_rank_by("dt", "2d", closed=closed).alias("rank"),
+        )
 
 
 @pytest.mark.parametrize(
@@ -238,17 +266,17 @@ def test_rolling_kurtosis() -> None:
     )
 
 
-@pytest.mark.parametrize("time_zone", [None, "US/Central"])
+@pytest.mark.parametrize("time_zone", [None, "America/Chicago"])
 @pytest.mark.parametrize(
     ("rolling_fn", "expected_values", "expected_dtype"),
     [
-        ("rolling_mean_by", [None, 1.0, 2.0, 3.0, 4.0, 5.0], pl.Float64),
-        ("rolling_sum_by", [None, 1, 2, 3, 4, 5], pl.Int64),
-        ("rolling_min_by", [None, 1, 2, 3, 4, 5], pl.Int64),
-        ("rolling_max_by", [None, 1, 2, 3, 4, 5], pl.Int64),
+        ("rolling_mean_by", [1.0, 2.0, 3.0, 4.0, 5.0, 6.0], pl.Float64),
+        ("rolling_sum_by", [1, 2, 3, 4, 5, 6], pl.Int64),
+        ("rolling_min_by", [1, 2, 3, 4, 5, 6], pl.Int64),
+        ("rolling_max_by", [1, 2, 3, 4, 5, 6], pl.Int64),
         ("rolling_std_by", [None, None, None, None, None, None], pl.Float64),
         ("rolling_var_by", [None, None, None, None, None, None], pl.Float64),
-        ("rolling_rank_by", [None, 1.0, 1.0, 1.0, 1.0, 1.0], pl.Float64),
+        ("rolling_rank_by", [1.0, 1.0, 1.0, 1.0, 1.0, 1.0], pl.Float64),
     ],
 )
 def test_rolling_crossing_dst(
@@ -263,7 +291,7 @@ def test_rolling_crossing_dst(
     df = pl.DataFrame({"ts": ts, "value": [1, 2, 3, 4, 5, 6]})
 
     result = df.with_columns(
-        getattr(pl.col("value"), rolling_fn)(by="ts", window_size="1d", closed="left")
+        getattr(pl.col("value"), rolling_fn)(by="ts", window_size="1d", closed="right")
     )
 
     expected = pl.DataFrame(
@@ -596,7 +624,6 @@ def test_overlapping_groups_4628() -> None:
     }
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Minor numerical diff")
 def test_rolling_skew_lagging_null_5179() -> None:
     s = pl.Series([None, 3, 4, 1, None, None, None, None, 3, None, 5, 4, 7, 2, 1, None])
     result = s.rolling_skew(3, min_samples=1).fill_nan(-1.0)
@@ -1424,18 +1451,6 @@ def test_rolling_aggs(
     assert_frame_equal(result_from_unsorted, expected)
 
 
-def test_rolling_by_nulls() -> None:
-    df = pl.DataFrame({"a": [1, None], "b": [1, 2]})
-    with pytest.raises(
-        InvalidOperationError, match="not yet supported for series with null values"
-    ):
-        df.select(pl.col("a").rolling_min_by("b", "2i"))
-    with pytest.raises(
-        InvalidOperationError, match="not yet supported for series with null values"
-    ):
-        df.select(pl.col("b").rolling_min_by("a", "2i"))
-
-
 def test_window_size_validation() -> None:
     df = pl.DataFrame({"x": [1.0]})
 
@@ -1948,7 +1963,6 @@ def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
         ("dense", get_index_type()),
     ],
 )
-@pytest.mark.parametrize("center", [False, True])
 @given(
     s=series(
         name="a",
@@ -1963,7 +1977,6 @@ def test_rolling_rank(
     window_size: int,
     method: RankMethod,
     out_dtype: pl.DataType,
-    center: bool,
 ) -> None:
     df = pl.DataFrame({"a": s})
     expected = (
@@ -1975,31 +1988,15 @@ def test_rolling_rank(
             .list.last()
             .cast(out_dtype)
         )
-        .with_columns(
-            a=pl.when(pl.col("index") < window_size - 1)
-            .then(None)
-            .otherwise(pl.col("a"))
-        )
         .drop("index")
     )
-    if center:
-        expected = expected.with_columns(a=pl.col("a").shift(-((window_size - 1) // 2)))
     actual = df.lazy().select(
-        pl.col("a").rolling_rank(window_size=window_size, method=method, center=center)
-    )
-
-    try:
-        assert actual.collect_schema() == actual.collect().schema, (
-            f"expected {actual.collect_schema()}, got {actual.collect().schema}"
+        pl.col("a").rolling_rank(
+            window_size=window_size, method=method, seed=0, min_samples=1
         )
-        assert_frame_equal(actual.collect(), expected)
-        print("PASS", file=sys.stderr)
-    except AssertionError:
-        print("FAIL", file=sys.stderr)
-        print(f"{actual.collect() = }", file=sys.stderr)
-        print(f"{expected = }", file=sys.stderr)
-        print(f"{s = }", file=sys.stderr)
-        raise
+    )
+    assert actual.collect_schema() == actual.collect().schema
+    assert_frame_equal(actual.collect(), expected)
 
 
 @pytest.mark.parametrize("center", [False, True])
@@ -2329,3 +2326,22 @@ def test_rolling_midpoint_25793() -> None:
         pl.col.x.cumulative_eval(pl.element().quantile(0.5, interpolation="midpoint"))
     )
     assert_frame_equal(out, expected)
+
+
+def test_rolling_rank_closed_left_26147() -> None:
+    df = pl.DataFrame(
+        {
+            "date": [datetime(2025, 1, 1), datetime(2025, 1, 1)],
+            "x": [0, 1],
+            "x_flipped": [1, 0],
+        }
+    )
+    actual = df.with_columns(
+        x_ranked=pl.col("x").rolling_rank_by("date", "2d"),
+        x_flipped_ranked=pl.col("x_flipped").rolling_rank_by("date", "2d"),
+    )
+    expected = df.with_columns(
+        x_ranked=pl.Series([1.0, 2.0]),
+        x_flipped_ranked=pl.Series([2.0, 1.0]),
+    )
+    assert_frame_equal(actual, expected)

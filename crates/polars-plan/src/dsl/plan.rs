@@ -22,7 +22,7 @@ const DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 const DSL_SCHEMA_HASH: SchemaHash<'static> = SchemaHash::from_hash_file();
 
-#[derive(Debug)]
+#[derive(Debug, strum_macros::IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DslPlan {

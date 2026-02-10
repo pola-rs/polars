@@ -1867,3 +1867,38 @@ def test_init_from_list_shape_6968() -> None:
     df2 = pl.DataFrame([[None, None], [2, None], [3, None]])
     assert df1.shape == (2, 3)
     assert df2.shape == (2, 3)
+
+
+def test_dataframe_height() -> None:
+    assert pl.DataFrame(height=10).shape == (10, 0)
+    assert pl.DataFrame(pl.DataFrame(height=10)).shape == (10, 0)
+
+    assert_frame_equal(
+        pl.DataFrame({"a": [0, 1, 2]}, height=3), pl.DataFrame({"a": [0, 1, 2]})
+    )
+
+    with pytest.raises(
+        pl.exceptions.ShapeError,
+        match=r"height of data \(3\) does not match specified height \(99\)",
+    ):
+        pl.DataFrame({"a": [0, 1, 2]}, height=99)
+
+    with pytest.raises(
+        pl.exceptions.ShapeError,
+        match=r"height of data \(3\) does not match specified height \(0\)",
+    ):
+        pl.DataFrame({"a": [0, 1, 2]}, height=0)
+
+    with pytest.raises(
+        pl.exceptions.ShapeError,
+        match=r"height of data \(10\) does not match specified height \(5\)",
+    ):
+        pl.DataFrame(pl.DataFrame(height=10), height=5)
+
+    assert_frame_equal(pl.DataFrame(height=10), pl.DataFrame(height=10))
+
+    with pytest.raises(AssertionError):
+        assert_frame_equal(pl.DataFrame(height=5), pl.DataFrame(height=10))
+
+    with pytest.raises(AssertionError):
+        assert_frame_equal(pl.DataFrame(), pl.DataFrame(height=10))

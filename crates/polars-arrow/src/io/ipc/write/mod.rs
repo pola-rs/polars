@@ -1,21 +1,22 @@
 //! APIs to write to Arrow's IPC format.
 pub(crate) mod common;
-mod schema;
+pub mod schema;
 mod serialize;
 mod stream;
 pub(crate) mod writer;
 
+pub use arrow_format::ipc::{Block, KeyValue, KeyValueRef};
 pub use common::{
-    Compression, DictionaryTracker, EncodedData, Record, WriteOptions, commit_encoded_arrays,
-    dictionaries_to_encode, encode_array, encode_dictionary_values, encode_new_dictionaries,
-    encode_record_batch,
+    Compression, DictionaryTracker, EncodedData, EncodedDataBytes, Record, WriteOptions,
+    arrow_ipc_block, commit_encoded_arrays, dictionaries_to_encode, encode_array,
+    encode_dictionary_values, encode_new_dictionaries, encode_record_batch,
 };
 pub use schema::schema_to_bytes;
 pub use serialize::write;
 pub use stream::StreamWriter;
 pub use writer::FileWriter;
 
-pub(crate) mod common_sync;
+pub mod common_sync;
 
 use super::IpcField;
 use crate::datatypes::{ArrowDataType, Field};

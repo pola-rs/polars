@@ -74,12 +74,12 @@ impl PySelector {
     #[staticmethod]
     fn by_dtype(dtypes: Vec<Wrap<DataType>>) -> Self {
         let dtypes = dtypes.into_iter().map(|x| x.0).collect::<Vec<_>>();
-        dsl::dtype_cols(dtypes).as_selector().into()
+        dsl::functions::dtype_cols(dtypes).as_selector().into()
     }
 
     #[staticmethod]
-    fn by_name(names: Vec<String>, strict: bool) -> Self {
-        dsl::by_name(names, strict).into()
+    fn by_name(names: Vec<String>, strict: bool, expand_patterns: bool) -> Self {
+        dsl::functions::by_name(names, strict, expand_patterns).into()
     }
 
     #[staticmethod]
@@ -230,12 +230,12 @@ impl PySelector {
 
     #[staticmethod]
     fn empty() -> Self {
-        dsl::empty().into()
+        dsl::functions::empty().into()
     }
 
     #[staticmethod]
     fn all() -> Self {
-        dsl::all().into()
+        dsl::functions::all().into()
     }
 
     fn hash(&self) -> u64 {

@@ -109,6 +109,11 @@ impl ExprIR {
         }
     }
 
+    pub fn from_column_name(name: PlSmallStr, expr_arena: &mut Arena<AExpr>) -> Self {
+        let node = expr_arena.add(AExpr::Column(name.clone()));
+        ExprIR::new(node, OutputName::ColumnLhs(name))
+    }
+
     pub fn with_dtype(self, dtype: DataType) -> Self {
         let _ = self.output_dtype.set(dtype);
         self
@@ -133,6 +138,11 @@ impl ExprIR {
                 },
                 AExpr::Column(name) => {
                     out.output_name = OutputName::ColumnLhs(name.clone());
+                    break;
+                },
+                #[cfg(feature = "dtype-struct")]
+                AExpr::StructField(name) => {
+                    out.output_name = OutputName::Field(name.clone());
                     break;
                 },
                 AExpr::Literal(lv) => {
@@ -195,7 +205,7 @@ impl ExprIR {
         }
     }
 
-    pub(crate) fn set_node(&mut self, node: Node) {
+    pub fn set_node(&mut self, node: Node) {
         self.node = node;
         self.output_dtype = OnceLock::new();
     }
@@ -320,8 +330,7 @@ impl From<&ExprIR> for Node {
 }
 
 pub(crate) fn name_to_expr_ir(name: PlSmallStr, expr_arena: &mut Arena<AExpr>) -> ExprIR {
-    let node = expr_arena.add(AExpr::Column(name.clone()));
-    ExprIR::new(node, OutputName::ColumnLhs(name))
+    ExprIR::from_column_name(name, expr_arena)
 }
 
 pub(crate) fn names_to_expr_irs<I, S>(names: I, expr_arena: &mut Arena<AExpr>) -> Vec<ExprIR>

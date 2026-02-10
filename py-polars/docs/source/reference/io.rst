@@ -56,6 +56,7 @@ Delta Lake
    read_delta
    scan_delta
    DataFrame.write_delta
+   LazyFrame.sink_delta
 
 Excel / ODS
 ~~~~~~~~~~~
@@ -99,6 +100,14 @@ JSON
    DataFrame.write_ndjson
    LazyFrame.sink_ndjson
 
+Lines
+~~~~~
+.. autosummary::
+   :toctree: api/
+
+   read_lines
+   scan_lines
+
 
 Partition
 ~~~~~~~~~
@@ -107,18 +116,14 @@ Sink to disk with differing partitioning strategies.
 .. autosummary::
    :toctree: api/
 
-   PartitionByKey
-   PartitionMaxSize
-   PartitionParted
+   PartitionBy
 
 .. currentmodule:: polars.io.partition
 
 .. autosummary::
    :toctree: api/
 
-   KeyedPartition
-   BasePartitionContext
-   KeyedPartitionContext
+   FileProviderArgs
 
 .. currentmodule:: polars
 
@@ -133,15 +138,6 @@ Parquet
    scan_parquet
    DataFrame.write_parquet
    LazyFrame.sink_parquet
-
-.. currentmodule:: polars.io.parquet
-
-.. autosummary::
-   :toctree: api/
-
-   ParquetFieldOverwrites
-
-.. currentmodule:: polars
 
 PyArrow Datasets
 ~~~~~~~~~~~~~~~~

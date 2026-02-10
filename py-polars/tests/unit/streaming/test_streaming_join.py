@@ -1,19 +1,28 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import TYPE_CHECKING, Literal
+import typing
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Any, Literal
 
+import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
 import pytest
+from hypothesis import given, settings
 
 import polars as pl
+from polars._typing import AsofJoinStrategy
+from polars.datatypes.group import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric.strategies.core import dataframes
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import JoinStrategy
+    from polars._typing import AsofJoinStrategy, JoinStrategy, MaintainOrderJoin
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -401,3 +410,251 @@ def test_cross_join_with_literal_column_25544() -> None:
 
     assert_frame_equal(streaming_result, in_memory_result)
     assert streaming_result.item() == 0
+
+
+@pytest.mark.parametrize("on", [["key"], ["key", "key_ext"]])
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("coalesce", [None, True, False])
+@pytest.mark.parametrize("maintain_order", ["none", "left_right", "right_left"])
+@given(data=st.data())
+@settings(max_examples=10)
+def test_merge_join(
+    on: list[str],
+    how: JoinStrategy,
+    descending: bool,
+    nulls_last: bool,
+    nulls_equal: bool,
+    coalesce: bool | None,
+    maintain_order: MaintainOrderJoin,
+    data: st.DataObject,
+) -> None:
+    check_row_order = maintain_order in {"left_right", "right_left"}
+
+    df_st = dataframes(min_cols=len(on), max_cols=len(on), allowed_dtypes=[pl.Int16])
+    left_df = data.draw(df_st)
+    right_df = data.draw(df_st)
+
+    left = left_df.rename(dict(zip(left_df.columns, ["key", "key_ext"], strict=False)))
+    right = right_df.rename(
+        dict(zip(right_df.columns, ["key", "key_ext"], strict=False))
+    )
+
+    def df_sorted(df: pl.DataFrame) -> pl.LazyFrame:
+        return (
+            df.lazy()
+            .sort(
+                *on,
+                descending=descending,
+                nulls_last=nulls_last,
+                maintain_order=True,
+                multithreaded=False,
+            )
+            .set_sorted(on, descending=descending, nulls_last=nulls_last)
+        )
+
+    q = df_sorted(left).join(
+        df_sorted(right),
+        on=on,
+        how=how,
+        nulls_equal=nulls_equal,
+        coalesce=coalesce,
+        maintain_order=maintain_order,
+    )
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    expected = q.collect(engine="in-memory")
+    actual = q.collect(engine="streaming")
+
+    assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
+    assert_frame_equal(actual, expected, check_row_order=check_row_order)
+
+
+@pytest.mark.parametrize(
+    ("keys", "dtype"),
+    [
+        ([False, True, False], pl.Boolean),
+        ([1, 3, 2], pl.Int8),
+        ([1, 3, 2], pl.Int16),
+        ([1, 3, 2], pl.Int32),
+        ([1, 3, 2], pl.Int64),
+        ([1, 3, 2], pl.Int128),
+        ([1, 3, 2], pl.UInt8),
+        ([1, 3, 2], pl.UInt16),
+        ([1, 3, 2], pl.UInt32),
+        ([1, 3, 2], pl.UInt64),
+        ([1, 3, 2], pl.UInt128),
+        ([1.0, 3.0, 2.0], pl.Float16),
+        ([1.0, 3.0, 2.0], pl.Float32),
+        ([1.0, 3.0, 2.0], pl.Float64),
+        (["a", "b", "c"], pl.String),
+        ([b"a", b"b", b"c"], pl.Binary),
+        ([datetime(2024, 1, x) for x in [1, 3, 2]], pl.Date),
+        ([datetime(2024, 1, x, 12, 0) for x in [1, 3, 2]], pl.Time),
+        ([datetime(2024, 1, x, 12, 0) for x in [1, 3, 2]], pl.Datetime),
+        ([timedelta(days=x) for x in [1, 3, 2]], pl.Duration),
+        ([1, 3, 2], pl.Decimal),
+        ([pl.Null, pl.Null, pl.Null], pl.Null),
+        (["a", "c", "b"], pl.Enum(["a", "b", "c"])),
+        (["a", "c", "b"], pl.Categorical),
+    ],
+)
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_join_dtypes(
+    keys: list[Any], dtype: pl.DataType, how: JoinStrategy, nulls_equal: bool
+) -> None:
+    df_left = pl.DataFrame({"key": pl.Series("key", keys[:2], dtype=dtype)})
+    df_right = pl.DataFrame({"key": pl.Series("key", keys[2:], dtype=dtype)})
+
+    def df_sorted(df: pl.DataFrame) -> pl.LazyFrame:
+        return (
+            df.lazy()
+            .sort(
+                "key",
+                maintain_order=True,
+                multithreaded=False,
+            )
+            .set_sorted("key")
+        )
+
+    q_hashjoin = df_left.lazy().join(
+        df_right.lazy(),
+        on="key",
+        how=how,
+        nulls_equal=nulls_equal,
+        maintain_order="none",
+    )
+    dot = q_hashjoin.show_graph(
+        engine="streaming", plan_stage="physical", raw_output=True
+    )
+    expected = q_hashjoin.collect(engine="in-memory")
+    actual = q_hashjoin.collect(engine="streaming")
+    assert "equi-join" in typing.cast("str", dot), "hash-join not used in plan"
+    assert_frame_equal(actual, expected, check_row_order=False)
+
+    q_mergejoin = df_sorted(df_left).join(
+        df_sorted(df_right),
+        on="key",
+        how=how,
+        nulls_equal=nulls_equal,
+        maintain_order="none",
+    )
+    dot = q_mergejoin.show_graph(
+        engine="streaming", plan_stage="physical", raw_output=True
+    )
+    expected = q_mergejoin.collect(engine="in-memory")
+    actual = q_mergejoin.collect(engine="streaming")
+    assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
+    assert_frame_equal(actual, expected, check_row_order=False)
+
+
+def test_merge_join_exprs() -> None:
+    left = pl.LazyFrame(
+        {
+            "key": ["", "a", "c"],
+            "key_ext": [1, 2, 3],
+            "value": [1, 2, 3],
+        }
+    ).set_sorted("key", "key_ext")
+    right = pl.LazyFrame(
+        {
+            "key": ["", "a", "b"],
+            "key_ext": [3, 2, 3],
+            "value": [4, 5, 6],
+        }
+    ).set_sorted("key", "key_ext")
+
+    q = left.join(
+        right,
+        left_on="key",
+        right_on=pl.concat_str(pl.col("key"), ignore_nulls=False),
+        how="full",
+        maintain_order="none",
+    )
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@pytest.mark.parametrize("left_descending", [False, True])
+@pytest.mark.parametrize("right_descending", [False, True])
+@pytest.mark.parametrize("left_nulls_last", [False, True])
+@pytest.mark.parametrize("right_nulls_last", [False, True])
+def test_merge_join_applicable(
+    left_descending: bool,
+    right_descending: bool,
+    left_nulls_last: bool,
+    right_nulls_last: bool,
+) -> None:
+    left = pl.LazyFrame({"key": [1]}).set_sorted(
+        "key", descending=left_descending, nulls_last=left_nulls_last
+    )
+    right = pl.LazyFrame({"key": [2]}).set_sorted(
+        "key", descending=right_descending, nulls_last=right_nulls_last
+    )
+    q = left.join(right, on="key", how="full", maintain_order="left_right")
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    if (left_descending, left_nulls_last) == (right_descending, right_nulls_last):
+        assert "merge-join" in typing.cast("str", dot)
+    else:
+        assert "merge-join" not in typing.cast("str", dot)
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+@pytest.mark.parametrize("allow_exact_matches", [False, True])
+@pytest.mark.parametrize("coalesce", [False, True])
+@pytest.mark.parametrize(
+    "dtypes",
+    [
+        FLOAT_DTYPES,
+        INTEGER_DTYPES,
+        {pl.String, pl.Binary},
+        {pl.Date},
+        {
+            pl.Datetime("ms"),
+            pl.Datetime("us"),
+            pl.Datetime("ns"),
+        },
+        {
+            pl.Datetime("ms", time_zone="Europe/Amsterdam"),
+            pl.Datetime("us", time_zone="Europe/Amsterdam"),
+            pl.Datetime("ns", time_zone="Europe/Amsterdam"),
+        },
+        {pl.Time},
+        {pl.Duration("ms"), pl.Duration("us"), pl.Duration("ns")},
+    ],
+)
+@given(data=st.data())
+def test_streaming_asof_join(
+    data: st.DataObject,
+    strategy: AsofJoinStrategy,
+    allow_exact_matches: bool,
+    coalesce: bool,
+    dtypes: set[pl.DataType],
+) -> None:
+    if dtypes & {pl.String, pl.Binary} and strategy == "nearest":
+        pytest.skip("asof join with string/binary does not support 'nearest' strategy")
+
+    dtype = data.draw(st.sampled_from(list(dtypes)))
+    df_st = dataframes(
+        min_cols=1, max_cols=1, allowed_dtypes=[dtype], allow_time_zones=False
+    )
+    left_df = data.draw(df_st)
+    right_df = data.draw(df_st)
+
+    left = left_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
+    right = right_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
+
+    q = left.join_asof(
+        right,
+        on="key",
+        strategy=strategy,
+        allow_exact_matches=allow_exact_matches,
+        coalesce=coalesce,
+    )
+    expected = q.collect(engine="in-memory")
+    actual = q.collect(engine="streaming")
+    assert_frame_equal(actual, expected)

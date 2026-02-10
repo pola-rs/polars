@@ -419,3 +419,12 @@ def test_replace_strict_nested_mapping_22554() -> None:
         ),
         pl.Series([[42], [13], [37]]),
     )
+
+
+def test_replace_strict_incompatible_types_26329() -> None:
+    df = pl.DataFrame({"x": [{"x": [None]}]})
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError, match="cannot use values of type"
+    ):
+        df.with_columns(pl.col("x").replace_strict({"a": 1}))

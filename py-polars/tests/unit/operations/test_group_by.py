@@ -2629,11 +2629,29 @@ def test_group_bool_unique_25267(maintain_order: bool, stable: bool) -> None:
 
 
 @pytest.mark.parametrize("group_as_slice", [False, True])
-@pytest.mark.parametrize("n", [10, 100, 1_000, 10_000])
+@pytest.mark.parametrize("n", [10, 100, 519])
 @pytest.mark.parametrize(
     "dtype", [pl.Int32, pl.Boolean, pl.String, pl.Categorical, pl.List(pl.Int32)]
 )
 def test_group_by_first_last(
+    group_as_slice: bool, n: int, dtype: PolarsDataType
+) -> None:
+    group_by_first_last_test_impl(group_as_slice, n, dtype)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("group_as_slice", [False, True])
+@pytest.mark.parametrize("n", [1056, 10_432])
+@pytest.mark.parametrize(
+    "dtype", [pl.Int32, pl.Boolean, pl.String, pl.Categorical, pl.List(pl.Int32)]
+)
+def test_group_by_first_last_big(
+    group_as_slice: bool, n: int, dtype: PolarsDataType
+) -> None:
+    group_by_first_last_test_impl(group_as_slice, n, dtype)
+
+
+def group_by_first_last_test_impl(
     group_as_slice: bool, n: int, dtype: PolarsDataType
 ) -> None:
     idx = pl.Series([1, 2, 3, 4, 5], dtype=pl.Int32)
@@ -2920,3 +2938,29 @@ def test_group_by_sum_on_strings_should_error_24659() -> None:
         match=r"`sum`.*operation not supported for dtype.*str",
     ):
         pl.DataFrame({"str": ["a", "b"]}).group_by(1).agg(pl.col.str.sum())
+
+
+@pytest.mark.parametrize("tail", [0, 1, 4, 5, 6, 10])
+def test_unique_head_tail_26429(tail: int) -> None:
+    df = pl.DataFrame(
+        {
+            "x": [1, 2, 3, 4, 5],
+        }
+    )
+    out = df.lazy().unique().tail(tail).collect()
+    expected = min(tail, df.height)
+    assert len(out) == expected
+
+
+def test_group_by_cse_alias_26423() -> None:
+    df = pl.LazyFrame({"a": [1, 2, 1, 2, 3, 4]})
+    result = df.group_by("a").agg(pl.len(), pl.len().alias("len_a")).collect()
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3, 4], "len": [2, 2, 1, 1], "len_a": [2, 2, 1, 1]},
+        schema={
+            "a": pl.Int64,
+            "len": pl.get_index_type(),
+            "len_a": pl.get_index_type(),
+        },
+    )
+    assert_frame_equal(result, expected, check_row_order=False)

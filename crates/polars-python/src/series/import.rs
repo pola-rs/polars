@@ -121,7 +121,7 @@ pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<Py
 
     let mut produced_arrays: Vec<Box<dyn Array>> = vec![];
     while let Some(array) = unsafe { stream.next() } {
-        produced_arrays.push(array.unwrap());
+        produced_arrays.push(array.map_err(PyPolarsErr::from)?);
     }
 
     // Series::try_from fails for an empty vec of chunks
@@ -129,7 +129,7 @@ pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<Py
         let polars_dt = DataType::from_arrow_field(stream.field());
         Series::new_empty(stream.field().name.clone(), &polars_dt)
     } else {
-        Series::try_from((stream.field(), produced_arrays)).unwrap()
+        Series::try_from((stream.field(), produced_arrays)).map_err(PyPolarsErr::from)?
     };
     Ok(PySeries::new(s))
 }

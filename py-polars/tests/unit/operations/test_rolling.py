@@ -184,7 +184,7 @@ def test_rolling_negative_offset_3914() -> None:
     assert result["matches"].to_list() == expected
 
 
-@pytest.mark.parametrize("time_zone", [None, "US/Central"])
+@pytest.mark.parametrize("time_zone", [None, "America/Chicago"])
 def test_rolling_negative_offset_crossing_dst(time_zone: str | None) -> None:
     df = pl.DataFrame(
         {
@@ -216,7 +216,7 @@ def test_rolling_negative_offset_crossing_dst(time_zone: str | None) -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.parametrize("time_zone", [None, "US/Central"])
+@pytest.mark.parametrize("time_zone", [None, "America/Chicago"])
 @pytest.mark.parametrize(
     ("offset", "closed", "expected_values"),
     [

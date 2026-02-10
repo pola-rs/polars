@@ -127,7 +127,7 @@ mod shift_and_fill;
 #[cfg(feature = "strings")]
 mod strings;
 #[cfg(feature = "dtype-struct")]
-mod struct_;
+pub(crate) mod struct_;
 #[cfg(feature = "temporal")]
 mod temporal;
 #[cfg(feature = "trigonometry")]
@@ -296,6 +296,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             descending,
             nulls_last,
         } => map!(misc::arg_sort, descending, nulls_last),
+        F::MinBy => map_as_slice!(misc::min_by),
+        F::MaxBy => map_as_slice!(misc::max_by),
         F::Product => map!(misc::product),
         F::Repeat => map_as_slice!(misc::repeat),
         #[cfg(feature = "rank")]

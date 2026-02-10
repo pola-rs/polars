@@ -50,6 +50,7 @@ pub mod udf;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+mod iter;
 mod plan;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
@@ -59,7 +60,6 @@ pub use expr::*;
 #[cfg(feature = "dtype-extension")]
 pub use extension::*;
 pub use function_expr::*;
-pub use functions::*;
 pub use list::*;
 pub use match_to_schema::*;
 #[cfg(feature = "meta")]
@@ -82,9 +82,9 @@ pub use struct_::*;
 pub use udf::UserDefinedFunction;
 mod file_scan;
 pub use file_scan::*;
+use functions::lit;
 pub use scan_sources::{ScanSource, ScanSourceIter, ScanSourceRef, ScanSources};
 
-pub use crate::plans::lit;
 use crate::prelude::*;
 
 impl Expr {
@@ -198,7 +198,7 @@ impl Expr {
         .into()
     }
 
-    /// GroupBy the group to a Series.
+    /// Implode into a list scalar.
     pub fn implode(self) -> Self {
         AggExpr::Implode(Arc::new(self)).into()
     }
@@ -219,6 +219,10 @@ impl Expr {
     }
 
     /// Alias for `explode`.
+    #[deprecated(
+        since = "0.53.0",
+        note = "Use `explode()` with `ExplodeOptions { empty_as_null: false, keep_nulls: false }` instead. Will be removed in version 2.0."
+    )]
     pub fn flatten(self) -> Self {
         self.explode(ExplodeOptions {
             empty_as_null: true,
@@ -290,7 +294,6 @@ impl Expr {
     pub fn arg_max(self) -> Self {
         self.map_unary(FunctionExpr::ArgMax)
     }
-
     /// Get the index values that would sort this expression.
     pub fn arg_sort(self, descending: bool, nulls_last: bool) -> Self {
         self.map_unary(FunctionExpr::ArgSort {
@@ -849,7 +852,7 @@ impl Expr {
             } else {
                 feature_gated!["dtype-struct", {
                     let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
-                    Arc::new(as_struct(e))
+                    Arc::new(functions::as_struct(e))
                 }]
             };
             (e, options)
@@ -1718,28 +1721,5 @@ where
         function: new_column_udf(function),
         options,
         fmt_str: Box::new(PlSmallStr::EMPTY),
-    }
-}
-
-/// Return the number of rows in the context.
-pub fn len() -> Expr {
-    Expr::Len
-}
-
-/// First column in a DataFrame.
-pub fn first() -> Selector {
-    nth(0)
-}
-
-/// Last column in a DataFrame.
-pub fn last() -> Selector {
-    nth(-1)
-}
-
-/// Nth column in a DataFrame.
-pub fn nth(n: i64) -> Selector {
-    Selector::ByIndex {
-        indices: [n].into(),
-        strict: true,
     }
 }

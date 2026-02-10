@@ -1,23 +1,18 @@
 pub mod builder;
 
 use std::cmp::Reverse;
-use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use chunk_reader::ChunkReader;
 use line_batch_processor::{LineBatchProcessor, LineBatchProcessorOutputPort};
 use negative_slice_pass::MorselStreamReverser;
-use polars_core::schema::SchemaRef;
+use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_io::cloud::CloudOptions;
-use polars_io::prelude::estimate_n_lines_in_file;
-use polars_io::utils::compression::maybe_decompress_bytes;
-use polars_plan::dsl::{NDJsonReadOptions, ScanSource};
+use polars_io::utils::compression::CompressedReader;
+use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
-use polars_utils::mem::prefetch::get_memory_prefetch_func;
-use polars_utils::mmap::MemSlice;
 use polars_utils::priority::Priority;
 use polars_utils::slice_enum::Slice;
 use row_index_limit_pass::ApplyRowIndexOrLimit;
@@ -32,8 +27,10 @@ use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::multi_scan::reader_interface::Projection;
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
+use crate::nodes::io_sources::ndjson::chunk_reader::ChunkReaderBuilder;
+use crate::nodes::io_sources::ndjson::line_batch_distributor::RowSkipper;
 use crate::nodes::{MorselSeq, TaskPriority};
-mod chunk_reader;
+pub(super) mod chunk_reader;
 mod line_batch_distributor;
 mod line_batch_processor;
 mod negative_slice_pass;
@@ -41,18 +38,27 @@ mod row_index_limit_pass;
 
 #[derive(Clone)]
 pub struct NDJsonFileReader {
-    scan_source: ScanSource,
+    pub scan_source: ScanSource,
     #[expect(unused)] // Will be used when implementing cloud streaming.
-    cloud_options: Option<Arc<CloudOptions>>,
-    options: Arc<NDJsonReadOptions>,
-    verbose: bool,
+    pub cloud_options: Option<Arc<CloudOptions>>,
+    pub chunk_reader_builder: ChunkReaderBuilder,
+    pub count_rows_fn: fn(&[u8]) -> usize,
     // Cached on first access - we may be called multiple times e.g. on negative slice.
-    cached_bytes: Option<MemSlice>,
+    pub cached_bytes: Option<Buffer<u8>>,
+    pub verbose: bool,
 }
 
 #[async_trait]
 impl FileReader for NDJsonFileReader {
     async fn initialize(&mut self) -> PolarsResult<()> {
+        let memslice = self
+            .scan_source
+            .as_scan_source_ref()
+            .to_buffer_async_assume_latest(self.scan_source.run_async())?;
+
+        // Note: We do not decompress in `initialize()`.
+        self.cached_bytes = Some(memslice);
+
         Ok(())
     }
 
@@ -68,6 +74,7 @@ impl FileReader for NDJsonFileReader {
             pre_slice,
 
             num_pipelines,
+            disable_morsel_split: _,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx,
@@ -82,9 +89,10 @@ impl FileReader for NDJsonFileReader {
             panic!("unsupported args: {:?}", &args)
         };
 
-        // TODO: This currently downloads and decompresses everything upfront in a blocking manner.
-        // Ideally we have a streaming download/decompression.
-        let global_bytes = self.get_bytes_maybe_decompress()?;
+        let is_empty_slice = pre_slice.as_ref().is_some_and(|x| x.len() == 0);
+        let is_negative_slice = matches!(pre_slice, Some(Slice::Negative { .. }));
+
+        let reader = CompressedReader::try_new(self.cached_bytes.clone().unwrap())?;
 
         // NDJSON: We just use the projected schema - the parser will automatically append NULL if
         // the field is not found.
@@ -98,8 +106,6 @@ impl FileReader for NDJsonFileReader {
         if let Some(tx) = file_schema_tx {
             _ = tx.send(schema.clone())
         }
-
-        let is_negative_slice = matches!(pre_slice, Some(Slice::Negative { .. }));
 
         // Convert (offset, len) to Range
         // Note: This is converted to right-to-left for negative slice (i.e. range.start is position
@@ -134,65 +140,16 @@ impl FileReader for NDJsonFileReader {
             || (row_position_on_end_tx.is_some()
                 && matches!(pre_slice, Some(Slice::Negative { .. })));
 
-        let chunk_size: usize = {
-            let n_bytes_to_split = if let Some(x) = global_slice.as_ref() {
-                if needs_total_row_count {
-                    global_bytes.len()
-                } else {
-                    // There may be early stopping, try to heuristically use a smaller chunk size to stop faster.
-                    let n_rows_to_sample = 8;
-                    let n_lines_estimate =
-                        estimate_n_lines_in_file(global_bytes.as_ref(), n_rows_to_sample);
-                    let line_length_estimate = global_bytes.len().div_ceil(n_lines_estimate);
-
-                    if verbose {
-                        eprintln!(
-                            "[NDJsonFileReader]: n_lines_estimate: {n_lines_estimate}, line_length_estimate: {line_length_estimate}"
-                        );
-                    }
-
-                    // Estimated stopping point in the file
-                    x.end.saturating_mul(line_length_estimate)
-                }
-            } else {
-                global_bytes.len()
-            };
-
-            let chunk_size = n_bytes_to_split.div_ceil(16 * num_pipelines);
-
-            let max_chunk_size = 16 * 1024 * 1024;
-            // Use a small min chunk size to catch failures in tests.
-            #[cfg(debug_assertions)]
-            let min_chunk_size = 64;
-            #[cfg(not(debug_assertions))]
-            let min_chunk_size = 1024 * 4;
-
-            let chunk_size = chunk_size.clamp(min_chunk_size, max_chunk_size);
-
-            std::env::var("POLARS_FORCE_NDJSON_CHUNK_SIZE").map_or(chunk_size, |x| {
-                x.parse::<NonZeroUsize>()
-                    .ok()
-                    .unwrap_or_else(|| {
-                        panic!("invalid value for POLARS_FORCE_NDJSON_CHUNK_SIZE: {x}")
-                    })
-                    .get()
-            })
-        };
-
         if verbose {
             eprintln!(
                 "[NDJsonFileReader]: \
                 project: {}, \
                 global_slice: {:?}, \
                 row_index: {:?}, \
-                chunk_size: {}, \
-                n_chunks: {}, \
                 is_negative_slice: {}",
                 schema.len(),
                 &global_slice,
                 &row_index,
-                chunk_size,
-                global_bytes.len().div_ceil(chunk_size),
                 is_negative_slice,
             );
         }
@@ -210,7 +167,6 @@ impl FileReader for NDJsonFileReader {
             };
 
         let output_to_linearizer = opt_linearizer.is_some();
-
         let mut output_port = None;
 
         let opt_post_process_handle = if is_negative_slice {
@@ -276,7 +232,7 @@ impl FileReader for NDJsonFileReader {
                 verbose,
             };
 
-            if limit == Some(0) {
+            if is_empty_slice {
                 None
             } else {
                 Some(AbortOnDropHandle::new(spawn(
@@ -288,12 +244,7 @@ impl FileReader for NDJsonFileReader {
             None
         };
 
-        let schema = Arc::new(schema);
-        let chunk_reader = Arc::new(self.try_init_chunk_reader(&schema)?);
-
-        if !is_negative_slice {
-            get_memory_prefetch_func(verbose)(global_bytes.as_ref());
-        }
+        let chunk_reader = self.chunk_reader_builder.build(schema);
 
         let (line_batch_distribute_tx, line_batch_distribute_receivers) =
             distributor_channel(num_pipelines, 1);
@@ -314,8 +265,8 @@ impl FileReader for NDJsonFileReader {
             .enumerate()
             .rev()
             .map(|(worker_idx, line_batch_rx)| {
-                let global_bytes = global_bytes.clone();
                 let chunk_reader = chunk_reader.clone();
+                let count_rows_fn = self.count_rows_fn;
                 // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
                 let source_token = SourceToken::new();
 
@@ -324,11 +275,13 @@ impl FileReader for NDJsonFileReader {
                     LineBatchProcessor {
                         worker_idx,
 
-                        global_bytes,
                         chunk_reader,
+                        count_rows_fn,
 
                         line_batch_rx,
-                        output_port: if output_to_linearizer {
+                        output_port: if is_empty_slice {
+                            LineBatchProcessorOutputPort::Closed
+                        } else if output_to_linearizer {
                             LineBatchProcessorOutputPort::Linearize {
                                 tx: linearizer_inserters.pop().unwrap(),
                             }
@@ -348,13 +301,19 @@ impl FileReader for NDJsonFileReader {
             })
             .collect::<Vec<_>>();
 
+        let row_skipper = RowSkipper {
+            cfg_n_rows_to_skip: n_rows_to_skip,
+            n_rows_skipped: 0,
+            is_line: self.chunk_reader_builder.is_line_fn(),
+            reverse: is_negative_slice,
+        };
+
         let line_batch_distributor_task_handle = AbortOnDropHandle::new(spawn(
             TaskPriority::Low,
             line_batch_distributor::LineBatchDistributor {
-                global_bytes,
-                chunk_size,
-                n_rows_to_skip,
+                reader,
                 reverse: is_negative_slice,
+                row_skipper,
                 line_batch_distribute_tx,
             }
             .run(),
@@ -437,36 +396,5 @@ impl FileReader for NDJsonFileReader {
         });
 
         Ok((output_port.unwrap(), finishing_handle))
-    }
-}
-
-impl NDJsonFileReader {
-    fn try_init_chunk_reader(&self, schema: &SchemaRef) -> PolarsResult<ChunkReader> {
-        ChunkReader::try_new(&self.options, schema)
-    }
-
-    fn get_bytes_maybe_decompress(&mut self) -> PolarsResult<MemSlice> {
-        if self.cached_bytes.is_none() {
-            let run_async = self.scan_source.run_async();
-            let source = self
-                .scan_source
-                .as_scan_source_ref()
-                .to_memslice_async_assume_latest(run_async)?;
-
-            let memslice = {
-                let mut out = vec![];
-                maybe_decompress_bytes(&source, &mut out)?;
-
-                if out.is_empty() {
-                    source
-                } else {
-                    MemSlice::from_vec(out)
-                }
-            };
-
-            self.cached_bytes = Some(memslice);
-        }
-
-        Ok(self.cached_bytes.clone().unwrap())
     }
 }

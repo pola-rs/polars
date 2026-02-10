@@ -204,14 +204,14 @@ def test_tzaware_datetime_range_crossing_dst_hourly() -> None:
         datetime(2021, 11, 7),
         datetime(2021, 11, 7, 2),
         "1h",
-        time_zone="US/Central",
+        time_zone="America/Chicago",
         eager=True,
     )
     assert result.to_list() == [
-        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
-        datetime(2021, 11, 7, 1, 0, tzinfo=ZoneInfo("US/Central")),
-        datetime(2021, 11, 7, 1, 0, fold=1, tzinfo=ZoneInfo("US/Central")),
-        datetime(2021, 11, 7, 2, 0, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
+        datetime(2021, 11, 7, 1, 0, tzinfo=ZoneInfo("America/Chicago")),
+        datetime(2021, 11, 7, 1, 0, fold=1, tzinfo=ZoneInfo("America/Chicago")),
+        datetime(2021, 11, 7, 2, 0, tzinfo=ZoneInfo("America/Chicago")),
     ]
 
 
@@ -220,13 +220,13 @@ def test_tzaware_datetime_range_crossing_dst_daily() -> None:
         datetime(2021, 11, 7),
         datetime(2021, 11, 11),
         "2d",
-        time_zone="US/Central",
+        time_zone="America/Chicago",
         eager=True,
     )
     assert result.to_list() == [
-        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
-        datetime(2021, 11, 9, 0, 0, tzinfo=ZoneInfo("US/Central")),
-        datetime(2021, 11, 11, 0, 0, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
+        datetime(2021, 11, 9, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
+        datetime(2021, 11, 11, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
     ]
 
 
@@ -235,12 +235,12 @@ def test_tzaware_datetime_range_crossing_dst_weekly() -> None:
         datetime(2021, 11, 7),
         datetime(2021, 11, 20),
         "1w",
-        time_zone="US/Central",
+        time_zone="America/Chicago",
         eager=True,
     )
     assert result.to_list() == [
-        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
-        datetime(2021, 11, 14, 0, 0, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
+        datetime(2021, 11, 14, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
     ]
 
 
@@ -249,25 +249,25 @@ def test_tzaware_datetime_range_crossing_dst_monthly() -> None:
         datetime(2021, 11, 7),
         datetime(2021, 12, 20),
         "1mo",
-        time_zone="US/Central",
+        time_zone="America/Chicago",
         eager=True,
     )
     assert result.to_list() == [
-        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
-        datetime(2021, 12, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
+        datetime(2021, 12, 7, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
     ]
 
 
 def test_datetime_range_with_unsupported_datetimes() -> None:
     with pytest.raises(
         ComputeError,
-        match=r"datetime '2021-11-07 01:00:00' is ambiguous in time zone 'US/Central'",
+        match=r"datetime '2021-11-07 01:00:00' is ambiguous in time zone 'America/Chicago'",
     ):
         pl.datetime_range(
             datetime(2021, 11, 7, 1),
             datetime(2021, 11, 7, 2),
             "1h",
-            time_zone="US/Central",
+            time_zone="America/Chicago",
             eager=True,
         )
     with pytest.raises(

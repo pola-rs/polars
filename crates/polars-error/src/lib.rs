@@ -45,6 +45,7 @@ impl<T> From<T> for ErrString
 where
     T: Into<Cow<'static, str>>,
 {
+    #[track_caller]
     fn from(msg: T) -> Self {
         match &*ERROR_STRATEGY {
             ErrorStrategy::Panic => panic!("{}", msg.into()),
@@ -108,7 +109,30 @@ pub enum PolarsError {
     },
 }
 
-impl Error for PolarsError {}
+impl Error for PolarsError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            PolarsError::AssertionError(_)
+            | PolarsError::ColumnNotFound(_)
+            | PolarsError::ComputeError(_)
+            | PolarsError::Duplicate(_)
+            | PolarsError::InvalidOperation(_)
+            | PolarsError::NoData(_)
+            | PolarsError::OutOfBounds(_)
+            | PolarsError::SchemaFieldNotFound(_)
+            | PolarsError::SchemaMismatch(_)
+            | PolarsError::ShapeMismatch(_)
+            | PolarsError::SQLInterface(_)
+            | PolarsError::SQLSyntax(_)
+            | PolarsError::StringCacheMismatch(_)
+            | PolarsError::StructFieldNotFound(_) => None,
+            PolarsError::IO { error, .. } => Some(error.as_ref()),
+            PolarsError::Context { error, .. } => Some(error.as_ref()),
+            #[cfg(feature = "python")]
+            PolarsError::Python { error } => error.deref().source(),
+        }
+    }
+}
 
 impl Display for PolarsError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -156,6 +180,7 @@ impl From<regex::Error> for PolarsError {
     }
 }
 
+// TODO: Remove this conversion after reworking cloud writer
 #[cfg(feature = "object_store")]
 impl From<object_store::Error> for PolarsError {
     fn from(err: object_store::Error) -> Self {
@@ -409,7 +434,7 @@ macro_rules! polars_err {
     };
     (bigidx, ctx = $ctx:expr, size = $size:expr) => {
         $crate::polars_err!(ComputeError: "\
-{} produces {} rows which is more than maximum allowed pow(2, 32) rows; \
+{} produces {} rows which is more than maximum allowed pow(2, 32)-1 rows; \
 consider compiling with bigidx feature (pip install polars[rt64])",
             $ctx,
             $size,
@@ -492,6 +517,12 @@ on startup."#.trim_start())
     };
     (invalid_element_use) => {
         $crate::polars_err!(InvalidOperation: "`element` is not allowed in this context")
+    };
+    (invalid_field_use) => {
+        $crate::polars_err!(InvalidOperation: "`field` is not allowed in this context")
+    };
+    (non_utf8_path) => {
+        $crate::polars_err!(ComputeError: "encountered non UTF-8 path characters")
     };
     (assertion_error = $objects:expr, $detail:expr, $lhs:expr, $rhs:expr) => {
         $crate::polars_err!(

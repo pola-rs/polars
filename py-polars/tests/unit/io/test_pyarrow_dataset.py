@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from typing import TYPE_CHECKING
 
+import pyarrow as pa
 import pyarrow.dataset as ds
 import pytest
 
@@ -284,13 +285,9 @@ def test_pyarrow_dataset_python_scan(tmp_path: Path) -> None:
     assert_frame_equal(df, out)
 
 
-@pytest.mark.write_disk
-def test_pyarrow_dataset_allow_pyarrow_filter_false(tmp_path: Path) -> None:
+def test_pyarrow_dataset_allow_pyarrow_filter_false() -> None:
     df = pl.DataFrame({"item": ["foo", "bar", "baz"], "price": [10.0, 20.0, 30.0]})
-    file_path = tmp_path / "data.parquet"
-    df.write_parquet(file_path)
-
-    dataset = ds.dataset(file_path)
+    dataset = ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
 
     # basic scan without filter
     result = pl.scan_pyarrow_dataset(dataset, allow_pyarrow_filter=False).collect()
@@ -321,3 +318,89 @@ def test_pyarrow_dataset_allow_pyarrow_filter_false(tmp_path: Path) -> None:
         .collect()
     )
     assert_frame_equal(result, expected)
+
+
+def test_scan_pyarrow_dataset_filter_with_timezone_26029() -> None:
+    table = pa.table(
+        {
+            "valid_from": [
+                datetime(2025, 8, 26, 10, 0, 0, tzinfo=timezone.utc),
+                datetime(2025, 8, 26, 11, 0, 0, tzinfo=timezone.utc),
+            ],
+            "valid_to": [
+                datetime(2025, 8, 26, 12, 0, 0, tzinfo=timezone.utc),
+                datetime(2025, 8, 26, 13, 0, 0, tzinfo=timezone.utc),
+            ],
+            "value": [1, 2],
+        }
+    )
+    dataset = ds.dataset(table)
+
+    lower_bound_time = datetime(2025, 8, 26, 11, 30, 0, tzinfo=timezone.utc)
+    lf = pl.scan_pyarrow_dataset(dataset).filter(
+        (pl.col("valid_from") <= lower_bound_time)
+        & (pl.col("valid_to") > lower_bound_time)
+    )
+
+    assert_frame_equal(lf.collect(), pl.DataFrame(table))
+
+
+def test_scan_pyarrow_dataset_filter_slice_order() -> None:
+    table = pa.table(
+        {
+            "index": [0, 1, 2],
+            "year": [2025, 2026, 2026],
+            "month": [0, 0, 0],
+        }
+    )
+    dataset = ds.dataset(table)
+
+    q = pl.scan_pyarrow_dataset(dataset).head(2).filter(pl.col("year") == 2026)
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"index": 1, "year": 2026, "month": 0}),
+    )
+
+    import polars.io.pyarrow_dataset.anonymous_scan
+
+    assert_frame_equal(
+        polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
+            dataset,
+            n_rows=2,
+            predicate="pa.compute.field('year') == 2026",
+            with_columns=None,
+        ),
+        pl.DataFrame({"index": 1, "year": 2026, "month": 0}),
+    )
+
+    assert_frame_equal(
+        polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
+            dataset,
+            n_rows=0,
+            predicate="pa.compute.field('year') == 2026",
+            with_columns=None,
+        ),
+        pl.DataFrame(schema={"index": pl.Int64, "year": pl.Int64, "month": pl.Int64}),
+    )
+
+    assert_frame_equal(
+        pl.concat(
+            polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
+                dataset,
+                n_rows=1,
+                predicate=None,
+                with_columns=None,
+                allow_pyarrow_filter=False,
+            )[0]
+        ),
+        pl.DataFrame({"index": 0, "year": 2025, "month": 0}),
+    )
+
+    assert not polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
+        dataset,
+        n_rows=0,
+        predicate="pa.compute.field('year') == 2026",
+        with_columns=None,
+        allow_pyarrow_filter=False,
+    )[1]

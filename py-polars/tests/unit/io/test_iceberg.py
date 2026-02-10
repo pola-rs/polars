@@ -13,6 +13,7 @@ from datetime import date, datetime
 from decimal import Decimal as D
 from functools import partial
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -49,9 +50,19 @@ from pyiceberg.types import (
 
 import polars as pl
 from polars._utils.various import parse_version
-from polars.io.iceberg._utils import _convert_predicate, _to_ast
-from polars.io.iceberg.dataset import IcebergDataset, _NativeIcebergScanData
+from polars.io.cloud._utils import NoPickleOption
+from polars.io.iceberg._dataset import IcebergDataset, _NativeIcebergScanData
+from polars.io.iceberg._utils import (
+    _convert_predicate,
+    _normalize_windows_iceberg_file_uri,
+    _to_ast,
+)
 from polars.testing import assert_frame_equal
+from tests.unit.io.conftest import normalize_path_separator_pl
+
+if TYPE_CHECKING:
+    from pyiceberg.table import Table
+
 
 with warnings.catch_warnings():
     # Upstream issue at https://github.com/apache/iceberg-python/issues/2648.
@@ -60,6 +71,35 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
     from pyiceberg.catalog.sql import SqlCatalog
     from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+
+def new_pl_iceberg_dataset(source: str | Table) -> IcebergDataset:
+    from pyiceberg.table import Table
+
+    return IcebergDataset(
+        table_=NoPickleOption(source if isinstance(source, Table) else None),
+        metadata_path_=source if not isinstance(source, Table) else None,
+        snapshot_id=None,
+        iceberg_storage_properties=None,
+        reader_override=None,
+        use_metadata_statistics=True,
+        fast_deletion_count=False,
+        use_pyiceberg_filter=True,
+    )
+
+
+# PyIceberg on Windows uses `file://C:/` rather than `file:///C:/`.
+def format_file_uri_iceberg(absolute_local_path: str | Path) -> str:
+    absolute_local_path = str(absolute_local_path)
+
+    if sys.platform == "win32":
+        assert absolute_local_path[0].isalpha()
+        assert absolute_local_path[1] == ":"
+        p = absolute_local_path.replace("\\", "/")
+        return f"file://{p}"
+
+    assert absolute_local_path.startswith("/")
+    return f"file://{absolute_local_path}"
 
 
 @pytest.fixture
@@ -73,7 +113,7 @@ def iceberg_path(io_files_path: Path) -> str:
         os.symlink(f"{current_path}/files/iceberg-table", "/tmp/iceberg/t1")  # noqa: PTH211
 
     iceberg_path = io_files_path / "iceberg-table" / "metadata" / "v2.metadata.json"
-    return f"file://{iceberg_path.resolve()}"
+    return format_file_uri_iceberg(f"{iceberg_path.resolve()}")
 
 
 @pytest.mark.slow
@@ -237,6 +277,40 @@ class TestIcebergExpressions:
         assert _convert_predicate(expr) == EqualTo("ts", False)
 
 
+@pytest.mark.write_disk
+def test_iceberg_dataset_does_not_pickle_table_object(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("namespace")
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(1, "row_index", IntegerType()),
+        ),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+
+    df = pl.DataFrame(
+        {"row_index": [0, 1, 2, 3, 4]},
+        schema={"row_index": pl.Int32},
+    )
+
+    df.write_iceberg(tbl, mode="append")
+
+    dataset = new_pl_iceberg_dataset(tbl)
+
+    assert dataset.table_.get() is not None
+    dataset = pickle.loads(pickle.dumps(dataset))
+    assert dataset.table_.get() is None
+
+    assert_frame_equal(dataset.to_dataset_scan()[0].collect(), df)  # type: ignore[index]
+
+
 @pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.filterwarnings("ignore:Delete operation did not match any records")
@@ -250,7 +324,7 @@ def test_write_iceberg(df: pl.DataFrame, tmp_path: Path) -> None:
 
     # in-memory catalog
     catalog = SqlCatalog(
-        "default", uri="sqlite:///:memory:", warehouse=f"file://{tmp_path}"
+        "default", uri="sqlite:///:memory:", warehouse=format_file_uri_iceberg(tmp_path)
     )
     catalog.create_namespace("foo")
     table = catalog.create_table(
@@ -276,7 +350,7 @@ def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri_iceberg(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -299,7 +373,10 @@ def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
         sch.rename_column("row_index", "row_index_in_file")
         sch.rename_column("file_path", "file_path_in_file")
 
-    file_paths = [x.file.file_path for x in tbl.scan().plan_files()]
+    file_paths = [
+        _normalize_windows_iceberg_file_uri(x.file.file_path)
+        for x in tbl.scan().plan_files()
+    ]
     assert len(file_paths) == 1
 
     q = pl.scan_parquet(
@@ -308,26 +385,23 @@ def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
             "row_index_in_file": pl.Int32,
             "file_path_in_file": pl.String,
         },
-        _column_mapping=("iceberg-column-mapping", IcebergDataset(tbl).arrow_schema()),
+        _column_mapping=(
+            "iceberg-column-mapping",
+            new_pl_iceberg_dataset(tbl).arrow_schema(),
+        ),
         include_file_paths="file_path",
         row_index_name="row_index",
         row_index_offset=3,
     )
 
     assert_frame_equal(
-        q.collect().with_columns(
-            # To pass Windows CI
-            pl.col("file_path").map_elements(
-                lambda x: str(Path(x).resolve()),
-                return_dtype=pl.String,
-            )
-        ),
+        q.collect().with_columns(normalize_path_separator_pl(pl.col("file_path"))),
         pl.DataFrame(
             {
                 "row_index": [3, 4, 5, 6, 7],
                 "row_index_in_file": [0, 1, 2, 3, 4],
                 "file_path_in_file": None,
-                "file_path": str(Path(file_paths[0]).resolve()),
+                "file_path": file_paths[0],
             },
             schema={
                 "row_index": pl.get_index_type(),
@@ -336,6 +410,64 @@ def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
                 "file_path": pl.String,
             },
         ),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_polars_storage_options_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("namespace")
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(1, "row_index", IntegerType()),
+            NestedField(2, "file_path", StringType()),
+        ),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+
+    pl.DataFrame(
+        {"row_index": [0, 1, 2, 3, 4], "file_path": None},
+        schema={"row_index": pl.Int32, "file_path": pl.String},
+    ).write_iceberg(tbl, mode="append")
+
+    capfd.readouterr()
+
+    pl.scan_iceberg(
+        tbl,
+        storage_options={
+            "file_cache_ttl": 7,
+            "max_retries": 3,
+            "retry_timeout_ms": 9873,
+            "retry_init_backoff_ms": 9874,
+            "retry_max_backoff_ms": 9875,
+            "retry_base_multiplier": 3.14159,
+        },
+    ).collect()
+
+    capture = capfd.readouterr().err
+
+    assert "file_cache_ttl: 7" in capture
+
+    assert (
+        """\
+max_retries: Some(3), \
+retry_timeout: Some(9.873s), \
+retry_init_backoff: Some(9.874s), \
+retry_max_backoff: Some(9.875s), \
+retry_base_multiplier: Some(TotalOrdWrap(3.14159)) }"""
+        in capture
     )
 
 
@@ -350,7 +482,7 @@ def test_scan_iceberg_collect_without_version_scans_latest(
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri_iceberg(tmp_path),
     )
 
     catalog.create_namespace("namespace")
@@ -403,7 +535,7 @@ def test_scan_iceberg_extra_columns(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri_iceberg(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -425,13 +557,20 @@ def test_scan_iceberg_extra_columns(tmp_path: Path) -> None:
         sch.delete_column("a")
         sch.add_column("a", IntegerType())
 
-    file_paths = [x.file.file_path for x in tbl.scan().plan_files()]
+    file_paths = [
+        _normalize_windows_iceberg_file_uri(x.file.file_path)
+        for x in tbl.scan().plan_files()
+    ]
+
     assert len(file_paths) == 1
 
     q = pl.scan_parquet(
         file_paths,
         schema={"a": pl.Int32},
-        _column_mapping=("iceberg-column-mapping", IcebergDataset(tbl).arrow_schema()),
+        _column_mapping=(
+            "iceberg-column-mapping",
+            new_pl_iceberg_dataset(tbl).arrow_schema(),
+        ),
     )
 
     # The original column is considered an extra column despite having the same
@@ -446,7 +585,10 @@ def test_scan_iceberg_extra_columns(tmp_path: Path) -> None:
     q = pl.scan_parquet(
         file_paths,
         schema={"a": pl.Int32},
-        _column_mapping=("iceberg-column-mapping", IcebergDataset(tbl).arrow_schema()),
+        _column_mapping=(
+            "iceberg-column-mapping",
+            new_pl_iceberg_dataset(tbl).arrow_schema(),
+        ),
         extra_columns="ignore",
         missing_columns="insert",
     )
@@ -467,7 +609,7 @@ def test_scan_iceberg_extra_struct_fields(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri_iceberg(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -489,13 +631,20 @@ def test_scan_iceberg_extra_struct_fields(tmp_path: Path) -> None:
         sch.delete_column(("a", "a"))
         sch.add_column(("a", "a"), IntegerType())
 
-    file_paths = [x.file.file_path for x in tbl.scan().plan_files()]
+    file_paths = [
+        _normalize_windows_iceberg_file_uri(x.file.file_path)
+        for x in tbl.scan().plan_files()
+    ]
+
     assert len(file_paths) == 1
 
     q = pl.scan_parquet(
         file_paths,
         schema={"a": pl.Struct({"a": pl.Int32})},
-        _column_mapping=("iceberg-column-mapping", IcebergDataset(tbl).arrow_schema()),
+        _column_mapping=(
+            "iceberg-column-mapping",
+            new_pl_iceberg_dataset(tbl).arrow_schema(),
+        ),
     )
 
     # The original column is considered an extra column despite having the same
@@ -510,7 +659,10 @@ def test_scan_iceberg_extra_struct_fields(tmp_path: Path) -> None:
     q = pl.scan_parquet(
         file_paths,
         schema={"a": pl.Struct({"a": pl.Int32})},
-        _column_mapping=("iceberg-column-mapping", IcebergDataset(tbl).arrow_schema()),
+        _column_mapping=(
+            "iceberg-column-mapping",
+            new_pl_iceberg_dataset(tbl).arrow_schema(),
+        ),
         cast_options=pl.ScanCastOptions(
             extra_struct_fields="ignore", missing_struct_fields="insert"
         ),
@@ -538,7 +690,7 @@ def test_scan_iceberg_column_deletion(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri_iceberg(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -578,7 +730,7 @@ def test_scan_iceberg_nested_column_cast_deletion_rename(tmp_path: Path) -> None
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri_iceberg(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -910,7 +1062,7 @@ def test_scan_iceberg_nulls_multiple_nesting(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri_iceberg(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -1051,7 +1203,7 @@ def test_scan_iceberg_nulls_nested(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri_iceberg(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -1121,7 +1273,7 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri_iceberg(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -1240,7 +1392,7 @@ def test_fill_missing_fields_with_identity_partition_values(
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri_iceberg(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -1393,7 +1545,7 @@ def test_fill_missing_fields_with_identity_partition_values_nested(
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri_iceberg(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -1511,7 +1663,7 @@ def test_scan_iceberg_min_max_statistics_filter(
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri_iceberg(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -1633,13 +1785,13 @@ def test_scan_iceberg_min_max_statistics_filter(
 
     # Begin inspecting statistics
 
-    scan_data = IcebergDataset(tbl)._to_dataset_scan_impl()
+    scan_data = new_pl_iceberg_dataset(tbl)._to_dataset_scan_impl()
 
     assert isinstance(scan_data, _NativeIcebergScanData)
     assert scan_data.statistics_loader is None
     assert scan_data.min_max_statistics is None
 
-    scan_data = IcebergDataset(tbl)._to_dataset_scan_impl(
+    scan_data = new_pl_iceberg_dataset(tbl)._to_dataset_scan_impl(
         filter_columns=["height_provider"]
     )
 
@@ -1664,7 +1816,7 @@ def test_scan_iceberg_min_max_statistics_filter(
         ),
     )
 
-    scan_data = IcebergDataset(tbl)._to_dataset_scan_impl(
+    scan_data = new_pl_iceberg_dataset(tbl)._to_dataset_scan_impl(
         filter_columns=pl_schema.names()
     )
 
@@ -1920,7 +2072,7 @@ def test_scan_iceberg_categorical_24140(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri_iceberg(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -1962,7 +2114,7 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri_iceberg(tmp_path),
     )
     catalog.create_namespace("namespace")
 
