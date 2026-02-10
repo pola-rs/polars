@@ -31,6 +31,8 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "cloud")]
 use super::credential_provider::PlCredentialProvider;
+#[cfg(feature = "cloud")]
+use crate::cloud::PolarsObjectStoreError;
 #[cfg(feature = "file_cache")]
 use crate::file_cache::get_env_file_cache_ttl;
 #[cfg(feature = "aws")]
@@ -350,13 +352,14 @@ impl CloudOptions {
         clear_cached_credentials: bool,
     ) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
+        use crate::cloud::PolarsObjectStoreError;
 
         let opt_credential_provider =
             self.initialized_credential_provider(clear_cached_credentials)?;
 
         let mut builder = AmazonS3Builder::from_env()
             .with_client_options(get_client_options())
-            .with_url(url.to_string());
+            .with_url(url.clone().to_string());
 
         if let Some(credential_provider) = &opt_credential_provider {
             let storage_update_options = parse_untyped_config::<AmazonS3ConfigKey, _>(
@@ -416,7 +419,7 @@ impl CloudOptions {
                 .get_config_value(&AmazonS3ConfigKey::Region)
                 .is_none()
         {
-            let bucket = crate::cloud::CloudLocation::new(url, false)?.bucket;
+            let bucket = crate::cloud::CloudLocation::new(url.clone(), false)?.bucket;
             let region = {
                 let mut bucket_region = BUCKET_REGION.lock().unwrap();
                 bucket_region.get(bucket.as_str()).cloned()
@@ -491,7 +494,9 @@ impl CloudOptions {
             builder
         };
 
-        let out = builder.build()?;
+        let out = builder
+            .build()
+            .map_err(PolarsObjectStoreError::from_url(&url))?;
 
         Ok(out)
     }
@@ -550,7 +555,9 @@ impl CloudOptions {
                 builder
             };
 
-        let out = builder.build()?;
+        let out = builder
+            .build()
+            .map_err(PolarsObjectStoreError::from_url(&url))?;
 
         Ok(out)
     }
@@ -605,13 +612,15 @@ impl CloudOptions {
             builder
         };
 
-        let out = builder.build()?;
+        let out = builder
+            .build()
+            .map_err(PolarsObjectStoreError::from_url(&url))?;
 
         Ok(out)
     }
 
     #[cfg(feature = "http")]
-    pub fn build_http(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
+    pub fn build_http(&self, url: PlRefPath) -> PolarsResult<impl object_store::ObjectStore> {
         let out = object_store::http::HttpBuilder::new()
             .with_url(url.to_string())
             .with_client_options({
@@ -623,7 +632,8 @@ impl CloudOptions {
                 }
                 opts
             })
-            .build()?;
+            .build()
+            .map_err(PolarsObjectStoreError::from_url(&url))?;
 
         Ok(out)
     }
