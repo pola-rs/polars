@@ -39,7 +39,7 @@ impl CloudWriter {
         self.writer.start().await
     }
 
-    pub async fn write_owned(&mut self, mut bytes: Bytes) -> object_store::Result<()> {
+    pub async fn write_all_owned(&mut self, mut bytes: Bytes) -> object_store::Result<()> {
         while !bytes.is_empty() {
             self.bufferer.push_owned(&mut bytes);
 

@@ -1,7 +1,7 @@
-use std::num::NonZeroUsize;
-
 use bytes::Bytes;
 use object_store::PutPayload;
+
+use crate::configs::{cloud_writer_coalesce_run_length, cloud_writer_copy_buffer_size};
 
 /// Utility for byte buffering logic. Accepts both owned [`Bytes`] and borrowed `&[u8]` incoming
 /// bytes. Buffered bytes can be flushed to a [`PutPayload`].
@@ -20,7 +20,8 @@ pub(super) struct BytesBufferer {
 
 impl BytesBufferer {
     pub(super) fn new(target_output_size: usize) -> Self {
-        let copy_buffer_reserve_size = usize::min(target_output_size, get_copy_buffer_size().get());
+        let copy_buffer_reserve_size =
+            usize::min(target_output_size, cloud_writer_copy_buffer_size().get());
 
         BytesBufferer {
             target_output_size,
@@ -30,7 +31,10 @@ impl BytesBufferer {
             } else {
                 usize::max(
                     target_output_size.div_ceil(copy_buffer_reserve_size),
-                    get_coalesce_run_length(),
+                    match cloud_writer_coalesce_run_length() {
+                        n if n <= copy_buffer_reserve_size => n,
+                        _ => 0,
+                    },
                 )
             }),
             copy_buffer: vec![],
@@ -54,20 +58,30 @@ impl BytesBufferer {
             return;
         }
 
-        let copy_buffer_available_capacity = usize::min(
-            available_capacity,
-            self.copy_buffer.capacity() - self.copy_buffer.len(),
-        );
+        loop {
+            let copy_buffer_available_capacity = usize::min(
+                available_capacity,
+                self.copy_buffer.capacity() - self.copy_buffer.len(),
+            );
 
-        if bytes.len() <= copy_buffer_available_capacity {
-            self.copy_buffer.extend_from_slice(bytes);
-            self.num_bytes_buffered += bytes.len();
-            *bytes = Bytes::new();
+            if bytes.len() <= copy_buffer_available_capacity {
+                self.copy_buffer.extend_from_slice(bytes);
+                self.num_bytes_buffered += bytes.len();
+                *bytes = Bytes::new();
 
-            return;
+                return;
+            }
+
+            self.commit_active_copy_buffer();
+
+            if self.tail_coalesce_num_items >= cloud_writer_coalesce_run_length() {
+                self.coalesce_tail(self.tail_coalesce_num_items, self.tail_coalesce_byte_offset);
+                self.reset_tail_coalesce_counters();
+                continue;
+            }
+
+            break;
         }
-
-        self.commit_active_copy_buffer();
 
         let bytes = bytes.split_to(usize::min(bytes.len(), available_capacity));
 
@@ -79,11 +93,6 @@ impl BytesBufferer {
         {
             self.tail_coalesce_num_items += 1;
         } else {
-            self.reset_tail_coalesce_counters();
-        }
-
-        if self.tail_coalesce_num_items >= get_coalesce_run_length() {
-            self.coalesce_tail(self.tail_coalesce_num_items, self.tail_coalesce_byte_offset);
             self.reset_tail_coalesce_counters();
         }
     }
@@ -211,54 +220,4 @@ impl BytesBufferer {
             available_capacity_current_chunk,
         )
     }
-}
-
-/// Runs of this many values whose total bytes are <= `copy_buffer_reserve_size` will be copied into
-/// a single contiguous chunk.
-fn get_coalesce_run_length() -> usize {
-    return *COALESCE_RUN_LENGTH;
-
-    static COALESCE_RUN_LENGTH: LazyLock<usize> = LazyLock::new(|| {
-        let mut v: usize = 64;
-
-        if let Ok(x) = std::env::var("POLARS_UPLOAD_COALESCE_RUN_LENGTH") {
-            v = x
-                .parse::<usize>()
-                .ok()
-                .filter(|x| *x >= 2)
-                .unwrap_or_else(|| {
-                    panic!("invalid value for POLARS_UPLOAD_COALESCE_RUN_LENGTH: {x}")
-                })
-        }
-
-        if polars_core::config::verbose() {
-            eprintln!("upload coalesce_run_length: {v}")
-        }
-
-        v
-    });
-
-    use std::sync::LazyLock;
-}
-
-fn get_copy_buffer_size() -> NonZeroUsize {
-    return *COPY_BUFFER_SIZE;
-
-    static COPY_BUFFER_SIZE: LazyLock<NonZeroUsize> = LazyLock::new(|| {
-        let mut v: NonZeroUsize = const { NonZeroUsize::new(16 * 1024 * 1024).unwrap() };
-
-        if let Ok(x) = std::env::var("POLARS_UPLOAD_COPY_BUFFER_SIZE") {
-            v = x
-                .parse::<NonZeroUsize>()
-                .unwrap_or_else(|_| panic!("invalid value for POLARS_UPLOAD_COPY_BUFFER_SIZE: {x}"))
-        }
-
-        if polars_core::config::verbose() {
-            eprintln!("upload copy_buffer_size: {v}")
-        }
-
-        v
-    });
-
-    use std::sync::LazyLock;
 }

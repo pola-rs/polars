@@ -34,7 +34,7 @@ pub fn start_partition_sink_pipeline(
     let inflight_morsel_limit = config.inflight_morsel_limit(num_pipelines);
     let num_pipelines_per_sink = config.num_pipelines_per_sink(num_pipelines);
     let max_open_sinks = config.max_open_sinks().get();
-    let upload_chunk_size = config.partitioned_cloud_upload_chunk_size();
+    let upload_chunk_size = config.partitioned_upload_chunk_size();
     let upload_max_concurrency = config.partitioned_upload_concurrency();
 
     let IOSinkNodeConfig {
@@ -73,7 +73,7 @@ pub fn start_partition_sink_pipeline(
         cloud_options,
         provider_type: file_path_provider,
         upload_chunk_size,
-        upload_max_concurrency,
+        upload_max_concurrency: upload_max_concurrency.get(),
         io_metrics,
     });
 
@@ -96,7 +96,8 @@ pub fn start_partition_sink_pipeline(
             inflight_morsel_limit: {}, \
             takeable_rows_provider: {:?}, \
             file_size_limit: {:?}, \
-            upload_chunk_size: {} \
+            upload_chunk_size: {}, \
+            upload_concurrency: {}, \
             io_metrics: {}",
             partitioner.verbose_display(),
             file_writer_starter.writer_name(),
@@ -106,6 +107,7 @@ pub fn start_partition_sink_pipeline(
             takeable_rows_provider,
             file_size_limit,
             upload_chunk_size,
+            upload_max_concurrency,
             io_metrics_is_some,
         );
     }
