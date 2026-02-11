@@ -71,7 +71,7 @@ num-bigint = "0.4.6"
 num-derive = "0.4.2"
 num-traits = "0.2"
 numpy = "0.27"
-object_store = { version = "0.13", default-features = false, features = ["fs"] }
+object_store = { version = "0.13.1", default-features = false, features = ["fs"] }
 parking_lot = "0.12"
 percent-encoding = "2.3"
 pin-project-lite = "0.2"
@@ -162,6 +162,7 @@ collapsible_if = "allow"
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
 tikv-jemallocator = { git = "https://github.com/pola-rs/jemallocator", rev = "c7991e5bb6b3e9f79db6b0f48dcda67c5c3d2936" }
+object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", branch = "feat_checksum_crc64" }
 
 [profile.mindebug-dev]
 inherits = "dev"

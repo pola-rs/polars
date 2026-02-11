@@ -495,6 +495,8 @@ impl CloudOptions {
         };
 
         let out = builder
+            .with_checksum_algorithm(object_store::aws::Checksum::CRC64NVME)
+            .with_unsigned_payload(true)
             .build()
             .map_err(PolarsObjectStoreError::from_url(&url))?;
 
