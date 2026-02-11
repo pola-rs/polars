@@ -318,12 +318,14 @@ def test_read_parquet_invalid_hive_schema(dataset_path: Path) -> None:
         )
 
 
-def test_read_parquet_hive_schema_with_pyarrow() -> None:
+def test_read_parquet_hive_schema_with_pyarrow(tmp_path: Path) -> None:
     with pytest.raises(
         TypeError,
         match="cannot use `hive_partitions` with `use_pyarrow=True`",
     ):
-        pl.read_parquet("test.parquet", hive_schema={"c": pl.Int32}, use_pyarrow=True)
+        pl.read_parquet(
+            tmp_path / "test.parquet", hive_schema={"c": pl.Int32}, use_pyarrow=True
+        )
 
 
 @pytest.mark.parametrize(
