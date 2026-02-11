@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError, OutOfBoundsError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -160,6 +160,45 @@ def test_arr_slice_on_series(as_array: bool) -> None:
         assert s.arr.head(-1, as_array=as_array).to_list() == [[1, 2, 3], [10, 2, 1]]
         assert s.arr.head(-2, as_array=as_array).to_list() == [[1, 2], [10, 2]]
         assert s.arr.head(-3, as_array=as_array).to_list() == [[1], [10]]
+
+
+def test_arr_sample() -> None:
+    s = pl.Series("a", [[1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int64, 3))
+
+    out = s.arr.sample(2, seed=1)
+    assert out.dtype == pl.Array(pl.Int64, 2)
+    assert_series_equal(out, s.arr.sample(2, seed=1))
+
+    for source, sampled in zip(s.to_list(), out.to_list(), strict=True):
+        assert sampled is not None
+        assert len(sampled) == 2
+        assert set(sampled).issubset(set(source))
+
+
+def test_arr_sample_with_replacement() -> None:
+    s = pl.Series("a", [[1, 2], [3, 4]], dtype=pl.Array(pl.Int64, 2))
+    out = s.arr.sample(3, with_replacement=True, seed=1)
+
+    assert out.dtype == pl.Array(pl.Int64, 3)
+    for sampled in out.to_list():
+        assert sampled is not None
+        assert len(sampled) == 3
+
+
+def test_arr_sample_requires_literal_n() -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 2, 3], [4, 5, 6]], "n": [1, 2]},
+        schema={"a": pl.Array(pl.Int64, 3), "n": pl.Int64},
+    )
+
+    with pytest.raises(InvalidOperationError, match="constant `i64` value"):
+        df.select(pl.col("a").arr.sample(pl.col("n")))
+
+
+def test_arr_sample_negative_n() -> None:
+    s = pl.Series("a", [[1, 2, 3]], dtype=pl.Array(pl.Int64, 3))
+    with pytest.raises(OutOfBoundsError, match="non-negative integer"):
+        s.arr.sample(-1)
 
 
 def test_arr_unique() -> None:

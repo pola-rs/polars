@@ -191,6 +191,59 @@ class ExprArrayNameSpace:
         n_pyexpr = parse_into_expression(n)
         return wrap_expr(self._pyexpr.arr_tail(n_pyexpr, as_array))
 
+    def sample(
+        self,
+        n: int | str | Expr | None = None,
+        *,
+        with_replacement: bool = False,
+        shuffle: bool = False,
+        seed: int | None = None,
+    ) -> Expr:
+        """
+        Sample from this Array.
+
+        Parameters
+        ----------
+        n
+            Number of items to return. Defaults to 1.
+            This must be a scalar literal value.
+        with_replacement
+            Allow values to be sampled more than once.
+        shuffle
+            Shuffle the order of sampled items.
+        seed
+            Seed for the random number generator. If set to None (default), a random
+            seed is generated for each sample operation.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Array`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[1, 2, 3], [4, 5, 6]]}, schema={"a": pl.Array(pl.Int64, 3)}
+        ... )
+        >>> df.select(pl.col("a").arr.sample(2, seed=42))
+        shape: (2, 1)
+        ┌───────────────┐
+        │ a             │
+        │ ---           │
+        │ array[i64, 2] │
+        ╞═══════════════╡
+        │ [1, 3]        │
+        │ [6, 5]        │
+        └───────────────┘
+        """
+        if n is None:
+            n = 1
+
+        n = parse_into_expression(n)
+        return wrap_expr(
+            self._pyexpr.arr_sample(n, with_replacement, shuffle, seed)
+        )
+
     def min(self) -> Expr:
         """
         Compute the min values of the sub-arrays.

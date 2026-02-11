@@ -148,6 +148,24 @@ impl PyExpr {
             .into())
     }
 
+    #[cfg(feature = "list_sample")]
+    #[pyo3(signature = (n, with_replacement, shuffle, seed=None))]
+    fn arr_sample(
+        &self,
+        n: PyExpr,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .arr()
+            .sample(n.inner, with_replacement, shuffle, seed)
+            .map_err(PyPolarsErr::from)?
+            .into())
+    }
+
     fn arr_shift(&self, n: PyExpr) -> Self {
         self.inner.clone().arr().shift(n.inner).into()
     }

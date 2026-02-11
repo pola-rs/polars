@@ -57,6 +57,18 @@ pub(super) fn convert_functions(
                 A::Explode(options) => IA::Explode(options),
                 A::Concat => IA::Concat,
                 A::Slice(offset, length) => IA::Slice(offset, length),
+                #[cfg(feature = "list_sample")]
+                A::Sample {
+                    n,
+                    with_replacement,
+                    shuffle,
+                    seed,
+                } => IA::Sample {
+                    n,
+                    with_replacement,
+                    shuffle,
+                    seed,
+                },
                 #[cfg(feature = "array_to_struct")]
                 A::ToStruct(ng) => IA::ToStruct(ng),
             })

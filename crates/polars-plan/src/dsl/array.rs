@@ -190,6 +190,32 @@ impl ArrayNameSpace {
         self.0
             .map_binary(FunctionExpr::ArrayExpr(ArrayFunction::Shift), n)
     }
+
+    #[cfg(feature = "list_sample")]
+    /// Sample `n` values from every sub-array.
+    pub fn sample(
+        self,
+        n: Expr,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> PolarsResult<Expr> {
+        let Ok(n) = n.extract_i64() else {
+            polars_bail!(InvalidOperation: "Sample size must be a constant `i64` value, got: {}", n)
+        };
+        let n: usize = n.try_into().map_err(
+            |_| polars_err!(OutOfBounds: "Sample size must be a non-negative integer, got: {}", n),
+        )?;
+        Ok(self
+            .0
+            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Sample {
+                n,
+                with_replacement,
+                shuffle,
+                seed,
+            })))
+    }
+
     /// Returns a column with a separate row for every array element.
     pub fn explode(self, options: ExplodeOptions) -> Expr {
         self.0

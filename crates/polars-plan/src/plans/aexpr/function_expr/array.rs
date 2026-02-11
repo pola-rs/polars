@@ -37,6 +37,13 @@ pub enum IRArrayFunction {
     Explode(ExplodeOptions),
     Concat,
     Slice(i64, i64),
+    #[cfg(feature = "list_sample")]
+    Sample {
+        n: usize,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    },
     #[cfg(feature = "array_to_struct")]
     ToStruct(Option<DslNameGenerator>),
 }
@@ -101,6 +108,15 @@ impl IRArrayFunction {
             Slice(offset, length) => mapper
                 .ensure_is_array()?
                 .try_map_dtype(map_to_array_fixed_length(offset, length)),
+            #[cfg(feature = "list_sample")]
+            Sample {
+                n,
+                with_replacement: _,
+                shuffle: _,
+                seed: _,
+            } => mapper
+                .ensure_is_array()?
+                .try_map_dtype(map_to_array_dtype(*n)),
             #[cfg(feature = "array_to_struct")]
             ToStruct(name_generator) => mapper.ensure_is_array()?.try_map_dtype(|dtype| {
                 let DataType::Array(inner, width) = dtype else {
@@ -151,6 +167,8 @@ impl IRArrayFunction {
             | A::Join(_)
             | A::Shift
             | A::Slice(_, _) => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_sample")]
+            A::Sample { .. } => FunctionOptions::elementwise(),
             A::Explode { .. } => FunctionOptions::row_separable(),
             #[cfg(feature = "array_to_struct")]
             A::ToStruct(_) => FunctionOptions::elementwise(),
@@ -163,6 +181,17 @@ fn map_array_dtype_to_list_dtype(datatype: &DataType) -> PolarsResult<DataType> 
         Ok(DataType::List(inner.clone()))
     } else {
         polars_bail!(ComputeError: "expected array dtype")
+    }
+}
+
+#[cfg(feature = "list_sample")]
+fn map_to_array_dtype(width: usize) -> impl FnOnce(&DataType) -> PolarsResult<DataType> {
+    move |datatype: &DataType| {
+        if let DataType::Array(inner, _) = datatype {
+            Ok(DataType::Array(inner.clone(), width))
+        } else {
+            polars_bail!(ComputeError: "expected array dtype")
+        }
     }
 }
 
@@ -220,6 +249,8 @@ impl Display for IRArrayFunction {
             Shift => "shift",
             Slice(_, _) => "slice",
             Explode { .. } => "explode",
+            #[cfg(feature = "list_sample")]
+            Sample { .. } => "sample",
             #[cfg(feature = "array_to_struct")]
             ToStruct(_) => "to_struct",
         };

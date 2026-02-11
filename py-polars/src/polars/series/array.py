@@ -255,6 +255,49 @@ class ArrayNameSpace:
         ]
         """
 
+    def sample(
+        self,
+        n: int | IntoExprColumn | None = None,
+        *,
+        with_replacement: bool = False,
+        shuffle: bool = False,
+        seed: int | None = None,
+    ) -> Series:
+        """
+        Sample from this array.
+
+        Parameters
+        ----------
+        n
+            Number of items to return. Defaults to 1.
+            This must be a scalar literal value.
+        with_replacement
+            Allow values to be sampled more than once.
+        shuffle
+            Shuffle the order of sampled data points.
+        seed
+            Seed for the random number generator. If set to None (default), a
+            random seed is generated for each sample operation.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Array`.
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     "a", [[1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int64, 3)
+        ... )
+        >>> s.arr.sample(2, seed=42)
+        shape: (2,)
+        Series: 'a' [array[i64, 2]]
+        [
+            [1, 3]
+            [6, 5]
+        ]
+        """
+
     def slice(
         self,
         offset: int | Expr,

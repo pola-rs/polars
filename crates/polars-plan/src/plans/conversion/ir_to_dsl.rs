@@ -336,6 +336,18 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::Shift => A::Shift,
                 IA::Slice(offset, length) => A::Slice(offset, length),
                 IA::Explode(options) => A::Explode(options),
+                #[cfg(feature = "list_sample")]
+                IA::Sample {
+                    n,
+                    with_replacement,
+                    shuffle,
+                    seed,
+                } => A::Sample {
+                    n,
+                    with_replacement,
+                    shuffle,
+                    seed,
+                },
                 #[cfg(feature = "array_to_struct")]
                 IA::ToStruct(ng) => A::ToStruct(ng),
             })

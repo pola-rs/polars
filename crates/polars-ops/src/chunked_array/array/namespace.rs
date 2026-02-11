@@ -250,6 +250,22 @@ pub trait ArrayNameSpace: AsArray {
         );
         Ok(slice_arr.into_series())
     }
+
+    #[cfg(feature = "list_sample")]
+    fn array_sample_n_literal(
+        &self,
+        n: usize,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> PolarsResult<ArrayChunked> {
+        let ca = self.as_array();
+        let sampled = ca.try_apply_amortized_to_list(|s| {
+            s.as_ref().sample_n(n, with_replacement, shuffle, seed)
+        })?;
+        let sampled = sampled.cast(&DataType::Array(Box::new(ca.inner_dtype().clone()), n))?;
+        Ok(sampled.array()?.clone())
+    }
 }
 
 impl ArrayNameSpace for ArrayChunked {}

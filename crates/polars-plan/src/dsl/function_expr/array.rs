@@ -41,6 +41,13 @@ pub enum ArrayFunction {
     Concat,
     #[cfg(feature = "array_to_struct")]
     ToStruct(Option<super::DslNameGenerator>),
+    #[cfg(feature = "list_sample")]
+    Sample {
+        n: usize,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    },
 }
 
 impl fmt::Display for ArrayFunction {
@@ -78,6 +85,8 @@ impl fmt::Display for ArrayFunction {
             Explode { .. } => "explode",
             #[cfg(feature = "array_to_struct")]
             ToStruct(_) => "to_struct",
+            #[cfg(feature = "list_sample")]
+            Sample { .. } => "sample",
         };
         write!(f, "arr.{name}")
     }
