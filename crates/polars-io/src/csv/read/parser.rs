@@ -3,7 +3,7 @@ use std::cmp;
 use memchr::memchr2_iter;
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
-use polars_core::{POOL, config};
+use polars_core::POOL;
 use polars_error::feature_gated;
 use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_path::PlRefPath;
