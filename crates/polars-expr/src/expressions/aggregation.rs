@@ -9,6 +9,7 @@ use polars_core::utils::{_split_offsets, NoNull};
 use polars_ops::prelude::ArgAgg;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
+use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
 use super::*;
@@ -624,6 +625,115 @@ impl PhysicalExpr for AggQuantileExpr {
             },
             Err(_) => Ok(input_field),
         }
+    }
+
+    fn is_scalar(&self) -> bool {
+        true
+    }
+}
+
+pub struct AggMinMaxByExpr {
+    input: Arc<dyn PhysicalExpr>,
+    by: Arc<dyn PhysicalExpr>,
+    is_max_by: bool,
+}
+
+impl AggMinMaxByExpr {
+    pub fn new_min_by(input: Arc<dyn PhysicalExpr>, by: Arc<dyn PhysicalExpr>) -> Self {
+        Self {
+            input,
+            by,
+            is_max_by: false,
+        }
+    }
+
+    pub fn new_max_by(input: Arc<dyn PhysicalExpr>, by: Arc<dyn PhysicalExpr>) -> Self {
+        Self {
+            input,
+            by,
+            is_max_by: true,
+        }
+    }
+}
+
+impl PhysicalExpr for AggMinMaxByExpr {
+    fn as_expression(&self) -> Option<&Expr> {
+        None
+    }
+
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+        let input = self.input.evaluate(df, state)?;
+        let by = self.by.evaluate(df, state)?;
+        let name = if self.is_max_by { "max_by" } else { "min_by" };
+        polars_ensure!(
+            input.len() == by.len(),
+            ShapeMismatch: "'by' column in {} expression has incorrect length: expected {}, got {}",
+            name, input.len(), by.len()
+        );
+        let arg_extremum = if self.is_max_by {
+            by.as_materialized_series_maintain_scalar().arg_max()
+        } else {
+            by.as_materialized_series_maintain_scalar().arg_min()
+        };
+        let out = if let Some(idx) = arg_extremum {
+            input.slice(idx as i64, 1)
+        } else {
+            let dtype = input.dtype().clone();
+            Column::new_scalar(input.name().clone(), Scalar::null(dtype), 1)
+        };
+        Ok(out)
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupPositions,
+        state: &ExecutionState,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        let ac = self.input.evaluate_on_groups(df, groups, state)?;
+        let ac_by = self.by.evaluate_on_groups(df, groups, state)?;
+        assert!(ac.groups.len() == ac_by.groups.len());
+
+        // Don't change names by aggregations as is done in polars-core
+        let keep_name = ac.get_values().name().clone();
+
+        let (input_col, input_groups) = ac.get_final_aggregation();
+        let (by_col, by_groups) = ac_by.get_final_aggregation();
+        GroupsType::check_lengths(&input_groups, &by_groups)?;
+
+        // Dispatch to arg_min/arg_max and then gather
+        // SAFETY: Groups are correct.
+        let idxs_in_groups = if self.is_max_by {
+            unsafe { by_col.agg_arg_max(&by_groups) }
+        } else {
+            unsafe { by_col.agg_arg_min(&by_groups) }
+        };
+        let idxs_in_groups: &IdxCa = idxs_in_groups.as_materialized_series().as_ref().as_ref();
+        let flat_gather_idxs = match input_groups.as_ref().as_ref() {
+            GroupsType::Idx(g) => idxs_in_groups
+                .into_no_null_iter()
+                .enumerate()
+                .map(|(group_idx, idx_in_group)| g.all()[group_idx][idx_in_group as usize])
+                .collect_vec(),
+            GroupsType::Slice { groups, .. } => idxs_in_groups
+                .into_no_null_iter()
+                .enumerate()
+                .map(|(group_idx, idx_in_group)| groups[group_idx][0] + idx_in_group)
+                .collect_vec(),
+        };
+
+        // SAFETY: All indices are within input_col's groups.
+        let gathered = unsafe { input_col.take_slice_unchecked(&flat_gather_idxs) };
+        let agg_state = AggregatedScalar(gathered.with_name(keep_name));
+        Ok(AggregationContext::from_agg_state(
+            agg_state,
+            Cow::Borrowed(groups),
+        ))
+    }
+
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
+        self.input.to_field(input_schema)
     }
 
     fn is_scalar(&self) -> bool {
