@@ -12,6 +12,14 @@ import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import ComputeError, InvalidOperationError, SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import IS_WASM
+
+# Date/datetime range operations have usize conversion issues in WASM
+if IS_WASM:
+    pytest.skip(
+        "Datetime range operations not supported in WASM (usize conversion)",
+        allow_module_level=True,
+    )
 
 if TYPE_CHECKING:
     from polars._typing import ClosedInterval, PolarsDataType, TimeUnit

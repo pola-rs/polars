@@ -5,9 +5,12 @@ import time
 from functools import lru_cache, partial
 from typing import TYPE_CHECKING, Any
 
+import pytest
+
 import polars as pl
 from polars._plr import _ir_nodes
 from polars._utils.wrap import wrap_df
+from tests.unit.conftest import requires_parquet
 from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
@@ -34,6 +37,8 @@ class Timer:
 
 
 def test_run_on_pandas() -> None:
+    pytest.importorskip("pyarrow")
+
     # Simple join example, missing multiple columns, slices, etc.
     def join(
         inputs: list[Callable[[], pd.DataFrame]],
@@ -141,6 +146,7 @@ def test_run_on_pandas() -> None:
     ]
 
 
+@requires_parquet
 def test_path_uri_to_python_conversion_22766(tmp_path: Path) -> None:
     path = format_file_uri(f"{tmp_path / 'data.parquet'}")
 
@@ -156,6 +162,7 @@ def test_path_uri_to_python_conversion_22766(tmp_path: Path) -> None:
     assert out == [path]
 
 
+@requires_parquet
 def test_node_traverse_sink(tmp_path: Path) -> None:
     def callback(node_traverser: Any, query_start: int | None) -> None:
         assert list(json.loads(node_traverser.view_current_node().payload)["File"]) == [

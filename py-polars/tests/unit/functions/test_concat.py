@@ -5,6 +5,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import requires_new_streaming, requires_parquet
 
 
 @pytest.mark.may_fail_cloud  # reason: @serialize-stack-overflow
@@ -134,6 +135,7 @@ def test_concat_zip_series_21980() -> None:
     assert_frame_equal(out, pl.DataFrame({"x": [1, 2], "": [3, 4]}))
 
 
+@requires_new_streaming
 def test_concat_invalid_schema_err_20355() -> None:
     lf1 = pl.LazyFrame({"x": [1], "y": [None]})
     lf2 = pl.LazyFrame({"y": [1]})
@@ -175,6 +177,7 @@ def test_concat_to_empty() -> None:
     ) == {"a": [1]}
 
 
+@requires_parquet
 def test_concat_multiple_parquet_inmem() -> None:
     f = io.BytesIO()
     g = io.BytesIO()

@@ -5,8 +5,6 @@ import operator
 import pickle
 from typing import TYPE_CHECKING
 
-import pyarrow as pa
-import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
@@ -14,6 +12,9 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+pa = pytest.importorskip("pyarrow")
+pq = pytest.importorskip("pyarrow.parquet")
 
 
 def test_categorical_full_outer_join() -> None:

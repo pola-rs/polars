@@ -13,6 +13,7 @@ import pytest
 import polars as pl
 from polars.io.plugins import register_io_source
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import requires_new_streaming
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -111,6 +112,7 @@ def test_cse_with_struct_expr_11116() -> None:
     assert_frame_equal(result, expected)
 
 
+@requires_new_streaming
 def test_cse_schema_6081() -> None:
     # https://github.com/pola-rs/polars/issues/6081
 
@@ -750,6 +752,7 @@ def test_cse_predicate_self_join(
     assert "CACHE HIT" in captured
 
 
+@requires_new_streaming
 def test_cse_manual_cache_15688() -> None:
     df = pl.LazyFrame(
         {"a": [1, 2, 3, 1, 2, 3], "b": [1, 1, 1, 1, 1, 1], "id": [1, 1, 1, 2, 2, 2]}
@@ -1192,6 +1195,7 @@ def test_cspe_recursive_24744() -> None:
     )
 
 
+@requires_new_streaming
 def test_cpse_predicates_25030() -> None:
     df = pl.LazyFrame({"key": [1, 2, 2], "x": [6, 2, 3], "y": [0, 1, 4]})
 

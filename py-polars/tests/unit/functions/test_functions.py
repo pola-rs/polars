@@ -303,6 +303,7 @@ def test_spearman_propagate_nans_with_all_nulls_does_not_panic() -> None:
 
 
 def test_align_frames() -> None:
+    pytest.importorskip("pyarrow")
     import numpy as np
     import pandas as pd
 

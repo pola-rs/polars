@@ -4,9 +4,11 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 import pandas as pd
-import pyarrow as pa
-import pyarrow.interchange
 import pytest
+
+pa = pytest.importorskip("pyarrow")
+pytest.importorskip("pyarrow.interchange")
+
 from hypothesis import given
 
 import polars as pl

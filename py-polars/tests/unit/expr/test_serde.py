@@ -4,6 +4,13 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
+from tests.unit.conftest import IS_WASM
+
+if IS_WASM:
+    pytest.skip(
+        "JSON serialisation feature is not enabled on Emscripten/Pyodide builds",
+        allow_module_level=True,
+    )
 
 
 @pytest.mark.parametrize(

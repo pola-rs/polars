@@ -8,9 +8,17 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import IS_WASM
 
 if TYPE_CHECKING:
     from polars._typing import ClosedInterval
+
+# Time range operations have usize conversion issues in WASM
+if IS_WASM:
+    pytest.skip(
+        "Time range operations not supported in WASM (usize conversion)",
+        allow_module_level=True,
+    )
 
 
 def test_time_range_schema() -> None:

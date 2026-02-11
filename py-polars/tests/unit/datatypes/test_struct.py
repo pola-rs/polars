@@ -7,8 +7,9 @@ from datetime import datetime, time
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
-import pyarrow as pa
 import pytest
+
+pa = pytest.importorskip("pyarrow")
 
 import polars as pl
 import polars.selectors as cs

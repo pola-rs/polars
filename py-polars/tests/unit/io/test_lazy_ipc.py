@@ -4,8 +4,9 @@ import io
 import typing
 from typing import IO, TYPE_CHECKING, Any
 
-import pyarrow.ipc
 import pytest
+
+pyarrow = pytest.importorskip("pyarrow")
 
 import polars as pl
 from polars.interchange.protocol import CompatLevel

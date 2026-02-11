@@ -11,7 +11,7 @@ import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes, series
 from polars.testing.parametric.strategies.dtype import dtypes
-from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
+from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES, requires_new_streaming
 
 if TYPE_CHECKING:
     from typing import Any
@@ -457,6 +457,7 @@ def test_nested_sorting_22557(dtype: pl.DataType, vs: list[Any]) -> None:
     )
 
 
+@requires_new_streaming
 def test_row_encoding_null_chunks() -> None:
     lf1 = pl.select(a=pl.lit(1, pl.Int64)).lazy()
     lf2 = pl.select(a=None).lazy()

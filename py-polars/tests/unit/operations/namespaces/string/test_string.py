@@ -14,6 +14,7 @@ from polars.exceptions import (
     ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import IS_WASM, requires_json
 
 
 def test_str_slice() -> None:
@@ -770,6 +771,7 @@ def test_str_split() -> None:
         assert out[2].to_list() == ["ab,", "c,", "de"]
 
 
+@requires_json
 def test_json_decode_series() -> None:
     s = pl.Series(["[1, 2, 3]", None, "[4, 5, 6]"])
     expected = pl.Series([[1, 2, 3], None, [4, 5, 6]])
@@ -793,6 +795,7 @@ def test_json_decode_series() -> None:
     assert_series_equal(s.str.json_decode(dtype), expected)
 
 
+@requires_json
 def test_json_decode_lazy_expr() -> None:
     dtype = pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)])
     ldf = (
@@ -807,6 +810,7 @@ def test_json_decode_lazy_expr() -> None:
     assert_frame_equal(ldf, expected)
 
 
+@requires_json
 def test_json_decode_nested_struct() -> None:
     json = [
         '[{"key_1": "a"}]',
@@ -837,6 +841,7 @@ def test_json_decode_nested_struct() -> None:
     assert_series_equal(key_1_values.get_column("key_1_values"), expected_values)
 
 
+@requires_json
 def test_json_decode_primitive_to_list_11053() -> None:
     df = pl.DataFrame(
         {
@@ -860,12 +865,20 @@ def test_json_decode_primitive_to_list_11053() -> None:
     assert_frame_equal(output, expected)
 
 
+@pytest.mark.skipif(
+    IS_WASM,
+    reason="JSONPath extraction is not supported on emscripten/wasm builds.",
+)
 def test_jsonpath_single() -> None:
     s = pl.Series(['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}'])
     expected = pl.Series(["1", None, "2", "2.1", "true"])
     assert_series_equal(s.str.json_path_match("$.a"), expected)
 
 
+@pytest.mark.skipif(
+    IS_WASM,
+    reason="JSONPath extraction is not supported on emscripten/wasm builds.",
+)
 def test_json_path_match() -> None:
     df = pl.DataFrame(
         {
@@ -894,6 +907,10 @@ def test_json_path_match() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.skipif(
+    IS_WASM,
+    reason="JSONPath extraction is not supported on emscripten/wasm builds.",
+)
 def test_str_json_path_match_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
     with pytest.raises((ShapeError, ComputeError)):
@@ -1576,6 +1593,10 @@ def test_starts_ends_with() -> None:
     }
 
 
+@pytest.mark.skipif(
+    IS_WASM,
+    reason="JSONPath extraction is not supported on emscripten/wasm builds.",
+)
 def test_json_path_match_type_4905() -> None:
     df = pl.DataFrame({"json_val": ['{"a":"hello"}', None, '{"a":"world"}']})
     assert df.filter(
@@ -2009,6 +2030,7 @@ def test_extract_many() -> None:
     assert f2.to_list() == [[0], [0, 5]]
 
 
+@requires_json
 def test_json_decode_raise_on_data_type_mismatch_13061() -> None:
     assert_series_equal(
         pl.Series(["null", "null"]).str.json_decode(infer_schema_length=1),
@@ -2024,6 +2046,7 @@ def test_json_decode_raise_on_data_type_mismatch_13061() -> None:
     )
 
 
+@requires_json
 def test_json_decode_struct_schema() -> None:
     with pytest.raises(ComputeError, match="extra field in struct data: b"):
         pl.Series([r'{"a": 1}', r'{"a": 2, "b": 2}']).str.json_decode(
@@ -2152,6 +2175,7 @@ def test_str_replace_null_19601() -> None:
     )
 
 
+@requires_json
 def test_str_json_decode_25237() -> None:
     s = pl.Series(['[{"a": 0, "b": 1}, {"b": 2}]'])
 
@@ -2160,6 +2184,7 @@ def test_str_json_decode_25237() -> None:
     assert len(dtypes) == 1
 
 
+@requires_json
 def test_json_decode_decimal_25789() -> None:
     s = pl.Series(
         ['{"a": 1.23}', '{"a": 4.56}', '{"a": null}', '{"a": "30.1271239481230948"}']
@@ -2177,6 +2202,7 @@ def test_json_decode_decimal_25789() -> None:
         s.str.json_decode(dtype=pl.Struct({"a": pl.Decimal(3, 2)}))
 
 
+@requires_json
 def test_json_decode_i128() -> None:
     s = pl.Series(
         [
@@ -2193,6 +2219,7 @@ def test_json_decode_i128() -> None:
     assert_series_equal(result, expected)
 
 
+@requires_json
 def test_json_decode_u128() -> None:
     s = pl.Series(['{"a":340282366920938463463374607431768211451}', '{"a":null}'])
     result = s.str.json_decode(dtype=pl.Struct({"a": pl.UInt128}))
@@ -2204,6 +2231,7 @@ def test_json_decode_u128() -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.Enum(["bar", "foo"]), pl.Categorical])
+@requires_json
 def test_json_decode_categorical_enum(dtype: pl.DataType) -> None:
     s = pl.Series(['{"a":"foo"}', '{"a":"bar"}', '{"a":null}', '{"a":"foo"}'])
     result = s.str.json_decode(dtype=pl.Struct({"a": dtype}))

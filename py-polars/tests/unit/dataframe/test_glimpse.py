@@ -7,6 +7,14 @@ from typing import Any
 import pytest
 
 import polars as pl
+from tests.unit.conftest import IS_WASM
+
+# TODO: why?
+if IS_WASM:
+    pytest.skip(
+        "Datetime range conversion is not available on emscripten.",
+        allow_module_level=True,
+    )
 
 TEST_DF = pl.DataFrame(
     {

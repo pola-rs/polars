@@ -15,6 +15,7 @@ import polars as pl
 from polars.exceptions import DuplicateError, InvalidOperationError
 from polars.testing import assert_frame_equal
 from polars.testing.parametric.strategies.core import dataframes
+from tests.unit.conftest import requires_datetime_range, requires_new_streaming
 
 if TYPE_CHECKING:
     from polars._typing import AsofJoinStrategy, PolarsIntegerType
@@ -78,6 +79,7 @@ def test_asof_join_inline_cast_6438() -> None:
     }
 
 
+@requires_new_streaming
 def test_asof_join_projection_resolution_4606() -> None:
     a = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
     b = pl.DataFrame({"a": [1], "b": [2], "d": [4]}).lazy()
@@ -143,6 +145,7 @@ def test_asof_join_schema_5684() -> None:
     )
 
 
+@requires_datetime_range
 def test_join_asof_mismatched_dtypes() -> None:
     # test 'on' dtype mismatch
     df1 = pl.DataFrame(
@@ -399,6 +402,7 @@ def test_join_asof_projection() -> None:
     }
 
 
+@requires_datetime_range
 def test_asof_join_by_logical_types() -> None:
     dates = (
         pl.datetime_range(

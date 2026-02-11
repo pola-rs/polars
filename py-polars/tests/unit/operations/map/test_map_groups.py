@@ -9,6 +9,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import requires_new_streaming, requires_parquet
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -226,6 +227,7 @@ def test_map_groups_multiple_all_literal(
 
 
 @pytest.mark.may_fail_auto_streaming  # reason: alternate error message
+@requires_new_streaming
 def test_map_groups_multiple_all_literal_elementwise_raises() -> None:
     df = pl.DataFrame({"g": [10, 10, 20], "a": [1, 2, 3], "b": [2, 3, 4]})
     q = (
@@ -249,6 +251,7 @@ def test_map_groups_multiple_all_literal_elementwise_raises() -> None:
         q.collect(engine="streaming")
 
 
+@requires_parquet
 def test_nested_query_with_streaming_dispatch_25172() -> None:
     def simple(_: Any) -> pl.Series:
         import io

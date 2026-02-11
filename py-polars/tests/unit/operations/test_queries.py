@@ -10,7 +10,7 @@ import pytest
 import polars as pl
 from polars._utils.various import parse_version
 from polars.testing import assert_frame_equal
-from tests.unit.conftest import NUMERIC_DTYPES
+from tests.unit.conftest import NUMERIC_DTYPES, requires_new_streaming
 
 if TYPE_CHECKING:
     from polars._typing import TimeUnit
@@ -64,6 +64,7 @@ def test_agg_after_head() -> None:
         assert_frame_equal(out, expected)
 
 
+@requires_new_streaming
 def test_overflow_uint16_agg_mean() -> None:
     assert (
         pl.DataFrame(
@@ -102,6 +103,7 @@ def test_binary_on_list_agg_3345() -> None:
     ) == {"group": ["A", "B"], "id": [0.6365141682948128, 1.0397207708399179]}
 
 
+@requires_new_streaming
 def test_maintain_order_after_sampling() -> None:
     # internally samples cardinality
     # check if the maintain_order kwarg is dispatched
@@ -121,6 +123,7 @@ def test_maintain_order_after_sampling() -> None:
 @pytest.mark.parametrize("descending", [False, True])
 @pytest.mark.parametrize("nulls_last", [False, True])
 @pytest.mark.parametrize("maintain_order", [False, True])
+@requires_new_streaming
 def test_sorted_group_by_optimization(
     descending: bool, nulls_last: bool, maintain_order: bool
 ) -> None:
@@ -159,6 +162,7 @@ def test_median_on_shifted_col_3522() -> None:
     assert diffs.select(pl.col("foo").median()).to_series()[0] == 36828.5
 
 
+@requires_new_streaming
 def test_group_by_agg_equals_zero_3535() -> None:
     # setup test frame
     df = pl.DataFrame(
@@ -187,6 +191,7 @@ def test_group_by_agg_equals_zero_3535() -> None:
     }
 
 
+@requires_new_streaming
 def test_group_by_followed_by_limit() -> None:
     lf = pl.LazyFrame(
         {
@@ -354,6 +359,7 @@ def test_none_comparison_4773() -> None:
 
 
 def test_datetime_supertype_5236() -> None:
+    pytest.importorskip("pyarrow")
     df = pd.DataFrame(
         {
             "StartDateTime": [pd.Timestamp.now(tz="UTC"), pd.Timestamp.now(tz="UTC")],
@@ -399,6 +405,7 @@ def test_temporal_downcasts() -> None:
     ]
 
 
+@requires_new_streaming
 def test_slice_pushdown_queries() -> None:
     lf = pl.LazyFrame({"a": range(100)}).cache()
 
@@ -448,6 +455,7 @@ def assert_unopt_frame_equal(
     )
 
 
+@requires_new_streaming
 def test_order_queries() -> None:
     lf = pl.LazyFrame({"a": range(100), "b": range(100)})
 

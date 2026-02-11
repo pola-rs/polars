@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pyarrow as pa
 import pytest
+
+pa = pytest.importorskip("pyarrow")
 
 import polars as pl
 from polars.exceptions import ComputeError

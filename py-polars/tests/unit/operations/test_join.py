@@ -18,7 +18,7 @@ from polars.exceptions import (
     SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import time_func
+from tests.unit.conftest import requires_new_streaming, time_func
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -67,6 +67,7 @@ def test_semi_anti_join() -> None:
     }
 
 
+@requires_new_streaming
 def test_join_same_cat_src() -> None:
     df = pl.DataFrame(
         data={"column": ["a", "a", "b"], "more": [1, 2, 3]},
@@ -468,6 +469,7 @@ def test_semi_join_projection_pushdown_6423() -> None:
     ).collect().to_dict(as_series=False) == {"x": [1]}
 
 
+@requires_new_streaming
 def test_semi_join_projection_pushdown_6455() -> None:
     df = pl.DataFrame(
         {
@@ -956,6 +958,7 @@ def test_join_projection_invalid_name_contains_suffix_15243() -> None:
         )
 
 
+@requires_new_streaming
 def test_join_list_non_numeric() -> None:
     assert (
         pl.DataFrame(
@@ -1120,6 +1123,7 @@ def test_join_lit_panic_11410() -> None:
     }
 
 
+@requires_new_streaming
 def test_join_empty_literal_17027() -> None:
     df1 = pl.DataFrame({"a": [1]})
     df2 = pl.DataFrame(schema={"a": pl.Int64})

@@ -14,11 +14,19 @@ import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
+from tests.unit.conftest import IS_WASM
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import SerializationFormat
+
+
+if IS_WASM:
+    pytest.skip(
+        "JSON serialisation feature is not enabled on Emscripten/Pyodide builds, and threading/multiprocessing is not supported in Pyodide",
+        allow_module_level=True,
+    )
 
 
 def test_df_serde_roundtrip_binary(df: pl.DataFrame) -> None:

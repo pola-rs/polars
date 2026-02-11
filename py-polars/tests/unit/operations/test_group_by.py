@@ -20,6 +20,7 @@ from polars.exceptions import (
 from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
+from tests.unit.conftest import requires_new_streaming
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType, TimeUnit
 
 
+@requires_new_streaming
 def test_group_by() -> None:
     df = pl.DataFrame(
         {
@@ -138,6 +140,7 @@ def test_group_by() -> None:
         ),
     ],
 )
+@requires_new_streaming
 def test_group_by_mean_by_dtype(
     input: list[Any],
     expected: list[Any],
@@ -287,6 +290,7 @@ def df() -> pl.DataFrame:
         ("n_unique", [("a", 2, 2), ("b", 3, 2)]),
     ],
 )
+@requires_new_streaming
 def test_group_by_shorthands(
     df: pl.DataFrame, method: str, expected: list[tuple[Any]]
 ) -> None:
@@ -518,6 +522,7 @@ def test_group_by_args() -> None:
     assert df.group_by("a").agg(q="b", r="c").columns == ["a", "q", "r"]
 
 
+@requires_new_streaming
 def test_group_by_empty() -> None:
     df = pl.DataFrame({"a": [1, 1, 2]})
     result = df.group_by("a").agg()
@@ -573,6 +578,7 @@ def test_group_by_iteration_selector() -> None:
 
 
 @pytest.mark.parametrize("input", [[pl.col("b").sum()], pl.col("b").sum()])
+@requires_new_streaming
 def test_group_by_agg_input_types(input: Any) -> None:
     df = pl.LazyFrame({"a": [1, 1, 2, 2], "b": [1, 2, 3, 4]})
     result = df.group_by("a", maintain_order=True).agg(input)
@@ -758,6 +764,7 @@ def test_take_in_group_by() -> None:
     ).sort("group").to_dict(as_series=False) == {"group": [1, 2], "values": [197, 494]}
 
 
+@requires_new_streaming
 def test_group_by_wildcard() -> None:
     df = pl.DataFrame(
         {
@@ -1005,6 +1012,7 @@ def test_group_by_list_scalar_11749() -> None:
     }
 
 
+@requires_new_streaming
 def test_group_by_with_expr_as_key() -> None:
     gb = pl.select(x=1).group_by(pl.col("x").alias("key"))
     result = gb.agg(pl.all().first())
@@ -1021,6 +1029,7 @@ def test_group_by_with_expr_as_key() -> None:
     assert_frame_equal(result, expected)
 
 
+@requires_new_streaming
 def test_lazy_group_by_reuse_11767() -> None:
     lgb = pl.select(x=1).lazy().group_by("x")
     a = lgb.len()
@@ -1036,6 +1045,7 @@ def test_group_by_double_on_empty_12194() -> None:
     )
 
 
+@requires_new_streaming
 def test_group_by_when_then_no_aggregation_predicate() -> None:
     df = pl.DataFrame(
         {
@@ -1106,6 +1116,7 @@ def test_partitioned_group_by_14954(monkeypatch: Any) -> None:
     }
 
 
+@requires_new_streaming
 def test_partitioned_group_by_nulls_mean_21838() -> None:
     size = 10
     a = [1 for i in range(size)] + [2 for i in range(size)] + [3 for i in range(size)]
@@ -1127,6 +1138,7 @@ def test_aggregated_scalar_elementwise_15602() -> None:
     assert_frame_equal(out, expected)
 
 
+@requires_new_streaming
 def test_group_by_multiple_null_cols_15623() -> None:
     df = pl.DataFrame(schema={"a": pl.Null, "b": pl.Null}).group_by(pl.all()).len()
     assert df.is_empty()
@@ -1267,6 +1279,7 @@ def test_group_by_schema_err() -> None:
         ),
     ],
 )
+@requires_new_streaming
 def test_schemas(
     data: dict[str, list[Any]],
     expr: pl.Expr,
@@ -1421,6 +1434,7 @@ def test_group_by_lit_series(capfd: Any, monkeypatch: Any) -> None:
     assert "are not partitionable" in captured
 
 
+@requires_new_streaming
 def test_group_by_list_column() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [[1, 2], [3], [1, 2]]})
     result = df.group_by("b").agg(pl.sum("a")).sort("b")
@@ -1428,6 +1442,7 @@ def test_group_by_list_column() -> None:
     assert_frame_equal(result, expected)
 
 
+@requires_new_streaming
 def test_enum_perfect_group_by_21360() -> None:
     dtype = pl.Enum(categories=["a", "b"])
 
@@ -1444,6 +1459,7 @@ def test_enum_perfect_group_by_21360() -> None:
     )
 
 
+@requires_new_streaming
 def test_partitioned_group_by_21634(partition_limit: int) -> None:
     n = partition_limit
     df = pl.DataFrame({"grp": [1] * n, "x": [1] * n})
@@ -1466,6 +1482,7 @@ def test_group_by_cse_dup_key_alias_22238() -> None:
     )
 
 
+@requires_new_streaming
 def test_group_by_22328() -> None:
     N = 20
 
@@ -1484,6 +1501,7 @@ def test_group_by_22328() -> None:
 
 
 @pytest.mark.parametrize("maintain_order", [False, True])
+@requires_new_streaming
 def test_group_by_arrays_22574(maintain_order: bool) -> None:
     assert_frame_equal(
         pl.Series("a", [[1], [2], [2]], pl.Array(pl.Int64, 1))
@@ -1686,6 +1704,7 @@ def test_group_by_tuple_typing_24112() -> None:
         _should_work: str = id_
 
 
+@requires_new_streaming
 def test_group_by_input_independent_with_len_23868() -> None:
     out = pl.DataFrame({"a": ["A", "B", "C"]}).group_by(pl.lit("G")).agg(pl.len())
     assert_frame_equal(
@@ -1749,6 +1768,7 @@ def test_slice_group_by_offset_24259() -> None:
     }
 
 
+@requires_new_streaming
 def test_group_by_first_nondet_24278() -> None:
     values = [
         96, 86, 0, 86, 43, 50, 9, 14, 98, 39, 93, 7, 71, 1, 93, 41, 56,
@@ -1902,6 +1922,7 @@ def test_group_by_length_preserving_on_scalar() -> None:
     )
 
 
+@requires_new_streaming
 def test_group_by_enum_min_max_18394() -> None:
     df = pl.DataFrame(
         {
@@ -2633,6 +2654,7 @@ def test_group_bool_unique_25267(maintain_order: bool, stable: bool) -> None:
 @pytest.mark.parametrize(
     "dtype", [pl.Int32, pl.Boolean, pl.String, pl.Categorical, pl.List(pl.Int32)]
 )
+@requires_new_streaming
 def test_group_by_first_last(
     group_as_slice: bool, n: int, dtype: PolarsDataType
 ) -> None:
@@ -2816,6 +2838,7 @@ def group_by_first_last_test_impl(
     assert_frame_equal(result, expected)
 
 
+@requires_new_streaming
 def test_sorted_group_by() -> None:
     lf = pl.LazyFrame(
         {

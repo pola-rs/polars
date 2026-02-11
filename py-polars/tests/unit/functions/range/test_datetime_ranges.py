@@ -8,9 +8,17 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import IS_WASM
 
 if TYPE_CHECKING:
     from polars._typing import ClosedInterval, PolarsDataType, TimeUnit
+
+# Date/datetime range operations have usize conversion issues in WASM
+if IS_WASM:
+    pytest.skip(
+        "Datetime range operations not supported in WASM (usize conversion)",
+        allow_module_level=True,
+    )
 
 
 @pytest.mark.parametrize("low", ["start", pl.col("start")])

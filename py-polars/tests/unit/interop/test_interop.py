@@ -6,9 +6,10 @@ from typing import Any, cast
 
 import numpy as np
 import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
 import pytest
+
+pa = pytest.importorskip("pyarrow")
+pq = pytest.importorskip("pyarrow.parquet")
 
 import polars as pl
 from polars.exceptions import (

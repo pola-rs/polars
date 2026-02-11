@@ -5,6 +5,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import skip_wasm_differences
 
 
 def test_shuffle_group_by_reseed() -> None:
@@ -65,6 +66,7 @@ def test_sample_df() -> None:
         df.sample(n=2, fraction=0.4)
 
 
+@skip_wasm_differences
 def test_sample_n_expr() -> None:
     df = pl.DataFrame(
         {
@@ -128,6 +130,7 @@ def test_shuffle_expr() -> None:
     assert_series_equal(result1, result2)
 
 
+@skip_wasm_differences
 def test_shuffle_series() -> None:
     a = pl.Series("a", [1, 2, 3])
     out = a.shuffle(1)

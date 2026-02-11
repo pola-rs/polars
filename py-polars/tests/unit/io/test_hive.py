@@ -9,8 +9,9 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import pyarrow.parquet as pq
 import pytest
+
+pq = pytest.importorskip("pyarrow.parquet")
 
 import polars as pl
 from polars.exceptions import ComputeError, SchemaFieldNotFoundError

@@ -10,6 +10,7 @@ import pytest
 import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import requires_datetime_range
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType
 
 
+@requires_datetime_range
 def test_struct_logical_is_in() -> None:
     df1 = pl.DataFrame(
         {
@@ -465,6 +467,7 @@ def test_is_in_int_range() -> None:
     assert out.to_list() == [False, True, True]
 
 
+@requires_datetime_range
 def test_is_in_date_range() -> None:
     r = pl.date_range(date(2023, 1, 1), date(2023, 1, 3), eager=False)
     out = pl.select(r.is_in([date(2023, 1, 2), date(2023, 1, 3)])).to_series()

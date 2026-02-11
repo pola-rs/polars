@@ -6,7 +6,8 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Any, overload
 
 import pytest
-import sqlalchemy
+
+sqlalchemy = pytest.importorskip("sqlalchemy")
 from sqlalchemy.ext.asyncio import create_async_engine
 
 import polars as pl

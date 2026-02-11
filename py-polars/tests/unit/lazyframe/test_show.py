@@ -4,12 +4,14 @@ from unittest.mock import patch
 import pytest
 
 import polars as pl
+from tests.unit.conftest import requires_new_streaming
 
 
 def test_show_signature_match() -> None:
     assert signature(pl.LazyFrame.show) == signature(pl.DataFrame.show)
 
 
+@requires_new_streaming
 def test_lf_show_calls_df_show() -> None:
     lf = pl.LazyFrame({})
     with patch.object(pl.DataFrame, "show") as df_show:

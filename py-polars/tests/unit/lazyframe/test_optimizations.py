@@ -7,6 +7,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import requires_csv, requires_datetime_range, requires_parquet
 
 
 def test_is_null_followed_by_all() -> None:
@@ -418,6 +419,7 @@ def test_slice_pushdown_within_concat_24734() -> None:
     assert_frame_equal(q, pl.LazyFrame({"x": [3, 2]}))
 
 
+@requires_parquet
 def test_is_between_pushdown_25499() -> None:
     f = io.BytesIO()
     pl.LazyFrame(
@@ -463,6 +465,7 @@ def test_slice_pushdown_expr_25473() -> None:
         q.collect()
 
 
+@requires_datetime_range
 def test_lazy_groupby_maintain_order_after_asof_join_25973() -> None:
     # Small target times: 00:00, 00:10, 00:20, 00:30
     targettime = (
@@ -542,6 +545,7 @@ def test_lazy_groupby_maintain_order_after_asof_join_25973() -> None:
     assert_frame_equal(result, expected)
 
 
+@requires_csv
 def test_fast_count_alias_18581() -> None:
     f = io.BytesIO()
     f.write(b"a,b,c\n1,2,3\n4,5,6")

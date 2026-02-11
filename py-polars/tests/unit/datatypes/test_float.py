@@ -1,5 +1,6 @@
-import pyarrow as pa
 import pytest
+
+pa = pytest.importorskip("pyarrow")
 
 import polars as pl
 from polars.testing import assert_series_equal

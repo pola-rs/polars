@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import date, datetime, time, timezone
 from typing import TYPE_CHECKING
 
-import pyarrow as pa
-import pyarrow.dataset as ds
 import pytest
+
+pa = pytest.importorskip("pyarrow")
+ds = pytest.importorskip("pyarrow.dataset")
 
 import polars as pl
 from polars.testing import assert_frame_equal

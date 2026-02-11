@@ -9,6 +9,7 @@ import polars.selectors as cs
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
+from tests.unit.conftest import requires_new_streaming
 
 
 def test_top_k() -> None:
@@ -603,6 +604,7 @@ def test_top_k_by_non_uniq_name_25072() -> None:
     assert_frame_equal(result, expected)
 
 
+@requires_new_streaming
 def test_top_k_union_null() -> None:
     df1 = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.Int64})
     df2 = pl.DataFrame({"a": [None, None, None]}, schema={"a": pl.Null})

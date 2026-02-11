@@ -6,8 +6,10 @@ from typing import TYPE_CHECKING, Literal
 import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
-import pyarrow as pa
 import pytest
+
+pa = pytest.importorskip("pyarrow")
+
 from hypothesis import given
 
 import polars as pl

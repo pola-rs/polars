@@ -7,6 +7,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_series_equal
+from tests.unit.conftest import requires_new_streaming
 
 
 def is_sorted_any(s: pl.Series) -> bool:
@@ -217,6 +218,7 @@ def test_sorted_update_flags_10327() -> None:
     )["a"].to_list() == [1, 2]
 
 
+@requires_new_streaming
 def test_sorted_flag_unset_by_arithmetic_4937() -> None:
     df = pl.DataFrame(
         {
@@ -238,6 +240,7 @@ def test_sorted_flag_unset_by_arithmetic_4937() -> None:
     }
 
 
+@requires_new_streaming
 def test_unset_sorted_flag_after_extend() -> None:
     df1 = pl.DataFrame({"Add": [37, 41], "Batch": [48, 49]}).sort("Add")
     df2 = pl.DataFrame({"Add": [37], "Batch": [67]}).sort("Add")
@@ -322,6 +325,7 @@ def test_sorted_flag() -> None:
 @pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud
 def test_sorted_flag_after_joins() -> None:
+    pytest.importorskip("pyarrow")
     np.random.seed(1)
     dfa = pl.DataFrame(
         {

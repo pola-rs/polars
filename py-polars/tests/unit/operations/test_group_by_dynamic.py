@@ -10,6 +10,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import requires_datetime_range
 
 if TYPE_CHECKING:
     from polars._typing import ClosedInterval, Label, StartBy
@@ -64,6 +65,7 @@ def test_group_by_dynamic(
         (timedelta(days=3), timedelta(days=-1)),
     ],
 )
+@requires_datetime_range
 def test_dynamic_group_by_timezone_awareness(
     every: str | timedelta, offset: str | timedelta
 ) -> None:
@@ -95,6 +97,7 @@ def test_dynamic_group_by_timezone_awareness(
 
 
 @pytest.mark.parametrize("tzinfo", [None, ZoneInfo("UTC"), ZoneInfo("Asia/Kathmandu")])
+@requires_datetime_range
 def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
     # start by datapoint
     start = datetime(2022, 12, 16, tzinfo=tzinfo)
@@ -845,6 +848,7 @@ def test_group_by_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) 
 
 # https://github.com/pola-rs/polars/issues/11339
 @pytest.mark.parametrize("include_boundaries", [True, False])
+@requires_datetime_range
 def test_group_by_dynamic_lazy_schema(include_boundaries: bool) -> None:
     lf = pl.LazyFrame(
         {
@@ -1005,6 +1009,7 @@ def test_group_by_dynamic_invalid() -> None:
         )
 
 
+@requires_datetime_range
 def test_group_by_dynamic_get() -> None:
     df = pl.DataFrame(
         {
@@ -1283,6 +1288,7 @@ def test_group_by_dynamic_negative_time_25039() -> None:
     assert_frame_equal(out, expected)
 
 
+@requires_datetime_range
 def test_group_by_multiple_chunks_25063() -> None:
     df = (
         pl.DataFrame(

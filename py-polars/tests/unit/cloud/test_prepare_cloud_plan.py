@@ -6,9 +6,14 @@ import pytest
 import polars as pl
 from polars._utils.cloud import prepare_cloud_plan
 from polars.exceptions import InvalidOperationError
+from tests.unit.conftest import IS_WASM
 
 CLOUD_SOURCE = "s3://my-nonexistent-bucket/dataset"
 DST = "s3://my-nonexistent-bucket/output"
+
+pytestmark = pytest.mark.skipif(
+    IS_WASM, reason="Parquet lazy scanning is not available on emscripten"
+)
 
 
 @pytest.mark.parametrize(

@@ -10,6 +10,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+pytest.importorskip("xlsx2csv")
+
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import (

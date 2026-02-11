@@ -7,6 +7,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import requires_new_streaming
 
 
 def test_shift() -> None:
@@ -210,6 +211,7 @@ def test_streaming_shift_25226() -> None:
     )
 
 
+@requires_new_streaming
 def test_streaming_shift_with_head_26098() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 

@@ -22,7 +22,12 @@ from polars.exceptions import (
     StructFieldNotFoundError,
 )
 from polars.testing import assert_frame_equal
-from tests.unit.conftest import TEMPORAL_DTYPES
+from tests.unit.conftest import (
+    TEMPORAL_DTYPES,
+    requires_csv,
+    requires_json,
+    requires_parquet,
+)
 
 if TYPE_CHECKING:
     from polars._typing import ConcatMethod
@@ -117,6 +122,7 @@ def test_error_on_invalid_struct_field() -> None:
         ).struct.field("z")
 
 
+@requires_csv
 def test_not_found_error() -> None:
     csv = "a,b,c\n2,1,1"
     df = pl.read_csv(io.StringIO(csv))
@@ -143,6 +149,7 @@ def test_panic_error() -> None:
 
 
 def test_join_lazy_on_df() -> None:
+    pytest.importorskip("pyarrow")
     df_left = pl.DataFrame(
         {
             "Id": [1, 2, 3, 4],
@@ -225,6 +232,7 @@ def test_err_bubbling_up_to_lit() -> None:
         df.filter(pl.col("date") == pl.Date("2020-01-01"))  # type: ignore[call-arg,operator]
 
 
+@requires_json
 def test_filter_not_of_type_bool() -> None:
     df = pl.DataFrame({"json_val": ['{"a":"hello"}', None, '{"a":"world"}']})
     with pytest.raises(
@@ -301,6 +309,7 @@ def test_epoch_time_type() -> None:
         pl.Series([time(0, 0, 1)]).dt.epoch("s")
 
 
+@requires_parquet
 def test_duplicate_columns_arg_csv() -> None:
     f = io.BytesIO()
     pl.DataFrame({"x": [1, 2, 3], "y": ["a", "b", "c"]}).write_csv(f)

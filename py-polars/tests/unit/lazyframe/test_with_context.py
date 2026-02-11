@@ -4,6 +4,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import requires_new_streaming
 
 
 @pytest.mark.may_fail_cloud  # reason: with_context
@@ -25,6 +26,7 @@ def test_with_context() -> None:
 
 # https://github.com/pola-rs/polars/issues/5867
 @pytest.mark.may_fail_cloud  # reason: with_context
+@requires_new_streaming
 def test_with_context_ignore_5867() -> None:
     outer = pl.LazyFrame({"OtherCol": [1, 2, 3, 4]})
     with pytest.deprecated_call():

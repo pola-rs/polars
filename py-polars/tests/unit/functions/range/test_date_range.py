@@ -7,6 +7,14 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import IS_WASM
+
+# Date/datetime range operations have usize conversion issues in WASM
+if IS_WASM:
+    pytest.skip(
+        "Date range operations not supported in WASM (usize conversion)",
+        allow_module_level=True,
+    )
 
 
 def test_date_range() -> None:

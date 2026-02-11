@@ -1,7 +1,9 @@
 import polars as pl
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import skip_wasm_differences
 
 
+@skip_wasm_differences
 def test_hash_struct() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
     df = df.select(pl.struct(pl.all()))

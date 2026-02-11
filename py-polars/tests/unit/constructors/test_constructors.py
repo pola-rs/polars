@@ -9,8 +9,10 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
-import pyarrow as pa
 import pytest
+
+pa = pytest.importorskip("pyarrow")
+
 from packaging.version import parse as parse_version
 from pydantic import BaseModel, Field, TypeAdapter
 

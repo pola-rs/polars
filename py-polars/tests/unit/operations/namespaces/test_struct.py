@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import requires_json
 
 
 def test_struct_various() -> None:
@@ -39,6 +40,7 @@ def test_rename_fields() -> None:
     assert s.struct.fields == ["a", "b"]
 
 
+@requires_json
 def test_struct_json_encode() -> None:
     assert pl.DataFrame(
         {"a": [{"a": [1, 2], "b": [45]}, {"a": [9, 1, 3], "b": None}]}
@@ -50,6 +52,7 @@ def test_struct_json_encode() -> None:
     }
 
 
+@requires_json
 def test_struct_json_encode_logical_type() -> None:
     df = pl.DataFrame(
         {
@@ -133,6 +136,7 @@ def test_unnest_raises_on_non_struct_23654() -> None:
             df.unnest(z)
 
 
+@requires_json
 def test_json_encode_decimal_25881() -> None:
     s = pl.Series(
         [{"a": 1.23}, {"a": 4.56}, {"a": None}, {"a": 30.13}],
@@ -145,6 +149,7 @@ def test_json_encode_decimal_25881() -> None:
     assert_series_equal(result, expected)
 
 
+@requires_json
 def test_json_encode_i128() -> None:
     s = pl.Series(
         [{"a": 2**127 - 5}, {"a": None}, {"a": -(2**127) + 124912489}],
@@ -161,6 +166,7 @@ def test_json_encode_i128() -> None:
     assert_series_equal(result, expected)
 
 
+@requires_json
 def test_json_encode_u128() -> None:
     s = pl.Series(
         [{"a": 2**128 - 5}, {"a": None}],
@@ -174,6 +180,7 @@ def test_json_encode_u128() -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.Enum(["bar", "foo"]), pl.Categorical])
+@requires_json
 def test_json_encode_categorical(dtype: pl.DataType) -> None:
     s = pl.Series("a", ["foo", "bar"], dtype=dtype)
     assert_series_equal(

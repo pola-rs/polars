@@ -12,6 +12,13 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from polars._typing import JoinStrategy, PolarsDataType
 
+from tests.unit.conftest import IS_WASM
+
+# Sink operations (CSV, Parquet, IPC) are not available in WASM builds
+if IS_WASM:
+    pytest.skip("Sink operations not available in WASM", allow_module_level=True)
+
+
 TestExtension = pl.Extension(
     name="testing.test_extension",
     storage=pl.Int8,

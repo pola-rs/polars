@@ -5,6 +5,13 @@ from pathlib import Path
 import pytest
 
 import polars as pl
+from tests.unit.conftest import IS_WASM
+
+if IS_WASM:
+    pytest.skip(
+        "the sql feature is not enabled on Emscripten/Pyodide builds.",
+        allow_module_level=True,
+    )
 
 
 @pytest.fixture

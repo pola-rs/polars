@@ -9,8 +9,9 @@ from math import ceil, floor
 from random import choice, randrange, seed
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-import pyarrow as pa
 import pytest
+
+pa = pytest.importorskip("pyarrow")
 
 import polars as pl
 from polars.exceptions import InvalidOperationError

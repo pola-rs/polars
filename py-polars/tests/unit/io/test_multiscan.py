@@ -6,8 +6,10 @@ import sys
 from functools import partial
 from typing import IO, TYPE_CHECKING, Any
 
-import pyarrow.parquet as pq
 import pytest
+
+pq = pytest.importorskip("pyarrow.parquet")
+
 from hypothesis import given
 from hypothesis import strategies as st
 

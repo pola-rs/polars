@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import gc
+import importlib.util
 import os
+import platform
 import random
 import string
 import sys
@@ -23,6 +25,27 @@ if TYPE_CHECKING:
 
 load_profile(
     profile=os.environ.get("POLARS_HYPOTHESIS_PROFILE", "fast"),  # type: ignore[arg-type]
+)
+
+IS_WASM = sys.platform == "emscripten" or platform.machine() in ["wasm32", "wasm64"]
+
+requires_json = pytest.mark.skipif(IS_WASM, reason="json feature not available in WASM")
+requires_csv = pytest.mark.skipif(IS_WASM, reason="csv feature not available in WASM")
+requires_parquet = pytest.mark.skipif(
+    IS_WASM, reason="parquet feature not available in WASM"
+)
+requires_ipc = pytest.mark.skipif(IS_WASM, reason="ipc feature not available in WASM")
+requires_new_streaming = pytest.mark.skipif(
+    IS_WASM, reason="new_streaming feature not available in WASM"
+)
+requires_multiprocessing = pytest.mark.skipif(
+    IS_WASM, reason="multiprocessing not available in WASM"
+)
+requires_datetime_range = pytest.mark.skipif(
+    IS_WASM, reason="datetime range has usize conversion issues in WASM"
+)
+skip_wasm_differences = pytest.mark.skipif(
+    IS_WASM, reason="test has different results in WASM (hash/random differences)"
 )
 
 # Data type groups

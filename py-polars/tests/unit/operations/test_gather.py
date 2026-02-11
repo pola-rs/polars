@@ -4,6 +4,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, OutOfBoundsError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import requires_datetime_range
 
 
 def test_negative_index() -> None:
@@ -323,6 +324,7 @@ def test_get_agg_group_update_scalar_21610() -> None:
     assert_frame_equal(df, expected)
 
 
+@requires_datetime_range
 def test_get_dt_truncate_21533() -> None:
     df = pl.DataFrame(
         {

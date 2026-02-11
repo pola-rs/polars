@@ -15,7 +15,7 @@ from polars.exceptions import (
     OutOfBoundsError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import time_func
+from tests.unit.conftest import requires_new_streaming, skip_wasm_differences, time_func
 
 if TYPE_CHECKING:
     from polars._typing import EngineType, PolarsDataType
@@ -401,6 +401,7 @@ def test_list_drop_nulls_eager() -> None:
         [None, [None, "value", None]],
     ],
 )
+@requires_new_streaming
 def test_list_drop_nulls_lazy(engine: EngineType, data: list[Any]) -> None:
     res = (
         pl.LazyFrame({"foo": data})
@@ -411,6 +412,7 @@ def test_list_drop_nulls_lazy(engine: EngineType, data: list[Any]) -> None:
     assert_frame_equal(res, expected)
 
 
+@skip_wasm_differences
 def test_list_sample() -> None:
     s = pl.Series("values", [[1, 2, 3, None], [None, None], [1, 2], None])
 

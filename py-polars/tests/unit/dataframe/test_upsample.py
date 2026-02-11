@@ -9,6 +9,7 @@ import pytest
 import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import requires_datetime_range
 
 if TYPE_CHECKING:
     from datetime import timezone
@@ -77,6 +78,7 @@ def test_upsample(time_zone: str | None, tzinfo: ZoneInfo | timezone | None) -> 
 
 
 @pytest.mark.parametrize("time_zone", [None, "America/Chicago"])
+@requires_datetime_range
 def test_upsample_crossing_dst(time_zone: str | None) -> None:
     df = pl.DataFrame(
         {

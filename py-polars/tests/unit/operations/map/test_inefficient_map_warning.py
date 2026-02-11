@@ -17,6 +17,7 @@ from polars._utils.udfs import _BYTECODE_PARSER_CACHE_, _NUMPY_FUNCTIONS, Byteco
 from polars._utils.various import in_terminal_that_supports_colour
 from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import requires_json
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -398,6 +399,7 @@ def test_parse_apply_functions(
     "ignore:.*without specifying `return_dtype`:polars.exceptions.MapWithoutReturnDtypeWarning",
 )
 @pytest.mark.may_fail_auto_streaming  # dtype is not set
+@requires_json
 def test_parse_apply_raw_functions() -> None:
     lf = pl.LazyFrame({"a": [1.1, 2.0, 3.4]})
 
