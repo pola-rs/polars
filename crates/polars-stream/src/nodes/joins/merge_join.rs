@@ -20,8 +20,6 @@ use crate::nodes::in_memory_source::InMemorySourceNode;
 use crate::nodes::joins::utils::DataFrameSearchBuffer;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
-pub const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY_TMP";
-
 #[derive(Clone, Copy, Debug)]
 enum NeedMore {
     Build,
@@ -103,8 +101,14 @@ pub struct MergeJoinNode {
 pub struct MergeJoinSideParams {
     pub input_schema: SchemaRef,
     pub on: Vec<PlSmallStr>,
-    pub key_col: PlSmallStr,
+    pub tmp_key_col: Option<PlSmallStr>,
     pub emit_unmatched: bool,
+}
+
+impl MergeJoinSideParams {
+    fn key_col(&self) -> &PlSmallStr {
+        self.tmp_key_col.as_ref().unwrap_or(&self.on[0])
+    }
 }
 
 impl MergeJoinNode {
@@ -115,37 +119,31 @@ impl MergeJoinNode {
         output_schema: SchemaRef,
         left_on: Vec<PlSmallStr>,
         right_on: Vec<PlSmallStr>,
+        tmp_left_key_col: Option<PlSmallStr>,
+        tmp_right_key_col: Option<PlSmallStr>,
         descending: bool,
         nulls_last: bool,
         keys_row_encoded: bool,
         args: JoinArgs,
     ) -> PolarsResult<Self> {
-        let state = MergeJoinState::Running;
+        let left_key_col = tmp_left_key_col.as_ref().unwrap_or(&left_on[0]);
+        let right_key_col = tmp_right_key_col.as_ref().unwrap_or(&right_on[0]);
+        let left_key_dtype = left_input_schema.get(left_key_col).unwrap();
+        let right_key_dtype = right_input_schema.get(right_key_col).unwrap();
         assert!(left_on.len() == right_on.len());
-        if keys_row_encoded {
-            assert!(left_input_schema.contains(KEY_COL_NAME));
-            assert!(right_input_schema.contains(KEY_COL_NAME));
-        }
-        let left_key_col = if left_input_schema.contains(&PlSmallStr::from(KEY_COL_NAME)) {
-            PlSmallStr::from(KEY_COL_NAME)
-        } else {
-            left_on[0].clone()
-        };
-        let right_key_col = if right_input_schema.contains(&PlSmallStr::from(KEY_COL_NAME)) {
-            PlSmallStr::from(KEY_COL_NAME)
-        } else {
-            right_on[0].clone()
-        };
+        assert_eq!(left_key_dtype, right_key_dtype);
+
+        let state = MergeJoinState::Running;
         let left = MergeJoinSideParams {
             input_schema: left_input_schema.clone(),
             on: left_on,
-            key_col: left_key_col,
+            tmp_key_col: tmp_left_key_col,
             emit_unmatched: matches!(args.how, JoinType::Left | JoinType::Full),
         };
         let right = MergeJoinSideParams {
             input_schema: right_input_schema.clone(),
             on: right_on,
-            key_col: right_key_col,
+            tmp_key_col: tmp_right_key_col,
             emit_unmatched: matches!(args.how, JoinType::Right | JoinType::Full),
         };
         let params = MergeJoinParams {
@@ -447,11 +445,11 @@ async fn compute_join_and_send(
     probe.rechunk_mut();
 
     let mut build_key = build
-        .column(&params.build_params().key_col)
+        .column(params.build_params().key_col())
         .unwrap()
         .as_materialized_series();
     let mut probe_key = probe
-        .column(&params.probe_params().key_col)
+        .column(params.probe_params().key_col())
         .unwrap()
         .as_materialized_series();
 
@@ -643,10 +641,10 @@ fn find_mergeable_search(
     let probe_empty_buf =
         || DataFrameSearchBuffer::empty_with_schema(probe_params.input_schema.clone());
     let build_get = |idx| unsafe {
-        build.get_bypass_validity(&build_params.key_col, idx, params.keys_row_encoded)
+        build.get_bypass_validity(build_params.key_col(), idx, params.keys_row_encoded)
     };
     let probe_get = |idx| unsafe {
-        probe.get_bypass_validity(&probe_params.key_col, idx, params.keys_row_encoded)
+        probe.get_bypass_validity(probe_params.key_col(), idx, params.keys_row_encoded)
     };
 
     if build_done && build.is_empty() && !probe_done && probe.is_empty() {
@@ -753,7 +751,7 @@ fn binary_search_lower(
     sp: &MergeJoinSideParams,
 ) -> usize {
     let predicate = |x: &AnyValue<'_>| keys_cmp(sv, x, params).is_le();
-    dfsb.binary_search(predicate, &sp.key_col, params.keys_row_encoded)
+    dfsb.binary_search(predicate, sp.key_col(), params.keys_row_encoded)
 }
 
 fn binary_search_upper(
@@ -763,7 +761,7 @@ fn binary_search_upper(
     sp: &MergeJoinSideParams,
 ) -> usize {
     let predicate = |x: &AnyValue<'_>| keys_cmp(sv, x, params).is_lt();
-    dfsb.binary_search(predicate, &sp.key_col, params.keys_row_encoded)
+    dfsb.binary_search(predicate, sp.key_col(), params.keys_row_encoded)
 }
 
 fn keys_cmp(lhs: &AnyValue, rhs: &AnyValue, params: &MergeJoinParams) -> Ordering {

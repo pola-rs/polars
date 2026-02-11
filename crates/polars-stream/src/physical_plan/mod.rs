@@ -358,6 +358,8 @@ pub enum PhysNodeKind {
         input_right: PhysStream,
         left_on: Vec<PlSmallStr>,
         right_on: Vec<PlSmallStr>,
+        tmp_left_key_col: Option<PlSmallStr>,
+        tmp_right_key_col: Option<PlSmallStr>,
         descending: bool,
         nulls_last: bool,
         keys_row_encoded: bool,
@@ -384,6 +386,8 @@ pub enum PhysNodeKind {
         input_right: PhysStream,
         left_on: PlSmallStr,
         right_on: PlSmallStr,
+        tmp_left_key_col: Option<PlSmallStr>,
+        tmp_right_key_col: Option<PlSmallStr>,
         args: JoinArgs,
     },
 
