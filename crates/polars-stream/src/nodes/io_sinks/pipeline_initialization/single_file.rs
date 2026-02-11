@@ -59,7 +59,7 @@ pub fn start_single_file_sink_pipeline(
                     cloud_options.as_deref(),
                     mkdir,
                     upload_chunk_size,
-                    upload_max_concurrency,
+                    upload_max_concurrency.get(),
                     io_metrics,
                 )
                 .await
@@ -77,10 +77,12 @@ pub fn start_single_file_sink_pipeline(
             file_writer_starter: {}, \
             takeable_rows_provider: {:?}, \
             upload_chunk_size: {}, \
+            upload_concurrency: {}, \
             io_metrics: {}",
             file_writer_starter.writer_name(),
             takeable_rows_provider,
             upload_chunk_size,
+            upload_max_concurrency,
             io_metrics.is_some(),
         )
     }

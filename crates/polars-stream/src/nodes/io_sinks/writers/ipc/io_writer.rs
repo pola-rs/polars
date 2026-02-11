@@ -48,7 +48,7 @@ impl IOWriter {
                 // Start with header.
                 let offset = push_magic(&mut sink_queue, true);
                 for bytes in sink_queue.drain(..) {
-                    cloud_writer.write_owned(bytes).await?;
+                    cloud_writer.write_all_owned(bytes).await?;
                 }
                 block_offsets += offset;
 
@@ -60,7 +60,7 @@ impl IOWriter {
                 };
                 let (meta, data) = push_message(&mut sink_queue, encoded_data);
                 for bytes in sink_queue.drain(..) {
-                    cloud_writer.write_owned(bytes).await?;
+                    cloud_writer.write_all_owned(bytes).await?;
                 }
                 block_offsets += meta + data;
 
@@ -76,7 +76,7 @@ impl IOWriter {
 
                             let (meta, data) = push_message(&mut sink_queue, encoded_data);
                             for bytes in sink_queue.drain(..) {
-                                cloud_writer.write_owned(bytes).await?;
+                                cloud_writer.write_all_owned(bytes).await?;
                             }
 
                             let block = arrow_ipc_block(block_offsets, meta, data);
@@ -93,7 +93,7 @@ impl IOWriter {
 
                             let (meta, data) = push_message(&mut sink_queue, encoded_dictionary);
                             for bytes in sink_queue.drain(..) {
-                                cloud_writer.write_owned(bytes).await?;
+                                cloud_writer.write_all_owned(bytes).await?;
                             }
 
                             let block = arrow_ipc_block(block_offsets, meta, data);
@@ -114,7 +114,7 @@ impl IOWriter {
                 );
                 push_magic(&mut sink_queue, false);
                 for bytes in sink_queue.drain(..) {
-                    cloud_writer.write_owned(bytes).await?;
+                    cloud_writer.write_all_owned(bytes).await?;
                 }
 
                 // Finish.
