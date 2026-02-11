@@ -43,7 +43,6 @@ static KNOWN_OPTIONS: &'static [&'static str] = &[
     IDEAL_MORSEL_SIZE,
     STREAMING_CHUNK_SIZE,
     ENGINE_AFFINITY,
-
     /*
     Not yet supported public options:
 
@@ -66,11 +65,10 @@ static KNOWN_OPTIONS: &'static [&'static str] = &[
         "POLARS_TABLE_WIDTH"
         "POLARS_MAX_EXPR_DEPTH"
     */
-    
     // Private.
     VERBOSE_SENSITIVE,
     FORCE_ASYNC,
-    IMPORT_INTERVAL_AS_STRUCT
+    IMPORT_INTERVAL_AS_STRUCT,
 ];
 
 pub struct Config {
@@ -198,7 +196,6 @@ impl Config {
     pub fn engine_affinity(&self) -> Engine {
         Engine::from_discriminant(self.engine_affinity.load(Ordering::Relaxed))
     }
-    
 
     /// Whether we should do verbose printing on sensitive information.
     pub fn verbose_sensitive(&self) -> bool {
@@ -208,7 +205,7 @@ impl Config {
     pub fn force_async(&self) -> bool {
         self.force_async.load(Ordering::Relaxed)
     }
-    
+
     pub fn import_interval_as_struct(&self) -> bool {
         self.import_interval_as_struct.load(Ordering::Relaxed)
     }
@@ -218,4 +215,3 @@ pub fn config() -> &'static Config {
     static CONFIG: LazyLock<Config> = LazyLock::new(Config::new);
     &*CONFIG
 }
-

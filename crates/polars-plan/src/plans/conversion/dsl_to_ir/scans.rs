@@ -345,8 +345,8 @@ pub async fn csv_file_info(
     csv_options: &mut CsvReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
-    use polars_core::error::feature_gated;
     use polars_core::POOL;
+    use polars_core::error::feature_gated;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
     // Holding _first_scan_source should guarantee sources is not empty.

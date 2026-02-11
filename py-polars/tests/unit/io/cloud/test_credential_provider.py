@@ -32,9 +32,7 @@ from polars.io.cloud.credential_provider._providers import (
         pl.scan_ipc,
     ],
 )
-def test_credential_provider_scan(
-    io_func: Any, plmonkeypatch: Any
-) -> None:
+def test_credential_provider_scan(io_func: Any, plmonkeypatch: Any) -> None:
     err_magic = "err_magic_3"
 
     def raises(*_: None, **__: None) -> None:
@@ -545,9 +543,7 @@ def test_no_pickle_option() -> None:
 
 
 @pytest.mark.write_disk
-def test_credential_provider_aws_expiry(
-    tmp_path: Path, plmonkeypatch: Any
-) -> None:
+def test_credential_provider_aws_expiry(tmp_path: Path, plmonkeypatch: Any) -> None:
     credential_file_path = tmp_path / "credentials.json"
 
     credential_file_path.write_text(

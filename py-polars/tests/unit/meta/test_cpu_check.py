@@ -9,9 +9,7 @@ from polars._cpu_check import check_cpu_flags
 TEST_FEATURE_FLAGS = "+sse3,+ssse3"
 
 
-def test_check_cpu_flags(
-    plmonkeypatch: Any, recwarn: pytest.WarningsRecorder
-) -> None:
+def test_check_cpu_flags(plmonkeypatch: Any, recwarn: pytest.WarningsRecorder) -> None:
     cpu_flags = {"sse3": True, "ssse3": True}
     mock_read_cpu_flags = Mock(return_value=cpu_flags)
     plmonkeypatch.setattr(_cpu_check, "_read_cpu_flags", mock_read_cpu_flags)

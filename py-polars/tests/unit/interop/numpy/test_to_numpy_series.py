@@ -448,9 +448,7 @@ def test_series_to_numpy(s: pl.Series) -> None:
 
 @pytest.mark.parametrize("writable", [False, True])
 @pytest.mark.parametrize("pyarrow_available", [False, True])
-def test_to_numpy2(
-    writable: bool, pyarrow_available: bool, plmonkeypatch: Any
-) -> None:
+def test_to_numpy2(writable: bool, pyarrow_available: bool, plmonkeypatch: Any) -> None:
     plmonkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", pyarrow_available)
 
     np_array = pl.Series("a", [1, 2, 3], pl.UInt8).to_numpy(writable=writable)

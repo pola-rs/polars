@@ -99,9 +99,7 @@ def session_tmp_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     params=[False, True],
     ids=["sync", "async"],
 )
-def force_async(
-    request: pytest.FixtureRequest, plmonkeypatch: Any
-) -> bool:
+def force_async(request: pytest.FixtureRequest, plmonkeypatch: Any) -> bool:
     value: bool = request.param
     return value
 

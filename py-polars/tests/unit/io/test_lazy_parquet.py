@@ -217,7 +217,9 @@ def test_row_index_schema_parquet(parquet_file_path: Path) -> None:
 
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 @pytest.mark.write_disk
-def test_parquet_is_in_statistics(plmonkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
+def test_parquet_is_in_statistics(
+    plmonkeypatch: Any, capfd: Any, tmp_path: Path
+) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")

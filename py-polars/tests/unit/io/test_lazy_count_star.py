@@ -140,9 +140,7 @@ a,b
 
 
 @pytest.mark.write_disk
-def test_commented_csv(
-    capfd: pytest.CaptureFixture[str], plmonkeypatch: Any
-) -> None:
+def test_commented_csv(capfd: pytest.CaptureFixture[str], plmonkeypatch: Any) -> None:
     with NamedTemporaryFile() as csv_a:
         csv_a.write(b"A,B\nGr1,A\nGr1,B\n# comment line\n")
         csv_a.seek(0)

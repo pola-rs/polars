@@ -23,9 +23,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _patched_cloud(
-    request: pytest.FixtureRequest, plmonkeypatch: Any
-) -> None:
+def _patched_cloud(request: pytest.FixtureRequest, plmonkeypatch: Any) -> None:
     if request.config.getoption("--cloud-distributed"):
         import signal
         import uuid
@@ -252,6 +250,7 @@ class PlMonkeyPatch(pytest.MonkeyPatch):
     def undo(self) -> None:
         super().undo()
         pl.Config.reload_env_vars()
+
 
 @pytest.fixture
 def plmonkeypatch() -> Generator[PlMonkeyPatch, None, None]:
