@@ -17,7 +17,7 @@ polars-json = { workspace = true, optional = true }
 polars-parquet = { workspace = true, optional = true }
 polars-schema = { workspace = true }
 polars-time = { workspace = true, features = [], optional = true }
-polars-utils = { workspace = true, features = ['mmap'] }
+polars-utils = { workspace = true, features = ['mmap', 'sysinfo'] }
 
 arrow = { workspace = true }
 async-trait = { workspace = true, optional = true }
@@ -124,6 +124,7 @@ async = [
   "tokio",
   "polars-error/regex",
   "polars-parquet?/async",
+  "polars-utils/async-utils",
 ]
 cloud = [
   "object_store",

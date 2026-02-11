@@ -481,3 +481,40 @@ class ExprBinaryNameSpace:
         """
         n_pyexpr = parse_into_expression(n, str_as_lit=False)
         return wrap_expr(self._pyexpr.bin_tail(n_pyexpr))
+
+    def get(self, index: int | IntoExpr, *, null_on_oob: bool = False) -> Expr:
+        r"""
+        Get the byte value at the given index.
+
+        For example, index `0` would return the first byte of every binary value
+        and index `-1` would return the last byte of every binary value.
+        The behavior if an index is out of bounds is determined by the argument
+        `null_on_oob`.
+
+        Parameters
+        ----------
+        index
+            Index to return per binary value
+        null_on_oob
+            Behavior if an index is out of bounds:
+
+            * True -> set as null
+            * False -> raise an error
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [b"\x01\x02\x03", b"", b"\x04\x05"]})
+        >>> df.with_columns(get=pl.col("a").bin.get(0, null_on_oob=True))
+        shape: (3, 2)
+        ┌─────────────────┬──────┐
+        │ a               ┆ get  │
+        │ ---             ┆ ---  │
+        │ binary          ┆ u8   │
+        ╞═════════════════╪══════╡
+        │ b"\x01\x02\x03" ┆ 1    │
+        │ b""             ┆ null │
+        │ b"\x04\x05"     ┆ 4    │
+        └─────────────────┴──────┘
+        """
+        index_pyexpr = parse_into_expression(index)
+        return wrap_expr(self._pyexpr.bin_get(index_pyexpr, null_on_oob))

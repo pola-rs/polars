@@ -3684,8 +3684,8 @@ def test_between_prefiltering_parametric(s: pl.Series, start: int, end: int) -> 
     [
         (pl.Null, pa.null()),
         (pl.Boolean, pa.bool_()),
-        (pl.String, pa.string_view()),
-        (pl.Binary, pa.binary_view()),
+        (pl.String, pa.large_string()),
+        (pl.Binary, pa.large_binary()),
         (pl.Int8, pa.int8()),
         (pl.Int16, pa.int16()),
         (pl.Int32, pa.int32()),
@@ -3709,7 +3709,7 @@ def test_between_prefiltering_parametric(s: pl.Series, start: int, end: int) -> 
             pa.struct(
                 [
                     pa.field("x", pa.int32()),
-                    pa.field("y", pa.string_view()),
+                    pa.field("y", pa.large_string()),
                 ]
             ),
         ),
@@ -3773,7 +3773,8 @@ def test_parquet_is_in_pushdown_large_26007() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_parquet_ordered_cat_26174() -> None:
+@pytest.mark.write_disk
+def test_parquet_ordered_cat_26174(tmp_path: Path) -> None:
     df_pandas = pd.DataFrame(
         {
             "dummy": pd.Categorical(
@@ -3782,9 +3783,9 @@ def test_parquet_ordered_cat_26174() -> None:
             )
         }
     )
-    df_pandas.to_parquet(r"test.parquet", index=False)
+    df_pandas.to_parquet(tmp_path / "test.parquet", index=False)
 
-    df = pl.scan_parquet(r"test.parquet").collect()
+    df = pl.scan_parquet(tmp_path / "test.parquet").collect()
     assert_frame_equal(
         df,
         pl.DataFrame(

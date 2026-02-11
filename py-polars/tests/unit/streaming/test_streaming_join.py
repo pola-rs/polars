@@ -1,21 +1,28 @@
 from __future__ import annotations
 
-import itertools
 import typing
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
+import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
 import pytest
+from hypothesis import given, settings
 
 import polars as pl
+from polars._typing import AsofJoinStrategy
+from polars.datatypes.group import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric.strategies.core import dataframes
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import JoinStrategy, MaintainOrderJoin
+    from polars._typing import AsofJoinStrategy, JoinStrategy, MaintainOrderJoin
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -405,7 +412,6 @@ def test_cross_join_with_literal_column_25544() -> None:
     assert streaming_result.item() == 0
 
 
-@pytest.mark.slow
 @pytest.mark.parametrize("on", [["key"], ["key", "key_ext"]])
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
 @pytest.mark.parametrize("descending", [False, True])
@@ -413,7 +419,8 @@ def test_cross_join_with_literal_column_25544() -> None:
 @pytest.mark.parametrize("nulls_equal", [False, True])
 @pytest.mark.parametrize("coalesce", [None, True, False])
 @pytest.mark.parametrize("maintain_order", ["none", "left_right", "right_left"])
-@pytest.mark.parametrize("ideal_morsel_size", [1, 1000])
+@given(data=st.data())
+@settings(max_examples=10)
 def test_merge_join(
     on: list[str],
     how: JoinStrategy,
@@ -422,18 +429,18 @@ def test_merge_join(
     nulls_equal: bool,
     coalesce: bool | None,
     maintain_order: MaintainOrderJoin,
-    ideal_morsel_size: int,
-    monkeypatch: pytest.MonkeyPatch,
+    data: st.DataObject,
 ) -> None:
-    max_examples = 10
-    key_value_set = pl.Series([None] * 5 + list(range(5)), dtype=pl.Int32)
     check_row_order = maintain_order in {"left_right", "right_left"}
-    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", str(ideal_morsel_size))
 
-    def sample_keys(height: int, seed: int) -> pl.Series:
-        return key_value_set.sample(
-            height, with_replacement=True, shuffle=True, seed=seed
-        )
+    df_st = dataframes(min_cols=len(on), max_cols=len(on), allowed_dtypes=[pl.Int16])
+    left_df = data.draw(df_st)
+    right_df = data.draw(df_st)
+
+    left = left_df.rename(dict(zip(left_df.columns, ["key", "key_ext"], strict=False)))
+    right = right_df.rename(
+        dict(zip(right_df.columns, ["key", "key_ext"], strict=False))
+    )
 
     def df_sorted(df: pl.DataFrame) -> pl.LazyFrame:
         return (
@@ -448,39 +455,20 @@ def test_merge_join(
             .set_sorted(on, descending=descending, nulls_last=nulls_last)
         )
 
-    seed = 0
-    for height, _ in itertools.product([0, 1, 5, 10], range(max_examples)):
-        # Use random testing, because hypothesis does not work well with
-        # monkeypatch.
+    q = df_sorted(left).join(
+        df_sorted(right),
+        on=on,
+        how=how,
+        nulls_equal=nulls_equal,
+        coalesce=coalesce,
+        maintain_order=maintain_order,
+    )
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    expected = q.collect(engine="in-memory")
+    actual = q.collect(engine="streaming")
 
-        df_left = pl.DataFrame(
-            {
-                "key": sample_keys(height, seed),
-                "key_ext": sample_keys(height, seed + 1),
-            },
-        ).with_row_index()
-        df_right = pl.DataFrame(
-            {
-                "key": sample_keys(height, seed + 2),
-                "key_ext": sample_keys(height, seed + 3),
-            },
-        ).with_row_index()
-        seed += 4
-
-        q = df_sorted(df_left).join(
-            df_sorted(df_right),
-            on=on,
-            how=how,
-            nulls_equal=nulls_equal,
-            coalesce=coalesce,
-            maintain_order=maintain_order,
-        )
-        dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
-        expected = q.collect(engine="in-memory")
-        actual = q.collect(engine="streaming")
-
-        assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
-        assert_frame_equal(actual, expected, check_row_order=check_row_order)
+    assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
+    assert_frame_equal(actual, expected, check_row_order=check_row_order)
 
 
 @pytest.mark.parametrize(
@@ -562,11 +550,10 @@ def test_join_dtypes(
     assert_frame_equal(actual, expected, check_row_order=False)
 
 
-@pytest.mark.parametrize("ignore_nulls", [False, True])
-def test_merge_join_exprs(ignore_nulls: bool) -> None:
+def test_merge_join_exprs() -> None:
     left = pl.LazyFrame(
         {
-            "key": ["zzzaaa", "zzzaaaa", "zzzcaaa"],
+            "key": ["", "a", "c"],
             "key_ext": [1, 2, 3],
             "value": [1, 2, 3],
         }
@@ -582,9 +569,7 @@ def test_merge_join_exprs(ignore_nulls: bool) -> None:
     q = left.join(
         right,
         left_on="key",
-        right_on=pl.concat_str(
-            pl.lit("zzz"), pl.col("key"), pl.lit("aaa"), ignore_nulls=ignore_nulls
-        ),
+        right_on=pl.concat_str(pl.col("key"), ignore_nulls=False),
         how="full",
         maintain_order="none",
     )
@@ -616,3 +601,60 @@ def test_merge_join_applicable(
     else:
         assert "merge-join" not in typing.cast("str", dot)
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+@pytest.mark.parametrize("allow_exact_matches", [False, True])
+@pytest.mark.parametrize("coalesce", [False, True])
+@pytest.mark.parametrize(
+    "dtypes",
+    [
+        FLOAT_DTYPES,
+        INTEGER_DTYPES,
+        {pl.String, pl.Binary},
+        {pl.Date},
+        {
+            pl.Datetime("ms"),
+            pl.Datetime("us"),
+            pl.Datetime("ns"),
+        },
+        {
+            pl.Datetime("ms", time_zone="Europe/Amsterdam"),
+            pl.Datetime("us", time_zone="Europe/Amsterdam"),
+            pl.Datetime("ns", time_zone="Europe/Amsterdam"),
+        },
+        {pl.Time},
+        {pl.Duration("ms"), pl.Duration("us"), pl.Duration("ns")},
+    ],
+)
+@given(data=st.data())
+def test_streaming_asof_join(
+    data: st.DataObject,
+    strategy: AsofJoinStrategy,
+    allow_exact_matches: bool,
+    coalesce: bool,
+    dtypes: set[pl.DataType],
+) -> None:
+    if dtypes & {pl.String, pl.Binary} and strategy == "nearest":
+        pytest.skip("asof join with string/binary does not support 'nearest' strategy")
+
+    dtype = data.draw(st.sampled_from(list(dtypes)))
+    df_st = dataframes(
+        min_cols=1, max_cols=1, allowed_dtypes=[dtype], allow_time_zones=False
+    )
+    left_df = data.draw(df_st)
+    right_df = data.draw(df_st)
+
+    left = left_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
+    right = right_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
+
+    q = left.join_asof(
+        right,
+        on="key",
+        strategy=strategy,
+        allow_exact_matches=allow_exact_matches,
+        coalesce=coalesce,
+    )
+    expected = q.collect(engine="in-memory")
+    actual = q.collect(engine="streaming")
+    assert_frame_equal(actual, expected)

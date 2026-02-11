@@ -462,7 +462,7 @@ def read_csv(
             new_to_current = dict(zip(new_columns, current_columns, strict=False))
             # Change new column names to current column names in dtype.
             schema_overrides = {
-                new_to_current.get(column_name, column_name): column_dtype
+                new_to_current.get(column_name, column_name): column_dtype  # type: ignore[misc]
                 for column_name, column_dtype in schema_overrides.items()
             }
 
@@ -1031,7 +1031,7 @@ def read_csv_batched(
             new_to_current = dict(zip(new_columns, current_columns, strict=False))
             # Change new column names to current column names in dtype.
             schema_overrides = {
-                new_to_current.get(column_name, column_name): column_dtype
+                new_to_current.get(column_name, column_name): column_dtype  # type: ignore[misc]
                 for column_name, column_dtype in schema_overrides.items()
             }
 

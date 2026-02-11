@@ -946,10 +946,18 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 }
             }
 
-            let keys = index
+            let keys: Vec<_> = index
                 .into_iter()
                 .map(|i| AExprBuilder::col(i.clone(), ctxt.expr_arena).expr_ir(i))
                 .collect();
+
+            let mut uniq_names = PlHashSet::new();
+            for expr in keys.iter().chain(aggs.iter()) {
+                let name = expr.output_name();
+                let is_uniq = uniq_names.insert(name.clone());
+                polars_ensure!(is_uniq, duplicate = name);
+            }
+
             IRBuilder::new(input, ctxt.expr_arena, ctxt.lp_arena)
                 .group_by(keys, aggs, None, maintain_order, Default::default())
                 .build()
@@ -1311,7 +1319,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         validate_arrow_schema_conversion(
                             input_schema.as_ref(),
                             arrow_schema,
-                            CompatLevel::newest(),
+                            options.compat_level(),
                         )?;
                     }
 
@@ -1331,17 +1339,16 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
                     if let Some(compression) = compression_opt {
                         if let SinkTarget::Path(path) = &options.target {
-                            let path_str = path.as_str();
+                            let extension = path.extension();
 
                             if let Some(suffix) = compression.file_suffix() {
                                 polars_ensure!(
-                                    path_str.ends_with(suffix) || !path_str.contains('.'),
+                                    extension.is_none_or(|extension| extension == suffix.strip_prefix(".").unwrap_or(suffix)),
                                     InvalidOperation: "the path ({}) does not conform to standard naming, expected suffix: ({}), set `check_extension` to `False` if you don't want this behavior", path, suffix
                                 );
-                            } else if [".gz", ".zst", ".zstd"]
-                                .iter()
-                                .any(|extension| path_str.ends_with(extension))
-                            {
+                            } else if ["gz", "zst", "zstd"].iter().any(|compression_extension| {
+                                extension == Some(compression_extension)
+                            }) {
                                 polars_bail!(
                                     InvalidOperation: "use the compression parameter to control compression, or set `check_extension` to `False` if you want to suffix an uncompressed filename with an ending intended for compression"
                                 );
@@ -1413,7 +1420,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         validate_arrow_schema_conversion(
                             file_schema.as_ref(),
                             arrow_schema,
-                            CompatLevel::newest(),
+                            parquet_options.compat_level(),
                         )?;
                     }
 

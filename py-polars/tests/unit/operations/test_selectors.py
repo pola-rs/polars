@@ -247,6 +247,11 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
         cs.by_name("abc", "cde", "def", "eee") & cs.by_name("cde", "eee", "fgg")
     ).columns == ["cde", "eee"]
 
+    # confirm literal name match
+    df_rx = pl.DataFrame({"*": [1], "xxx": [2], "^x+$": [3]})
+    assert df_rx.select(cs.by_name("*")).columns == ["*"]
+    assert df_rx.select(cs.by_name("^x+$")).columns == ["^x+$"]
+
     # expected errors
     with pytest.raises(ColumnNotFoundError, match="xxx"):
         df.select(cs.by_name("xxx", "fgg", "!!!"))
@@ -645,15 +650,13 @@ def test_selector_expansion() -> None:
 
 def test_selector_repr() -> None:
     assert_repr_equals(cs.all() - cs.first(), "[cs.all() - cs.first(require=true)]")
-    assert_repr_equals(
-        ~cs.starts_with("a", "b"), '[cs.all() - cs.matches("^(a|b).*$")]'
-    )
+    assert_repr_equals(~cs.starts_with("a", "b"), '[cs.all() - cs.matches("^(a|b)")]')
     assert_repr_equals(
         cs.float() | cs.by_name("x"), "[cs.float() | cs.by_name('x', require_all=true)]"
     )
     assert_repr_equals(
         cs.integer() & cs.matches("z"),
-        '[cs.integer() & cs.matches("^.*z.*$")]',
+        '[cs.integer() & cs.matches("z")]',
     )
     assert_repr_equals(
         cs.by_name("baz", "moose", "foo", "bear"),
@@ -1141,3 +1144,17 @@ def test_datetime_selectors_23767() -> None:
         "a",
         "b",
     ]
+
+
+def test_multiline_colname_matches() -> None:
+    prefix, suffix = "Abc", "xyz"
+    colname = f"{prefix} \nmisc\n {suffix}"
+
+    df = pl.DataFrame({colname: [0]})
+
+    res = df.select(
+        cs.starts_with(prefix).alias("starts_with"),
+        cs.ends_with(suffix).alias("ends_with"),
+        cs.contains(prefix).alias("contains"),
+    )
+    assert res.columns == ["starts_with", "ends_with", "contains"]

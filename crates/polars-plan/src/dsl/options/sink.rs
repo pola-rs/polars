@@ -9,6 +9,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::PlHashSet;
 use polars_core::schema::Schema;
 use polars_io::cloud::CloudOptions;
+use polars_io::metrics::IOMetrics;
 use polars_io::utils::file::Writeable;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::IdxSize;
@@ -87,7 +88,8 @@ impl SinkTarget {
         cloud_options: Option<&CloudOptions>,
         mkdir: bool,
         cloud_upload_chunk_size: usize,
-        cloud_upload_max_concurrency: usize,
+        cloud_upload_concurrency: usize,
+        io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<Writeable> {
         match self {
             SinkTarget::Path(path) => {
@@ -99,7 +101,8 @@ impl SinkTarget {
                     path.clone(),
                     cloud_options,
                     cloud_upload_chunk_size,
-                    cloud_upload_max_concurrency,
+                    cloud_upload_concurrency,
+                    io_metrics,
                 )
             },
             SinkTarget::Dyn(memory_writer) => Ok(memory_writer.lock().unwrap().take().unwrap()),
@@ -111,7 +114,8 @@ impl SinkTarget {
         cloud_options: Option<&CloudOptions>,
         mkdir: bool,
         cloud_upload_chunk_size: usize,
-        cloud_upload_max_concurrency: usize,
+        cloud_upload_concurrency: usize,
+        io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<Writeable> {
         #[cfg(feature = "cloud")]
         {
@@ -125,7 +129,8 @@ impl SinkTarget {
                         path.clone(),
                         cloud_options,
                         cloud_upload_chunk_size,
-                        cloud_upload_max_concurrency,
+                        cloud_upload_concurrency,
+                        io_metrics,
                     )
                 },
                 SinkTarget::Dyn(memory_writer) => Ok(memory_writer.lock().unwrap().take().unwrap()),
@@ -138,7 +143,8 @@ impl SinkTarget {
                 cloud_options,
                 mkdir,
                 cloud_upload_chunk_size,
-                cloud_upload_max_concurrency,
+                cloud_upload_concurrency,
+                io_metrics,
             )
         }
     }

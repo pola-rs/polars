@@ -258,12 +258,25 @@ impl Default for UnionOptions {
     }
 }
 
-#[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct HConcatOptions {
     pub parallel: bool,
     pub strict: bool,
+    // Treat unit values as scalar.
+    // E.g. broadcast them instead of fill nulls.
+    pub broadcast_unit_length: bool,
+}
+
+impl Default for HConcatOptions {
+    fn default() -> Self {
+        Self {
+            parallel: true,
+            strict: false,
+            broadcast_unit_length: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]

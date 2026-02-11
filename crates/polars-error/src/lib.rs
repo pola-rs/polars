@@ -109,7 +109,30 @@ pub enum PolarsError {
     },
 }
 
-impl Error for PolarsError {}
+impl Error for PolarsError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            PolarsError::AssertionError(_)
+            | PolarsError::ColumnNotFound(_)
+            | PolarsError::ComputeError(_)
+            | PolarsError::Duplicate(_)
+            | PolarsError::InvalidOperation(_)
+            | PolarsError::NoData(_)
+            | PolarsError::OutOfBounds(_)
+            | PolarsError::SchemaFieldNotFound(_)
+            | PolarsError::SchemaMismatch(_)
+            | PolarsError::ShapeMismatch(_)
+            | PolarsError::SQLInterface(_)
+            | PolarsError::SQLSyntax(_)
+            | PolarsError::StringCacheMismatch(_)
+            | PolarsError::StructFieldNotFound(_) => None,
+            PolarsError::IO { error, .. } => Some(error.as_ref()),
+            PolarsError::Context { error, .. } => Some(error.as_ref()),
+            #[cfg(feature = "python")]
+            PolarsError::Python { error } => error.deref().source(),
+        }
+    }
+}
 
 impl Display for PolarsError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -157,6 +180,7 @@ impl From<regex::Error> for PolarsError {
     }
 }
 
+// TODO: Remove this conversion after reworking cloud writer
 #[cfg(feature = "object_store")]
 impl From<object_store::Error> for PolarsError {
     fn from(err: object_store::Error) -> Self {

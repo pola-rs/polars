@@ -19,7 +19,6 @@ polars-utils = { workspace = true }
 
 bitflags = { workspace = true }
 hex = { workspace = true }
-rand = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 sqlparser = { workspace = true }
@@ -27,6 +26,8 @@ sqlparser = { workspace = true }
 [dev-dependencies]
 # to display dataframes in case of test failures
 polars-core = { workspace = true, features = ["fmt"] }
+# required for local runs of the 'iss_23134' test
+polars-lazy = { workspace = true, features = ["new_streaming"] }
 
 [features]
 default = []
