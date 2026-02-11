@@ -9,7 +9,6 @@ from moto.server import ThreadedMotoServer
 
 import polars as pl
 from polars.testing import assert_frame_equal
-
 from tests.conftest import PlMonkeyPatch
 
 if TYPE_CHECKING:

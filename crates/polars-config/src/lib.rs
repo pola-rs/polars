@@ -8,34 +8,34 @@ pub use engine::Engine;
 use polars_error::polars_warn;
 
 // Public.
-const VERBOSE: &'static str = "POLARS_VERBOSE";
+const VERBOSE: &str = "POLARS_VERBOSE";
 const DEFAULT_VERBOSE: bool = false;
 
-const WARN_UNKNOWN_CONFIG: &'static str = "POLARS_WARN_UNKNOWN_CONFIG";
+const WARN_UNKNOWN_CONFIG: &str = "POLARS_WARN_UNKNOWN_CONFIG";
 const DEFAULT_WARN_UNKNOWN_CONFIG: bool = false;
 // TODO: Turn DEFAULT_WARN_UNKNOWN_CONFIG on once we support all stable config options.
 
-const WARN_UNSTABLE: &'static str = "POLARS_WARN_UNSTABLE";
+const WARN_UNSTABLE: &str = "POLARS_WARN_UNSTABLE";
 const DEFAULT_WARN_UNSTABLE: bool = true;
 
-const IDEAL_MORSEL_SIZE: &'static str = "POLARS_IDEAL_MORSEL_SIZE";
-const STREAMING_CHUNK_SIZE: &'static str = "POLARS_STREAMING_CHUNK_SIZE"; // Backwards compatibility.
+const IDEAL_MORSEL_SIZE: &str = "POLARS_IDEAL_MORSEL_SIZE";
+const STREAMING_CHUNK_SIZE: &str = "POLARS_STREAMING_CHUNK_SIZE"; // Backwards compatibility.
 const DEFAULT_IDEAL_MORSEL_SIZE: u64 = 100_000;
 
-const ENGINE_AFFINITY: &'static str = "POLARS_ENGINE_AFFINITY";
+const ENGINE_AFFINITY: &str = "POLARS_ENGINE_AFFINITY";
 const DEFAULT_ENGINE_AFFINITY: Engine = Engine::Auto;
 
 // Private.
-const VERBOSE_SENSITIVE: &'static str = "POLARS_VERBOSE_SENSITIVE";
+const VERBOSE_SENSITIVE: &str = "POLARS_VERBOSE_SENSITIVE";
 const DEFAULT_VERBOSE_SENSITIVE: bool = false;
 
-const FORCE_ASYNC: &'static str = "POLARS_FORCE_ASYNC";
+const FORCE_ASYNC: &str = "POLARS_FORCE_ASYNC";
 const DEFAULT_FORCE_ASYNC: bool = false;
 
-const IMPORT_INTERVAL_AS_STRUCT: &'static str = "POLARS_IMPORT_INTERVAL_AS_STRUCT";
+const IMPORT_INTERVAL_AS_STRUCT: &str = "POLARS_IMPORT_INTERVAL_AS_STRUCT";
 const DEFAULT_IMPORT_INTERVAL_AS_STRUCT: bool = false;
 
-static KNOWN_OPTIONS: &'static [&'static str] = &[
+static KNOWN_OPTIONS: &'static [&str] = &[
     // Public.
     VERBOSE,
     WARN_UNKNOWN_CONFIG,
@@ -213,5 +213,5 @@ impl Config {
 
 pub fn config() -> &'static Config {
     static CONFIG: LazyLock<Config> = LazyLock::new(Config::new);
-    &*CONFIG
+    &CONFIG
 }
