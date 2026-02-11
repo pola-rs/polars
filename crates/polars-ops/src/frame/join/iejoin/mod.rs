@@ -40,8 +40,10 @@ impl InequalityOperator {
         matches!(self, InequalityOperator::Gt | InequalityOperator::Lt)
     }
 }
+
 #[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct IEJoinOptions {
     pub operator1: InequalityOperator,
     pub operator2: Option<InequalityOperator>,

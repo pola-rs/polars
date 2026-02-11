@@ -725,6 +725,25 @@ fn visualize_plan_rec(
             );
             (label, &[*input_left, *input_right][..])
         },
+        PhysNodeKind::RangeJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            tmp_left_key_cols,
+            tmp_right_key_cols,
+            args,
+            options,
+        } => {
+            // TODO: [amber] fmt this without using Debug
+            let label = fmt_join_label(
+                "range-join",
+                &escape_graphviz(&format!("{:?}", left_on)),
+                &escape_graphviz(&format!("{:?}", right_on)),
+                args,
+            );
+            (label, &[*input_left, *input_right][..])
+        },
         PhysNodeKind::CrossJoin {
             input_left,
             input_right,

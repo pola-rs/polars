@@ -1052,6 +1052,150 @@ pub fn lower_ir(
                 are_keys_sorted,
             );
         },
+        #[cfg(feature = "iejoin")]
+        j @ IR::Join {
+            input_left,
+            input_right,
+            schema: _,
+            left_on,
+            right_on,
+            options,
+        } if options.args.how == JoinType::IEJoin => {
+            dbg!(&j);
+            let input_left = *input_left;
+            let input_right = *input_right;
+            let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);
+            let input_right_schema = IR::schema_with_cache(input_right, ir_arena, schema_cache);
+            let left_on = left_on.clone();
+            let right_on = right_on.clone();
+            let get_expr_name = |e: &ExprIR| e.output_name().clone();
+            let left_on_names = left_on.iter().map(get_expr_name).collect_vec();
+            let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
+            let args = options.args.clone();
+            let options = options.options.clone();
+
+            let phys_left = lower_ir!(input_left)?;
+            let phys_right = lower_ir!(input_right)?;
+
+            // When lowering the expressions for the keys we need to ensure we keep around the
+            // payload columns, otherwise the input nodes can get replaced by input-independent
+            // nodes since the lowering code does not see we access any non-literal expressions.
+            // So we add dummy expressions before lowering and remove them afterwards.
+
+            let mut aug_left_on = left_on.clone();
+            for name in phys_sm[phys_left.node].output_schema.iter_names() {
+                let col_expr = expr_arena.add(AExpr::Column(name.clone()));
+                aug_left_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
+            }
+            let mut aug_right_on = right_on.clone();
+            for name in phys_sm[phys_right.node].output_schema.iter_names() {
+                let col_expr = expr_arena.add(AExpr::Column(name.clone()));
+                aug_right_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
+            }
+
+            let (mut trans_input_left, mut trans_left_on) = lower_exprs(
+                phys_left,
+                &aug_left_on,
+                expr_arena,
+                phys_sm,
+                expr_cache,
+                ctx,
+            )?;
+            let (mut trans_input_right, mut trans_right_on) = lower_exprs(
+                phys_right,
+                &aug_right_on,
+                expr_arena,
+                phys_sm,
+                expr_cache,
+                ctx,
+            )?;
+
+            trans_left_on.drain(left_on.len()..);
+            trans_right_on.drain(right_on.len()..);
+
+            let Some(JoinTypeOptionsIR::IEJoin(ie_options)) = options else {
+                unreachable!()
+            };
+
+            let key_expr_is_trivial =
+                |c: &ExprIR, ea: &mut Arena<AExpr>| matches!(ea.get(c.node()), AExpr::Column(_));
+            let mut prepare_key_col = |expr: &ExprIR, schema: &Schema| -> PolarsResult<_> {
+                if !key_expr_is_trivial(&expr, expr_arena) {
+                    assert!(expr.dtype(&schema, expr_arena)?.is_nested());
+                    let tmp_col_name = unique_column_name();
+                    let tmp_col_expr = expr.with_alias(tmp_col_name.clone());
+                    Ok((tmp_col_expr, Some(tmp_col_name)))
+                } else {
+                    Ok((expr.clone(), None))
+                }
+            };
+            let (left_key_expr1, left_tmp_col_name1) =
+                prepare_key_col(&trans_left_on[0], &input_left_schema)?;
+            let (right_key_expr1, right_tmp_col_name1) =
+                prepare_key_col(&trans_right_on[0], &input_left_schema)?;
+
+            let mut left_key_exprs = vec![left_key_expr1];
+            let mut right_key_exprs = vec![right_key_expr1];
+            let mut left_tmp_col_names = (left_tmp_col_name1, None);
+            let mut right_tmp_col_names = (right_tmp_col_name1, None);
+
+            if ie_options.operator2.is_some() {
+                assert!((1..=2).contains(&left_on.len()));
+                assert!((1..=2).contains(&right_on.len()));
+
+                let (left_key_expr2, left_tmp_col_name2) =
+                    prepare_key_col(&trans_left_on[0], &input_left_schema)?;
+                let (right_key_expr2, right_tmp_col_name2) =
+                    prepare_key_col(&trans_right_on[0], &input_left_schema)?;
+
+                left_key_exprs.push(left_key_expr2);
+                right_key_exprs.push(right_key_expr2);
+                left_tmp_col_names.1 = left_tmp_col_name2;
+                right_tmp_col_names.1 = right_tmp_col_name2;
+            } else {
+                assert!(left_on.len() == 1);
+                assert!(right_on.len() == 1);
+            }
+
+            let trans_input_left = build_hstack_stream(
+                trans_input_left,
+                &right_key_exprs,
+                expr_arena,
+                phys_sm,
+                expr_cache,
+                ctx,
+            )?;
+            let trans_input_right = build_hstack_stream(
+                trans_input_right,
+                &right_key_exprs,
+                expr_arena,
+                phys_sm,
+                expr_cache,
+                ctx,
+            )?;
+
+            let node: PhysNodeKey = {
+                phys_sm.insert(PhysNode::new(
+                    output_schema,
+                    PhysNodeKind::RangeJoin {
+                        input_left: trans_input_left,
+                        input_right: trans_input_right,
+                        left_on: (left_on_names[0].clone(), left_on_names.get(1).cloned()),
+                        right_on: (right_on_names[0].clone(), right_on_names.get(1).cloned()),
+                        tmp_left_key_cols: left_tmp_col_names,
+                        tmp_right_key_cols: right_tmp_col_names,
+                        args: args.clone(),
+                        options: ie_options,
+                    },
+                ))
+            };
+
+            let mut stream = PhysStream::first(node);
+            if let Some((offset, len)) = args.slice {
+                stream = build_slice_stream(stream, offset, len, phys_sm);
+            }
+            return Ok(stream);
+        },
         IR::Join {
             input_left,
             input_right,
