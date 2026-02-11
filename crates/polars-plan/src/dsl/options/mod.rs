@@ -1,7 +1,6 @@
 use std::hash::Hash;
 #[cfg(feature = "json")]
 use std::num::NonZeroUsize;
-use std::str::FromStr;
 use std::sync::Arc;
 
 pub mod file_provider;
