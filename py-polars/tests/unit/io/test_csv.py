@@ -3131,3 +3131,7 @@ def test_provided_schema_mismatch_truncate(chunk_override: None, read_fn: str) -
     )
     expected = [pl.Series("A", [1])]
     assert_frame_equal(df, pl.DataFrame(expected))
+
+def test_read_batch_csv_deprecations_26479() -> None:
+    with pytest.warns(DeprecationWarning, match="read_csv_batched is deprecated"):
+        pl.read_csv_batched(b"foo\nbar")

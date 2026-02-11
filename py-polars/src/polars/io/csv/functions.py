@@ -739,13 +739,13 @@ def _read_csv_impl(
     )
     return wrap_df(pydf)
 
-
+@deprecated(
+    "`read_csv_batched` is deprecated; use `scan_csv().collect_batches()` instead.",
+    version="1.37.0"
+)
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
-@deprecated(
-    "`read_csv_batched` is deprecated; use `scan_csv().collect_batches()` instead."
-)
 def read_csv_batched(
     source: str | Path,
     *,
