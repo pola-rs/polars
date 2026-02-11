@@ -237,7 +237,7 @@ def _patched_cloud(
         plmonkeypatch.setenv("POLARS_SKIP_CLIENT_CHECK", "1")
 
 
-class PlMonkeyPatch(pytest.MonkeyPatch):
+class PlMonkeyPatch(pytest.MonkeyPatch):  # type: ignore[misc]
     """A wrapper of pytest.MonkeyPatch that updates Polars when an env var changes."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
