@@ -2725,14 +2725,14 @@ dependencies = [
 
 [[package]]
 name = "object_store"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d180d5469872facb82dec7e233ff850d615330ea3044a7813550b22ffa4f05ce"
+version = "0.13.1"
+source = "git+https://github.com/kdn36/arrow-rs-object-store?branch=feat_checksum_crc64#b5883a9b6e7d4dcc842054c2f626debfb3434e45"
 dependencies = [
  "async-trait",
  "base64",
  "bytes",
  "chrono",
+ "crc-fast",
  "form_urlencoded",
  "futures",
  "http 1.4.0",
@@ -3881,9 +3881,9 @@ checksum = "5a651516ddc9168ebd67b24afd085a718be02f8858fe406591b013d101ce2f40"
 
 [[package]]
 name = "quick-xml"
-version = "0.38.4"
+version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b66c2058c55a409d601666cffe35f04333cf1013010882cec174a7467cd4e21c"
+checksum = "f2e3bf4aa9d243beeb01a7b3bc30b77cfe2c44e24ec02d751a7104a53c2c49a1"
 dependencies = [
  "memchr",
  "serde",
