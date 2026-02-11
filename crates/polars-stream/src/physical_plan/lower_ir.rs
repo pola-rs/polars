@@ -1097,21 +1097,20 @@ pub fn lower_ir(
 
                 let mut key_descending = left_on_sorted.as_ref().and_then(|v| v[0].descending);
                 let key_nulls_last = left_on_sorted.as_ref().and_then(|v| v[0].nulls_last);
-                let mut left_key_col_name = PlSmallStr::EMPTY;
-                let mut right_key_col_name = PlSmallStr::EMPTY;
+                let mut tmp_left_key_col = None;
+                let mut tmp_right_key_col = None;
                 if use_streaming_merge_join || use_streaming_asof_join {
-                    (trans_input_left, trans_left_on, left_key_col_name) =
-                        append_sorted_key_column(
-                            trans_input_left,
-                            trans_left_on,
-                            left_on_sorted.as_ref(),
-                            Some(!args.nulls_equal),
-                            expr_arena,
-                            phys_sm,
-                            expr_cache,
-                            ctx,
-                        )?;
-                    (trans_input_right, trans_right_on, right_key_col_name) =
+                    (trans_input_left, trans_left_on, tmp_left_key_col) = append_sorted_key_column(
+                        trans_input_left,
+                        trans_left_on,
+                        left_on_sorted.as_ref(),
+                        Some(!args.nulls_equal),
+                        expr_arena,
+                        phys_sm,
+                        expr_cache,
+                        ctx,
+                    )?;
+                    (trans_input_right, trans_right_on, tmp_right_key_col) =
                         append_sorted_key_column(
                             trans_input_right,
                             trans_right_on,
@@ -1136,8 +1135,8 @@ pub fn lower_ir(
                             input_right: trans_input_right,
                             left_on: left_on_names,
                             right_on: right_on_names,
-                            left_key_col_name,
-                            right_key_col_name,
+                            tmp_left_key_col,
+                            tmp_right_key_col,
                             keys_row_encoded: keys_are_row_encoded,
                             descending: key_descending.unwrap(),
                             nulls_last: key_nulls_last.unwrap(),
@@ -1164,8 +1163,8 @@ pub fn lower_ir(
                             input_right: trans_input_right,
                             left_on: left_on_names[0].clone(),
                             right_on: right_on_names[0].clone(),
-                            left_key_col_name,
-                            right_key_col_name,
+                            tmp_left_key_col,
+                            tmp_right_key_col,
                             args: args.clone(),
                         },
                     ))
@@ -1399,7 +1398,7 @@ fn append_sorted_key_column(
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext,
-) -> PolarsResult<(PhysStream, Vec<ExprIR>, PlSmallStr)> {
+) -> PolarsResult<(PhysStream, Vec<ExprIR>, Option<PlSmallStr>)> {
     let input_schema = &phys_sm[phys_input.node].output_schema.clone();
     let use_row_encoding =
         key_exprs.len() > 1 || key_exprs[0].dtype(input_schema, expr_arena)?.is_nested();
@@ -1428,15 +1427,15 @@ fn append_sorted_key_column(
         key_exprs.push(row_encode_col_expr);
         let output =
             build_hstack_stream(phys_input, &key_exprs, expr_arena, phys_sm, expr_cache, ctx)?;
-        (output, key_col_name)
+        (output, Some(key_col_name))
     } else if !key_expr_is_trivial(&key_exprs[0], expr_arena) {
         let key_col_name = unique_column_name();
         key_exprs[0] = key_exprs[0].with_alias(key_col_name.clone());
         let output =
             build_hstack_stream(phys_input, &key_exprs, expr_arena, phys_sm, expr_cache, ctx)?;
-        (output, key_col_name)
+        (output, Some(key_col_name))
     } else {
-        (phys_input, key_exprs[0].output_name().clone())
+        (phys_input, None)
     };
     Ok((phys_output, key_exprs, key_col_name))
 }
