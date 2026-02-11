@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from polars._typing import EpochTimeUnit, PolarsDataType, TimeUnit
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_cum_agg() -> None:
@@ -79,7 +80,7 @@ def test_cum_min_max_bool() -> None:
     )
 
 
-def test_init_inputs(plmonkeypatch: Any) -> None:
+def test_init_inputs(plmonkeypatch: PlMonkeyPatch) -> None:
     nan = float("nan")
     # Good inputs
     pl.Series("a", [1, 2])
@@ -909,7 +910,9 @@ def test_shape() -> None:
 
 
 @pytest.mark.parametrize("arrow_available", [True, False])
-def test_create_list_series(arrow_available: bool, plmonkeypatch: Any) -> None:
+def test_create_list_series(
+    arrow_available: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
     plmonkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", arrow_available)
     a = [[1, 2], None, [None, 3]]
     s = pl.Series("", a)
@@ -1224,7 +1227,7 @@ def test_from_generator_or_iterable() -> None:
     assert_series_equal(pl.Series("s", []), pl.Series("s", values=gen(0)))
 
 
-def test_from_sequences(plmonkeypatch: Any) -> None:
+def test_from_sequences(plmonkeypatch: PlMonkeyPatch) -> None:
     # test int, str, bool, flt
     values = [
         [[1], [None, 3]],

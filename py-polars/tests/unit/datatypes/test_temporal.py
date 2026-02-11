@@ -34,6 +34,7 @@ if TYPE_CHECKING:
         PolarsTemporalType,
         TimeUnit,
     )
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_fill_null() -> None:
@@ -2478,7 +2479,7 @@ def test_temporal_downcast_construction_19309() -> None:
 
 def test_timezone_ignore_error(
     capfd: pytest.CaptureFixture[str],
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     dtype = pl.Datetime(time_zone="non-existent")
 

@@ -36,7 +36,7 @@ def foods_file_path(io_files_path: Path) -> Path:
 
 
 @pytest.fixture(params=["chunk-size-default", "chunk-size-7"])
-def chunk_override(request: Any, plmonkeypatch: Any) -> None:
+def chunk_override(request: Any, plmonkeypatch: PlMonkeyPatch) -> None:
     env_var_name = "POLARS_FORCE_CSV_INFER_CHUNK_SIZE"
 
     if request.param == "chunk-size-default":
@@ -604,7 +604,7 @@ def test_column_rename_and_schema_overrides(chunk_override: None) -> None:
 
 
 def test_compressed_csv(
-    chunk_override: None, io_files_path: Path, plmonkeypatch: Any
+    chunk_override: None, io_files_path: Path, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
 
@@ -2095,7 +2095,7 @@ def test_invalid_csv_raise(chunk_override: None) -> None:
 
 @pytest.mark.write_disk
 def test_partial_read_compressed_file(
-    chunk_override: None, tmp_path: Path, plmonkeypatch: Any
+    chunk_override: None, tmp_path: Path, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
 

@@ -10,6 +10,8 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tests.conftest import PlMonkeyPatch
+
 pytestmark = pytest.mark.xdist_group("streaming")
 
 
@@ -200,7 +202,7 @@ def test_sink_ndjson_should_write_same_data(
 @pytest.mark.write_disk
 @pytest.mark.parametrize("streaming", [False, True])
 def test_parquet_eq_statistics(
-    plmonkeypatch: Any, capfd: Any, tmp_path: Path, streaming: bool
+    plmonkeypatch: PlMonkeyPatch, capfd: Any, tmp_path: Path, streaming: bool
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
 

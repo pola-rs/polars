@@ -20,11 +20,13 @@ from tests.unit.io.conftest import format_file_uri
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from tests.conftest import PlMonkeyPatch
+
 
 def impl_test_hive_partitioned_predicate_pushdown(
     io_files_path: Path,
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.read_ipc(io_files_path / "*.ipc")
@@ -80,7 +82,7 @@ def impl_test_hive_partitioned_predicate_pushdown(
 def test_hive_partitioned_predicate_pushdown(
     io_files_path: Path,
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     impl_test_hive_partitioned_predicate_pushdown(
         io_files_path,
@@ -94,7 +96,7 @@ def test_hive_partitioned_predicate_pushdown(
 def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
     io_files_path: Path,
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     plmonkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
@@ -110,7 +112,7 @@ def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
 @pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
-    tmp_path: Path, plmonkeypatch: Any, capfd: Any
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any
 ) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.DataFrame({"d": pl.arange(0, 5, eager=True)}).with_columns(
@@ -505,7 +507,9 @@ def test_hive_partition_schema_inference(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_hive_partition_force_async_17155(tmp_path: Path, plmonkeypatch: Any) -> None:
+def test_hive_partition_force_async_17155(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     plmonkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
 
@@ -900,7 +904,7 @@ def test_hive_write_dates(tmp_path: Path) -> None:
 @pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_hive_predicate_dates_14712(
-    tmp_path: Path, plmonkeypatch: Any, capfd: Any
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any
 ) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     pl.DataFrame({"a": [datetime(2024, 1, 1)]}).write_parquet(
@@ -1161,7 +1165,7 @@ def test_hive_filter_lit_true_24235(tmp_path: Path) -> None:
 
 
 def test_hive_filter_in_ir(
-    tmp_path: Path, plmonkeypatch: Any, capfd: pytest.CaptureFixture[str]
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     (tmp_path / "a=1").mkdir()
     pl.DataFrame({"x": [0, 1, 2, 3, 4]}).write_parquet(tmp_path / "a=1/data.parquet")

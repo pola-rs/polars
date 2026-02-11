@@ -16,6 +16,8 @@ from polars.testing.asserts.series import assert_series_equal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from tests.conftest import PlMonkeyPatch
+
 
 def test_predicate_4906() -> None:
     one_day = timedelta(days=1)
@@ -556,7 +558,7 @@ def test_predicate_push_down_with_alias_15442() -> None:
 
 
 def test_predicate_slice_pushdown_list_gather_17492(
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     lf = pl.LazyFrame({"val": [[1], [1, 1]], "len": [1, 2]})
 
@@ -807,7 +809,7 @@ def test_predicate_pushdown_lazy_rename_22373(
     ],
 )
 def test_predicate_pushdown_pushes_past_fallible(
-    base_query: pl.LazyFrame, plmonkeypatch: Any
+    base_query: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     # Ensure baseline fails
     with pytest.raises(ComputeError, match="index is out of bounds"):
@@ -828,7 +830,7 @@ def test_predicate_pushdown_pushes_past_fallible(
 
 
 def test_predicate_pushdown_fallible_exprs_22284(
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     q = (
         pl.LazyFrame({"a": ["xyz", "123", "456", "789"]})
@@ -912,7 +914,7 @@ def test_predicate_pushdown_single_fallible() -> None:
 
 
 def test_predicate_pushdown_split_pushable(
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     lf = pl.LazyFrame({"a": [1, 999]}).with_columns(MARKER=pl.lit(1, dtype=pl.Int64))
 

@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import IpcCompression
+    from tests.conftest import PlMonkeyPatch
 
 COMPRESSIONS = ["uncompressed", "lz4", "zstd"]
 
@@ -97,7 +98,7 @@ def test_ipc_list_arg(io_files_path: Path) -> None:
 
 
 def test_scan_ipc_local_with_async(
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     io_files_path: Path,
 ) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
@@ -138,7 +139,7 @@ def test_sink_ipc_compat_level_22930() -> None:
 
 
 def test_scan_file_info_cache(
-    capfd: Any, plmonkeypatch: Any, foods_ipc_path: Path
+    capfd: Any, plmonkeypatch: PlMonkeyPatch, foods_ipc_path: Path
 ) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     a = pl.scan_ipc(foods_ipc_path)
@@ -151,7 +152,7 @@ def test_scan_file_info_cache(
 
 
 def test_scan_ipc_file_async(
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     io_files_path: Path,
 ) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
@@ -214,7 +215,7 @@ def test_scan_ipc_file_async(
 
 
 def test_scan_ipc_file_async_dict(
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
 
@@ -231,7 +232,7 @@ def test_scan_ipc_file_async_dict(
 
 # TODO: create multiple record batches through API instead of env variable
 def test_scan_ipc_file_async_multiple_record_batches(
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     plmonkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS", "10")
@@ -283,7 +284,7 @@ def test_scan_ipc_file_async_multiple_record_batches(
 @pytest.mark.parametrize("n_b", [1, 12, 13, 999])  # problem starts 13
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 def test_scan_ipc_varying_block_metadata_len_c4812(
-    n_a: int, n_b: int, compression: IpcCompression, plmonkeypatch: Any
+    n_a: int, n_b: int, compression: IpcCompression, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
 

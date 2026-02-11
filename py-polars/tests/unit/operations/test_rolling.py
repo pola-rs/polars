@@ -12,6 +12,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import ClosedInterval, PolarsIntegerType
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_rolling() -> None:
@@ -69,7 +70,9 @@ def test_rolling_group_by_overlapping_groups(dtype: PolarsIntegerType) -> None:
 # the thread pool, which implies prior to import. The test is only valid when
 # run in isolation, and invalid otherwise because of xdist import caching.
 # See GH issue #22070
-def test_rolling_group_by_overlapping_groups_21859_a(plmonkeypatch: Any) -> None:
+def test_rolling_group_by_overlapping_groups_21859_a(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
     plmonkeypatch.setenv("POLARS_MAX_THREADS", "1")
     # assert pl.thread_pool_size() == 1 # pending resolution, see TODO
     df = pl.select(
@@ -92,7 +95,9 @@ def test_rolling_group_by_overlapping_groups_21859_a(plmonkeypatch: Any) -> None
 # the thread pool, which implies prior to import. The test is only valid when
 # run in isolation, and invalid otherwise because of xdist import caching.
 # See GH issue #22070
-def test_rolling_group_by_overlapping_groups_21859_b(plmonkeypatch: Any) -> None:
+def test_rolling_group_by_overlapping_groups_21859_b(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
     plmonkeypatch.setenv("POLARS_MAX_THREADS", "1")
     # assert pl.thread_pool_size() == 1 # pending resolution, see TODO
     df = pl.DataFrame({"a": [20, 30, 40]})

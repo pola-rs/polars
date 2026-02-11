@@ -20,6 +20,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from tests.conftest import PlMonkeyPatch
+
 SCAN_AND_WRITE_FUNCS = [
     (pl.scan_ipc, pl.DataFrame.write_ipc),
     (pl.scan_parquet, pl.DataFrame.write_parquet),
@@ -559,7 +561,7 @@ def test_many_files(scan: Any, write: Any) -> None:
     )
 
 
-def test_deadlock_stop_requested(plmonkeypatch: Any) -> None:
+def test_deadlock_stop_requested(plmonkeypatch: PlMonkeyPatch) -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],

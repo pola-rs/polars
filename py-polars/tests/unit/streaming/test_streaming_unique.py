@@ -10,13 +10,15 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tests.conftest import PlMonkeyPatch
+
 pytestmark = pytest.mark.xdist_group("streaming")
 
 
 @pytest.mark.write_disk
 @pytest.mark.slow
 def test_streaming_out_of_core_unique(
-    io_files_path: Path, tmp_path: Path, plmonkeypatch: Any, capfd: Any
+    io_files_path: Path, tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     plmonkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))

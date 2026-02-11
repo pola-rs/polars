@@ -35,7 +35,7 @@ const DEFAULT_FORCE_ASYNC: bool = false;
 const IMPORT_INTERVAL_AS_STRUCT: &str = "POLARS_IMPORT_INTERVAL_AS_STRUCT";
 const DEFAULT_IMPORT_INTERVAL_AS_STRUCT: bool = false;
 
-static KNOWN_OPTIONS: &'static [&str] = &[
+static KNOWN_OPTIONS: &[&str] = &[
     // Public.
     VERBOSE,
     WARN_UNKNOWN_CONFIG,

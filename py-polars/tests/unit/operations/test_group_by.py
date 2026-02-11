@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from polars._typing import PolarsDataType, TimeUnit
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_group_by() -> None:
@@ -965,7 +966,7 @@ def test_perfect_hash_table_null_values() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_group_by_partitioned_ending_cast(plmonkeypatch: Any) -> None:
+def test_group_by_partitioned_ending_cast(plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
     df = pl.DataFrame({"a": [1] * 5, "b": [1] * 5})
     out = df.group_by(["a", "b"]).agg(pl.len().cast(pl.Int64).alias("num"))
@@ -1088,7 +1089,7 @@ def test_group_by_with_null() -> None:
     assert_frame_equal(expected, output)
 
 
-def test_partitioned_group_by_14954(plmonkeypatch: Any) -> None:
+def test_partitioned_group_by_14954(plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
     assert (
         pl.DataFrame({"a": range(20)})
@@ -1411,7 +1412,7 @@ def test_group_by_map_groups_slice_pushdown_20002() -> None:
 
 
 @typing.no_type_check
-def test_group_by_lit_series(capfd: Any, plmonkeypatch: Any) -> None:
+def test_group_by_lit_series(capfd: Any, plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     n = 10
     df = pl.DataFrame({"x": np.ones(2 * n), "y": n * list(range(2))})

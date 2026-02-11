@@ -6,7 +6,7 @@ import warnings
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 import pytest
@@ -22,6 +22,9 @@ from polars.io.cloud.credential_provider._builder import (
 from polars.io.delta._dataset import DeltaDataset
 from polars.io.delta._utils import _extract_table_statistics_from_delta_add_actions
 from polars.testing import assert_frame_equal, assert_frame_not_equal
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
@@ -94,7 +97,7 @@ def test_scan_delta_columns(delta_table_path: Path) -> None:
 
 def test_scan_delta_polars_storage_options_keys(
     delta_table_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
@@ -674,7 +677,7 @@ def test_read_delta_arrow_map_type(tmp_path: Path) -> None:
 @pytest.mark.write_disk
 def test_scan_delta_nanosecond_timestamp(
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     df = pl.DataFrame(
@@ -823,7 +826,7 @@ def test_scan_delta_schema_evolution_nested_struct_field_19915(tmp_path: Path) -
 
 @pytest.mark.write_disk
 def test_scan_delta_storage_options_from_delta_table(
-    tmp_path: Path, plmonkeypatch: Any
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     import polars.io.delta._dataset
 
@@ -880,7 +883,7 @@ def test_scan_delta_storage_options_from_delta_table(
 
 def test_scan_delta_loads_aws_profile_endpoint_url(
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -991,7 +994,7 @@ def _df_many_types() -> pl.DataFrame:
 @pytest.mark.write_disk
 def test_scan_delta_filter_delta_log_statistics_23780(
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
     expr: pl.Expr,
 ) -> None:
@@ -1081,7 +1084,7 @@ def test_scan_delta_extract_table_statistics_df(tmp_path: Path) -> None:
 @pytest.mark.write_disk
 def test_scan_delta_filter_delta_log_statistics_partial_23780(
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
     expr: pl.Expr,
     n_cols: str,
@@ -1115,7 +1118,7 @@ def test_scan_delta_filter_delta_log_statistics_partial_23780(
 @pytest.mark.write_disk
 def test_scan_delta_filter_delta_log_statistics_delete_partition_23780(
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     df = pl.DataFrame(
@@ -1255,7 +1258,7 @@ def test_delta_partition_filter(tmp_path: Path, use_pyarrow: bool) -> None:
 def test_scan_delta_collect_without_version_scans_latest(
     tmp_path: Path,
     use_pyarrow: bool,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     pl.DataFrame({"a": [0]}).write_delta(tmp_path)

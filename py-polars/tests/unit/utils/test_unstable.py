@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars.exceptions import UnstableWarning
 
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
-def test_issue_unstable_warning(plmonkeypatch: Any) -> None:
+
+def test_issue_unstable_warning(plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
 
     msg = "`func` is considered unstable."
@@ -18,7 +23,7 @@ def test_issue_unstable_warning(plmonkeypatch: Any) -> None:
         issue_unstable_warning(msg)
 
 
-def test_issue_unstable_warning_default(plmonkeypatch: Any) -> None:
+def test_issue_unstable_warning_default(plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
 
     msg = "this functionality is considered unstable."
@@ -33,7 +38,7 @@ def test_issue_unstable_warning_setting_disabled(
     assert len(recwarn) == 0
 
 
-def test_unstable_decorator(plmonkeypatch: Any) -> None:
+def test_unstable_decorator(plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
 
     @unstable()

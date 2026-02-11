@@ -1,4 +1,6 @@
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
 import pytest
@@ -6,10 +8,15 @@ import pytest
 from polars import _cpu_check
 from polars._cpu_check import check_cpu_flags
 
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
+
 TEST_FEATURE_FLAGS = "+sse3,+ssse3"
 
 
-def test_check_cpu_flags(plmonkeypatch: Any, recwarn: pytest.WarningsRecorder) -> None:
+def test_check_cpu_flags(
+    plmonkeypatch: PlMonkeyPatch, recwarn: pytest.WarningsRecorder
+) -> None:
     cpu_flags = {"sse3": True, "ssse3": True}
     mock_read_cpu_flags = Mock(return_value=cpu_flags)
     plmonkeypatch.setattr(_cpu_check, "_read_cpu_flags", mock_read_cpu_flags)
@@ -19,7 +26,7 @@ def test_check_cpu_flags(plmonkeypatch: Any, recwarn: pytest.WarningsRecorder) -
     assert len(recwarn) == 0
 
 
-def test_check_cpu_flags_missing_features(plmonkeypatch: Any) -> None:
+def test_check_cpu_flags_missing_features(plmonkeypatch: PlMonkeyPatch) -> None:
     cpu_flags = {"sse3": True, "ssse3": False}
     mock_read_cpu_flags = Mock(return_value=cpu_flags)
     plmonkeypatch.setattr(_cpu_check, "_read_cpu_flags", mock_read_cpu_flags)
@@ -31,7 +38,7 @@ def test_check_cpu_flags_missing_features(plmonkeypatch: Any) -> None:
 
 
 def test_check_cpu_flags_unknown_flag(
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     real_cpu_flags = {"sse3": True, "ssse3": False}
     mock_read_cpu_flags = Mock(return_value=real_cpu_flags)
@@ -41,7 +48,7 @@ def test_check_cpu_flags_unknown_flag(
         check_cpu_flags(unknown_feature_flags)
 
 
-def test_check_cpu_flags_skipped_no_flags(plmonkeypatch: Any) -> None:
+def test_check_cpu_flags_skipped_no_flags(plmonkeypatch: PlMonkeyPatch) -> None:
     mock_read_cpu_flags = Mock()
     plmonkeypatch.setattr(_cpu_check, "_read_cpu_flags", mock_read_cpu_flags)
 
@@ -50,7 +57,7 @@ def test_check_cpu_flags_skipped_no_flags(plmonkeypatch: Any) -> None:
     assert mock_read_cpu_flags.call_count == 0
 
 
-def test_check_cpu_flags_skipped_env_var(plmonkeypatch: Any) -> None:
+def test_check_cpu_flags_skipped_env_var(plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_SKIP_CPU_CHECK", "1")
 
     mock_read_cpu_flags = Mock()

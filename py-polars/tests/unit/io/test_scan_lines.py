@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing.asserts.frame import assert_frame_equal
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 def lazified_read_lines(*a: Any, **kw: Any) -> pl.LazyFrame:
@@ -21,7 +24,7 @@ def test_scan_lines(
     force_unit_chunk_size: bool,
     carriage_return: bool,
     capfd: pytest.CaptureFixture[str],
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     if patch_scan_lines:
         plmonkeypatch.setattr(pl, "scan_lines", lazified_read_lines)
@@ -192,7 +195,7 @@ EEE
 
 
 def test_scan_lines_negative_slice_reversed_read(
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_NDJSON_CHUNK_SIZE", "1")
     q = pl.scan_lines(b"\xff" + 5000 * b"abc\n")

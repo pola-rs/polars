@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars.lazyframe.frame import LazyFrame
+    from tests.conftest import PlMonkeyPatch
 
 import gzip
 import re
@@ -27,7 +28,7 @@ def assert_fast_count(
     *,
     expected_name: str = "len",
     capfd: pytest.CaptureFixture[str],
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     capfd.readouterr()  # resets stderr
 
@@ -96,7 +97,7 @@ def test_count_csv(
     path: str,
     n_rows: int,
     capfd: pytest.CaptureFixture[str],
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     lf = pl.scan_csv(io_files_path / path).select(pl.len())
 
@@ -104,7 +105,7 @@ def test_count_csv(
 
 
 def test_count_csv_comment_char(
-    capfd: pytest.CaptureFixture[str], plmonkeypatch: Any
+    capfd: pytest.CaptureFixture[str], plmonkeypatch: PlMonkeyPatch
 ) -> None:
     q = pl.scan_csv(
         b"""
@@ -140,7 +141,9 @@ a,b
 
 
 @pytest.mark.write_disk
-def test_commented_csv(capfd: pytest.CaptureFixture[str], plmonkeypatch: Any) -> None:
+def test_commented_csv(
+    capfd: pytest.CaptureFixture[str], plmonkeypatch: PlMonkeyPatch
+) -> None:
     with NamedTemporaryFile() as csv_a:
         csv_a.write(b"A,B\nGr1,A\nGr1,B\n# comment line\n")
         csv_a.seek(0)
@@ -192,7 +195,7 @@ def test_count_parquet(
     pattern: str,
     n_rows: int,
     capfd: pytest.CaptureFixture[str],
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     lf = pl.scan_parquet(io_files_path / pattern).select(pl.len())
     assert_fast_count(lf, n_rows, capfd=capfd, plmonkeypatch=plmonkeypatch)
@@ -206,7 +209,7 @@ def test_count_ipc(
     path: str,
     n_rows: int,
     capfd: pytest.CaptureFixture[str],
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     lf = pl.scan_ipc(io_files_path / path).select(pl.len())
     assert_fast_count(lf, n_rows, capfd=capfd, plmonkeypatch=plmonkeypatch)
@@ -220,7 +223,7 @@ def test_count_ndjson(
     path: str,
     n_rows: int,
     capfd: pytest.CaptureFixture[str],
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     lf = pl.scan_ndjson(io_files_path / path).select(pl.len())
     assert_fast_count(lf, n_rows, capfd=capfd, plmonkeypatch=plmonkeypatch)
@@ -229,7 +232,7 @@ def test_count_ndjson(
 def test_count_compressed_csv_18057(
     io_files_path: Path,
     capfd: pytest.CaptureFixture[str],
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     csv_file = io_files_path / "gzipped.csv.gz"
 
@@ -249,7 +252,7 @@ def test_count_compressed_csv_18057(
 
 @pytest.mark.write_disk
 def test_count_compressed_ndjson(
-    tmp_path: Path, capfd: pytest.CaptureFixture[str], plmonkeypatch: Any
+    tmp_path: Path, capfd: pytest.CaptureFixture[str], plmonkeypatch: PlMonkeyPatch
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     path = tmp_path / "data.jsonl.gz"
@@ -263,7 +266,7 @@ def test_count_compressed_ndjson(
 
 
 def test_count_projection_pd(
-    capfd: pytest.CaptureFixture[str], plmonkeypatch: Any
+    capfd: pytest.CaptureFixture[str], plmonkeypatch: PlMonkeyPatch
 ) -> None:
     df = pl.DataFrame({"a": range(3), "b": range(3)})
 
@@ -288,7 +291,7 @@ def test_count_projection_pd(
 
 
 def test_csv_scan_skip_lines_len_22889(
-    capfd: pytest.CaptureFixture[str], plmonkeypatch: Any
+    capfd: pytest.CaptureFixture[str], plmonkeypatch: PlMonkeyPatch
 ) -> None:
     bb = b"col\n1\n2\n3"
     lf = pl.scan_csv(bb, skip_lines=2).select(pl.len())

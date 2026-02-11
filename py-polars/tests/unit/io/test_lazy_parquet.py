@@ -21,6 +21,7 @@ from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import ParallelStrategy
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
@@ -39,7 +40,7 @@ def test_scan_parquet(parquet_file_path: Path) -> None:
 
 
 def test_scan_parquet_local_with_async(
-    plmonkeypatch: Any, foods_parquet_path: Path
+    plmonkeypatch: PlMonkeyPatch, foods_parquet_path: Path
 ) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     pl.scan_parquet(foods_parquet_path.relative_to(Path.cwd())).head(1).collect()
@@ -218,7 +219,7 @@ def test_row_index_schema_parquet(parquet_file_path: Path) -> None:
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 @pytest.mark.write_disk
 def test_parquet_is_in_statistics(
-    plmonkeypatch: Any, capfd: Any, tmp_path: Path
+    plmonkeypatch: PlMonkeyPatch, capfd: Any, tmp_path: Path
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -250,7 +251,9 @@ def test_parquet_is_in_statistics(
 
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 @pytest.mark.write_disk
-def test_parquet_statistics(plmonkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
+def test_parquet_statistics(
+    plmonkeypatch: PlMonkeyPatch, capfd: Any, tmp_path: Path
+) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
@@ -419,7 +422,7 @@ def test_nested_slice_12480(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk
 def test_scan_deadlock_rayon_spawn_from_async_15172(
-    plmonkeypatch: Any, tmp_path: Path
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
 ) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     plmonkeypatch.setenv("POLARS_MAX_THREADS", "1")
@@ -1084,7 +1087,7 @@ def test_parquet_prefiltering_inserted_column_23268() -> None:
 
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_scan_parquet_prefilter_with_cast(
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     f = io.BytesIO()
@@ -1197,7 +1200,7 @@ def test_prefilter_with_n_rows_23790() -> None:
     )
 
 
-def test_scan_parquet_filter_index_panic_23849(plmonkeypatch: Any) -> None:
+def test_scan_parquet_filter_index_panic_23849(plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_PARQUET_DECODE_TARGET_VALUES_PER_THREAD", "5")
     num_rows = 3
     num_cols = 5
@@ -1215,7 +1218,7 @@ def test_scan_parquet_filter_index_panic_23849(plmonkeypatch: Any) -> None:
 
 
 @pytest.mark.write_disk
-def test_sink_large_rows_25834(tmp_path: Path, plmonkeypatch: Any) -> None:
+def test_sink_large_rows_25834(tmp_path: Path, plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_BYTES", "1")
     df = pl.select(idx=pl.repeat(1, 20_000), bytes=pl.lit(b"AAAAA"))
 

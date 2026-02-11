@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import SerializationFormat
+    from tests.conftest import PlMonkeyPatch
 
 
 @given(
@@ -158,7 +159,9 @@ def test_lf_serde_map_batches_on_lazyframe() -> None:
 
 
 @pytest.mark.parametrize("max_byte_slice_len", [1, 2, 3, 100, 4294967295])
-def test_lf_serde_chunked_bytes(plmonkeypatch: Any, max_byte_slice_len: int) -> None:
+def test_lf_serde_chunked_bytes(
+    plmonkeypatch: PlMonkeyPatch, max_byte_slice_len: int
+) -> None:
     plmonkeypatch.setenv(
         "POLARS_SERIALIZE_LAZYFRAME_MAX_BYTE_SLICE_LEN", str(max_byte_slice_len)
     )

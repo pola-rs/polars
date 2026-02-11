@@ -14,6 +14,8 @@ from tests.unit.conftest import INTEGER_DTYPES
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tests.conftest import PlMonkeyPatch
+
 pytestmark = pytest.mark.xdist_group("streaming")
 
 
@@ -204,7 +206,7 @@ def random_integers() -> pl.Series:
 def test_streaming_group_by_ooc_q1(
     random_integers: pl.Series,
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     plmonkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
@@ -232,7 +234,7 @@ def test_streaming_group_by_ooc_q1(
 def test_streaming_group_by_ooc_q2(
     random_integers: pl.Series,
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     plmonkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
@@ -260,7 +262,7 @@ def test_streaming_group_by_ooc_q2(
 def test_streaming_group_by_ooc_q3(
     random_integers: pl.Series,
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     plmonkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))

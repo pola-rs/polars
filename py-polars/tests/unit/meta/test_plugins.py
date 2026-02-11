@@ -49,7 +49,7 @@ def test_serialize_kwargs(input: dict[str, Any] | None, expected: bytes) -> None
 @pytest.mark.write_disk
 @pytest.mark.parametrize("use_abs_path", [True, False])
 def test_resolve_plugin_path(
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     tmp_path: Path,
     use_abs_path: bool,
 ) -> None:

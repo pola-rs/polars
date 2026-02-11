@@ -64,6 +64,8 @@ from tests.unit.io.conftest import normalize_path_separator_pl
 if TYPE_CHECKING:
     from pyiceberg.table import Table
 
+    from tests.conftest import PlMonkeyPatch
+
     # Mypy does not understand the constructors and we can't construct the inputs
     # explicitly since they are abstract base classes.
     And = Any
@@ -417,7 +419,7 @@ def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
 @pytest.mark.write_disk
 def test_scan_iceberg_polars_storage_options_keys(
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
@@ -478,7 +480,7 @@ def test_scan_iceberg_collect_without_version_scans_latest(
     tmp_path: Path,
     reader_override: str,
     capfd: pytest.CaptureFixture[str],
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     catalog = SqlCatalog(
         "default",
@@ -1268,7 +1270,7 @@ def test_scan_iceberg_nulls_nested(tmp_path: Path) -> None:
 @pytest.mark.write_disk
 def test_scan_iceberg_parquet_prefilter_with_column_mapping(
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     catalog = SqlCatalog(
@@ -1656,7 +1658,7 @@ def test_fill_missing_fields_with_identity_partition_values_nested(
 @pytest.mark.write_disk
 def test_scan_iceberg_min_max_statistics_filter(
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     import datetime

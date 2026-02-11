@@ -21,6 +21,7 @@ from polars.io.cloud.credential_provider._providers import (
     CachingCredentialProvider,
     UserProvidedGCPToken,
 )
+from tests.conftest import PlMonkeyPatch
 
 
 @pytest.mark.parametrize(
@@ -32,7 +33,7 @@ from polars.io.cloud.credential_provider._providers import (
         pl.scan_ipc,
     ],
 )
-def test_credential_provider_scan(io_func: Any, plmonkeypatch: Any) -> None:
+def test_credential_provider_scan(io_func: Any, plmonkeypatch: PlMonkeyPatch) -> None:
     err_magic = "err_magic_3"
 
     def raises(*_: None, **__: None) -> None:
@@ -79,7 +80,7 @@ def test_credential_provider_scan(io_func: Any, plmonkeypatch: Any) -> None:
 def test_credential_provider_serialization_auto_init(
     provider_class: polars.io.cloud.credential_provider.CredentialProvider,
     path: str,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     def raises_1(*a: Any, **kw: Any) -> None:
         msg = "err_magic_1"
@@ -134,7 +135,7 @@ def test_credential_provider_serialization_custom_provider() -> None:
 
 
 def test_credential_provider_gcp_skips_config_autoload(
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     plmonkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_PATH", "__non_existent")
 
@@ -151,7 +152,7 @@ def test_credential_provider_gcp_skips_config_autoload(
 
 
 def test_credential_provider_aws_import_error_with_requested_profile(
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     def _session(self: Any) -> None:
         msg = "err_magic_3"
@@ -191,7 +192,7 @@ def test_credential_provider_aws_import_error_with_requested_profile(
 @pytest.mark.write_disk
 def test_credential_provider_aws_endpoint_url_scan_no_parameters(
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -225,7 +226,7 @@ endpoint_url = http://localhost:333
 @pytest.mark.write_disk
 def test_credential_provider_aws_endpoint_url_serde(
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -259,7 +260,7 @@ endpoint_url = http://localhost:777
 @pytest.mark.write_disk
 def test_credential_provider_aws_endpoint_url_with_storage_options(
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -316,7 +317,7 @@ endpoint_url = http://localhost:333
 def test_credential_provider_aws_endpoint_url_passed_in_storage_options(
     storage_options: dict[str, str],
     tmp_path: Path,
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -344,7 +345,7 @@ endpoint_url = http://localhost:333
         q.collect()
 
 
-def _set_default_credentials(tmp_path: Path, plmonkeypatch: Any) -> None:
+def _set_default_credentials(tmp_path: Path, plmonkeypatch: PlMonkeyPatch) -> None:
     creds_file_path = tmp_path / "credentials"
 
     creds_file_path.write_text("""\
@@ -358,7 +359,7 @@ aws_secret_access_key=Z
 
 @pytest.mark.slow
 def test_credential_provider_python_builder_cache(
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     # Tests caching of building credential providers.
@@ -467,7 +468,7 @@ def test_credential_provider_python_builder_cache(
 
 @pytest.mark.slow
 def test_credential_provider_python_credentials_cache(
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     credentials_func = Mock(
         wraps=lambda: (
@@ -543,7 +544,9 @@ def test_no_pickle_option() -> None:
 
 
 @pytest.mark.write_disk
-def test_credential_provider_aws_expiry(tmp_path: Path, plmonkeypatch: Any) -> None:
+def test_credential_provider_aws_expiry(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
     credential_file_path = tmp_path / "credentials.json"
 
     credential_file_path.write_text(
@@ -639,7 +642,7 @@ def test_credential_provider_rebuild_clears_cache(
     scan_path: str,
     initial_credentials: dict[str, str],
     updated_credentials: dict[str, str],
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     assert initial_credentials != updated_credentials
 
@@ -704,7 +707,7 @@ def test_credential_provider_rebuild_clears_cache(
 
 
 def test_user_gcp_token_provider(
-    plmonkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     provider = UserProvidedGCPToken("A")
     assert provider() == ({"bearer_token": "A"}, None)
@@ -712,7 +715,7 @@ def test_user_gcp_token_provider(
     assert provider() == ({"bearer_token": "A"}, None)
 
 
-def test_auto_init_cache_key_memoize(plmonkeypatch: Any) -> None:
+def test_auto_init_cache_key_memoize(plmonkeypatch: PlMonkeyPatch) -> None:
     get_cache_key_impl = Mock(wraps=AutoInit.get_cache_key_impl)
     plmonkeypatch.setattr(
         AutoInit,
@@ -770,7 +773,7 @@ def test_credential_provider_init_from_partition_target(
 
 
 @pytest.mark.slow
-def test_cache_user_credential_provider(plmonkeypatch: Any) -> None:
+def test_cache_user_credential_provider(plmonkeypatch: PlMonkeyPatch) -> None:
     user_provider = Mock(
         return_value=(
             {"aws_access_key_id": "...", "aws_secret_access_key": "..."},
@@ -806,7 +809,7 @@ def test_cache_user_credential_provider(plmonkeypatch: Any) -> None:
 
 
 @pytest.mark.slow
-def test_credential_provider_global_config(plmonkeypatch: Any) -> None:
+def test_credential_provider_global_config(plmonkeypatch: PlMonkeyPatch) -> None:
     import polars as pl
     import polars.io.cloud.credential_provider._builder
 
