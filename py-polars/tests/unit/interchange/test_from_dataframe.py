@@ -597,9 +597,9 @@ def test_construct_validity_buffer_from_bytemask_zero_copy_fails(
         )
 
 
-def test_interchange_protocol_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_interchange_protocol_fallback(plmonkeypatch: Any) -> None:
     df_pd = pd.DataFrame({"a": [1, 2, 3]})
-    monkeypatch.setattr(df_pd, "__arrow_c_stream__", lambda *args, **kwargs: 1 / 0)
+    plmonkeypatch.setattr(df_pd, "__arrow_c_stream__", lambda *args, **kwargs: 1 / 0)
     with pytest.warns(
         UserWarning, match="Falling back to Dataframe Interchange Protocol"
     ):

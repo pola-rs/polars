@@ -89,10 +89,10 @@ def test_is_aws_cloud() -> None:
 
 
 def test_storage_options_retry_config(
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: Any,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     capture = subprocess.check_output(
         [

@@ -79,11 +79,11 @@ def test_read_missing_file_path_truncated() -> None:
 
 
 def test_read_missing_file_path_expanded_when_polars_verbose_enabled(
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: Any,
 ) -> None:
     content = "lskdfj".join(str(i) for i in range(25))
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     with pytest.raises(
         FileNotFoundError,

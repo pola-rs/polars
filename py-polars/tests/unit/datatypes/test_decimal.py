@@ -53,7 +53,7 @@ def test_series_from_pydecimal_and_ints(
 
 @pytest.mark.slow
 def test_frame_from_pydecimal_and_ints(
-    permutations_int_dec_none: list[tuple[D | int | None, ...]], monkeypatch: Any
+    permutations_int_dec_none: list[tuple[D | int | None, ...]], plmonkeypatch: Any
 ) -> None:
     class X(NamedTuple):
         a: int | D | None
@@ -159,7 +159,7 @@ def test_decimal_cast_no_scale() -> None:
         pl.Series().cast(pl.Decimal)
 
 
-def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
+def test_decimal_scale_precision_roundtrip(plmonkeypatch: Any) -> None:
     assert pl.from_arrow(pl.Series("dec", [D("10.0")]).to_arrow()).item() == D("10.0")
 
 
@@ -181,7 +181,7 @@ def test_string_to_decimal() -> None:
     assert s.to_list() == [D(v) for v in values]
 
 
-def test_read_csv_decimal(monkeypatch: Any) -> None:
+def test_read_csv_decimal(plmonkeypatch: Any) -> None:
     csv = """a,b
 123.12,a
 1.1,a

@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 #[cfg(feature = "cloud")]
 pub use async_writeable::{AsyncDynWriteable, AsyncWriteable};
-use polars_core::config;
 use polars_error::{PolarsResult, feature_gated, polars_err};
 use polars_utils::create_file;
 use polars_utils::file::close_file;

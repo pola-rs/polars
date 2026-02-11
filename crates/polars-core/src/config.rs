@@ -36,7 +36,7 @@ pub fn verbose() -> bool {
 /// Prints a log message if sensitive verbose logging has been enabled.
 pub fn verbose_print_sensitive<F: Fn() -> String>(create_log_message: F) {
     fn do_log(create_log_message: &dyn Fn() -> String) {
-        if polars_config::config().verbose() {
+        if polars_config::config().verbose_sensitive() {
             // Force the message to be a single line.
             let msg = create_log_message().replace('\n', " ");
             eprintln!("[SENSITIVE]: {msg}")

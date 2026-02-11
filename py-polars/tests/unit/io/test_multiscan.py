@@ -559,7 +559,7 @@ def test_many_files(scan: Any, write: Any) -> None:
     )
 
 
-def test_deadlock_stop_requested(monkeypatch: Any) -> None:
+def test_deadlock_stop_requested(plmonkeypatch: Any) -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
@@ -569,8 +569,8 @@ def test_deadlock_stop_requested(monkeypatch: Any) -> None:
     f = io.BytesIO()
     df.write_parquet(f, row_group_size=1)
 
-    monkeypatch.setenv("POLARS_MAX_THREADS", "2")
-    monkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "1")
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "2")
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "1")
 
     left_fs = [io.BytesIO(f.getbuffer()) for _ in range(10)]
     right_fs = [io.BytesIO(f.getbuffer()) for _ in range(10)]

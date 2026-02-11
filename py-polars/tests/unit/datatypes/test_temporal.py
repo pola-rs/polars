@@ -2478,7 +2478,7 @@ def test_temporal_downcast_construction_19309() -> None:
 
 def test_timezone_ignore_error(
     capfd: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: Any,
 ) -> None:
     dtype = pl.Datetime(time_zone="non-existent")
 
@@ -2493,9 +2493,9 @@ def test_timezone_ignore_error(
     ):
         pl.DataFrame({"a": datetime(2025, 1, 1)}, schema={"a": dtype})
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
-    with monkeypatch.context() as cx:
+    with plmonkeypatch.context() as cx:
         cx.setenv("POLARS_IGNORE_TIMEZONE_PARSE_ERROR", "1")
         capfd.readouterr()
 

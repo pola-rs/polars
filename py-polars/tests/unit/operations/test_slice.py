@@ -337,7 +337,7 @@ def test_slice_empty_morsel_input() -> None:
     ],
 )
 def test_slice_pushdown_pushes_past_fallible(
-    base_query: pl.LazyFrame, monkeypatch: pytest.MonkeyPatch
+    base_query: pl.LazyFrame, plmonkeypatch: Any
 ) -> None:
     # Ensure baseline fails
     with pytest.raises(ComputeError, match="index is out of bounds"):

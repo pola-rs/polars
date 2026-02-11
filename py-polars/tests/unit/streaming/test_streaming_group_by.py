@@ -204,11 +204,11 @@ def random_integers() -> pl.Series:
 def test_streaming_group_by_ooc_q1(
     random_integers: pl.Series,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: Any,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
-    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    plmonkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
+    plmonkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
     lf = random_integers.to_frame().lazy()
     result = (
@@ -232,11 +232,11 @@ def test_streaming_group_by_ooc_q1(
 def test_streaming_group_by_ooc_q2(
     random_integers: pl.Series,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: Any,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
-    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    plmonkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
+    plmonkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
     lf = random_integers.cast(str).to_frame().lazy()
     result = (
@@ -260,11 +260,11 @@ def test_streaming_group_by_ooc_q2(
 def test_streaming_group_by_ooc_q3(
     random_integers: pl.Series,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: Any,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
-    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    plmonkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
+    plmonkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
     lf = pl.LazyFrame({"a": random_integers, "b": random_integers})
     result = (

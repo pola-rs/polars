@@ -174,7 +174,7 @@ def test_mixed_sequence_selection() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_from_arrow(monkeypatch: Any) -> None:
+def test_from_arrow(plmonkeypatch: Any) -> None:
     tbl = pa.table(
         {
             "a": pa.array([1, 2], pa.timestamp("s")),

@@ -6,8 +6,8 @@ from polars._utils.unstable import issue_unstable_warning, unstable
 from polars.exceptions import UnstableWarning
 
 
-def test_issue_unstable_warning(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
+def test_issue_unstable_warning(plmonkeypatch: Any) -> None:
+    plmonkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
 
     msg = "`func` is considered unstable."
     expected = (
@@ -18,8 +18,8 @@ def test_issue_unstable_warning(monkeypatch: pytest.MonkeyPatch) -> None:
         issue_unstable_warning(msg)
 
 
-def test_issue_unstable_warning_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
+def test_issue_unstable_warning_default(plmonkeypatch: Any) -> None:
+    plmonkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
 
     msg = "this functionality is considered unstable."
     with pytest.warns(UnstableWarning, match=msg):
@@ -33,8 +33,8 @@ def test_issue_unstable_warning_setting_disabled(
     assert len(recwarn) == 0
 
 
-def test_unstable_decorator(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
+def test_unstable_decorator(plmonkeypatch: Any) -> None:
+    plmonkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
 
     @unstable()
     def hello() -> None: ...

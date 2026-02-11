@@ -12,7 +12,8 @@ const VERBOSE: &'static str = "POLARS_VERBOSE";
 const DEFAULT_VERBOSE: bool = false;
 
 const WARN_UNKNOWN_CONFIG: &'static str = "POLARS_WARN_UNKNOWN_CONFIG";
-const DEFAULT_WARN_UNKNOWN_CONFIG: bool = true;
+const DEFAULT_WARN_UNKNOWN_CONFIG: bool = false;
+// TODO: Turn DEFAULT_WARN_UNKNOWN_CONFIG on once we support all stable config options.
 
 const WARN_UNSTABLE: &'static str = "POLARS_WARN_UNSTABLE";
 const DEFAULT_WARN_UNSTABLE: bool = true;
@@ -25,11 +26,52 @@ const ENGINE_AFFINITY: &'static str = "POLARS_ENGINE_AFFINITY";
 const DEFAULT_ENGINE_AFFINITY: Engine = Engine::Auto;
 
 // Private.
+const VERBOSE_SENSITIVE: &'static str = "POLARS_VERBOSE_SENSITIVE";
+const DEFAULT_VERBOSE_SENSITIVE: bool = false;
+
 const FORCE_ASYNC: &'static str = "POLARS_FORCE_ASYNC";
 const DEFAULT_FORCE_ASYNC: bool = false;
 
 const IMPORT_INTERVAL_AS_STRUCT: &'static str = "POLARS_IMPORT_INTERVAL_AS_STRUCT";
 const DEFAULT_IMPORT_INTERVAL_AS_STRUCT: bool = false;
+
+static KNOWN_OPTIONS: &'static [&'static str] = &[
+    // Public.
+    VERBOSE,
+    WARN_UNKNOWN_CONFIG,
+    WARN_UNSTABLE,
+    IDEAL_MORSEL_SIZE,
+    STREAMING_CHUNK_SIZE,
+    ENGINE_AFFINITY,
+
+    /*
+    Not yet supported public options:
+
+        "POLARS_AUTO_STRUCTIFY"
+        "POLARS_FMT_STR_LEN"
+        "POLARS_FMT_MAX_COLS"
+        "POLARS_FMT_TABLE_FORMATTING"
+        "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE"
+        "POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW"
+        "POLARS_FMT_TABLE_FORMATTING"
+        "POLARS_FMT_TABLE_ROUNDED_CORNERS"
+        "POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES"
+        "POLARS_FMT_TABLE_HIDE_COLUMN_NAMES"
+        "POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR"
+        "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION"
+        "POLARS_FMT_TABLE_CELL_ALIGNMENT"
+        "POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT"
+        "POLARS_FMT_TABLE_CELL_LIST_LEN"
+        "POLARS_FMT_MAX_ROWS"
+        "POLARS_TABLE_WIDTH"
+        "POLARS_MAX_EXPR_DEPTH"
+    */
+    
+    // Private.
+    VERBOSE_SENSITIVE,
+    FORCE_ASYNC,
+    IMPORT_INTERVAL_AS_STRUCT
+];
 
 pub struct Config {
     // Public.
@@ -40,6 +82,7 @@ pub struct Config {
     engine_affinity: AtomicU8,
 
     // Private.
+    verbose_sensitive: AtomicBool,
     force_async: AtomicBool,
     import_interval_as_struct: AtomicBool,
 }
@@ -55,6 +98,7 @@ impl Config {
             engine_affinity: AtomicU8::new(DEFAULT_ENGINE_AFFINITY as u8),
 
             // Private.
+            verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
             force_async: AtomicBool::new(DEFAULT_FORCE_ASYNC),
             import_interval_as_struct: AtomicBool::new(DEFAULT_IMPORT_INTERVAL_AS_STRUCT),
         };
@@ -66,8 +110,9 @@ impl Config {
     pub fn reload_env_vars(&self) {
         // Reload the warning config first to ensure we respect it.
         self.reload_env_var("POLARS_WARN_UNKNOWN_CONFIG");
-        for (var, val) in std::env::vars() {
-            self.apply_env_var(var.as_str(), Some(val.as_str()));
+
+        for var in KNOWN_OPTIONS {
+            self.reload_env_var(var);
         }
     }
 
@@ -106,12 +151,16 @@ impl Config {
             ),
 
             // Private flags.
+            VERBOSE_SENSITIVE => self.verbose_sensitive.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_VERBOSE_SENSITIVE),
+                Ordering::Relaxed,
+            ),
             FORCE_ASYNC => self.force_async.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_FORCE_ASYNC),
                 Ordering::Relaxed,
             ),
-            
             IMPORT_INTERVAL_AS_STRUCT => self.import_interval_as_struct.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_IMPORT_INTERVAL_AS_STRUCT),
@@ -149,6 +198,12 @@ impl Config {
     pub fn engine_affinity(&self) -> Engine {
         Engine::from_discriminant(self.engine_affinity.load(Ordering::Relaxed))
     }
+    
+
+    /// Whether we should do verbose printing on sensitive information.
+    pub fn verbose_sensitive(&self) -> bool {
+        self.verbose_sensitive.load(Ordering::Relaxed)
+    }
 
     pub fn force_async(&self) -> bool {
         self.force_async.load(Ordering::Relaxed)
@@ -164,26 +219,3 @@ pub fn config() -> &'static Config {
     &*CONFIG
 }
 
-/*
-
-plr.config_reload_env_var("POLARS_AUTO_STRUCTIFY")
-plr.config_reload_env_var("POLARS_FMT_STR_LEN")
-plr.config_reload_env_var("POLARS_STREAMING_CHUNK_SIZE")
-plr.config_reload_env_var("POLARS_FMT_MAX_COLS")
-plr.config_reload_env_var("POLARS_FMT_TABLE_FORMATTING")
-plr.config_reload_env_var("POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE")
-plr.config_reload_env_var("POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW")
-plr.config_reload_env_var("POLARS_FMT_TABLE_FORMATTING")
-plr.config_reload_env_var("POLARS_FMT_TABLE_ROUNDED_CORNERS")
-plr.config_reload_env_var("POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES")
-plr.config_reload_env_var("POLARS_FMT_TABLE_HIDE_COLUMN_NAMES")
-plr.config_reload_env_var("POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR")
-plr.config_reload_env_var("POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION")
-plr.config_reload_env_var("POLARS_FMT_TABLE_CELL_ALIGNMENT")
-plr.config_reload_env_var("POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT")
-plr.config_reload_env_var("POLARS_FMT_TABLE_CELL_LIST_LEN")
-plr.config_reload_env_var("POLARS_FMT_MAX_ROWS")
-plr.config_reload_env_var("POLARS_TABLE_WIDTH")
-plr.config_reload_env_var("POLARS_MAX_EXPR_DEPTH")
-
-*/

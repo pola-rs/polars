@@ -2146,7 +2146,7 @@ def test_decimal_precision_nested_roundtrip(
 @pytest.mark.may_fail_cloud  # reason: sortedness flag
 @pytest.mark.parametrize("parallel", ["prefiltered", "columns", "row_groups", "auto"])
 def test_conserve_sortedness(
-    monkeypatch: Any, capfd: pytest.CaptureFixture[str], parallel: ParallelStrategy
+    plmonkeypatch: Any, capfd: pytest.CaptureFixture[str], parallel: ParallelStrategy
 ) -> None:
     f = io.BytesIO()
 
@@ -2174,7 +2174,7 @@ def test_conserve_sortedness(
         f.truncate()
         f.seek(0)
 
-        monkeypatch.setenv("POLARS_VERBOSE", "1")
+        plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
         df = pl.scan_parquet(f, parallel=parallel).filter(pl.col.f > 1).collect()
 
@@ -2812,7 +2812,7 @@ def test_struct_list_statistics_20510() -> None:
     assert_frame_equal(result, df.filter(pl.col("name") == "b"))
 
 
-def test_required_masked_skip_values_20809(monkeypatch: Any) -> None:
+def test_required_masked_skip_values_20809(plmonkeypatch: Any) -> None:
     df = pl.DataFrame(
         [pl.Series("a", list(range(20)) + [42] * 15), pl.Series("b", range(35))]
     )
@@ -2822,7 +2822,7 @@ def test_required_masked_skip_values_20809(monkeypatch: Any) -> None:
     df.write_parquet(f)
 
     f.seek(0)
-    monkeypatch.setenv("POLARS_PQ_PREFILTERED_MASK", "pre")
+    plmonkeypatch.setenv("POLARS_PQ_PREFILTERED_MASK", "pre")
     df1 = (
         pl.scan_parquet(f, parallel="prefiltered")
         .filter(pl.col.b.is_in(needle))
@@ -3382,7 +3382,7 @@ def test_scan_parquet_skip_row_groups_with_cast(
     value: Any,
     scan_dtype: pl.DataType,
     filter_expr: pl.Expr,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: Any,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     f = io.BytesIO()
@@ -3402,7 +3402,7 @@ def test_scan_parquet_skip_row_groups_with_cast(
         ),
     ).filter(filter_expr)
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
     out = q.collect()
     assert "reading 0 / 1 row groups" in capfd.readouterr().err
@@ -3440,7 +3440,7 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
     value: Any,
     scan_dtype: pl.DataType,
     filter_expr: pl.Expr,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: Any,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     f = io.BytesIO()
@@ -3459,7 +3459,7 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
         ),
     ).filter(filter_expr)
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
     out = q.collect()
     assert "reading 1 / 1 row groups" in capfd.readouterr().err
@@ -3555,8 +3555,8 @@ def test_binary_offset_roundtrip() -> None:
         ),
     ],
 )
-def test_empty_struct_roundtrip(df: pl.DataFrame, monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_ALLOW_PQ_EMPTY_STRUCT", "1")
+def test_empty_struct_roundtrip(df: pl.DataFrame, plmonkeypatch: Any) -> None:
+    plmonkeypatch.setenv("POLARS_ALLOW_PQ_EMPTY_STRUCT", "1")
 
     f = io.BytesIO()
     df.write_parquet(f)

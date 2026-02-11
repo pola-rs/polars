@@ -346,7 +346,7 @@ pub async fn csv_file_info(
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
     use polars_core::error::feature_gated;
-    use polars_core::{POOL, config};
+    use polars_core::POOL;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
     // Holding _first_scan_source should guarantee sources is not empty.
@@ -459,7 +459,6 @@ pub async fn ndjson_file_info(
     ndjson_options: &NDJsonReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
-    use polars_core::config;
     use polars_core::error::feature_gated;
 
     let run_async =

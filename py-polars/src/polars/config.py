@@ -336,6 +336,8 @@ class Config(contextlib.ContextDecorator):
         for cfg_methodname, value in options.get("direct", {}).items():
             if hasattr(cfg_load, cfg_methodname):
                 getattr(cfg_load, cfg_methodname)(value)
+
+        plr.config_reload_env_vars()
         return cfg_load
 
     @classmethod
@@ -383,6 +385,7 @@ class Config(contextlib.ContextDecorator):
         for method in _POLARS_CFG_DIRECT_VARS:
             getattr(cls, method)(None)
 
+        plr.config_reload_env_vars()
         return cls
 
     @classmethod
@@ -1590,8 +1593,7 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
-    @unstable()
-    def reload_env_vars() -> None:
+    def reload_env_vars(cls) -> None:
         """
         Update the Polars config from the set environment variables.
 

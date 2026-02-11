@@ -79,7 +79,7 @@ def test_cum_min_max_bool() -> None:
     )
 
 
-def test_init_inputs(monkeypatch: Any) -> None:
+def test_init_inputs(plmonkeypatch: Any) -> None:
     nan = float("nan")
     # Good inputs
     pl.Series("a", [1, 2])
@@ -196,7 +196,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
         pl.Series("bigint", [2**128])
 
     # numpy not available
-    monkeypatch.setattr(pl.series.series, "_check_for_numpy", lambda x: False)
+    plmonkeypatch.setattr(pl.series.series, "_check_for_numpy", lambda x: False)
     with pytest.raises(TypeError):
         pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
 
@@ -909,8 +909,8 @@ def test_shape() -> None:
 
 
 @pytest.mark.parametrize("arrow_available", [True, False])
-def test_create_list_series(arrow_available: bool, monkeypatch: Any) -> None:
-    monkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", arrow_available)
+def test_create_list_series(arrow_available: bool, plmonkeypatch: Any) -> None:
+    plmonkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", arrow_available)
     a = [[1, 2], None, [None, 3]]
     s = pl.Series("", a)
     assert s.to_list() == a
@@ -1224,7 +1224,7 @@ def test_from_generator_or_iterable() -> None:
     assert_series_equal(pl.Series("s", []), pl.Series("s", values=gen(0)))
 
 
-def test_from_sequences(monkeypatch: Any) -> None:
+def test_from_sequences(plmonkeypatch: Any) -> None:
     # test int, str, bool, flt
     values = [
         [[1], [None, 3]],
@@ -1234,9 +1234,9 @@ def test_from_sequences(monkeypatch: Any) -> None:
     ]
 
     for vals in values:
-        monkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", False)
+        plmonkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", False)
         a = pl.Series("a", vals)
-        monkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", True)
+        plmonkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", True)
         b = pl.Series("a", vals)
         assert_series_equal(a, b)
         assert a.to_list() == vals

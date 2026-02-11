@@ -417,10 +417,10 @@ def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
 @pytest.mark.write_disk
 def test_scan_iceberg_polars_storage_options_keys(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: Any,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
@@ -478,7 +478,7 @@ def test_scan_iceberg_collect_without_version_scans_latest(
     tmp_path: Path,
     reader_override: str,
     capfd: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: Any,
 ) -> None:
     catalog = SqlCatalog(
         "default",
@@ -521,7 +521,7 @@ def test_scan_iceberg_collect_without_version_scans_latest(
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [2, 1]}))
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
     assert_frame_equal(q_with_id.collect(), pl.DataFrame({"a": 1}))
 
@@ -1268,7 +1268,7 @@ def test_scan_iceberg_nulls_nested(tmp_path: Path) -> None:
 @pytest.mark.write_disk
 def test_scan_iceberg_parquet_prefilter_with_column_mapping(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: Any,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     catalog = SqlCatalog(
@@ -1352,7 +1352,7 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
         tbl, reader_override="native", use_pyiceberg_filter=False
     ).filter(pl.col("column_3") == 5)
 
-    with monkeypatch.context() as cx:
+    with plmonkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
         cx.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "0")
         capfd.readouterr()
@@ -1656,7 +1656,7 @@ def test_fill_missing_fields_with_identity_partition_values_nested(
 @pytest.mark.write_disk
 def test_scan_iceberg_min_max_statistics_filter(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: Any,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     import datetime
@@ -1960,7 +1960,7 @@ def test_scan_iceberg_min_max_statistics_filter(
     def ensure_filter_skips_file(filter_expr: pl.Expr) -> None:
         nonlocal iceberg_table_filter_seen
 
-        with monkeypatch.context() as cx:
+        with plmonkeypatch.context() as cx:
             cx.setenv("POLARS_VERBOSE", "1")
             capfd.readouterr()
 

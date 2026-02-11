@@ -65,9 +65,9 @@ def test_write_async_force_async(
     write_func: Callable[[pl.DataFrame, Path], None],
     opt_absolute_fn: Callable[[Path], Path],
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: Any,
 ) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     tmp_path.mkdir(exist_ok=True)
     path = opt_absolute_fn(tmp_path / "1")
 
