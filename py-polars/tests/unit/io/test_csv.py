@@ -3134,5 +3134,5 @@ def test_provided_schema_mismatch_truncate(chunk_override: None, read_fn: str) -
 
 
 def test_read_batch_csv_deprecations_26479(foods_file_path: Path) -> None:
-    with pytest.warns(DeprecationWarning, match="read_csv_batched is deprecated"):
+    with pytest.warns(DeprecationWarning, match=r"`read_csv_batched` is deprecated"):
         pl.read_csv_batched(foods_file_path)
