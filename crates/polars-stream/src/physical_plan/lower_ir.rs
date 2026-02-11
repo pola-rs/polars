@@ -1429,7 +1429,7 @@ fn append_sorted_key_column(
         let output =
             build_hstack_stream(phys_input, &key_exprs, expr_arena, phys_sm, expr_cache, ctx)?;
         (output, key_col_name)
-    } else if key_expr_is_trivial(&key_exprs[0], expr_arena) {
+    } else if !key_expr_is_trivial(&key_exprs[0], expr_arena) {
         let key_col_name = unique_column_name();
         key_exprs[0] = key_exprs[0].with_alias(key_col_name.clone());
         let output =
