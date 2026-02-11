@@ -328,34 +328,45 @@ pub fn lower_ir(
             let input_right = *input_right;
             let key = key.clone();
 
-            let phys_left = lower_ir!(input_left)?;
-            let phys_right = lower_ir!(input_right)?;
+            let mut phys_left = lower_ir!(input_left)?;
+            let mut phys_right = lower_ir!(input_right)?;
 
-            let left_schema = &phys_sm[phys_left.node].output_schema.clone();
-            let right_schema = &phys_sm[phys_right.node].output_schema.clone();
+            let left_schema = &phys_sm[phys_left.node].output_schema;
+            let right_schema = &phys_sm[phys_right.node].output_schema;
+
             left_schema.ensure_is_exact_match(right_schema).unwrap();
 
+            let key_dtype = left_schema.try_get(key.as_str())?.clone();
+
+            let key_name = unique_column_name();
+            use polars_plan::plans::{AExprBuilder, RowEncodingVariant};
+
             // Add the key column as the last column for both inputs.
-            let (phys_left, _, _) = append_sorted_key_column(
-                phys_left,
-                vec![AExprBuilder::col(key.clone(), expr_arena).expr_ir_retain_name(expr_arena)],
-                None,
-                None,
-                expr_arena,
-                phys_sm,
-                expr_cache,
-                ctx,
-            )?;
-            let (phys_right, _, _) = append_sorted_key_column(
-                phys_right,
-                vec![AExprBuilder::col(key, expr_arena).expr_ir_retain_name(expr_arena)],
-                None,
-                None,
-                expr_arena,
-                phys_sm,
-                expr_cache,
-                ctx,
-            )?;
+            for s in [&mut phys_left, &mut phys_right] {
+                let key_dtype = key_dtype.clone();
+                let mut expr = AExprBuilder::col(key.clone(), expr_arena);
+                if key_dtype.is_nested() {
+                    expr = AExprBuilder::row_encode(
+                        vec![expr.expr_ir(key_name.clone())],
+                        vec![key_dtype],
+                        RowEncodingVariant::Ordered {
+                            descending: None,
+                            nulls_last: None,
+                            broadcast_nulls: None,
+                        },
+                        expr_arena,
+                    );
+                }
+
+                *s = build_hstack_stream(
+                    *s,
+                    &[expr.expr_ir(key_name.clone())],
+                    expr_arena,
+                    phys_sm,
+                    expr_cache,
+                    ctx,
+                )?;
+            }
 
             PhysNodeKind::MergeSorted {
                 input_left: phys_left,

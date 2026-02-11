@@ -445,11 +445,11 @@ async fn compute_join_and_send(
     probe.rechunk_mut();
 
     let mut build_key = build
-        .column(&params.build_params().key_col())
+        .column(params.build_params().key_col())
         .unwrap()
         .as_materialized_series();
     let mut probe_key = probe
-        .column(&params.probe_params().key_col())
+        .column(params.probe_params().key_col())
         .unwrap()
         .as_materialized_series();
 
@@ -641,10 +641,10 @@ fn find_mergeable_search(
     let probe_empty_buf =
         || DataFrameSearchBuffer::empty_with_schema(probe_params.input_schema.clone());
     let build_get = |idx| unsafe {
-        build.get_bypass_validity(&build_params.key_col(), idx, params.keys_row_encoded)
+        build.get_bypass_validity(build_params.key_col(), idx, params.keys_row_encoded)
     };
     let probe_get = |idx| unsafe {
-        probe.get_bypass_validity(&probe_params.key_col(), idx, params.keys_row_encoded)
+        probe.get_bypass_validity(probe_params.key_col(), idx, params.keys_row_encoded)
     };
 
     if build_done && build.is_empty() && !probe_done && probe.is_empty() {
@@ -751,7 +751,7 @@ fn binary_search_lower(
     sp: &MergeJoinSideParams,
 ) -> usize {
     let predicate = |x: &AnyValue<'_>| keys_cmp(sv, x, params).is_le();
-    dfsb.binary_search(predicate, &sp.key_col(), params.keys_row_encoded)
+    dfsb.binary_search(predicate, sp.key_col(), params.keys_row_encoded)
 }
 
 fn binary_search_upper(
@@ -761,7 +761,7 @@ fn binary_search_upper(
     sp: &MergeJoinSideParams,
 ) -> usize {
     let predicate = |x: &AnyValue<'_>| keys_cmp(sv, x, params).is_lt();
-    dfsb.binary_search(predicate, &sp.key_col(), params.keys_row_encoded)
+    dfsb.binary_search(predicate, sp.key_col(), params.keys_row_encoded)
 }
 
 fn keys_cmp(lhs: &AnyValue, rhs: &AnyValue, params: &MergeJoinParams) -> Ordering {

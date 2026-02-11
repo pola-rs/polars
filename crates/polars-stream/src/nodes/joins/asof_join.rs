@@ -299,9 +299,7 @@ fn need_more_right_side(
     params: &AsOfJoinParams,
 ) -> PolarsResult<bool> {
     let options = params.as_of_options();
-    let left_key = left
-        .column(&params.left.key_col())?
-        .as_materialized_series();
+    let left_key = left.column(params.left.key_col())?.as_materialized_series();
     if left_key.is_empty() {
         return Ok(false);
     }
@@ -309,14 +307,14 @@ fn need_more_right_side(
     let left_last_val = unsafe { left_key.get_unchecked(left_key.len() - 1) };
     let right_range_end = match (options.strategy, options.allow_eq) {
         (AsofStrategy::Forward, true) => {
-            right.binary_search(|x| *x >= left_last_val, &params.right.key_col(), false)
+            right.binary_search(|x| *x >= left_last_val, params.right.key_col(), false)
         },
         (AsofStrategy::Forward, false) | (AsofStrategy::Backward, true) => {
-            right.binary_search(|x| *x > left_last_val, &params.right.key_col(), false)
+            right.binary_search(|x| *x > left_last_val, params.right.key_col(), false)
         },
         (AsofStrategy::Backward, false) | (AsofStrategy::Nearest, _) => {
             let first_greater =
-                right.binary_search(|x| *x > left_last_val, &params.right.key_col(), false);
+                right.binary_search(|x| *x > left_last_val, params.right.key_col(), false);
             if first_greater >= right.height() {
                 return Ok(true);
             }
@@ -326,8 +324,8 @@ fn need_more_right_side(
 
             // SAFETY: We just checked that right_range_end is in bounds
             let fst_greater_val =
-                unsafe { right.get_bypass_validity(&params.right.key_col(), first_greater, false) };
-            right.binary_search(|x| *x > fst_greater_val, &params.right.key_col(), false)
+                unsafe { right.get_bypass_validity(params.right.key_col(), first_greater, false) };
+            right.binary_search(|x| *x > fst_greater_val, params.right.key_col(), false)
         },
     };
     Ok(right_range_end >= right.height())
@@ -338,16 +336,14 @@ fn prune_right_side(
     right: &mut DataFrameSearchBuffer,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
-    let left_key = left
-        .column(&params.left.key_col())?
-        .as_materialized_series();
+    let left_key = left.column(params.left.key_col())?.as_materialized_series();
     if left.len() == 0 {
         return Ok(());
     }
     // SAFETY: We just checked that left_key is not empty
     let left_first_val = unsafe { left_key.get_unchecked(0) };
     let right_range_start = right
-        .binary_search(|x| *x >= left_first_val, &params.right.key_col(), false)
+        .binary_search(|x| *x >= left_first_val, params.right.key_col(), false)
         .saturating_sub(1);
     right.split_at(right_range_start);
     Ok(())
@@ -362,8 +358,8 @@ async fn compute_and_emit_task(
     while let Ok((left_df, right_buffer, seq, st)) = dist_recv.recv().await {
         let right_df = right_buffer.into_df();
 
-        let left_key = left_df.column(&params.left.key_col())?;
-        let right_key = right_df.column(&params.right.key_col())?;
+        let left_key = left_df.column(params.left.key_col())?;
+        let right_key = right_df.column(params.right.key_col())?;
         let any_key_is_temporary_col =
             params.left.tmp_key_col.is_some() || params.right.tmp_key_col.is_some();
         let mut out = polars_ops::frame::AsofJoin::_join_asof(
@@ -381,9 +377,9 @@ async fn compute_and_emit_task(
         )?;
 
         // Drop any temporary key columns that were added
-        for side in [&params.left, &params.right] {
-            if let Some(tmp_col) = &side.tmp_key_col
-                && out.schema().contains(&tmp_col)
+        for tmp_key_col in [&params.left.tmp_key_col, &params.right.tmp_key_col] {
+            if let Some(tmp_col) = tmp_key_col
+                && out.schema().contains(tmp_col)
             {
                 out.drop_in_place(tmp_col)?;
             }
