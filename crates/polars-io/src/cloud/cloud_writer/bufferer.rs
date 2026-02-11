@@ -58,20 +58,30 @@ impl BytesBufferer {
             return;
         }
 
-        let copy_buffer_available_capacity = usize::min(
-            available_capacity,
-            self.copy_buffer.capacity() - self.copy_buffer.len(),
-        );
+        loop {
+            let copy_buffer_available_capacity = usize::min(
+                available_capacity,
+                self.copy_buffer.capacity() - self.copy_buffer.len(),
+            );
 
-        if bytes.len() <= copy_buffer_available_capacity {
-            self.copy_buffer.extend_from_slice(bytes);
-            self.num_bytes_buffered += bytes.len();
-            *bytes = Bytes::new();
+            if bytes.len() <= copy_buffer_available_capacity {
+                self.copy_buffer.extend_from_slice(bytes);
+                self.num_bytes_buffered += bytes.len();
+                *bytes = Bytes::new();
 
-            return;
+                return;
+            }
+
+            self.commit_active_copy_buffer();
+
+            if self.tail_coalesce_num_items >= cloud_writer_coalesce_run_length() {
+                self.coalesce_tail(self.tail_coalesce_num_items, self.tail_coalesce_byte_offset);
+                self.reset_tail_coalesce_counters();
+                continue;
+            }
+
+            break;
         }
-
-        self.commit_active_copy_buffer();
 
         let bytes = bytes.split_to(usize::min(bytes.len(), available_capacity));
 
@@ -83,11 +93,6 @@ impl BytesBufferer {
         {
             self.tail_coalesce_num_items += 1;
         } else {
-            self.reset_tail_coalesce_counters();
-        }
-
-        if self.tail_coalesce_num_items >= get_coalesce_run_length() {
-            self.coalesce_tail(self.tail_coalesce_num_items, self.tail_coalesce_byte_offset);
             self.reset_tail_coalesce_counters();
         }
     }
