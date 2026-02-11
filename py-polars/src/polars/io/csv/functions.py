@@ -739,6 +739,7 @@ def _read_csv_impl(
     )
     return wrap_df(pydf)
 
+
 @deprecated(
     "`read_csv_batched` is deprecated as of 1.37.0; use `scan_csv().collect_batches()` instead."
 )
