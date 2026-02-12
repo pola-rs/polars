@@ -3868,3 +3868,25 @@ def test_parquet_nested_dictionary_multipage(tmp_path: Path) -> None:
 
     assert dict_pages == 1, f"Expected 1 dict page, got {dict_pages}"
     assert data_pages == 2, f"Expected 2 data pages, got {data_pages}"
+
+
+def test_parquet_dict_and_data_page_offset_26531(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "empty_dict_col": pl.Series(
+                [None, None, None, None, None], dtype=pl.Categorical
+            ),
+        }
+    )
+
+    filename = tmp_path / "file_native.parquet"
+    df.write_parquet(filename, use_pyarrow=False)
+
+    meta = pq.read_metadata(filename)
+    rg = meta.row_group(0)
+    col = rg.column(1)  # empty_dict_col
+
+    assert "RLE_DICTIONARY" in str(col.encodings)
+    assert col.dictionary_page_offset is not None
+    assert col.data_page_offset > col.dictionary_page_offset
