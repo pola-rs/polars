@@ -203,7 +203,9 @@ pub enum Expr {
         evaluation: Vec<Expr>,
     },
     /// SQL SubQueries
-    SubPlan(SpecialEq<Arc<DslPlan>>, Vec<PlSmallStr>),
+    /// Plan,
+    /// Post-select expression and output-name of that expr
+    SubPlan(SpecialEq<Arc<DslPlan>>, Vec<(PlSmallStr, Expr)>),
     RenameAlias {
         function: RenameAliasFn,
         expr: Arc<Expr>,
@@ -717,7 +719,7 @@ pub enum Operator {
     Plus,
     Minus,
     Multiply,
-    /// Rust division semantics, this is what Rust interface `/` fispatches to
+    /// Rust division semantics, this is what Rust interface `/` dispatches to
     RustDivide,
     /// Python division semantics, converting to floats. This is what python `/` operator dispatches to
     TrueDivide,

@@ -15,7 +15,9 @@ use crate::utils::{NoNull, flatten, slice_slice};
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GroupsIdx {
     pub(crate) sorted: bool,
+    /// Positions of the start of each group.
     first: Vec<IdxSize>,
+    /// Global positions of all elements of all groups.
     all: Vec<IdxVec>,
 }
 

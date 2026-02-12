@@ -2,7 +2,7 @@
   description = "A basic Nix Flake for eachDefaultSystem";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";
     fenix = {
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -31,7 +31,7 @@
           let
             rustToolchain = pkgs.fenix.fromToolchainName {
               name = (lib.importTOML ./rust-toolchain.toml).toolchain.channel;
-              sha256 = "sha256-7BslJCnXhsJe97SDZiclW7tc83VH9NHp4fn+UTV1GYU=";
+              sha256 = "sha256-xJcQgGnbraFO5NipYwkHR+V1BxGbTe1ZrRnNw5InBEg=";
             };
 
             rustPlatform = pkgs.makeRustPlatform {
@@ -39,11 +39,8 @@
               rustc = rustToolchain;
             };
 
-            # Create a python platform that contains the python interpreter and its packages
-            # in a single set that can be reused throughout this flake.
-            pythonPlatform = lib.recursiveUpdate {
-              python = pkgs.python311;
-            } pkgs.python311Packages;
+            # Create an alias for python packages, such that we can use the same python version for everything
+            py = pkgs.python313Packages;
 
           in
           {
@@ -55,7 +52,7 @@
 
             # packages.polars =
             #   let
-            #     project = builtins.fromTOML (builtins.readFile ./py-polars/Cargo.toml);
+            #     project = builtins.fromTOML (builtins.readFile ./py-polars/runtime/polars-runtime-32/Cargo.toml);
             #   in
             #   pythonPlatform.buildPythonPackage {
             #     pname = "polars";
@@ -75,7 +72,8 @@
             #
             #     maturinBuildFlags = [
             #       "-m"
-            #       "py-polars/Cargo.toml"
+            #       "py-polars/runtime/polars-runtime-32/Cargo.toml"
+            #       "--uv"
             #     ];
             #
             #     cargoDeps = rustPlatform.importCargoLock {
@@ -89,7 +87,7 @@
                   with pkgs;
                   lib.optionals stdenv.isLinux [
                     gcc13
-                    openssl_3_4
+                    openssl_3_6
                   ];
                 stdenv = pkgs.stdenv;
 
@@ -156,32 +154,32 @@
                   };
                   pybuild = {
                     pwd = "py-polars";
-                    cmd = buildPy "debug" "maturin develop -m $WORKSPACE_ROOT/py-polars/Cargo.toml \"$@\"";
+                    cmd = buildPy "debug" "maturin develop -m $WORKSPACE_ROOT/py-polars/runtime/polars-runtime-32/Cargo.toml \"$@\" --uv";
                     doc = "Build the python library";
                   };
                   pybuild-mindebug = {
                     pwd = "py-polars";
-                    cmd = buildPy "mindebug" "maturin develop --profile mindebug-dev \"$@\"";
+                    cmd = buildPy "mindebug" "maturin develop --profile mindebug-dev \"$@\" --uv";
                     doc = "Build the python library with minimal debug information";
                   };
                   pybuild-nodebug-release = {
                     pwd = "py-polars";
-                    cmd = buildPy "nodebug-release" "maturin develop --profile nodebug-release \"$@\"";
+                    cmd = buildPy "nodebug-release" "maturin develop --profile nodebug-release \"$@\" --uv";
                     doc = "Build the python library in release mode without debug symbols";
                   };
                   pybuild-release = {
                     pwd = "py-polars";
-                    cmd = buildPy "release" "maturin develop --profile release \"$@\"";
+                    cmd = buildPy "release" "maturin develop --profile release \"$@\" --uv";
                     doc = "Build the python library in release mode with minimal debug symbols";
                   };
                   pybuild-debug-release = {
                     pwd = "py-polars";
-                    cmd = buildPy "debug-release" "maturin develop --profile debug-release \"$@\"";
+                    cmd = buildPy "debug-release" "maturin develop --profile debug-release \"$@\" --uv";
                     doc = "Build the python library in release mode with full debug symbols";
                   };
                   pybuild-dist-release = {
                     pwd = "py-polars";
-                    cmd = buildPy "dist-release" "maturin develop --profile dist-release \"$@\"";
+                    cmd = buildPy "dist-release" "maturin develop --profile dist-release \"$@\" --uv";
                     doc = "Build the python library in release mode which would be distributed to users";
                   };
                   pyselect-build = {
@@ -302,7 +300,10 @@
 
 									"duckdb"
 									"pandas"
+									"jax"
+									"torch"
 									"jupyterlab"
+									"pyiceberg"
 
 									"pygithub"
 
@@ -327,9 +328,10 @@
                 packages =
                   with pkgs;
                   [
-                    pythonPlatform.python
-                    pythonPlatform.venvShellHook
-                    pythonPlatform.build
+                    py.python
+                    py.venvShellHook
+                    py.build
+                    py.mypy
 
                     rustPkg
 
@@ -339,7 +341,6 @@
                     maturin
 
                     typos
-                    mypy
                     dprint
 										uv
 
@@ -359,7 +360,7 @@
                     name: value: pkgs.writeShellScriptBin "pl-${name}" (aliasToScript value)
                   ) aliases)
                   ++ (pkgs.lib.optionals pkgs.stdenv.isLinux [
-                    pkgs.linuxPackages.perf
+                    pkgs.perf
                     mold-wrapped
                   ]);
 
@@ -367,12 +368,15 @@
 
                 postVenvCreation = ''
                   unset CONDA_PREFIX 
-                  MATURIN_PEP517_ARGS="--profile dev" uv pip install \
-                    -r py-polars/requirements-ci.txt                 \
-                    -r py-polars/requirements-dev.txt                \
-                    -r py-polars/requirements-lint.txt               \
-                    -r py-polars/docs/requirements-docs.txt          \
-										${builtins.concatStringsSep " " extraPyDeps}
+                  MATURIN_PEP517_ARGS="--profile dev" uv pip install --upgrade --compile-bytecode --no-build \
+                    -r py-polars/requirements-dev.txt \
+                    -r py-polars/requirements-lint.txt \
+                    -r py-polars/docs/requirements-docs.txt \
+                    -r docs/source/requirements.txt \
+                    ${builtins.concatStringsSep " " extraPyDeps} \
+                  && uv pip install --upgrade --compile-bytecode "pyiceberg>=0.7.1" pyiceberg-core \
+                	&& uv pip install --no-deps -e py-polars \
+                	&& uv pip uninstall polars-runtime-compat polars-runtime-64  ## Uninstall runtimes which might take precedence over polars-runtime-32
                 '';
 
                 venvDir = ".venv";
@@ -426,23 +430,15 @@
                     # but fortify and fortify3.
                     export NIX_HARDENING_ENABLE="bindnow format pic relro stackclashprotection stackprotector strictoverflow zerocallusedregs"
 
-                    export PYO3_NO_REOCOMPILE=1
                     export PYO3_NO_RECOMPILE=1
 
-                    export POLARS_DOT_SVG_VIEWER="${openCmd} %file%"
-                    export PYO3_PYTHON=$($VENV/bin/python -c "import sys,os; print(os.path.abspath(sys.executable))")
                     export PYTHON_SHARED_LIB=$($VENV/bin/python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
 
-                    # Set `nix-ld` env vars for nixos users that need these to be able
-                    # to run `ruff`.
-                    export NIX_LD=${pkgs.stdenv.cc.bintools.dynamicLinker}
-                    export NIX_LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimePkgs}:$PYTHON_SHARED_LIB"
-                    # Set openssl for `cargo test` to work.
-                    export LD_LIBRARY_PATH="${pkgs.openssl_3_4.out}/lib:${stdenv.cc.cc.lib}/lib:$PYTHON_SHARED_LIB"
+                    # - cc is needed for numpy to function
+                    # - python shared libs are required for rust-side tests
+                    export LD_LIBRARY_PATH="${stdenv.cc.cc.lib}/lib:$PYTHON_SHARED_LIB"
 
-                    export PYTHON_LIBS=$($VENV/bin/python -c "import site; print(site.getsitepackages()[0])")
-
-                    export PYTHONPATH="$PYTHONPATH:$PYTHON_LIBS"
+                    export POLARS_DOT_SVG_VIEWER="${openCmd} %file%"
 										export RUST_SRC_PATH="${rustToolchain.rust-src}/lib/rustlib/src/rust/library"
                   '';
 
@@ -450,9 +446,9 @@
             );
             packages.polars =
               let
-                project = builtins.fromTOML (builtins.readFile ./py-polars/Cargo.toml);
+                project = builtins.fromTOML (builtins.readFile ./py-polars/runtime/polars-runtime-32/Cargo.toml);
               in
-              pkgs.python3Packages.buildPythonPackage {
+              py.buildPythonPackage {
                 pname = "polars";
                 version = project.package.version;
 
@@ -468,7 +464,8 @@
 
                 maturinBuildFlags = [
                   "-m"
-                  "py-polars/Cargo.toml"
+                  "py-polars/runtime/polars-runtime-32/Cargo.toml"
+                  "--uv"
                 ];
                 postInstall = ''
 									# Move polars.abi3.so -> polars.so

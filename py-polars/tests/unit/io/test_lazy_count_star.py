@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars.lazyframe.frame import LazyFrame
+    from tests.conftest import PlMonkeyPatch
 
 import gzip
 import re
@@ -27,11 +28,11 @@ def assert_fast_count(
     *,
     expected_name: str = "len",
     capfd: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     capfd.readouterr()  # resets stderr
 
-    with monkeypatch.context() as cx:
+    with plmonkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
         result = lf.collect()
     capture = capfd.readouterr().err
@@ -50,11 +51,11 @@ def assert_fast_count(
 
     # We disable the fast-count optimization to check that the normal scan
     # logic counts as expected.
-    monkeypatch.setenv("POLARS_NO_FAST_FILE_COUNT", "1")
+    plmonkeypatch.setenv("POLARS_NO_FAST_FILE_COUNT", "1")
 
     capfd.readouterr()
 
-    with monkeypatch.context() as cx:
+    with plmonkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
         assert lf.collect().item() == expected_count
 
@@ -64,7 +65,7 @@ def assert_fast_count(
     assert "FAST COUNT" not in lf.explain()
     assert project_logs == {"project: 0"}
 
-    monkeypatch.setenv("POLARS_NO_FAST_FILE_COUNT", "0")
+    plmonkeypatch.setenv("POLARS_NO_FAST_FILE_COUNT", "0")
 
     plan = lf.explain()
     if "Csv" not in plan:
@@ -78,7 +79,7 @@ def assert_fast_count(
 
     capfd.readouterr()
 
-    with monkeypatch.context() as cx:
+    with plmonkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
         assert lf.collect().item() == expected_count
 
@@ -96,15 +97,15 @@ def test_count_csv(
     path: str,
     n_rows: int,
     capfd: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     lf = pl.scan_csv(io_files_path / path).select(pl.len())
 
-    assert_fast_count(lf, n_rows, capfd=capfd, monkeypatch=monkeypatch)
+    assert_fast_count(lf, n_rows, capfd=capfd, plmonkeypatch=plmonkeypatch)
 
 
 def test_count_csv_comment_char(
-    capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    capfd: pytest.CaptureFixture[str], plmonkeypatch: PlMonkeyPatch
 ) -> None:
     q = pl.scan_csv(
         b"""
@@ -122,7 +123,7 @@ a,b
     )
 
     q = q.select(pl.len())
-    assert_fast_count(q, 3, capfd=capfd, monkeypatch=monkeypatch)
+    assert_fast_count(q, 3, capfd=capfd, plmonkeypatch=plmonkeypatch)
 
 
 def test_count_csv_no_newline_on_last_22564() -> None:
@@ -141,49 +142,49 @@ a,b
 
 @pytest.mark.write_disk
 def test_commented_csv(
-    capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    capfd: pytest.CaptureFixture[str], plmonkeypatch: PlMonkeyPatch
 ) -> None:
     with NamedTemporaryFile() as csv_a:
         csv_a.write(b"A,B\nGr1,A\nGr1,B\n# comment line\n")
         csv_a.seek(0)
 
         lf = pl.scan_csv(csv_a.name, comment_prefix="#").select(pl.len())
-        assert_fast_count(lf, 2, capfd=capfd, monkeypatch=monkeypatch)
+        assert_fast_count(lf, 2, capfd=capfd, plmonkeypatch=plmonkeypatch)
 
     lf = pl.scan_csv(
         b"AAA",
         has_header=False,
         comment_prefix="#",
     ).select(pl.len())
-    assert_fast_count(lf, 1, capfd=capfd, monkeypatch=monkeypatch)
+    assert_fast_count(lf, 1, capfd=capfd, plmonkeypatch=plmonkeypatch)
 
     lf = pl.scan_csv(
         b"AAA\nBBB",
         has_header=False,
         comment_prefix="#",
     ).select(pl.len())
-    assert_fast_count(lf, 2, capfd=capfd, monkeypatch=monkeypatch)
+    assert_fast_count(lf, 2, capfd=capfd, plmonkeypatch=plmonkeypatch)
 
     lf = pl.scan_csv(
         b"AAA\n#comment\nBBB\n#comment",
         has_header=False,
         comment_prefix="#",
     ).select(pl.len())
-    assert_fast_count(lf, 2, capfd=capfd, monkeypatch=monkeypatch)
+    assert_fast_count(lf, 2, capfd=capfd, plmonkeypatch=plmonkeypatch)
 
     lf = pl.scan_csv(
         b"AAA\n#comment\nBBB\n#comment\nCCC\n#comment",
         has_header=False,
         comment_prefix="#",
     ).select(pl.len())
-    assert_fast_count(lf, 3, capfd=capfd, monkeypatch=monkeypatch)
+    assert_fast_count(lf, 3, capfd=capfd, plmonkeypatch=plmonkeypatch)
 
     lf = pl.scan_csv(
         b"AAA\n#comment\nBBB\n#comment\nCCC\n#comment\n",
         has_header=False,
         comment_prefix="#",
     ).select(pl.len())
-    assert_fast_count(lf, 3, capfd=capfd, monkeypatch=monkeypatch)
+    assert_fast_count(lf, 3, capfd=capfd, plmonkeypatch=plmonkeypatch)
 
 
 @pytest.mark.parametrize(
@@ -194,10 +195,10 @@ def test_count_parquet(
     pattern: str,
     n_rows: int,
     capfd: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     lf = pl.scan_parquet(io_files_path / pattern).select(pl.len())
-    assert_fast_count(lf, n_rows, capfd=capfd, monkeypatch=monkeypatch)
+    assert_fast_count(lf, n_rows, capfd=capfd, plmonkeypatch=plmonkeypatch)
 
 
 @pytest.mark.parametrize(
@@ -208,10 +209,10 @@ def test_count_ipc(
     path: str,
     n_rows: int,
     capfd: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     lf = pl.scan_ipc(io_files_path / path).select(pl.len())
-    assert_fast_count(lf, n_rows, capfd=capfd, monkeypatch=monkeypatch)
+    assert_fast_count(lf, n_rows, capfd=capfd, plmonkeypatch=plmonkeypatch)
 
 
 @pytest.mark.parametrize(
@@ -222,16 +223,16 @@ def test_count_ndjson(
     path: str,
     n_rows: int,
     capfd: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     lf = pl.scan_ndjson(io_files_path / path).select(pl.len())
-    assert_fast_count(lf, n_rows, capfd=capfd, monkeypatch=monkeypatch)
+    assert_fast_count(lf, n_rows, capfd=capfd, plmonkeypatch=plmonkeypatch)
 
 
 def test_count_compressed_csv_18057(
     io_files_path: Path,
     capfd: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     csv_file = io_files_path / "gzipped.csv.gz"
 
@@ -246,12 +247,12 @@ def test_count_compressed_csv_18057(
     # as the file has an empty line at the beginning.
 
     q = lf.select(pl.len())
-    assert_fast_count(q, 3, capfd=capfd, monkeypatch=monkeypatch)
+    assert_fast_count(q, 3, capfd=capfd, plmonkeypatch=plmonkeypatch)
 
 
 @pytest.mark.write_disk
 def test_count_compressed_ndjson(
-    tmp_path: Path, capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, capfd: pytest.CaptureFixture[str], plmonkeypatch: PlMonkeyPatch
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     path = tmp_path / "data.jsonl.gz"
@@ -261,11 +262,11 @@ def test_count_compressed_ndjson(
         df.write_ndjson(f)  # type: ignore[call-overload]
 
     lf = pl.scan_ndjson(path).select(pl.len())
-    assert_fast_count(lf, 5, capfd=capfd, monkeypatch=monkeypatch)
+    assert_fast_count(lf, 5, capfd=capfd, plmonkeypatch=plmonkeypatch)
 
 
 def test_count_projection_pd(
-    capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    capfd: pytest.CaptureFixture[str], plmonkeypatch: PlMonkeyPatch
 ) -> None:
     df = pl.DataFrame({"a": range(3), "b": range(3)})
 
@@ -279,7 +280,7 @@ def test_count_projection_pd(
     # Manual assert, this is not converted to FAST COUNT but we will have
     # 0-width projections.
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
     result = q.collect()
     capture = capfd.readouterr().err
@@ -290,16 +291,16 @@ def test_count_projection_pd(
 
 
 def test_csv_scan_skip_lines_len_22889(
-    capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    capfd: pytest.CaptureFixture[str], plmonkeypatch: PlMonkeyPatch
 ) -> None:
     bb = b"col\n1\n2\n3"
     lf = pl.scan_csv(bb, skip_lines=2).select(pl.len())
-    assert_fast_count(lf, 1, capfd=capfd, monkeypatch=monkeypatch)
+    assert_fast_count(lf, 1, capfd=capfd, plmonkeypatch=plmonkeypatch)
 
     # trigger multi-threading code path
     bb_10k = b"1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n" * 1000
     lf = pl.scan_csv(bb_10k, skip_lines=1000, has_header=False).select(pl.len())
-    assert_fast_count(lf, 9000, capfd=capfd, monkeypatch=monkeypatch)
+    assert_fast_count(lf, 9000, capfd=capfd, plmonkeypatch=plmonkeypatch)
 
     # for comparison
     out = pl.scan_csv(bb, skip_lines=2).collect().select(pl.len())

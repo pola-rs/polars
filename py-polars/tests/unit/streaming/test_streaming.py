@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from datetime import date
 from pathlib import Path
@@ -14,6 +15,7 @@ from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import JoinStrategy
+    from tests.conftest import PlMonkeyPatch
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -53,8 +55,10 @@ def test_streaming_block_on_literals_6054() -> None:
 
 @pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: non-pure map_batches
-def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+def test_streaming_streamable_functions(
+    plmonkeypatch: PlMonkeyPatch, capfd: Any
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
     calls = 0
 
     def func(df: pl.DataFrame) -> pl.DataFrame:
@@ -82,6 +86,10 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
 @pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: timing
 def test_cross_join_stack() -> None:
+    morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
+    if morsel_size is not None and int(morsel_size) < 1000:
+        pytest.skip("test is too slow for small morsel sizes")
+
     a = pl.Series(np.arange(100_000)).to_frame().lazy()
     t0 = time.time()
     assert a.join(a, how="cross").head().collect(engine="streaming").shape == (5, 2)
@@ -122,8 +130,8 @@ def test_streaming_literal_expansion() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
-def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+def test_streaming_apply(plmonkeypatch: PlMonkeyPatch, capfd: Any) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     q = pl.DataFrame({"a": [1, 2]}).lazy()
     with pytest.warns(
@@ -159,6 +167,10 @@ def test_streaming_sortedness_propagation_9494() -> None:
 @pytest.mark.write_disk
 @pytest.mark.slow
 def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None:
+    morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
+    if morsel_size is not None and int(morsel_size) < 1000:
+        pytest.skip("test is too slow for small morsel sizes")
+
     tmp_path.mkdir(exist_ok=True)
     p0 = tmp_path / "df0.parquet"
     p1 = tmp_path / "df1.parquet"

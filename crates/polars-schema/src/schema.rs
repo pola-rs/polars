@@ -6,12 +6,21 @@ use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure, polars
 use polars_utils::aliases::{InitHashMaps, PlIndexMap};
 use polars_utils::pl_str::PlSmallStr;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct Schema<Field, Metadata> {
     fields: PlIndexMap<PlSmallStr, Field>,
     metadata: Metadata,
+}
+
+impl<Field, Metadata: Default> Default for Schema<Field, Metadata> {
+    fn default() -> Self {
+        Self {
+            fields: PlIndexMap::default(),
+            metadata: Metadata::default(),
+        }
+    }
 }
 
 impl<Field: Eq, Metadata: Eq> Eq for Schema<Field, Metadata> {}
@@ -401,7 +410,7 @@ impl<Field, Metadata> Schema<Field, Metadata> {
 
 impl<Field, Metadata> Schema<Field, Metadata>
 where
-    Field: Clone + Default,
+    Field: Clone,
     Metadata: Clone,
 {
     /// Create a new schema from this one, inserting a field with `name` and `dtype` at the given `index`.

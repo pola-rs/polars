@@ -1,4 +1,5 @@
 use std::ops::Deref;
+use std::sync::RwLock;
 
 use polars_core::frame::row::Row;
 use polars_core::prelude::*;
@@ -10,12 +11,12 @@ use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator, CreateTable, CreateTableLikeKind, Delete, Distinct, ExcludeSelectItem,
-    Expr as SQLExpr, FromTable, FunctionArg, GroupByExpr, Ident, JoinConstraint, JoinOperator,
-    LimitClause, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectType, OrderBy,
-    OrderByKind, Query, RenameSelectItem, Select, SelectItem, SelectItemQualifiedWildcardKind,
-    SetExpr, SetOperator, SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins,
-    Truncate, UnaryOperator, Value as SQLValue, ValueWithSpan, Values, Visit,
-    WildcardAdditionalOptions, WindowSpec,
+    Expr as SQLExpr, Fetch, FromTable, FunctionArg, GroupByExpr, Ident, JoinConstraint,
+    JoinOperator, LimitClause, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectType,
+    OrderBy, OrderByKind, Query, RenameSelectItem, Select, SelectItem,
+    SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias,
+    TableFactor, TableWithJoins, Truncate, UnaryOperator, Value as SQLValue, ValueWithSpan, Values,
+    Visit, WildcardAdditionalOptions, WindowSpec,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -30,6 +31,14 @@ use crate::sql_visitors::{
 };
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
+
+fn clear_lf(lf: LazyFrame) -> LazyFrame {
+    let cb = PlanCallback::new(move |(_, schemas): (Vec<DslPlan>, Vec<SchemaRef>)| {
+        let schema = &schemas[0];
+        Ok(DataFrame::empty_with_schema(schema).lazy().logical_plan)
+    });
+    lf.pipe_with_schema(cb)
+}
 
 #[derive(Clone)]
 pub struct TableInfo {
@@ -142,7 +151,7 @@ fn disambiguate_projection_cols(
 /// The SQLContext is the main entry point for executing SQL queries.
 #[derive(Clone)]
 pub struct SQLContext {
-    pub(crate) table_map: PlHashMap<String, LazyFrame>,
+    pub(crate) table_map: Arc<RwLock<PlHashMap<String, LazyFrame>>>,
     pub(crate) function_registry: Arc<dyn FunctionRegistry>,
     pub(crate) lp_arena: Arena<IR>,
     pub(crate) expr_arena: Arena<AExpr>,
@@ -182,7 +191,7 @@ impl SQLContext {
 
     /// Get the names of all registered tables, in sorted order.
     pub fn get_tables(&self) -> Vec<String> {
-        let mut tables = Vec::from_iter(self.table_map.keys().cloned());
+        let mut tables = Vec::from_iter(self.table_map.read().unwrap().keys().cloned());
         tables.sort_unstable();
         tables
     }
@@ -202,13 +211,13 @@ impl SQLContext {
     /// ctx.register("df", df);
     /// # }
     ///```
-    pub fn register(&mut self, name: &str, lf: LazyFrame) {
-        self.table_map.insert(name.to_owned(), lf);
+    pub fn register(&self, name: &str, lf: LazyFrame) {
+        self.table_map.write().unwrap().insert(name.to_owned(), lf);
     }
 
     /// Unregister a [`LazyFrame`] table from the [`SQLContext`].
-    pub fn unregister(&mut self, name: &str) {
-        self.table_map.remove(&name.to_owned());
+    pub fn unregister(&self, name: &str) {
+        self.table_map.write().unwrap().remove(&name.to_owned());
     }
 
     /// Execute a SQL query, returning a [`LazyFrame`].
@@ -279,6 +288,17 @@ impl SQLContext {
 }
 
 impl SQLContext {
+    fn isolated(&self) -> Self {
+        Self {
+            // Deep clone to isolate
+            table_map: Arc::new(RwLock::new(self.table_map.read().unwrap().clone())),
+            named_windows: self.named_windows.clone(),
+            cte_map: self.cte_map.clone(),
+
+            ..Default::default()
+        }
+    }
+
     pub(crate) fn execute_statement(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         let ast = stmt;
         Ok(match ast {
@@ -304,23 +324,10 @@ impl SQLContext {
     }
 
     pub(crate) fn execute_query_no_ctes(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
+        self.validate_query(query)?;
+
         let lf = self.process_query(&query.body, query)?;
-        let (limit, offset) = match &query.limit_clause {
-            Some(LimitClause::LimitOffset {
-                limit,
-                offset,
-                limit_by,
-            }) => {
-                if !limit_by.is_empty() {
-                    // specialised clickhouse syntax
-                    polars_bail!(SQLSyntax: "LIMIT BY clause is not supported");
-                }
-                (limit.as_ref(), offset.as_ref().map(|o| &o.value))
-            },
-            Some(LimitClause::OffsetCommaLimit { offset, limit }) => (Some(limit), Some(offset)),
-            None => (None, None),
-        };
-        self.process_limit_offset(lf, limit, offset)
+        self.process_limit_offset(lf, &query.limit_clause, &query.fetch)
     }
 
     pub(crate) fn get_frame_schema(&mut self, frame: &mut LazyFrame) -> PolarsResult<SchemaRef> {
@@ -332,50 +339,39 @@ impl SQLContext {
         // * table name → cte name
         // * table alias → cte alias
         self.table_map
+            .read()
+            .unwrap()
             .get(name)
-            .or_else(|| self.cte_map.get(name))
+            .cloned()
+            .or_else(|| self.cte_map.get(name).cloned())
             .or_else(|| {
                 self.table_aliases.get(name).and_then(|alias| {
                     self.table_map
+                        .read()
+                        .unwrap()
                         .get(alias.as_str())
                         .or_else(|| self.cte_map.get(alias.as_str()))
+                        .cloned()
                 })
             })
-            .cloned()
     }
 
     /// Execute a query in an isolated context. This prevents subqueries from mutating
     /// arenas and other context state. Returns both the LazyFrame *and* its associated
     /// Schema (so that the correct arenas are used when determining schema).
-    pub(crate) fn execute_isolated<F>(&mut self, query: F) -> PolarsResult<(LazyFrame, SchemaRef)>
+    pub(crate) fn execute_isolated<F>(&mut self, query: F) -> PolarsResult<LazyFrame>
     where
         F: FnOnce(&mut Self) -> PolarsResult<LazyFrame>,
     {
-        // Save key state (arenas and lookups)
-        let (joined_aliases, table_aliases, lp_arena, expr_arena, table_map) = (
-            // "take" to ensure subqueries start with clean state
-            std::mem::take(&mut self.joined_aliases),
-            std::mem::take(&mut self.table_aliases),
-            std::mem::take(&mut self.lp_arena),
-            std::mem::take(&mut self.expr_arena),
-            // "clone" to allow subqueries to see registered tables
-            self.table_map.clone(),
-        );
+        let mut ctx = self.isolated();
 
         // Execute query with clean state (eg: nested/subquery)
-        let mut lf = query(self)?;
-        let schema = self.get_frame_schema(&mut lf)?;
+        let lf = query(&mut ctx)?;
 
-        // Restore saved state
-        lf.set_cached_arena(
-            std::mem::replace(&mut self.lp_arena, lp_arena),
-            std::mem::replace(&mut self.expr_arena, expr_arena),
-        );
-        self.joined_aliases = joined_aliases;
-        self.table_aliases = table_aliases;
-        self.table_map = table_map;
+        // Save state
+        lf.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
 
-        Ok((lf, schema))
+        Ok(lf)
     }
 
     fn expr_or_ordinal(
@@ -485,7 +481,10 @@ impl SQLContext {
     fn process_query(&mut self, expr: &SetExpr, query: &Query) -> PolarsResult<LazyFrame> {
         match expr {
             SetExpr::Select(select_stmt) => self.execute_select(select_stmt, query),
-            SetExpr::Query(query) => self.execute_query_no_ctes(query),
+            SetExpr::Query(nested_query) => {
+                let lf = self.execute_query_no_ctes(nested_query)?;
+                self.process_order_by(lf, &query.order_by, None)
+            },
             SetExpr::SetOperation {
                 op: SetOperator::Union,
                 set_quantifier,
@@ -499,7 +498,7 @@ impl SQLContext {
                 set_quantifier,
                 left,
                 right,
-            } => self.process_except_intersect(left, right, set_quantifier, query),
+            } => self.process_except_intersect(left, right, *set_quantifier, query),
 
             SetExpr::Values(Values {
                 explicit_row: _,
@@ -531,7 +530,7 @@ impl SQLContext {
         &mut self,
         left: &SetExpr,
         right: &SetExpr,
-        quantifier: &SetQuantifier,
+        quantifier: SetQuantifier,
         query: &Query,
     ) -> PolarsResult<LazyFrame> {
         let (join_type, op_name) = match *query.body {
@@ -544,31 +543,38 @@ impl SQLContext {
 
         // Note: each side of the EXCEPT/INTERSECT operation should execute
         // in isolation to prevent context state leakage between them
-        let (mut lf, _) = self.execute_isolated(|ctx| ctx.process_query(left, query))?;
-        let (mut rf, _) = self.execute_isolated(|ctx| ctx.process_query(right, query))?;
-        let lf_schema = self.get_frame_schema(&mut lf)?;
+        let lf = self.execute_isolated(|ctx| ctx.process_query(left, query))?;
+        let rf = self.execute_isolated(|ctx| ctx.process_query(right, query))?;
 
-        let lf_cols: Vec<_> = lf_schema.iter_names_cloned().map(col).collect();
-        let rf_cols = match quantifier {
-            SetQuantifier::ByName => None,
-            SetQuantifier::Distinct | SetQuantifier::None => {
-                let rf_schema = self.get_frame_schema(&mut rf)?;
-                let rf_cols: Vec<_> = rf_schema.iter_names_cloned().map(col).collect();
-                if lf_cols.len() != rf_cols.len() {
-                    polars_bail!(SQLInterface: "{} requires equal number of columns in each table (use '{} BY NAME' to combine mismatched tables)", op_name, op_name)
-                }
-                Some(rf_cols)
+        let cb = PlanCallback::new(
+            move |(mut plans, schemas): (Vec<DslPlan>, Vec<SchemaRef>)| {
+                let rf = LazyFrame::from_logical_plan(plans.pop().unwrap(), Default::default());
+                let lf = LazyFrame::from_logical_plan(plans.pop().unwrap(), Default::default());
+
+                let lf_cols: Vec<_> = schemas[0].iter_names_cloned().map(col).collect();
+                let rf_cols: Vec<_> = schemas[1].iter_names_cloned().map(col).collect();
+                let join = lf
+                    .join_builder()
+                    .with(rf)
+                    .how(join_type.clone())
+                    .join_nulls(true);
+                let joined_tbl = match quantifier {
+                    SetQuantifier::ByName => join.on(lf_cols).finish(),
+                    SetQuantifier::Distinct | SetQuantifier::None => {
+                        polars_ensure!(schemas[0].len() == schemas[1].len(), SQLInterface: "{} requires equal number of columns in each table (use '{} BY NAME' to combine mismatched tables", op_name, op_name);
+                        join.left_on(lf_cols).right_on(rf_cols).finish()
+                    },
+                    _ => {
+                        polars_bail!(SQLInterface: "'{} {}' is not supported", op_name, quantifier.to_string())
+                    },
+                };
+                Ok(joined_tbl
+                    .unique(None, UniqueKeepStrategy::Any)
+                    .logical_plan)
             },
-            _ => {
-                polars_bail!(SQLInterface: "'{} {}' is not supported", op_name, quantifier.to_string())
-            },
-        };
-        let join = lf.join_builder().with(rf).how(join_type).join_nulls(true);
-        let joined_tbl = match rf_cols {
-            Some(rf_cols) => join.left_on(lf_cols).right_on(rf_cols).finish(),
-            None => join.on(lf_cols).finish(),
-        };
-        Ok(joined_tbl.unique(None, UniqueKeepStrategy::Any))
+        );
+        let lf = lf.pipe_with_schemas(vec![rf], cb);
+        self.process_order_by(lf, &query.order_by, None)
     }
 
     fn process_union(
@@ -582,8 +588,8 @@ impl SQLContext {
 
         // Note: each side of the UNION operation should execute
         // in isolation to prevent context state leakage between them
-        let (lf, _) = self.execute_isolated(|ctx| ctx.process_query(left, query))?;
-        let (rf, _) = self.execute_isolated(|ctx| ctx.process_query(right, query))?;
+        let lf = self.execute_isolated(|ctx| ctx.process_query(left, query))?;
+        let rf = self.execute_isolated(|ctx| ctx.process_query(right, query))?;
 
         let cb = PlanCallback::new(
             move |(mut plans, schemas): (Vec<DslPlan>, Vec<SchemaRef>)| {
@@ -636,7 +642,8 @@ impl SQLContext {
             },
         );
 
-        Ok(lf.pipe_with_schemas(vec![rf], cb))
+        let lf = lf.pipe_with_schemas(vec![rf], cb);
+        self.process_order_by(lf, &query.order_by, None)
     }
 
     /// Process UNNEST as a lateral operation when it contains column references
@@ -752,7 +759,7 @@ impl SQLContext {
         match stmt {
             Statement::Drop { names, .. } => {
                 names.iter().for_each(|name| {
-                    self.table_map.remove(&name.to_string());
+                    self.table_map.write().unwrap().remove(&name.to_string());
                 });
                 Ok(DataFrame::empty().lazy())
             },
@@ -800,15 +807,10 @@ impl SQLContext {
             if !tbl_expr.joins.is_empty() {
                 polars_bail!(SQLInterface: "DELETE does not support table JOINs")
             }
-            let (_, mut lf) = self.get_table(&tbl_expr.relation)?;
+            let (_, lf) = self.get_table(&tbl_expr.relation)?;
             if selection.is_none() {
                 // no WHERE clause; equivalent to TRUNCATE (drop all rows)
-                Ok(DataFrame::empty_with_schema(
-                    lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)
-                        .unwrap()
-                        .as_ref(),
-                )
-                .lazy())
+                Ok(clear_lf(lf))
             } else {
                 // apply constraint as inverted filter (drops rows matching the selection)
                 Ok(self.process_where(lf.clone(), selection, true, None)?)
@@ -832,13 +834,8 @@ impl SQLContext {
                         polars_bail!(SQLInterface: "TRUNCATE expects exactly one table name; found {}", table_names.len())
                     }
                     let tbl = table_names[0].name.to_string();
-                    if let Some(lf) = self.table_map.get_mut(&tbl) {
-                        *lf = DataFrame::empty_with_schema(
-                            lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)
-                                .unwrap()
-                                .as_ref(),
-                        )
-                        .lazy();
+                    if let Some(lf) = self.table_map.write().unwrap().get_mut(&tbl) {
+                        *lf = clear_lf(lf.clone());
                         Ok(lf.clone())
                     } else {
                         polars_bail!(SQLInterface: "table '{}' does not exist", tbl);
@@ -923,7 +920,7 @@ impl SQLContext {
                     // Require non-empty to avoid duplicate column errors from nested self-joins.
                     polars_bail!(
                         SQLInterface:
-                        "cannot join on unnamed relation; please provide an alias"
+                        "cannot JOIN on unnamed relation; please provide an alias"
                     )
                 }
                 let left_schema = self.get_frame_schema(&mut lf)?;
@@ -1070,6 +1067,45 @@ impl SQLContext {
         polars_ensure!(top.is_none(), SQLInterface: "`TOP` clause is not supported; use `LIMIT` instead");
         polars_ensure!(value_table_mode.is_none(), SQLInterface: "`SELECT AS VALUE/STRUCT` is not supported");
 
+        Ok(())
+    }
+
+    /// Check that the QUERY only contains supported clauses.
+    fn validate_query(&self, query: &Query) -> PolarsResult<()> {
+        // As with "Select" validation (above) destructure "Query" exhaustively
+        let Query {
+            // Supported clauses
+            with: _,
+            body: _,
+            order_by: _,
+            limit_clause: _,
+            fetch,
+
+            // Unsupported clauses
+            for_clause,
+            format_clause,
+            locks,
+            pipe_operators,
+            settings,
+        } = query;
+
+        // Raise specific error messages for unsupported attributes
+        polars_ensure!(for_clause.is_none(), SQLInterface: "`FOR` clause is not supported");
+        polars_ensure!(format_clause.is_none(), SQLInterface: "`FORMAT` clause is not supported");
+        polars_ensure!(locks.is_empty(), SQLInterface: "`FOR UPDATE/SHARE` locking clause is not supported");
+        polars_ensure!(pipe_operators.is_empty(), SQLInterface: "pipe operators are not supported");
+        polars_ensure!(settings.is_none(), SQLInterface: "`SETTINGS` clause is not supported");
+
+        // Validate FETCH clause options (if present)
+        if let Some(Fetch {
+            quantity: _, // supported
+            percent,
+            with_ties,
+        }) = fetch
+        {
+            polars_ensure!(!percent, SQLInterface: "`FETCH` with `PERCENT` is not supported");
+            polars_ensure!(!with_ties, SQLInterface: "`FETCH` with `WITH TIES` is not supported");
+        }
         Ok(())
     }
 
@@ -1562,7 +1598,7 @@ impl SQLContext {
             if (all_true && !invert_filter) || (all_false && invert_filter) {
                 return Ok(lf);
             } else if (all_false && !invert_filter) || (all_true && invert_filter) {
-                return Ok(DataFrame::empty_with_schema(schema.as_ref()).lazy());
+                return Ok(clear_lf(lf));
             }
 
             // ...otherwise parse and apply the filter as normal
@@ -1647,8 +1683,16 @@ impl SQLContext {
                         1,
                         "multiple columns in subqueries not yet supported"
                     );
-                    subplans.push(LazyFrame::from((**lp).clone()));
-                    Expr::Column(names[0].clone()).first()
+
+                    let select_expr = names[0].1.clone();
+                    let cb =
+                        PlanCallback::new(move |(plans, schemas): (Vec<DslPlan>, Vec<SchemaRef>)| {
+                            let schema = &schemas[0];
+                            polars_ensure!(schema.len() == 1,  SQLSyntax: "SQL subquery returns more than one column");
+                            Ok(LazyFrame::from(plans.into_iter().next().unwrap()).select([select_expr.clone()]).logical_plan)
+                        });
+                    subplans.push(LazyFrame::from((**lp).clone()).pipe_with_schema(cb));
+                    Expr::Column(names[0].0.clone()).first()
                 } else {
                     e
                 }
@@ -1681,7 +1725,7 @@ impl SQLContext {
         }) = stmt
         {
             let tbl_name = name.0.first().unwrap().as_ident().unwrap().value.as_str();
-            if *if_not_exists && self.table_map.contains_key(tbl_name) {
+            if *if_not_exists && self.table_map.read().unwrap().contains_key(tbl_name) {
                 polars_bail!(SQLInterface: "relation '{}' already exists", tbl_name);
             }
             let lf = match (query, columns.is_empty(), like) {
@@ -1719,9 +1763,8 @@ impl SQLContext {
                         .unwrap()
                         .value
                         .as_str();
-                    if let Some(mut table) = self.table_map.get(like_table).cloned() {
-                        let schema = self.get_frame_schema(&mut table)?;
-                        DataFrame::empty_with_schema(&schema).lazy()
+                    if let Some(table) = self.table_map.read().unwrap().get(like_table).cloned() {
+                        clear_lf(table)
                     } else {
                         polars_bail!(SQLInterface: "table given in LIKE does not exist: {}", like_table)
                     }
@@ -1780,10 +1823,14 @@ impl SQLContext {
                 if let Some(alias) = alias {
                     let mut lf = self.execute_query_no_ctes(subquery)?;
                     lf = self.rename_columns_from_table_alias(lf, alias)?;
-                    self.table_map.insert(alias.name.value.clone(), lf.clone());
+                    self.table_map
+                        .write()
+                        .unwrap()
+                        .insert(alias.name.value.clone(), lf.clone());
                     Ok((alias.name.value.clone(), lf))
                 } else {
-                    polars_bail!(SQLSyntax: "derived tables must have aliases");
+                    let lf = self.execute_query_no_ctes(subquery)?;
+                    Ok(("".to_string(), lf))
                 }
             },
             TableFactor::UNNEST {
@@ -1842,7 +1889,10 @@ impl SQLContext {
                         polars_bail!(SQLInterface: "UNNEST tables do not (yet) support WITH ORDINALITY|OFFSET");
                     }
                     let table_name = alias.name.value.clone();
-                    self.table_map.insert(table_name.clone(), lf.clone());
+                    self.table_map
+                        .write()
+                        .unwrap()
+                        .insert(table_name.clone(), lf.clone());
                     Ok((table_name, lf))
                 } else {
                     polars_bail!(SQLSyntax: "UNNEST table must have an alias");
@@ -1878,7 +1928,10 @@ impl SQLContext {
             .map(|a| a.name.value.clone())
             .unwrap_or_else(|| tbl_name.to_string());
 
-        self.table_map.insert(tbl_name.clone(), lf.clone());
+        self.table_map
+            .write()
+            .unwrap()
+            .insert(tbl_name.clone(), lf.clone());
         Ok((tbl_name, lf))
     }
 
@@ -2187,9 +2240,37 @@ impl SQLContext {
     fn process_limit_offset(
         &self,
         lf: LazyFrame,
-        limit: Option<&SQLExpr>,
-        offset: Option<&SQLExpr>,
+        limit_clause: &Option<LimitClause>,
+        fetch: &Option<Fetch>,
     ) -> PolarsResult<LazyFrame> {
+        // Extract limit and offset from LimitClause
+        let (limit, offset) = match limit_clause {
+            Some(LimitClause::LimitOffset {
+                limit,
+                offset,
+                limit_by,
+            }) => {
+                if !limit_by.is_empty() {
+                    // TODO: might be able to support as an aggregate `top_k_by` operation?
+                    //  (https://clickhouse.com/docs/sql-reference/statements/select/limit-by)
+                    polars_bail!(SQLSyntax: "`LIMIT <n> BY <exprs>` clause is not supported");
+                }
+                (limit.as_ref(), offset.as_ref().map(|o| &o.value))
+            },
+            Some(LimitClause::OffsetCommaLimit { offset, limit }) => (Some(limit), Some(offset)),
+            None => (None, None),
+        };
+
+        // Handle FETCH clause (alternative to LIMIT, mutually exclusive)
+        let limit = match (fetch, limit) {
+            (Some(fetch), None) => fetch.quantity.as_ref(),
+            (Some(_), Some(_)) => {
+                polars_bail!(SQLSyntax: "cannot use both `LIMIT` and `FETCH` in the same query")
+            },
+            (None, limit) => limit,
+        };
+
+        // Apply limit and/or offset
         match (offset, limit) {
             (
                 Some(SQLExpr::Value(ValueWithSpan {
@@ -2204,9 +2285,9 @@ impl SQLContext {
                 offset
                     .parse()
                     .map_err(|e| polars_err!(SQLInterface: "OFFSET conversion error: {}", e))?,
-                limit
-                    .parse()
-                    .map_err(|e| polars_err!(SQLInterface: "LIMIT conversion error: {}", e))?,
+                limit.parse().map_err(
+                    |e| polars_err!(SQLInterface: "LIMIT/FETCH conversion error: {}", e),
+                )?,
             )),
             (
                 Some(SQLExpr::Value(ValueWithSpan {
@@ -2226,14 +2307,14 @@ impl SQLContext {
                     value: SQLValue::Number(limit, _),
                     ..
                 })),
-            ) => Ok(lf.limit(
-                limit
-                    .parse()
-                    .map_err(|e| polars_err!(SQLInterface: "LIMIT conversion error: {}", e))?,
-            )),
+            ) => {
+                Ok(lf.limit(limit.parse().map_err(
+                    |e| polars_err!(SQLInterface: "LIMIT/FETCH conversion error: {}", e),
+                )?))
+            },
             (None, None) => Ok(lf),
             _ => polars_bail!(
-                SQLSyntax: "non-numeric arguments for LIMIT/OFFSET are not supported",
+                SQLSyntax: "non-numeric arguments for LIMIT/OFFSET/FETCH are not supported",
             ),
         }
     }
@@ -2353,15 +2434,10 @@ impl SQLContext {
 }
 
 impl SQLContext {
-    /// Get internal table map. For internal use only.
-    pub fn get_table_map(&self) -> PlHashMap<String, LazyFrame> {
-        self.table_map.clone()
-    }
-
     /// Create a new SQLContext from a table map. For internal use only
     pub fn new_from_table_map(table_map: PlHashMap<String, LazyFrame>) -> Self {
         Self {
-            table_map,
+            table_map: Arc::new(RwLock::new(table_map)),
             ..Default::default()
         }
     }

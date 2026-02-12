@@ -13,13 +13,14 @@ from datetime import date, datetime
 from decimal import Decimal as D
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pydantic
 import pyiceberg
 import pytest
+from pyiceberg.expressions import literal
 from pyiceberg.partitioning import (
     BucketTransform,
     IdentityTransform,
@@ -62,6 +63,36 @@ from tests.unit.io.conftest import normalize_path_separator_pl
 
 if TYPE_CHECKING:
     from pyiceberg.table import Table
+
+    from tests.conftest import PlMonkeyPatch
+
+    # Mypy does not understand the constructors and we can't construct the inputs
+    # explicitly since they are abstract base classes.
+    And = Any
+    EqualTo = Any
+    GreaterThan = Any
+    GreaterThanOrEqual = Any
+    In = Any
+    IsNull = Any
+    LessThan = Any
+    LessThanOrEqual = Any
+    Not = Any
+    Or = Any
+    Reference = Any
+else:
+    from pyiceberg.expressions import (
+        And,
+        EqualTo,
+        GreaterThan,
+        GreaterThanOrEqual,
+        In,
+        IsNull,
+        LessThan,
+        LessThanOrEqual,
+        Not,
+        Or,
+        Reference,
+    )
 
 
 with warnings.catch_warnings():
@@ -196,36 +227,20 @@ class TestIcebergExpressions:
     """Test coverage for `iceberg` expressions comprehension."""
 
     def test_is_null_expression(self) -> None:
-        from pyiceberg.expressions import IsNull
-
         expr = _to_ast("(pa.compute.field('id')).is_null()")
         assert _convert_predicate(expr) == IsNull("id")
 
     def test_is_not_null_expression(self) -> None:
-        from pyiceberg.expressions import IsNull, Not
-
         expr = _to_ast("~(pa.compute.field('id')).is_null()")
         assert _convert_predicate(expr) == Not(IsNull("id"))
 
     def test_isin_expression(self) -> None:
-        from pyiceberg.expressions import In, literal
-
         expr = _to_ast("(pa.compute.field('id')).isin([1,2,3])")
         assert _convert_predicate(expr) == In(
             "id", {literal(1), literal(2), literal(3)}
         )
 
     def test_parse_combined_expression(self) -> None:
-        from pyiceberg.expressions import (
-            And,
-            EqualTo,
-            GreaterThan,
-            In,
-            Or,
-            Reference,
-            literal,
-        )
-
         expr = _to_ast(
             "(((pa.compute.field('str') == '2') & (pa.compute.field('id') > 10)) | (pa.compute.field('id')).isin([1,2,3]))"
         )
@@ -238,38 +253,26 @@ class TestIcebergExpressions:
         )
 
     def test_parse_gt(self) -> None:
-        from pyiceberg.expressions import GreaterThan
-
         expr = _to_ast("(pa.compute.field('ts') > '2023-08-08')")
         assert _convert_predicate(expr) == GreaterThan("ts", "2023-08-08")
 
     def test_parse_gteq(self) -> None:
-        from pyiceberg.expressions import GreaterThanOrEqual
-
         expr = _to_ast("(pa.compute.field('ts') >= '2023-08-08')")
         assert _convert_predicate(expr) == GreaterThanOrEqual("ts", "2023-08-08")
 
     def test_parse_eq(self) -> None:
-        from pyiceberg.expressions import EqualTo
-
         expr = _to_ast("(pa.compute.field('ts') == '2023-08-08')")
         assert _convert_predicate(expr) == EqualTo("ts", "2023-08-08")
 
     def test_parse_lt(self) -> None:
-        from pyiceberg.expressions import LessThan
-
         expr = _to_ast("(pa.compute.field('ts') < '2023-08-08')")
         assert _convert_predicate(expr) == LessThan("ts", "2023-08-08")
 
     def test_parse_lteq(self) -> None:
-        from pyiceberg.expressions import LessThanOrEqual
-
         expr = _to_ast("(pa.compute.field('ts') <= '2023-08-08')")
         assert _convert_predicate(expr) == LessThanOrEqual("ts", "2023-08-08")
 
     def test_compare_boolean(self) -> None:
-        from pyiceberg.expressions import EqualTo
-
         expr = _to_ast("(pa.compute.field('ts') == pa.compute.scalar(True))")
         assert _convert_predicate(expr) == EqualTo("ts", True)
 
@@ -416,10 +419,10 @@ def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
 @pytest.mark.write_disk
 def test_scan_iceberg_polars_storage_options_keys(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
@@ -477,7 +480,7 @@ def test_scan_iceberg_collect_without_version_scans_latest(
     tmp_path: Path,
     reader_override: str,
     capfd: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     catalog = SqlCatalog(
         "default",
@@ -520,7 +523,7 @@ def test_scan_iceberg_collect_without_version_scans_latest(
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [2, 1]}))
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
     assert_frame_equal(q_with_id.collect(), pl.DataFrame({"a": 1}))
 
@@ -1267,7 +1270,7 @@ def test_scan_iceberg_nulls_nested(tmp_path: Path) -> None:
 @pytest.mark.write_disk
 def test_scan_iceberg_parquet_prefilter_with_column_mapping(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     catalog = SqlCatalog(
@@ -1351,7 +1354,7 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
         tbl, reader_override="native", use_pyiceberg_filter=False
     ).filter(pl.col("column_3") == 5)
 
-    with monkeypatch.context() as cx:
+    with plmonkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
         cx.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "0")
         capfd.readouterr()
@@ -1655,7 +1658,7 @@ def test_fill_missing_fields_with_identity_partition_values_nested(
 @pytest.mark.write_disk
 def test_scan_iceberg_min_max_statistics_filter(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     import datetime
@@ -1959,7 +1962,7 @@ def test_scan_iceberg_min_max_statistics_filter(
     def ensure_filter_skips_file(filter_expr: pl.Expr) -> None:
         nonlocal iceberg_table_filter_seen
 
-        with monkeypatch.context() as cx:
+        with plmonkeypatch.context() as cx:
             cx.setenv("POLARS_VERBOSE", "1")
             capfd.readouterr()
 

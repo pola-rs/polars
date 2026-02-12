@@ -834,7 +834,7 @@ impl CommonSubExprOptimizer {
                             continue;
                         }
                         scratch.clear();
-                        let aes = expr_arena.get_many_mut([original, new]);
+                        let aes = expr_arena.get_disjoint_mut([original, new]);
 
                         // Only follow paths that are the same.
                         if std::mem::discriminant(aes[0]) != std::mem::discriminant(aes[1]) {
@@ -854,7 +854,7 @@ impl CommonSubExprOptimizer {
                             stack.push((scratch[i], scratch[i + offset]));
                         }
 
-                        match expr_arena.get_many_mut([original, new]) {
+                        match expr_arena.get_disjoint_mut([original, new]) {
                             [
                                 AExpr::Function {
                                     input: input_original,

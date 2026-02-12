@@ -2725,14 +2725,14 @@ dependencies = [
 
 [[package]]
 name = "object_store"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d180d5469872facb82dec7e233ff850d615330ea3044a7813550b22ffa4f05ce"
+version = "0.13.1"
+source = "git+https://github.com/kdn36/arrow-rs-object-store?branch=feat_checksum_crc64#b5883a9b6e7d4dcc842054c2f626debfb3434e45"
 dependencies = [
  "async-trait",
  "base64",
  "bytes",
  "chrono",
+ "crc-fast",
  "form_urlencoded",
  "futures",
  "http 1.4.0",
@@ -2927,7 +2927,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "apache-avro",
  "avro-schema",
@@ -2959,7 +2959,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "async-stream",
  "atoi_simd",
@@ -3012,7 +3012,7 @@ dependencies = [
 
 [[package]]
 name = "polars-buffer"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "bytemuck",
  "either",
@@ -3022,7 +3022,7 @@ dependencies = [
 
 [[package]]
 name = "polars-compute"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "atoi_simd",
  "bigdecimal",
@@ -3050,8 +3050,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-config"
+version = "0.53.0"
+dependencies = [
+ "polars-error",
+ "serde",
+]
+
+[[package]]
 name = "polars-core"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "bincode",
  "bitflags",
@@ -3071,6 +3079,7 @@ dependencies = [
  "polars-arrow",
  "polars-buffer",
  "polars-compute",
+ "polars-config",
  "polars-core",
  "polars-dtype",
  "polars-error",
@@ -3093,7 +3102,7 @@ dependencies = [
 
 [[package]]
 name = "polars-doc-examples"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "aws-config",
  "aws-sdk-s3",
@@ -3107,7 +3116,7 @@ dependencies = [
 
 [[package]]
 name = "polars-dtype"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "boxcar",
  "hashbrown 0.16.1",
@@ -3121,7 +3130,7 @@ dependencies = [
 
 [[package]]
 name = "polars-dylib"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "polars",
  "polars-arrow",
@@ -3135,7 +3144,7 @@ dependencies = [
 
 [[package]]
 name = "polars-error"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "avro-schema",
  "object_store",
@@ -3149,7 +3158,7 @@ dependencies = [
 
 [[package]]
 name = "polars-expr"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "bitflags",
  "chrono-tz",
@@ -3176,7 +3185,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ffi"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -3184,7 +3193,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "async-trait",
  "atoi_simd",
@@ -3208,6 +3217,7 @@ dependencies = [
  "polars-arrow",
  "polars-buffer",
  "polars-compute",
+ "polars-config",
  "polars-core",
  "polars-error",
  "polars-json",
@@ -3234,7 +3244,7 @@ dependencies = [
 
 [[package]]
 name = "polars-json"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -3254,7 +3264,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "bitflags",
  "bytes",
@@ -3284,7 +3294,7 @@ dependencies = [
 
 [[package]]
 name = "polars-mem-engine"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "futures",
  "memmap2",
@@ -3306,7 +3316,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "aho-corasick",
  "argminmax",
@@ -3346,7 +3356,7 @@ dependencies = [
 
 [[package]]
 name = "polars-parquet"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "async-stream",
  "base64",
@@ -3391,7 +3401,7 @@ dependencies = [
 
 [[package]]
 name = "polars-plan"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "bitflags",
  "blake3",
@@ -3409,6 +3419,7 @@ dependencies = [
  "polars-arrow",
  "polars-buffer",
  "polars-compute",
+ "polars-config",
  "polars-core",
  "polars-error",
  "polars-ffi",
@@ -3434,7 +3445,7 @@ dependencies = [
 
 [[package]]
 name = "polars-python"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "arboard",
  "bincode",
@@ -3456,6 +3467,7 @@ dependencies = [
  "polars-arrow",
  "polars-buffer",
  "polars-compute",
+ "polars-config",
  "polars-core",
  "polars-dtype",
  "polars-error",
@@ -3481,7 +3493,7 @@ dependencies = [
 
 [[package]]
 name = "polars-row"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "bitflags",
  "bytemuck",
@@ -3529,7 +3541,7 @@ dependencies = [
 
 [[package]]
 name = "polars-schema"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "indexmap",
  "polars-error",
@@ -3541,7 +3553,7 @@ dependencies = [
 
 [[package]]
 name = "polars-sql"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "bitflags",
  "hex",
@@ -3559,7 +3571,7 @@ dependencies = [
 
 [[package]]
 name = "polars-stream"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "async-channel",
  "async-trait",
@@ -3581,6 +3593,7 @@ dependencies = [
  "polars-arrow",
  "polars-buffer",
  "polars-compute",
+ "polars-config",
  "polars-core",
  "polars-error",
  "polars-expr",
@@ -3606,7 +3619,7 @@ dependencies = [
 
 [[package]]
 name = "polars-testing"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "polars-core",
  "polars-ops",
@@ -3614,7 +3627,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "atoi_simd",
  "bytemuck",
@@ -3637,7 +3650,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "argminmax",
  "bincode",
@@ -3647,6 +3660,7 @@ dependencies = [
  "either",
  "flate2",
  "foldhash 0.2.0",
+ "futures",
  "half",
  "hashbrown 0.16.1",
  "indexmap",
@@ -3655,6 +3669,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "numpy",
+ "polars-config",
  "polars-error",
  "proptest",
  "pyo3",
@@ -3670,6 +3685,7 @@ dependencies = [
  "slotmap",
  "stacker",
  "sysinfo",
+ "tokio",
  "uuid",
  "version_check",
 ]
@@ -3836,7 +3852,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3-polars"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "libc",
  "once_cell",
@@ -3857,7 +3873,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3-polars-derive"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -3879,9 +3895,9 @@ checksum = "5a651516ddc9168ebd67b24afd085a718be02f8858fe406591b013d101ce2f40"
 
 [[package]]
 name = "quick-xml"
-version = "0.38.4"
+version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b66c2058c55a409d601666cffe35f04333cf1013010882cec174a7467cd4e21c"
+checksum = "f2e3bf4aa9d243beeb01a7b3bc30b77cfe2c44e24ec02d751a7104a53c2c49a1"
 dependencies = [
  "memchr",
  "serde",

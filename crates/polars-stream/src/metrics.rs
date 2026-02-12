@@ -30,6 +30,7 @@ pub struct NodeMetrics {
     pub io_total_active_ns: u64,
     pub io_total_bytes_requested: u64,
     pub io_total_bytes_received: u64,
+    pub io_total_bytes_sent: u64,
 
     pub state_update_in_progress: bool,
     pub num_running_tasks: u32,
@@ -47,10 +48,11 @@ impl NodeMetrics {
         self.num_running_tasks += (!task_metrics.done.load()) as u32;
     }
 
-    fn add_io_recv(&mut self, io_metrics: &IOMetrics) {
+    fn add_io(&mut self, io_metrics: &IOMetrics) {
         self.io_total_active_ns += io_metrics.io_timer.total_time_live_ns();
         self.io_total_bytes_requested += io_metrics.bytes_requested.load();
         self.io_total_bytes_received += io_metrics.bytes_received.load();
+        self.io_total_bytes_sent += io_metrics.bytes_sent.load();
     }
 
     fn start_state_update(&mut self) {
@@ -133,7 +135,7 @@ impl GraphMetrics {
             let this_node_metrics = self.node_metrics.entry(key).unwrap().or_default();
             this_node_metrics.num_running_tasks = 0;
             for io_metrics in in_progress_io_metrics.drain(..) {
-                this_node_metrics.add_io_recv(&io_metrics);
+                this_node_metrics.add_io(&io_metrics);
             }
         }
 

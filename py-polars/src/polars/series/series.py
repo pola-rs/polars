@@ -2410,9 +2410,19 @@ class Series:
         """
         return self._s.median()
 
+    @overload
+    def quantile(
+        self, quantile: list_[float], interpolation: QuantileMethod = ...
+    ) -> list_[float] | list_[None]: ...
+
+    @overload
+    def quantile(
+        self, quantile: float, interpolation: QuantileMethod = ...
+    ) -> float | None: ...
+
     def quantile(
         self, quantile: float | list_[float], interpolation: QuantileMethod = "nearest"
-    ) -> float | list_[float] | None:
+    ) -> float | None | list_[float] | list_[None]:
         """
         Get the quantile value of this Series.
 
@@ -2425,7 +2435,7 @@ class Series:
 
         Returns
         -------
-        float | list[float] | None
+        float | None | list[float] | list[None]
             A single quantile value if a float is provided, or a list of quantile values if a list is provided.
 
         Examples
@@ -9410,7 +9420,7 @@ class Series:
         """Evaluate the number of set bits."""
 
     def bitwise_count_zeros(self) -> Self:
-        """Evaluate the number of unset Self."""
+        """Evaluate the number of unset bits."""
 
     def bitwise_leading_ones(self) -> Self:
         """Evaluate the number most-significant set bits before seeing an unset bit."""

@@ -6875,8 +6875,8 @@ class DataFrame:
         self,
         column_names: str | Sequence[str] | pl.Selector,
         function: Callable[[Series], Series],
-        *args: P.args,
-        **kwargs: P.kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> DataFrame:
         """
         Apply eager functions to columns of a DataFrame.
@@ -8591,7 +8591,7 @@ class DataFrame:
 
         Return a DataFrame with a single column by mapping each row to a scalar:
 
-        >>> df.map_rows(lambda t: (t[0] * 2 + t[1]))
+        >>> df.map_rows(lambda t: t[0] * 2 + t[1])
         shape: (3, 1)
         ┌─────┐
         │ map │
