@@ -114,7 +114,7 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             recursive::set_minimum_stack_size(1024 * 1024);
             recursive::set_stack_allocation_size(1024 * 1024 * 16);
         }
-        
+
         #[cfg(feature = "backtrace_filter")]
         {
             use std::path::Path;
