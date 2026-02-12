@@ -187,7 +187,7 @@ def test_derived_table_without_alias() -> None:
 
     # basic unaliased subquery
     with pl.SQLContext(df=df) as ctx:
-        res = ctx.execute("SELECT * FROM (SELECT a, b FROM df)", eager=True)
+        res = ctx.execute("SELECT * FROM (SELECT a, b FROM df) ORDER BY a", eager=True)
         assert_frame_equal(res, df)
 
         # set operation without subquery aliases
@@ -198,12 +198,13 @@ def test_derived_table_without_alias() -> None:
                 UNION ALL
                 SELECT a, b FROM df WHERE a > 2
             )
+            ORDER BY a
             """
         ).collect()
         assert_frame_equal(res, df)
 
         # unqualified (but unambiguous) column refs from unaliased derived table
-        res = ctx.execute("SELECT a FROM (SELECT a, b FROM df)", eager=True)
+        res = ctx.execute("SELECT a FROM (SELECT a, b FROM df) ORDER BY a", eager=True)
         assert_frame_equal(res, df.select("a"))
 
 
