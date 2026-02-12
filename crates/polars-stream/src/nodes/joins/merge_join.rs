@@ -17,7 +17,7 @@ use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::ComputeNode;
 use crate::nodes::in_memory_source::InMemorySourceNode;
-use crate::nodes::joins::utils::DataFrameSearchBuffer;
+use crate::nodes::joins::utils::{DataFrameSearchBuffer, stop_and_buffer_pipe_contents};
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
 #[derive(Clone, Copy, Debug)]
