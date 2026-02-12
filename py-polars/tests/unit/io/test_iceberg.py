@@ -57,6 +57,7 @@ from polars.io.iceberg._utils import (
     _convert_predicate,
     _normalize_windows_iceberg_file_uri,
     _to_ast,
+    try_convert_pyarrow_predicate,
 )
 from polars.testing import assert_frame_equal
 from tests.unit.io.conftest import normalize_path_separator_pl
@@ -276,6 +277,14 @@ class TestIcebergExpressions:
 
         expr = _to_ast("(pa.compute.field('ts') == pa.compute.scalar(False))")
         assert _convert_predicate(expr) == EqualTo("ts", False)
+
+    def test_bare_boolean_field(self) -> None:
+        expr = try_convert_pyarrow_predicate("pa.compute.field('is_active')")
+        assert expr == EqualTo("is_active", True)
+
+    def test_bare_boolean_field_negated(self) -> None:
+        expr = try_convert_pyarrow_predicate("~pa.compute.field('is_active')")
+        assert expr == Not(EqualTo("is_active", True))
 
 
 @pytest.mark.write_disk
@@ -2246,3 +2255,23 @@ def test_scan_iceberg_idxsize_limit() -> None:
         match=r"row count \(4294967296\) exceeded maximum supported of 4294967295.*Consider installing 'polars\[rt64\]'.",
     ):
         q.select(pl.len()).collect()
+
+
+def test_iceberg_filter_bool_26474() -> None:
+    catalog = SqlCatalog(
+        "test", uri="sqlite:///:memory:", warehouse="file:///tmp/iceberg_mre"
+    )
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test",
+        IcebergSchema(
+            NestedField(1, "id", LongType()),
+            NestedField(2, "is_active", BooleanType()),
+        ),
+    )
+    pl.DataFrame({"id": [1, 2, 3], "is_active": [True, False, True]}).write_iceberg(
+        table, mode="append"
+    )
+
+    assert pl.scan_iceberg(table).filter(pl.col("is_active")).collect().height == 2
+    assert pl.scan_iceberg(table).filter(~pl.col("is_active")).collect().height == 1
