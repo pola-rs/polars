@@ -114,6 +114,45 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             recursive::set_minimum_stack_size(1024 * 1024);
             recursive::set_stack_allocation_size(1024 * 1024 * 16);
         }
+        
+        #[cfg(feature = "backtrace_filter")]
+        {
+            use std::path::Path;
+            use color_backtrace::{BacktracePrinter, default_output_stream, default_is_dependency_frame, Frame, ColorScheme};
+            use color_backtrace::termcolor::{ColorSpec, Color};
+
+            let polars_base_path = || {
+                let on_startup = Path::new(file!()).canonicalize().ok()?;
+                let src = on_startup.parent()?;
+                let polars_python = src.parent()?;
+                let crates = polars_python.parent()?;
+                let root = crates.parent()?;
+                Some(root.to_path_buf())
+            };
+
+            let mut btp = BacktracePrinter::default();
+            if let Some(bp) = polars_base_path() {
+                btp = btp.dependency_predicate(Box::new(move |frame: &Frame| -> bool {
+                    if let Some(file) = frame.filename.as_ref().and_then(|f| f.canonicalize().ok()) {
+                        !file.starts_with(&bp)
+                    } else {
+                        default_is_dependency_frame(frame)
+                    }
+                }));
+            }
+
+            let mut color_scheme = ColorScheme::classic();
+            color_scheme.dependency_code = ColorSpec::new();
+            color_scheme.dependency_code.set_dimmed(true);
+            color_scheme.dependency_code = color_scheme.dependency_code_hash.clone();
+            color_scheme.crate_code = ColorSpec::new();
+            color_scheme.crate_code.set_fg(Some(Color::Blue));
+            color_scheme.crate_code_hash = color_scheme.crate_code.clone();
+
+            btp
+                .color_scheme(color_scheme)
+                .install(default_output_stream());
+        }
 
         // Register object type builder.
         let object_builder = Box::new(|name: PlSmallStr, capacity: usize| {
