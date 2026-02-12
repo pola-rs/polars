@@ -1369,3 +1369,26 @@ def test_scan_path_expansion_sorting_24528(
         pl.scan_parquet(n_repeats * [format_file_uri(f"{tmp_path}/**/*")]).collect(),
         pl.DataFrame({"relpath": n_repeats * relpaths}),
     )
+
+
+def test_scan_sink_error_captures_path() -> None:
+    storage_options = {
+        "aws_endpoint_url": "http://localhost:333",
+        "max_retries": 0,
+    }
+
+    q = pl.scan_parquet(
+        "s3://.../...",
+        storage_options=storage_options,
+        credential_provider=None,
+    )
+
+    with pytest.raises(OSError, match=r"path: s3://.../..."):
+        q.collect()
+
+    with pytest.raises(OSError, match=r"path: s3://.../..."):
+        pl.LazyFrame({"a": 1}).sink_parquet(
+            "s3://.../...",
+            storage_options=storage_options,
+            credential_provider=None,
+        )

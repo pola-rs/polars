@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use bytes::Bytes;
+use polars_error::PolarsResult;
 
 use crate::cloud::PolarsObjectStore;
 use crate::cloud::cloud_writer::bufferer::BytesBufferer;
@@ -35,11 +36,11 @@ impl CloudWriter {
         }
     }
 
-    pub async fn start(&mut self) -> object_store::Result<()> {
+    pub async fn start(&mut self) -> PolarsResult<()> {
         self.writer.start().await
     }
 
-    pub async fn write_all_owned(&mut self, mut bytes: Bytes) -> object_store::Result<()> {
+    pub async fn write_all_owned(&mut self, mut bytes: Bytes) -> PolarsResult<()> {
         while !bytes.is_empty() {
             self.bufferer.push_owned(&mut bytes);
 
@@ -56,7 +57,7 @@ impl CloudWriter {
         self.bufferer.has_complete_chunk()
     }
 
-    pub(super) async fn flush_complete_chunk(&mut self) -> object_store::Result<()> {
+    pub(super) async fn flush_complete_chunk(&mut self) -> PolarsResult<()> {
         if let Some(payload) = self.bufferer.flush_complete_chunk() {
             self.writer.put(payload).await?;
         }
@@ -64,7 +65,7 @@ impl CloudWriter {
         Ok(())
     }
 
-    pub(super) async fn flush(&mut self) -> object_store::Result<()> {
+    pub(super) async fn flush(&mut self) -> PolarsResult<()> {
         if let Some(payload) = self.bufferer.flush() {
             self.writer.put(payload).await?;
         }
@@ -78,7 +79,7 @@ impl CloudWriter {
         !self.bufferer.is_empty()
     }
 
-    pub async fn finish(&mut self) -> object_store::Result<()> {
+    pub async fn finish(&mut self) -> PolarsResult<()> {
         if let Some(payload) = self.bufferer.flush() {
             self.writer.put(payload).await?;
         }

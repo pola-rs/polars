@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "cloud")]
 use super::credential_provider::PlCredentialProvider;
 #[cfg(feature = "cloud")]
-use crate::cloud::PolarsObjectStoreError;
+use crate::cloud::ObjectStoreErrorContext;
 #[cfg(feature = "file_cache")]
 use crate::file_cache::get_env_file_cache_ttl;
 #[cfg(feature = "aws")]
@@ -352,7 +352,6 @@ impl CloudOptions {
         clear_cached_credentials: bool,
     ) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
-        use crate::cloud::PolarsObjectStoreError;
 
         let opt_credential_provider =
             self.initialized_credential_provider(clear_cached_credentials)?;
@@ -498,7 +497,7 @@ impl CloudOptions {
             .with_checksum_algorithm(object_store::aws::Checksum::CRC64NVME)
             .with_unsigned_payload(true)
             .build()
-            .map_err(PolarsObjectStoreError::from_url(&url))?;
+            .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
 
         Ok(out)
     }
@@ -523,6 +522,7 @@ impl CloudOptions {
         clear_cached_credentials: bool,
     ) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
+        use crate::cloud::ObjectStoreErrorContext;
 
         let verbose = polars_core::config::verbose();
 
@@ -559,7 +559,7 @@ impl CloudOptions {
 
         let out = builder
             .build()
-            .map_err(PolarsObjectStoreError::from_url(&url))?;
+            .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
 
         Ok(out)
     }
@@ -616,7 +616,7 @@ impl CloudOptions {
 
         let out = builder
             .build()
-            .map_err(PolarsObjectStoreError::from_url(&url))?;
+            .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
 
         Ok(out)
     }
@@ -635,7 +635,7 @@ impl CloudOptions {
                 opts
             })
             .build()
-            .map_err(PolarsObjectStoreError::from_url(&url))?;
+            .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
 
         Ok(out)
     }
