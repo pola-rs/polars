@@ -108,7 +108,7 @@ impl InternalCloudWriter {
         }
 
         let num_bytes = payload.content_length() as u64;
-        let upload_fut = state.multipart.put_part(payload);
+        let upload_fut = state.multipart.put(payload);
 
         let fut = async move { io_metrics.record_bytes_tx(num_bytes, upload_fut).await };
 

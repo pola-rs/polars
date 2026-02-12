@@ -16,7 +16,7 @@ impl PlMultipartUpload {
         Self { inner, error_cx }
     }
 
-    pub fn put_part(
+    pub fn put(
         &mut self,
         payload: object_store::PutPayload,
     ) -> impl Future<Output = PolarsResult<()>> + Send + 'static {
