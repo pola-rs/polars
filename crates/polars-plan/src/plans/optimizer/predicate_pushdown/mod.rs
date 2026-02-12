@@ -4,7 +4,7 @@ mod join;
 mod keys;
 mod utils;
 
-pub use dynamic::{DynamicPred, PredicateExpr};
+pub use dynamic::{DynamicPred, PredicateExpr, TrivialPredicateExpr};
 use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;

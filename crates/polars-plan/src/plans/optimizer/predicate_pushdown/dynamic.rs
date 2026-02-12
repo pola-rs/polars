@@ -2,7 +2,7 @@ use std::any::Any;
 use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
 use std::sync::RwLock;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use polars_core::frame::column::ScalarColumn;
 use polars_utils::unique_id::UniqueId;
@@ -13,8 +13,17 @@ use super::*;
 
 pub trait PredicateExpr: Send + Sync + Any {
     // Invariant: output column must be of type `Boolean`. If true a value is
-    // included, if false it is filtered out.
-    fn evaluate(&self, columns: &[Column]) -> PolarsResult<Column>;
+    // included, if false it is filtered out. If None is returned it is assumed
+    // all values are needed.
+    fn evaluate(&self, columns: &[Column]) -> PolarsResult<Option<Column>>;
+}
+
+pub struct TrivialPredicateExpr;
+
+impl PredicateExpr for TrivialPredicateExpr {
+    fn evaluate(&self, columns: &[Column]) -> PolarsResult<Option<Column>> {
+        Ok(None)
+    }
 }
 
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -72,26 +81,25 @@ impl DynamicPred {
         }
         self.inner
             .is_set
-            .store(true, std::sync::atomic::Ordering::Release);
+            .store(true, Ordering::Release);
     }
 
     pub fn evaluate(&self, columns: &[Column]) -> PolarsResult<Column> {
         let h = columns[0].len();
-
-        // Can be relaxed, worst thing that can happen is that we read
-        // more data than strictly needed.
-        if self.inner.is_set.load(std::sync::atomic::Ordering::Relaxed) {
+        if self.inner.is_set.load(Ordering::Acquire) {
             let guard = self.inner.pred.read().unwrap();
             let dyn_func = guard.as_ref().unwrap();
-            dyn_func.evaluate(columns)
-        } else {
-            let s = Scalar::new(DataType::Boolean, AnyValue::Boolean(true));
-            Ok(Column::Scalar(ScalarColumn::new(
-                columns[0].name().clone(),
-                s,
-                1,
-            )))
+            if let Some(pred) = dyn_func.evaluate(columns)? {
+                return Ok(pred);
+            }
         }
+
+        let s = Scalar::new(DataType::Boolean, AnyValue::Boolean(true));
+        Ok(Column::Scalar(ScalarColumn::new(
+            columns[0].name().clone(),
+            s,
+            1,
+        )))
     }
 }
 
