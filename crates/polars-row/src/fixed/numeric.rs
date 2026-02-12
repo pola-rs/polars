@@ -6,8 +6,9 @@ use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
+use polars_utils::float16::pf16;
 use polars_utils::slice::*;
-use polars_utils::total_ord::{canonical_f32, canonical_f64};
+use polars_utils::total_ord::{canonical_f16, canonical_f32, canonical_f64};
 
 use crate::row::RowEncodingOptions;
 pub(crate) trait FromSlice {
@@ -62,6 +63,7 @@ encode_unsigned!(1, u8);
 encode_unsigned!(2, u16);
 encode_unsigned!(4, u32);
 encode_unsigned!(8, u64);
+encode_unsigned!(16, u128);
 
 // toggle the sign bit and then encode as big indian
 macro_rules! encode_signed {
@@ -95,6 +97,22 @@ encode_signed!(2, i16);
 encode_signed!(4, i32);
 encode_signed!(8, i64);
 encode_signed!(16, i128);
+
+impl FixedLengthEncoding for pf16 {
+    type Encoded = [u8; 2];
+
+    fn encode(self) -> [u8; 2] {
+        let s = canonical_f16(self).to_bits() as i16;
+        let val = s ^ (((s >> 15) as u16) >> 1) as i16;
+        val.encode()
+    }
+
+    fn decode(encoded: Self::Encoded) -> Self {
+        let bits = i16::decode(encoded);
+        let val = bits ^ (((bits >> 15) as u16) >> 1) as i16;
+        Self::from_bits(val as u16)
+    }
+}
 
 impl FixedLengthEncoding for f32 {
     type Encoded = [u8; 4];

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import io
-from typing import IO, TYPE_CHECKING, Any, Callable
+import re
+import sys
+from functools import partial
+from typing import IO, TYPE_CHECKING, Any
 
 import pyarrow.parquet as pq
 import pytest
@@ -11,21 +14,24 @@ from hypothesis import strategies as st
 import polars as pl
 from polars.meta.index_type import get_index_type
 from polars.testing import assert_frame_equal
+from tests.unit.io.conftest import normalize_path_separator_pl
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
+
+    from tests.conftest import PlMonkeyPatch
+
+SCAN_AND_WRITE_FUNCS = [
+    (pl.scan_ipc, pl.DataFrame.write_ipc),
+    (pl.scan_parquet, pl.DataFrame.write_parquet),
+    (pl.scan_csv, pl.DataFrame.write_csv),
+    (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+]
 
 
 @pytest.mark.write_disk
-@pytest.mark.parametrize(
-    ("scan", "write"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc),
-        (pl.scan_parquet, pl.DataFrame.write_parquet),
-        (pl.scan_csv, pl.DataFrame.write_csv),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-    ],
-)
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
     a_path = tmp_path / "a"
     b_path = tmp_path / "b"
@@ -42,7 +48,7 @@ def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
                 "a": [5, 10, 1996],
                 "f": [str(a_path), str(a_path), str(b_path)],
             }
-        ),
+        ).with_columns(normalize_path_separator_pl(pl.col("f"))),
     )
 
 
@@ -145,7 +151,6 @@ def test_multiscan_projection(
             new_projection,
             new_projection[::-1],
         ]:
-            print(projection)
             assert_frame_equal(
                 scan(multiscan_path, **args)
                 .collect(engine="streaming")
@@ -223,32 +228,23 @@ def test_multiscan_hive_predicate(
         raise
 
 
-@pytest.mark.parametrize(
-    ("scan", "write", "ext"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
-        (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
-        (pl.scan_csv, pl.DataFrame.write_csv, "csv"),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
-    ],
-)
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 @pytest.mark.write_disk
 def test_multiscan_row_index(
     tmp_path: Path,
     scan: Callable[..., pl.LazyFrame],
     write: Callable[[pl.DataFrame, Path], Any],
-    ext: str,
 ) -> None:
     a = pl.DataFrame({"col": [5, 10, 1996]})
     b = pl.DataFrame({"col": [42]})
     c = pl.DataFrame({"col": [13, 37]})
 
-    write(a, tmp_path / f"a.{ext}")
-    write(b, tmp_path / f"b.{ext}")
-    write(c, tmp_path / f"c.{ext}")
+    write(a, tmp_path / "a")
+    write(b, tmp_path / "b")
+    write(c, tmp_path / "c")
 
     col = pl.concat([a, b, c]).to_series()
-    g = tmp_path / f"*.{ext}"
+    g = tmp_path / "*"
 
     assert_frame_equal(
         scan(g, row_index_name="ri").collect(),
@@ -295,6 +291,27 @@ def test_multiscan_row_index(
         ),
     )
 
+    with pytest.raises(
+        pl.exceptions.DuplicateError, match="duplicate column name index"
+    ):
+        scan(g).with_row_index().with_row_index().collect()
+
+    assert_frame_equal(
+        scan(g)
+        .with_row_index()
+        .with_row_index("index_1", offset=1)
+        .with_row_index("index_2", offset=2)
+        .collect(),
+        pl.DataFrame(
+            [
+                pl.Series("index_2", [2, 3, 4, 5, 6, 7], get_index_type()),
+                pl.Series("index_1", [1, 2, 3, 4, 5, 6], get_index_type()),
+                pl.Series("index", [0, 1, 2, 3, 4, 5], get_index_type()),
+                col,
+            ]
+        ),
+    )
+
 
 @pytest.mark.parametrize(
     ("scan", "write", "ext"),
@@ -334,10 +351,13 @@ def test_schema_mismatch_type_mismatch(
 
     # NDJSON will just parse according to `projected_schema`
     cx = (
-        pytest.raises(pl.exceptions.ComputeError, match="cannot parse 'a' as Int64")
+        pytest.raises(
+            pl.exceptions.ComputeError,
+            match=re.escape("cannot parse 'a' (string) as Int64"),
+        )
         if scan is pl.scan_ndjson
         else pytest.raises(
-            pl.exceptions.SchemaError,
+            pl.exceptions.SchemaError,  # type: ignore[arg-type]
             match=(
                 "data type mismatch for column xyz_col: "
                 "incoming: String != target: Int64"
@@ -389,18 +409,7 @@ def test_schema_mismatch_order_mismatch(
         q.collect(engine="streaming")
 
 
-@pytest.mark.parametrize(
-    ("scan", "write"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc),
-        (pl.scan_parquet, pl.DataFrame.write_parquet),
-        (
-            pl.scan_csv,
-            pl.DataFrame.write_csv,
-        ),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-    ],
-)
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 def test_multiscan_head(
     scan: Callable[..., pl.LazyFrame],
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
@@ -445,18 +454,7 @@ def test_multiscan_tail(
     )
 
 
-@pytest.mark.parametrize(
-    ("scan", "write"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc),
-        (pl.scan_parquet, pl.DataFrame.write_parquet),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-        (
-            pl.scan_csv,
-            pl.DataFrame.write_csv,
-        ),
-    ],
-)
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 def test_multiscan_slice_middle(
     scan: Callable[..., pl.LazyFrame],
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
@@ -498,20 +496,11 @@ def test_multiscan_slice_middle(
     )
 
 
-@pytest.mark.parametrize(
-    ("scan", "write", "ext"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
-        (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
-        (pl.scan_csv, pl.DataFrame.write_csv, "csv"),
-    ],
-)
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 @given(offset=st.integers(-100, 100), length=st.integers(0, 101))
 def test_multiscan_slice_parametric(
     scan: Callable[..., pl.LazyFrame],
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
-    ext: str,
     offset: int,
     length: int,
 ) -> None:
@@ -554,16 +543,8 @@ def test_multiscan_slice_parametric(
     )
 
 
-@pytest.mark.parametrize(
-    ("scan", "write"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc),
-        (pl.scan_parquet, pl.DataFrame.write_parquet),
-        (pl.scan_csv, pl.DataFrame.write_csv),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-    ],
-)
-def test_many_files(tmp_path: Path, scan: Any, write: Any) -> None:
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
+def test_many_files(scan: Any, write: Any) -> None:
     f = io.BytesIO()
     write(pl.DataFrame({"a": [5, 10, 1996]}), f)
     bs = f.getvalue()
@@ -580,7 +561,7 @@ def test_many_files(tmp_path: Path, scan: Any, write: Any) -> None:
     )
 
 
-def test_deadlock_stop_requested(tmp_path: Path, monkeypatch: Any) -> None:
+def test_deadlock_stop_requested(plmonkeypatch: PlMonkeyPatch) -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
@@ -590,8 +571,8 @@ def test_deadlock_stop_requested(tmp_path: Path, monkeypatch: Any) -> None:
     f = io.BytesIO()
     df.write_parquet(f, row_group_size=1)
 
-    monkeypatch.setenv("POLARS_MAX_THREADS", "2")
-    monkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "1")
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "2")
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "1")
 
     left_fs = [io.BytesIO(f.getbuffer()) for _ in range(10)]
     right_fs = [io.BytesIO(f.getbuffer()) for _ in range(10)]
@@ -602,15 +583,7 @@ def test_deadlock_stop_requested(tmp_path: Path, monkeypatch: Any) -> None:
     left.join(right, pl.col.a == pl.col.a).collect(engine="streaming").height
 
 
-@pytest.mark.parametrize(
-    ("scan", "write"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc),
-        (pl.scan_parquet, pl.DataFrame.write_parquet),
-        (pl.scan_csv, pl.DataFrame.write_csv),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-    ],
-)
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 def test_deadlock_linearize(scan: Any, write: Any) -> None:
     df = pl.DataFrame(
         {
@@ -633,12 +606,7 @@ def test_deadlock_linearize(scan: Any, write: Any) -> None:
 
 @pytest.mark.parametrize(
     ("scan", "write"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc),
-        (pl.scan_parquet, pl.DataFrame.write_parquet),
-        (pl.scan_csv, pl.DataFrame.write_csv),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-    ],
+    SCAN_AND_WRITE_FUNCS,
 )
 def test_row_index_filter_22612(scan: Any, write: Any) -> None:
     df = pl.DataFrame(
@@ -673,15 +641,7 @@ def test_row_index_filter_22612(scan: Any, write: Any) -> None:
         )
 
 
-@pytest.mark.parametrize(
-    ("scan", "write"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc),
-        (pl.scan_parquet, pl.DataFrame.write_parquet),
-        (pl.scan_csv, pl.DataFrame.write_csv),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-    ],
-)
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 def test_row_index_name_in_file(scan: Any, write: Any) -> None:
     f = io.BytesIO()
     write(pl.DataFrame({"index": 1}), f)
@@ -703,9 +663,9 @@ def test_extra_columns_not_ignored_22218() -> None:
 
     with pytest.raises(
         pl.exceptions.SchemaError,
-        match="extra column in file outside of expected schema: c, hint: specify .*or pass",
+        match=r"extra column in file outside of expected schema: c, hint: specify .*or pass",
     ):
-        (pl.scan_parquet(files, missing_columns="insert").select(pl.all()).collect())
+        pl.scan_parquet(files, missing_columns="insert").select(pl.all()).collect()
 
     assert_frame_equal(
         pl.scan_parquet(
@@ -717,3 +677,272 @@ def test_extra_columns_not_ignored_22218() -> None:
         .collect(),
         pl.DataFrame({"a": [1, 2], "b": [1, None]}),
     )
+
+
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
+def test_scan_null_upcast(scan: Any, write: Any) -> None:
+    dfs = [
+        pl.DataFrame({"a": [1, 2, 3]}),
+        pl.select(a=pl.lit(None, dtype=pl.Null)),
+    ]
+
+    files = [io.BytesIO(), io.BytesIO()]
+
+    write(dfs[0], files[0])
+    write(dfs[1], files[1])
+
+    # Prevent CSV schema inference from loading as string (it looks at multiple
+    # files).
+    if scan is pl.scan_csv:
+        scan = partial(scan, schema=dfs[0].schema)
+
+    assert_frame_equal(
+        scan(files).collect(),
+        pl.DataFrame({"a": [1, 2, 3, None]}),
+    )
+
+
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+    ],
+)
+def test_scan_null_upcast_to_nested(scan: Any, write: Any) -> None:
+    schema = {"a": pl.List(pl.Struct({"field": pl.Int64}))}
+
+    dfs = [
+        pl.DataFrame(
+            {"a": [[{"field": 1}], [{"field": 2}], []]},
+            schema=schema,
+        ),
+        pl.select(a=pl.lit(None, dtype=pl.Null)),
+    ]
+
+    files = [io.BytesIO(), io.BytesIO()]
+
+    write(dfs[0], files[0])
+    write(dfs[1], files[1])
+
+    # Prevent CSV schema inference from loading as string (it looks at multiple
+    # files).
+    if scan is pl.scan_csv:
+        scan = partial(scan, schema=schema)
+
+    assert_frame_equal(
+        scan(files).collect(),
+        pl.DataFrame(
+            {"a": [[{"field": 1}], [{"field": 2}], [], None]},
+            schema=schema,
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+    ],
+)
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "",
+        "file:" if sys.platform != "win32" else "file:/",
+        "file://" if sys.platform != "win32" else "file:///",
+    ],
+)
+@pytest.mark.parametrize("use_glob", [True, False])
+def test_scan_ignore_hidden_files_21762(
+    tmp_path: Path, scan: Any, write: Any, use_glob: bool, prefix: str
+) -> None:
+    file_names: list[str] = ["a.ext", "_a.ext", ".a.ext", "a_.ext"]
+
+    for file_name in file_names:
+        write(pl.DataFrame({"rel_path": file_name}), tmp_path / file_name)
+
+    (tmp_path / "folder").mkdir()
+
+    for file_name in file_names:
+        write(
+            pl.DataFrame({"rel_path": f"folder/{file_name}"}),
+            tmp_path / "folder" / file_name,
+        )
+
+    (tmp_path / "_folder").mkdir()
+
+    for file_name in file_names:
+        write(
+            pl.DataFrame({"rel_path": f"_folder/{file_name}"}),
+            tmp_path / "_folder" / file_name,
+        )
+
+    suffix = "/**/*.ext" if use_glob else "/" if prefix.startswith("file:") else ""
+    root = f"{prefix}{tmp_path}{suffix}"
+
+    assert_frame_equal(
+        scan(root).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    ".a.ext",
+                    "_a.ext",
+                    "_folder/.a.ext",
+                    "_folder/_a.ext",
+                    "_folder/a.ext",
+                    "_folder/a_.ext",
+                    "a.ext",
+                    "a_.ext",
+                    "folder/.a.ext",
+                    "folder/_a.ext",
+                    "folder/a.ext",
+                    "folder/a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=".").sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "_a.ext",
+                    "_folder/_a.ext",
+                    "_folder/a.ext",
+                    "_folder/a_.ext",
+                    "a.ext",
+                    "a_.ext",
+                    "folder/_a.ext",
+                    "folder/a.ext",
+                    "folder/a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=[".", "_"]).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "_folder/a.ext",
+                    "_folder/a_.ext",
+                    "a.ext",
+                    "a_.ext",
+                    "folder/a.ext",
+                    "folder/a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=(".", "_")).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "_folder/a.ext",
+                    "_folder/a_.ext",
+                    "a.ext",
+                    "a_.ext",
+                    "folder/a.ext",
+                    "folder/a_.ext",
+                ]
+            }
+        ),
+    )
+
+    # Top-level glob only
+    root = f"{tmp_path}/*.ext"
+
+    assert_frame_equal(
+        scan(root).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    ".a.ext",
+                    "_a.ext",
+                    "a.ext",
+                    "a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=".").sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "_a.ext",
+                    "a.ext",
+                    "a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=[".", "_"]).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "a.ext",
+                    "a_.ext",
+                ]
+            }
+        ),
+    )
+
+    # Direct file passed
+    with pytest.raises(pl.exceptions.ComputeError, match="expanded paths were empty"):
+        scan(tmp_path / "_a.ext", hidden_file_prefix="_").collect()
+
+
+def test_row_count_estimate_multifile(io_files_path: Path) -> None:
+    src = io_files_path / "foods*.parquet"
+    # test that it doesn't check only the first file
+    assert "ESTIMATED ROWS: 54" in pl.scan_parquet(src).explain()
+
+
+@pytest.mark.parametrize(
+    ("scan", "write", "ext"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
+        (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("predicate", "expected_indices"),
+    [
+        ((pl.col.x == 1) & True, [0]),
+        (True & (pl.col.x == 1), [0]),
+    ],
+)
+@pytest.mark.write_disk
+def test_hive_predicate_filtering_edge_case_25630(
+    tmp_path: Path,
+    scan: Callable[..., pl.LazyFrame],
+    write: Callable[[pl.DataFrame, Path], Any],
+    ext: str,
+    predicate: pl.Expr,
+    expected_indices: list[int],
+) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "y": [0, 1, 1]}).with_row_index()
+
+    (tmp_path / "y=0").mkdir()
+    (tmp_path / "y=1").mkdir()
+
+    # previously we could panic if hive columns were all filtered out of the projection
+    write(df.filter(pl.col.y == 0).drop("y"), tmp_path / "y=0" / f"data.{ext}")
+    write(df.filter(pl.col.y == 1).drop("y"), tmp_path / "y=1" / f"data.{ext}")
+
+    res = scan(tmp_path).filter(predicate).select("index").collect(engine="streaming")
+    expected = pl.DataFrame(
+        data={"index": expected_indices},
+        schema={"index": pl.get_index_type()},
+    )
+    assert_frame_equal(res, expected)

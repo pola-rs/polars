@@ -1,14 +1,14 @@
 use pyo3::Python;
 use pyo3::prelude::*;
-use pyo3::types::PyCFunction;
+use pyo3::types::{PyNone, PyTuple};
 
 use super::PySeries;
 use crate::error::PyPolarsErr;
-use crate::map::check_nested_object;
-use crate::map::series::{ApplyLambda, call_lambda_and_extract};
+use crate::map::series::ApplyLambdaGeneric;
 use crate::prelude::*;
-use crate::py_modules::pl_series;
-use crate::{apply_method_all_arrow_series2, raise_err};
+#[cfg(feature = "object")]
+use crate::series::construction::series_from_objects;
+use crate::{apply_all_polars_dtypes, raise_err};
 
 #[pymethods]
 impl PySeries {
@@ -19,15 +19,8 @@ impl PySeries {
         return_dtype: Option<Wrap<DataType>>,
         skip_nulls: bool,
     ) -> PyResult<PySeries> {
-        let series = &self.series;
-
-        if return_dtype.is_none() {
-            polars_warn!(
-                MapWithoutReturnDtypeWarning,
-                "Calling `map_elements` without specifying `return_dtype` can lead to unpredictable results. \
-                Specify `return_dtype` to silence this warning."
-            )
-        }
+        let series = self.series.read().clone(); // Clone so we don't deadlock on re-entrance.
+        let series = series.to_storage();
 
         if skip_nulls && (series.null_count() == series.len()) {
             if let Some(return_dtype) = return_dtype {
@@ -43,257 +36,66 @@ impl PySeries {
 
         let return_dtype = return_dtype.map(|dt| dt.0);
 
-        macro_rules! dispatch_apply {
-            ($self:expr, $method:ident, $($args:expr),*) => {
-                match $self.dtype() {
-                    #[cfg(feature = "object")]
-                    DataType::Object(_) => {
-                        let ca = $self.0.unpack::<ObjectType<ObjectValue>>().unwrap();
-                        ca.$method($($args),*)
-                    },
-                    _ => {
-                        apply_method_all_arrow_series2!(
-                            $self,
-                            $method,
-                            $($args),*
-                        )
-                    }
-
-                }
-            }
-
-        }
-
-        Python::with_gil(|py| {
-            if matches!(
-                self.series.dtype(),
-                DataType::Datetime(_, _)
-                    | DataType::Date
-                    | DataType::Duration(_)
-                    | DataType::Categorical(_, _)
-                    | DataType::Enum(_, _)
-                    | DataType::Binary
-                    | DataType::Array(_, _)
-                    | DataType::Time
-                    | DataType::Decimal(_, _)
-            ) || !skip_nulls
-            {
-                let mut avs = Vec::with_capacity(self.series.len());
-                let s = self.series.rechunk();
-
-                for av in s.iter() {
-                    let out = match (skip_nulls, av) {
-                        (true, AnyValue::Null) => AnyValue::Null,
-                        (_, av) => {
-                            let av: Option<Wrap<AnyValue>> =
-                                call_lambda_and_extract(py, function, Wrap(av))?;
-                            match av {
-                                None => AnyValue::Null,
-                                Some(av) => av.0,
-                            }
-                        },
-                    };
-                    avs.push(out)
-                }
-                let out = Series::new(self.series.name().clone(), &avs);
-                let dtype = out.dtype();
-                if dtype.is_nested() {
-                    check_nested_object(dtype)?;
-                }
-
-                return Ok(out.into());
-            }
-
-            let out = match return_dtype {
-                Some(DataType::Int8) => {
-                    let ca: Int8Chunked = dispatch_apply!(
-                        series,
-                        apply_lambda_with_primitive_out_type,
-                        py,
-                        function,
-                        0,
-                        None
-                    )?;
-                    ca.into_series()
-                },
-                Some(DataType::Int16) => {
-                    let ca: Int16Chunked = dispatch_apply!(
-                        series,
-                        apply_lambda_with_primitive_out_type,
-                        py,
-                        function,
-                        0,
-                        None
-                    )?;
-                    ca.into_series()
-                },
-                Some(DataType::Int32) => {
-                    let ca: Int32Chunked = dispatch_apply!(
-                        series,
-                        apply_lambda_with_primitive_out_type,
-                        py,
-                        function,
-                        0,
-                        None
-                    )?;
-                    ca.into_series()
-                },
-                Some(DataType::Int64) => {
-                    let ca: Int64Chunked = dispatch_apply!(
-                        series,
-                        apply_lambda_with_primitive_out_type,
-                        py,
-                        function,
-                        0,
-                        None
-                    )?;
-                    ca.into_series()
-                },
-                Some(DataType::Int128) => {
-                    let ca: Int128Chunked = dispatch_apply!(
-                        series,
-                        apply_lambda_with_primitive_out_type,
-                        py,
-                        function,
-                        0,
-                        None
-                    )?;
-                    ca.into_series()
-                },
-                Some(DataType::UInt8) => {
-                    let ca: UInt8Chunked = dispatch_apply!(
-                        series,
-                        apply_lambda_with_primitive_out_type,
-                        py,
-                        function,
-                        0,
-                        None
-                    )?;
-                    ca.into_series()
-                },
-                Some(DataType::UInt16) => {
-                    let ca: UInt16Chunked = dispatch_apply!(
-                        series,
-                        apply_lambda_with_primitive_out_type,
-                        py,
-                        function,
-                        0,
-                        None
-                    )?;
-                    ca.into_series()
-                },
-                Some(DataType::UInt32) => {
-                    let ca: UInt32Chunked = dispatch_apply!(
-                        series,
-                        apply_lambda_with_primitive_out_type,
-                        py,
-                        function,
-                        0,
-                        None
-                    )?;
-                    ca.into_series()
-                },
-                Some(DataType::UInt64) => {
-                    let ca: UInt64Chunked = dispatch_apply!(
-                        series,
-                        apply_lambda_with_primitive_out_type,
-                        py,
-                        function,
-                        0,
-                        None
-                    )?;
-                    ca.into_series()
-                },
-                Some(DataType::Float32) => {
-                    let ca: Float32Chunked = dispatch_apply!(
-                        series,
-                        apply_lambda_with_primitive_out_type,
-                        py,
-                        function,
-                        0,
-                        None
-                    )?;
-                    ca.into_series()
-                },
-                Some(DataType::Float64) => {
-                    let ca: Float64Chunked = dispatch_apply!(
-                        series,
-                        apply_lambda_with_primitive_out_type,
-                        py,
-                        function,
-                        0,
-                        None
-                    )?;
-                    ca.into_series()
-                },
-                Some(DataType::Boolean) => {
-                    let ca: BooleanChunked = dispatch_apply!(
-                        series,
-                        apply_lambda_with_bool_out_type,
-                        py,
-                        function,
-                        0,
-                        None
-                    )?;
-                    ca.into_series()
-                },
-                Some(DataType::String) => {
-                    let ca = dispatch_apply!(
-                        series,
-                        apply_lambda_with_string_out_type,
-                        py,
-                        function,
-                        0,
-                        None
-                    )?;
-
-                    ca.into_series()
-                },
-                Some(DataType::List(inner)) => {
-                    check_nested_object(&inner)?;
-                    // Make sure the function returns a Series of the correct data type.
-                    let function_owned = function.clone().unbind();
-                    let dtype_py = Wrap((*inner).clone());
-                    let function_wrapped =
-                        PyCFunction::new_closure(py, None, None, move |args, _kwargs| {
-                            Python::with_gil(|py| {
-                                let out = function_owned.call1(py, args)?;
-                                pl_series(py).call1(py, ("", out, &dtype_py))
-                            })
-                        })?
-                        .into_any()
-                        .unbind();
-
-                    let ca = dispatch_apply!(
-                        series,
-                        apply_lambda_with_list_out_type,
-                        py,
-                        function_wrapped,
-                        0,
-                        None,
-                        inner.as_ref()
-                    )?;
-
-                    ca.into_series()
-                },
+        Python::attach(|py| {
+            let s = match &return_dtype {
                 #[cfg(feature = "object")]
                 Some(DataType::Object(_)) => {
-                    let ca = dispatch_apply!(
+                    // If the return dtype is Object we should not go through AnyValue.
+                    call_and_collect_objects(
+                        py,
+                        series.name().clone(),
+                        function,
+                        series.len(),
+                        series.iter().map(|av| av.null_to_none().map(Wrap)),
+                        skip_nulls,
+                    )
+                },
+                Some(return_dtype) => {
+                    apply_all_polars_dtypes!(
                         series,
-                        apply_lambda_with_object_out_type,
+                        apply_generic_with_dtype,
                         py,
                         function,
-                        0,
-                        None
-                    )?;
-                    ca.into_series()
+                        return_dtype,
+                        skip_nulls
+                    )
                 },
-                None => return dispatch_apply!(series, apply_lambda_unknown, py, function),
-
-                _ => return dispatch_apply!(series, apply_lambda_unknown, py, function),
+                None => apply_all_polars_dtypes!(series, apply_generic, py, function, skip_nulls),
             };
-
-            Ok(out.into())
+            s.map(PySeries::from)
         })
     }
+}
+
+#[cfg(feature = "object")]
+fn call_and_collect_objects<'py, T, I>(
+    py: Python<'py>,
+    name: PlSmallStr,
+    lambda: &Bound<'py, PyAny>,
+    len: usize,
+    iter: I,
+    skip_nulls: bool,
+) -> PyResult<Series>
+where
+    T: IntoPyObject<'py>,
+    I: Iterator<Item = Option<T>>,
+{
+    let mut objects = Vec::with_capacity(len);
+    for opt_val in iter {
+        let arg = match opt_val {
+            None if skip_nulls => {
+                objects.push(ObjectValue {
+                    inner: PyNone::get(py).to_owned().unbind().into_any(),
+                });
+                continue;
+            },
+            None => PyTuple::new(py, [PyNone::get(py)])?,
+            Some(val) => PyTuple::new(py, [val])?,
+        };
+        let out = lambda.call1(arg)?;
+        objects.push(ObjectValue {
+            inner: out.unbind(),
+        });
+    }
+    Ok(series_from_objects(py, name, objects))
 }

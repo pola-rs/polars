@@ -238,7 +238,7 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
         // Since T::Unpacked::LENGTH is always a power of two and known at compile time. Division,
         // modulo and multiplication are just trivial operators.
         let num_packs = (self.length / T::Unpacked::LENGTH)
-            + usize::from(self.length % T::Unpacked::LENGTH != 0);
+            + usize::from(!self.length.is_multiple_of(T::Unpacked::LENGTH));
 
         // We reserve enough space here for self.length rounded up to the next multiple of
         // T::Unpacked::LENGTH so that we can safely just write into that memory. Otherwise, we

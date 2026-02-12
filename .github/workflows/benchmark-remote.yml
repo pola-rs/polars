@@ -22,16 +22,16 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' || github.event.label.name == 'needs-bench' }}
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Clone Polars-benchmark
         run: |
           git clone --depth=1 https://github.com/pola-rs/polars-benchmark.git
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
-          python-version: '3.13'
+          python-version: '3.14'
 
       - name: Create virtual environment
         run: |
@@ -62,7 +62,10 @@ jobs:
           RUSTFLAGS: -C embed-bitcode -D warnings
         working-directory: py-polars
         run: |
-          maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
+          # Make sure we use the Polars we're about to build.
+          uv pip uninstall polars-runtime-32 polars-runtime-64 polars-runtime-compat
+          uv pip install --no-deps -e .
+          maturin develop --manifest-path runtime/polars-runtime-32/Cargo.toml --release --uv -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
       - name: Run benchmark
         working-directory: polars-benchmark
@@ -77,4 +80,3 @@ jobs:
           pip install seaborn
           "$HOME/py-polars-cache/create-plots.py"
           touch "$HOME/py-polars-cache/upload-probe"
-          "$HOME/py-polars-cache/cache-build.sh" "$PWD/polars"

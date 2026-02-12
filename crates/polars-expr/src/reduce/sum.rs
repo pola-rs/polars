@@ -4,6 +4,8 @@ use arrow::array::PrimitiveArray;
 use num_traits::Zero;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::float::IsFloat;
+#[cfg(feature = "dtype-f16")]
+use polars_utils::float16::pf16;
 
 use super::*;
 
@@ -28,8 +30,12 @@ impl_sum_cast!(
     i16 as i64
 );
 impl_sum_cast!(u32, u64, i32, i64, f32, f64);
+#[cfg(feature = "dtype-f16")]
+impl_sum_cast!(pf16);
 #[cfg(feature = "dtype-i128")]
 impl_sum_cast!(i128);
+#[cfg(feature = "dtype-u128")]
+impl_sum_cast!(u128);
 
 fn out_dtype(in_dtype: &DataType) -> DataType {
     use DataType::*;
@@ -40,10 +46,11 @@ fn out_dtype(in_dtype: &DataType) -> DataType {
     }
 }
 
-pub fn new_sum_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
+pub fn new_sum_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
+    // TODO: Move the error checks up and make this function infallible
     use DataType::*;
     use VecGroupedReduction as VGR;
-    match dtype {
+    Ok(match dtype {
         Boolean => Box::new(VGR::new(dtype, BoolSumReducer)),
         _ if dtype.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
@@ -53,10 +60,18 @@ pub fn new_sum_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VGR::new(dtype, NumSumReducer::<Int128Type>(PhantomData))),
         Duration(_) => Box::new(VGR::new(dtype, NumSumReducer::<Int64Type>(PhantomData))),
-        // For compatibility with the current engine, should probably be an error.
-        String | Binary => Box::new(super::NullGroupedReduction::new(dtype)),
-        _ => unimplemented!("{dtype:?} is not supported by sum reduction"),
-    }
+        Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
+            DataType::Null,
+        ))),
+        String => {
+            polars_bail!(
+                op = "`sum`",
+                DataType::String,
+                hint = "you may mean to call `str.join` or `list.join`"
+            );
+        },
+        _ => polars_bail!(op = "`sum`", dtype),
+    })
 }
 
 struct NumSumReducer<T>(PhantomData<T>);

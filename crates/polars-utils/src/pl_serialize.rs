@@ -38,21 +38,6 @@ where
     }
 }
 
-#[cfg(feature = "polars_cloud_server")]
-/// Deserializes the value and collects paths to all unknown fields.
-fn deserialize_with_unknown_fields<T, R>(reader: R) -> PolarsResult<(T, Vec<String>)>
-where
-    T: serde::de::DeserializeOwned,
-    R: std::io::Read,
-{
-    let mut de = rmp_serde::Deserializer::new(reader);
-    let mut unknown_fields = Vec::new();
-    let t = serde_ignored::deserialize(&mut de, |path| {
-        unknown_fields.push(path.to_string());
-    });
-    t.map(|t| (t, unknown_fields)).map_err(to_compute_err)
-}
-
 /// Mainly used to enable compression when serializing the final outer value.
 /// For intermediate serialization steps, the function in the module should
 /// be used instead.
@@ -92,25 +77,6 @@ impl SerializeOptions {
             deserialize_impl::<_, _, FC>(flate2::read::ZlibDecoder::new(reader))
         } else {
             deserialize_impl::<_, _, FC>(reader)
-        }
-    }
-
-    /// Deserializes the value and collects paths to all unknown fields.
-    ///
-    /// Supports only the future-compatible format (`FC: true`).
-    #[cfg(feature = "polars_cloud_server")]
-    pub fn deserialize_from_reader_with_unknown_fields<T, R>(
-        &self,
-        reader: R,
-    ) -> PolarsResult<(T, Vec<String>)>
-    where
-        T: serde::de::DeserializeOwned,
-        R: std::io::Read,
-    {
-        if self.compression {
-            deserialize_with_unknown_fields(flate2::read::ZlibDecoder::new(reader))
-        } else {
-            deserialize_with_unknown_fields(reader)
         }
     }
 
@@ -160,6 +126,29 @@ where
     Ok(v)
 }
 
+/// Serialize function customized for `DslPlan`, with stack overflow protection.
+pub fn serialize_dsl<W, T>(writer: W, value: &T) -> PolarsResult<()>
+where
+    W: std::io::Write,
+    T: serde::ser::Serialize,
+{
+    let mut s = rmp_serde::Serializer::new(writer).with_struct_map();
+    let s = serde_stacker::Serializer::new(&mut s);
+    value.serialize(s).map_err(to_compute_err)
+}
+
+/// Deserialize function customized for `DslPlan`, with stack overflow protection.
+pub fn deserialize_dsl<T, R>(reader: R) -> PolarsResult<T>
+where
+    T: serde::de::DeserializeOwned,
+    R: std::io::Read,
+{
+    let mut de = rmp_serde::Deserializer::new(reader);
+    de.set_max_depth(usize::MAX);
+    let de = serde_stacker::Deserializer::new(&mut de);
+    T::deserialize(de).map_err(to_compute_err)
+}
+
 /// Potentially avoids copying memory compared to a naive `Vec::<u8>::deserialize`.
 ///
 /// This is essentially boilerplate for visiting bytes without copying where possible.
@@ -172,7 +161,7 @@ where
 {
     // Lets us avoid monomorphizing the visitor
     let mut out: Option<O> = None;
-    struct V<'f>(&'f mut (dyn for<'b> FnMut(std::borrow::Cow<'b, [u8]>)));
+    struct V<'f>(&'f mut dyn for<'b> FnMut(std::borrow::Cow<'b, [u8]>));
 
     deserializer.deserialize_bytes(V(&mut |v| drop(out.replace(func(v)))))?;
 
@@ -231,7 +220,7 @@ pub fn python_object_serialize(
     use crate::python_function::PYTHON3_VERSION;
 
     let mut use_cloudpickle = USE_CLOUDPICKLE.get();
-    let dumped = Python::with_gil(|py| {
+    let dumped = Python::attach(|py| {
         // Pickle with whatever pickling method was selected.
         if use_cloudpickle {
             let cloudpickle = PyModule::import(py, "cloudpickle")?.getattr("dumps")?;
@@ -248,6 +237,7 @@ pub fn python_object_serialize(
             }
         }
         .extract::<PyBackedBytes>()
+        .map_err(pyo3::PyErr::from)
     })?;
 
     // Write pickle metadata
@@ -282,7 +272,7 @@ pub fn python_object_deserialize(buf: &[u8]) -> PolarsResult<pyo3::Py<pyo3::PyAn
     }
     let buf = &buf[3..];
 
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let loads = PyModule::import(py, "pickle")?.getattr("loads")?;
         let arg = (PyBytes::new(py, buf),);
         let python_function = loads.call1(arg)?;
@@ -326,41 +316,5 @@ mod tests {
             .unwrap();
 
         assert_eq!(r, v);
-    }
-
-    #[cfg(feature = "polars_cloud_server")]
-    #[test]
-    fn test_serde_collect_unknown_fields() {
-        #[derive(Clone, Copy, serde::Serialize)]
-        struct A {
-            x: bool,
-            u: u8,
-        }
-
-        #[derive(serde::Serialize)]
-        enum E {
-            V { val: A, ch: char },
-        }
-
-        #[derive(serde::Deserialize)]
-        struct B {
-            u: u8,
-        }
-
-        #[derive(serde::Deserialize)]
-        enum F {
-            V { val: B },
-        }
-
-        let a = A { u: 42, x: true };
-        let e = E::V { val: a, ch: 'x' };
-
-        let buf: Vec<u8> = super::serialize_to_bytes::<_, true>(&e).unwrap();
-        let (f, unknown) = super::deserialize_with_unknown_fields::<F, _>(buf.as_slice()).unwrap();
-
-        let F::V { val: b } = f;
-
-        assert_eq!(a.u, b.u);
-        assert_eq!(unknown.as_slice(), &["val.x", "ch"]);
     }
 }

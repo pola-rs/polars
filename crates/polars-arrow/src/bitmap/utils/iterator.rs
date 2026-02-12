@@ -236,6 +236,54 @@ impl Iterator for BitmapIter<'_> {
         let num_remaining = self.num_remaining();
         (num_remaining, Some(num_remaining))
     }
+
+    #[inline]
+    fn nth(&mut self, mut n: usize) -> Option<Self::Item> {
+        if n >= self.word_len + self.rest_len {
+            self.word = 0;
+            self.word_len = 0;
+            self.rest_len = 0;
+            return None;
+        }
+
+        // Advance words in buffer, skip words as needed
+        if n >= self.word_len {
+            n -= self.word_len;
+
+            let word_offset = n / 64;
+            n -= word_offset * 64;
+            self.rest_len -= word_offset * 64;
+
+            self.word_len = self.rest_len.min(64);
+            self.rest_len -= self.word_len;
+
+            let byte_offset = 8 * word_offset;
+
+            // Safety: bytes is large enough at construction time.
+            debug_assert!(byte_offset + 8 <= self.bytes.len());
+            unsafe {
+                let chunk = self
+                    .bytes
+                    .get_unchecked(byte_offset..byte_offset + 8)
+                    .try_into()
+                    .unwrap();
+                self.word = u64::from_le_bytes(chunk);
+                self.bytes = self.bytes.get_unchecked(byte_offset + 8..);
+            }
+        }
+
+        // At this point, n < self.word_len
+        debug_assert!(self.word_len > n);
+
+        // Advance index by n and take value at final index
+        self.word >>= n;
+        self.word_len -= n;
+
+        let ret = self.word & 1 != 0;
+        self.word >>= 1;
+        self.word_len -= 1;
+        Some(ret)
+    }
 }
 
 impl DoubleEndedIterator for BitmapIter<'_> {
@@ -382,5 +430,101 @@ mod tests {
             assert_eq!(iter.take_leading_zeros(), 0);
             assert_eq!(iter.take_leading_ones(), 0);
         }
+    }
+
+    #[test]
+    #[allow(clippy::iter_nth_zero)]
+    fn test_bitmap_iter_nth() {
+        // Calling nth repeatedly advances through the bitmap
+        {
+            let mut iter = BitmapIter::new(&[0b10110001], 0, 8);
+            assert_eq!(iter.nth(0), Some(true));
+            assert_eq!(iter.nth(0), Some(false));
+            assert_eq!(iter.nth(2), Some(true));
+            assert_eq!(iter.nth(3), None);
+
+            assert_eq!(iter.next(), None);
+        }
+
+        // Test parity with next()-based implementation on of singular call to nth()
+        for len in [0, 1, 2, 63, 64, 65, 127, 128, 129] {
+            for offset in [0, 1, 2] {
+                // binary '01010101' == 85
+                let iter = BitmapIter::new(
+                    &[
+                        0, 1, 2, 4, 8, 16, 32, 64, 85, 170, 85, 170, 85, 170, 85, 170, 255, 0,
+                    ],
+                    offset,
+                    len,
+                );
+
+                for i in 0..=len {
+                    let mut iter_expected = iter.clone();
+                    let mut iter_test = iter.clone();
+
+                    let prev_rest_len = iter_test.rest_len;
+                    let prev_word_len = iter_test.word_len;
+
+                    assert_eq!(len, prev_rest_len + prev_word_len);
+
+                    // Iterate.
+                    let out = iter_test.nth(i);
+                    for _ in 0..i {
+                        iter_expected.next();
+                    }
+                    let expected = iter_expected.next();
+
+                    // Check value.
+                    assert_eq!(out, expected);
+
+                    // Check internal sate.
+                    let final_rest_len = iter_test.rest_len;
+                    let final_word_len = iter_test.word_len;
+                    match out {
+                        Some(_) => assert_eq!(
+                            prev_rest_len + prev_word_len,
+                            i + 1 + final_rest_len + final_word_len
+                        ),
+                        None => {
+                            assert!(i >= prev_rest_len + prev_word_len);
+                            assert_eq!(final_rest_len + final_word_len, 0)
+                        },
+                    };
+                }
+            }
+        }
+
+        // Check internal state on repeat calls to nth().
+        {
+            for len in [0, 63, 64, 65, 126, 128, 129] {
+                let mut iter =
+                    BitmapIter::new(&[0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 0], 0, len);
+                for step in [0, 1, 2, 3] {
+                    for i in (0..len + step + 1).step_by(step + 1) {
+                        let prev_rest_len = iter.rest_len;
+                        let prev_word_len = iter.word_len;
+
+                        let out = iter.nth(step);
+
+                        let final_rest_len = iter.rest_len;
+                        let final_word_len = iter.word_len;
+                        match out {
+                            Some(_) => assert_eq!(
+                                prev_rest_len + prev_word_len,
+                                step + 1 + final_rest_len + final_word_len
+                            ),
+                            None => {
+                                assert!(i >= prev_rest_len + prev_word_len);
+                                assert_eq!(final_rest_len + final_word_len, 0)
+                            },
+                        };
+                    }
+                }
+            }
+        }
+
+        // Edge cases
+        let mut iter = BitmapIter::new(&[], 0, 0);
+        assert_eq!(iter.nth(0), None);
     }
 }

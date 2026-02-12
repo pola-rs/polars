@@ -17,6 +17,9 @@ use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "proptest")]
 pub mod proptest;
 
+/// Name used for the values array within List/FixedSizeList arrays.
+pub const LIST_VALUES_NAME: PlSmallStr = PlSmallStr::from_static("item");
+
 /// An [`Array`] semantically equivalent to `Vec<Option<Vec<Option<T>>>>` with Arrow's in-memory.
 #[derive(Clone)]
 pub struct ListArray<O: Offset> {
@@ -101,6 +104,17 @@ impl<O: Offset> ListArray<O> {
             new_empty_array(child),
             Some(Bitmap::new_zeroed(length)),
         )
+    }
+
+    pub fn into_inner(
+        self,
+    ) -> (
+        ArrowDataType,
+        Box<dyn Array>,
+        OffsetsBuffer<O>,
+        Option<Bitmap>,
+    ) {
+        (self.dtype, self.values, self.offsets, self.validity)
     }
 }
 
@@ -188,7 +202,7 @@ impl<O: Offset> ListArray<O> {
 impl<O: Offset> ListArray<O> {
     /// Returns a default [`ArrowDataType`]: inner field is named "item" and is nullable
     pub fn default_datatype(dtype: ArrowDataType) -> ArrowDataType {
-        let field = Box::new(Field::new(PlSmallStr::from_static("item"), dtype, true));
+        let field = Box::new(Field::new(LIST_VALUES_NAME, dtype, true));
         if O::IS_LARGE {
             ArrowDataType::LargeList(field)
         } else {
@@ -208,12 +222,12 @@ impl<O: Offset> ListArray<O> {
     /// Panics iff the logical type is not consistent with this struct.
     pub fn try_get_child(dtype: &ArrowDataType) -> PolarsResult<&Field> {
         if O::IS_LARGE {
-            match dtype.to_logical_type() {
+            match dtype.to_storage() {
                 ArrowDataType::LargeList(child) => Ok(child.as_ref()),
                 _ => polars_bail!(ComputeError: "ListArray<i64> expects DataType::LargeList"),
             }
         } else {
-            match dtype.to_logical_type() {
+            match dtype.to_storage() {
                 ArrowDataType::List(child) => Ok(child.as_ref()),
                 _ => polars_bail!(ComputeError: "ListArray<i32> expects DataType::List"),
             }

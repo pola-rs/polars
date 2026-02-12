@@ -11,10 +11,7 @@ use pyo3::pybacked::PyBackedStr;
 
 use super::PyDataFrame;
 use crate::conversion::Wrap;
-use crate::file::{
-    EitherRustPythonFile, get_either_file, get_file_like, get_mmap_bytes_reader,
-    get_mmap_bytes_reader_and_path,
-};
+use crate::file::{get_file_like, get_mmap_bytes_reader, get_mmap_bytes_reader_and_path};
 use crate::prelude::PyCompatLevel;
 use crate::utils::EnterPolarsExt;
 
@@ -128,58 +125,6 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
-    #[cfg(feature = "parquet")]
-    #[pyo3(signature = (py_f, columns, projection, n_rows, row_index, low_memory, parallel, use_statistics, rechunk))]
-    pub fn read_parquet(
-        py: Python<'_>,
-        py_f: PyObject,
-        columns: Option<Vec<String>>,
-        projection: Option<Vec<usize>>,
-        n_rows: Option<usize>,
-        row_index: Option<(String, IdxSize)>,
-        low_memory: bool,
-        parallel: Wrap<ParallelStrategy>,
-        use_statistics: bool,
-        rechunk: bool,
-    ) -> PyResult<Self> {
-        use EitherRustPythonFile::*;
-
-        let row_index = row_index.map(|(name, offset)| RowIndex {
-            name: name.into(),
-            offset,
-        });
-
-        _ = use_statistics;
-
-        match get_either_file(py_f, false)? {
-            Py(f) => {
-                let buf = std::io::Cursor::new(f.to_memslice());
-                py.enter_polars_df(move || {
-                    ParquetReader::new(buf)
-                        .with_projection(projection)
-                        .with_columns(columns)
-                        .read_parallel(parallel.0)
-                        .with_slice(n_rows.map(|x| (0, x)))
-                        .with_row_index(row_index)
-                        .set_low_memory(low_memory)
-                        .set_rechunk(rechunk)
-                        .finish()
-                })
-            },
-            Rust(f) => py.enter_polars_df(move || {
-                ParquetReader::new(f)
-                    .with_projection(projection)
-                    .with_columns(columns)
-                    .read_parallel(parallel.0)
-                    .with_slice(n_rows.map(|x| (0, x)))
-                    .with_row_index(row_index)
-                    .set_rechunk(rechunk)
-                    .finish()
-            }),
-        }
-    }
-
-    #[staticmethod]
     #[cfg(feature = "json")]
     #[pyo3(signature = (py_f, infer_schema_length, schema, schema_overrides))]
     pub fn read_json(
@@ -193,47 +138,20 @@ impl PyDataFrame {
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
 
         py.enter_polars_df(move || {
-            let mut builder = JsonReader::new(mmap_bytes_r)
+            let mut reader = JsonReader::new(mmap_bytes_r)
                 .with_json_format(JsonFormat::Json)
                 .infer_schema_len(infer_schema_length.and_then(NonZeroUsize::new));
 
             if let Some(schema) = schema {
-                builder = builder.with_schema(Arc::new(schema.0));
+                reader = reader.with_schema(Arc::new(schema.0));
             }
 
             if let Some(schema) = schema_overrides.as_ref() {
-                builder = builder.with_schema_overwrite(&schema.0);
+                reader = reader.with_schema_overwrite(&schema.0);
             }
 
-            builder.finish()
+            reader.finish()
         })
-    }
-
-    #[staticmethod]
-    #[cfg(feature = "json")]
-    #[pyo3(signature = (py_f, ignore_errors, schema, schema_overrides))]
-    pub fn read_ndjson(
-        py: Python<'_>,
-        py_f: Bound<PyAny>,
-        ignore_errors: bool,
-        schema: Option<Wrap<Schema>>,
-        schema_overrides: Option<Wrap<Schema>>,
-    ) -> PyResult<Self> {
-        let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
-
-        let mut builder = JsonReader::new(mmap_bytes_r)
-            .with_json_format(JsonFormat::JsonLines)
-            .with_ignore_errors(ignore_errors);
-
-        if let Some(schema) = schema {
-            builder = builder.with_schema(Arc::new(schema.0));
-        }
-
-        if let Some(schema) = schema_overrides.as_ref() {
-            builder = builder.with_schema_overwrite(&schema.0);
-        }
-
-        py.enter_polars_df(move || builder.finish())
     }
 
     #[staticmethod]
@@ -299,7 +217,7 @@ impl PyDataFrame {
     #[pyo3(signature = (py_f, columns, projection, n_rows))]
     pub fn read_avro(
         py: Python<'_>,
-        py_f: PyObject,
+        py_f: Py<PyAny>,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
@@ -317,22 +235,22 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "json")]
-    pub fn write_json(&mut self, py: Python<'_>, py_f: PyObject) -> PyResult<()> {
+    pub fn write_json(&self, py: Python<'_>, py_f: Py<PyAny>) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
         py.enter_polars(|| {
             // TODO: Cloud support
 
             JsonWriter::new(file)
                 .with_json_format(JsonFormat::Json)
-                .finish(&mut self.df)
+                .finish(&mut self.df.write())
         })
     }
 
     #[cfg(feature = "ipc_streaming")]
     pub fn write_ipc_stream(
-        &mut self,
+        &self,
         py: Python<'_>,
-        py_f: PyObject,
+        py_f: Py<PyAny>,
         compression: Wrap<Option<IpcCompression>>,
         compat_level: PyCompatLevel,
     ) -> PyResult<()> {
@@ -341,16 +259,16 @@ impl PyDataFrame {
             IpcStreamWriter::new(&mut buf)
                 .with_compression(compression.0)
                 .with_compat_level(compat_level.0)
-                .finish(&mut self.df)
+                .finish(&mut self.df.write())
         })
     }
 
     #[cfg(feature = "avro")]
     #[pyo3(signature = (py_f, compression, name))]
     pub fn write_avro(
-        &mut self,
+        &self,
         py: Python<'_>,
-        py_f: PyObject,
+        py_f: Py<PyAny>,
         compression: Wrap<Option<AvroCompression>>,
         name: String,
     ) -> PyResult<()> {
@@ -360,7 +278,7 @@ impl PyDataFrame {
             AvroWriter::new(&mut buf)
                 .with_compression(compression.0)
                 .with_name(name)
-                .finish(&mut self.df)
+                .finish(&mut self.df.write())
         })
     }
 }

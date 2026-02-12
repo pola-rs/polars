@@ -1,11 +1,13 @@
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::ops::Neg;
 use std::panic::RefUnwindSafe;
 
 use bytemuck::{Pod, Zeroable};
+use half;
+use polars_utils::float16::pf16;
 use polars_utils::min_max::MinMax;
 use polars_utils::nulls::IsNull;
-use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash, TotalOrd, TotalOrdWrap};
+use polars_utils::total_ord::{TotalEq, TotalOrd};
 
 use super::PrimitiveType;
 use super::aligned_bytes::*;
@@ -28,7 +30,6 @@ pub trait NativeType:
     + TotalOrd
     + IsNull
     + MinMax
-    + AlignedBytesCast<Self::AlignedBytes>
 {
     /// The corresponding variant of [`PrimitiveType`].
     const PRIMITIVE: PrimitiveType;
@@ -97,14 +98,14 @@ native_type!(u8, Bytes1Alignment1, PrimitiveType::UInt8);
 native_type!(u16, Bytes2Alignment2, PrimitiveType::UInt16);
 native_type!(u32, Bytes4Alignment4, PrimitiveType::UInt32);
 native_type!(u64, Bytes8Alignment8, PrimitiveType::UInt64);
+native_type!(u128, Bytes16Alignment16, PrimitiveType::UInt128);
 native_type!(i8, Bytes1Alignment1, PrimitiveType::Int8);
 native_type!(i16, Bytes2Alignment2, PrimitiveType::Int16);
 native_type!(i32, Bytes4Alignment4, PrimitiveType::Int32);
 native_type!(i64, Bytes8Alignment8, PrimitiveType::Int64);
+native_type!(i128, Bytes16Alignment16, PrimitiveType::Int128);
 native_type!(f32, Bytes4Alignment4, PrimitiveType::Float32);
 native_type!(f64, Bytes8Alignment8, PrimitiveType::Float64);
-native_type!(i128, Bytes16Alignment16, PrimitiveType::Int128);
-native_type!(u128, Bytes16Alignment16, PrimitiveType::UInt128);
 
 /// The in-memory representation of the DayMillisecond variant of arrow's "Interval" logical type.
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable, Pod)]
@@ -433,271 +434,6 @@ impl Neg for months_days_ns {
     }
 }
 
-/// Type representation of the Float16 physical type
-#[derive(Copy, Clone, Default, Zeroable, Pod)]
-#[allow(non_camel_case_types)]
-#[repr(C)]
-pub struct f16(pub u16);
-
-impl PartialEq for f16 {
-    #[inline]
-    fn eq(&self, other: &f16) -> bool {
-        if self.is_nan() || other.is_nan() {
-            false
-        } else {
-            (self.0 == other.0) || ((self.0 | other.0) & 0x7FFFu16 == 0)
-        }
-    }
-}
-
-/// Converts an f32 into a canonical form, where -0 == 0 and all NaNs map to
-/// the same value.
-#[inline]
-pub fn canonical_f16(x: f16) -> f16 {
-    // zero out the sign bit if the f16 is zero.
-    let convert_zero = f16(x.0 & (0x7FFF | (u16::from(x.0 & 0x7FFF == 0) << 15)));
-    if convert_zero.is_nan() {
-        f16::from_bits(0x7c00) // Canonical quiet NaN.
-    } else {
-        convert_zero
-    }
-}
-
-impl TotalHash for f16 {
-    #[inline(always)]
-    fn tot_hash<H>(&self, state: &mut H)
-    where
-        H: Hasher,
-    {
-        canonical_f16(*self).to_bits().hash(state)
-    }
-}
-
-impl ToTotalOrd for f16 {
-    type TotalOrdItem = TotalOrdWrap<f16>;
-    type SourceItem = f16;
-
-    #[inline]
-    fn to_total_ord(&self) -> Self::TotalOrdItem {
-        TotalOrdWrap(*self)
-    }
-
-    #[inline]
-    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
-        ord_item.0
-    }
-}
-
-impl IsNull for f16 {
-    const HAS_NULLS: bool = false;
-    type Inner = f16;
-
-    #[inline(always)]
-    fn is_null(&self) -> bool {
-        false
-    }
-    fn unwrap_inner(self) -> Self::Inner {
-        self
-    }
-}
-
-// see https://github.com/starkat99/half-rs/blob/main/src/binary16.rs
-impl f16 {
-    /// The difference between 1.0 and the next largest representable number.
-    pub const EPSILON: f16 = f16(0x1400u16);
-
-    #[inline]
-    #[must_use]
-    pub(crate) const fn is_nan(self) -> bool {
-        self.0 & 0x7FFFu16 > 0x7C00u16
-    }
-
-    /// Casts from u16.
-    #[inline]
-    pub const fn from_bits(bits: u16) -> f16 {
-        f16(bits)
-    }
-
-    /// Casts to u16.
-    #[inline]
-    pub const fn to_bits(self) -> u16 {
-        self.0
-    }
-
-    /// Casts this `f16` to `f32`
-    pub fn to_f32(self) -> f32 {
-        let i = self.0;
-        // Check for signed zero
-        if i & 0x7FFFu16 == 0 {
-            return f32::from_bits((i as u32) << 16);
-        }
-
-        let half_sign = (i & 0x8000u16) as u32;
-        let half_exp = (i & 0x7C00u16) as u32;
-        let half_man = (i & 0x03FFu16) as u32;
-
-        // Check for an infinity or NaN when all exponent bits set
-        if half_exp == 0x7C00u32 {
-            // Check for signed infinity if mantissa is zero
-            if half_man == 0 {
-                let number = (half_sign << 16) | 0x7F80_0000u32;
-                return f32::from_bits(number);
-            } else {
-                // NaN, keep current mantissa but also set most significiant mantissa bit
-                let number = (half_sign << 16) | 0x7FC0_0000u32 | (half_man << 13);
-                return f32::from_bits(number);
-            }
-        }
-
-        // Calculate single-precision components with adjusted exponent
-        let sign = half_sign << 16;
-        // Unbias exponent
-        let unbiased_exp = ((half_exp as i32) >> 10) - 15;
-
-        // Check for subnormals, which will be normalized by adjusting exponent
-        if half_exp == 0 {
-            // Calculate how much to adjust the exponent by
-            let e = (half_man as u16).leading_zeros() - 6;
-
-            // Rebias and adjust exponent
-            let exp = (127 - 15 - e) << 23;
-            let man = (half_man << (14 + e)) & 0x7F_FF_FFu32;
-            return f32::from_bits(sign | exp | man);
-        }
-
-        // Rebias exponent for a normalized normal
-        let exp = ((unbiased_exp + 127) as u32) << 23;
-        let man = (half_man & 0x03FFu32) << 13;
-        f32::from_bits(sign | exp | man)
-    }
-
-    /// Casts an `f32` into `f16`
-    pub fn from_f32(value: f32) -> Self {
-        let x: u32 = value.to_bits();
-
-        // Extract IEEE754 components
-        let sign = x & 0x8000_0000u32;
-        let exp = x & 0x7F80_0000u32;
-        let man = x & 0x007F_FFFFu32;
-
-        // Check for all exponent bits being set, which is Infinity or NaN
-        if exp == 0x7F80_0000u32 {
-            // Set mantissa MSB for NaN (and also keep shifted mantissa bits)
-            let nan_bit = if man == 0 { 0 } else { 0x0200u32 };
-            return f16(((sign >> 16) | 0x7C00u32 | nan_bit | (man >> 13)) as u16);
-        }
-
-        // The number is normalized, start assembling half precision version
-        let half_sign = sign >> 16;
-        // Unbias the exponent, then bias for half precision
-        let unbiased_exp = ((exp >> 23) as i32) - 127;
-        let half_exp = unbiased_exp + 15;
-
-        // Check for exponent overflow, return +infinity
-        if half_exp >= 0x1F {
-            return f16((half_sign | 0x7C00u32) as u16);
-        }
-
-        // Check for underflow
-        if half_exp <= 0 {
-            // Check mantissa for what we can do
-            if 14 - half_exp > 24 {
-                // No rounding possibility, so this is a full underflow, return signed zero
-                return f16(half_sign as u16);
-            }
-            // Don't forget about hidden leading mantissa bit when assembling mantissa
-            let man = man | 0x0080_0000u32;
-            let mut half_man = man >> (14 - half_exp);
-            // Check for rounding (see comment above functions)
-            let round_bit = 1 << (13 - half_exp);
-            if (man & round_bit) != 0 && (man & (3 * round_bit - 1)) != 0 {
-                half_man += 1;
-            }
-            // No exponent for subnormals
-            return f16((half_sign | half_man) as u16);
-        }
-
-        // Rebias the exponent
-        let half_exp = (half_exp as u32) << 10;
-        let half_man = man >> 13;
-        // Check for rounding (see comment above functions)
-        let round_bit = 0x0000_1000u32;
-        if (man & round_bit) != 0 && (man & (3 * round_bit - 1)) != 0 {
-            // Round it
-            f16(((half_sign | half_exp | half_man) + 1) as u16)
-        } else {
-            f16((half_sign | half_exp | half_man) as u16)
-        }
-    }
-}
-
-impl std::fmt::Debug for f16 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.to_f32())
-    }
-}
-
-impl std::fmt::Display for f16 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_f32())
-    }
-}
-
-impl TotalEq for f16 {
-    #[inline]
-    fn tot_eq(&self, other: &Self) -> bool {
-        if self.is_nan() {
-            other.is_nan()
-        } else {
-            self == other
-        }
-    }
-}
-
-impl TotalOrd for f16 {
-    #[inline]
-    fn tot_cmp(&self, _other: &Self) -> std::cmp::Ordering {
-        unimplemented!()
-    }
-}
-
-impl MinMax for f16 {
-    fn nan_min_lt(&self, _other: &Self) -> bool {
-        unimplemented!()
-    }
-
-    fn nan_max_lt(&self, _other: &Self) -> bool {
-        unimplemented!()
-    }
-}
-
-impl NativeType for f16 {
-    const PRIMITIVE: PrimitiveType = PrimitiveType::Float16;
-
-    type Bytes = [u8; 2];
-    type AlignedBytes = Bytes2Alignment2;
-
-    #[inline]
-    fn to_le_bytes(&self) -> Self::Bytes {
-        self.0.to_le_bytes()
-    }
-
-    #[inline]
-    fn to_be_bytes(&self) -> Self::Bytes {
-        self.0.to_be_bytes()
-    }
-
-    #[inline]
-    fn from_be_bytes(bytes: Self::Bytes) -> Self {
-        Self(u16::from_be_bytes(bytes))
-    }
-
-    #[inline]
-    fn from_le_bytes(bytes: Self::Bytes) -> Self {
-        Self(u16::from_le_bytes(bytes))
-    }
-}
-
 /// Physical representation of a decimal
 #[derive(Clone, Copy, Default, Eq, Hash, PartialEq, PartialOrd, Ord)]
 #[allow(non_camel_case_types)]
@@ -708,6 +444,14 @@ impl i256 {
     /// Returns a new [`i256`] from two `i128`.
     pub fn from_words(hi: i128, lo: i128) -> Self {
         Self(ethnum::I256::from_words(hi, lo))
+    }
+}
+
+impl TryFrom<i256> for i128 {
+    type Error = core::num::TryFromIntError;
+
+    fn try_from(value: i256) -> Result<Self, Self::Error> {
+        value.0.try_into()
     }
 }
 
@@ -834,27 +578,28 @@ impl NativeType for i256 {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    #[test]
-    fn test_f16_to_f32() {
-        let f = f16::from_f32(7.0);
-        assert_eq!(f.to_f32(), 7.0f32);
+impl NativeType for pf16 {
+    const PRIMITIVE: PrimitiveType = PrimitiveType::Float16;
+    type Bytes = [u8; 2];
+    type AlignedBytes = Bytes2Alignment2;
 
-        // 7.1 is NOT exactly representable in 16-bit, it's rounded
-        let f = f16::from_f32(7.1);
-        let diff = (f.to_f32() - 7.1f32).abs();
-        // diff must be <= 4 * EPSILON, as 7 has two more significant bits than 1
-        assert!(diff <= 4.0 * f16::EPSILON.to_f32());
+    #[inline]
+    fn to_le_bytes(&self) -> Self::Bytes {
+        self.0.to_le_bytes()
+    }
 
-        assert_eq!(f16(0x0000_0001).to_f32(), 2.0f32.powi(-24));
-        assert_eq!(f16(0x0000_0005).to_f32(), 5.0 * 2.0f32.powi(-24));
+    #[inline]
+    fn to_be_bytes(&self) -> Self::Bytes {
+        self.0.to_be_bytes()
+    }
 
-        assert_eq!(f16(0x0000_0001), f16::from_f32(2.0f32.powi(-24)));
-        assert_eq!(f16(0x0000_0005), f16::from_f32(5.0 * 2.0f32.powi(-24)));
+    #[inline]
+    fn from_le_bytes(bytes: Self::Bytes) -> Self {
+        pf16(half::f16::from_le_bytes(bytes))
+    }
 
-        assert_eq!(format!("{}", f16::from_f32(7.0)), "7".to_string());
-        assert_eq!(format!("{:?}", f16::from_f32(7.0)), "7.0".to_string());
+    #[inline]
+    fn from_be_bytes(bytes: Self::Bytes) -> Self {
+        pf16(half::f16::from_be_bytes(bytes))
     }
 }

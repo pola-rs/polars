@@ -20,7 +20,13 @@ pub enum BinaryFunction {
     Base64Encode,
     Size,
     #[cfg(feature = "binary_encoding")]
+    /// The parameters are destination type, and whether to use little endian
+    /// encoding.
     Reinterpret(DataTypeExpr, bool),
+    Slice,
+    Head,
+    Tail,
+    Get(bool),
 }
 
 impl Display for BinaryFunction {
@@ -41,6 +47,10 @@ impl Display for BinaryFunction {
             Size => "size_bytes",
             #[cfg(feature = "binary_encoding")]
             Reinterpret(_, _) => "reinterpret",
+            Slice => "slice",
+            Head => "head",
+            Tail => "tail",
+            Get(_) => "get",
         };
         write!(f, "bin.{s}")
     }

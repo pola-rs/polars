@@ -239,18 +239,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    #[pyo3(signature = (dtype=None, infer_schema_len=None))]
-    fn str_json_decode(
-        &self,
-        dtype: Option<PyDataTypeExpr>,
-        infer_schema_len: Option<usize>,
-    ) -> Self {
-        let dtype = dtype.map(|wrap| wrap.inner);
-        self.inner
-            .clone()
-            .str()
-            .json_decode(dtype, infer_schema_len)
-            .into()
+    fn str_json_decode(&self, dtype: PyDataTypeExpr) -> Self {
+        self.inner.clone().str().json_decode(dtype.inner).into()
     }
 
     #[cfg(feature = "extract_jsonpath")]
@@ -313,8 +303,36 @@ impl PyExpr {
         self.inner.clone().str().splitn(by.inner, n).into()
     }
 
-    fn str_to_decimal(&self, infer_len: usize) -> Self {
-        self.inner.clone().str().to_decimal(infer_len).into()
+    #[cfg(feature = "regex")]
+    fn str_split_regex(&self, by: Self, strict: bool) -> Self {
+        self.str_split_regex_with_strict(by, strict)
+    }
+
+    #[cfg(feature = "regex")]
+    fn str_split_regex_inclusive(&self, by: Self, strict: bool) -> Self {
+        self.str_split_regex_inclusive_with_strict(by, strict)
+    }
+
+    #[cfg(feature = "regex")]
+    fn str_split_regex_with_strict(&self, by: Self, strict: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .split_regex(by.inner, strict)
+            .into()
+    }
+
+    #[cfg(feature = "regex")]
+    fn str_split_regex_inclusive_with_strict(&self, by: Self, strict: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .split_regex_inclusive(by.inner, strict)
+            .into()
+    }
+
+    fn str_to_decimal(&self, scale: usize) -> Self {
+        self.inner.clone().str().to_decimal(scale).into()
     }
 
     #[cfg(feature = "find_many")]
@@ -331,11 +349,17 @@ impl PyExpr {
         patterns: PyExpr,
         replace_with: PyExpr,
         ascii_case_insensitive: bool,
+        leftmost: bool,
     ) -> Self {
         self.inner
             .clone()
             .str()
-            .replace_many(patterns.inner, replace_with.inner, ascii_case_insensitive)
+            .replace_many(
+                patterns.inner,
+                replace_with.inner,
+                ascii_case_insensitive,
+                leftmost,
+            )
             .into()
     }
 
@@ -345,11 +369,17 @@ impl PyExpr {
         patterns: PyExpr,
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     ) -> Self {
         self.inner
             .clone()
             .str()
-            .extract_many(patterns.inner, ascii_case_insensitive, overlapping)
+            .extract_many(
+                patterns.inner,
+                ascii_case_insensitive,
+                overlapping,
+                leftmost,
+            )
             .into()
     }
 
@@ -359,16 +389,30 @@ impl PyExpr {
         patterns: PyExpr,
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     ) -> Self {
         self.inner
             .clone()
             .str()
-            .find_many(patterns.inner, ascii_case_insensitive, overlapping)
+            .find_many(
+                patterns.inner,
+                ascii_case_insensitive,
+                overlapping,
+                leftmost,
+            )
             .into()
     }
 
     #[cfg(feature = "regex")]
     fn str_escape_regex(&self) -> Self {
         self.inner.clone().str().escape_regex().into()
+    }
+
+    #[staticmethod]
+    fn str_format(f_string: String, exprs: Vec<PyExpr>) -> PyResult<Self> {
+        let exprs = exprs.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+        Ok(format_str(&f_string, exprs)
+            .map_err(PyPolarsErr::from)?
+            .into())
     }
 }

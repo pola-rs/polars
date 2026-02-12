@@ -2,6 +2,7 @@ use polars_core::error::{PolarsResult, polars_err};
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
 use polars_ffi::version_0::SeriesExport;
+use polars_utils::python_convert_registry::get_python_convert_registry;
 use pyo3::intern;
 use pyo3::prelude::*;
 
@@ -9,6 +10,13 @@ pub fn python_df_to_rust(py: Python, df: Bound<PyAny>) -> PolarsResult<DataFrame
     let err = |_| polars_err!(ComputeError: "expected a polars.DataFrame; got {}", df);
     let pydf = df.getattr(intern!(py, "_df")).map_err(err)?;
 
+    // Try to convert without going through FFI first.
+    let converted = get_python_convert_registry().from_py.df;
+    if let Ok(any_df) = converted(pydf.clone().unbind()) {
+        return Ok(*any_df.downcast::<DataFrame>().unwrap());
+    }
+
+    // Might be foreign Polars, try with FFI.
     let width = pydf.call_method0(intern!(py, "width")).unwrap();
     let width = width.extract::<usize>().unwrap();
 

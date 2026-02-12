@@ -82,8 +82,8 @@ pub fn resolve_join(
         options.args.validation.is_valid_join(&options.args.how)?;
 
         #[cfg(feature = "asof_join")]
-        if let JoinType::AsOf(opt) = &options.args.how {
-            match (&opt.left_by, &opt.right_by) {
+        if let JoinType::AsOf(options) = &options.args.how {
+            match (&options.left_by, &options.right_by) {
                 (None, None) => {},
                 (Some(l), Some(r)) => {
                     polars_ensure!(l.len() == r.len(), InvalidOperation: "expected equal number of columns in 'by_left' and 'by_right' in 'asof_join'");
@@ -112,9 +112,11 @@ pub fn resolve_join(
         .map(|e| {
             to_expr_ir_materialized_lit(
                 e,
-                ctxt.expr_arena,
-                &schema_left,
-                ctxt.opt_flags.contains(OptFlags::EAGER),
+                &mut ExprToIRContext::new_with_opt_eager(
+                    ctxt.expr_arena,
+                    &schema_left,
+                    ctxt.opt_flags,
+                ),
             )
         })
         .collect::<PolarsResult<Vec<_>>>()?;
@@ -123,9 +125,11 @@ pub fn resolve_join(
         .map(|e| {
             to_expr_ir_materialized_lit(
                 e,
-                ctxt.expr_arena,
-                &schema_right,
-                ctxt.opt_flags.contains(OptFlags::EAGER),
+                &mut ExprToIRContext::new_with_opt_eager(
+                    ctxt.expr_arena,
+                    &schema_right,
+                    ctxt.opt_flags,
+                ),
             )
         })
         .collect::<PolarsResult<Vec<_>>>()?;
@@ -150,12 +154,12 @@ pub fn resolve_join(
     ctxt.conversion_optimizer
         .fill_scratch(&left_on, ctxt.expr_arena);
     ctxt.conversion_optimizer
-        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_left)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_left, true)
         .map_err(|e| e.context("'join' failed".into()))?;
     ctxt.conversion_optimizer
         .fill_scratch(&right_on, ctxt.expr_arena);
     ctxt.conversion_optimizer
-        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_right)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_right, true)
         .map_err(|e| e.context("'join' failed".into()))?;
 
     // Re-evaluate because of mutable borrows earlier.
@@ -204,7 +208,7 @@ pub fn resolve_join(
                 let tmp_name = get_tmp_name(count);
                 count += 1;
                 e.set_alias(tmp_name.clone());
-                let dtype = e.dtype(&schema_left_new, Context::Default, ctxt.expr_arena)?;
+                let dtype = e.dtype(&schema_left_new, ctxt.expr_arena)?;
                 schema_left_new.with_column(tmp_name.clone(), dtype.clone());
 
                 let col = ctxt.expr_arena.add(AExpr::Column(tmp_name));
@@ -224,7 +228,7 @@ pub fn resolve_join(
                 let tmp_name = get_tmp_name(count);
                 count += 1;
                 e.set_alias(tmp_name.clone());
-                let dtype = e.dtype(&schema_right_new, Context::Default, ctxt.expr_arena)?;
+                let dtype = e.dtype(&schema_right_new, ctxt.expr_arena)?;
                 schema_right_new.with_column(tmp_name.clone(), dtype.clone());
 
                 let col = ctxt.expr_arena.add(AExpr::Column(tmp_name));
@@ -252,7 +256,7 @@ pub fn resolve_join(
         ($expr:expr, $schema:expr) => {
             ctxt.expr_arena
                 .get($expr.node())
-                .get_type($schema, Context::Default, ctxt.expr_arena)
+                .to_dtype(&ToFieldContext::new(ctxt.expr_arena, $schema))
         };
     }
 
@@ -308,9 +312,9 @@ pub fn resolve_join(
         } else {
             polars_ensure!(
                 ltype == rtype,
-                SchemaMismatch: "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
-                lnode.output_name(), ltype, rnode.output_name(), rtype
-            )
+                SchemaMismatch: "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right (and no other type was available to cast to)",
+                lnode.output_name(), ltype.pretty_format(), rnode.output_name(), rtype.pretty_format()
+            );
         }
     }
 
@@ -321,6 +325,50 @@ pub fn resolve_join(
         all_elementwise(&left_on, ctxt.expr_arena) && all_elementwise(&right_on, ctxt.expr_arena),
         InvalidOperation: "all join key expressions must be elementwise."
     );
+
+    #[cfg(feature = "asof_join")]
+    if let JoinType::AsOf(options) = &mut options.args.how {
+        use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
+
+        // prepare the tolerance
+        // we must ensure that we use the right units
+        if let Some(tol) = &options.tolerance_str {
+            let duration = polars_time::Duration::try_parse(tol)?;
+            polars_ensure!(
+                duration.months() == 0,
+                ComputeError: "cannot use month offset in timedelta of an asof join; \
+                consider using 4 weeks"
+            );
+            use DataType::*;
+            match ctxt
+                .expr_arena
+                .get(left_on[0].node())
+                .to_dtype(&ToFieldContext::new(ctxt.expr_arena, &schema_left))?
+            {
+                Datetime(tu, _) | Duration(tu) => {
+                    let tolerance = match tu {
+                        TimeUnit::Nanoseconds => duration.duration_ns(),
+                        TimeUnit::Microseconds => duration.duration_us(),
+                        TimeUnit::Milliseconds => duration.duration_ms(),
+                    };
+                    options.tolerance = Some(Scalar::from(tolerance))
+                },
+                Date => {
+                    let days = (duration.duration_ms() / MILLISECONDS_IN_DAY) as i32;
+                    options.tolerance = Some(Scalar::from(days))
+                },
+                Time => {
+                    let tolerance = duration.duration_ns();
+                    options.tolerance = Some(Scalar::from(tolerance))
+                },
+                _ => {
+                    panic!(
+                        "can only use timedelta string language with Date/Datetime/Duration/Time dtypes"
+                    )
+                },
+            }
+        }
+    }
 
     // These are Arc<Schema>, into_owned is free.
     let schema_left = schema_left.into_owned();
@@ -417,7 +465,6 @@ fn resolve_join_where(
     if ctxt.opt_flags.eager() {
         ctxt.opt_flags.set(OptFlags::PREDICATE_PUSHDOWN, true);
     }
-    ctxt.opt_flags.set(OptFlags::COLLAPSE_JOINS, true);
     check_join_keys(&predicates)?;
     let input_left = to_alp_impl(Arc::unwrap_or_clone(input_left), ctxt)
         .map_err(|e| e.context(failed_here!(join left)))?;
@@ -454,15 +501,13 @@ fn resolve_join_where(
         let arena = &mut ctxt.expr_arena;
         let predicate = to_expr_ir_materialized_lit(
             e,
-            arena,
-            &schema_merged,
-            ctxt.opt_flags.contains(OptFlags::EAGER),
+            &mut ExprToIRContext::new_with_opt_eager(arena, &schema_merged, ctxt.opt_flags),
         )?;
         let node = predicate.node();
 
         // Ensure the predicate dtype output of the root node is Boolean
         let ae = arena.get(node);
-        let dt_out = ae.to_dtype(&schema_merged, Context::Default, arena)?;
+        let dt_out = ae.to_dtype(&ToFieldContext::new(arena, &schema_merged))?;
         polars_ensure!(
             dt_out == DataType::Boolean,
             ComputeError: "'join_where' predicates must resolve to boolean"
@@ -488,7 +533,7 @@ fn resolve_join_where(
     }
 
     ctxt.conversion_optimizer
-        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, last_node)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, last_node, false)
         .map_err(|e| e.context("'join_where' failed".into()))?;
 
     Ok((last_node, join_node))
@@ -574,9 +619,9 @@ fn build_upcast_node_list(
                         let left = expr_arena.get(*left_node);
                         let right = expr_arena.get(*right_node);
                         let dtype_left =
-                            left.to_dtype(schema_merged, Context::Default, expr_arena)?;
+                            left.to_dtype(&ToFieldContext::new(expr_arena, schema_merged))?;
                         let dtype_right =
-                            right.to_dtype(schema_merged, Context::Default, expr_arena)?;
+                            right.to_dtype(&ToFieldContext::new(expr_arena, schema_merged))?;
                         if dtype_left != dtype_right {
                             // Ensure that we have a lossless cast between the two types.
                             let dt = if dtype_left.is_primitive_numeric()

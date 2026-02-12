@@ -131,7 +131,7 @@ where
 }
 
 #[derive(Default)]
-pub struct BoolXorGroupedReduction {
+struct BoolXorGroupedReduction {
     values: MutableBitmap,
     mask: MutableBitmap,
     evicted_values: BitmapBuilder,
@@ -155,10 +155,11 @@ impl GroupedReduction for BoolXorGroupedReduction {
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &DataType::Boolean);
         let values = values.as_materialized_series_maintain_scalar();
         let ca: &BooleanChunked = values.as_ref().as_ref();
@@ -176,11 +177,12 @@ impl GroupedReduction for BoolXorGroupedReduction {
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &DataType::Boolean);
         assert!(subset.len() == group_idxs.len());
         let values = values.as_materialized_series(); // @scalar-opt
@@ -236,16 +238,8 @@ impl GroupedReduction for BoolXorGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
-        let arr = BooleanArray::from(v.freeze())
-            .with_validity(Some(m.freeze()))
-            .boxed();
-        Ok(unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                PlSmallStr::EMPTY,
-                vec![arr],
-                &DataType::Boolean,
-            )
-        })
+        let arr = BooleanArray::from(v.freeze()).with_validity(Some(m.freeze()));
+        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
     }
 
     fn as_any(&self) -> &dyn Any {

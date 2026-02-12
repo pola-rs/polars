@@ -2,6 +2,8 @@
 use std::rc::Rc;
 
 use polars_core::series::amortized_iter::AmortSeries;
+use rayon::iter::IntoParallelIterator;
+use rayon::prelude::*;
 
 use super::*;
 
@@ -11,7 +13,7 @@ impl AggregationContext<'_> {
         keep_names: bool,
     ) -> Box<dyn Iterator<Item = Option<AmortSeries>> + '_> {
         match self.agg_state() {
-            AggState::Literal(_) => {
+            AggState::LiteralScalar(_) => {
                 self.groups();
                 let c = self.get_values().rechunk();
                 let name = if keep_names {
@@ -69,6 +71,66 @@ impl AggregationContext<'_> {
                 };
                 Box::new(list.amortized_iter_with_name(name))
             },
+        }
+    }
+}
+
+impl AggregationContext<'_> {
+    /// Iterate over groups lazily, i.e., without greedy aggregation into an AggList.
+    pub(super) fn iter_groups_lazy(&mut self) -> impl Iterator<Item = Option<Series>> + '_ {
+        match self.agg_state() {
+            AggState::NotAggregated(_) => {
+                let groups = self.groups();
+                let len = groups.len();
+                let groups = Arc::new(groups.clone());
+
+                let c = self.get_values().rechunk();
+
+                let col = Arc::new(c);
+
+                (0..len).map(move |idx| {
+                    let g = groups.get(idx);
+                    match g {
+                        GroupsIndicator::Idx(_) => unreachable!(),
+                        GroupsIndicator::Slice(s) => Some(
+                            col.slice(s[0] as i64, s[1] as usize)
+                                .into_materialized_series()
+                                .clone(),
+                        ),
+                    }
+                })
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    /// Iterate parallel over groups lazily, i.e., without greedy aggregation into an AggList.
+    pub(super) fn par_iter_groups_lazy(
+        &mut self,
+    ) -> impl IndexedParallelIterator<Item = Option<Series>> + '_ {
+        match self.agg_state() {
+            AggState::NotAggregated(_) => {
+                let groups = self.groups();
+                let len = groups.len();
+                let groups = Arc::new(groups.clone());
+
+                let c = self.get_values().rechunk();
+
+                let col = Arc::new(c);
+
+                (0..len).into_par_iter().map(move |idx| {
+                    let g = groups.get(idx);
+                    match g {
+                        GroupsIndicator::Idx(_) => unreachable!(),
+                        GroupsIndicator::Slice(s) => Some(
+                            col.slice(s[0] as i64, s[1] as usize)
+                                .into_materialized_series()
+                                .clone(),
+                        ),
+                    }
+                })
+            },
+            _ => unreachable!(),
         }
     }
 }

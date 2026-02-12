@@ -69,12 +69,12 @@ fn to_lowercase_helper(s: &str, buf: &mut Vec<u8>) {
         // See https://www.unicode.org/versions/Unicode7.0.0/ch03.pdf#G33992
         // for the definition of `Final_Sigma`.
         debug_assert!('Σ'.len_utf8() == 2);
-        let is_word_final = case_ignoreable_then_cased(from[..i].chars().rev())
-            && !case_ignoreable_then_cased(from[i + 2..].chars());
+        let is_word_final = case_ignorable_then_cased(from[..i].chars().rev())
+            && !case_ignorable_then_cased(from[i + 2..].chars());
         to.push_str(if is_word_final { "ς" } else { "σ" });
     }
 
-    fn case_ignoreable_then_cased<I: Iterator<Item = char>>(iter: I) -> bool {
+    fn case_ignorable_then_cased<I: Iterator<Item = char>>(iter: I) -> bool {
         #[cfg(feature = "nightly")]
         use core::unicode::{Case_Ignorable, Cased};
 
@@ -154,7 +154,7 @@ pub(super) fn to_titlecase<'a>(ca: &'a StringChunked) -> StringChunked {
             } else {
                 s.push(c);
             }
-            next_is_upper = !c.is_alphanumeric();
+            next_is_upper = !c.is_alphabetic();
         }
 
         // Put buf back for next iteration.

@@ -364,6 +364,9 @@ def test_cum_sum_horizontal() -> None:
     expected = pl.DataFrame({"cum_sum": [{"a": 1, "c": 6}, {"a": 2, "c": 8}]})
     assert_frame_equal(result, expected)
 
+    q = df.lazy().select(pl.cum_sum_horizontal("a", "c"))
+    assert q.collect_schema() == q.collect().schema
+
 
 def test_sum_dtype_12028() -> None:
     result = pl.select(
@@ -504,7 +507,7 @@ def test_schema_mean_horizontal_single_column(
 
 def test_schema_boolean_sum_horizontal() -> None:
     lf = pl.LazyFrame({"a": [True, False]}).select(pl.sum_horizontal("a"))
-    assert lf.collect_schema() == OrderedDict([("a", pl.UInt32)])
+    assert lf.collect_schema() == OrderedDict([("a", pl.get_index_type())])
 
 
 def test_fold_all_schema() -> None:

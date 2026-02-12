@@ -1,7 +1,13 @@
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(
+    feature = "allow_unused",
+    allow(unused, dead_code, irrefutable_let_patterns)
+)] // Maybe be caused by some feature
+// combinations
 #[cfg(feature = "timezones")]
 mod base_utc_offset;
 pub mod chunkedarray;
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 mod date_range;
 #[cfg(feature = "timezones")]
 mod dst_offset;
@@ -24,6 +30,7 @@ mod windows;
 
 #[cfg(feature = "timezones")]
 pub use base_utc_offset::*;
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 pub use date_range::*;
 #[cfg(feature = "timezones")]
 pub use dst_offset::*;

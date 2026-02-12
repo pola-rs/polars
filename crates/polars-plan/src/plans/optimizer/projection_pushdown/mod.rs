@@ -5,15 +5,12 @@ mod hconcat;
 mod hstack;
 mod joins;
 mod projection;
-#[cfg(feature = "semi_anti_join")]
-mod semi_anti_join;
 
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 use polars_io::RowIndex;
+use polars_utils::idx_vec::UnitVec;
 use recursive::recursive;
-#[cfg(feature = "semi_anti_join")]
-use semi_anti_join::process_semi_anti_join;
 
 use crate::prelude::optimizer::projection_pushdown::generic::process_generic;
 use crate::prelude::optimizer::projection_pushdown::group_by::process_group_by;
@@ -233,19 +230,18 @@ impl ProjectionPushDown {
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
         let inputs = lp.get_inputs();
-        let exprs = lp.get_exprs();
 
         let new_inputs = inputs
-            .iter()
-            .map(|&node| {
+            .into_iter()
+            .map(|node| {
                 let alp = lp_arena.take(node);
                 let ctx = ProjectionContext::new(Default::default(), Default::default(), ctx.inner);
                 let alp = self.push_down(alp, ctx, lp_arena, expr_arena)?;
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
-            .collect::<PolarsResult<Vec<_>>>()?;
-        let lp = lp.with_exprs_and_input(exprs, new_inputs);
+            .collect::<PolarsResult<UnitVec<_>>>()?;
+        let lp = lp.with_inputs(new_inputs);
 
         let builder = IRBuilder::from_lp(lp, expr_arena, lp_arena);
         Ok(self.finish_node_simple_projection(&ctx.acc_projections, builder))
@@ -277,6 +273,7 @@ impl ProjectionPushDown {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(unused)]
     fn join_push_down(
         &mut self,
         schema_left: &Schema,
@@ -444,9 +441,9 @@ impl ProjectionPushDown {
                 hive_parts,
                 scan_type,
                 predicate,
+                predicate_file_skip_applied,
                 mut unified_scan_args,
                 mut output_schema,
-                id: _,
             } => {
                 let do_optimization = match &*scan_type {
                     FileScanIR::Anonymous { function, .. } => function.allows_projection_pushdown(),
@@ -458,6 +455,8 @@ impl ProjectionPushDown {
                     FileScanIR::Csv { .. } => true,
                     #[cfg(feature = "parquet")]
                     FileScanIR::Parquet { .. } => true,
+                    #[cfg(feature = "scan_lines")]
+                    FileScanIR::Lines { .. } => true,
                     // MultiScan will handle it if the PythonDataset cannot do projections.
                     #[cfg(feature = "python")]
                     FileScanIR::PythonDataset { .. } => true,
@@ -573,8 +572,8 @@ impl ProjectionPushDown {
                     output_schema,
                     scan_type,
                     predicate,
+                    predicate_file_skip_applied,
                     unified_scan_args,
-                    id: Default::default(),
                 };
 
                 Ok(lp)
@@ -658,39 +657,7 @@ impl ProjectionPushDown {
                 lp_arena,
                 expr_arena,
             ),
-            Join {
-                input_left,
-                input_right,
-                left_on,
-                right_on,
-                options,
-                schema,
-            } => match options.args.how {
-                #[cfg(feature = "semi_anti_join")]
-                JoinType::Semi | JoinType::Anti => process_semi_anti_join(
-                    self,
-                    input_left,
-                    input_right,
-                    left_on,
-                    right_on,
-                    options,
-                    ctx,
-                    lp_arena,
-                    expr_arena,
-                ),
-                _ => process_join(
-                    self,
-                    input_left,
-                    input_right,
-                    left_on,
-                    right_on,
-                    options,
-                    ctx,
-                    lp_arena,
-                    expr_arena,
-                    &schema,
-                ),
-            },
+            join_ir @ Join { .. } => process_join(join_ir, ctx, self, lp_arena, expr_arena),
             HStack {
                 input,
                 exprs,
@@ -735,11 +702,12 @@ impl ProjectionPushDown {
                 schema,
                 options,
             } => process_hconcat(self, inputs, schema, options, ctx, lp_arena, expr_arena),
-            lp @ Union { .. } => process_generic(self, lp, ctx, lp_arena, expr_arena),
+            lp @ Union { .. } => process_generic(self, lp, ctx, lp_arena, expr_arena, false),
             // These nodes only have inputs and exprs, so we can use same logic.
-            lp @ Slice { .. } | lp @ Sink { .. } | lp @ SinkMultiple { .. } => {
-                process_generic(self, lp, ctx, lp_arena, expr_arena)
+            lp @ Slice { .. } | lp @ Sink { .. } => {
+                process_generic(self, lp, ctx, lp_arena, expr_arena, false)
             },
+            lp @ SinkMultiple { .. } => process_generic(self, lp, ctx, lp_arena, expr_arena, true),
             Cache { .. } => {
                 // projections above this cache will be accumulated and pushed down
                 // later

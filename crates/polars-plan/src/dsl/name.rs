@@ -25,23 +25,10 @@ impl ExprNameNameSpace {
     }
 
     /// Define an alias by mapping a function over the original root column name.
-    pub fn map<F>(self, function: F) -> Expr
-    where
-        F: Fn(&PlSmallStr) -> PolarsResult<PlSmallStr> + 'static + Send + Sync,
-    {
-        let function = SpecialEq::new(Arc::new(function) as Arc<RenameAliasRustFn>);
+    pub fn map(self, function: PlanCallback<PlSmallStr, PlSmallStr>) -> Expr {
         Expr::RenameAlias {
             expr: Arc::new(self.0),
-            function: RenameAliasFn::Rust(function),
-        }
-    }
-
-    /// Define an alias by mapping a python lambda over the original root column name.
-    #[cfg(feature = "python")]
-    pub fn map_udf(self, function: polars_utils::python_function::PythonObject) -> Expr {
-        Expr::RenameAlias {
-            expr: Arc::new(self.0),
-            function: RenameAliasFn::Python(SpecialEq::new(Arc::new(function))),
+            function: RenameAliasFn::Map(function),
         }
     }
 
@@ -58,6 +45,19 @@ impl ExprNameNameSpace {
         Expr::RenameAlias {
             expr: Arc::new(self.0),
             function: RenameAliasFn::Suffix(suffix.into()),
+        }
+    }
+
+    /// Replace matching string pattern in the root column name with a new value.
+    #[cfg(feature = "regex")]
+    pub fn replace(self, pattern: &str, value: &str, literal: bool) -> Expr {
+        Expr::RenameAlias {
+            expr: Arc::new(self.0),
+            function: RenameAliasFn::Replace {
+                pattern: pattern.into(),
+                value: value.into(),
+                literal,
+            },
         }
     }
 
@@ -80,42 +80,10 @@ impl ExprNameNameSpace {
     }
 
     #[cfg(feature = "dtype-struct")]
-    pub fn map_fields(self, function: FieldsNameMapper) -> Expr {
-        let f = function.clone();
-        self.0.map(
-            move |s| {
-                let s = s.struct_()?;
-                let fields = s
-                    .fields_as_series()
-                    .iter()
-                    .map(|fd| {
-                        let mut fd = fd.clone();
-                        fd.rename(function(fd.name()));
-                        fd
-                    })
-                    .collect::<Vec<_>>();
-                let mut out = StructChunked::from_series(s.name().clone(), s.len(), fields.iter())?;
-                out.zip_outer_validity(s);
-                Ok(Some(out.into_column()))
-            },
-            GetOutput::map_dtype(move |dt| match dt {
-                DataType::Struct(fds) => {
-                    let fields = fds
-                        .iter()
-                        .map(|fd| Field::new(f(fd.name()), fd.dtype().clone()))
-                        .collect();
-                    Ok(DataType::Struct(fields))
-                },
-                _ => panic!("Only struct dtype is supported for `map_fields`."),
-            }),
-        )
-    }
-
-    #[cfg(all(feature = "dtype-struct", feature = "python"))]
-    pub fn map_fields_udf(self, function: polars_utils::python_function::PythonObject) -> Expr {
+    pub fn map_fields(self, function: PlanCallback<PlSmallStr, PlSmallStr>) -> Expr {
         self.0
             .map_unary(FunctionExpr::StructExpr(StructFunction::MapFieldNames(
-                SpecialEq::new(Arc::new(function)),
+                function,
             )))
     }
 

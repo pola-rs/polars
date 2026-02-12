@@ -5,6 +5,7 @@ use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::with_match_physical_numeric_polars_type;
+#[cfg(feature = "hash")]
 use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::total_ord::TotalOrd;
 
@@ -28,7 +29,9 @@ pub trait SeriesMethods: SeriesSealed {
         );
         // we need to sort here as well in case of `maintain_order` because duplicates behavior is undefined
         let groups = s.group_tuples(parallel, sort)?;
-        let values = unsafe { s.agg_first(&groups) }.into();
+        let values = unsafe { s.agg_first(&groups) }
+            .with_name(s.name().clone())
+            .into();
         let counts = groups.group_count().with_name(name.clone());
 
         let counts = if normalize {
@@ -42,7 +45,7 @@ pub trait SeriesMethods: SeriesSealed {
 
         let height = counts.len();
         let cols = vec![values, counts];
-        let df = unsafe { DataFrame::new_no_checks(height, cols) };
+        let df = unsafe { DataFrame::new_unchecked(height, cols) };
         if sort {
             df.sort(
                 [name],
@@ -57,18 +60,10 @@ pub trait SeriesMethods: SeriesSealed {
 
     #[cfg(feature = "hash")]
     fn hash(&self, build_hasher: PlSeedableRandomStateQuality) -> UInt64Chunked {
-        let s = self.as_series().to_physical_repr();
-        match s.dtype() {
-            DataType::List(_) => {
-                let mut ca = s.list().unwrap().clone();
-                crate::chunked_array::hash::hash(&mut ca, build_hasher)
-            },
-            _ => {
-                let mut h = vec![];
-                s.0.vec_hash(build_hasher, &mut h).unwrap();
-                UInt64Chunked::from_vec(s.name().clone(), h)
-            },
-        }
+        let s = self.as_series();
+        let mut h = vec![];
+        s.0.vec_hash(build_hasher, &mut h).unwrap();
+        UInt64Chunked::from_vec(s.name().clone(), h)
     }
 
     fn ensure_sorted_arg(&self, operation: &str) -> PolarsResult<()> {
@@ -100,6 +95,7 @@ pub trait SeriesMethods: SeriesSealed {
                 &[s.clone().into()],
                 &[options.descending],
                 &[options.nulls_last],
+                false,
             )?;
             return encoded.into_series().is_sorted(options);
         }

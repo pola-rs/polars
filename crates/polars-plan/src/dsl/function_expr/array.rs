@@ -1,6 +1,6 @@
 use std::fmt;
 
-use polars_core::prelude::SortOptions;
+use polars_core::prelude::{ExplodeOptions, SortOptions};
 
 use super::FunctionExpr;
 
@@ -18,6 +18,7 @@ pub enum ArrayFunction {
     NUnique,
     Std(u8),
     Var(u8),
+    Mean,
     Median,
     #[cfg(feature = "array_any_all")]
     Any,
@@ -36,9 +37,7 @@ pub enum ArrayFunction {
     #[cfg(feature = "array_count")]
     CountMatches,
     Shift,
-    Explode {
-        skip_empty: bool,
-    },
+    Explode(ExplodeOptions),
     Concat,
     #[cfg(feature = "array_to_struct")]
     ToStruct(Option<super::DslNameGenerator>),
@@ -59,6 +58,7 @@ impl fmt::Display for ArrayFunction {
             NUnique => "n_unique",
             Std(_) => "std",
             Var(_) => "var",
+            Mean => "mean",
             Median => "median",
             #[cfg(feature = "array_any_all")]
             Any => "any",

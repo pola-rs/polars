@@ -159,7 +159,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([all()
             .as_expr()
             .name()
-            .map(|name| Ok(PlSmallStr::from_string(name.to_ascii_uppercase())))])
+            .map(PlanCallback::new(|name: PlSmallStr| {
+                Ok(PlSmallStr::from_string(name.to_ascii_uppercase()))
+            }))])
         .collect()?;
     println!("{result}");
     // --8<-- [end:name-map]
@@ -184,7 +186,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let aliased = format!("{tp}_amplitude");
         exprs.push((col(high) - col(low)).alias(aliased))
     }
-    let result = df.clone().lazy().with_columns(exprs).collect()?;
+    let result = df.lazy().with_columns(exprs).collect()?;
     println!("{result}");
     // --8<-- [end:yield-expressions]
 

@@ -3,25 +3,25 @@ pub(super) mod list;
 pub(crate) mod polars_extension;
 
 use std::mem;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::BitmapBuilder;
-use arrow::buffer::Buffer;
 use arrow::datatypes::ExtensionType;
+use polars_buffer::Buffer;
 use polars_extension::PolarsExtension;
 use polars_utils::format_pl_smallstr;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::PROCESS_ID;
 use crate::prelude::*;
 
-static POLARS_ALLOW_EXTENSION: AtomicBool = AtomicBool::new(false);
+static POLARS_ALLOW_EXTENSION: RelaxedCell<bool> = RelaxedCell::new_bool(false);
 
 /// Control whether extension types may be created.
 ///
 /// If the environment variable POLARS_ALLOW_EXTENSION is set, this function has no effect.
 pub fn set_polars_allow_extension(toggle: bool) {
-    POLARS_ALLOW_EXTENSION.store(toggle, Ordering::Relaxed)
+    POLARS_ALLOW_EXTENSION.store(toggle)
 }
 
 /// Invariants
@@ -64,7 +64,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
     iter: I,
 ) -> PolarsExtension {
     let env = "POLARS_ALLOW_EXTENSION";
-    if !(POLARS_ALLOW_EXTENSION.load(Ordering::Relaxed) || std::env::var(env).is_ok()) {
+    if !(POLARS_ALLOW_EXTENSION.load() || std::env::var(env).is_ok()) {
         panic!("creating extension types not allowed - try setting the environment variable {env}")
     }
     let t_size = size_of::<T>();
@@ -100,17 +100,13 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
         }
     }
 
-    // we slice the buffer because we want to ignore the padding bytes from here
-    // they can be forgotten
-    let buf: Buffer<u8> = buf.into();
-    let len = buf.len() - n_padding;
-    let buf = buf.sliced(n_padding, len);
-
+    // We slice the buffer because we want to ignore the padding bytes from here
+    // they can be forgotten.
+    let buf: Buffer<u8> = Buffer::from_vec(buf).sliced(n_padding..);
     // ptr to start of T, not to start of padding
     let ptr = buf.as_slice().as_ptr();
 
-    // SAFETY:
-    // ptr and t are correct
+    // SAFETY: ptr and t are correct.
     let drop_fn = unsafe { create_drop::<T>(ptr, n_t_vals) };
     let et = Box::new(ExtensionSentinel {
         drop_fn: Some(drop_fn),
@@ -123,7 +119,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
 
     let physical_type = ArrowDataType::FixedSizeBinary(t_size);
     let extension_type = ArrowDataType::Extension(Box::new(ExtensionType {
-        name: PlSmallStr::from_static(EXTENSION_NAME),
+        name: PlSmallStr::from_static(POLARS_OBJECT_EXTENSION_NAME),
         inner: physical_type,
         metadata: Some(metadata),
     }));

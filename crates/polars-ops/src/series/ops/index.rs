@@ -1,108 +1,107 @@
-use num_traits::{Signed, Zero};
-use polars_core::error::{PolarsResult, polars_ensure};
-use polars_core::prelude::arity::unary_elementwise_values;
-use polars_core::prelude::{
-    ChunkedArray, Column, DataType, IDX_DTYPE, IdxCa, PolarsIntegerType, Series,
-};
-use polars_utils::index::ToIdx;
+use arrow::array::Array;
+use arrow::bitmap::BitmapBuilder;
+use arrow::compute::utils::combine_validities_and;
+use arrow::datatypes::IdxArr;
+use num_traits::{Bounded, ToPrimitive, Zero};
+use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
+use polars_core::prelude::{ChunkedArray, IdxCa, IdxSize, PolarsIntegerType, Series};
+use polars_core::with_match_physical_integer_polars_type;
+use polars_utils::select::select_unpredictable;
+use polars_utils::vec::PushUnchecked;
 
-fn convert<T>(ca: &ChunkedArray<T>, target_len: usize) -> PolarsResult<IdxCa>
+/// UNSIGNED conversion:
+/// - `0 <= v < target_len`  → `Some(v)`
+/// - `v >= target_len`      → `None`
+///
+/// SIGNED conversion with Python-style negative semantics:
+/// - `v < -target_len`              → `None`
+/// - `-target_len <= v < 0`         → `Some(target_len + v)`
+/// - `0 <= v < target_len`          → `Some(v)`
+/// - `v >= target_len`              → `None`
+pub fn convert_and_bound_idx_ca<T>(
+    ca: &ChunkedArray<T>,
+    target_len: usize,
+    null_on_oob: bool,
+) -> PolarsResult<IdxCa>
 where
     T: PolarsIntegerType,
-    T::Native: ToIdx,
+    T::Native: ToPrimitive,
 {
-    let target_len = target_len as u64;
-    Ok(unary_elementwise_values(ca, |v| v.to_idx(target_len)))
-}
+    let mut out = Vec::with_capacity(ca.len());
+    let mut in_bounds = BitmapBuilder::with_capacity(ca.len());
+    assert!(target_len < IdxSize::MAX as usize);
 
-pub fn convert_to_unsigned_index(s: &Series, target_len: usize) -> PolarsResult<IdxCa> {
-    let dtype = s.dtype();
-    polars_ensure!(dtype.is_integer(), InvalidOperation: "expected integers as index");
-    if dtype.is_unsigned_integer() {
-        let nulls_before_cast = s.null_count();
-        let out = s.cast(&IDX_DTYPE).unwrap();
-        polars_ensure!(out.null_count() == nulls_before_cast, OutOfBounds: "some integers did not fit polars' index size");
-        return Ok(out.idx().unwrap().clone());
-    }
-    match dtype {
-        DataType::Int64 => {
-            let ca = s.i64().unwrap();
-            convert(ca, target_len)
-        },
-        DataType::Int32 => {
-            let ca = s.i32().unwrap();
-            convert(ca, target_len)
-        },
-        #[cfg(feature = "dtype-i16")]
-        DataType::Int16 => {
-            let ca = s.i16().unwrap();
-            convert(ca, target_len)
-        },
-        #[cfg(feature = "dtype-i8")]
-        DataType::Int8 => {
-            let ca = s.i8().unwrap();
-            convert(ca, target_len)
-        },
-        _ => unreachable!(),
-    }
-}
-
-/// May give false negatives because it ignores the null values.
-fn is_positive_idx_uncertain_impl<T>(ca: &ChunkedArray<T>) -> bool
-where
-    T: PolarsIntegerType,
-    T::Native: Signed,
-{
-    ca.downcast_iter().all(|v| {
-        let values = v.values();
-        let mut all_positive = true;
-
-        // process chunks to autovec but still have early return
-        for chunk in values.chunks(1024) {
-            for v in chunk.iter() {
-                all_positive &= v.is_positive() | v.is_zero()
-            }
-            if !all_positive {
-                return all_positive;
+    let unsigned = T::Native::min_value() == T::Native::zero(); // Optimized to constant by compiler.
+    if unsigned {
+        let len_u64 = target_len as u64;
+        for arr in ca.downcast_iter() {
+            for v in arr.values().iter() {
+                // SAFETY: we reserved.
+                unsafe {
+                    if let Some(v_u64) = v.to_u64() {
+                        // Usually infallible.
+                        out.push_unchecked(v_u64 as IdxSize);
+                        in_bounds.push_unchecked(v_u64 < len_u64);
+                    } else {
+                        in_bounds.push_unchecked(false);
+                    }
+                }
             }
         }
-        all_positive
-    })
+    } else {
+        let len_i64 = target_len as i64;
+        for arr in ca.downcast_iter() {
+            for v in arr.values().iter() {
+                // SAFETY: we reserved.
+                unsafe {
+                    if let Some(v_i64) = v.to_i64() {
+                        // Usually infallible.
+                        let mut shifted = v_i64;
+                        shifted += select_unpredictable(v_i64 < 0, len_i64, 0);
+                        out.push_unchecked(shifted as IdxSize);
+                        in_bounds.push_unchecked((v_i64 >= -len_i64) & (v_i64 < len_i64));
+                    } else {
+                        in_bounds.push_unchecked(false);
+                    }
+                }
+            }
+        }
+    }
+
+    let idx_arr = IdxArr::from_vec(out);
+    let in_bounds_valid = in_bounds.into_opt_validity();
+    let ca_valid = ca.rechunk_validity();
+    let valid = combine_validities_and(in_bounds_valid.as_ref(), ca_valid.as_ref());
+    let out = idx_arr.with_validity(valid);
+
+    if !null_on_oob && out.null_count() != ca.null_count() {
+        polars_bail!(
+            OutOfBounds: "gather indices are out of bounds"
+        );
+    }
+
+    Ok(out.into())
 }
 
-/// May give false negatives because it ignores the null values.
-pub fn is_positive_idx_uncertain(s: &Series) -> bool {
+/// Convert arbitrary integer Series into IdxCa, using `target_len` as logical length.
+///
+/// - All OOB indices are mapped to null in `convert_*`.
+/// - We track null counts before and after:
+///   - if `null_on_oob == true`, extra nulls are expected and we just return.
+///   - if `null_on_oob == false` and new nulls appear, we raise OutOfBounds.
+pub fn convert_and_bound_index(
+    s: &Series,
+    target_len: usize,
+    null_on_oob: bool,
+) -> PolarsResult<IdxCa> {
     let dtype = s.dtype();
-    debug_assert!(dtype.is_integer(), "expected integers as index");
-    if dtype.is_unsigned_integer() {
-        return true;
-    }
-    match dtype {
-        DataType::Int64 => {
-            let ca = s.i64().unwrap();
-            is_positive_idx_uncertain_impl(ca)
-        },
-        DataType::Int32 => {
-            let ca = s.i32().unwrap();
-            is_positive_idx_uncertain_impl(ca)
-        },
-        #[cfg(feature = "dtype-i16")]
-        DataType::Int16 => {
-            let ca = s.i16().unwrap();
-            is_positive_idx_uncertain_impl(ca)
-        },
-        #[cfg(feature = "dtype-i8")]
-        DataType::Int8 => {
-            let ca = s.i8().unwrap();
-            is_positive_idx_uncertain_impl(ca)
-        },
-        _ => unreachable!(),
-    }
-}
+    polars_ensure!(
+        dtype.is_integer(),
+        InvalidOperation: "expected integers as index"
+    );
 
-/// May give false negatives because it ignores the null values.
-pub fn is_positive_idx_uncertain_col(c: &Column) -> bool {
-    // @scalar-opt
-    // @partition-opt
-    is_positive_idx_uncertain(c.as_materialized_series())
+    with_match_physical_integer_polars_type!(dtype, |$T| {
+        let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
+        convert_and_bound_idx_ca(ca, target_len, null_on_oob)
+    })
 }

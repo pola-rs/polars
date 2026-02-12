@@ -19,31 +19,31 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str, ignore_nulls: bool) -
 #[cfg(all(feature = "concat_str", feature = "strings"))]
 /// Format the results of an array of expressions using a format string
 pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr> {
-    let mut args: std::collections::VecDeque<Expr> = args.as_ref().to_vec().into();
+    let input = args.as_ref().to_vec();
 
-    // Parse the format string, and separate substrings between placeholders
-    let segments: Vec<&str> = format.split("{}").collect();
+    let mut s = String::with_capacity(format.len());
+    let mut insertions = Vec::with_capacity(input.len());
+    let mut offset = 0;
+    while let Some(j) = format[offset..].find("{}") {
+        s.push_str(&format[offset..][..j]);
+        insertions.push(s.len());
+        offset += j + 2;
+    }
+    s.push_str(&format[offset..]);
 
     polars_ensure!(
-        segments.len() - 1 == args.len(),
+        insertions.len() == input.len(),
         ShapeMismatch: "number of placeholders should equal the number of arguments"
     );
 
-    let mut exprs: Vec<Expr> = Vec::new();
-
-    for (i, s) in segments.iter().enumerate() {
-        if i > 0 {
-            if let Some(arg) = args.pop_front() {
-                exprs.push(arg);
-            }
+    Ok(Expr::Function {
+        input,
+        function: StringFunction::Format {
+            format: s.into(),
+            insertions: insertions.into(),
         }
-
-        if !s.is_empty() {
-            exprs.push(lit(s.to_string()))
-        }
-    }
-
-    Ok(concat_str(exprs, "", false))
+        .into(),
+    })
 }
 
 /// Concat lists entries.

@@ -18,7 +18,7 @@ pub(crate) fn to_py_array(
     array: ArrayRef,
     field: &ArrowField,
     pyarrow: &Bound<PyModule>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let schema = Box::new(ffi::export_field_to_c(field));
     let array = Box::new(ffi::export_array_to_c(array));
 
@@ -38,7 +38,7 @@ pub(crate) fn to_py_rb(
     rb: &RecordBatch,
     py: Python<'_>,
     pyarrow: &Bound<PyModule>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let mut arrays = Vec::with_capacity(rb.width());
 
     for (array, field) in rb.columns().iter().zip(rb.schema().iter_values()) {
@@ -71,7 +71,11 @@ pub(crate) fn series_to_stream<'py>(
     py: Python<'py>,
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let field = series.field().to_arrow(CompatLevel::newest());
-    let iter = Box::new(series.chunks().clone().into_iter().map(Ok)) as _;
+    let series = series.clone();
+    let iter = Box::new(
+        (0..series.n_chunks()).map(move |i| Ok(series.to_arrow(i, CompatLevel::newest()))),
+    ) as _;
+
     let stream = ffi::export_iterator(iter, field);
     let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
     PyCapsule::new(py, stream, Some(stream_capsule_name))
@@ -88,6 +92,29 @@ pub(crate) fn dataframe_to_stream<'py>(
     PyCapsule::new(py, stream, Some(stream_capsule_name))
 }
 
+#[cfg(feature = "c_api")]
+#[pyfunction]
+pub(crate) fn polars_schema_to_pycapsule<'py>(
+    py: Python<'py>,
+    schema: crate::prelude::Wrap<polars::prelude::Schema>,
+    compat_level: crate::prelude::PyCompatLevel,
+) -> PyResult<Bound<'py, PyCapsule>> {
+    let schema: arrow::ffi::ArrowSchema = arrow::ffi::export_field_to_c(&ArrowField::new(
+        PlSmallStr::EMPTY,
+        ArrowDataType::Struct(
+            schema
+                .0
+                .iter_fields()
+                .map(|x| x.to_arrow(compat_level.0))
+                .collect(),
+        ),
+        false,
+    ));
+
+    let capsule_name = CString::new("arrow_schema").unwrap();
+    PyCapsule::new(py, schema, Some(capsule_name))
+}
+
 pub struct DataFrameStreamIterator {
     columns: Vec<Series>,
     dtype: ArrowDataType,
@@ -102,7 +129,7 @@ impl DataFrameStreamIterator {
 
         Self {
             columns: df
-                .get_columns()
+                .columns()
                 .iter()
                 .map(|v| v.as_materialized_series().clone())
                 .collect(),

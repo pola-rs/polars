@@ -16,7 +16,7 @@ parts = [
     "year=2024/month=02",
 ]
 
-for df, part in zip(dfs, parts):
+for df, part in zip(dfs, parts, strict=True):
     path = Path("docs/assets/data/hive/") / part / "data.parquet"
     Path(path).parent.mkdir(exist_ok=True, parents=True)
     df.write_parquet(path)

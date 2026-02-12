@@ -52,7 +52,6 @@ pub use sort::options::*;
 
 use crate::chunked_array::cast::CastOptions;
 use crate::series::{BitRepr, IsSorted};
-#[cfg(feature = "reinterpret")]
 pub trait Reinterpret {
     fn reinterpret_signed(&self) -> Series {
         unimplemented!()
@@ -82,13 +81,34 @@ pub trait ChunkAnyValue {
     fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>>;
 }
 
+pub trait ChunkAnyValueBypassValidity {
+    /// Get a single value bypassing the validity map. Beware this is slow.
+    ///
+    /// # Safety
+    /// Does not do any bounds checking.
+    unsafe fn get_any_value_bypass_validity(&self, index: usize) -> AnyValue<'_>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct ExplodeOptions {
+    /// Explode an empty list into a `null`.
+    pub empty_as_null: bool,
+    /// Explode a `null` into a `null`.
+    pub keep_nulls: bool,
+}
+
 /// Explode/flatten a List or String Series
 pub trait ChunkExplode {
-    fn explode(&self, skip_empty: bool) -> PolarsResult<Series> {
-        self.explode_and_offsets(skip_empty).map(|t| t.0)
+    fn explode(&self, options: ExplodeOptions) -> PolarsResult<Series> {
+        self.explode_and_offsets(options).map(|t| t.0)
     }
     fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>>;
-    fn explode_and_offsets(&self, skip_empty: bool) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
+    fn explode_and_offsets(
+        &self,
+        options: ExplodeOptions,
+    ) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
 }
 
 pub trait ChunkBytes {
@@ -102,14 +122,11 @@ pub trait ChunkBytes {
 pub trait ChunkRollApply: AsRefDataType {
     fn rolling_map(
         &self,
-        _f: &dyn Fn(&Series) -> Series,
-        _options: RollingOptionsFixedWindow,
+        f: &dyn Fn(&Series) -> PolarsResult<Series>,
+        options: RollingOptionsFixedWindow,
     ) -> PolarsResult<Series>
     where
-        Self: Sized,
-    {
-        polars_bail!(opq = rolling_map, self.as_ref_dtype());
-    }
+        Self: Sized;
 }
 
 pub trait ChunkTake<Idx: ?Sized>: ChunkTakeUnchecked<Idx> {
@@ -284,6 +301,14 @@ pub trait ChunkQuantile<T> {
     fn quantile(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Option<T>> {
         Ok(None)
     }
+    /// Aggregate a given set of quantiles of the ChunkedArray.
+    /// Returns `None` if the array is empty or only contains null values.
+    fn quantiles(&self, quantiles: &[f64], _method: QuantileMethod) -> PolarsResult<Vec<Option<T>>>
+    where
+        T: Clone,
+    {
+        Ok(vec![None; quantiles.len()])
+    }
 }
 
 /// Variance and standard deviation aggregation.
@@ -375,6 +400,11 @@ pub trait ChunkUnique {
     fn n_unique(&self) -> PolarsResult<usize> {
         self.arg_unique().map(|v| v.len())
     }
+
+    /// Get dense ids for each unique value.
+    ///
+    /// Returns: (n_unique, unique_ids)
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)>;
 }
 
 #[cfg(feature = "approx_unique")]

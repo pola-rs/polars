@@ -1,10 +1,8 @@
-use std::sync::Arc;
-
 use arrow::array::*;
-use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::Offset;
 use arrow::types::NativeType;
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_utils::vec::PushUnchecked;
 
@@ -24,7 +22,9 @@ pub(super) fn utf8_to_dictionary_dyn<O: Offset, K: DictionaryKey>(
 pub fn utf8_to_dictionary<O: Offset, K: DictionaryKey>(
     from: &Utf8Array<O>,
 ) -> PolarsResult<DictionaryArray<K>> {
-    let mut array = MutableDictionaryArray::<K, MutableUtf8Array<O>>::new();
+    let mut array = MutableDictionaryArray::<K, MutableUtf8Array<O>>::empty_with_value_dtype(
+        from.dtype().clone(),
+    );
     array.reserve(from.len());
     array.try_extend(from.iter())?;
 
@@ -76,10 +76,8 @@ type OffsetType = i8;
 // chunks so that we don't overflow the offset u32.
 fn truncate_buffer(buf: &Buffer<u8>) -> Buffer<u8> {
     // * 2, as it must be able to hold u32::MAX offset + u32::MAX len.
-    buf.clone().sliced(
-        0,
-        std::cmp::min(buf.len(), ((OffsetType::MAX as u64) * 2) as usize),
-    )
+    let len = std::cmp::min(buf.len(), ((OffsetType::MAX as u64) * 2) as usize);
+    buf.clone().sliced(..len)
 }
 
 pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
@@ -132,7 +130,7 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
                 let len = base_buffer.len() - offset;
 
                 // Set new buffer
-                base_buffer = base_buffer.clone().sliced(offset, len);
+                base_buffer = base_buffer.clone().sliced(offset..offset + len);
                 base_ptr = base_buffer.as_ptr() as usize;
 
                 // And add the (truncated) one to the buffers
@@ -149,9 +147,9 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
         unsafe { views.push_unchecked(value) };
     }
     let buffers = if uses_buffer {
-        Arc::from(buffers)
+        Buffer::from(buffers)
     } else {
-        Arc::from([])
+        Buffer::new()
     };
     unsafe {
         BinaryViewArray::new_unchecked_unknown_md(

@@ -1,0 +1,18 @@
+[package]
+name = "extend_polars"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "extend_polars"
+crate-type = ["cdylib"]
+
+[dependencies]
+polars = { workspace = true, features = ["full"] }
+polars-core = { workspace = true }
+polars-lazy = { workspace = true }
+polars-python = { workspace = true, features = ["full", "allow_unused"] }
+pyo3 = { workspace = true, features = ["extension-module"] }
+pyo3-polars = { workspace = true, features = ["lazy"] }
+rayon = { workspace = true }

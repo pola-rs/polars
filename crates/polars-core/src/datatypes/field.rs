@@ -1,9 +1,11 @@
-use arrow::datatypes::Metadata;
+use arrow::datatypes::{IntervalUnit, Metadata};
 use polars_dtype::categorical::CategoricalPhysical;
+use polars_error::feature_gated;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
-pub static EXTENSION_NAME: &str = "POLARS_EXTENSION_TYPE";
+use crate::config::check_allow_importing_interval_as_struct;
+pub static POLARS_OBJECT_EXTENSION_NAME: &str = "_POLARS_PYTHON_OBJECT";
 
 /// Characterizes the name and the [`DataType`] of a column.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -107,6 +109,12 @@ impl Field {
         self
     }
 
+    // Returns this `Field`, with a different datatype.
+    pub fn with_dtype(mut self, dtype: DataType) -> Self {
+        self.dtype = dtype;
+        self
+    }
+
     /// Converts the `Field` to an `arrow::datatypes::Field`.
     ///
     /// # Example
@@ -120,6 +128,13 @@ impl Field {
     /// ```
     pub fn to_arrow(&self, compat_level: CompatLevel) -> ArrowField {
         self.dtype.to_arrow_field(self.name.clone(), compat_level)
+    }
+
+    pub fn to_physical(&self) -> Field {
+        Self {
+            name: self.name.clone(),
+            dtype: self.dtype().to_physical(),
+        }
     }
 }
 
@@ -155,6 +170,8 @@ impl DataType {
             ArrowDataType::UInt16 => DataType::UInt16,
             ArrowDataType::UInt32 => DataType::UInt32,
             ArrowDataType::UInt64 => DataType::UInt64,
+            #[cfg(feature = "dtype-u128")]
+            ArrowDataType::UInt128 => DataType::UInt128,
             ArrowDataType::Int8 => DataType::Int8,
             ArrowDataType::Int16 => DataType::Int16,
             ArrowDataType::Int32 => DataType::Int32,
@@ -162,7 +179,8 @@ impl DataType {
             #[cfg(feature = "dtype-i128")]
             ArrowDataType::Int128 => DataType::Int128,
             ArrowDataType::Boolean => DataType::Boolean,
-            ArrowDataType::Float16 => DataType::Float32,
+            #[cfg(feature = "dtype-f16")]
+            ArrowDataType::Float16 => DataType::Float16,
             ArrowDataType::Float32 => DataType::Float32,
             ArrowDataType::Float64 => DataType::Float64,
             #[cfg(feature = "dtype-array")]
@@ -239,7 +257,7 @@ impl DataType {
             ArrowDataType::Struct(_) => {
                 panic!("activate the 'dtype-struct' feature to handle struct data types")
             },
-            ArrowDataType::Extension(ext) if ext.name.as_str() == EXTENSION_NAME => {
+            ArrowDataType::Extension(ext) if ext.name.as_str() == POLARS_OBJECT_EXTENSION_NAME => {
                 #[cfg(feature = "object")]
                 {
                     DataType::Object("object")
@@ -249,10 +267,17 @@ impl DataType {
                     panic!("activate the 'object' feature to be able to load POLARS_EXTENSION_TYPE")
                 }
             },
-            #[cfg(feature = "dtype-decimal")]
-            ArrowDataType::Decimal(precision, scale) => {
-                DataType::Decimal(Some(*precision), Some(*scale))
+            #[cfg(feature = "dtype-extension")]
+            ArrowDataType::Extension(ext) => {
+                use crate::prelude::extension::get_extension_type_or_storage;
+                let storage = DataType::from_arrow(&ext.inner, md);
+                match get_extension_type_or_storage(&ext.name, &storage, ext.metadata.as_deref()) {
+                    Some(typ) => DataType::Extension(typ, Box::new(storage)),
+                    None => storage,
+                }
             },
+            #[cfg(feature = "dtype-decimal")]
+            ArrowDataType::Decimal(precision, scale) => DataType::Decimal(*precision, *scale),
             ArrowDataType::Utf8View | ArrowDataType::LargeUtf8 | ArrowDataType::Utf8 => {
                 DataType::String
             },
@@ -269,6 +294,14 @@ impl DataType {
             ArrowDataType::FixedSizeBinary(_) => DataType::Binary,
             ArrowDataType::Map(inner, _is_sorted) => {
                 DataType::List(Self::from_arrow_field(inner).boxed())
+            },
+            ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
+                check_allow_importing_interval_as_struct("month_day_nano_interval").unwrap();
+                feature_gated!("dtype-struct", DataType::_month_days_ns_struct_type())
+            },
+            ArrowDataType::Interval(IntervalUnit::MonthDayMillis) => {
+                check_allow_importing_interval_as_struct("month_day_millisecond_interval").unwrap();
+                feature_gated!("dtype-struct", DataType::_month_days_ns_struct_type())
             },
             dt => panic!(
                 "Arrow datatype {dt:?} not supported by Polars. \

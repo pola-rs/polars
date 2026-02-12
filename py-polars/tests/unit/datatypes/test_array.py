@@ -27,6 +27,7 @@ def test_cast_list_array() -> None:
         s.cast(pl.Array(pl.Int64, 2))
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_array_in_group_by_iter() -> None:
     df = pl.DataFrame(
         [
@@ -204,18 +205,12 @@ def test_arr_var(data_dispersion: pl.DataFrame) -> None:
     result = df.select(
         pl.col("int").arr.var().name.suffix("_var"),
         pl.col("float").arr.var().name.suffix("_var"),
-        pl.col("duration").arr.var().name.suffix("_var"),
     )
 
     expected = pl.DataFrame(
         [
             pl.Series("int_var", [2.5], dtype=pl.Float64),
             pl.Series("float_var", [2.5], dtype=pl.Float64),
-            pl.Series(
-                "duration_var",
-                [timedelta(microseconds=2000)],
-                dtype=pl.Duration(time_unit="ms"),
-            ),
         ]
     )
 
@@ -238,6 +233,48 @@ def test_arr_std(data_dispersion: pl.DataFrame) -> None:
             pl.Series(
                 "duration_std",
                 [timedelta(microseconds=1581)],
+                dtype=pl.Duration(time_unit="us"),
+            ),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_arr_sum(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").arr.sum().name.suffix("_sum"),
+        pl.col("float").arr.sum().name.suffix("_sum"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_sum", [15], dtype=pl.Int64),
+            pl.Series("float_sum", [15.0], dtype=pl.Float64),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_arr_mean(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").arr.mean().name.suffix("_mean"),
+        pl.col("float").arr.mean().name.suffix("_mean"),
+        pl.col("duration").arr.mean().name.suffix("_mean"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_mean", [3.0], dtype=pl.Float64),
+            pl.Series("float_mean", [3.0], dtype=pl.Float64),
+            pl.Series(
+                "duration_mean",
+                [timedelta(microseconds=3000)],
                 dtype=pl.Duration(time_unit="us"),
             ),
         ]
@@ -355,6 +392,7 @@ def test_array_invalid_physical_type_18920() -> None:
     assert_frame_equal(df, expected)
 
 
+@pytest.mark.may_fail_cloud  # reason: zero-width array
 @pytest.mark.parametrize(
     "fn",
     [
@@ -408,3 +446,24 @@ def test_sort() -> None:
     tc([[2], [1]], [[1], [2]], 1)
     tc([[2, 1]], [[2, 1]], 2)
     tc([[2, 1], [1, 2]], [[1, 2], [2, 1]], 2)
+
+
+def test_array_sum_with_nulls() -> None:
+    for dt_in, dt_out in [
+        (pl.Int8, pl.Int64),
+        (pl.Int16, pl.Int64),
+        (pl.Int32, pl.Int32),
+        (pl.Int64, pl.Int64),
+        (pl.Int128, pl.Int128),
+        (pl.UInt8, pl.Int64),
+        (pl.UInt16, pl.Int64),
+        (pl.UInt32, pl.UInt32),
+        (pl.UInt64, pl.UInt64),
+        (pl.Float16, pl.Float16),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
+    ]:
+        s = pl.Series("a", [[1, 2, 3], None, [4, None, 6]], pl.Array(dt_in, 3))
+        result = s.arr.sum()
+        expected = pl.Series("a", [6, None, 10], dt_out)
+        assert_series_equal(result, expected)

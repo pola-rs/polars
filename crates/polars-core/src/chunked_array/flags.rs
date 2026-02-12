@@ -1,10 +1,11 @@
-use std::sync::atomic::{AtomicU32, Ordering};
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::series::IsSorted;
 
 /// An interior mutable version of [`StatisticsFlags`]
+#[derive(Clone)]
 pub struct StatisticsFlagsIM {
-    inner: AtomicU32,
+    inner: RelaxedCell<u32>,
 }
 
 bitflags::bitflags! {
@@ -35,23 +36,18 @@ impl std::fmt::Debug for StatisticsFlagsIM {
     }
 }
 
-impl Clone for StatisticsFlagsIM {
-    fn clone(&self) -> Self {
-        Self::new(self.get())
-    }
-}
-
 impl PartialEq for StatisticsFlagsIM {
     fn eq(&self, other: &Self) -> bool {
         self.get() == other.get()
     }
 }
+
 impl Eq for StatisticsFlagsIM {}
 
 impl From<StatisticsFlags> for StatisticsFlagsIM {
     fn from(value: StatisticsFlags) -> Self {
         Self {
-            inner: AtomicU32::new(value.bits()),
+            inner: RelaxedCell::from(value.bits()),
         }
     }
 }
@@ -59,7 +55,7 @@ impl From<StatisticsFlags> for StatisticsFlagsIM {
 impl StatisticsFlagsIM {
     pub fn new(value: StatisticsFlags) -> Self {
         Self {
-            inner: AtomicU32::new(value.bits()),
+            inner: RelaxedCell::from(value.bits()),
         }
     }
 
@@ -75,10 +71,10 @@ impl StatisticsFlagsIM {
     }
 
     pub fn get(&self) -> StatisticsFlags {
-        StatisticsFlags::from_bits(self.inner.load(Ordering::Relaxed)).unwrap()
+        StatisticsFlags::from_bits(self.inner.load()).unwrap()
     }
     pub fn set(&self, value: StatisticsFlags) {
-        self.inner.store(value.bits(), Ordering::Relaxed);
+        self.inner.store(value.bits());
     }
 }
 

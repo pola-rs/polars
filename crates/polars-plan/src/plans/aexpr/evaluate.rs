@@ -24,12 +24,7 @@ pub fn constant_evaluate<'a>(
     }
 }
 
-pub fn into_column<'a>(
-    e: Node,
-    expr_arena: &'a Arena<AExpr>,
-    _schema: &Schema,
-    _depth: usize,
-) -> Option<&'a PlSmallStr> {
+pub fn into_column(e: Node, expr_arena: &Arena<AExpr>) -> Option<&PlSmallStr> {
     match expr_arena.get(e) {
         AExpr::Column(c) => Some(c),
         _ => None,

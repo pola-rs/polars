@@ -15,7 +15,7 @@
 //!
 //! let c0 = Column::new("days".into(), &[0, 1, 2, 3, 4]);
 //! let c1 = Column::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
-//! let mut df = DataFrame::new(vec![c0, c1]).unwrap();
+//! let mut df = DataFrame::new_infer_height(vec![c0, c1]).unwrap();
 //!
 //! // Create an in memory file handler.
 //! // Vec<u8>: Read + Write
@@ -33,7 +33,7 @@
 //! let df_read = IpcStreamReader::new(buf).finish().unwrap();
 //! assert!(df.equals(&df_read));
 //! ```
-use std::io::{Read, Write};
+use std::io::{Read, Seek, Write};
 use std::path::PathBuf;
 
 use arrow::datatypes::Metadata;
@@ -130,7 +130,7 @@ impl<R: Read> IpcStreamReader<R> {
 
 impl<R> ArrowReader for read::StreamReader<R>
 where
-    R: Read,
+    R: Read + Seek,
 {
     fn next_record_batch(&mut self) -> PolarsResult<Option<RecordBatch>> {
         self.next().map_or(Ok(None), |v| match v {
@@ -145,7 +145,7 @@ where
 
 impl<R> SerReader<R> for IpcStreamReader<R>
 where
-    R: Read,
+    R: Read + Seek,
 {
     fn new(reader: R) -> Self {
         IpcStreamReader {

@@ -9,24 +9,24 @@ repository = { workspace = true }
 description = "Enable running Polars workloads in Python"
 
 [dependencies]
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
+polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["python"] }
+polars-dtype = { workspace = true }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-ffi = { workspace = true }
 polars-io = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
-polars-mem-engine = { workspace = true }
+polars-mem-engine = { workspace = true, features = ["python"] }
 polars-ops = { workspace = true, features = ["bitwise"] }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
 polars-row = { workspace = true }
 polars-testing = { workspace = true }
 polars-time = { workspace = true }
-polars-utils = { workspace = true }
-
-# TODO! remove this once truly activated. This is required to make sdist building work
-# polars-stream = { workspace = true }
+polars-utils = { workspace = true, features = ["python"] }
 
 arboard = { workspace = true, optional = true }
 arrow = { workspace = true }
@@ -43,10 +43,21 @@ libc = { workspace = true }
 ndarray = { workspace = true }
 num-traits = { workspace = true }
 numpy = { workspace = true }
-pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "chrono-tz", "multiple-pymethods"] }
+parking_lot = { workspace = true }
+pyo3 = { workspace = true, features = ["abi3-py310", "chrono", "chrono-tz", "multiple-pymethods"] }
 rayon = { workspace = true }
 recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
+
+[target.'cfg(any(not(target_family = "unix"), target_os = "emscripten"))'.dependencies]
+mimalloc = { version = "0.1", default-features = false }
+
+# Feature background_threads is unsupported on MacOS (https://github.com/jemalloc/jemalloc/issues/843).
+[target.'cfg(all(target_family = "unix", not(target_os = "macos"), not(target_os = "emscripten")))'.dependencies]
+tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls", "background_threads"] }
+
+[target.'cfg(all(target_family = "unix", target_os = "macos"))'.dependencies]
+tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls"] }
 
 [dependencies.polars]
 workspace = true
@@ -69,6 +80,7 @@ features = [
   "dot_diagram",
   "dot_product",
   "dtype-categorical",
+  "dtype-extension",
   "dtype-full",
   "dynamic_group_by",
   "ewma",
@@ -124,14 +136,26 @@ features = [
 version_check = { workspace = true }
 
 [features]
+allocator = []
+c_api = []
+
 # Features below are only there to enable building a slim binary during development.
 avro = ["polars/avro"]
+async = ["polars-lazy/async", "polars-io/async"]
 catalog = ["polars-lazy/catalog"]
 parquet = ["polars/parquet", "polars-parquet", "polars-mem-engine/parquet"]
 ipc = ["polars/ipc", "polars-mem-engine/ipc"]
 ipc_streaming = ["polars/ipc_streaming"]
 is_in = ["polars/is_in"]
-json = ["polars/serde", "serde_json", "polars/json", "polars-utils/serde", "polars-mem-engine/json"]
+json = [
+  "polars/serde",
+  "polars-buffer/serde",
+  "serde_json",
+  "polars/json",
+  "polars-utils/serde",
+  "polars-mem-engine/json",
+]
+scan_lines = ["polars/scan_lines", "polars-mem-engine/scan_lines"]
 trigonometry = ["polars/trigonometry"]
 sign = ["polars/sign"]
 asof_join = ["polars/asof_join"]
@@ -169,7 +193,7 @@ list_sample = ["polars/list_sample"]
 cutqcut = ["polars/cutqcut"]
 rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
-ffi_plugin = ["polars-plan/ffi_plugin"]
+ffi_plugin = ["polars-lazy/ffi_plugin"]
 cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/http"]
 peaks = ["polars/peaks"]
 hist = ["polars/hist"]
@@ -184,7 +208,9 @@ dtype-i16 = []
 dtype-u8 = []
 dtype-u16 = []
 dtype-i128 = []
+dtype-u128 = []
 dtype-array = []
+dtype-f16 = []
 object = ["polars/object"]
 
 dtypes = [
@@ -194,6 +220,8 @@ dtypes = [
   "dtype-u16",
   "dtype-u8",
   "dtype-i128",
+  "dtype-u128",
+  "dtype-f16",
   "object",
 ]
 
@@ -241,6 +269,7 @@ io = [
   "ipc_streaming",
   "avro",
   "csv",
+  "scan_lines",
   "cloud",
   "clipboard",
 ]
@@ -257,8 +286,10 @@ polars_cloud_server = ["polars/polars_cloud_server"]
 nightly = ["polars/nightly"]
 
 pymethods = []
+allow_unused = []
 
-all = [
+full = [
+  "async",
   "pymethods",
   "optimizations",
   "io",
@@ -274,13 +305,18 @@ all = [
   "new_streaming",
 ]
 
+rt32 = []
+rt64 = ["polars/bigidx"]
+rtcompat = ["polars/bigidx"]
+
 # we cannot conditionally activate simd
 # https://github.com/rust-lang/cargo/issues/1197
 # so we have an indirection and compile
-# with --no-default-features --features=all for targets without simd
+# with --no-default-features --features=full for targets without simd
 default = [
-  "all",
+  "full",
 ]
+default_alloc = []
 
 [lints]
 workspace = true

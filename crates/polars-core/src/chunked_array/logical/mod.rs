@@ -2,6 +2,10 @@
 mod date;
 #[cfg(feature = "dtype-date")]
 pub use date::*;
+#[cfg(feature = "dtype-categorical")]
+pub mod categorical;
+#[cfg(feature = "dtype-categorical")]
+pub use categorical::*;
 #[cfg(feature = "dtype-datetime")]
 mod datetime;
 #[cfg(feature = "dtype-datetime")]
@@ -14,15 +18,14 @@ pub use decimal::*;
 mod duration;
 #[cfg(feature = "dtype-duration")]
 pub use duration::*;
-#[cfg(feature = "dtype-categorical")]
-pub mod categorical;
+#[cfg(feature = "dtype-extension")]
+mod extension;
+#[cfg(feature = "dtype-extension")]
+pub use extension::*;
 #[cfg(feature = "dtype-time")]
 mod time;
-
 use std::marker::PhantomData;
 
-#[cfg(feature = "dtype-categorical")]
-pub use categorical::*;
 #[cfg(feature = "dtype-time")]
 pub use time::*;
 

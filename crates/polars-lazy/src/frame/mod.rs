@@ -6,9 +6,9 @@ mod cached_arenas;
 mod err;
 #[cfg(not(target_arch = "wasm32"))]
 mod exitable;
-#[cfg(feature = "pivot")]
-pub mod pivot;
 
+use std::num::NonZeroUsize;
+use std::sync::mpsc::{Receiver, sync_channel};
 use std::sync::{Arc, Mutex};
 
 pub use anonymous_scan::*;
@@ -17,8 +17,6 @@ pub use csv::*;
 #[cfg(not(target_arch = "wasm32"))]
 pub use exitable::*;
 pub use file_list_reader::*;
-#[cfg(feature = "ipc")]
-pub use ipc::*;
 #[cfg(feature = "json")]
 pub use ndjson::*;
 #[cfg(feature = "parquet")]
@@ -27,16 +25,14 @@ use polars_compute::rolling::QuantileMethod;
 use polars_core::POOL;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
-use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::RowIndex;
+use polars_mem_engine::scan_predicate::functions::apply_scan_predicate_to_scan_ir;
 use polars_mem_engine::{Executor, create_multiple_physical_plans, create_physical_plan};
-use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
+use polars_ops::frame::{JoinBuildSide, JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
-use polars_plan::global::FETCH_ROWS;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::plpath::PlPath;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
 use crate::frame::cached_arenas::CachedArena;
@@ -107,7 +103,7 @@ impl LazyFrame {
         self.opt_state
     }
 
-    fn from_logical_plan(logical_plan: DslPlan, opt_state: OptFlags) -> Self {
+    pub fn from_logical_plan(logical_plan: DslPlan, opt_state: OptFlags) -> Self {
         LazyFrame {
             logical_plan,
             opt_state,
@@ -140,12 +136,6 @@ impl LazyFrame {
     /// Toggle cluster with columns optimization.
     pub fn with_cluster_with_columns(mut self, toggle: bool) -> Self {
         self.opt_state.set(OptFlags::CLUSTER_WITH_COLUMNS, toggle);
-        self
-    }
-
-    /// Toggle collapse joins optimization.
-    pub fn with_collapse_joins(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptFlags::COLLAPSE_JOINS, toggle);
         self
     }
 
@@ -486,7 +476,7 @@ impl LazyFrame {
             .collect();
 
         if cast_cols.is_empty() {
-            self.clone()
+            self
         } else {
             self.with_columns(cast_cols)
         }
@@ -499,19 +489,6 @@ impl LazyFrame {
         } else {
             col(PlSmallStr::from_static("*")).cast(dtype)
         }])
-    }
-
-    /// Fetch is like a collect operation, but it overwrites the number of rows read by every scan
-    /// operation. This is a utility that helps debug a query on a smaller number of rows.
-    ///
-    /// Note that the fetch does not guarantee the final number of rows in the DataFrame.
-    /// Filter, join operations and a lower number of rows available in the scanned file influence
-    /// the final number of rows.
-    pub fn fetch(self, n_rows: usize) -> PolarsResult<DataFrame> {
-        FETCH_ROWS.with(|fetch_rows| fetch_rows.set(Some(n_rows)));
-        let res = self.collect();
-        FETCH_ROWS.with(|fetch_rows| fetch_rows.set(None));
-        res
     }
 
     pub fn optimize(
@@ -547,35 +524,13 @@ impl LazyFrame {
         expr_arena: &mut Arena<AExpr>,
         scratch: &mut Vec<Node>,
     ) -> PolarsResult<Node> {
-        #[allow(unused_mut)]
-        let mut opt_state = self.opt_state;
-        let new_streaming = self.opt_state.contains(OptFlags::NEW_STREAMING);
-
-        #[cfg(feature = "cse")]
-        if new_streaming {
-            // The new streaming engine can't deal with the way the common
-            // subexpression elimination adds length-incorrect with_columns.
-            opt_state &= !OptFlags::COMM_SUBEXPR_ELIM;
-        }
-
         let lp_top = optimize(
             self.logical_plan,
-            opt_state,
+            self.opt_state,
             lp_arena,
             expr_arena,
             scratch,
-            Some(&|expr, expr_arena, schema| {
-                let phys_expr = create_physical_expr(
-                    expr,
-                    Context::Default,
-                    expr_arena,
-                    schema,
-                    &mut ExpressionConversionState::new(true),
-                )
-                .ok()?;
-                let io_expr = phys_expr_to_io_expr(phys_expr);
-                Some(io_expr)
-            }),
+            apply_scan_predicate_to_scan_ir,
         )?;
 
         Ok(lp_top)
@@ -614,7 +569,7 @@ impl LazyFrame {
             !matches!(
                 lp_arena.get(lp_top),
                 IR::Sink {
-                    payload: SinkTypeIR::File { .. } | SinkTypeIR::Partition { .. },
+                    payload: SinkTypeIR::File { .. },
                     ..
                 }
             )
@@ -661,21 +616,35 @@ impl LazyFrame {
     ///
     /// The query is optimized prior to execution.
     pub fn collect_with_engine(mut self, mut engine: Engine) -> PolarsResult<DataFrame> {
-        let payload = if let DslPlan::Sink { payload, .. } = &self.logical_plan {
-            payload.clone()
-        } else {
-            self.logical_plan = DslPlan::Sink {
-                input: Arc::new(self.logical_plan),
-                payload: SinkType::Memory,
-            };
-            SinkType::Memory
+        let payload = match &self.logical_plan {
+            DslPlan::Sink { payload, .. } => payload.clone(),
+            DslPlan::SinkMultiple { .. } => {
+                polars_ensure!(matches!(engine, Engine::Auto | Engine::Streaming), InvalidOperation: "lazy multisinks only supported on streaming engine");
+                feature_gated!("new_streaming", {
+                    let sink_multiple = self.with_new_streaming(true);
+                    let mut alp_plan = sink_multiple.to_alp_optimized()?;
+                    let result = polars_stream::run_query(
+                        alp_plan.lp_top,
+                        &mut alp_plan.lp_arena,
+                        &mut alp_plan.expr_arena,
+                    );
+                    return result.map(|_| DataFrame::empty());
+                })
+            },
+            _ => {
+                self.logical_plan = DslPlan::Sink {
+                    input: Arc::new(self.logical_plan),
+                    payload: SinkType::Memory,
+                };
+                SinkType::Memory
+            },
         };
 
         // Default engine for collect is InMemory, sink_* is Streaming
         if engine == Engine::Auto {
             engine = match payload {
                 #[cfg(feature = "new_streaming")]
-                SinkType::File { .. } | SinkType::Partition { .. } => Engine::Streaming,
+                SinkType::Callback { .. } | SinkType::File { .. } => Engine::Streaming,
                 _ => Engine::InMemory,
             };
         }
@@ -709,10 +678,6 @@ impl LazyFrame {
                 );
                 result.map(|v| v.unwrap_single())
             }),
-            _ if matches!(payload, SinkType::Partition { .. }) => Err(polars_err!(
-                InvalidOperation: "partition sinks are not supported on for the '{}' engine",
-                engine.into_static_str()
-            )),
             Engine::Gpu => {
                 Err(polars_err!(InvalidOperation: "sink is not supported for the gpu engine"))
             },
@@ -862,6 +827,49 @@ impl LazyFrame {
         self.collect_with_engine(Engine::InMemory)
     }
 
+    /// Collect the query in batches.
+    ///
+    /// If lazy is true the query will not start until the first poll (or until
+    /// start is called on CollectBatches).
+    #[cfg(feature = "async")]
+    pub fn collect_batches(
+        self,
+        engine: Engine,
+        maintain_order: bool,
+        chunk_size: Option<NonZeroUsize>,
+        lazy: bool,
+    ) -> PolarsResult<CollectBatches> {
+        let (send, recv) = sync_channel(1);
+        let runner_send = send.clone();
+        let ldf = self.sink_batches(
+            PlanCallback::new(move |df| {
+                // Stop if receiver has closed.
+                let send_result = send.send(Ok(df));
+                Ok(send_result.is_err())
+            }),
+            maintain_order,
+            chunk_size,
+        )?;
+        let runner = move || {
+            // We use a tokio spawn_blocking here as it has a high blocking
+            // thread pool limit.
+            polars_io::pl_async::get_runtime().spawn_blocking(move || {
+                if let Err(e) = ldf.collect_with_engine(engine) {
+                    runner_send.send(Err(e)).ok();
+                }
+            });
+        };
+
+        let mut collect_batches = CollectBatches {
+            recv,
+            runner: Some(Box::new(runner)),
+        };
+        if !lazy {
+            collect_batches.start();
+        }
+        Ok(collect_batches)
+    }
+
     // post_opt: A function that is called after optimization. This can be used to modify the IR jit.
     // This version does profiling of the node execution.
     pub fn _profile_post_opt<P>(self, post_opt: P) -> PolarsResult<(DataFrame, DataFrame)>
@@ -893,192 +901,29 @@ impl LazyFrame {
         self._profile_post_opt(|_, _, _, _| Ok(()))
     }
 
-    /// Stream a query result into a parquet file. This is useful if the final result doesn't fit
-    /// into memory. This methods will return an error if the query cannot be completely done in a
-    /// streaming fashion.
-    #[cfg(feature = "parquet")]
-    pub fn sink_parquet(
-        self,
-        target: SinkTarget,
-        options: ParquetWriteOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        sink_options: SinkOptions,
+    pub fn sink_batches(
+        mut self,
+        function: PlanCallback<DataFrame, bool>,
+        maintain_order: bool,
+        chunk_size: Option<NonZeroUsize>,
     ) -> PolarsResult<Self> {
-        self.sink(SinkType::File(FileSinkType {
-            target,
-            sink_options,
-            file_type: FileType::Parquet(options),
-            cloud_options,
-        }))
-    }
+        use polars_plan::prelude::sink::CallbackSinkType;
 
-    /// Stream a query result into an ipc/arrow file. This is useful if the final result doesn't fit
-    /// into memory. This methods will return an error if the query cannot be completely done in a
-    /// streaming fashion.
-    #[cfg(feature = "ipc")]
-    pub fn sink_ipc(
-        self,
-        target: SinkTarget,
-        options: IpcWriterOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        sink_options: SinkOptions,
-    ) -> PolarsResult<Self> {
-        self.sink(SinkType::File(FileSinkType {
-            target,
-            sink_options,
-            file_type: FileType::Ipc(options),
-            cloud_options,
-        }))
-    }
+        polars_ensure!(
+            !matches!(self.logical_plan, DslPlan::Sink { .. }),
+            InvalidOperation: "cannot create a sink on top of another sink"
+        );
 
-    /// Stream a query result into an csv file. This is useful if the final result doesn't fit
-    /// into memory. This methods will return an error if the query cannot be completely done in a
-    /// streaming fashion.
-    #[cfg(feature = "csv")]
-    pub fn sink_csv(
-        self,
-        target: SinkTarget,
-        options: CsvWriterOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        sink_options: SinkOptions,
-    ) -> PolarsResult<Self> {
-        self.sink(SinkType::File(FileSinkType {
-            target,
-            sink_options,
-            file_type: FileType::Csv(options),
-            cloud_options,
-        }))
-    }
+        self.logical_plan = DslPlan::Sink {
+            input: Arc::new(self.logical_plan),
+            payload: SinkType::Callback(CallbackSinkType {
+                function,
+                maintain_order,
+                chunk_size,
+            }),
+        };
 
-    /// Stream a query result into a JSON file. This is useful if the final result doesn't fit
-    /// into memory. This methods will return an error if the query cannot be completely done in a
-    /// streaming fashion.
-    #[cfg(feature = "json")]
-    pub fn sink_json(
-        self,
-        target: SinkTarget,
-        options: JsonWriterOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        sink_options: SinkOptions,
-    ) -> PolarsResult<Self> {
-        self.sink(SinkType::File(FileSinkType {
-            target,
-            sink_options,
-            file_type: FileType::Json(options),
-            cloud_options,
-        }))
-    }
-
-    /// Stream a query result into a parquet file in a partitioned manner. This is useful if the
-    /// final result doesn't fit into memory. This methods will return an error if the query cannot
-    /// be completely done in a streaming fashion.
-    #[cfg(feature = "parquet")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn sink_parquet_partitioned(
-        self,
-        base_path: Arc<PlPath>,
-        file_path_cb: Option<PartitionTargetCallback>,
-        variant: PartitionVariant,
-        options: ParquetWriteOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        sink_options: SinkOptions,
-        per_partition_sort_by: Option<Vec<SortColumn>>,
-        finish_callback: Option<SinkFinishCallback>,
-    ) -> PolarsResult<Self> {
-        self.sink(SinkType::Partition(PartitionSinkType {
-            base_path,
-            file_path_cb,
-            sink_options,
-            variant,
-            file_type: FileType::Parquet(options),
-            cloud_options,
-            per_partition_sort_by,
-            finish_callback,
-        }))
-    }
-
-    /// Stream a query result into an ipc/arrow file in a partitioned manner. This is useful if the
-    /// final result doesn't fit into memory. This methods will return an error if the query cannot
-    /// be completely done in a streaming fashion.
-    #[cfg(feature = "ipc")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn sink_ipc_partitioned(
-        self,
-        base_path: Arc<PlPath>,
-        file_path_cb: Option<PartitionTargetCallback>,
-        variant: PartitionVariant,
-        options: IpcWriterOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        sink_options: SinkOptions,
-        per_partition_sort_by: Option<Vec<SortColumn>>,
-        finish_callback: Option<SinkFinishCallback>,
-    ) -> PolarsResult<Self> {
-        self.sink(SinkType::Partition(PartitionSinkType {
-            base_path,
-            file_path_cb,
-            sink_options,
-            variant,
-            file_type: FileType::Ipc(options),
-            cloud_options,
-            per_partition_sort_by,
-            finish_callback,
-        }))
-    }
-
-    /// Stream a query result into an csv file in a partitioned manner. This is useful if the final
-    /// result doesn't fit into memory. This methods will return an error if the query cannot be
-    /// completely done in a streaming fashion.
-    #[cfg(feature = "csv")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn sink_csv_partitioned(
-        self,
-        base_path: Arc<PlPath>,
-        file_path_cb: Option<PartitionTargetCallback>,
-        variant: PartitionVariant,
-        options: CsvWriterOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        sink_options: SinkOptions,
-        per_partition_sort_by: Option<Vec<SortColumn>>,
-        finish_callback: Option<SinkFinishCallback>,
-    ) -> PolarsResult<Self> {
-        self.sink(SinkType::Partition(PartitionSinkType {
-            base_path,
-            file_path_cb,
-            sink_options,
-            variant,
-            file_type: FileType::Csv(options),
-            cloud_options,
-            per_partition_sort_by,
-            finish_callback,
-        }))
-    }
-
-    /// Stream a query result into a JSON file in a partitioned manner. This is useful if the final
-    /// result doesn't fit into memory. This methods will return an error if the query cannot be
-    /// completely done in a streaming fashion.
-    #[cfg(feature = "json")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn sink_json_partitioned(
-        self,
-        base_path: Arc<PlPath>,
-        file_path_cb: Option<PartitionTargetCallback>,
-        variant: PartitionVariant,
-        options: JsonWriterOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        sink_options: SinkOptions,
-        per_partition_sort_by: Option<Vec<SortColumn>>,
-        finish_callback: Option<SinkFinishCallback>,
-    ) -> PolarsResult<Self> {
-        self.sink(SinkType::Partition(PartitionSinkType {
-            base_path,
-            file_path_cb,
-            sink_options,
-            variant,
-            file_type: FileType::Json(options),
-            cloud_options,
-            per_partition_sort_by,
-            finish_callback,
-        }))
+        Ok(self)
     }
 
     #[cfg(feature = "new_streaming")]
@@ -1132,14 +977,41 @@ impl LazyFrame {
         None
     }
 
-    fn sink(mut self, payload: SinkType) -> Result<LazyFrame, PolarsError> {
+    pub fn sink(
+        mut self,
+        sink_type: SinkDestination,
+        file_format: FileWriteFormat,
+        unified_sink_args: UnifiedSinkArgs,
+    ) -> PolarsResult<Self> {
         polars_ensure!(
             !matches!(self.logical_plan, DslPlan::Sink { .. }),
             InvalidOperation: "cannot create a sink on top of another sink"
         );
+
         self.logical_plan = DslPlan::Sink {
             input: Arc::new(self.logical_plan),
-            payload: payload.clone(),
+            payload: match sink_type {
+                SinkDestination::File { target } => SinkType::File(FileSinkOptions {
+                    target,
+                    file_format,
+                    unified_sink_args,
+                }),
+                SinkDestination::Partitioned {
+                    base_path,
+                    file_path_provider,
+                    partition_strategy,
+                    max_rows_per_file,
+                    approximate_bytes_per_file,
+                } => SinkType::Partitioned(PartitionedSinkOptions {
+                    base_path,
+                    file_path_provider,
+                    partition_strategy,
+                    file_format,
+                    unified_sink_args,
+                    max_rows_per_file,
+                    approximate_bytes_per_file,
+                }),
+            },
         };
         Ok(self)
     }
@@ -1277,6 +1149,7 @@ impl LazyFrame {
                 logical_plan: self.logical_plan,
                 opt_state,
                 keys,
+                predicates: vec![],
                 maintain_order: false,
                 dynamic_options: None,
                 rolling_options: None,
@@ -1289,6 +1162,7 @@ impl LazyFrame {
                 logical_plan: self.logical_plan,
                 opt_state,
                 keys,
+                predicates: vec![],
                 maintain_order: false,
             }
         }
@@ -1312,7 +1186,7 @@ impl LazyFrame {
             options.index_column = name;
         } else {
             let output_field = index_column
-                .to_field(&self.collect_schema().unwrap(), Context::Default)
+                .to_field(&self.collect_schema().unwrap())
                 .unwrap();
             return self.with_column(index_column).rolling(
                 Expr::Column(output_field.name().clone()),
@@ -1324,6 +1198,7 @@ impl LazyFrame {
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
+            predicates: vec![],
             keys: group_by.as_ref().to_vec(),
             maintain_order: true,
             dynamic_options: None,
@@ -1357,7 +1232,7 @@ impl LazyFrame {
             options.index_column = name;
         } else {
             let output_field = index_column
-                .to_field(&self.collect_schema().unwrap(), Context::Default)
+                .to_field(&self.collect_schema().unwrap())
                 .unwrap();
             return self.with_column(index_column).group_by_dynamic(
                 Expr::Column(output_field.name().clone()),
@@ -1369,6 +1244,7 @@ impl LazyFrame {
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
+            predicates: vec![],
             keys: group_by.as_ref().to_vec(),
             maintain_order: true,
             dynamic_options: Some(options),
@@ -1391,6 +1267,7 @@ impl LazyFrame {
                 logical_plan: self.logical_plan,
                 opt_state,
                 keys,
+                predicates: vec![],
                 maintain_order: true,
                 dynamic_options: None,
                 rolling_options: None,
@@ -1403,6 +1280,7 @@ impl LazyFrame {
                 logical_plan: self.logical_plan,
                 opt_state,
                 keys,
+                predicates: vec![],
                 maintain_order: true,
             }
         }
@@ -1595,6 +1473,7 @@ impl LazyFrame {
             nulls_equal,
             coalesce,
             maintain_order,
+            build_side,
         } = args;
 
         if slice.is_some() {
@@ -1610,7 +1489,8 @@ impl LazyFrame {
             .validate(validation)
             .join_nulls(nulls_equal)
             .coalesce(coalesce)
-            .maintain_order(maintain_order);
+            .maintain_order(maintain_order)
+            .build_side(build_side);
 
         if let Some(suffix) = suffix {
             builder = builder.suffix(suffix);
@@ -1716,6 +1596,34 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    pub fn pipe_with_schema(
+        self,
+        callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
+    ) -> Self {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .pipe_with_schema(vec![], callback)
+            .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    pub fn pipe_with_schemas(
+        self,
+        others: Vec<LazyFrame>,
+        callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
+    ) -> Self {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .pipe_with_schema(
+                others.into_iter().map(|lf| lf.logical_plan).collect(),
+                callback,
+            )
+            .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     fn with_columns_impl(self, exprs: Vec<Expr>, options: ProjectionOptions) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().with_columns(exprs, options).build();
@@ -1815,16 +1723,21 @@ impl LazyFrame {
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
-    pub fn explode(self, columns: Selector) -> LazyFrame {
-        self.explode_impl(columns, false)
+    pub fn explode(self, columns: Selector, options: ExplodeOptions) -> LazyFrame {
+        self.explode_impl(columns, options, false)
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
-    fn explode_impl(self, columns: Selector, allow_empty: bool) -> LazyFrame {
+    fn explode_impl(
+        self,
+        columns: Selector,
+        options: ExplodeOptions,
+        allow_empty: bool,
+    ) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .explode(columns, allow_empty)
+            .explode(columns, options, allow_empty)
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -1843,12 +1756,13 @@ impl LazyFrame {
         subset: Option<Selector>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
+        let subset = subset.map(|s| vec![Expr::Selector(s)]);
         self.unique_stable_generic(subset, keep_strategy)
     }
 
     pub fn unique_stable_generic(
         self,
-        subset: Option<Selector>,
+        subset: Option<Vec<Expr>>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
@@ -1869,12 +1783,13 @@ impl LazyFrame {
     /// `subset` is an optional `Vec` of column names to consider for uniqueness; if None,
     /// all columns are considered.
     pub fn unique(self, subset: Option<Selector>, keep_strategy: UniqueKeepStrategy) -> LazyFrame {
+        let subset = subset.map(|s| vec![Expr::Selector(s)]);
         self.unique_generic(subset, keep_strategy)
     }
 
     pub fn unique_generic(
         self,
-        subset: Option<Selector>,
+        subset: Option<Vec<Expr>>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
@@ -1944,6 +1859,34 @@ impl LazyFrame {
         self.slice(neg_tail, n)
     }
 
+    #[cfg(feature = "pivot")]
+    #[expect(clippy::too_many_arguments)]
+    pub fn pivot(
+        self,
+        on: Selector,
+        on_columns: Arc<DataFrame>,
+        index: Selector,
+        values: Selector,
+        agg: Expr,
+        maintain_order: bool,
+        separator: PlSmallStr,
+    ) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .pivot(
+                on,
+                on_columns,
+                index,
+                values,
+                agg,
+                maintain_order,
+                separator,
+            )
+            .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     /// Unpivot the DataFrame from wide to long format.
     ///
     /// See [`UnpivotArgsIR`] for information on how to unpivot a DataFrame.
@@ -1955,8 +1898,6 @@ impl LazyFrame {
     }
 
     /// Limit the DataFrame to the first `n` rows.
-    ///
-    /// Note if you don't want the rows to be scanned, use [`fetch`](LazyFrame::fetch).
     pub fn limit(self, n: IdxSize) -> LazyFrame {
         self.slice(0, n)
     }
@@ -2034,8 +1975,12 @@ impl LazyFrame {
         let name = name.into();
 
         match &self.logical_plan {
-            v @ DslPlan::Scan { scan_type, .. }
-                if !matches!(&**scan_type, FileScanDsl::Anonymous { .. }) =>
+            v @ DslPlan::Scan {
+                scan_type,
+                unified_scan_args,
+                ..
+            } if unified_scan_args.row_index.is_none()
+                && !matches!(&**scan_type, FileScanDsl::Anonymous { .. }) =>
             {
                 let DslPlan::Scan {
                     sources,
@@ -2072,8 +2017,11 @@ impl LazyFrame {
     /// Unnest the given `Struct` columns: the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
-    pub fn unnest(self, cols: Selector) -> Self {
-        self.map_private(DslFunction::Unnest(cols))
+    pub fn unnest(self, cols: Selector, separator: Option<PlSmallStr>) -> Self {
+        self.map_private(DslFunction::Unnest {
+            columns: cols,
+            separator,
+        })
     }
 
     #[cfg(feature = "merge_sorted")]
@@ -2090,6 +2038,14 @@ impl LazyFrame {
         };
         Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
     }
+
+    pub fn hint(self, hint: HintIR) -> PolarsResult<LazyFrame> {
+        let lp = DslPlan::MapFunction {
+            input: Arc::new(self.logical_plan),
+            function: DslFunction::Hint(hint),
+        };
+        Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
+    }
 }
 
 /// Utility struct for lazy group_by operation.
@@ -2098,6 +2054,7 @@ pub struct LazyGroupBy {
     pub logical_plan: DslPlan,
     opt_state: OptFlags,
     keys: Vec<Expr>,
+    predicates: Vec<Expr>,
     maintain_order: bool,
     #[cfg(feature = "dynamic_group_by")]
     dynamic_options: Option<DynamicGroupOptions>,
@@ -2116,6 +2073,31 @@ impl From<LazyGroupBy> for LazyFrame {
 }
 
 impl LazyGroupBy {
+    /// Filter groups with a predicate after aggregation.
+    ///
+    /// Similarly to the [LazyGroupBy::agg] method, the predicate must run an aggregation as it
+    /// is evaluated on the groups.
+    /// This method can be chained in which case all predicates must evaluate to `true` for a
+    /// group to be kept.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    ///
+    /// fn example(df: DataFrame) -> LazyFrame {
+    ///       df.lazy()
+    ///        .group_by_stable([col("date")])
+    ///        .having(col("rain").sum().gt(lit(10)))
+    ///        .agg([col("rain").min().alias("min_rain")])
+    /// }
+    /// ```
+    pub fn having(mut self, predicate: Expr) -> Self {
+        self.predicates.push(predicate);
+        self
+    }
+
     /// Group by and aggregate.
     ///
     /// Select a column with [col] and choose an aggregation.
@@ -2142,6 +2124,7 @@ impl LazyGroupBy {
         let lp = DslBuilder::from(self.logical_plan)
             .group_by(
                 self.keys,
+                self.predicates,
                 aggs,
                 None,
                 self.maintain_order,
@@ -2152,7 +2135,7 @@ impl LazyGroupBy {
 
         #[cfg(not(feature = "dynamic_group_by"))]
         let lp = DslBuilder::from(self.logical_plan)
-            .group_by(self.keys, aggs, None, self.maintain_order)
+            .group_by(self.keys, self.predicates, aggs, None, self.maintain_order)
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
@@ -2165,8 +2148,14 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([all().as_expr().head(n).explode()])
-            .explode_impl(all() - by_name(keys.iter().cloned(), false), true)
+        self.agg([all().as_expr().head(n)]).explode_impl(
+            all() - by_name(keys.iter().cloned(), false, false),
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+            true,
+        )
     }
 
     /// Return last n rows of each group
@@ -2177,18 +2166,25 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([all().as_expr().tail(n).explode()])
-            .explode_impl(all() - by_name(keys.iter().cloned(), false), true)
+        self.agg([all().as_expr().tail(n)]).explode_impl(
+            all() - by_name(keys.iter().cloned(), false, false),
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+            true,
+        )
     }
 
     /// Apply a function over the groups as a new DataFrame.
     ///
     /// **It is not recommended that you use this as materializing the DataFrame is very
     /// expensive.**
-    pub fn apply<F>(self, f: F, schema: SchemaRef) -> LazyFrame
-    where
-        F: 'static + Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
-    {
+    pub fn apply(self, f: PlanCallback<DataFrame, DataFrame>, schema: SchemaRef) -> LazyFrame {
+        if !self.predicates.is_empty() {
+            panic!("not yet implemented: `apply` cannot be used with `having` predicates");
+        }
+
         #[cfg(feature = "dynamic_group_by")]
         let options = GroupbyOptions {
             dynamic: self.dynamic_options,
@@ -2202,8 +2198,9 @@ impl LazyGroupBy {
         let lp = DslPlan::GroupBy {
             input: Arc::new(self.logical_plan),
             keys: self.keys,
+            predicates: vec![],
             aggs: vec![],
-            apply: Some((Arc::new(f), schema)),
+            apply: Some((f, schema)),
             maintain_order: self.maintain_order,
             options: Arc::new(options),
         };
@@ -2225,6 +2222,7 @@ pub struct JoinBuilder {
     nulls_equal: bool,
     coalesce: JoinCoalesce,
     maintain_order: MaintainOrderJoin,
+    build_side: Option<JoinBuildSide>,
 }
 impl JoinBuilder {
     /// Create the `JoinBuilder` with the provided `LazyFrame` as the left table.
@@ -2242,6 +2240,7 @@ impl JoinBuilder {
             nulls_equal: false,
             coalesce: Default::default(),
             maintain_order: Default::default(),
+            build_side: None,
         }
     }
 
@@ -2328,6 +2327,12 @@ impl JoinBuilder {
         self
     }
 
+    /// Whether to prefer a specific build side.
+    pub fn build_side(mut self, build_side: Option<JoinBuildSide>) -> Self {
+        self.build_side = build_side;
+        self
+    }
+
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
         let opt_state = self.lf.opt_state;
@@ -2341,6 +2346,7 @@ impl JoinBuilder {
             nulls_equal: self.nulls_equal,
             coalesce: self.coalesce,
             maintain_order: self.maintain_order,
+            build_side: self.build_side,
         };
 
         let lp = self
@@ -2432,6 +2438,7 @@ impl JoinBuilder {
             nulls_equal: self.nulls_equal,
             coalesce: self.coalesce,
             maintain_order: self.maintain_order,
+            build_side: self.build_side,
         };
         let options = JoinOptions {
             allow_parallel: self.allow_parallel,
@@ -2459,74 +2466,29 @@ pub const BUILD_STREAMING_EXECUTOR: Option<polars_mem_engine::StreamingExecutorB
     }
     #[cfg(feature = "new_streaming")]
     {
-        Some(streaming_dispatch::build_streaming_query_executor)
+        Some(polars_stream::build_streaming_query_executor)
     }
 };
-#[cfg(feature = "new_streaming")]
-pub use streaming_dispatch::build_streaming_query_executor;
 
-#[cfg(feature = "new_streaming")]
-mod streaming_dispatch {
-    use std::sync::{Arc, Mutex};
+pub struct CollectBatches {
+    recv: Receiver<PolarsResult<DataFrame>>,
+    runner: Option<Box<dyn FnOnce() + Send + 'static>>,
+}
 
-    use polars_core::POOL;
-    use polars_core::error::PolarsResult;
-    use polars_core::frame::DataFrame;
-    use polars_expr::state::ExecutionState;
-    use polars_mem_engine::Executor;
-    use polars_plan::dsl::SinkTypeIR;
-    use polars_plan::plans::{AExpr, IR};
-    use polars_utils::arena::{Arena, Node};
-
-    pub fn build_streaming_query_executor(
-        node: Node,
-        ir_arena: &mut Arena<IR>,
-        expr_arena: &mut Arena<AExpr>,
-    ) -> PolarsResult<Box<dyn Executor>> {
-        let rechunk = match ir_arena.get(node) {
-            IR::Scan {
-                unified_scan_args, ..
-            } => unified_scan_args.rechunk,
-            _ => false,
-        };
-
-        let node = ir_arena.add(IR::Sink {
-            input: node,
-            payload: SinkTypeIR::Memory,
-        });
-
-        polars_stream::StreamingQuery::build(node, ir_arena, expr_arena)
-            .map(Some)
-            .map(Mutex::new)
-            .map(Arc::new)
-            .map(|x| StreamingQueryExecutor {
-                executor: x,
-                rechunk,
-            })
-            .map(|x| Box::new(x) as Box<dyn Executor>)
-    }
-
-    // Note: Arc/Mutex is because Executor requires Sync, but SlotMap is not Sync.
-    struct StreamingQueryExecutor {
-        executor: Arc<Mutex<Option<polars_stream::StreamingQuery>>>,
-        rechunk: bool,
-    }
-
-    impl Executor for StreamingQueryExecutor {
-        fn execute(&mut self, _cache: &mut ExecutionState) -> PolarsResult<DataFrame> {
-            // Must not block rayon thread on pending new-streaming future.
-            assert!(POOL.current_thread_index().is_none());
-
-            let mut df = { self.executor.try_lock().unwrap().take() }
-                .expect("unhandled: execute() more than once")
-                .execute()
-                .map(|x| x.unwrap_single())?;
-
-            if self.rechunk {
-                df.as_single_chunk_par();
-            }
-
-            Ok(df)
+impl CollectBatches {
+    /// Start running the query, if not already.
+    pub fn start(&mut self) {
+        if let Some(runner) = self.runner.take() {
+            runner()
         }
+    }
+}
+
+impl Iterator for CollectBatches {
+    type Item = PolarsResult<DataFrame>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.start();
+        self.recv.recv().ok()
     }
 }

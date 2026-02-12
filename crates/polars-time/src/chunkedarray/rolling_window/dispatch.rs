@@ -1,5 +1,14 @@
+use std::borrow::Cow;
+
+use arrow::types::NativeType;
+#[cfg(feature = "dtype-f16")]
+use num_traits::real::Real;
+use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
+use polars_compute::rolling::nulls::RollingAggWindowNulls;
+use polars_compute::rolling::{MeanWindow, SumWindow, no_nulls, nulls};
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_numeric_polars_type};
 use polars_ops::series::SeriesMethods;
+use polars_utils::float::IsFloat;
 
 use super::*;
 use crate::prelude::*;
@@ -59,37 +68,40 @@ where
 }
 
 #[cfg(feature = "rolling_window_by")]
-#[allow(clippy::type_complexity)]
-fn rolling_agg_by<T>(
+fn rolling_agg_by<T, Out, NoNullsAgg, NullsAgg>(
     ca: &ChunkedArray<T>,
     by: &Series,
     options: RollingOptionsDynamicWindow,
-    rolling_agg_fn_dynamic: &dyn Fn(
-        &[T::Native],
-        Duration,
-        &[i64],
-        ClosedWindow,
-        usize,
-        TimeUnit,
-        Option<&TimeZone>,
-        Option<RollingFnParams>,
-        Option<&[IdxSize]>,
-    ) -> PolarsResult<ArrayRef>,
 ) -> PolarsResult<Series>
 where
     T: PolarsNumericType,
+    T::Native: NativeType + IsFloat,
+    Out: NativeType,
+    NoNullsAgg: RollingAggWindowNoNulls<T::Native, Out>,
+    NullsAgg: RollingAggWindowNulls<T::Native, Out>,
 {
+    use crate::chunkedarray::rolling_window::rolling_kernels::shared::{
+        RollingAggWindowNoNullsWrapper, RollingAggWindowNullsWrapper, rolling_apply_agg,
+    };
+
     if ca.is_empty() {
         return Ok(Series::new_empty(ca.name().clone(), ca.dtype()));
     }
-    polars_ensure!(by.null_count() == 0 && ca.null_count() == 0, InvalidOperation: "'Expr.rolling_*_by(...)' not yet supported for series with null values, consider using 'DataFrame.rolling' or 'Expr.rolling'");
-    polars_ensure!(ca.len() == by.len(), InvalidOperation: "`by` column in `rolling_*_by` must be the same length as values column");
+
+    polars_ensure!(
+        ca.len() == by.len(),
+        InvalidOperation: "`by` column in `rolling_*_by` must be the same length as values column"
+    );
     ensure_duration_matches_dtype(options.window_size, by.dtype(), "window_size")?;
-    polars_ensure!(!options.window_size.is_zero() && !options.window_size.negative, InvalidOperation: "`window_size` must be strictly positive");
+    polars_ensure!(
+        !options.window_size.is_zero() && !options.window_size.negative,
+        InvalidOperation: "`window_size` must be strictly positive"
+    );
+
     let (by, tz) = match by.dtype() {
         DataType::Datetime(tu, tz) => (by.cast(&DataType::Datetime(*tu, None))?, tz),
         DataType::Date => (
-            by.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
+            by.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?,
             &None,
         ),
         DataType::Int64 => (
@@ -106,50 +118,72 @@ where
             dt,
             "Date/Datetime/Int64/Int32/UInt64/UInt32"),
     };
-    let ca = ca.rechunk();
+    let mut ca_rechunked = ca.rechunk();
     let by = by.rechunk();
     let by_is_sorted = by.is_sorted(SortOptions {
         descending: false,
         ..Default::default()
     })?;
-    let by = by.datetime().unwrap();
-    let tu = by.time_unit();
+    let by_logical = by.datetime().unwrap();
+    let tu = by_logical.time_unit();
+    let mut by_physical = Cow::Borrowed(by_logical.physical());
+    let sorting_indices_opt = (!by_is_sorted).then(|| by_physical.arg_sort(Default::default()));
 
-    let func = rolling_agg_fn_dynamic;
-    let out: ArrayRef = if by_is_sorted {
-        let arr = ca.downcast_iter().next().unwrap();
-        let by_values = by.physical().cont_slice().unwrap();
-        let values = arr.values().as_slice();
-        func(
-            values,
+    if let Some(sorting_indices) = &sorting_indices_opt {
+        // SAFETY: `sorting_indices` is in-bounds because we checked that `ca.len() == by.len()` and
+        // they are derived from `by`.
+        ca_rechunked = Cow::Owned(unsafe { ca_rechunked.take_unchecked(sorting_indices) });
+        // SAFETY: `sorting_indices` is in-bounds because they are derived from `by`.
+        by_physical = Cow::Owned(unsafe { by_physical.take_unchecked(sorting_indices) });
+    }
+
+    let by_values = by_physical.cont_slice().unwrap();
+    let arr = ca_rechunked.downcast_iter().next().unwrap();
+    let values = arr.values().as_slice();
+
+    // We explicitly branch here because we want to compile different versions based on the no_nulls
+    // or nulls kernel.
+    let out: ArrayRef = if ca.null_count() == 0 {
+        let mut agg_window =
+            RollingAggWindowNoNullsWrapper(NoNullsAgg::new(values, 0, 0, options.fn_params, None));
+
+        rolling_apply_agg(
+            &mut agg_window,
             options.window_size,
             by_values,
             options.closed_window,
             options.min_periods,
             tu,
             tz.as_ref(),
-            options.fn_params,
-            None,
+            sorting_indices_opt
+                .as_ref()
+                .map(|s| s.cont_slice().unwrap()),
         )?
     } else {
-        let sorting_indices = by.physical().arg_sort(Default::default());
-        let ca = unsafe { ca.take_unchecked(&sorting_indices) };
-        let by = unsafe { by.physical().take_unchecked(&sorting_indices) };
-        let arr = ca.downcast_iter().next().unwrap();
-        let by_values = by.cont_slice().unwrap();
-        let values = arr.values().as_slice();
-        func(
+        let validity = arr.validity().unwrap();
+        let mut agg_window = RollingAggWindowNullsWrapper(NullsAgg::new(
             values,
+            validity,
+            0,
+            0,
+            options.fn_params,
+            None,
+        ));
+
+        rolling_apply_agg(
+            &mut agg_window,
             options.window_size,
             by_values,
             options.closed_window,
             options.min_periods,
             tu,
             tz.as_ref(),
-            options.fn_params,
-            Some(sorting_indices.cont_slice().unwrap()),
+            sorting_indices_opt
+                .as_ref()
+                .map(|s| s.cont_slice().unwrap()),
         )?
     };
+
     Series::try_from((ca.name().clone(), out))
 }
 
@@ -164,12 +198,7 @@ pub trait SeriesOpsTime: AsSeries {
         let s = self.as_series().to_float()?;
         with_match_physical_float_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-            rolling_agg_by(
-                ca,
-                by,
-                options,
-                &super::rolling_kernels::no_nulls::rolling_mean,
-            )
+            rolling_agg_by::<$T, _, MeanWindow<_>, MeanWindow<_>>(ca, by, options)
         })
     }
     /// Apply a rolling mean to a Series.
@@ -214,12 +243,9 @@ pub trait SeriesOpsTime: AsSeries {
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-            rolling_agg_by(
-                ca,
-                by,
-                options,
-                &super::rolling_kernels::no_nulls::rolling_sum,
-            )
+            type Native = <$T as PolarsNumericType>::Native;
+            type SM<'a> = SumWindow<'a, Native, Native>;
+            rolling_agg_by::<$T, _, SM, SM>(ca, by, options)
         })
     }
 
@@ -265,12 +291,12 @@ pub trait SeriesOpsTime: AsSeries {
         let s = self.as_series().to_float()?;
         with_match_physical_float_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-        rolling_agg_by(
-            ca,
-            by,
-            options,
-            &super::rolling_kernels::no_nulls::rolling_quantile,
-        )
+            rolling_agg_by::<
+                $T,
+                _,
+                no_nulls::QuantileWindow<_>,
+                nulls::QuantileWindow<_>
+            >(ca, by, options)
         })
     }
 
@@ -280,12 +306,12 @@ pub trait SeriesOpsTime: AsSeries {
         let s = self.as_series().to_float()?;
         with_match_physical_float_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-        rolling_agg(
-            ca,
-            options,
-            &rolling::no_nulls::rolling_quantile,
-            &rolling::nulls::rolling_quantile,
-        )
+            rolling_agg(
+                ca,
+                options,
+                &rolling::no_nulls::rolling_quantile,
+                &rolling::nulls::rolling_quantile,
+            )
         })
     }
 
@@ -321,12 +347,12 @@ pub trait SeriesOpsTime: AsSeries {
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-            rolling_agg_by(
-                ca,
-                by,
-                options,
-                &super::rolling_kernels::no_nulls::rolling_min,
-            )
+            rolling_agg_by::<
+                $T,
+                _,
+                no_nulls::MinWindow<_>,
+                nulls::MinWindow<_>
+            >(ca, by, options)
         })
     }
 
@@ -402,12 +428,12 @@ pub trait SeriesOpsTime: AsSeries {
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-            rolling_agg_by(
-                ca,
-                by,
-                options,
-                &super::rolling_kernels::no_nulls::rolling_max,
-            )
+            rolling_agg_by::<
+                $T,
+                _,
+                no_nulls::MaxWindow<_>,
+                nulls::MaxWindow<_>
+            >(ca, by, options)
         })
     }
 
@@ -462,14 +488,13 @@ pub trait SeriesOpsTime: AsSeries {
 
         with_match_physical_float_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-            let mut ca = ca.clone();
 
-            rolling_agg_by(
-                &ca,
-                by,
-                options,
-                &super::rolling_kernels::no_nulls::rolling_var,
-            )
+            rolling_agg_by::<
+                $T,
+                _,
+                no_nulls::MomentWindow<_, no_nulls::VarianceMoment>,
+                nulls::MomentWindow<_, nulls::VarianceMoment>
+            >(ca, by, options)
         })
     }
 
@@ -480,10 +505,9 @@ pub trait SeriesOpsTime: AsSeries {
 
         with_match_physical_float_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-            let mut ca = ca.clone();
 
             rolling_agg(
-                &ca,
+                ca,
                 options,
                 &rolling::no_nulls::rolling_var,
                 &rolling::nulls::rolling_var,
@@ -499,17 +523,11 @@ pub trait SeriesOpsTime: AsSeries {
         options: RollingOptionsDynamicWindow,
     ) -> PolarsResult<Series> {
         self.rolling_var_by(by, options).map(|mut s| {
-            match s.dtype().clone() {
-                DataType::Float32 => {
-                    let ca: &mut ChunkedArray<Float32Type> = s._get_inner_mut().as_mut();
-                    ca.apply_mut(|v| v.powf(0.5))
-                },
-                DataType::Float64 => {
-                    let ca: &mut ChunkedArray<Float64Type> = s._get_inner_mut().as_mut();
-                    ca.apply_mut(|v| v.powf(0.5))
-                },
-                _ => unreachable!(),
-            }
+            with_match_physical_float_polars_type!(s.dtype(), |$T| {
+                let ca: &mut ChunkedArray<$T> = s._get_inner_mut().as_mut();
+                ca.apply_mut(|v| v.sqrt());
+            });
+
             s
         })
     }
@@ -518,18 +536,115 @@ pub trait SeriesOpsTime: AsSeries {
     #[cfg(feature = "rolling_window")]
     fn rolling_std(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
         self.rolling_var(options).map(|mut s| {
-            match s.dtype().clone() {
-                DataType::Float32 => {
-                    let ca: &mut ChunkedArray<Float32Type> = s._get_inner_mut().as_mut();
-                    ca.apply_mut(|v| v.powf(0.5))
-                },
-                DataType::Float64 => {
-                    let ca: &mut ChunkedArray<Float64Type> = s._get_inner_mut().as_mut();
-                    ca.apply_mut(|v| v.powf(0.5))
-                },
-                _ => unreachable!(),
-            }
+            with_match_physical_float_polars_type!(s.dtype(), |$T| {
+                let ca: &mut ChunkedArray<$T> = s._get_inner_mut().as_mut();
+                ca.apply_mut(|v| v.sqrt());
+            });
+
             s
+        })
+    }
+
+    /// Apply a rolling rank to a Series based on another Series.
+    #[cfg(feature = "rolling_window_by")]
+    fn rolling_rank_by(
+        &self,
+        by: &Series,
+        options: RollingOptionsDynamicWindow,
+    ) -> PolarsResult<Series> {
+        if !matches!(
+            options.closed_window,
+            ClosedWindow::Right | ClosedWindow::Both
+        ) {
+            polars_bail!(InvalidOperation: "`rolling_rank_by` window needs to be closed on the right side (i.e., `closed` must be `right` or `both`)");
+        }
+
+        let s = self.as_series().clone();
+
+        match s.dtype() {
+            DataType::Boolean => return s.cast(&DataType::UInt8)?.rolling_rank_by(by, options),
+            dt if dt.is_temporal() => return s.to_physical_repr().rolling_rank_by(by, options),
+            dt => {
+                polars_ensure!(
+                    dt.is_primitive_numeric() && !dt.is_unknown(),
+                    op = "rolling_rank_by",
+                    dt
+                );
+            },
+        }
+
+        let method = if let Some(RollingFnParams::Rank { method, .. }) = options.fn_params {
+            method
+        } else {
+            unreachable!("expected RollingFnParams::Rank");
+        };
+
+        with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+            let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+
+            match method {
+                RollingRankMethod::Average => rolling_agg_by::<
+                    $T,
+                    _,
+                    no_nulls::RankWindowAvg<_>,
+                    nulls::RankWindowAvg<_>
+                >(ca, by, options),
+                RollingRankMethod::Min => rolling_agg_by::<
+                    $T,
+                    _,
+                    no_nulls::RankWindowMin<_>,
+                    nulls::RankWindowMin<_>
+                >(ca, by, options),
+                RollingRankMethod::Max => rolling_agg_by::<
+                    $T,
+                    _,
+                    no_nulls::RankWindowMax<_>,
+                    nulls::RankWindowMax<_>
+                >(ca, by, options),
+                RollingRankMethod::Dense => rolling_agg_by::<
+                    $T,
+                    _,
+                    no_nulls::RankWindowDense<_>,
+                    nulls::RankWindowDense<_>
+                >(ca, by, options),
+                RollingRankMethod::Random => rolling_agg_by::<
+                    $T,
+                    _,
+                    no_nulls::RankWindowRandom<_>,
+                    nulls::RankWindowRandom<_>
+                >(ca, by, options),
+                _ => todo!()
+            }
+        })
+    }
+
+    /// Apply a rolling rank to a Series.
+    #[cfg(feature = "rolling_window")]
+    fn rolling_rank(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
+        let s = self.as_series();
+
+        match s.dtype() {
+            DataType::Boolean => return s.cast(&DataType::UInt8)?.rolling_rank(options),
+            dt if dt.is_temporal() => return s.to_physical_repr().rolling_rank(options),
+            dt => {
+                polars_ensure!(
+                    dt.is_primitive_numeric() && !dt.is_unknown(),
+                    op = "rolling_rank",
+                    dt
+                );
+            },
+        }
+
+        with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+            let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+            let mut ca = ca.clone();
+
+            rolling_agg(
+                &ca,
+                options,
+                &rolling::no_nulls::rolling_rank,
+                &rolling::nulls::rolling_rank,
+            )
         })
     }
 }

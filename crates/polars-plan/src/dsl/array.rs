@@ -43,6 +43,12 @@ impl ArrayNameSpace {
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Var(ddof)))
     }
 
+    /// Compute the mean of the items in every subarray.
+    pub fn mean(self) -> Expr {
+        self.0
+            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Mean))
+    }
+
     /// Compute the median of the items in every subarray.
     pub fn median(self) -> Expr {
         self.0
@@ -185,10 +191,24 @@ impl ArrayNameSpace {
             .map_binary(FunctionExpr::ArrayExpr(ArrayFunction::Shift), n)
     }
     /// Returns a column with a separate row for every array element.
-    pub fn explode(self) -> Expr {
+    pub fn explode(self, options: ExplodeOptions) -> Expr {
         self.0
-            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Explode {
-                skip_empty: false,
-            }))
+            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Explode(options)))
+    }
+
+    pub fn eval<E: Into<Expr>>(self, other: E, as_list: bool) -> Expr {
+        Expr::Eval {
+            expr: Arc::new(self.0),
+            evaluation: Arc::new(other.into()),
+            variant: EvalVariant::Array { as_list },
+        }
+    }
+
+    pub fn agg<E: Into<Expr>>(self, other: E) -> Expr {
+        Expr::Eval {
+            expr: Arc::new(self.0),
+            evaluation: Arc::new(other.into()),
+            variant: EvalVariant::ArrayAgg,
+        }
     }
 }

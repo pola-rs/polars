@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.fixture
@@ -220,7 +221,6 @@ def test_group_by_errors() -> None:
             "c": [99, 99, 66],
         }
     )
-
     with pytest.raises(
         SQLSyntaxError,
         match=r"negative ordinal values are invalid for GROUP BY; found -99",
@@ -246,7 +246,331 @@ def test_group_by_errors() -> None:
         df.sql("SELECT a, COUNT(a) AS n FROM self HAVING n > 1")
 
 
+def test_group_by_having_aggregate_not_in_select() -> None:
+    """Test HAVING with aggregate functions not present in SELECT."""
+    df = pl.DataFrame(
+        {"grp": ["a", "a", "a", "b", "b", "c"], "val": [1, 2, 3, 4, 5, 6]}
+    )
+    # COUNT(*) not in SELECT - only group 'a' has 3 rows
+    assert_sql_matches(
+        df,
+        query="SELECT grp FROM self GROUP BY grp HAVING COUNT(*) > 2",
+        compare_with="sqlite",
+        expected={"grp": ["a"]},
+    )
+
+    # SUM not in SELECT
+    assert_sql_matches(
+        df,
+        query="SELECT grp FROM self GROUP BY grp HAVING SUM(val) > 5 ORDER BY grp",
+        compare_with="sqlite",
+        expected={"grp": ["a", "b", "c"]},
+    )
+
+    # AVG not in SELECT
+    assert_sql_matches(
+        df,
+        query="SELECT grp FROM self GROUP BY grp HAVING AVG(val) > 4 ORDER BY grp",
+        compare_with="sqlite",
+        expected={"grp": ["b", "c"]},
+    )
+
+    # MIN/MAX not in SELECT
+    assert_sql_matches(
+        df,
+        query="SELECT grp FROM self GROUP BY grp HAVING MIN(val) >= 4 ORDER BY grp",
+        compare_with="sqlite",
+        expected={"grp": ["b", "c"]},
+    )
+
+
+def test_group_by_having_aggregate_in_select() -> None:
+    """Test HAVING properly references an aggregate already computed in SELECT."""
+    df = pl.DataFrame(
+        {"grp": ["a", "a", "a", "b", "b", "c"], "val": [1, 2, 3, 4, 5, 6]}
+    )
+    # COUNT(*) in SELECT and HAVING
+    for count_expr in ("COUNT(*)", "cnt"):
+        assert_sql_matches(
+            df,
+            query=f"SELECT grp, COUNT(*) AS cnt FROM self GROUP BY grp HAVING {count_expr} > 2",
+            compare_with="sqlite",
+            expected={"grp": ["a"], "cnt": [3]},
+        )
+
+    # SUM in SELECT and HAVING
+    for sum_expr in ("total", "SUM(val)"):
+        assert_sql_matches(
+            df,
+            query=f"SELECT grp, SUM(val) AS total FROM self GROUP BY grp HAVING {sum_expr} > 5 ORDER BY grp",
+            compare_with="sqlite",
+            expected={"grp": ["a", "b", "c"], "total": [6, 9, 6]},
+        )
+
+
+def test_group_by_having_multiple_aggregates() -> None:
+    """Test HAVING with multiple aggregate conditions."""
+    df = pl.DataFrame(
+        {"grp": ["a", "a", "a", "b", "b", "c"], "val": [1, 2, 3, 4, 5, 6]}
+    )
+    assert_sql_matches(
+        df,
+        query="SELECT grp FROM self GROUP BY grp HAVING COUNT(*) >= 2 AND SUM(val) > 5 ORDER BY grp",
+        compare_with="sqlite",
+        expected={"grp": ["a", "b"]},
+    )
+    assert_sql_matches(
+        df,
+        query="SELECT grp FROM self GROUP BY grp HAVING COUNT(*) = 1 OR SUM(val) >= 9 ORDER BY grp",
+        compare_with="sqlite",
+        expected={"grp": ["b", "c"]},
+    )
+
+
+def test_group_by_having_compound_expressions() -> None:
+    """Test HAVING with compound expressions involving aggregates."""
+    df = pl.DataFrame(
+        {"grp": ["a", "a", "c", "b", "b"], "val": [10, 20, 100, 5, 15]},
+    )
+    assert_sql_matches(
+        df,
+        query="SELECT grp FROM self GROUP BY grp HAVING SUM(val) / COUNT(*) > 10 ORDER BY grp",
+        compare_with="sqlite",
+        expected={"grp": ["a", "c"]},
+    )
+    assert_sql_matches(
+        df,
+        query="SELECT grp FROM self GROUP BY grp HAVING MAX(val) - MIN(val) > 5 ORDER BY grp DESC",
+        compare_with="sqlite",
+        expected={"grp": ["b", "a"]},
+    )
+    for sum_expr, count_expr in (
+        ("SUM(val)", "COUNT(*)"),
+        ("total", "COUNT(*)"),
+        ("SUM(val)", "n"),
+        ("total", "n"),
+    ):
+        assert_sql_matches(
+            df,
+            query=f"""
+                SELECT grp, SUM(val) AS total, COUNT(*) AS n
+                FROM self
+                GROUP BY grp
+                HAVING {sum_expr} / {count_expr} > 10 ORDER BY grp
+            """,
+            compare_with="sqlite",
+            expected={
+                "grp": ["a", "c"],
+                "total": [30, 100],
+                "n": [2, 1],
+            },
+        )
+
+
+def test_group_by_having_with_nulls() -> None:
+    """Test HAVING behaviour with NULL values."""
+    df = pl.DataFrame(
+        {"grp": ["a", "b", "a", "b", "c"], "val": [None, None, 1, None, 5]}
+    )
+    # COUNT(*) counts all rows, including NULLs...
+    assert_sql_matches(
+        df,
+        query="SELECT grp FROM self GROUP BY grp HAVING COUNT(*) > 1 ORDER BY grp",
+        compare_with="sqlite",
+        expected={"grp": ["a", "b"]},
+    )
+
+    # ...whereas COUNT(col) excludes NULLs
+    assert_sql_matches(
+        df,
+        query="SELECT grp FROM self GROUP BY grp HAVING COUNT(val) > 0 ORDER BY grp",
+        compare_with="sqlite",
+        expected={"grp": ["a", "c"]},
+    )
+
+
+@pytest.mark.parametrize(
+    ("having_clause", "expected"),
+    [
+        # basic count conditions
+        ("COUNT(*) > 2", [1]),
+        ("COUNT(*) >= 2 AND COUNT(*) <= 3", [1, 2]),
+        ("(COUNT(*) > 1)", [1, 2]),
+        ("NOT COUNT(*) < 2", [1, 2]),
+        # range / membership
+        ("COUNT(*) BETWEEN 2 AND 3", [1, 2]),
+        ("COUNT(*) NOT BETWEEN 1 AND 2", [1]),
+        ("COUNT(*) IN (1, 3)", [1, 3]),
+        ("COUNT(*) NOT IN (1, 2)", [1]),
+        # conditional
+        ("CASE WHEN COUNT(*) > 2 THEN 1 ELSE 0 END = 1", [1]),
+    ],
+)
+def test_group_by_having_misc_01(
+    having_clause: str,
+    expected: list[int],
+) -> None:
+    df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 3]})
+    assert_sql_matches(
+        df,
+        query=f"SELECT a FROM self GROUP BY a HAVING {having_clause} ORDER BY a",
+        compare_with="sqlite",
+        expected={"a": expected},
+    )
+
+
+@pytest.mark.parametrize(
+    ("having_clause", "expected"),
+    [
+        ("SUM(b) > 50", [1, 3]),
+        ("AVG(b) > 15", [1, 3]),
+        ("ABS(SUM(b)) > 50", [1, 3]),
+        ("ROUND(ABS(AVG(b))) > 15", [1, 3]),
+        ("ABS(SUM(b)) + ABS(AVG(b)) > 100", [3]),
+        ("CASE WHEN SUM(b) < 10 THEN 0 ELSE SUM(b) END > 50", [1, 3]),
+    ],
+)
+def test_group_by_having_misc_02(
+    having_clause: str,
+    expected: list[int],
+) -> None:
+    df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 3], "b": [10, 20, 30, 5, 15, 100]})
+    assert_sql_matches(
+        df,
+        query=f"SELECT a FROM self GROUP BY a HAVING {having_clause} ORDER BY a",
+        compare_with="sqlite",
+        expected={"a": expected},
+    )
+
+
+@pytest.mark.parametrize(
+    ("having_clause", "expected"),
+    [
+        ("MAX(b) IS NULL", [1]),
+        ("MAX(b) IS NOT NULL", [2]),
+    ],
+)
+def test_group_by_having_misc_03(
+    having_clause: str,
+    expected: list[int],
+) -> None:
+    df = pl.DataFrame({"a": [1, 1, 2], "b": [None, None, 5]})
+    assert_sql_matches(
+        df,
+        query=f"SELECT a FROM self GROUP BY a HAVING {having_clause}",
+        compare_with="sqlite",
+        expected={"a": expected},
+    )
+
+
 def test_group_by_output_struct() -> None:
     df = pl.DataFrame({"g": [1], "x": [2], "y": [3]})
     out = df.group_by("g").agg(pl.struct(pl.col.x.min(), pl.col.y.sum()))
     assert out.rows() == [(1, {"x": 2, "y": 3})]
+
+
+@pytest.mark.parametrize(
+    "maintain_order",
+    [False, True],
+)
+def test_group_by_list_cat_24049(maintain_order: bool) -> None:
+    df = pl.DataFrame(
+        {
+            "x": [["a"], ["b", "c"], ["a"], ["a"], ["d"], ["b", "c"]],
+            "y": [1, 2, 3, 4, 5, 10],
+        },
+        schema={"x": pl.List(pl.Categorical), "y": pl.Int32},
+    )
+
+    expected = pl.DataFrame(
+        {"x": [["a"], ["b", "c"], ["d"]], "y": [8, 12, 5]},
+        schema={"x": pl.List(pl.Categorical), "y": pl.Int32},
+    )
+    assert_frame_equal(
+        df.group_by("x", maintain_order=maintain_order).agg(pl.col.y.sum()),
+        expected,
+        check_row_order=maintain_order,
+    )
+
+
+@pytest.mark.parametrize(
+    "maintain_order",
+    [False, True],
+)
+def test_group_by_struct_cat_24049(maintain_order: bool) -> None:
+    a = {"k1": "a2", "k2": "a2"}
+    b = {"k1": "b2", "k2": "b2"}
+    c = {"k1": "c2", "k2": "c2"}
+    s = pl.Struct({"k1": pl.Categorical, "k2": pl.Categorical})
+    df = pl.DataFrame(
+        {
+            "x": [a, b, a, a, c, b],
+            "y": [1, 2, 3, 4, 5, 10],
+        },
+        schema={"x": s, "y": pl.Int32},
+    )
+
+    expected = pl.DataFrame(
+        {"x": [a, b, c], "y": [8, 12, 5]},
+        schema={"x": s, "y": pl.Int32},
+    )
+    assert_frame_equal(
+        df.group_by("x", maintain_order=maintain_order).agg(pl.col.y.sum()),
+        expected,
+        check_row_order=maintain_order,
+    )
+
+
+def test_group_by_aggregate_name_is_group_key() -> None:
+    """Unaliased aggregation with a column that's also used in the GROUP BY key."""
+    df = pl.DataFrame({"c0": [1, 2]})
+
+    # 'COUNT(col)' where 'col' is also part of the the group key
+    for query in (
+        "SELECT COUNT(c0) FROM self GROUP BY c0",
+        "SELECT COUNT(c0) AS c0 FROM self GROUP BY c0",
+    ):
+        assert_sql_matches(
+            df,
+            query=query,
+            compare_with="sqlite",
+            check_column_names=False,
+            expected={"c0": [1, 1]},
+        )
+
+    # Same condition with a table prefix (and a different aggfunc)
+    query = "SELECT SUM(self.c0) FROM self GROUP BY self.c0"
+    assert_sql_matches(
+        df,
+        query=query,
+        compare_with="sqlite",
+        check_row_order=False,
+        check_column_names=False,
+        expected={"c0": [1, 2]},
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # GROUP BY referencing SELECT alias for arithmetic expression
+        "SELECT COUNT(*) AS n, value / 10 AS bucket FROM self GROUP BY bucket ORDER BY bucket",
+        # Multiple aliased expressions in GROUP BY
+        "SELECT COUNT(*) AS n, value / 10 AS tens, value % 3 AS rem FROM self GROUP BY tens, rem ORDER BY tens, rem",
+        # GROUP BY alias with additional aggregation
+        "SELECT SUM(id) AS total, value / 20 AS grp FROM self GROUP BY grp ORDER BY grp",
+        # GROUP BY ordinal position with aliased column
+        "SELECT value / 10 AS bucket, COUNT(*) AS n FROM self GROUP BY 1 ORDER BY 1",
+        # GROUP BY ordinal with multiple aliased columns
+        "SELECT id % 2 AS parity, value / 10 AS tens, SUM(id) AS total FROM self GROUP BY 1, 2 ORDER BY 1, 2",
+    ],
+)
+def test_group_by_select_alias(query: str) -> None:
+    """Test GROUP BY can reference SELECT aliases for computed expressions."""
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "value": [10, 20, 30, 40, 50],
+        }
+    )
+    assert_sql_matches(df, query=query, compare_with="sqlite")

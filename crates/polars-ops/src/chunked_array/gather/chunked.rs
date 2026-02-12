@@ -3,9 +3,9 @@ use std::fmt::Debug;
 
 use arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
 use arrow::bitmap::BitmapBuilder;
-use arrow::buffer::Buffer;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::Entry;
+use polars_buffer::Buffer;
 use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -53,9 +53,9 @@ impl TakeChunked for DataFrame {
     ) -> DataFrame {
         let cols = self
             .to_df()
-            ._apply_columns(&|s| s.take_chunked_unchecked(idx, sorted, avoid_sharing));
+            .apply_columns(|s| s.take_chunked_unchecked(idx, sorted, avoid_sharing));
 
-        unsafe { DataFrame::new_no_checks_height_from_first(cols) }
+        unsafe { DataFrame::new_unchecked_infer_height(cols) }
     }
 
     /// Take elements by a slice of optional [`ChunkId`]s.
@@ -69,9 +69,9 @@ impl TakeChunked for DataFrame {
     ) -> DataFrame {
         let cols = self
             .to_df()
-            ._apply_columns(&|s| s.take_opt_chunked_unchecked(idx, avoid_sharing));
+            .apply_columns(|s| s.take_opt_chunked_unchecked(idx, avoid_sharing));
 
-        unsafe { DataFrame::new_no_checks_height_from_first(cols) }
+        unsafe { DataFrame::new_unchecked_infer_height(cols) }
     }
 }
 
@@ -85,9 +85,9 @@ pub trait TakeChunkedHorPar: IntoDf {
     ) -> DataFrame {
         let cols = self
             .to_df()
-            ._apply_columns_par(&|s| s.take_chunked_unchecked(idx, sorted, false));
+            .apply_columns_par(|s| s.take_chunked_unchecked(idx, sorted, false));
 
-        unsafe { DataFrame::new_no_checks_height_from_first(cols) }
+        unsafe { DataFrame::new_unchecked_infer_height(cols) }
     }
 
     /// # Safety
@@ -100,9 +100,9 @@ pub trait TakeChunkedHorPar: IntoDf {
     ) -> DataFrame {
         let cols = self
             .to_df()
-            ._apply_columns_par(&|s| s.take_opt_chunked_unchecked(idx, false));
+            .apply_columns_par(|s| s.take_opt_chunked_unchecked(idx, false));
 
-        unsafe { DataFrame::new_no_checks_height_from_first(cols) }
+        unsafe { DataFrame::new_unchecked_infer_height(cols) }
     }
 }
 
@@ -356,11 +356,11 @@ where
                 );
                 let (chunk_idx, array_idx) = chunk_id.extract();
                 let arr = self.downcast_get_unchecked(chunk_idx as usize);
-                arr.value_unchecked(array_idx as usize).clone()
+                arr.value_unchecked(array_idx as usize)
             });
 
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
-            ChunkedArray::with_chunk(self.name().clone(), arr)
+            ChunkedArray::with_chunk_like(self, arr)
         } else {
             let iter = by.iter().map(|chunk_id| {
                 debug_assert!(
@@ -373,7 +373,7 @@ where
             });
 
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
-            ChunkedArray::with_chunk(self.name().clone(), arr)
+            ChunkedArray::with_chunk_like(self, arr)
         };
         let sorted_flag = _update_gather_sorted_flag(self.is_sorted_flag(), sorted);
         out.set_sorted_flag(sorted_flag);
@@ -401,8 +401,7 @@ where
                     }
                 })
                 .collect_arr_trusted_with_dtype(arrow_dtype);
-
-            ChunkedArray::with_chunk(self.name().clone(), arr)
+            ChunkedArray::with_chunk_like(self, arr)
         } else {
             let arr = by
                 .iter()
@@ -417,7 +416,7 @@ where
                 })
                 .collect_arr_trusted_with_dtype(arrow_dtype);
 
-            ChunkedArray::with_chunk(self.name().clone(), arr)
+            ChunkedArray::with_chunk_like(self, arr)
         }
     }
 }
@@ -1018,6 +1017,44 @@ mod test {
             let idx = IdxCa::new("".into(), [None, Some(1), Some(3), Some(2)]);
             let expected = s_1.rechunk().take(&idx).unwrap();
             assert!(out.equals_missing(&expected));
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-categorical")]
+    fn test_list_categorical_dtype_preserved_after_take() {
+        use polars_core::prelude::*;
+
+        unsafe {
+            // Create List(String) and convert to List(Categorical)
+            let mut builder = ListStringChunkedBuilder::new("a".into(), 2, 3);
+            builder.append_values_iter(["a", "b"].iter().copied());
+            builder.append_values_iter(["c", "d"].iter().copied());
+            let list_str = builder.finish().into_series();
+
+            let list_cat = list_str
+                .list()
+                .unwrap()
+                .apply_to_inner(&|s| s.cast(&DataType::from_categories(Categories::global())))
+                .unwrap()
+                .into_series();
+
+            // Append to create chunked series
+            let mut chunked = list_cat.clone();
+            chunked.append(&list_cat).unwrap();
+            assert_eq!(chunked.n_chunks(), 2);
+
+            // Perform chunked take
+            let by: [ChunkId<24>; 2] = [ChunkId::store(0, 0), ChunkId::store(1, 0)];
+            let out = chunked.take_chunked_unchecked(&by, IsSorted::Not, false);
+
+            // Verify the Polars dtype is preserved
+            // The bug was that List(Categorical) was becoming List(UInt32) after take
+            assert!(
+                matches!(out.dtype(), DataType::List(inner) if matches!(inner.as_ref(), DataType::Categorical(_, _))),
+                "List(Categorical) dtype should be preserved after take_chunked_unchecked. Got: {:?}",
+                out.dtype()
+            );
         }
     }
 }

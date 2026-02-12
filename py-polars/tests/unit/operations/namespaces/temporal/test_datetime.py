@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -15,6 +15,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType, TemporalLiteral, TimeUnit
 
 
@@ -183,7 +185,7 @@ def test_local_time_before_epoch(time_unit: TimeUnit) -> None:
 @pytest.mark.parametrize(
     ("time_zone", "offset", "expected"),
     [
-        (None, "1d", True),
+        (None, "+1d", True),
         ("Europe/London", "1d", False),
         ("UTC", "1d", True),
         (None, "1m", True),
@@ -191,7 +193,7 @@ def test_local_time_before_epoch(time_unit: TimeUnit) -> None:
         ("UTC", "1m", True),
         (None, "1w", True),
         ("Europe/London", "1w", False),
-        ("UTC", "1w", True),
+        ("UTC", "+1w", True),
         (None, "1h", True),
         ("Europe/London", "1h", True),
         ("UTC", "1h", True),
@@ -214,35 +216,38 @@ def test_offset_by_sortedness(
     assert not result.flags["SORTED_DESC"]
 
 
-def test_offset_by_invalid_duration() -> None:
-    with pytest.raises(
-        InvalidOperationError, match="expected leading integer in the duration string"
-    ):
-        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("P")
-
-
-def test_offset_by_missing_unit() -> None:
+@pytest.mark.parametrize("offset", ["?", "xx", "P1D", "~10d"])
+def test_offset_by_invalid_duration(offset: str) -> None:
     with pytest.raises(
         InvalidOperationError,
-        match="expected a unit to follow integer in the duration string '1'",
+        match="expected leading integer in the duration string",
     ):
-        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("1")
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by(offset)
 
+
+@pytest.mark.parametrize("offset", ["++1d", "+1d+1m+1s", "--1d", "-1d-1m-1s"])
+def test_offset_by_invalid_duration_unary_ops(offset: str) -> None:
+    op = "+" if "+" in offset else "-"
     with pytest.raises(
         InvalidOperationError,
-        match="expected a unit to follow integer in the duration string '1mo23d4'",
+        match=rf"duration string can only have a single '\{op}' sign",
     ):
-        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("1mo23d4")
+        pl.Series([datetime(2025, 10, 3, 11, 42)]).dt.offset_by(offset)
 
+
+@pytest.mark.parametrize("offset", ["1", "1mo23d4", "-2d1", "12時30分45秒"])
+def test_offset_by_missing_or_invalid_unit(offset: str) -> None:
     with pytest.raises(
         InvalidOperationError,
-        match="expected a unit to follow integer in the duration string '-2d1'",
+        match=f"expected a valid unit to follow integer in the duration string '{offset}'",
     ):
-        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("-2d1")
+        pl.Series([datetime(2025, 10, 6, 13, 45)]).dt.offset_by(offset)
 
+
+def test_offset_by_missing_unit_in_expr() -> None:
     with pytest.raises(
         InvalidOperationError,
-        match="expected a unit to follow integer in the duration string '1d2'",
+        match="expected a valid unit to follow integer in the duration string '1d2'",
     ):
         pl.DataFrame(
             {"a": [datetime(2022, 3, 20, 5, 7)] * 2, "b": ["1d", "1d2"]}
@@ -258,107 +263,6 @@ def test_dt_datetime_date_time_invalid() -> None:
         pl.Series([timedelta(1)]).dt.time()
     with pytest.raises(ComputeError, match="expected Datetime or Time"):
         pl.Series([date(2020, 1, 1)]).dt.time()
-
-
-@pytest.mark.parametrize(
-    ("dt", "expected"),
-    [
-        (datetime(2022, 3, 15, 3), datetime(2022, 3, 1, 3)),
-        (datetime(2022, 3, 15, 3, 2, 1, 123000), datetime(2022, 3, 1, 3, 2, 1, 123000)),
-        (datetime(2022, 3, 15), datetime(2022, 3, 1)),
-        (datetime(2022, 3, 1), datetime(2022, 3, 1)),
-    ],
-)
-@pytest.mark.parametrize(
-    ("tzinfo", "time_zone"),
-    [
-        (None, None),
-        (ZoneInfo("Asia/Kathmandu"), "Asia/Kathmandu"),
-    ],
-)
-@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
-def test_month_start_datetime(
-    dt: datetime,
-    expected: datetime,
-    time_unit: TimeUnit,
-    tzinfo: ZoneInfo | None,
-    time_zone: str | None,
-) -> None:
-    ser = pl.Series([dt]).dt.replace_time_zone(time_zone).dt.cast_time_unit(time_unit)
-    result = ser.dt.month_start().item()
-    assert result == expected.replace(tzinfo=tzinfo)
-
-
-@pytest.mark.parametrize(
-    ("dt", "expected"),
-    [
-        (date(2022, 3, 15), date(2022, 3, 1)),
-        (date(2022, 3, 31), date(2022, 3, 1)),
-    ],
-)
-def test_month_start_date(dt: date, expected: date) -> None:
-    ser = pl.Series([dt])
-    result = ser.dt.month_start().item()
-    assert result == expected
-
-
-@pytest.mark.parametrize(
-    ("dt", "expected"),
-    [
-        (datetime(2022, 3, 15, 3), datetime(2022, 3, 31, 3)),
-        (
-            datetime(2022, 3, 15, 3, 2, 1, 123000),
-            datetime(2022, 3, 31, 3, 2, 1, 123000),
-        ),
-        (datetime(2022, 3, 15), datetime(2022, 3, 31)),
-        (datetime(2022, 3, 31), datetime(2022, 3, 31)),
-    ],
-)
-@pytest.mark.parametrize(
-    ("tzinfo", "time_zone"),
-    [
-        (None, None),
-        (ZoneInfo("Asia/Kathmandu"), "Asia/Kathmandu"),
-    ],
-)
-@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
-def test_month_end_datetime(
-    dt: datetime,
-    expected: datetime,
-    time_unit: TimeUnit,
-    tzinfo: ZoneInfo | None,
-    time_zone: str | None,
-) -> None:
-    ser = pl.Series([dt]).dt.replace_time_zone(time_zone).dt.cast_time_unit(time_unit)
-    result = ser.dt.month_end().item()
-    assert result == expected.replace(tzinfo=tzinfo)
-
-
-@pytest.mark.parametrize(
-    ("dt", "expected"),
-    [
-        (date(2022, 3, 15), date(2022, 3, 31)),
-        (date(2022, 3, 31), date(2022, 3, 31)),
-    ],
-)
-def test_month_end_date(dt: date, expected: date) -> None:
-    ser = pl.Series([dt])
-    result = ser.dt.month_end().item()
-    assert result == expected
-
-
-def test_month_start_end_invalid() -> None:
-    ser = pl.Series([time(1, 2, 3)])
-    with pytest.raises(
-        InvalidOperationError,
-        match=r"`month_start` operation not supported for dtype `time` \(expected: date/datetime\)",
-    ):
-        ser.dt.month_start()
-    with pytest.raises(
-        InvalidOperationError,
-        match=r"`month_end` operation not supported for dtype `time` \(expected: date/datetime\)",
-    ):
-        ser.dt.month_end()
 
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
@@ -861,6 +765,76 @@ def test_is_leap_year(
     ]
 
 
+@pytest.mark.parametrize(
+    ("value_type", "time_unit", "time_zone"),
+    [
+        (date, None, None),
+        (datetime, "ns", None),
+        (
+            datetime,
+            "ns",
+            "Asia/Kathmandu",
+        ),
+        (datetime, "us", None),
+        (
+            datetime,
+            "us",
+            "Asia/Kathmandu",
+        ),
+        (datetime, "ms", None),
+        (
+            datetime,
+            "ms",
+            "Asia/Kathmandu",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("start_ymd", "end_ymd", "feb_days"),
+    [
+        # Non-leap year cases
+        ((1900, 1, 1), (1900, 12, 1), 28),  # 1900 can be divided by 100 but not by 400
+        ((2025, 1, 1), (2025, 12, 1), 28),  # 2025 cannot be divided by 4
+        # Leap year cases
+        ((2000, 1, 1), (2000, 12, 1), 29),  # 2000 can be divided by 400
+        ((2004, 1, 1), (2004, 12, 1), 29),  # 2004 can be divided by 4 but not by 100
+    ],
+)
+def test_days_in_month(
+    value_type: type,
+    time_unit: str | None,
+    time_zone: str | None,
+    start_ymd: tuple[int, int, int],
+    end_ymd: tuple[int, int, int],
+    feb_days: int,
+) -> None:
+    assert value_type in (date, datetime)
+    range_fn: Callable[..., pl.Series] = (
+        pl.date_range if value_type is date else pl.datetime_range
+    )
+    kwargs: dict[str, str] = {}
+    if time_unit is not None:
+        kwargs["time_unit"] = time_unit
+    if time_zone is not None:
+        kwargs["time_zone"] = time_zone
+    assert range_fn(
+        value_type(*start_ymd), value_type(*end_ymd), "1mo", **kwargs, eager=True
+    ).dt.days_in_month().to_list() == [
+        31,
+        feb_days,
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ]
+
+
 def test_quarter() -> None:
     assert pl.datetime_range(
         datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo", eager=True
@@ -891,7 +865,7 @@ def test_offset_by() -> None:
     assert df["date_min"].to_list() == expected_dates
 
 
-@pytest.mark.parametrize("time_zone", ["US/Central", None])
+@pytest.mark.parametrize("time_zone", ["America/Chicago", None])
 def test_offset_by_crossing_dst(time_zone: str | None) -> None:
     ser = pl.Series([datetime(2021, 11, 7)]).dt.replace_time_zone(time_zone)
     result = ser.dt.offset_by("1d")
@@ -1232,6 +1206,15 @@ def test_datetime_median_with_tu(
     assert pl.Series(values, dtype=pl.Duration(time_unit)).median() == expected_median
 
 
+def test_date_median_upcast() -> None:
+    df = pl.DataFrame({"a": [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)]})
+    result = df.select(pl.col("a").median())
+    expected = pl.DataFrame(
+        {"a": pl.Series([datetime(2022, 1, 2)], dtype=pl.Datetime("us"))}
+    )
+    assert_frame_equal(result, expected)
+
+
 @pytest.mark.parametrize(
     ("values", "expected_mean"),
     [
@@ -1308,7 +1291,7 @@ def test_agg_mean_expr() -> None:
 
     expected = pl.DataFrame(
         {
-            "date": pl.Series([datetime(2023, 1, 2, 8, 0)], dtype=pl.Datetime("ms")),
+            "date": pl.Series([datetime(2023, 1, 2, 8, 0)], dtype=pl.Datetime("us")),
             "datetime_ms": pl.Series(
                 [datetime(2023, 1, 2, 8, 0, 0)], dtype=pl.Datetime("ms")
             ),
@@ -1374,7 +1357,7 @@ def test_agg_median_expr() -> None:
 
     expected = pl.DataFrame(
         {
-            "date": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("ms")),
+            "date": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("us")),
             "datetime_ms": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("ms")),
             "datetime_us": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("us")),
             "datetime_ns": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("ns")),
@@ -1419,7 +1402,7 @@ def test_series_duration_timeunits(
         for us in micros
         if isinstance(us, int)
     ):
-        for ns, us in zip(s.dt.total_nanoseconds(), micros):
+        for ns, us in zip(s.dt.total_nanoseconds(), micros, strict=True):
             assert ns == (us * 1000)
 
 
@@ -1457,20 +1440,19 @@ def test_dt_mean_deprecated() -> None:
     [
         pl.Date,
         pl.Datetime("ms"),
-        pl.Datetime("ms", "EST"),
+        pl.Datetime("ms", "America/New_York"),
         pl.Datetime("us"),
-        pl.Datetime("us", "EST"),
+        pl.Datetime("us", "America/New_York"),
         pl.Datetime("ns"),
-        pl.Datetime("ns", "EST"),
+        pl.Datetime("ns", "America/New_York"),
     ],
 )
 @pytest.mark.parametrize(
     "value",
     [
-        # date(1677, 9, 22), # See test_literal_from_datetime.
+        date(1677, 9, 22),
         date(1970, 1, 1),
         date(2024, 2, 29),
-        date(2262, 4, 11),
     ],
 )
 def test_literal_from_date(
@@ -1490,29 +1472,22 @@ def test_literal_from_date(
     [
         pl.Date,
         pl.Datetime("ms"),
-        pl.Datetime("ms", "EST"),
+        pl.Datetime("ms", "America/New_York"),
         pl.Datetime("us"),
-        pl.Datetime("us", "EST"),
+        pl.Datetime("us", "America/New_York"),
         pl.Datetime("ns"),
-        pl.Datetime("ns", "EST"),
+        pl.Datetime("ns", "America/New_York"),
     ],
 )
 @pytest.mark.parametrize(
     "value",
     [
-        # Very old dates with a timezone like EST caused problems for the CI due
-        # to the IANA timezone database updating their historical offset, so
-        # these have been disabled for now. A mismatch between the timezone
-        # database that chrono_tz crate uses vs. the one that Python uses (which
-        # differs from platform to platform) will cause this to fail.
-        # datetime(1677, 9, 22),
-        # datetime(1677, 9, 22, tzinfo=ZoneInfo("EST")),
+        datetime(1677, 9, 22),
+        datetime(1677, 9, 22, tzinfo=ZoneInfo("America/New_York")),
         datetime(1970, 1, 1),
-        datetime(1970, 1, 1, tzinfo=ZoneInfo("EST")),
+        datetime(1970, 1, 1, tzinfo=ZoneInfo("America/New_York")),
         datetime(2024, 2, 29),
-        datetime(2024, 2, 29, tzinfo=ZoneInfo("EST")),
-        datetime(2262, 4, 11),
-        datetime(2262, 4, 11, tzinfo=ZoneInfo("EST")),
+        datetime(2024, 2, 29, tzinfo=ZoneInfo("America/New_York")),
     ],
 )
 def test_literal_from_datetime(
@@ -1570,3 +1545,17 @@ def test_literal_from_timedelta(value: time, dtype: pl.Duration | None) -> None:
     out = pl.select(pl.lit(value, dtype=dtype))
     assert out.schema == OrderedDict({"literal": dtype or pl.Duration("us")})
     assert out.item() == value
+
+
+def test_out_of_range_date_year_11991() -> None:
+    # Out-of-range dates should return null instead of wrong values or panicking
+    # Regression test for #11991 where out-of-range dates silently returned
+    # the input value
+    s = pl.Series([-96_465_659]).cast(pl.Date)
+    result = s.dt.year()
+    # Should return null, not the input value -96465659
+    assert result[0] is None
+
+    # is_leap_year should also return null for out-of-range dates
+    result_leap = s.dt.is_leap_year()
+    assert result_leap[0] is None

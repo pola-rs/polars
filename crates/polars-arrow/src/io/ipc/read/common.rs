@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::aliases::PlHashMap;
+use polars_utils::bool::UnsafeBool;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::Dictionaries;
@@ -86,8 +87,8 @@ pub fn read_record_batch<R: Read + Seek>(
     version: arrow_format::ipc::MetadataVersion,
     reader: &mut R,
     block_offset: u64,
-    file_size: u64,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
     assert_eq!(fields.len(), ipc_schema.fields.len());
     let buffers = batch
@@ -100,26 +101,6 @@ pub fn read_record_batch<R: Read + Seek>(
         .map(|v| v.iter().map(|v| v as usize).collect::<VecDeque<usize>>())
         .unwrap_or_else(VecDeque::new);
     let mut buffers: VecDeque<arrow_format::ipc::BufferRef> = buffers.iter().collect();
-
-    // check that the sum of the sizes of all buffers is <= than the size of the file
-    let buffers_size = buffers
-        .iter()
-        .map(|buffer| {
-            let buffer_size: u64 = buffer
-                .length()
-                .try_into()
-                .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
-            Ok(buffer_size)
-        })
-        .sum::<PolarsResult<u64>>()?;
-    if buffers_size > file_size {
-        return Err(polars_err!(
-            oos = OutOfSpecKind::InvalidBuffersLength {
-                buffers_size,
-                file_size,
-            }
-        ));
-    }
 
     let field_nodes = batch
         .nodes()
@@ -151,6 +132,7 @@ pub fn read_record_batch<R: Read + Seek>(
                     limit,
                     version,
                     scratch,
+                    checked,
                 )?)),
                 ProjectionResult::NotSelected((field, _)) => {
                     skip(
@@ -185,6 +167,7 @@ pub fn read_record_batch<R: Read + Seek>(
                     limit,
                     version,
                     scratch,
+                    checked,
                 )
             })
             .collect::<PolarsResult<Vec<_>>>()?
@@ -211,7 +194,7 @@ fn find_first_dict_field_d<'a>(
     ipc_field: &'a IpcField,
 ) -> Option<(&'a Field, &'a IpcField)> {
     use ArrowDataType::*;
-    match dtype {
+    match dtype.to_storage() {
         Dictionary(_, inner, _) => find_first_dict_field_d(id, inner.as_ref(), ipc_field),
         List(field) | LargeList(field) | FixedSizeList(field, ..) | Map(field, ..) => {
             find_first_dict_field(id, field.as_ref(), &ipc_field.fields[0])
@@ -275,8 +258,8 @@ pub fn read_dictionary<R: Read + Seek>(
     dictionaries: &mut Dictionaries,
     reader: &mut R,
     block_offset: u64,
-    file_size: u64,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<()> {
     if batch
         .is_delta()
@@ -296,7 +279,7 @@ pub fn read_dictionary<R: Read + Seek>(
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingData))?;
 
     let value_type =
-        if let ArrowDataType::Dictionary(_, value_type, _) = first_field.dtype.to_logical_type() {
+        if let ArrowDataType::Dictionary(_, value_type, _) = first_field.dtype.to_storage() {
             value_type.as_ref()
         } else {
             polars_bail!(oos = OutOfSpecKind::InvalidIdDataType { requested_id: id })
@@ -322,8 +305,8 @@ pub fn read_dictionary<R: Read + Seek>(
         arrow_format::ipc::MetadataVersion::V5,
         reader,
         block_offset,
-        file_size,
         scratch,
+        checked,
     )?;
 
     dictionaries.insert(id, chunk.into_arrays().pop().unwrap());

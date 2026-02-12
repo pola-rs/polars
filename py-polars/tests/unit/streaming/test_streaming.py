@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from datetime import date
 from pathlib import Path
@@ -14,6 +15,7 @@ from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import JoinStrategy
+    from tests.conftest import PlMonkeyPatch
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -52,8 +54,11 @@ def test_streaming_block_on_literals_6054() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
-def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+@pytest.mark.may_fail_cloud  # reason: non-pure map_batches
+def test_streaming_streamable_functions(
+    plmonkeypatch: PlMonkeyPatch, capfd: Any
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
     calls = 0
 
     def func(df: pl.DataFrame) -> pl.DataFrame:
@@ -79,7 +84,12 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
 
 @pytest.mark.slow
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud  # reason: timing
 def test_cross_join_stack() -> None:
+    morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
+    if morsel_size is not None and int(morsel_size) < 1000:
+        pytest.skip("test is too slow for small morsel sizes")
+
     a = pl.Series(np.arange(100_000)).to_frame().lazy()
     t0 = time.time()
     assert a.join(a, how="cross").head().collect(engine="streaming").shape == (5, 2)
@@ -120,11 +130,14 @@ def test_streaming_literal_expansion() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
-def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+def test_streaming_apply(plmonkeypatch: PlMonkeyPatch, capfd: Any) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     q = pl.DataFrame({"a": [1, 2]}).lazy()
-    with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
+    with pytest.warns(
+        PolarsInefficientMapWarning,
+        match="with this one instead",
+    ):
         (
             q.select(
                 pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Int64)
@@ -154,6 +167,10 @@ def test_streaming_sortedness_propagation_9494() -> None:
 @pytest.mark.write_disk
 @pytest.mark.slow
 def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None:
+    morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
+    if morsel_size is not None and int(morsel_size) < 1000:
+        pytest.skip("test is too slow for small morsel sizes")
+
     tmp_path.mkdir(exist_ok=True)
     p0 = tmp_path / "df0.parquet"
     p1 = tmp_path / "df1.parquet"
@@ -178,13 +195,13 @@ def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None
     join_strategies: list[JoinStrategy] = ["left", "inner"]
     for how in join_strategies:
         assert_frame_equal(
-            lf0.join(
-                lf1, left_on="id", right_on="id_r", how=how, maintain_order="left"
-            ).collect(engine="streaming"),
+            lf0.join(lf1, left_on="id", right_on="id_r", how=how).collect(
+                engine="streaming"
+            ),
             lf0.join(lf1, left_on="id", right_on="id_r", how=how).collect(
                 engine="in-memory"
             ),
-            check_row_order=how == "left",
+            check_row_order=False,
         )
 
 

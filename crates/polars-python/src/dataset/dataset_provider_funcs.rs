@@ -5,29 +5,29 @@ use polars::prelude::{DslPlan, PlSmallStr, Schema, SchemaRef};
 use polars_core::config;
 use polars_error::PolarsResult;
 use polars_utils::python_function::PythonObject;
-use pyo3::conversion::FromPyObjectBound;
+use pyo3::conversion::FromPyObject;
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyAnyMethods, PyDict, PyList, PyListMethods};
-use pyo3::{PyResult, Python};
+use pyo3::{Py, PyAny, PyResult, Python, intern};
 
 use crate::interop::arrow::to_rust::field_to_rust;
 use crate::prelude::{Wrap, get_lf};
 
-pub fn reader_name(dataset_object: &PythonObject) -> PlSmallStr {
-    Python::with_gil(|py| {
-        let name: PyBackedStr = dataset_object
-            .getattr(py, "reader_name")?
-            .call0(py)?
-            .extract(py)?;
-
-        PyResult::Ok(PlSmallStr::from_str(&name))
+pub fn name(dataset_object: &PythonObject) -> PlSmallStr {
+    Python::attach(|py| {
+        PyResult::Ok(PlSmallStr::from_str(
+            &dataset_object
+                .getattr(py, intern!(py, "__class__"))?
+                .getattr(py, intern!(py, "__name__"))?
+                .extract::<PyBackedStr>(py)?,
+        ))
     })
     .unwrap()
 }
 
 pub fn schema(dataset_object: &PythonObject) -> PolarsResult<SchemaRef> {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let pyarrow_schema_cls = py
             .import("pyarrow")
             .ok()
@@ -69,7 +69,7 @@ pub fn schema(dataset_object: &PythonObject) -> PolarsResult<SchemaRef> {
             }
         }
 
-        let Wrap(schema) = Wrap::<Schema>::from_py_object_bound(schema_obj.bind_borrowed(py))?;
+        let Wrap(schema) = Wrap::<Schema>::extract(schema_obj.bind_borrowed(py))?;
 
         Ok(Arc::new(schema))
     })
@@ -77,14 +77,22 @@ pub fn schema(dataset_object: &PythonObject) -> PolarsResult<SchemaRef> {
 
 pub fn to_dataset_scan(
     dataset_object: &PythonObject,
+    existing_resolved_version_key: Option<&str>,
     limit: Option<usize>,
     projection: Option<&[PlSmallStr]>,
-) -> PolarsResult<DslPlan> {
-    Python::with_gil(|py| {
+    filter_columns: Option<&[PlSmallStr]>,
+    pyarrow_predicate: Option<&str>,
+) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
+    Python::attach(|py| {
         let kwargs = PyDict::new(py);
 
+        kwargs.set_item(
+            intern!(py, "existing_resolved_version_key"),
+            existing_resolved_version_key,
+        )?;
+
         if let Some(limit) = limit {
-            kwargs.set_item("limit", limit)?;
+            kwargs.set_item(intern!(py, "limit"), limit)?;
         }
 
         if let Some(projection) = projection {
@@ -94,12 +102,28 @@ pub fn to_dataset_scan(
                 projection_list.append(name.as_str())?;
             }
 
-            kwargs.set_item("projection", projection_list)?;
+            kwargs.set_item(intern!(py, "projection"), projection_list)?;
         }
 
-        let scan = dataset_object
-            .getattr(py, "to_dataset_scan")?
-            .call(py, (), Some(&kwargs))?;
+        if let Some(filter_columns) = filter_columns {
+            let filter_columns_list = PyList::empty(py);
+
+            for name in filter_columns {
+                filter_columns_list.append(name.as_str())?;
+            }
+
+            kwargs.set_item(intern!(py, "filter_columns"), filter_columns_list)?;
+        }
+
+        kwargs.set_item(intern!(py, "pyarrow_predicate"), pyarrow_predicate)?;
+
+        let Some((scan, version)): Option<(Py<PyAny>, Wrap<PlSmallStr>)> = dataset_object
+            .getattr(py, intern!(py, "to_dataset_scan"))?
+            .call(py, (), Some(&kwargs))?
+            .extract(py)?
+        else {
+            return Ok(None);
+        };
 
         let Ok(lf) = get_lf(scan.bind(py)) else {
             return Err(
@@ -107,6 +131,6 @@ pub fn to_dataset_scan(
             );
         };
 
-        Ok(lf.logical_plan)
+        Ok(Some((lf.logical_plan, version.0)))
     })
 }

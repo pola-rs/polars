@@ -8,11 +8,17 @@ license.workspace = true
 repository.workspace = true
 description = "Physical expression implementation of the Polars project."
 
+[build-dependencies]
+version_check = { workspace = true }
+
 [dependencies]
 arrow = { workspace = true }
 bitflags = { workspace = true }
+chrono-tz = { workspace = true, optional = true }
 hashbrown = { workspace = true }
+libloading = { workspace = true, optional = true }
 num-traits = { workspace = true }
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-io = { workspace = true, features = ["lazy"] }
@@ -25,6 +31,7 @@ polars-utils = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
+regex = { workspace = true, optional = true }
 
 [features]
 nightly = ["polars-core/nightly", "polars-plan/nightly"]
@@ -46,37 +53,113 @@ dtype-full = [
   "dtype-datetime",
   "dtype-decimal",
   "dtype-duration",
+  "dtype-extension",
   "dtype-i16",
   "dtype-i128",
   "dtype-i8",
   "dtype-struct",
   "dtype-time",
   "dtype-u16",
+  "dtype-u128",
   "dtype-u8",
+  "dtype-f16",
+  "object",
 ]
+object = ["polars-plan/object", "polars-ops/object"]
 dtype-array = ["polars-plan/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-plan/dtype-categorical"]
 dtype-date = ["polars-plan/dtype-date", "polars-time/dtype-date", "temporal"]
 dtype-datetime = ["polars-plan/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
 dtype-decimal = ["polars-plan/dtype-decimal", "dtype-i128"]
 dtype-duration = ["polars-plan/dtype-duration", "polars-time/dtype-duration", "temporal"]
+dtype-extension = ["polars-plan/dtype-extension", "polars-ops/dtype-extension"]
 dtype-i16 = ["polars-plan/dtype-i16"]
 dtype-i8 = ["polars-plan/dtype-i8"]
 dtype-i128 = ["polars-plan/dtype-i128"]
 dtype-struct = ["polars-plan/dtype-struct", "polars-ops/dtype-struct"]
 dtype-time = ["polars-plan/dtype-time", "polars-time/dtype-time", "temporal"]
+dtype-u128 = ["polars-plan/dtype-u128"]
 dtype-u16 = ["polars-plan/dtype-u16"]
 dtype-u8 = ["polars-plan/dtype-u8"]
+dtype-f16 = ["polars-plan/dtype-f16"]
 
 # operations
 approx_unique = ["polars-plan/approx_unique"]
 is_in = ["polars-plan/is_in", "polars-ops/is_in"]
+is_first_distinct = ["polars-plan/is_first_distinct"]
+is_last_distinct = ["polars-plan/is_last_distinct"]
+is_between = ["polars-plan/is_between"]
+is_close = ["polars-plan/is_close"]
+is_unique = ["polars-plan/is_unique"]
+strings = ["polars-plan/strings"]
+business = ["polars-plan/business"]
+range = ["polars-plan/range"]
+abs = ["polars-plan/abs"]
+diff = ["polars-plan/diff"]
+pct_change = ["polars-plan/pct_change"]
+interpolate = ["polars-plan/interpolate"]
+interpolate_by = ["polars-plan/interpolate_by"]
+timezones = ["regex", "polars-plan/timezones"]
+unique_counts = ["polars-plan/unique_counts"]
+repeat_by = ["polars-plan/repeat_by"]
+mode = ["polars-plan/mode"]
+moment = ["polars-plan/moment"]
+rank = ["polars-plan/rank"]
+replace = ["polars-plan/replace"]
+reinterpret = ["polars-plan/reinterpret"]
+row_hash = ["polars-plan/row_hash"]
+arg_where = ["polars-plan/arg_where"]
+index_of = ["polars-plan/index_of"]
+search_sorted = ["polars-plan/search_sorted"]
+trigonometry = ["polars-plan/trigonometry"]
+sign = ["polars-plan/sign"]
+rolling_window = ["polars-plan/rolling_window", "polars-time/rolling_window"]
+rolling_window_by = ["polars-plan/rolling_window_by", "polars-time/rolling_window_by"]
+top_k = ["polars-plan/top_k"]
+cum_agg = ["polars-plan/cum_agg"]
+log = ["polars-plan/log"]
+fused = ["polars-plan/fused"]
+ffi_plugin = ["polars-plan/ffi_plugin", "libloading"]
+regex = ["polars-plan/regex", "dep:regex"]
+extract_groups = ["regex", "polars-plan/extract_groups"]
+find_many = ["polars-ops/find_many", "polars-plan/find_many"]
+json = ["polars-plan/json", "polars-json"]
+extract_jsonpath = ["polars-plan/extract_jsonpath", "polars-ops/extract_jsonpath"]
+ewma = ["polars-plan/ewma"]
+ewma_by = ["polars-plan/ewma_by"]
+string_pad = ["polars-plan/string_pad"]
+string_normalize = ["polars-plan/string_normalize"]
+string_reverse = ["polars-plan/string_reverse"]
+string_to_integer = ["polars-plan/string_to_integer"]
+list_sets = ["polars-plan/list_sets", "polars-ops/list_sets"]
+list_any_all = ["polars-ops/list_any_all", "polars-plan/list_any_all"]
+array_any_all = ["polars-ops/array_any_all", "polars-plan/array_any_all", "dtype-array"]
+list_drop_nulls = ["polars-ops/list_drop_nulls", "polars-plan/list_drop_nulls"]
+list_sample = ["polars-ops/list_sample", "polars-plan/list_sample"]
+list_filter = ["polars-ops/list_filter", "polars-plan/list_filter"]
+list_gather = ["polars-ops/list_gather", "polars-plan/list_gather"]
+list_count = ["polars-ops/list_count", "polars-plan/list_count"]
+array_count = ["polars-ops/array_count", "polars-plan/array_count", "dtype-array"]
+array_to_struct = ["polars-plan/array_to_struct"]
+concat_str = ["polars-plan/concat_str"]
+list_to_struct = ["polars-plan/list_to_struct"]
+random = ["polars-plan/random"]
+cutqcut = ["polars-plan/cutqcut", "polars-ops/cutqcut"]
+rle = ["polars-plan/rle", "polars-ops/rle"]
+peaks = ["polars-plan/peaks"]
+cov = ["polars-ops/cov", "polars-plan/cov"]
+hist = ["polars-plan/hist"]
+binary_encoding = ["polars-plan/binary_encoding"]
+string_encoding = ["polars-plan/string_encoding"]
+month_start = ["polars-plan/month_start"]
+month_end = ["polars-plan/month_end"]
+offset_by = ["polars-plan/offset_by"]
 
 bitwise = ["polars-core/bitwise", "polars-plan/bitwise"]
 round_series = ["polars-plan/round_series", "polars-ops/round_series"]
-is_between = ["polars-plan/is_between"]
-dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "temporal"]
+dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "temporal", "chrono-tz"]
 propagate_nans = ["polars-plan/propagate_nans", "polars-ops/propagate_nans"]
+allow_unused = []
 
 [lints]
 workspace = true

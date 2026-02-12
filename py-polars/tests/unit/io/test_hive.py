@@ -7,7 +7,7 @@ from collections import OrderedDict
 from datetime import date, datetime
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pyarrow.parquet as pq
 import pytest
@@ -15,14 +15,20 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, SchemaFieldNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.io.conftest import format_file_uri
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from tests.conftest import PlMonkeyPatch
 
 
 def impl_test_hive_partitioned_predicate_pushdown(
     io_files_path: Path,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.read_ipc(io_files_path / "*.ipc")
 
     root = tmp_path / "partitioned_data"
@@ -76,12 +82,12 @@ def impl_test_hive_partitioned_predicate_pushdown(
 def test_hive_partitioned_predicate_pushdown(
     io_files_path: Path,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     impl_test_hive_partitioned_predicate_pushdown(
         io_files_path,
         tmp_path,
-        monkeypatch,
+        plmonkeypatch,
     )
 
 
@@ -90,24 +96,25 @@ def test_hive_partitioned_predicate_pushdown(
 def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
     io_files_path: Path,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
-    monkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
 
     impl_test_hive_partitioned_predicate_pushdown(
         io_files_path,
         tmp_path,
-        monkeypatch,
+        plmonkeypatch,
     )
 
 
 @pytest.mark.write_disk
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
-    tmp_path: Path, monkeypatch: Any, capfd: Any
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.DataFrame({"d": pl.arange(0, 5, eager=True)}).with_columns(
         a=pl.col("d") % 5
     )
@@ -313,12 +320,14 @@ def test_read_parquet_invalid_hive_schema(dataset_path: Path) -> None:
         )
 
 
-def test_read_parquet_hive_schema_with_pyarrow() -> None:
+def test_read_parquet_hive_schema_with_pyarrow(tmp_path: Path) -> None:
     with pytest.raises(
         TypeError,
         match="cannot use `hive_partitions` with `use_pyarrow=True`",
     ):
-        pl.read_parquet("test.parquet", hive_schema={"c": pl.Int32}, use_pyarrow=True)
+        pl.read_parquet(
+            tmp_path / "test.parquet", hive_schema={"c": pl.Int32}, use_pyarrow=True
+        )
 
 
 @pytest.mark.parametrize(
@@ -494,15 +503,17 @@ def test_hive_partition_schema_inference(tmp_path: Path) -> None:
     for i in range(3):
         paths[i].parent.mkdir(exist_ok=True, parents=True)
         dfs[i].write_parquet(paths[i])
-        out = pl.scan_parquet(tmp_path).collect()
+        out = pl.scan_parquet(tmp_path).sort("x").collect()
 
         assert_series_equal(out["a"], expected[i])
 
 
 @pytest.mark.write_disk
-def test_hive_partition_force_async_17155(tmp_path: Path, monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
-    monkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
+def test_hive_partition_force_async_17155(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
 
     dfs = [
         pl.DataFrame({"x": 1}),
@@ -723,7 +734,7 @@ def test_hive_partition_dates(tmp_path: Path) -> None:
             pl.col("date2").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
         ):
             if perc_escape:
-                date2 = urllib.parse.quote(date2)  # type: ignore[call-overload]
+                date2 = urllib.parse.quote(date2)
 
             path = root / f"date1={date1}/date2={date2}/data.bin"
             path.parent.mkdir(exist_ok=True, parents=True)
@@ -843,20 +854,17 @@ def test_hive_write(tmp_path: Path, df: pl.DataFrame) -> None:
 
 @pytest.mark.slow
 @pytest.mark.write_disk
-@pytest.mark.xfail
 def test_hive_write_multiple_files(tmp_path: Path) -> None:
-    chunk_size = 262_144
-    n_rows = 100_000
+    chunk_size = 1
+    n_rows = 500_000
     df = pl.select(a=pl.repeat(0, n_rows), b=pl.int_range(0, n_rows))
-
-    n_files = int(df.estimated_size() / chunk_size)
-
-    assert n_files > 1, "increase df size or decrease file size"
 
     root = tmp_path
     df.write_parquet(root, partition_by="a", partition_chunk_size_bytes=chunk_size)
 
-    assert sum(1 for _ in (root / "a=0").iterdir()) == n_files
+    n_out = sum(1 for _ in (root / "a=0").iterdir())
+    assert n_out == 5
+
     assert_frame_equal(pl.scan_parquet(root).collect(), df)
 
 
@@ -896,10 +904,11 @@ def test_hive_write_dates(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_hive_predicate_dates_14712(
-    tmp_path: Path, monkeypatch: Any, capfd: Any
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     pl.DataFrame({"a": [datetime(2024, 1, 1)]}).write_parquet(
         tmp_path, partition_by="a"
     )
@@ -909,9 +918,16 @@ def test_hive_predicate_dates_14712(
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Test is only for Windows paths")
 @pytest.mark.write_disk
-def test_hive_windows_splits_on_forward_slashes(tmp_path: Path) -> None:
+@pytest.mark.parametrize("prefix", ["", "file:/", "file:///"])
+def test_hive_windows_splits_on_forward_slashes(tmp_path: Path, prefix: str) -> None:
     # Note: This needs to be an absolute path.
     tmp_path = tmp_path.resolve()
+
+    d = str(tmp_path)[:2]
+
+    assert d[0].isalpha()
+    assert d[1] == ":"
+
     path = f"{tmp_path}/a=1/b=1/c=1/d=1/e=1"
     Path(path).mkdir(exist_ok=True, parents=True)
 
@@ -937,16 +953,23 @@ def test_hive_windows_splits_on_forward_slashes(tmp_path: Path) -> None:
     assert_frame_equal(
         pl.scan_parquet(
             [
-                f"{tmp_path}/a=1/b=1/c=1/d=1/e=1/data.parquet",
-                f"{tmp_path}\\a=1\\b=1\\c=1\\d=1\\e=1\\data.parquet",
-                f"{tmp_path}\\a=1/b=1/c=1/d=1/**/*",
-                f"{tmp_path}/a=1/b=1\\c=1/d=1/**/*",
-                f"{tmp_path}/a=1/b=1/c=1/d=1\\e=1/*",
+                f"{prefix}{tmp_path}/a=1/b=1/c=1/d=1/e=1/data.parquet",
+                f"{prefix}{tmp_path}\\a=1\\b=1\\c=1\\d=1\\e=1\\data.parquet",
+                f"{prefix}{tmp_path}\\a=1/b=1/c=1/d=1/**/*",
+                f"{prefix}{tmp_path}/a=1/b=1\\c=1/d=1/**/*",
+                f"{prefix}{tmp_path}/a=1/b=1/c=1/d=1\\e=1/*",
             ],
             hive_partitioning=True,
         ).collect(),
         expect,
     )
+
+    q = pl.scan_parquet("file://C:/")
+
+    with pytest.raises(
+        ComputeError, match="unsupported: non-empty hostname for 'file:' URI: 'C:'"
+    ):
+        q.collect()
 
 
 @pytest.mark.write_disk
@@ -984,6 +1007,41 @@ def test_hive_auto_enables_when_unspecified_and_hive_schema_passed(
                 pl.Series("a", [1], dtype=pl.UInt8),
             ),
         )
+
+
+@pytest.mark.write_disk
+def test_hive_file_as_uri_with_hive_start_idx_23830(
+    tmp_path: Path,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    (tmp_path / "a=1").mkdir(exist_ok=True)
+
+    pl.DataFrame({"x": 1}).write_parquet(tmp_path / "a=1/1")
+
+    # ensure we have a trailing "/"
+    uri = tmp_path.resolve().as_posix().rstrip("/") + "/"
+
+    lf = pl.scan_parquet(format_file_uri(uri), hive_schema={"a": pl.UInt8})
+
+    assert_frame_equal(
+        lf.collect(),
+        pl.select(
+            pl.Series("x", [1]),
+            pl.Series("a", [1], dtype=pl.UInt8),
+        ),
+    )
+
+    # https://github.com/pola-rs/polars/issues/24506
+    # `file:` URI with `//hostname` component omitted
+    lf = pl.scan_parquet(f"file:{uri}", hive_schema={"a": pl.UInt8})
+
+    assert_frame_equal(
+        lf.collect(),
+        pl.select(
+            pl.Series("x", [1]),
+            pl.Series("a", [1], dtype=pl.UInt8),
+        ),
+    )
 
 
 @pytest.mark.write_disk
@@ -1046,3 +1104,108 @@ print("OK", end="")
     )
 
     assert out == b"OK"
+
+
+def test_hive_decode_reserved_ascii_23241(tmp_path: Path) -> None:
+    partitioned_tbl_uri = (tmp_path / "partitioned_data").resolve()
+    start, stop = 32, 127
+    df = pl.DataFrame(
+        {
+            "a": list(range(start, stop)),
+            "strings": [chr(i) for i in range(start, stop)],
+        }
+    )
+    df.write_delta(partitioned_tbl_uri, delta_write_options={"partition_by": "strings"})
+    out = pl.read_delta(str(partitioned_tbl_uri)).sort("a").select(pl.col("strings"))
+
+    assert_frame_equal(df.sort(by=pl.col("a")).select(pl.col("strings")), out)
+
+
+def test_hive_decode_utf8_23241(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "strings": [
+                "Türkiye And Egpyt",
+                "résumé père forêt Noël",
+                "😊",
+                "北极熊",  # a polar bear perhaps ?!
+            ],
+            "a": [10, 20, 30, 40],
+        }
+    )
+    partitioned_tbl_uri = (tmp_path / "partitioned_data").resolve()
+    df.write_delta(partitioned_tbl_uri, delta_write_options={"partition_by": "strings"})
+    out = pl.read_delta(str(partitioned_tbl_uri)).sort("a").select(pl.col("strings"))
+
+    assert_frame_equal(df.sort(by=pl.col("a")).select(pl.col("strings")), out)
+
+
+@pytest.mark.write_disk
+def test_hive_filter_lit_true_24235(tmp_path: Path) -> None:
+    df = pl.DataFrame({"p": [1, 2, 3, 4, 5], "x": [1, 1, 2, 2, 3]})
+    df.lazy().sink_parquet(pl.PartitionBy(tmp_path, key="p"), mkdir=True)
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).filter(True).collect(),
+        df,
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).filter(pl.lit(True)).collect(),
+        df,
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).filter(False).collect(),
+        df.clear(),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).filter(pl.lit(False)).collect(),
+        df.clear(),
+    )
+
+
+def test_hive_filter_in_ir(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "a=1").mkdir()
+    pl.DataFrame({"x": [0, 1, 2, 3, 4]}).write_parquet(tmp_path / "a=1/data.parquet")
+    (tmp_path / "a=2").mkdir()
+    pl.DataFrame({"x": [5, 6, 7, 8, 9]}).write_parquet(tmp_path / "a=2/data.parquet")
+
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+
+        capfd.readouterr()
+
+        assert_frame_equal(
+            pl.scan_parquet(tmp_path).filter(pl.col("a") == 1).collect(),
+            pl.DataFrame({"x": [0, 1, 2, 3, 4], "a": [1, 1, 1, 1, 1]}),
+        )
+
+        capture = capfd.readouterr().err
+
+        # Ensure this only happens once.
+        assert (
+            capture.count(
+                "initialize_scan_predicate: Predicate pushdown allows skipping 1 / 2 files"
+            )
+            == 1
+        )
+
+    plan = pl.scan_parquet(tmp_path).filter(pl.col("a") < 0).explain()
+    assert plan.startswith("Parquet SCAN []")
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).with_row_index().filter(pl.col("a") == 2).collect(),
+        pl.DataFrame(
+            {"index": [5, 6, 7, 8, 9], "x": [5, 6, 7, 8, 9], "a": [2, 2, 2, 2, 2]},
+            schema_overrides={"index": pl.get_index_type()},
+        ),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).tail(1).filter(pl.col("a") == 1).collect(),
+        pl.DataFrame(schema={"x": pl.Int64, "a": pl.Int64}),
+    )

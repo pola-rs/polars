@@ -21,7 +21,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:existence]
     let result = df
-        .clone()
         .lazy()
         .select([
             col("fruit"),
@@ -48,7 +47,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let result = df
-        .clone()
         .lazy()
         .select([col("urls").str().extract(lit(r"candidate=(\w+)"), 1)])
         .collect()?;
@@ -62,7 +60,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let result = df
-        .clone()
         .lazy()
         .select([col("text")
             .str()
@@ -79,7 +76,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let result = df
-        .clone()
         .lazy()
         .with_columns([
             col("text").str().replace(lit(r"\d"), lit("-"), false),
@@ -104,7 +100,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let addresses = addresses
-        .clone()
         .lazy()
         .select([
             col("addresses").alias("originals"),
@@ -121,7 +116,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = col("addresses");
     let chars = lit(", 0123456789");
     let result = addresses
-        .clone()
         .lazy()
         .select([
             addr.clone().str().strip_chars(chars.clone()).alias("strip"),
@@ -129,15 +123,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .str()
                 .strip_chars_end(chars.clone())
                 .alias("end"),
-            addr.clone()
-                .str()
-                .strip_chars_start(chars.clone())
-                .alias("start"),
+            addr.clone().str().strip_chars_start(chars).alias("start"),
             addr.clone().str().strip_prefix(lit("128 ")).alias("prefix"),
-            addr.clone()
-                .str()
-                .strip_suffix(lit(", 158"))
-                .alias("suffix"),
+            addr.str().strip_suffix(lit(", 158")).alias("suffix"),
         ])
         .collect()?;
 
@@ -151,7 +139,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let result = df
-        .clone()
         .lazy()
         .with_columns([
             col("fruits")

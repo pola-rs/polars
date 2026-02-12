@@ -8,47 +8,6 @@ use super::parser::next_line_position;
 use super::parser::next_line_position_naive;
 use super::splitfields::SplitFields;
 
-/// TODO: Remove this in favor of parallel CountLines::analyze_chunk
-///
-/// (see https://github.com/pola-rs/polars/issues/19078)
-pub(crate) fn get_file_chunks(
-    bytes: &[u8],
-    n_chunks: usize,
-    expected_fields: Option<usize>,
-    separator: u8,
-    quote_char: Option<u8>,
-    eol_char: u8,
-) -> Vec<(usize, usize)> {
-    let mut last_pos = 0;
-    let total_len = bytes.len();
-    let chunk_size = total_len / n_chunks;
-    let mut offsets = Vec::with_capacity(n_chunks);
-    for _ in 0..n_chunks {
-        let search_pos = last_pos + chunk_size;
-
-        if search_pos >= bytes.len() {
-            break;
-        }
-
-        let end_pos = match next_line_position(
-            &bytes[search_pos..],
-            expected_fields,
-            separator,
-            quote_char,
-            eol_char,
-        ) {
-            Some(pos) => search_pos + pos,
-            None => {
-                break;
-            },
-        };
-        offsets.push((last_pos, end_pos));
-        last_pos = end_pos;
-    }
-    offsets.push((last_pos, total_len));
-    offsets
-}
-
 #[cfg(feature = "decompress")]
 fn decompress_impl<R: Read>(
     decoder: &mut R,
@@ -135,23 +94,21 @@ pub(crate) fn decompress(
 ) -> Option<Vec<u8>> {
     use crate::utils::compression::SupportedCompression;
 
-    if let Some(algo) = SupportedCompression::check(bytes) {
-        match algo {
-            SupportedCompression::GZIP => {
-                let mut decoder = flate2::read::MultiGzDecoder::new(bytes);
-                decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
-            },
-            SupportedCompression::ZLIB => {
-                let mut decoder = flate2::read::ZlibDecoder::new(bytes);
-                decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
-            },
-            SupportedCompression::ZSTD => {
-                let mut decoder = zstd::Decoder::with_buffer(bytes).ok()?;
-                decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
-            },
-        }
-    } else {
-        None
+    let algo = SupportedCompression::check(bytes)?;
+
+    match algo {
+        SupportedCompression::GZIP => {
+            let mut decoder = flate2::read::MultiGzDecoder::new(bytes);
+            decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
+        },
+        SupportedCompression::ZLIB => {
+            let mut decoder = flate2::read::ZlibDecoder::new(bytes);
+            decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
+        },
+        SupportedCompression::ZSTD => {
+            let mut decoder = zstd::Decoder::with_buffer(bytes).ok()?;
+            decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
+        },
     }
 }
 
@@ -186,23 +143,4 @@ pub(super) unsafe fn escape_field(bytes: &[u8], quote: u8, buf: &mut [MaybeUnini
         }
     }
     count
-}
-
-#[cfg(test)]
-mod test {
-    use super::get_file_chunks;
-
-    #[test]
-    fn test_get_file_chunks() {
-        let path = "../../examples/datasets/foods1.csv";
-        let s = std::fs::read_to_string(path).unwrap();
-        let bytes = s.as_bytes();
-        // can be within -1 / +1 bounds.
-        assert!(
-            (get_file_chunks(bytes, 10, Some(4), b',', None, b'\n').len() as i32 - 10).abs() <= 1
-        );
-        assert!(
-            (get_file_chunks(bytes, 8, Some(4), b',', None, b'\n').len() as i32 - 8).abs() <= 1
-        );
-    }
 }

@@ -22,7 +22,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .finish()
         .unwrap();
     let df = df
-        .clone()
         .lazy()
         .with_columns([col("Date").str().to_date(StrptimeOptions::default())])
         .collect()?;
@@ -40,7 +39,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:extract]
     let df_with_year = df
-        .clone()
         .lazy()
         .with_columns([col("Date").dt().year().alias("year")])
         .collect()?;

@@ -1,6 +1,6 @@
 use arrow::bitmap::Bitmap;
-use arrow::buffer::Buffer;
 use arrow::offset::OffsetsBuffer;
+use polars_buffer::Buffer;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_builder;
@@ -46,7 +46,7 @@ impl Series {
                 .into_series(),
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => Int128Chunked::full_null(name, size)
-                .into_decimal_unchecked(*precision, scale.unwrap_or(0))
+                .into_decimal_unchecked(*precision, *scale)
                 .into_series(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
@@ -96,6 +96,10 @@ impl Series {
                     builder.append_null();
                 }
                 builder.to_series()
+            },
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(typ, storage_dtype) => {
+                Series::full_null(name, size, storage_dtype).into_extension(typ.clone())
             },
             _ => {
                 macro_rules! primitive {

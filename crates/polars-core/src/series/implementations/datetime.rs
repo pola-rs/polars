@@ -88,6 +88,17 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series()
     }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_max(groups)
+    }
+
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
@@ -260,6 +271,14 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0
+            .physical()
+            .deposit(validity)
+            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -332,6 +351,10 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.physical().arg_unique()
     }
 
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        ChunkUnique::unique_id(self.0.physical())
+    }
+
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }
@@ -362,23 +385,65 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().max_reduce();
-
-        Ok(Scalar::new(self.dtype().clone(), sc.value().clone()))
+        let av = sc
+            .value()
+            .as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
+        Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().min_reduce();
-
-        Ok(Scalar::new(self.dtype().clone(), sc.value().clone()))
-    }
-
-    fn median_reduce(&self) -> PolarsResult<Scalar> {
-        let av: AnyValue = self.median().map(|v| v as i64).into();
+        let av = sc
+            .value()
+            .as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
-    fn quantile_reduce(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Scalar> {
-        Ok(Scalar::new(self.dtype().clone(), AnyValue::Null))
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        let mean = self.mean().map(|v| v as i64);
+        let av = AnyValue::from(mean).as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
+        Ok(Scalar::new(self.dtype().clone(), av))
+    }
+
+    fn median_reduce(&self) -> PolarsResult<Scalar> {
+        let median = self.median().map(|v| v as i64);
+        let av =
+            AnyValue::from(median).as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
+        Ok(Scalar::new(self.dtype().clone(), av))
+    }
+
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        let quantile = self.0.physical().quantile_reduce(quantile, method)?;
+        let av = quantile.value().cast(&DataType::Int64);
+        Ok(Scalar::new(
+            self.dtype().clone(),
+            av.as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc()),
+        ))
+    }
+
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let result = self.0.physical().quantiles_reduce(quantiles, method)?;
+
+        if let AnyValue::List(float_s) = result.value() {
+            let float_ca = float_s.f64().unwrap();
+            let int_s = float_ca
+                .iter()
+                .map(|v: Option<f64>| v.map(|f| f as i64))
+                .collect::<Int64Chunked>()
+                .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+                .into_series();
+            Ok(Scalar::new(
+                DataType::List(Box::new(self.dtype().clone())),
+                AnyValue::List(int_s),
+            ))
+        } else {
+            polars_bail!(ComputeError: "expected list scalar from quantiles_reduce")
+        }
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(ChunkApproxNUnique::approx_n_unique(self.0.physical()))
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

@@ -65,8 +65,8 @@ mod tests {
         assert!(options.check_column_order);
         assert!(options.check_dtypes);
         assert!(!options.check_exact);
-        assert_eq!(options.rtol, 1e-5);
-        assert_eq!(options.atol, 1e-8);
+        assert_eq!(options.rel_tol, 1e-5);
+        assert_eq!(options.abs_tol, 1e-8);
         assert!(!options.categorical_as_str);
     }
 
@@ -74,13 +74,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "height (row count) mismatch")]
     fn test_dataframe_height_mismatch() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2]).into(),
             Series::new("col2".into(), &["a", "b"]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
             Series::new("col2".into(), &["a", "b", "c"]).into(),
         ])
@@ -92,13 +92,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "columns mismatch")]
     fn test_dataframe_column_mismatch() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
             Series::new("col2".into(), &["a", "b", "c"]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
             Series::new("different_col".into(), &["a", "b", "c"]).into(),
         ])
@@ -110,13 +110,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "dtypes do not match")]
     fn test_dataframe_dtype_mismatch() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
             Series::new("col2".into(), &["a", "b", "c"]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1.0, 2.0, 3.0]).into(),
             Series::new("col2".into(), &["a", "b", "c"]).into(),
         ])
@@ -127,13 +127,13 @@ mod tests {
 
     #[test]
     fn test_dataframe_dtype_mismatch_ignored() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
             Series::new("col2".into(), &["a", "b", "c"]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1.0, 2.0, 3.0]).into(),
             Series::new("col2".into(), &["a", "b", "c"]).into(),
         ])
@@ -146,13 +146,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "columns are not in the same order")]
     fn test_dataframe_column_order_mismatch() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
             Series::new("col2".into(), &["a", "b", "c"]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col2".into(), &["a", "b", "c"]).into(),
             Series::new("col1".into(), &[1, 2, 3]).into(),
         ])
@@ -163,13 +163,13 @@ mod tests {
 
     #[test]
     fn test_dataframe_column_order_mismatch_ignored() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
             Series::new("col2".into(), &["a", "b", "c"]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col2".into(), &["a", "b", "c"]).into(),
             Series::new("col1".into(), &[1, 2, 3]).into(),
         ])
@@ -183,14 +183,14 @@ mod tests {
     #[test]
     #[should_panic(expected = "columns mismatch: [\"col3\"] in left, but not in right")]
     fn test_dataframe_left_has_extra_column() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
             Series::new("col2".into(), &["a", "b", "c"]).into(),
             Series::new("col3".into(), &[true, false, true]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
             Series::new("col2".into(), &["a", "b", "c"]).into(),
         ])
@@ -202,13 +202,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "columns mismatch: [\"col3\"] in right, but not in left")]
     fn test_dataframe_right_has_extra_column() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
             Series::new("col2".into(), &["a", "b", "c"]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
             Series::new("col2".into(), &["a", "b", "c"]).into(),
             Series::new("col3".into(), &[true, false, true]).into(),
@@ -222,14 +222,14 @@ mod tests {
     #[test]
     #[should_panic(expected = "value mismatch for column")]
     fn test_dataframe_value_mismatch() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
             Series::new("col2".into(), &["a", "b", "c"]).into(),
             Series::new("col3".into(), &[true, false, true]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
             Series::new("col2".into(), &["a", "b", "changed"]).into(),
             Series::new("col3".into(), &[true, false, true]).into(),
@@ -241,14 +241,14 @@ mod tests {
 
     #[test]
     fn test_dataframe_equal() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
             Series::new("col2".into(), &["a", "b", "c"]).into(),
             Series::new("col3".into(), &[true, false, true]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
             Series::new("col2".into(), &["a", "b", "c"]).into(),
             Series::new("col3".into(), &[true, false, true]).into(),
@@ -261,13 +261,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "value mismatch")]
     fn test_dataframe_row_order_mismatch() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
             Series::new("col2".into(), &["a", "b", "c"]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[3, 1, 2]).into(),
             Series::new("col2".into(), &["c", "a", "b"]).into(),
         ])
@@ -278,13 +278,13 @@ mod tests {
 
     #[test]
     fn test_dataframe_row_order_ignored() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
             Series::new("col2".into(), &["a", "b", "c"]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[3, 1, 2]).into(),
             Series::new("col2".into(), &["c", "a", "b"]).into(),
         ])
@@ -298,7 +298,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "value mismatch")]
     fn test_dataframe_complex_mismatch() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("integers".into(), &[1, 2, 3, 4, 5]).into(),
             Series::new("floats".into(), &[1.1, 2.2, 3.3, 4.4, 5.5]).into(),
             Series::new("strings".into(), &["a", "b", "c", "d", "e"]).into(),
@@ -307,7 +307,7 @@ mod tests {
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("integers".into(), &[1, 2, 99, 4, 5]).into(),
             Series::new("floats".into(), &[1.1, 2.2, 3.3, 9.9, 5.5]).into(),
             Series::new("strings".into(), &["a", "b", "c", "CHANGED", "e"]).into(),
@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn test_dataframe_complex_match() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("integers".into(), &[1, 2, 3, 4, 5]).into(),
             Series::new("floats".into(), &[1.1, 2.2, 3.3, 4.4, 5.5]).into(),
             Series::new("strings".into(), &["a", "b", "c", "d", "e"]).into(),
@@ -330,7 +330,7 @@ mod tests {
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("integers".into(), &[1, 2, 3, 4, 5]).into(),
             Series::new("floats".into(), &[1.1, 2.2, 3.3, 4.4, 5.5]).into(),
             Series::new("strings".into(), &["a", "b", "c", "d", "e"]).into(),
@@ -346,13 +346,14 @@ mod tests {
     #[test]
     #[should_panic(expected = "value mismatch")]
     fn test_dataframe_numeric_exact_fail() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1.0000001, 2.0000002, 3.0000003]).into(),
         ])
         .unwrap();
 
         let df2 =
-            DataFrame::new(vec![Series::new("col1".into(), &[1.0, 2.0, 3.0]).into()]).unwrap();
+            DataFrame::new_infer_height(vec![Series::new("col1".into(), &[1.0, 2.0, 3.0]).into()])
+                .unwrap();
 
         let options = crate::asserts::DataFrameEqualOptions::default().with_check_exact(true);
         assert_dataframe_equal!(&df1, &df2, options);
@@ -360,13 +361,14 @@ mod tests {
 
     #[test]
     fn test_dataframe_numeric_tolerance_pass() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1.0000001, 2.0000002, 3.0000003]).into(),
         ])
         .unwrap();
 
         let df2 =
-            DataFrame::new(vec![Series::new("col1".into(), &[1.0, 2.0, 3.0]).into()]).unwrap();
+            DataFrame::new_infer_height(vec![Series::new("col1".into(), &[1.0, 2.0, 3.0]).into()])
+                .unwrap();
 
         assert_dataframe_equal!(&df1, &df2);
     }
@@ -374,21 +376,21 @@ mod tests {
     // Testing equality with special values
     #[test]
     fn test_empty_dataframe_equal() {
-        let df1 = DataFrame::default();
-        let df2 = DataFrame::default();
+        let df1 = DataFrame::empty();
+        let df2 = DataFrame::empty();
 
         assert_dataframe_equal!(&df1, &df2);
     }
 
     #[test]
     fn test_empty_dataframe_schema_equal() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &Vec::<i32>::new()).into(),
             Series::new("col2".into(), &Vec::<String>::new()).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &Vec::<i32>::new()).into(),
             Series::new("col2".into(), &Vec::<String>::new()).into(),
         ])
@@ -400,14 +402,14 @@ mod tests {
     #[test]
     #[should_panic(expected = "value mismatch")]
     fn test_dataframe_single_row_mismatch() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[42]).into(),
             Series::new("col2".into(), &["value"]).into(),
             Series::new("col3".into(), &[true]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[42]).into(),
             Series::new("col2".into(), &["different"]).into(),
             Series::new("col3".into(), &[true]).into(),
@@ -419,14 +421,14 @@ mod tests {
 
     #[test]
     fn test_dataframe_single_row_match() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[42]).into(),
             Series::new("col2".into(), &["value"]).into(),
             Series::new("col3".into(), &[true]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[42]).into(),
             Series::new("col2".into(), &["value"]).into(),
             Series::new("col3".into(), &[true]).into(),
@@ -439,12 +441,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "value mismatch")]
     fn test_dataframe_null_values_mismatch() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[Some(1), None, Some(3)]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[Some(1), Some(2), None]).into(),
         ])
         .unwrap();
@@ -454,12 +456,12 @@ mod tests {
 
     #[test]
     fn test_dataframe_null_values_match() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[Some(1), None, Some(3)]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[Some(1), None, Some(3)]).into(),
         ])
         .unwrap();
@@ -470,12 +472,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "value mismatch")]
     fn test_dataframe_nan_values_mismatch() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1.0, f64::NAN, 3.0]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1.0, 2.0, f64::NAN]).into(),
         ])
         .unwrap();
@@ -485,12 +487,12 @@ mod tests {
 
     #[test]
     fn test_dataframe_nan_values_match() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1.0, f64::NAN, 3.0]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1.0, f64::NAN, 3.0]).into(),
         ])
         .unwrap();
@@ -501,12 +503,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "value mismatch")]
     fn test_dataframe_infinity_values_mismatch() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1.0, f64::INFINITY, 3.0]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1.0, f64::NEG_INFINITY, 3.0]).into(),
         ])
         .unwrap();
@@ -516,12 +518,12 @@ mod tests {
 
     #[test]
     fn test_dataframe_infinity_values_match() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1.0, f64::INFINITY, 3.0]).into(),
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new("col1".into(), &[1.0, f64::INFINITY, 3.0]).into(),
         ])
         .unwrap();
@@ -531,19 +533,38 @@ mod tests {
 
     // Testing categorical operations
     #[test]
-    #[should_panic(expected = "dtypes do not match")]
+    #[should_panic(expected = "value mismatch")]
     fn test_dataframe_categorical_as_string_mismatch() {
-        let mut categorical1 = Series::new("categories".into(), &["a", "b", "c", "a"]);
+        let mut categorical1 = Series::new("categories".into(), &["a", "b", "c", "d"]);
         categorical1 = categorical1
             .cast(&DataType::from_categories(Categories::global()))
             .unwrap();
-        let df1 = DataFrame::new(vec![categorical1.into()]).unwrap();
+        let df1 = DataFrame::new_infer_height(vec![categorical1.into()]).unwrap();
 
-        let mut categorical2 = Series::new("categories".into(), &["a", "b", "c", "a"]);
+        let mut categorical2 = Series::new("categories".into(), &["a", "b", "c", "e"]);
         categorical2 = categorical2
             .cast(&DataType::from_categories(Categories::global()))
             .unwrap();
-        let df2 = DataFrame::new(vec![categorical2.into()]).unwrap();
+        let df2 = DataFrame::new_infer_height(vec![categorical2.into()]).unwrap();
+
+        let options =
+            crate::asserts::DataFrameEqualOptions::default().with_categorical_as_str(true);
+        assert_dataframe_equal!(&df1, &df2, options);
+    }
+
+    #[test]
+    fn test_dataframe_categorical_as_string_match() {
+        let mut categorical1 = Series::new("categories".into(), &["a", "b", "c", "d"]);
+        categorical1 = categorical1
+            .cast(&DataType::from_categories(Categories::global()))
+            .unwrap();
+        let df1 = DataFrame::new_infer_height(vec![categorical1.into()]).unwrap();
+
+        let mut categorical2 = Series::new("categories".into(), &["a", "b", "c", "d"]);
+        categorical2 = categorical2
+            .cast(&DataType::from_categories(Categories::global()))
+            .unwrap();
+        let df2 = DataFrame::new_infer_height(vec![categorical2.into()]).unwrap();
 
         let options =
             crate::asserts::DataFrameEqualOptions::default().with_categorical_as_str(true);
@@ -554,7 +575,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "value mismatch")]
     fn test_dataframe_nested_values_mismatch() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new(
                 "list_col".into(),
                 &[
@@ -568,7 +589,7 @@ mod tests {
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new(
                 "list_col".into(),
                 &[
@@ -587,7 +608,7 @@ mod tests {
 
     #[test]
     fn test_dataframe_nested_values_match() {
-        let df1 = DataFrame::new(vec![
+        let df1 = DataFrame::new_infer_height(vec![
             Series::new(
                 "list_col".into(),
                 &[Some(vec![1, 2, 3]), Some(vec![]), None, Some(vec![7, 8, 9])],
@@ -596,7 +617,7 @@ mod tests {
         ])
         .unwrap();
 
-        let df2 = DataFrame::new(vec![
+        let df2 = DataFrame::new_infer_height(vec![
             Series::new(
                 "list_col".into(),
                 &[Some(vec![1, 2, 3]), Some(vec![]), None, Some(vec![7, 8, 9])],

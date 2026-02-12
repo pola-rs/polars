@@ -4,6 +4,9 @@ use arrow::bitmap::Bitmap;
 
 use super::*;
 use crate::chunked_array::StructChunked;
+use crate::prelude::row_encode::{
+    _get_rows_encoded_ca, _get_rows_encoded_ca_unordered, encode_rows_unordered,
+};
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 
@@ -44,6 +47,52 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
             .all(|(s, other)| s.equal_element(idx_self, idx_other, &other))
     }
 
+    fn vec_hash(
+        &self,
+        build_hasher: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
+        // TODO: don't use row-encoding here.
+        if self.0.dtype().contains_categoricals() {
+            // The unordered encoding uses physicals for categoricals which depends on insertion order,
+            // so we use the ordered one here.
+            _get_rows_encoded_ca(
+                PlSmallStr::EMPTY,
+                &[self.0.clone().into_column()],
+                &[false],
+                &[false],
+                true,
+            )?
+            .vec_hash(build_hasher, buf)
+        } else {
+            _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[self.0.clone().into_column()])?
+                .vec_hash(build_hasher, buf)
+        }
+    }
+
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlSeedableRandomStateQuality,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
+        // TODO: don't use row-encoding here.
+        if self.0.dtype().contains_categoricals() {
+            // The unordered encoding uses physicals for categoricals which depends on insertion order,
+            // so we use the ordered one here.
+            _get_rows_encoded_ca(
+                PlSmallStr::EMPTY,
+                &[self.0.clone().into_column()],
+                &[false],
+                &[false],
+                true,
+            )?
+            .vec_hash_combine(build_hasher, hashes)
+        } else {
+            _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[self.0.clone().into_column()])?
+                .vec_hash_combine(build_hasher, hashes)
+        }
+    }
+
     #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         let ca = self.0.get_row_encoded(Default::default())?;
@@ -67,22 +116,6 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         self.0.agg_list(groups)
-    }
-
-    fn vec_hash(
-        &self,
-        build_hasher: PlSeedableRandomStateQuality,
-        buf: &mut Vec<u64>,
-    ) -> PolarsResult<()> {
-        let mut fields = self.0.fields_as_series().into_iter();
-
-        if let Some(s) = fields.next() {
-            s.vec_hash(build_hasher, buf)?
-        };
-        for s in fields {
-            s.vec_hash_combine(build_hasher, buf)?
-        }
-        Ok(())
     }
 }
 
@@ -148,6 +181,10 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     unsafe fn take_slice_unchecked(&self, _idx: &[IdxSize]) -> Series {
         self.0.take_unchecked(_idx).into_series()
+    }
+
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0.deposit(validity).into_series()
     }
 
     fn len(&self) -> usize {
@@ -225,6 +262,11 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         let groups = self.group_tuples(main_thread, true)?;
         let first = groups.take_group_firsts();
         Ok(IdxCa::from_vec(self.name().clone(), first))
+    }
+
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        let ca = encode_rows_unordered(&[self.0.clone().into_column()])?;
+        ChunkUnique::unique_id(&ca)
     }
 
     fn has_nulls(&self) -> bool {

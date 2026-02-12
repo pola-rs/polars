@@ -9,6 +9,10 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
+pub(super) fn get_numpy_module(py: Python) -> PyResult<Bound<PyModule>> {
+    PyModule::import(py, intern!(py, "numpy"))
+}
+
 /// Create a NumPy ndarray view of the data.
 pub(super) unsafe fn create_borrowed_np_array<I>(
     py: Python<'_>,
@@ -16,8 +20,8 @@ pub(super) unsafe fn create_borrowed_np_array<I>(
     mut shape: Dim<I>,
     flags: c_int,
     data: *mut c_void,
-    owner: PyObject,
-) -> PyObject
+    owner: Py<PyAny>,
+) -> Py<PyAny>
 where
     Dim<I>: Dimension + ToNpyDims,
 {
@@ -72,10 +76,10 @@ pub(super) fn series_contains_null(s: &Series) -> bool {
 /// Reshape the first dimension of a NumPy array to the given height and width.
 pub(super) fn reshape_numpy_array(
     py: Python<'_>,
-    arr: PyObject,
+    arr: Py<PyAny>,
     height: usize,
     width: usize,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let shape = arr
         .getattr(py, intern!(py, "shape"))?
         .extract::<Vec<usize>>(py)?;

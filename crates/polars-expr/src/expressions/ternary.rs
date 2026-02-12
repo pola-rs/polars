@@ -67,10 +67,14 @@ fn finish_as_iters<'a>(
         // Exploded list should be equal to groups length.
         list_vals_len == ac_truthy.groups.len()
     {
-        out = out.explode(false)?
+        out = out.explode(ExplodeOptions {
+            empty_as_null: true,
+            keep_nulls: true,
+        })?
     }
 
     ac_truthy.with_agg_state(AggState::AggregatedList(out));
+    ac_truthy.with_update_groups(UpdateGroups::WithSeriesLen);
 
     Ok(ac_truthy)
 }
@@ -137,7 +141,7 @@ impl PhysicalExpr for TernaryExpr {
 
         for ac in [&ac_mask, &ac_truthy, &ac_falsy].into_iter() {
             match ac.agg_state() {
-                Literal(s) => {
+                LiteralScalar(s) => {
                     has_non_unit_literal = s.len() != 1;
 
                     if has_non_unit_literal {
@@ -179,14 +183,13 @@ impl PhysicalExpr for TernaryExpr {
                     return Ok(AggregationContext {
                         state: NotAggregated(out),
                         groups: ac_target.groups.clone(),
-                        sorted: ac_target.sorted,
                         update_groups: ac_target.update_groups,
                         original_len: ac_target.original_len,
                     });
                 }
             }
 
-            ac_truthy.with_agg_state(Literal(out));
+            ac_truthy.with_agg_state(LiteralScalar(out));
 
             return Ok(ac_truthy);
         }
@@ -207,7 +210,7 @@ impl PhysicalExpr for TernaryExpr {
         // non_literal_acs will have at least 1 item because has_aggregated was
         // true from above.
         for ac in [&ac_mask, &ac_truthy, &ac_falsy].into_iter() {
-            if !matches!(ac.agg_state(), Literal(_)) {
+            if !matches!(ac.agg_state(), LiteralScalar(_)) {
                 non_literal_acs.push(ac);
             }
         }
@@ -322,45 +325,12 @@ impl PhysicalExpr for TernaryExpr {
         Ok(AggregationContext {
             state: agg_state_out,
             groups: ac_target.groups.clone(),
-            sorted: ac_target.sorted,
             update_groups: ac_target.update_groups,
             original_len: ac_target.original_len,
         })
     }
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        Some(self)
-    }
 
     fn is_scalar(&self) -> bool {
         self.returns_scalar
-    }
-}
-
-impl PartitionedAggregation for TernaryExpr {
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        let truthy = self.truthy.as_partitioned_aggregator().unwrap();
-        let falsy = self.falsy.as_partitioned_aggregator().unwrap();
-        let mask = self.predicate.as_partitioned_aggregator().unwrap();
-
-        let truthy = truthy.evaluate_partitioned(df, groups, state)?;
-        let falsy = falsy.evaluate_partitioned(df, groups, state)?;
-        let mask = mask.evaluate_partitioned(df, groups, state)?;
-        let mask = mask.bool()?.clone();
-
-        truthy.zip_with(&mask, &falsy)
-    }
-
-    fn finalize(
-        &self,
-        partitioned: Column,
-        _groups: &GroupPositions,
-        _state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        Ok(partitioned)
     }
 }

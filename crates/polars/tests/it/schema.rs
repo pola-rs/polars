@@ -572,5 +572,5 @@ fn test_infer_schema() {
     ];
 
     // Check the inferred schema
-    assert_eq!(Schema::from_iter(exp_fields.clone()), schema);
+    assert_eq!(Schema::from_iter(exp_fields), schema);
 }

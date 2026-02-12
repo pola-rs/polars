@@ -1,8 +1,11 @@
+import pytest
+
 import polars as pl
+from polars.testing import assert_series_equal
 
 
 def test_shrink_dtype() -> None:
-    out = pl.DataFrame(
+    df = pl.DataFrame(
         {
             "a": [1, 2, 3],
             "b": [1, 2, 2 << 32],
@@ -16,19 +19,26 @@ def test_shrink_dtype() -> None:
             "j": pl.Series([None, None, None], dtype=pl.Int64),
             "k": pl.Series([None, None, None], dtype=pl.Float64),
         }
-    ).select(pl.all().shrink_dtype())
+    )
+
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"use `Series\.shrink_dtype` instead",
+    ):
+        out = df.select(pl.all().shrink_dtype())
+
     assert out.dtypes == [
-        pl.Int8,
         pl.Int64,
-        pl.Int32,
-        pl.Int8,
-        pl.Int16,
+        pl.Int64,
+        pl.Int64,
+        pl.Int64,
+        pl.Int64,
         pl.String,
-        pl.Float32,
+        pl.Float64,
         pl.Boolean,
-        pl.UInt8,
-        pl.Int8,
-        pl.Float32,
+        pl.UInt64,
+        pl.Int64,
+        pl.Float64,
     ]
 
     assert out.to_dict(as_series=False) == {
@@ -38,9 +48,29 @@ def test_shrink_dtype() -> None:
         "d": [-112, 2, 112],
         "e": [-112, 2, 129],
         "f": ["a", "b", "c"],
-        "g": [0.10000000149011612, 1.3200000524520874, 0.11999999731779099],
+        "g": [0.1, 1.32, 0.12],
         "h": [True, None, False],
         "i": [None, None, None],
         "j": [None, None, None],
         "k": [None, None, None],
     }
+
+
+@pytest.mark.parametrize(
+    ("value", "before", "after"),
+    [
+        (2**100, pl.Int128, pl.Int128),
+        (2**63, pl.Int128, pl.Int128),
+        (-(2**63) - 1, pl.Int128, pl.Int128),
+        (2**63 - 1, pl.Int128, pl.Int64),
+        (-(2**63), pl.Int128, pl.Int64),
+        (2**100, pl.UInt128, pl.UInt128),
+        (2**64, pl.UInt128, pl.UInt128),
+        (2**64 - 1, pl.UInt128, pl.UInt64),
+    ],
+)
+def test_shrink_dtype_large_24827(
+    value: int, before: pl.DataType, after: pl.DataType
+) -> None:
+    s = pl.Series([value], dtype=before)
+    assert_series_equal(s.shrink_dtype(), s.cast(after))

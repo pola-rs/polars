@@ -9,7 +9,7 @@
   "excludes": [
     ".venv/",
     "**/target/",
-    "crates/polars-plan/dsl-schema.sha256",
+    "crates/polars-plan/dsl-schema-hashes.json",
     "py-polars/.hypothesis/",
     "py-polars/.mypy_cache/",
     "py-polars/.pytest_cache/",

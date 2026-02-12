@@ -1,5 +1,5 @@
 use std::fmt;
-use std::hash::{BuildHasher, Hasher};
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::str::FromStr;
 use std::sync::{Arc, LazyLock, Mutex, Weak};
 
@@ -40,11 +40,11 @@ impl CategoricalPhysical {
     }
 
     pub fn smallest_physical(num_cats: usize) -> PolarsResult<Self> {
-        if num_cats < u8::MAX as usize {
+        if num_cats <= u8::MAX as usize {
             Ok(Self::U8)
-        } else if num_cats < u16::MAX as usize {
+        } else if num_cats <= u16::MAX as usize {
             Ok(Self::U16)
-        } else if num_cats < u32::MAX as usize {
+        } else if num_cats <= u32::MAX as usize {
             Ok(Self::U32)
         } else {
             polars_bail!(ComputeError: "attempted to insert more categories than the maximum allowed")
@@ -83,7 +83,7 @@ struct CategoricalId {
 impl CategoricalId {
     fn global() -> Self {
         Self {
-            name: PlSmallStr::from_static("__POLARS_GLOBAL_CATEGORIES"),
+            name: PlSmallStr::from_static(""),
             namespace: PlSmallStr::from_static(""),
             physical: CategoricalPhysical::U32,
         }
@@ -105,15 +105,19 @@ static FROZEN_CATEGORIES_HASHER: LazyLock<PlSeedableRandomStateQuality> =
     LazyLock::new(PlSeedableRandomStateQuality::random);
 
 static GLOBAL_CATEGORIES: LazyLock<Arc<Categories>> = LazyLock::new(|| {
-    let categories = Arc::new(Categories {
+    let mut registry = CATEGORIES_REGISTRY.lock().unwrap();
+    let global_id = CategoricalId::global();
+    if let Some(cats_ref) = registry.get(&global_id) {
+        if let Some(cats) = cats_ref.upgrade() {
+            return cats;
+        }
+    }
+    let global = Arc::new(Categories {
         id: CategoricalId::global(),
         mapping: Mutex::new(Weak::new()),
     });
-    CATEGORIES_REGISTRY
-        .lock()
-        .unwrap()
-        .insert(CategoricalId::global(), Arc::downgrade(&categories));
-    categories
+    registry.insert(global_id, Arc::downgrade(&global));
+    global
 });
 
 /// A (named) object which is used to indicate which categorical data types have the same mapping.
@@ -155,6 +159,16 @@ impl Categories {
         GLOBAL_CATEGORIES.clone()
     }
 
+    /// Returns whether this refers to the global categories.
+    pub fn is_global(self: &Arc<Self>) -> bool {
+        Arc::ptr_eq(self, &*GLOBAL_CATEGORIES)
+    }
+
+    /// Generates a Categories with a random (UUID) name.
+    pub fn random(namespace: PlSmallStr, physical: CategoricalPhysical) -> Arc<Self> {
+        Self::new(uuid::Uuid::new_v4().to_string().into(), namespace, physical)
+    }
+
     /// The name of this Categories object.
     pub fn name(&self) -> &PlSmallStr {
         &self.id.name
@@ -168,6 +182,11 @@ impl Categories {
     /// The physical dtype of the category ids.
     pub fn physical(&self) -> CategoricalPhysical {
         self.id.physical
+    }
+
+    /// A stable hash of this Categories object, not the contained categories.
+    pub fn hash(&self) -> u64 {
+        PlFixedStateQuality::default().hash_one(&self.id)
     }
 
     /// The mapping for this Categories object. If no mapping currently exists
@@ -222,9 +241,9 @@ impl FrozenCategories {
     /// It is guaranteed that the nth string ends up with category n (0-indexed).
     pub fn new<'a, I: IntoIterator<Item = &'a str>>(strings: I) -> PolarsResult<Arc<Self>> {
         let strings = strings.into_iter();
-        let hasher = *FROZEN_CATEGORIES_HASHER;
+        let hasher = FROZEN_CATEGORIES_HASHER.clone();
         let mut mapping = CategoricalMapping::with_hasher(usize::MAX, hasher);
-        let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8);
+        let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8View);
         builder.reserve(strings.size_hint().0);
 
         let mut combined_hasher = PlFixedStateQuality::default().build_hasher();
@@ -284,6 +303,11 @@ impl FrozenCategories {
     /// The mapping for this FrozenCategories object.
     pub fn mapping(&self) -> &Arc<CategoricalMapping> {
         &self.mapping
+    }
+
+    /// A stable hash of the categories.
+    pub fn hash(&self) -> u64 {
+        self.combined_hash
     }
 }
 

@@ -28,14 +28,15 @@ tokio = { workspace = true, optional = true }
 
 [features]
 async = [
-  "polars-plan/async",
   "polars-io/cloud",
+  "tokio",
 ]
 python = ["pyo3", "polars-plan/python", "polars-core/python", "polars-io/python", "polars-error/python"]
 ipc = ["polars-io/ipc", "polars-plan/ipc"]
 json = ["polars-io/json", "polars-plan/json", "polars-json"]
+scan_lines = ["polars-plan/scan_lines", "polars-io/scan_lines"]
 csv = ["polars-io/csv", "polars-plan/csv"]
-cloud = ["async", "polars-plan/cloud", "tokio", "futures"]
+cloud = ["polars-plan/cloud"]
 parquet = ["polars-io/parquet", "polars-plan/parquet"]
 dtype-categorical = ["polars-plan/dtype-categorical"]
 dtype-date = ["polars-plan/dtype-date", "polars-time/dtype-date"]
@@ -48,10 +49,19 @@ dtype-struct = ["polars-plan/dtype-struct", "polars-ops/dtype-struct"]
 dtype-time = ["polars-plan/dtype-time", "polars-time/dtype-time"]
 dtype-u16 = ["polars-plan/dtype-u16"]
 dtype-u8 = ["polars-plan/dtype-u8"]
+dtype-f16 = ["polars-plan/dtype-f16"]
 object = ["polars-core/object"]
 dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "polars-expr/dynamic_group_by"]
 asof_join = ["polars-plan/asof_join", "polars-time", "polars-ops/asof_join"]
 merge_sorted = ["polars-plan/merge_sorted", "polars-ops/merge_sorted"]
+allow_unused = [
+  "polars-core/allow_unused",
+  "polars-ops/allow_unused",
+  "polars-io/allow_unused",
+  "polars-time/allow_unused",
+  "polars-plan/allow_unused",
+  "polars-expr/allow_unused",
+]
 
 [lints]
 workspace = true

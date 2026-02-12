@@ -1,15 +1,16 @@
 use std::ops::Range;
 
 use either::Either;
+use polars_buffer::Buffer;
+use polars_utils::float16::pf16;
 
 use super::{Array, Splitable};
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::Bitmap;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
-use crate::buffer::Buffer;
 use crate::datatypes::*;
 use crate::trusted_len::TrustedLen;
-use crate::types::{NativeType, days_ms, f16, i256, months_days_ns};
+use crate::types::{NativeType, days_ms, i256, months_days_ns};
 
 mod ffi;
 pub(super) mod fmt;
@@ -40,7 +41,7 @@ use polars_utils::slice::SliceAble;
 /// ```
 /// use polars_arrow::array::PrimitiveArray;
 /// use polars_arrow::bitmap::Bitmap;
-/// use polars_arrow::buffer::Buffer;
+/// use polars_buffer::Buffer;
 ///
 /// let array = PrimitiveArray::from([Some(1i32), None, Some(10)]);
 /// assert_eq!(array.value(0), 1);
@@ -260,7 +261,8 @@ impl<T: NativeType> PrimitiveArray<T> {
             .take()
             .map(|bitmap| bitmap.sliced_unchecked(offset, length))
             .filter(|bitmap| bitmap.unset_bits() > 0);
-        self.values.slice_unchecked(offset, length);
+        self.values
+            .slice_in_place_unchecked(offset..offset + length);
     }
 
     impl_sliced!();
@@ -290,12 +292,23 @@ impl<T: NativeType> PrimitiveArray<T> {
 
     /// Applies a function `f` to the validity of this array.
     ///
-    /// This is an API to leverage clone-on-write
     /// # Panics
     /// This function panics if the function `f` modifies the length of the [`Bitmap`].
     pub fn apply_validity<F: FnOnce(Bitmap) -> Bitmap>(&mut self, f: F) {
         if let Some(validity) = std::mem::take(&mut self.validity) {
             self.set_validity(Some(f(validity)))
+        }
+    }
+
+    /// Applies a function `f` to the values of this array, ignoring validity,
+    /// in-place if possible.
+    pub fn with_values_mut<F: FnOnce(&mut [T])>(&mut self, f: F) {
+        if let Some(slice) = self.values.get_mut_slice() {
+            f(slice)
+        } else {
+            let mut values = self.values.as_slice().to_vec();
+            f(&mut values);
+            self.values = Buffer::from(values);
         }
     }
 
@@ -412,6 +425,13 @@ impl<T: NativeType> PrimitiveArray<T> {
         )
     }
 
+    /// Calls f with a [`PrimitiveArray`] backed by this slice.
+    ///
+    /// Aborts if any clones of the [`PrimitiveArray`] still live when `f` returns.
+    pub fn with_slice<R, F: FnOnce(PrimitiveArray<T>) -> R>(slice: &[T], f: F) -> R {
+        Buffer::with_slice(slice, |buf| f(Self::new(T::PRIMITIVE.into(), buf, None)))
+    }
+
     /// Creates a (non-null) [`PrimitiveArray`] from a [`TrustedLen`] of values.
     /// # Implementation
     /// This does not assume that the iterator has a known length.
@@ -458,13 +478,11 @@ impl<T: NativeType> PrimitiveArray<T> {
         let PrimitiveArray {
             values, validity, ..
         } = self;
-
-        // SAFETY: this is fine, we checked size and alignment, and NativeType
-        // is always Pod.
-        assert_eq!(size_of::<T>(), size_of::<U>());
-        assert_eq!(align_of::<T>(), align_of::<U>());
-        let new_values = unsafe { std::mem::transmute::<Buffer<T>, Buffer<U>>(values) };
-        PrimitiveArray::new(U::PRIMITIVE.into(), new_values, validity)
+        PrimitiveArray::new(
+            U::PRIMITIVE.into(),
+            Buffer::try_transmute::<U>(values).unwrap(),
+            validity,
+        )
     }
 
     /// Fills this entire array with the given value, leaving the validity mask intact.
@@ -569,7 +587,7 @@ pub type DaysMsArray = PrimitiveArray<days_ms>;
 /// A type definition [`PrimitiveArray`] for [`months_days_ns`]
 pub type MonthsDaysNsArray = PrimitiveArray<months_days_ns>;
 /// A type definition [`PrimitiveArray`] for `f16`
-pub type Float16Array = PrimitiveArray<f16>;
+pub type Float16Array = PrimitiveArray<pf16>;
 /// A type definition [`PrimitiveArray`] for `f32`
 pub type Float32Array = PrimitiveArray<f32>;
 /// A type definition [`PrimitiveArray`] for `f64`
@@ -582,6 +600,8 @@ pub type UInt16Array = PrimitiveArray<u16>;
 pub type UInt32Array = PrimitiveArray<u32>;
 /// A type definition [`PrimitiveArray`] for `u64`
 pub type UInt64Array = PrimitiveArray<u64>;
+/// A type definition [`PrimitiveArray`] for `u128`
+pub type UInt128Array = PrimitiveArray<u128>;
 
 /// A type definition [`MutablePrimitiveArray`] for `i8`
 pub type Int8Vec = MutablePrimitiveArray<i8>;
@@ -600,7 +620,7 @@ pub type DaysMsVec = MutablePrimitiveArray<days_ms>;
 /// A type definition [`MutablePrimitiveArray`] for [`months_days_ns`]
 pub type MonthsDaysNsVec = MutablePrimitiveArray<months_days_ns>;
 /// A type definition [`MutablePrimitiveArray`] for `f16`
-pub type Float16Vec = MutablePrimitiveArray<f16>;
+pub type Float16Vec = MutablePrimitiveArray<pf16>;
 /// A type definition [`MutablePrimitiveArray`] for `f32`
 pub type Float32Vec = MutablePrimitiveArray<f32>;
 /// A type definition [`MutablePrimitiveArray`] for `f64`
@@ -613,6 +633,8 @@ pub type UInt16Vec = MutablePrimitiveArray<u16>;
 pub type UInt32Vec = MutablePrimitiveArray<u32>;
 /// A type definition [`MutablePrimitiveArray`] for `u64`
 pub type UInt64Vec = MutablePrimitiveArray<u64>;
+/// A type definition [`MutablePrimitiveArray`] for `u128`
+pub type UInt128Vec = MutablePrimitiveArray<u128>;
 
 impl<T: NativeType> Default for PrimitiveArray<T> {
     fn default() -> Self {

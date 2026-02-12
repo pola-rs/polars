@@ -2,15 +2,20 @@ from __future__ import annotations
 
 import random
 import struct
-from typing import TYPE_CHECKING
+from datetime import date, datetime, time, timedelta
+from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.exceptions import InvalidOperationError
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import SizeUnit, TransferEncoding
+    from polars._typing import PolarsDataType, SizeUnit, TransferEncoding
 
 
 def test_binary_conversions() -> None:
@@ -211,6 +216,175 @@ def test_reinterpret(
 
 
 @pytest.mark.parametrize(
+    ("dtype", "inner_type_size", "struct_type"),
+    [
+        (pl.Array(pl.Int8, 3), 1, "b"),
+        (pl.Array(pl.UInt8, 3), 1, "B"),
+        (pl.Array(pl.Int16, 3), 2, "h"),
+        (pl.Array(pl.UInt16, 3), 2, "H"),
+        (pl.Array(pl.Int32, 3), 4, "i"),
+        (pl.Array(pl.UInt32, 3), 4, "I"),
+        (pl.Array(pl.Int64, 3), 8, "q"),
+        (pl.Array(pl.UInt64, 3), 8, "Q"),
+        (pl.Array(pl.Float32, 3), 4, "f"),
+        (pl.Array(pl.Float64, 3), 8, "d"),
+    ],
+)
+def test_reinterpret_to_array_numeric_types(
+    dtype: pl.Array,
+    inner_type_size: int,
+    struct_type: str,
+) -> None:
+    # Make test reproducible
+    random.seed(42)
+
+    type_size = inner_type_size
+    shape = dtype.shape
+    if isinstance(shape, int):
+        shape = (shape,)
+    for dim_size in dtype.shape:
+        type_size *= dim_size
+
+    byte_arr = [random.randbytes(type_size) for _ in range(3)]
+    df = pl.DataFrame({"x": byte_arr}, orient="row")
+
+    for endianness in ["little", "big"]:
+        result = df.select(
+            pl.col("x").bin.reinterpret(dtype=dtype, endianness=endianness)  # type: ignore[arg-type]
+        )
+
+        # So that mypy doesn't complain
+        struct_endianness = "<" if endianness == "little" else ">"
+        expected = []
+        for elem_bytes in byte_arr:
+            vals = [
+                struct.unpack_from(
+                    f"{struct_endianness}{struct_type}",
+                    elem_bytes[idx : idx + inner_type_size],
+                )[0]
+                for idx in range(0, type_size, inner_type_size)
+            ]
+            if len(shape) > 1:
+                vals = np.reshape(vals, shape).tolist()
+            expected.append(vals)
+        expected_df = pl.DataFrame({"x": expected}, schema={"x": dtype})
+
+        assert_frame_equal(result, expected_df)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "binary_value", "expected_values"),
+    [
+        (pl.Date(), b"\x06\x00\x00\x00", [date(1970, 1, 7)]),
+        (
+            pl.Datetime(),
+            b"\x40\xb6\xfd\xe3\x7c\x00\x00\x00",
+            [datetime(1970, 1, 7, 5, 0, 1)],
+        ),
+        (
+            pl.Duration(),
+            b"\x03\x00\x00\x00\x00\x00\x00\x00",
+            [timedelta(microseconds=3)],
+        ),
+        (
+            pl.Time(),
+            b"\x58\x1b\x00\x00\x00\x00\x00\x00",
+            [time(microsecond=7)],
+        ),
+        (
+            pl.Int128(),
+            b"\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+            [6],
+        ),
+        (
+            pl.UInt128(),
+            b"\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+            [6],
+        ),
+    ],
+)
+def test_reinterpret_to_additional_types(
+    dtype: PolarsDataType, binary_value: bytes, expected_values: list[object]
+) -> None:
+    series = pl.Series([binary_value])
+
+    # Direct conversion:
+    result = series.bin.reinterpret(dtype=dtype, endianness="little")
+    assert_series_equal(result, pl.Series(expected_values, dtype=dtype))
+
+    # Array conversion:
+    dtype = pl.Array(dtype, 1)
+    result = series.bin.reinterpret(dtype=dtype, endianness="little")
+    assert_series_equal(result, pl.Series([expected_values], dtype=dtype))
+
+
+def test_reinterpret_to_array_resulting_in_nulls() -> None:
+    series = pl.Series([None, b"short", b"justrite", None, b"waytoolong"])
+    as_bin = series.bin.reinterpret(dtype=pl.Array(pl.UInt32(), 2), endianness="little")
+    assert as_bin.to_list() == [None, None, [0x7473756A, 0x65746972], None, None]
+    as_bin = series.bin.reinterpret(dtype=pl.Array(pl.UInt32(), 2), endianness="big")
+    assert as_bin.to_list() == [None, None, [0x6A757374, 0x72697465], None, None]
+
+
+def test_reinterpret_to_n_dimensional_array() -> None:
+    series = pl.Series([b"abcd"])
+    for endianness in ["big", "little"]:
+        with pytest.raises(
+            InvalidOperationError,
+            match="reinterpret to a linear Array, and then use reshape",
+        ):
+            series.bin.reinterpret(
+                dtype=pl.Array(pl.UInt32(), (2, 2)),
+                endianness=endianness,  # type: ignore[arg-type]
+            )
+
+
+def test_reinterpret_to_zero_length_array() -> None:
+    arr_dtype = pl.Array(pl.UInt8, 0)
+    result = pl.Series([b"", b""]).bin.reinterpret(dtype=arr_dtype)
+    assert_series_equal(result, pl.Series([[], []], dtype=arr_dtype))
+
+
+@given(
+    value1=st.integers(0, 2**63),
+    value2=st.binary(min_size=0, max_size=7),
+    value3=st.integers(0, 2**63),
+)
+def test_reinterpret_to_array_different_alignment(
+    value1: int, value2: bytes, value3: int
+) -> None:
+    series = pl.Series([struct.pack("<Q", value1), value2, struct.pack("<Q", value3)])
+    arr_dtype = pl.Array(pl.UInt64, 1)
+    as_uint64 = series.bin.reinterpret(dtype=arr_dtype, endianness="little")
+    assert_series_equal(
+        pl.Series([[value1], None, [value3]], dtype=arr_dtype), as_uint64
+    )
+
+
+@pytest.mark.parametrize(
+    "bad_dtype",
+    [
+        pl.Array(pl.Array(pl.UInt8, 1), 1),
+        pl.String(),
+        pl.Array(pl.List(pl.UInt8()), 1),
+        pl.Array(pl.Null(), 1),
+        pl.Array(pl.Boolean(), 1),
+    ],
+)
+def test_reinterpret_unsupported(bad_dtype: pl.DataType) -> None:
+    series = pl.Series([b"12345678"])
+    lazy_df = pl.DataFrame({"s": series}).lazy()
+    expected = "cannot reinterpret binary to dtype.*Only numeric or temporal dtype.*"
+    for endianness in ["little", "big"]:
+        with pytest.raises(InvalidOperationError, match=expected):
+            series.bin.reinterpret(dtype=bad_dtype, endianness=endianness)  # type: ignore[arg-type]
+        with pytest.raises(InvalidOperationError, match=expected):
+            lazy_df.select(
+                pl.col("s").bin.reinterpret(dtype=bad_dtype, endianness=endianness)  # type: ignore[arg-type]
+            ).collect_schema()
+
+
+@pytest.mark.parametrize(
     ("dtype", "type_size"),
     [
         (pl.Int128, 16),
@@ -280,3 +454,185 @@ def test_bin_contains_unequal_lengths_22018(func: str) -> None:
     f = getattr(s, func)
     with pytest.raises(pl.exceptions.ShapeError):
         f(pl.Series([b"x", b"y", b"z"]))
+
+
+def test_binary_compounded_literal_aggstate_24460() -> None:
+    df = pl.DataFrame({"g": [10], "n": [1]})
+    out = df.group_by("g").agg(
+        (pl.lit(1, pl.Int64) + pl.lit(2)).pow(pl.lit(3)).alias("z")
+    )
+    expected = pl.DataFrame({"g": [10], "z": [27]})
+    assert_frame_equal(out, expected)
+
+
+# parametric tuples: (expr, is_scalar, values with broadcast)
+agg_expressions = [
+    (pl.lit(7, pl.Int64), True, [7, 7, 7]),  # LiteralScalar
+    (pl.col("n"), False, [2, 1, 3]),  # NotAggregated
+    (pl.int_range(pl.len()), False, [0, 1, 0]),  # AggregatedList
+    (pl.col("n").first(), True, [2, 2, 3]),  # AggregatedScalar
+]
+
+
+@pytest.mark.parametrize("lhs", agg_expressions)
+@pytest.mark.parametrize("rhs", agg_expressions)
+@pytest.mark.parametrize("n_rows", [0, 1, 2, 3])
+@pytest.mark.parametrize("maintain_order", [True, False])
+def test_add_aggstates_in_binary_expr_24504(
+    lhs: tuple[pl.Expr, bool, list[int]],
+    rhs: tuple[pl.Expr, bool, list[int]],
+    n_rows: int,
+    maintain_order: bool,
+) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "n": [2, 1, 3]})
+    lf = df.head(n_rows).lazy()
+    expr = pl.Expr.add(lhs[0].alias("lhs"), rhs[0].alias("rhs")).alias("expr")
+    q = lf.group_by("g", maintain_order=maintain_order).agg(expr)
+    out = q.collect()
+
+    # check schema
+    assert q.collect_schema() == out.schema
+
+    # check output against ground truth
+    if n_rows in [1, 2, 3]:
+        data = df.to_dict(as_series=False)
+        result: dict[int, Any] = {}
+        for gg, ll, rr in zip(
+            data["g"][:n_rows], lhs[2][:n_rows], rhs[2][:n_rows], strict=True
+        ):
+            result.setdefault(gg, []).append(ll + rr)
+        if lhs[1] and rhs[1]:
+            # expect scalar result
+            result = {k: v[0] for k, v in result.items()}
+        expected = pl.DataFrame(
+            {"g": list(result.keys()), "expr": list(result.values())}
+        )
+        assert_frame_equal(out, expected, check_row_order=maintain_order)
+
+    # check output against non_aggregated expression evaluation
+    if n_rows in [1, 2, 3]:
+        print(f"df\n{df}")
+        grouped = df.head(n_rows).group_by("g", maintain_order=maintain_order)
+        out_non_agg = pl.DataFrame({})
+        for df_group in grouped:
+            df = df_group[1]
+            print(f"df pre expr:\n{df}", flush=True)
+            if lhs[1] and rhs[1]:
+                df = df.head(1)
+                df = df.select(["g", expr])
+            else:
+                df = df.select(["g", expr.implode()]).head(1)
+            print(f"df post expr:{df}\n")
+            out_non_agg = out_non_agg.vstack(df)
+            print(f"out_non_agg:\n{out_non_agg}")
+
+        assert_frame_equal(out, out_non_agg, check_row_order=maintain_order)
+
+
+# parametric tuples: (expr, is_scalar)
+agg_expressions_sort = [
+    (pl.lit(7, pl.Int64), True),  # LiteralScalar
+    (pl.col("n"), False),  # NotAggregated
+    (pl.col("n").sort(), False),  # NotAggregated w groups modified
+    (pl.int_range(pl.len()), False),  # AggregatedList
+    (pl.int_range(pl.len()).reverse(), False),  # AggregatedList w groups modified
+    (pl.col("n").first(), True),  # AggregatedScalar
+]
+
+
+@pytest.mark.parametrize("lhs", agg_expressions_sort)
+@pytest.mark.parametrize("rhs", agg_expressions_sort)
+@pytest.mark.parametrize("maintain_order", [True, False])
+def test_add_aggstates_with_sort_in_binary_expr_24504(
+    lhs: tuple[pl.Expr, bool, list[int]],
+    rhs: tuple[pl.Expr, bool, list[int]],
+    maintain_order: bool,
+) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "n": [2, 1, 3]})
+    lf = df.lazy()
+    expr = pl.Expr.add(lhs[0].alias("lhs"), rhs[0].alias("rhs")).alias("expr")
+    q = lf.group_by("g", maintain_order=maintain_order).agg(expr)
+    out = q.collect()
+
+    # check schema
+    assert q.collect_schema() == out.schema
+
+    # check output against non_aggregated expression evaluation
+    grouped = df.group_by("g", maintain_order=maintain_order)
+    out_non_agg = pl.DataFrame({})
+    for df_group in grouped:
+        df = df_group[1]
+        if lhs[1] and rhs[1]:
+            df = df.head(1)
+            df = df.select(["g", expr])
+        else:
+            df = df.select(["g", expr.implode()]).head(1)
+        out_non_agg = out_non_agg.vstack(df)
+
+    assert_frame_equal(out, out_non_agg, check_row_order=maintain_order)
+
+
+@pytest.mark.parametrize("maintain_order", [True, False])
+def test_binary_context_nested(maintain_order: bool) -> None:
+    df = pl.DataFrame({"groups": [1, 1, 2, 2, 3, 3], "vals": [1, 13, 3, 87, 1, 6]})
+    out = (
+        df.lazy()
+        .group_by(pl.col("groups"), maintain_order=maintain_order)
+        .agg(
+            [
+                pl.when(pl.col("vals").eq(pl.lit(1)))
+                .then(pl.col("vals").sum())
+                .otherwise(pl.lit(90))
+                .alias("vals")
+            ]
+        )
+    ).collect()
+    expected = pl.DataFrame(
+        {"groups": [1, 2, 3], "vals": [[14, 90], [90, 90], [7, 90]]}
+    )
+    assert_frame_equal(out, expected, check_row_order=maintain_order)
+
+
+def test_get() -> None:
+    # N binary, scalar index (N to 1).
+    df = pl.DataFrame({"a": [b"\x01\x02\x03", b"", b"\x04\x05"]})
+    result = df.select(pl.col("a").bin.get(0, null_on_oob=True))
+    expected = pl.DataFrame({"a": [1, None, 4]}, schema={"a": pl.UInt8})
+    assert_frame_equal(result, expected)
+
+    # Negative index.
+    result = df.select(pl.col("a").bin.get(-1, null_on_oob=True))
+    expected = pl.DataFrame({"a": [3, None, 5]}, schema={"a": pl.UInt8})
+    assert_frame_equal(result, expected)
+
+    # Null index.
+    result = df.select(
+        pl.col("a").bin.get(pl.lit(None, dtype=pl.Int64), null_on_oob=True)
+    )
+    expected = pl.DataFrame({"a": [None, None, None]}, schema={"a": pl.UInt8})
+    assert_frame_equal(result, expected)
+
+    # N binary, N indices (N to N).
+    df = pl.DataFrame(
+        {
+            "a": [b"\x01\x02\x03", b"\x04\x05", b"\x06"],
+            "idx": [2, 0, 0],
+        }
+    )
+    result = df.select(pl.col("a").bin.get(pl.col("idx"), null_on_oob=True))
+    expected = pl.DataFrame({"a": [3, 4, 6]}, schema={"a": pl.UInt8})
+    assert_frame_equal(result, expected)
+
+    # 1 binary, N indices (1 to N).
+    result = pl.select(
+        pl.lit(pl.Series("a", [b"\x01\x02\x03"])).bin.get(
+            pl.Series("idx", [0, 1, 2]), null_on_oob=True
+        )
+    )
+    expected = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.UInt8})
+    assert_frame_equal(result, expected)
+
+    # OOB raises error.
+    df = pl.DataFrame({"a": [b"\x01\x02"]})
+    with pytest.raises(pl.exceptions.ComputeError, match="out of bounds"):
+        df.select(pl.col("a").bin.get(5))

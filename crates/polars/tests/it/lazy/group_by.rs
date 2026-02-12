@@ -73,7 +73,13 @@ fn test_filter_diff_arithmetic() -> PolarsResult<()> {
             * lit(2))
         .alias("diff")])
         .sort(["user"], Default::default())
-        .explode(cols(["diff"]))
+        .explode(
+            cols(["diff"]),
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )
         .collect()?;
 
     let out = out.column("diff")?;
@@ -122,7 +128,10 @@ fn test_group_by_agg_list_with_not_aggregated() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("value")?;
-    let out = out.explode(false)?;
+    let out = out.explode(ExplodeOptions {
+        empty_as_null: true,
+        keep_nulls: true,
+    })?;
     assert_eq!(
         out,
         Column::new("value".into(), &[0, 2, 1, 3, 2, 2, 7, 2, 3, 1, 2, 1])
@@ -141,7 +150,7 @@ fn test_logical_mean_partitioned_group_by_block() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .with_column(col("decimal").cast(DataType::Decimal(None, Some(2))))
+        .with_column(col("decimal").cast(DataType::Decimal(38, 2)))
         .with_column(col("duration").cast(DataType::Duration(TimeUnit::Microseconds)))
         .group_by([col("decimal")])
         .agg([col("duration").mean()])

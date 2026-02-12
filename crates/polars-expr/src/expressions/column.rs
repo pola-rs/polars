@@ -4,8 +4,9 @@ use polars_core::prelude::*;
 use polars_plan::constants::CSE_REPLACED;
 
 use super::*;
-use crate::expressions::{AggregationContext, PartitionedAggregation, PhysicalExpr};
+use crate::expressions::{AggregationContext, PhysicalExpr};
 
+#[derive(Debug)]
 pub struct ColumnExpr {
     name: PlSmallStr,
     expr: Expr,
@@ -79,7 +80,7 @@ impl ColumnExpr {
     ) -> PolarsResult<Column> {
         match schema.get_full(&self.name) {
             None => self.process_by_linear_search(df, state, true),
-            Some((idx, _, _)) => match df.get_columns().get(idx) {
+            Some((idx, _, _)) => match df.columns().get(idx) {
                 Some(out) => self.process_by_idx(out, state, schema, df, false),
                 None => self.process_by_linear_search(df, state, true),
             },
@@ -89,7 +90,7 @@ impl ColumnExpr {
     fn process_cse(&self, df: &DataFrame, schema: &Schema) -> PolarsResult<Column> {
         // The CSE columns are added on the rhs.
         let offset = schema.len();
-        let columns = &df.get_columns()[offset..];
+        let columns = &df.columns()[offset..];
         // Linear search will be relatively cheap as we only search the CSE columns.
         Ok(columns
             .iter()
@@ -109,7 +110,7 @@ impl PhysicalExpr for ColumnExpr {
             Some((idx, _, _)) => {
                 // check if the schema was correct
                 // if not do O(n) search
-                match df.get_columns().get(idx) {
+                match df.columns().get(idx) {
                     Some(out) => self.process_by_idx(out, state, &self.schema, df, true),
                     None => {
                         // partitioned group_by special case
@@ -145,10 +146,6 @@ impl PhysicalExpr for ColumnExpr {
         Ok(AggregationContext::new(c, Cow::Borrowed(groups), false))
     }
 
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        Some(self)
-    }
-
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         input_schema.get_field(&self.name).ok_or_else(|| {
             polars_err!(
@@ -159,24 +156,8 @@ impl PhysicalExpr for ColumnExpr {
     fn is_scalar(&self) -> bool {
         false
     }
-}
 
-impl PartitionedAggregation for ColumnExpr {
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        _groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        self.evaluate(df, state)
-    }
-
-    fn finalize(
-        &self,
-        partitioned: Column,
-        _groups: &GroupPositions,
-        _state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        Ok(partitioned)
+    fn as_column(&self) -> Option<PlSmallStr> {
+        Some(self.name.clone())
     }
 }

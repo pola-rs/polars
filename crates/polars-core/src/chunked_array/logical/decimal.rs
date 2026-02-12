@@ -1,35 +1,32 @@
 use std::borrow::Cow;
 
+use arrow::bitmap::Bitmap;
+use polars_compute::decimal::{dec128_fits, dec128_rescale, dec128_verify_prec_scale};
+
 use super::*;
 use crate::chunked_array::cast::cast_chunks;
+use crate::prelude::arity::{unary_elementwise, unary_kernel};
 use crate::prelude::*;
 
 pub type DecimalChunked = Logical<DecimalType, Int128Type>;
 
 impl Int128Chunked {
     #[inline]
-    pub fn into_decimal_unchecked(self, precision: Option<usize>, scale: usize) -> DecimalChunked {
-        // SAFETY: no invalid states.
-        unsafe { DecimalChunked::new_logical(self, DataType::Decimal(precision, Some(scale))) }
+    pub fn into_decimal_unchecked(self, precision: usize, scale: usize) -> DecimalChunked {
+        // SAFETY: no invalid states (from a safety perspective).
+        unsafe { DecimalChunked::new_logical(self, DataType::Decimal(precision, scale)) }
     }
 
-    pub fn into_decimal(
-        self,
-        precision: Option<usize>,
-        scale: usize,
-    ) -> PolarsResult<DecimalChunked> {
-        // TODO: if precision is None, do we check that the value fits within precision of 38?...
-        if let Some(precision) = precision {
-            let precision_max = 10_i128.pow(precision as u32);
-            if let Some((min, max)) = self.min_max() {
-                let max_abs = max.abs().max(min.abs());
-                polars_ensure!(
-                    max_abs < precision_max,
-                    ComputeError: "decimal precision {} can't fit values with {} digits",
-                    precision,
-                    max_abs.to_string().len()
-                );
-            }
+    pub fn into_decimal(self, precision: usize, scale: usize) -> PolarsResult<DecimalChunked> {
+        dec128_verify_prec_scale(precision, scale)?;
+        if let Some((min, max)) = self.min_max() {
+            let max_abs = max.unsigned_abs().max(min.unsigned_abs());
+            polars_ensure!(
+                max_abs < i128::MAX as u128 && dec128_fits(max_abs as i128, precision),
+                ComputeError: "decimal precision {} can't fit values with {} digits",
+                precision,
+                max_abs.to_string().len()
+            );
         }
         Ok(self.into_decimal_unchecked(precision, scale))
     }
@@ -49,7 +46,7 @@ impl LogicalType for DecimalChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
         match self.phys.get_unchecked(i) {
-            Some(v) => AnyValue::Decimal(v, self.scale()),
+            Some(v) => AnyValue::Decimal(v, self.precision(), self.scale()),
             None => AnyValue::Null,
         }
     }
@@ -59,42 +56,57 @@ impl LogicalType for DecimalChunked {
         dtype: &DataType,
         cast_options: CastOptions,
     ) -> PolarsResult<Series> {
-        let mut dtype = Cow::Borrowed(dtype);
-        if let DataType::Decimal(to_precision, to_scale) = dtype.as_ref() {
-            let from_precision = self.precision();
-            let from_scale = self.scale();
-
-            let to_precision = to_precision.or(from_precision);
-            let to_scale = to_scale.unwrap_or(from_scale);
-
-            if to_precision == from_precision && to_scale == from_scale {
-                return Ok(self.clone().into_series());
-            }
-
-            dtype = Cow::Owned(DataType::Decimal(to_precision, Some(to_scale)));
+        if let DataType::Decimal(to_prec, to_scale) = dtype {
+            return Ok(self
+                .with_prec_scale(*to_prec, *to_scale, cast_options.is_strict())?
+                .into_owned()
+                .into_series());
         }
 
-        let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
-        let chunks = self
-            .physical()
-            .chunks
-            .iter()
-            .map(|arr| {
-                arr.as_any()
-                    .downcast_ref::<PrimitiveArray<i128>>()
-                    .unwrap()
-                    .clone()
-                    .to(arrow_dtype.clone())
-                    .to_boxed()
-            })
-            .collect::<Vec<_>>();
-        let chunks = cast_chunks(&chunks, dtype.as_ref(), cast_options)?;
-        Series::try_from((self.name().clone(), chunks))
+        match dtype {
+            DataType::Decimal(to_prec, to_scale) => {
+                return Ok(self
+                    .with_prec_scale(*to_prec, *to_scale, cast_options.is_strict())?
+                    .into_owned()
+                    .into_series());
+            },
+
+            dt if dt.is_primitive_numeric()
+                | matches!(dt, DataType::String | DataType::Boolean) =>
+            {
+                // Normally we don't set the Arrow logical type, but now we temporarily set it so
+                // we can re-use the compute cast kernels.
+                let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
+                let chunks = self
+                    .physical()
+                    .chunks
+                    .iter()
+                    .map(|arr| {
+                        arr.as_any()
+                            .downcast_ref::<PrimitiveArray<i128>>()
+                            .unwrap()
+                            .clone()
+                            .to(arrow_dtype.clone())
+                            .to_boxed()
+                    })
+                    .collect::<Vec<_>>();
+                let chunks = cast_chunks(&chunks, dtype, cast_options)?;
+                Series::try_from((self.name().clone(), chunks))
+            },
+
+            dt => {
+                polars_bail!(
+                    InvalidOperation:
+                    "casting from {:?} to {:?} not supported",
+                    self.dtype(), dt
+                )
+            },
+        }
     }
 }
 
 impl DecimalChunked {
-    pub fn precision(&self) -> Option<usize> {
+    pub fn precision(&self) -> usize {
         match &self.dtype {
             DataType::Decimal(precision, _) => *precision,
             _ => unreachable!(),
@@ -103,28 +115,77 @@ impl DecimalChunked {
 
     pub fn scale(&self) -> usize {
         match &self.dtype {
-            DataType::Decimal(_, scale) => scale.unwrap_or_else(|| unreachable!()),
+            DataType::Decimal(_, scale) => *scale,
             _ => unreachable!(),
         }
     }
 
-    pub fn to_scale(&self, scale: usize) -> PolarsResult<Cow<'_, Self>> {
-        if self.scale() == scale {
+    pub fn with_prec_scale(
+        &self,
+        prec: usize,
+        scale: usize,
+        strict: bool,
+    ) -> PolarsResult<Cow<'_, Self>> {
+        if self.precision() == prec && self.scale() == scale {
             return Ok(Cow::Borrowed(self));
         }
 
-        let mut precision = self.precision();
-        if let Some(ref mut precision) = precision {
-            if self.scale() < scale {
-                *precision += scale;
-                *precision = (*precision).min(38);
+        dec128_verify_prec_scale(prec, scale)?;
+        let phys = if self.scale() == scale {
+            if prec >= self.precision() {
+                // Increasing precision is always allowed.
+                self.phys.clone()
+            } else if strict {
+                if let Some((min, max)) = self.phys.min_max() {
+                    let max_abs = max.unsigned_abs().max(min.unsigned_abs());
+                    polars_ensure!(
+                        max_abs < i128::MAX as u128 && dec128_fits(max_abs as i128, prec),
+                        ComputeError: "decimal precision {} can't fit values with {} digits",
+                        prec,
+                        max_abs.to_string().len()
+                    );
+                }
+                self.phys.clone()
+            } else {
+                unary_kernel(&self.phys, |arr| {
+                    let new_valid: Bitmap = arr
+                        .iter()
+                        .map(|opt_x| {
+                            if let Some(x) = opt_x {
+                                dec128_fits(*x, prec)
+                            } else {
+                                false
+                            }
+                        })
+                        .collect();
+                    arr.clone().with_validity_typed(Some(new_valid))
+                })
             }
+        } else {
+            let old_s = self.scale();
+            unary_elementwise(&self.phys, |x| dec128_rescale(x?, old_s, prec, scale))
+        };
+
+        let ca = unsafe { DecimalChunked::new_logical(phys, DataType::Decimal(prec, scale)) };
+        Ok(Cow::Owned(ca))
+    }
+
+    /// Converts self to a physical representation with the given precision and
+    /// scale, returning the given sentinel value instead for values which don't
+    /// fit in the given precision and scale. This can be useful for comparisons.
+    pub fn into_phys_with_prec_scale_or_sentinel(
+        &self,
+        prec: usize,
+        scale: usize,
+        sentinel: i128,
+    ) -> Int128Chunked {
+        if self.precision() <= prec && self.scale() == scale {
+            return self.phys.clone();
         }
 
-        let s = self.cast_with_options(
-            &DataType::Decimal(precision, Some(scale)),
-            CastOptions::NonStrict,
-        )?;
-        Ok(Cow::Owned(s.decimal().unwrap().clone()))
+        let old_s = self.scale();
+        unary_elementwise(&self.phys, |x| {
+            Some(dec128_rescale(x?, old_s, prec, scale).unwrap_or(sentinel))
+        })
     }
 }

@@ -1,21 +1,16 @@
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_expr::state::ExecutionState;
-use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
-use polars_utils::format_pl_smallstr;
+use polars_plan::prelude::sink::CallbackSinkType;
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
-use self::expr_ir::OutputName;
-use self::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate};
 #[cfg(feature = "python")]
 use self::python_dsl::PythonScanSource;
-use super::super::executors::{self, Executor};
 use super::*;
-use crate::ScanPredicate;
-use crate::executors::{CachePrefiller, SinkExecutor};
-use crate::predicate::PhysicalColumnPredicates;
+use crate::executors::{self, CachePrefiller, Executor, GroupByStreamingExec, SinkExecutor};
+use crate::scan_predicate::functions::create_scan_predicate;
 
 pub type StreamingExecutorBuilder =
     fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<Box<dyn Executor>>;
@@ -25,7 +20,7 @@ fn partitionable_gb(
     aggs: &[ExprIR],
     input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
-    apply: &Option<Arc<dyn DataFrameUdf>>,
+    apply: &Option<PlanCallback<DataFrame, DataFrame>>,
 ) -> bool {
     // checks:
     //      1. complex expressions in the group_by itself are also not partitionable
@@ -154,7 +149,7 @@ pub fn create_multiple_physical_plans(
 #[allow(clippy::type_complexity)]
 pub fn python_scan_predicate(
     options: &mut PythonOptions,
-    expr_arena: &Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
     state: &mut ExpressionConversionState,
 ) -> PolarsResult<(
     Option<Arc<dyn polars_expr::prelude::PhysicalExpr>>,
@@ -164,22 +159,30 @@ pub fn python_scan_predicate(
     let predicate = if let PythonPredicate::Polars(e) = &options.predicate {
         // Convert to a pyarrow eval string.
         if matches!(options.python_source, PythonScanSource::Pyarrow) {
-            if let Some(eval_str) = polars_plan::plans::python::pyarrow::predicate_to_pa(
+            use polars_core::config::verbose_print_sensitive;
+
+            let predicate_pa = polars_plan::plans::python::pyarrow::predicate_to_pa(
                 e.node(),
                 expr_arena,
                 Default::default(),
-            ) {
+            );
+
+            verbose_print_sensitive(|| {
+                format!(
+                    "python_scan_predicate: \
+                    predicate node: {}, \
+                    converted pyarrow predicate: {}",
+                    ExprIRDisplay::display_node(e.node(), expr_arena),
+                    &predicate_pa.as_deref().unwrap_or("<conversion failed>")
+                )
+            });
+
+            if let Some(eval_str) = predicate_pa {
                 options.predicate = PythonPredicate::PyArrow(eval_str);
                 // We don't have to use a physical expression as pyarrow deals with the filter.
                 None
             } else {
-                Some(create_physical_expr(
-                    e,
-                    Context::Default,
-                    expr_arena,
-                    &options.schema,
-                    state,
-                )?)
+                Some(create_physical_expr(e, expr_arena, &options.schema, state)?)
             }
         }
         // Convert to physical expression for the case the reader cannot consume the predicate.
@@ -187,13 +190,7 @@ pub fn python_scan_predicate(
             let dsl_expr = e.to_expr(expr_arena);
             predicate_serialized = polars_plan::plans::python::predicate::serialize(&dsl_expr)?;
 
-            Some(create_physical_expr(
-                e,
-                Context::Default,
-                expr_arena,
-                &options.schema,
-                state,
-            )?)
+            Some(create_physical_expr(e, expr_arena, &options.schema, state)?)
         }
     } else {
         None
@@ -209,10 +206,16 @@ fn create_physical_plan_impl(
     expr_arena: &mut Arena<AExpr>,
     state: &mut ConversionState,
     // Cache nodes in order of discovery
-    cache_nodes: &mut PlIndexMap<UniqueId, Box<executors::CacheExec>>,
+    cache_nodes: &mut PlIndexMap<UniqueId, executors::CachePrefill>,
     build_streaming_executor: Option<StreamingExecutorBuilder>,
 ) -> PolarsResult<Box<dyn Executor>> {
     use IR::*;
+
+    let get_streaming_executor_builder = || {
+        build_streaming_executor.expect(
+            "get_streaming_executor_builder() failed (hint: missing feature new-streaming?)",
+        )
+    };
 
     macro_rules! recurse {
         ($node:expr, $state: expr) => {
@@ -227,7 +230,18 @@ fn create_physical_plan_impl(
         };
     }
 
-    let logical_plan = if state.has_cache_parent || matches!(lp_arena.get(root), IR::Scan { .. }) {
+    let logical_plan = if state.has_cache_parent
+        || matches!(
+            lp_arena.get(root),
+            IR::Scan { .. } // Needed for the streaming impl
+                | IR::Cache { .. } // Needed for plans branching from the same cache node
+                | IR::GroupBy { .. } // Needed for the streaming impl
+                | IR::Sink { // Needed for the streaming impl
+                    payload:
+                        SinkTypeIR::File(_) | SinkTypeIR::Partitioned { .. },
+                    ..
+                }
+        ) {
         lp_arena.get(root).clone()
     } else {
         lp_arena.take(root)
@@ -245,126 +259,41 @@ fn create_physical_plan_impl(
                 predicate_serialized,
             }))
         },
-        Sink { input, payload } => {
-            let input = recurse!(input, state)?;
-            match payload {
-                SinkTypeIR::Memory => Ok(Box::new(SinkExecutor {
-                    input,
-                    name: "mem".to_string(),
-                    f: Box::new(move |df, _state| Ok(Some(df))),
-                })),
-                SinkTypeIR::File(FileSinkType {
-                    file_type,
-                    target,
-                    sink_options,
-                    cloud_options,
-                }) => {
-                    let name: &'static str = match &file_type {
-                        #[cfg(feature = "parquet")]
-                        FileType::Parquet(_) => "parquet",
-                        #[cfg(feature = "ipc")]
-                        FileType::Ipc(_) => "ipc",
-                        #[cfg(feature = "csv")]
-                        FileType::Csv(_) => "csv",
-                        #[cfg(feature = "json")]
-                        FileType::Json(_) => "json",
-                        #[allow(unreachable_patterns)]
-                        _ => panic!("enable filetype feature"),
-                    };
+        Sink { input, payload } => match payload {
+            SinkTypeIR::Memory => Ok(Box::new(SinkExecutor {
+                input: recurse!(input, state)?,
+                name: PlSmallStr::from_static("mem"),
+                f: Box::new(move |df, _state| Ok(Some(df))),
+            })),
+            SinkTypeIR::Callback(CallbackSinkType {
+                function,
+                maintain_order: _,
+                chunk_size,
+            }) => {
+                let chunk_size = chunk_size.map_or(usize::MAX, Into::into);
 
-                    Ok(Box::new(SinkExecutor {
-                        input,
-                        name: name.to_string(),
-                        f: Box::new(move |mut df, _state| {
-                            let mut file = target
-                                .open_into_writeable(&sink_options, cloud_options.as_ref())?;
-                            let writer = &mut *file;
-
-                            use std::io::BufWriter;
-                            match &file_type {
-                                #[cfg(feature = "parquet")]
-                                FileType::Parquet(options) => {
-                                    use polars_io::parquet::write::ParquetWriter;
-                                    ParquetWriter::new(BufWriter::new(writer))
-                                        .with_compression(options.compression)
-                                        .with_statistics(options.statistics)
-                                        .with_row_group_size(options.row_group_size)
-                                        .with_data_page_size(options.data_page_size)
-                                        .with_key_value_metadata(options.key_value_metadata.clone())
-                                        .finish(&mut df)?;
-                                },
-                                #[cfg(feature = "ipc")]
-                                FileType::Ipc(options) => {
-                                    use polars_io::SerWriter;
-                                    use polars_io::ipc::IpcWriter;
-                                    IpcWriter::new(BufWriter::new(writer))
-                                        .with_compression(options.compression)
-                                        .with_compat_level(options.compat_level)
-                                        .finish(&mut df)?;
-                                },
-                                #[cfg(feature = "csv")]
-                                FileType::Csv(options) => {
-                                    use polars_io::SerWriter;
-                                    use polars_io::csv::write::CsvWriter;
-                                    CsvWriter::new(BufWriter::new(writer))
-                                        .include_bom(options.include_bom)
-                                        .include_header(options.include_header)
-                                        .with_separator(options.serialize_options.separator)
-                                        .with_line_terminator(
-                                            options.serialize_options.line_terminator.clone(),
-                                        )
-                                        .with_quote_char(options.serialize_options.quote_char)
-                                        .with_batch_size(options.batch_size)
-                                        .with_datetime_format(
-                                            options.serialize_options.datetime_format.clone(),
-                                        )
-                                        .with_date_format(
-                                            options.serialize_options.date_format.clone(),
-                                        )
-                                        .with_time_format(
-                                            options.serialize_options.time_format.clone(),
-                                        )
-                                        .with_float_scientific(
-                                            options.serialize_options.float_scientific,
-                                        )
-                                        .with_float_precision(
-                                            options.serialize_options.float_precision,
-                                        )
-                                        .with_decimal_comma(options.serialize_options.decimal_comma)
-                                        .with_null_value(options.serialize_options.null.clone())
-                                        .with_quote_style(options.serialize_options.quote_style)
-                                        .finish(&mut df)?;
-                                },
-                                #[cfg(feature = "json")]
-                                FileType::Json(_options) => {
-                                    use polars_io::SerWriter;
-                                    use polars_io::json::{JsonFormat, JsonWriter};
-
-                                    JsonWriter::new(BufWriter::new(writer))
-                                        .with_json_format(JsonFormat::JsonLines)
-                                        .finish(&mut df)?;
-                                },
-                                #[allow(unreachable_patterns)]
-                                _ => panic!("enable filetype feature"),
+                Ok(Box::new(SinkExecutor {
+                    input: recurse!(input, state)?,
+                    name: PlSmallStr::from_static("batches"),
+                    f: Box::new(move |mut buffer, _state| {
+                        while buffer.height() > 0 {
+                            let df;
+                            (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
+                            let should_stop = function.call(df)?;
+                            if should_stop {
+                                break;
                             }
-
-                            file.sync_on_close(sink_options.sync_on_close)?;
-                            file.close()?;
-
-                            Ok(None)
-                        }),
-                    }))
-                },
-
-                SinkTypeIR::Partition { .. } => {
-                    polars_bail!(InvalidOperation:
-                        "partition sinks not yet supported in standard engine."
-                    )
-                },
-            }
+                        }
+                        Ok(Some(DataFrame::empty()))
+                    }),
+                }))
+            },
+            SinkTypeIR::File(_) | SinkTypeIR::Partitioned { .. } => {
+                get_streaming_executor_builder()(root, lp_arena, expr_arena)
+            },
         },
         SinkMultiple { .. } => {
-            unreachable!("should be handled with create_multiple_physical_plans")
+            polars_bail!(InvalidOperation: "lazy multisinks only supported on streaming engine")
         },
         Union { inputs, options } => {
             let inputs = state.with_new_branch(|new_state| {
@@ -399,13 +328,8 @@ fn create_physical_plan_impl(
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = recurse!(input, state)?;
             let mut state = ExpressionConversionState::new(true);
-            let predicate = create_physical_expr(
-                &predicate,
-                Context::Default,
-                expr_arena,
-                &input_schema,
-                &mut state,
-            )?;
+            let predicate =
+                create_physical_expr(&predicate, expr_arena, &input_schema, &mut state)?;
             Ok(Box::new(executors::FilterExec::new(
                 predicate,
                 input,
@@ -421,32 +345,17 @@ fn create_physical_plan_impl(
             output_schema,
             scan_type,
             predicate,
-            mut unified_scan_args,
-            id: scan_mem_id,
+            predicate_file_skip_applied,
+            unified_scan_args,
         } => {
-            unified_scan_args.pre_slice = if let Some(mut slice) = unified_scan_args.pre_slice {
-                *slice.len_mut() = _set_n_rows_for_scan(Some(slice.len())).unwrap();
-                Some(slice)
-            } else {
-                _set_n_rows_for_scan(None)
-                    .map(|len| polars_utils::slice_enum::Slice::Positive { offset: 0, len })
-            };
-
             let mut expr_conversion_state = ExpressionConversionState::new(true);
 
-            let mut create_skip_batch_predicate = false;
+            let mut create_skip_batch_predicate = unified_scan_args.table_statistics.is_some();
             #[cfg(feature = "parquet")]
             {
-                create_skip_batch_predicate |= matches!(
-                    &*scan_type,
-                    FileScanIR::Parquet {
-                        options: polars_io::prelude::ParquetOptions {
-                            use_statistics: true,
-                            ..
-                        },
-                        ..
-                    }
-                );
+                if let FileScanIR::Parquet { options, .. } = scan_type.as_ref() {
+                    create_skip_batch_predicate |= options.use_statistics;
+                }
             }
 
             let predicate = predicate
@@ -474,52 +383,17 @@ fn create_physical_plan_impl(
                         predicate_has_windows: expr_conversion_state.has_windows,
                     }))
                 },
-                #[allow(unreachable_patterns)]
-                _ => {
-                    // We wrap in a CacheExec so that the new-streaming scan gets called from the
-                    // CachePrefiller. This ensures it is called from outside of rayon to avoid
-                    // deadlocks.
-                    //
-                    // Note that we don't actually want it to be kept in memory after being used,
-                    // so we set the count to have it be dropped after a single use (or however
-                    // many times it is referenced after CSE (subplan)).
-                    state.has_cache_parent = true;
-                    state.has_cache_child = true;
-
-                    if !cache_nodes.contains_key(&scan_mem_id) {
-                        let build_func = build_streaming_executor
-                            .expect("invalid build. Missing feature new-streaming");
-
-                        let executor = build_func(root, lp_arena, expr_arena)?;
-
-                        cache_nodes.insert(
-                            scan_mem_id.clone(),
-                            Box::new(executors::CacheExec {
-                                input: Some(executor),
-                                id: scan_mem_id.clone(),
-                                // This is (n_hits - 1), because the drop logic is `fetch_sub(1) == 0`.
-                                count: 0,
-                                is_new_streaming_scan: true,
-                            }),
-                        );
-                    } else {
-                        // Already exists - this scan IR is under a CSE (subplan). We need to
-                        // increment the cache hit count here.
-                        let cache_exec = cache_nodes.get_mut(&scan_mem_id).unwrap();
-                        cache_exec.count = cache_exec.count.saturating_add(1);
-                    }
-
-                    Ok(Box::new(executors::CacheExec {
-                        id: scan_mem_id,
-                        // Rest of the fields don't matter - the actual node was inserted into
-                        // `cache_nodes`.
-                        input: None,
-                        count: Default::default(),
-                        is_new_streaming_scan: true,
-                    }))
-                },
-                #[allow(unreachable_patterns)]
-                _ => unreachable!(),
+                #[cfg_attr(
+                    not(any(
+                        feature = "parquet",
+                        feature = "ipc",
+                        feature = "csv",
+                        feature = "json",
+                        feature = "scan_lines"
+                    )),
+                    expect(unreachable_patterns)
+                )]
+                _ => get_streaming_executor_builder()(root, lp_arena, expr_arena),
             }
         },
 
@@ -533,13 +407,8 @@ fn create_physical_plan_impl(
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = recurse!(input, state)?;
             let mut state = ExpressionConversionState::new(POOL.current_num_threads() > expr.len());
-            let phys_expr = create_physical_expressions_from_irs(
-                &expr,
-                Context::Default,
-                expr_arena,
-                &input_schema,
-                &mut state,
-            )?;
+            let phys_expr =
+                create_physical_expressions_from_irs(&expr, expr_arena, &input_schema, &mut state)?;
 
             let allow_vertical_parallelism = options.should_broadcast && expr.iter().all(|e| is_elementwise_rec(e.node(), expr_arena))
                 // If all columns are literal we would get a 1 row per thread.
@@ -574,7 +443,6 @@ fn create_physical_plan_impl(
             let input_schema = lp_arena.get(input).schema(lp_arena);
             let by_column = create_physical_expressions_from_irs(
                 &by_column,
-                Context::Default,
                 expr_arena,
                 input_schema.as_ref(),
                 &mut ExpressionConversionState::new(true),
@@ -587,33 +455,22 @@ fn create_physical_plan_impl(
                 sort_options,
             }))
         },
-        Cache {
-            input,
-            id,
-            cache_hits,
-        } => {
+        Cache { input, id } => {
             state.has_cache_parent = true;
             state.has_cache_child = true;
 
-            if !cache_nodes.contains_key(&id) {
+            if let Some(cache) = cache_nodes.get_mut(&id) {
+                Ok(Box::new(cache.make_exec()))
+            } else {
                 let input = recurse!(input, state)?;
 
-                let cache = Box::new(executors::CacheExec {
-                    id: id.clone(),
-                    input: Some(input),
-                    count: cache_hits,
-                    is_new_streaming_scan: false,
-                });
+                let mut prefill = executors::CachePrefill::new_cache(input, id);
+                let exec = prefill.make_exec();
 
-                cache_nodes.insert(id.clone(), cache);
+                cache_nodes.insert(id, prefill);
+
+                Ok(Box::new(exec))
             }
-
-            Ok(Box::new(executors::CacheExec {
-                id,
-                input: None,
-                count: cache_hits,
-                is_new_streaming_scan: false,
-            }))
         },
         Distinct { input, options } => {
             let input = recurse!(input, state)?;
@@ -624,7 +481,7 @@ fn create_physical_plan_impl(
             keys,
             aggs,
             apply,
-            schema,
+            schema: output_schema,
             maintain_order,
             options,
         } => {
@@ -632,14 +489,12 @@ fn create_physical_plan_impl(
             let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
             let phys_keys = create_physical_expressions_from_irs(
                 &keys,
-                Context::Default,
                 expr_arena,
                 &input_schema,
                 &mut ExpressionConversionState::new(true),
             )?;
             let phys_aggs = create_physical_expressions_from_irs(
                 &aggs,
-                Context::Aggregation,
                 expr_arena,
                 &input_schema,
                 &mut ExpressionConversionState::new(true),
@@ -655,6 +510,7 @@ fn create_physical_plan_impl(
                     aggs: phys_aggs,
                     options,
                     input_schema,
+                    output_schema,
                     slice: _slice,
                     apply,
                 }));
@@ -669,6 +525,7 @@ fn create_physical_plan_impl(
                     aggs: phys_aggs,
                     options,
                     input_schema,
+                    output_schema,
                     slice: _slice,
                     apply,
                 }));
@@ -684,27 +541,31 @@ fn create_physical_plan_impl(
                         false
                     }
                 });
+                let builder = get_streaming_executor_builder();
+
                 let input = recurse!(input, state)?;
-                let keys = keys
-                    .iter()
-                    .map(|e| e.to_expr(expr_arena))
-                    .collect::<Vec<_>>();
-                let aggs = aggs
-                    .iter()
-                    .map(|e| e.to_expr(expr_arena))
-                    .collect::<Vec<_>>();
-                Ok(Box::new(executors::PartitionGroupByExec::new(
+
+                let gb_root = if state.has_cache_parent {
+                    lp_arena.add(lp_arena.get(root).clone())
+                } else {
+                    root
+                };
+
+                let executor = Box::new(GroupByStreamingExec::new(
                     input,
+                    builder,
+                    gb_root,
+                    lp_arena,
+                    expr_arena,
                     phys_keys,
                     phys_aggs,
                     maintain_order,
-                    options.slice,
-                    input_schema,
-                    schema,
+                    output_schema,
+                    _slice,
                     from_partitioned_ds,
-                    keys,
-                    aggs,
-                )))
+                ));
+
+                Ok(executor)
             } else {
                 let input = recurse!(input, state)?;
                 Ok(Box::new(executors::GroupByExec::new(
@@ -714,6 +575,7 @@ fn create_physical_plan_impl(
                     apply,
                     maintain_order,
                     input_schema,
+                    output_schema,
                     options.slice,
                 )))
             }
@@ -748,14 +610,12 @@ fn create_physical_plan_impl(
 
             let left_on = create_physical_expressions_from_irs(
                 &left_on,
-                Context::Default,
                 expr_arena,
                 &schema_left,
                 &mut ExpressionConversionState::new(true),
             )?;
             let right_on = create_physical_expressions_from_irs(
                 &right_on,
-                Context::Default,
                 expr_arena,
                 &schema_right,
                 &mut ExpressionConversionState::new(true),
@@ -770,7 +630,6 @@ fn create_physical_plan_impl(
                     o.compile(|e| {
                         let phys_expr = create_physical_expr(
                             e,
-                            Context::Default,
                             expr_arena,
                             &schema,
                             &mut ExpressionConversionState::new(false),
@@ -782,7 +641,7 @@ fn create_physical_plan_impl(
                             let mask = phys_expr.evaluate(&df, &execution_state)?;
                             let mask = mask.as_materialized_series();
                             let mask = mask.bool()?;
-                            df._filter_seq(mask)
+                            df.filter_seq(mask)
                         }))
                     })
                 })
@@ -817,7 +676,6 @@ fn create_physical_plan_impl(
 
             let phys_exprs = create_physical_expressions_from_irs(
                 &exprs,
-                Context::Default,
                 expr_arena,
                 &input_schema,
                 &mut state,
@@ -879,186 +737,44 @@ fn create_physical_plan_impl(
     }
 }
 
-pub fn create_scan_predicate(
-    predicate: &ExprIR,
-    expr_arena: &mut Arena<AExpr>,
-    schema: &Arc<Schema>,
-    hive_schema: Option<&Schema>,
-    state: &mut ExpressionConversionState,
-    create_skip_batch_predicate: bool,
-    create_column_predicates: bool,
-) -> PolarsResult<ScanPredicate> {
-    let mut predicate = predicate.clone();
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let mut hive_predicate = None;
-    let mut hive_predicate_is_full_predicate = false;
+    #[test]
+    fn test_create_multiple_physical_plans_reused_cache() {
+        // Check that reusing the same cache node doesn't panic.
+        // CSE creates duplicate cache nodes with the same ID, but cloud reuses them.
 
-    #[expect(clippy::never_loop)]
-    loop {
-        let Some(hive_schema) = hive_schema else {
-            break;
-        };
+        let mut ir = Arena::new();
 
-        let mut hive_predicate_parts = vec![];
-        let mut non_hive_predicate_parts = vec![];
+        let schema = Schema::from_iter([(PlSmallStr::from_static("x"), DataType::Float32)]);
+        let scan = ir.add(IR::DataFrameScan {
+            df: Arc::new(DataFrame::empty_with_schema(&schema)),
+            schema: Arc::new(schema),
+            output_schema: None,
+        });
 
-        for predicate_part in MintermIter::new(predicate.node(), expr_arena) {
-            if aexpr_to_leaf_names_iter(predicate_part, expr_arena)
-                .all(|name| hive_schema.contains(&name))
-            {
-                hive_predicate_parts.push(predicate_part)
-            } else {
-                non_hive_predicate_parts.push(predicate_part)
-            }
-        }
+        let cache = ir.add(IR::Cache {
+            input: scan,
+            id: UniqueId::new(),
+        });
 
-        if hive_predicate_parts.is_empty() {
-            break;
-        }
+        let left_sink = ir.add(IR::Sink {
+            input: cache,
+            payload: SinkTypeIR::Memory,
+        });
+        let right_sink = ir.add(IR::Sink {
+            input: cache,
+            payload: SinkTypeIR::Memory,
+        });
 
-        if non_hive_predicate_parts.is_empty() {
-            hive_predicate_is_full_predicate = true;
-            break;
-        }
-
-        {
-            let mut iter = hive_predicate_parts.into_iter();
-            let mut node = iter.next().unwrap();
-
-            for next_node in iter {
-                node = expr_arena.add(AExpr::BinaryExpr {
-                    left: node,
-                    op: Operator::And,
-                    right: next_node,
-                });
-            }
-
-            hive_predicate = Some(create_physical_expr(
-                &ExprIR::from_node(node, expr_arena),
-                Context::Default,
-                expr_arena,
-                schema,
-                state,
-            )?)
-        }
-
-        {
-            let mut iter = non_hive_predicate_parts.into_iter();
-            let mut node = iter.next().unwrap();
-
-            for next_node in iter {
-                node = expr_arena.add(AExpr::BinaryExpr {
-                    left: node,
-                    op: Operator::And,
-                    right: next_node,
-                });
-            }
-
-            predicate = ExprIR::from_node(node, expr_arena);
-        }
-
-        break;
+        let _multiplan = create_multiple_physical_plans(
+            &[left_sink, right_sink],
+            &mut ir,
+            &mut Arena::new(),
+            None,
+        )
+        .unwrap();
     }
-
-    let phys_predicate =
-        create_physical_expr(&predicate, Context::Default, expr_arena, schema, state)?;
-
-    if hive_predicate_is_full_predicate {
-        hive_predicate = Some(phys_predicate.clone());
-    }
-
-    let live_columns = Arc::new(PlIndexSet::from_iter(aexpr_to_leaf_names_iter(
-        predicate.node(),
-        expr_arena,
-    )));
-
-    let mut skip_batch_predicate = None;
-
-    if create_skip_batch_predicate {
-        if let Some(node) = aexpr_to_skip_batch_predicate(predicate.node(), expr_arena, schema) {
-            let expr = ExprIR::new(node, predicate.output_name_inner().clone());
-
-            if std::env::var("POLARS_OUTPUT_SKIP_BATCH_PRED").as_deref() == Ok("1") {
-                eprintln!("predicate: {}", predicate.display(expr_arena));
-                eprintln!("skip_batch_predicate: {}", expr.display(expr_arena));
-            }
-
-            let mut skip_batch_schema = Schema::with_capacity(1 + live_columns.len());
-
-            skip_batch_schema.insert(PlSmallStr::from_static("len"), IDX_DTYPE);
-            for (col, dtype) in schema.iter() {
-                if !live_columns.contains(col) {
-                    continue;
-                }
-
-                skip_batch_schema.insert(format_pl_smallstr!("{col}_min"), dtype.clone());
-                skip_batch_schema.insert(format_pl_smallstr!("{col}_max"), dtype.clone());
-                skip_batch_schema.insert(format_pl_smallstr!("{col}_nc"), IDX_DTYPE);
-            }
-
-            skip_batch_predicate = Some(create_physical_expr(
-                &expr,
-                Context::Default,
-                expr_arena,
-                &Arc::new(skip_batch_schema),
-                state,
-            )?);
-        }
-    }
-
-    let column_predicates = if create_column_predicates {
-        let column_predicates = aexpr_to_column_predicates(predicate.node(), expr_arena, schema);
-        if std::env::var("POLARS_OUTPUT_COLUMN_PREDS").as_deref() == Ok("1") {
-            eprintln!("column_predicates: {{");
-            eprintln!("  [");
-            for (pred, spec) in column_predicates.predicates.values() {
-                eprintln!(
-                    "    {} ({spec:?}),",
-                    ExprIRDisplay::display_node(*pred, expr_arena)
-                );
-            }
-            eprintln!("  ],");
-            eprintln!(
-                "  is_sumwise_complete: {}",
-                column_predicates.is_sumwise_complete
-            );
-            eprintln!("}}");
-        }
-        PhysicalColumnPredicates {
-            predicates: column_predicates
-                .predicates
-                .into_iter()
-                .map(|(n, (p, s))| {
-                    PolarsResult::Ok((
-                        n,
-                        (
-                            create_physical_expr(
-                                &ExprIR::new(p, OutputName::Alias(PlSmallStr::EMPTY)),
-                                Context::Default,
-                                expr_arena,
-                                schema,
-                                state,
-                            )?,
-                            s,
-                        ),
-                    ))
-                })
-                .collect::<PolarsResult<PlHashMap<_, _>>>()?,
-            is_sumwise_complete: column_predicates.is_sumwise_complete,
-        }
-    } else {
-        PhysicalColumnPredicates {
-            predicates: PlHashMap::default(),
-            is_sumwise_complete: false,
-        }
-    };
-
-    PolarsResult::Ok(ScanPredicate {
-        predicate: phys_predicate,
-        live_columns,
-        skip_batch_predicate,
-        column_predicates,
-        hive_predicate,
-        hive_predicate_is_full_predicate,
-    })
 }

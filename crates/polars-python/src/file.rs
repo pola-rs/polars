@@ -7,16 +7,13 @@ use std::io::{Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
 #[cfg(target_family = "unix")]
 use std::os::fd::{FromRawFd, RawFd};
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use polars::io::mmap::MmapBytesReader;
-use polars::prelude::PlPath;
-use polars::prelude::file::DynWriteable;
-use polars::prelude::sync_on_close::SyncOnCloseType;
+use polars::prelude::PlRefPath;
+use polars::prelude::file::{Writeable, WriteableTrait};
+use polars_buffer::{Buffer, SharedStorage};
 use polars_error::polars_err;
 use polars_utils::create_file;
-use polars_utils::file::{ClosableFile, WriteClose};
-use polars_utils::mmap::MemSlice;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -24,34 +21,33 @@ use pyo3::types::{PyBytes, PyString, PyStringMethods};
 
 use crate::error::PyPolarsErr;
 use crate::prelude::resolve_homedir;
+use crate::utils::to_py_err;
 
 pub(crate) struct PyFileLikeObject {
-    inner: PyObject,
+    inner: Py<PyAny>,
     /// The object expects a string instead of a bytes for `write`.
     expects_str: bool,
     /// The object has a flush method.
     has_flush: bool,
 }
 
-impl WriteClose for PyFileLikeObject {}
-impl DynWriteable for PyFileLikeObject {
-    fn as_dyn_write(&self) -> &(dyn io::Write + Send + 'static) {
-        self as _
-    }
-    fn as_mut_dyn_write(&mut self) -> &mut (dyn io::Write + Send + 'static) {
-        self as _
-    }
-    fn close(self: Box<Self>) -> io::Result<()> {
+impl WriteableTrait for PyFileLikeObject {
+    fn close(&mut self) -> io::Result<()> {
         Ok(())
     }
-    fn sync_on_close(&mut self, _sync_on_close: SyncOnCloseType) -> io::Result<()> {
-        Ok(())
+
+    fn sync_all(&self) -> std::io::Result<()> {
+        self.flush()
+    }
+
+    fn sync_data(&self) -> std::io::Result<()> {
+        self.flush()
     }
 }
 
 impl Clone for PyFileLikeObject {
     fn clone(&self) -> Self {
-        Python::with_gil(|py| Self {
+        Python::attach(|py| Self {
             inner: self.inner.clone_ref(py),
             expects_str: self.expects_str,
             has_flush: self.has_flush,
@@ -64,7 +60,7 @@ impl PyFileLikeObject {
     /// Creates an instance of a `PyFileLikeObject` from a `PyObject`.
     /// To assert the object has the required methods,
     /// instantiate it with `PyFileLikeObject::require`
-    pub(crate) fn new(object: PyObject, expects_str: bool, has_flush: bool) -> Self {
+    pub(crate) fn new(object: Py<PyAny>, expects_str: bool, has_flush: bool) -> Self {
         PyFileLikeObject {
             inner: object,
             expects_str,
@@ -72,23 +68,31 @@ impl PyFileLikeObject {
         }
     }
 
-    pub(crate) fn to_memslice(&self) -> MemSlice {
-        Python::with_gil(|py| {
+    pub(crate) fn to_buffer(&self) -> Buffer<u8> {
+        Python::attach(|py| {
             let bytes = self
                 .inner
                 .call_method(py, "read", (), None)
                 .expect("no read method found");
 
-            if let Ok(b) = bytes.downcast_bound::<PyBytes>(py) {
-                return MemSlice::from_arc(b.as_bytes(), Arc::new(bytes.clone_ref(py)));
+            if let Ok(b) = bytes.cast_bound::<PyBytes>(py) {
+                // SAFETY: we keep the underlying python object alive.
+                let slice = b.as_bytes();
+                let owner = bytes.clone_ref(py);
+                let ss = unsafe { SharedStorage::from_slice_with_owner(slice, owner) };
+                return Buffer::from_storage(ss);
             }
 
-            if let Ok(b) = bytes.downcast_bound::<PyString>(py) {
+            if let Ok(b) = bytes.cast_bound::<PyString>(py) {
                 return match b.to_cow().expect("PyString is not valid UTF-8") {
                     Cow::Borrowed(v) => {
-                        MemSlice::from_arc(v.as_bytes(), Arc::new(bytes.clone_ref(py)))
+                        // SAFETY: we keep the underlying python object alive.
+                        let slice = v.as_bytes();
+                        let owner = bytes.clone_ref(py);
+                        let ss = unsafe { SharedStorage::from_slice_with_owner(slice, owner) };
+                        return Buffer::from_storage(ss);
                     },
-                    Cow::Owned(v) => MemSlice::from_vec(v.into_bytes()),
+                    Cow::Owned(v) => Buffer::from_vec(v.into_bytes()),
                 };
             }
 
@@ -125,12 +129,24 @@ impl PyFileLikeObject {
 
         Ok(())
     }
+
+    pub fn flush(&self) -> std::io::Result<()> {
+        if self.has_flush {
+            Python::attach(|py| {
+                self.inner
+                    .call_method(py, "flush", (), None)
+                    .map_err(pyerr_to_io_err)
+            })?;
+        }
+
+        Ok(())
+    }
 }
 
 /// Extracts a string repr from, and returns an IO error to send back to rust.
 fn pyerr_to_io_err(e: PyErr) -> io::Error {
-    Python::with_gil(|py| {
-        let e_as_object: PyObject = e.into_py_any(py).unwrap();
+    Python::attach(|py| {
+        let e_as_object: Py<PyAny> = e.into_py_any(py).unwrap();
 
         match e_as_object.call_method(py, "__str__", (), None) {
             Ok(repr) => match repr.extract::<String>(py) {
@@ -144,19 +160,19 @@ fn pyerr_to_io_err(e: PyErr) -> io::Error {
 
 impl Read for PyFileLikeObject {
     fn read(&mut self, mut buf: &mut [u8]) -> Result<usize, io::Error> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let bytes = self
                 .inner
                 .call_method(py, "read", (buf.len(),), None)
                 .map_err(pyerr_to_io_err)?;
 
-            let opt_bytes = bytes.downcast_bound::<PyBytes>(py);
+            let opt_bytes = bytes.cast_bound::<PyBytes>(py);
 
             if let Ok(bytes) = opt_bytes {
                 buf.write_all(bytes.as_bytes())?;
 
                 bytes.len().map_err(pyerr_to_io_err)
-            } else if let Ok(s) = bytes.downcast_bound::<PyString>(py) {
+            } else if let Ok(s) = bytes.cast_bound::<PyString>(py) {
                 let s = s.to_cow().map_err(pyerr_to_io_err)?;
                 buf.write_all(s.as_bytes())?;
                 Ok(s.len())
@@ -172,45 +188,71 @@ impl Read for PyFileLikeObject {
 
 impl Write for PyFileLikeObject {
     fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
-        Python::with_gil(|py| {
-            let number_bytes_written = if self.expects_str {
-                self.inner.call_method(
-                    py,
-                    "write",
-                    (PyString::new(
+        // Note on the .extract() method:
+        // In case of a PyString object, it returns the number of chars,
+        // so we need to take extra steps if the underlying string is not all ASCII.
+        // In case of a ByBytes object, it returns the number of bytes.
+        let expects_str = self.expects_str;
+        let expects_str_and_is_ascii = expects_str && buf.is_ascii();
+
+        Python::attach(|py| {
+            let n_bytes = if expects_str_and_is_ascii {
+                let number_chars_written = unsafe {
+                    self.inner.call_method(
                         py,
-                        std::str::from_utf8(buf).map_err(io::Error::other)?,
-                    ),),
-                    None,
-                )
+                        "write",
+                        (PyString::new(py, std::str::from_utf8_unchecked(buf)),),
+                        None,
+                    )
+                }
+                .map_err(pyerr_to_io_err)?;
+                number_chars_written.extract(py).map_err(pyerr_to_io_err)?
+            } else if expects_str {
+                let number_chars_written = self
+                    .inner
+                    .call_method(
+                        py,
+                        "write",
+                        (PyString::new(
+                            py,
+                            std::str::from_utf8(buf).map_err(io::Error::other)?,
+                        ),),
+                        None,
+                    )
+                    .map_err(pyerr_to_io_err)?;
+                let n_chars: usize = number_chars_written.extract(py).map_err(pyerr_to_io_err)?;
+                // calculate n_bytes
+                if n_chars > 0 {
+                    std::str::from_utf8(buf)
+                        .map(|str| {
+                            str.char_indices()
+                                .nth(n_chars - 1)
+                                .map(|(i, ch)| i + ch.len_utf8())
+                                .unwrap()
+                        })
+                        .expect("unable to parse buffer as utf-8")
+                } else {
+                    0
+                }
             } else {
-                self.inner
+                let number_bytes_written = self
+                    .inner
                     .call_method(py, "write", (PyBytes::new(py, buf),), None)
-            }
-            .map_err(pyerr_to_io_err)?;
-
-            let n = number_bytes_written.extract(py).map_err(pyerr_to_io_err)?;
-
-            Ok(n)
+                    .map_err(pyerr_to_io_err)?;
+                number_bytes_written.extract(py).map_err(pyerr_to_io_err)?
+            };
+            Ok(n_bytes)
         })
     }
 
     fn flush(&mut self) -> Result<(), io::Error> {
-        if self.has_flush {
-            Python::with_gil(|py| {
-                self.inner
-                    .call_method(py, "flush", (), None)
-                    .map_err(pyerr_to_io_err)
-            })?;
-        }
-
-        Ok(())
+        Self::flush(self)
     }
 }
 
 impl Seek for PyFileLikeObject {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, io::Error> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let (whence, offset) = match pos {
                 SeekFrom::Start(i) => (0, i as i64),
                 SeekFrom::Current(i) => (1, i),
@@ -230,13 +272,12 @@ impl Seek for PyFileLikeObject {
 pub(crate) trait FileLike: Read + Write + Seek + Sync + Send {}
 
 impl FileLike for File {}
-impl FileLike for ClosableFile {}
 impl FileLike for PyFileLikeObject {}
 impl MmapBytesReader for PyFileLikeObject {}
 
 pub(crate) enum EitherRustPythonFile {
     Py(PyFileLikeObject),
-    Rust(ClosableFile),
+    Rust(std::fs::File),
 }
 
 impl EitherRustPythonFile {
@@ -249,23 +290,23 @@ impl EitherRustPythonFile {
 
     fn into_scan_source_input(self) -> PythonScanSourceInput {
         match self {
-            EitherRustPythonFile::Py(f) => PythonScanSourceInput::Buffer(f.to_memslice()),
+            EitherRustPythonFile::Py(f) => PythonScanSourceInput::Buffer(f.to_buffer()),
             EitherRustPythonFile::Rust(f) => PythonScanSourceInput::File(f),
         }
     }
 
-    pub(crate) fn into_writeable(self) -> Box<dyn DynWriteable> {
+    pub(crate) fn into_writeable(self) -> Writeable {
         match self {
-            Self::Py(f) => Box::new(f),
-            Self::Rust(f) => Box::new(f),
+            Self::Py(f) => Writeable::Dyn(Box::new(f)),
+            Self::Rust(f) => Writeable::Local(f),
         }
     }
 }
 
 pub(crate) enum PythonScanSourceInput {
-    Buffer(MemSlice),
-    Path(PlPath),
-    File(ClosableFile),
+    Buffer(Buffer<u8>),
+    Path(PlRefPath),
+    File(std::fs::File),
 }
 
 pub(crate) fn try_get_pyfile(
@@ -365,10 +406,10 @@ pub(crate) fn try_get_pyfile(
 }
 
 pub(crate) fn get_python_scan_source_input(
-    py_f: PyObject,
+    py_f: Py<PyAny>,
     write: bool,
 ) -> PyResult<PythonScanSourceInput> {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let py_f = py_f.into_bound(py);
 
         // CPython has some internal tricks that means much of the time
@@ -378,21 +419,19 @@ pub(crate) fn get_python_scan_source_input(
         let py_f = read_if_bytesio(py_f);
 
         // If the pyobject is a `bytes` class
-        if let Ok(b) = py_f.downcast::<PyBytes>() {
-            return Ok(PythonScanSourceInput::Buffer(MemSlice::from_arc(
-                b.as_bytes(),
-                // We want to specifically keep alive the PyBytes object.
-                Arc::new(b.clone().unbind()),
-            )));
+        if let Ok(b) = py_f.cast::<PyBytes>() {
+            // SAFETY: we keep the underlying python object alive.
+            let slice = b.as_bytes();
+            let owner = b.clone().unbind();
+            let ss = unsafe { SharedStorage::from_slice_with_owner(slice, owner) };
+            let buffer = Buffer::from_storage(ss);
+            return Ok(PythonScanSourceInput::Buffer(buffer));
         }
 
         if let Ok(s) = py_f.extract::<Cow<str>>() {
-            let mut file_path = PlPath::new(&s);
-            if let Some(p) = file_path.as_ref().as_local_path() {
-                if p.starts_with("~/") {
-                    file_path = PlPath::Local(resolve_homedir(&p).into());
-                }
-            }
+            let file_path = PlRefPath::try_from_path(resolve_homedir(s.as_ref()).as_ref())
+                .map_err(to_py_err)?;
+
             Ok(PythonScanSourceInput::Path(file_path))
         } else {
             Ok(try_get_pyfile(py, py_f, write)?.0.into_scan_source_input())
@@ -401,19 +440,22 @@ pub(crate) fn get_python_scan_source_input(
 }
 
 fn get_either_buffer_or_path(
-    py_f: PyObject,
+    py_f: Py<PyAny>,
     write: bool,
 ) -> PyResult<(EitherRustPythonFile, Option<PathBuf>)> {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let py_f = py_f.into_bound(py);
         if let Ok(s) = py_f.extract::<Cow<str>>() {
-            let file_path = resolve_homedir(&&*s);
+            let file_path = resolve_homedir(s.as_ref());
             let f = if write {
                 create_file(&file_path).map_err(PyPolarsErr::from)?
             } else {
                 polars_utils::open_file(&file_path).map_err(PyPolarsErr::from)?
             };
-            Ok((EitherRustPythonFile::Rust(f.into()), Some(file_path)))
+            Ok((
+                EitherRustPythonFile::Rust(f.into()),
+                Some(file_path.into_owned()),
+            ))
         } else {
             try_get_pyfile(py, py_f, write)
         }
@@ -423,11 +465,11 @@ fn get_either_buffer_or_path(
 ///
 /// # Arguments
 /// * `write` - open for writing; will truncate existing file and create new file if not.
-pub(crate) fn get_either_file(py_f: PyObject, write: bool) -> PyResult<EitherRustPythonFile> {
+pub(crate) fn get_either_file(py_f: Py<PyAny>, write: bool) -> PyResult<EitherRustPythonFile> {
     Ok(get_either_buffer_or_path(py_f, write)?.0)
 }
 
-pub(crate) fn get_file_like(f: PyObject, truncate: bool) -> PyResult<Box<dyn FileLike>> {
+pub(crate) fn get_file_like(f: Py<PyAny>, truncate: bool) -> PyResult<Box<dyn FileLike>> {
     Ok(get_either_file(f, truncate)?.into_dyn())
 }
 
@@ -457,22 +499,18 @@ pub(crate) fn get_mmap_bytes_reader_and_path(
     let py_f = read_if_bytesio(py_f.clone());
 
     // bytes object
-    if let Ok(bytes) = py_f.downcast::<PyBytes>() {
-        Ok((
-            Box::new(Cursor::new(MemSlice::from_arc(
-                bytes.as_bytes(),
-                Arc::new(py_f.clone().unbind()),
-            ))),
-            None,
-        ))
+    if let Ok(bytes) = py_f.cast::<PyBytes>() {
+        // SAFETY: we keep the underlying python object alive.
+        let slice = bytes.as_bytes();
+        let owner = bytes.clone().unbind();
+        let ss = unsafe { SharedStorage::from_slice_with_owner(slice, owner) };
+        Ok((Box::new(Cursor::new(Buffer::from_storage(ss))), None))
     }
     // string so read file
     else {
         match get_either_buffer_or_path(py_f.to_owned().unbind(), false)? {
             (EitherRustPythonFile::Rust(f), path) => Ok((Box::new(f), path)),
-            (EitherRustPythonFile::Py(f), path) => {
-                Ok((Box::new(Cursor::new(f.to_memslice())), path))
-            },
+            (EitherRustPythonFile::Py(f), path) => Ok((Box::new(Cursor::new(f.to_buffer())), path)),
         }
     }
 }

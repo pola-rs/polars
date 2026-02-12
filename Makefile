@@ -2,7 +2,11 @@
 
 PYTHONPATH=
 SHELL=bash
-VENV=.venv
+ifeq ($(VENV),)
+VENV := .venv
+endif
+
+RUNTIME_CARGO_TOML=py-polars/runtime/polars-runtime-32/Cargo.toml
 
 ifeq ($(OS),Windows_NT)
 	VENV_BIN=$(VENV)/Scripts
@@ -19,17 +23,23 @@ ifeq ($(OS),Windows_NT)
 	else ifeq ($(PROCESSOR_ARCHITECTURE),ARM64)
 		ARCH := arm64
 	else
+		_DUMMY := $(warning Unknown architecture '$(PROCESSOR_ARCHITECTURE)', defaulting to 'unknown')
 		ARCH := unknown
     endif
 else
-    UNAME_P := $(shell uname -p)
-    ifeq ($(UNAME_P),x86_64)
+    UNAME_M := $(shell uname -m)
+    ifeq ($(UNAME_M),x86_64)
 		ARCH := amd64
-	else ifneq ($(filter %86,$(UNAME_P)),)
-		ARCH := x86
-	else ifneq ($(filter arm%,$(UNAME_P)),)
+    else ifeq ($(UNAME_M),x64)
+		ARCH := amd64
+    else ifeq ($(UNAME_M),arm64)
 		ARCH := arm64
+    else ifeq ($(UNAME_M),aarch64)
+		ARCH := arm64
+	else ifneq ($(filter %86,$(UNAME_M)),)
+		ARCH := x86
 	else
+		_DUMMY := $(warning Unknown architecture '$(UNAME_M)', defaulting to 'unknown')
 		ARCH := unknown
     endif
 endif
@@ -64,58 +74,65 @@ export CFLAGS
 FILTER_PIP_WARNINGS=| grep -v "don't match your environment"; test $${PIPESTATUS[0]} -eq 0
 
 .venv:  ## Set up Python virtual environment and install requirements
-	python3 -m venv $(VENV)
-	$(MAKE) requirements
-
-.PHONY: requirements
-requirements: .venv  ## Install/refresh Python project requirements
 	@unset CONDA_PREFIX \
+	&& python3 -m venv $(VENV) \
+	&& $(MAKE) requirements
+
+# Note: Installed separately as pyiceberg does not have wheels for 3.13, causing
+# --no-build to fail.
+.PHONY: requirements
+requirements:  ## Install/refresh Python project requirements
+	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/python -m venv $(VENV) --clear \
 	&& $(VENV_BIN)/python -m pip install --upgrade uv \
 	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode --no-build \
 	   -r py-polars/requirements-dev.txt \
 	   -r py-polars/requirements-lint.txt \
 	   -r py-polars/docs/requirements-docs.txt \
-	   -r docs/source/requirements.txt
+	   -r docs/source/requirements.txt \
+	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode "pyiceberg>=0.7.1" pyiceberg-core \
+	&& $(VENV_BIN)/uv pip install --no-deps -e py-polars \
+	&& $(VENV_BIN)/uv pip uninstall polars-runtime-compat polars-runtime-64  ## Uninstall runtimes which might take precedence over polars-runtime-32
 
 .PHONY: requirements-all
-requirements-all: .venv  ## Install/refresh all Python requirements (including those needed for CI tests)
-	$(MAKE) requirements
+requirements-all:  ## Install/refresh all Python requirements (including those needed for CI tests)
 	$(VENV_BIN)/uv pip install --upgrade --compile-bytecode -r py-polars/requirements-ci.txt
+	$(MAKE) requirements
 
 .PHONY: build
 build: .venv  ## Compile and install Python Polars for development
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml $(ARGS) \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-mindebug
 build-mindebug: .venv  ## Same as build, but don't include full debug information
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile mindebug-dev $(ARGS) \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --profile mindebug-dev $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-release
 build-release: .venv  ## Compile and install Python Polars binary with optimizations, with minimal debug symbols
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --release $(ARGS) \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --release $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-nodebug-release
 build-nodebug-release: .venv  ## Same as build-release, but without any debug symbols at all (a bit faster to build)
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile nodebug-release $(ARGS) \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --profile nodebug-release $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-debug-release
 build-debug-release: .venv  ## Same as build-release, but with full debug symbols turned on (a bit slower to build)
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile debug-release $(ARGS) \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --profile debug-release $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-dist-release
 build-dist-release: .venv  ## Compile and install Python Polars binary with super slow extra optimization turned on, for distribution
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile dist-release $(ARGS) \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --profile dist-release $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: check
@@ -144,13 +161,26 @@ fix:
 	@# Good chance the fixing introduced formatting issues, best to just do a quick format.
 	cargo fmt --all
 
-.PHONY: update-dsl-schema-hash
-update-dsl-schema-hash:  ## Update the DSL schema hash file
-	cargo build --all-features
-	./target/debug/dsl-schema update-hash
+.PHONY: py-lint
+py-lint: .venv  ## Run python lint checks (only)
+	@$(MAKE) -s -C py-polars lint $(ARGS)
+
+.PHONY: check-fixme
+check-fixme:
+	@cmd_exit=0; \
+	rg -q -i --hidden --glob '!/.git' --glob '!/Makefile' --glob '!/.github/workflows/lint-global.yml' 'FIXME' || cmd_exit=$$?; \
+	if [ $$cmd_exit -eq 0 ]; then \
+		rg -i --hidden --glob '!/.git' --glob '!/Makefile' --glob '!/.github/workflows/lint-global.yml' -C 2 'FIXME'; \
+		printf "\n[ERROR] Found FIXME, use TODO for things that are ok to merge.\n"; \
+		exit 1; \
+	fi
+
+.PHONY: update-dsl-schema-hashes
+update-dsl-schema-hashes:  ## Update the DSL schema hashes file
+	cargo run --all-features --bin dsl-schema update-hashes
 
 .PHONY: pre-commit
-pre-commit: fmt clippy clippy-default  ## Run all code quality checks
+pre-commit: fmt py-lint clippy clippy-default  ## Run all code quality checks
 
 .PHONY: clean
 clean:  ## Clean up caches, build artifacts, and the venv

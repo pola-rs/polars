@@ -223,7 +223,6 @@ pub fn propagate_nulls_struct(arr: &StructArray) -> Option<StructArray> {
     for (i, field_array) in arr.values().iter().enumerate() {
         let new_field_array = match field_array.validity() {
             None => Some(field_array.with_validity(Some(validity.clone()))),
-            Some(v) if v.num_intersections_with(validity) == validity.set_bits() => None,
             Some(v) => Some(field_array.with_validity(Some(v & validity))),
         };
 

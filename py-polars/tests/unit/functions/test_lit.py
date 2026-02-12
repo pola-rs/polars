@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import enum
 import sys
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -202,6 +202,14 @@ def test_datetime_ms(value: datetime) -> None:
     assert result == value.replace(microsecond=expected_microsecond)
 
 
+def test_np_datetime64_as_date_24521() -> None:
+    result = pl.select(pl.lit(np.datetime64("2020-12-27")))
+    series = result.get_column("literal")
+    assert series.dtype == pl.Date
+    assert series[0] == date(2020, 12, 27)
+
+
+@pytest.mark.may_fail_cloud  # @cloud-decimal
 def test_lit_decimal() -> None:
     value = Decimal("0.1")
 
@@ -224,6 +232,7 @@ def test_lit_string_float() -> None:
     assert result == str(value)
 
 
+@pytest.mark.may_fail_cloud  # @cloud-decimal
 @given(s=series(min_size=1, max_size=1, allow_null=False, allowed_dtypes=pl.Decimal))
 def test_lit_decimal_parametric(s: pl.Series) -> None:
     scale = s.dtype.scale  # type: ignore[attr-defined]
@@ -239,7 +248,34 @@ def test_lit_decimal_parametric(s: pl.Series) -> None:
 
 @pytest.mark.parametrize(
     "item",
-    [{}, {"foo": 1}],
+    [pytest.param({}, marks=pytest.mark.may_fail_cloud), {"foo": 1}],
 )
 def test_lit_structs(item: Any) -> None:
     assert pl.select(pl.lit(item)).to_dict(as_series=False) == {"literal": [item]}
+
+
+@pytest.mark.parametrize(
+    ("value", "expected_dtype"),
+    [
+        (np.float32(1.2), pl.Float32),
+        (np.float64(1.2), pl.Float64),
+        (np.int8(1), pl.Int8),
+        (np.uint8(1), pl.UInt8),
+        (np.int16(1), pl.Int16),
+        (np.uint16(1), pl.UInt16),
+        (np.int32(1), pl.Int32),
+        (np.uint32(1), pl.UInt32),
+        (np.int64(1), pl.Int64),
+        (np.uint64(1), pl.UInt64),
+    ],
+)
+def test_numpy_lit(value: Any, expected_dtype: PolarsDataType) -> None:
+    result = pl.select(pl.lit(value)).get_column("literal")
+    assert result.dtype == expected_dtype
+
+
+def test_lit_object_type_25713() -> None:
+    obj = time(hour=1)
+    out = pl.select(pl.lit(obj, dtype=pl.Object))
+    expected = pl.DataFrame({"literal": [obj]}, schema={"literal": pl.Object})
+    assert out.to_dict(as_series=False) == expected.to_dict(as_series=False)

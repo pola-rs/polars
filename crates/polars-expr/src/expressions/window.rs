@@ -1,7 +1,12 @@
+use std::cmp::Ordering;
 use std::fmt::Write;
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
+use arrow::trusted_len::TrustMyLength;
+use polars_core::error::feature_gated;
+use polars_core::prelude::row_encode::encode_rows_unordered;
+use polars_core::prelude::sort::perfect_sort;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
@@ -10,8 +15,9 @@ use polars_ops::frame::SeriesJoin;
 use polars_ops::frame::join::{ChunkJoinOptIds, private_left_join_multiple_keys};
 use polars_ops::prelude::*;
 use polars_plan::prelude::*;
-use polars_utils::sort::perfect_sort;
+use polars_utils::UnitVec;
 use polars_utils::sync::SyncPtr;
+use polars_utils::vec::PushUnchecked;
 use rayon::prelude::*;
 
 use super::*;
@@ -22,12 +28,14 @@ pub struct WindowExpr {
     pub(crate) group_by: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) order_by: Option<(Arc<dyn PhysicalExpr>, SortOptions)>,
     pub(crate) apply_columns: Vec<PlSmallStr>,
-    /// A function Expr. i.e. Mean, Median, Max, etc.
-    pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
     pub(crate) mapping: WindowMapping,
     pub(crate) expr: Expr,
     pub(crate) has_different_group_sources: bool,
+    pub(crate) output_field: Field,
+
+    pub(crate) all_group_by_are_elementwise: bool,
+    pub(crate) order_by_is_elementwise: bool,
 }
 
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -109,7 +117,7 @@ impl WindowExpr {
         }
         // SAFETY:
         // we only have unique indices ranging from 0..len
-        unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
+        unsafe { perfect_sort(&idx_mapping, &mut take_idx) };
         Ok(IdxCa::from_vec(PlSmallStr::EMPTY, take_idx))
     }
 
@@ -224,7 +232,7 @@ impl WindowExpr {
         // col("foo").min()
         let mut explicit_list = false;
         for e in &self.expr {
-            if let Expr::Window { function, .. } = e {
+            if let Expr::Over { function, .. } = e {
                 // or list().alias
                 let mut finishes_list = false;
                 for e in &**function {
@@ -248,7 +256,7 @@ impl WindowExpr {
         // or col().alias()
         let mut simple_col = false;
         for e in &self.expr {
-            if let Expr::Window { function, .. } = e {
+            if let Expr::Over { function, .. } = e {
                 // or list().alias
                 for e in &**function {
                     match e {
@@ -269,7 +277,7 @@ impl WindowExpr {
         // or col().agg()
         let mut agg_col = false;
         for e in &self.expr {
-            if let Expr::Window { function, .. } = e {
+            if let Expr::Over { function, .. } = e {
                 // or list().alias
                 for e in &**function {
                     match e {
@@ -287,10 +295,10 @@ impl WindowExpr {
 
     fn determine_map_strategy(
         &self,
-        agg_state: &AggState,
+        ac: &mut AggregationContext,
         gb: &GroupBy,
     ) -> PolarsResult<MapStrategy> {
-        match (self.mapping, agg_state) {
+        match (self.mapping, ac.agg_state()) {
             // Explode
             // `(col("x").sum() * col("y")).list().over("groups").flatten()`
             (WindowMapping::Explode, _) => Ok(MapStrategy::Explode),
@@ -308,6 +316,7 @@ impl WindowExpr {
             (WindowMapping::GroupsToRows, AggState::AggregatedList(_)) => {
                 if let GroupsType::Slice { .. } = gb.get_groups().as_ref() {
                     // Result can be directly exploded if the input was sorted.
+                    ac.groups().as_ref().check_lengths(gb.get_groups())?;
                     Ok(MapStrategy::Explode)
                 } else {
                     Ok(MapStrategy::Map)
@@ -328,7 +337,7 @@ impl WindowExpr {
             },
             (WindowMapping::Join, AggState::NotAggregated(_)) => Ok(MapStrategy::Join),
             // literals, do nothing and let broadcast
-            (_, AggState::Literal(_)) => Ok(MapStrategy::Nothing),
+            (_, AggState::LiteralScalar(_)) => Ok(MapStrategy::Nothing),
         }
     }
 }
@@ -371,7 +380,7 @@ impl PhysicalExpr for WindowExpr {
 
         // 4. select the final column and return
 
-        if df.is_empty() {
+        if df.height() == 0 {
             let field = self.phys_function.to_field(df.schema())?;
             match self.mapping {
                 WindowMapping::Join => {
@@ -387,7 +396,7 @@ impl PhysicalExpr for WindowExpr {
             }
         }
 
-        let group_by_columns = self
+        let mut group_by_columns = self
             .group_by
             .iter()
             .map(|e| e.evaluate(df, state))
@@ -422,7 +431,7 @@ impl PhysicalExpr for WindowExpr {
 
         let create_groups = || {
             let gb = df.group_by_with_series(group_by_columns.clone(), true, sort_groups)?;
-            let mut groups = gb.take_groups();
+            let mut groups = gb.into_groups();
 
             if let Some((order_by, options)) = &self.order_by {
                 let order_by = order_by.evaluate(df, state)?;
@@ -474,12 +483,25 @@ impl PhysicalExpr for WindowExpr {
                 .window_cache
                 .insert_groups(cache_key.clone(), groups.clone());
         }
+
+        // broadcast if required
+        for col in group_by_columns.iter_mut() {
+            if col.len() != df.height() {
+                polars_ensure!(
+                    col.len() == 1,
+                    ShapeMismatch: "columns used as `partition_by` must have the same length as the DataFrame"
+                );
+                *col = col.new_from_index(0, df.height())
+            }
+        }
+
         let gb = GroupBy::new(df, group_by_columns.clone(), groups, Some(apply_columns));
 
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
         use MapStrategy::*;
-        match self.determine_map_strategy(ac.agg_state(), &gb)? {
+
+        match self.determine_map_strategy(&mut ac, &gb)? {
             Nothing => {
                 let mut out = ac.flat_naive().into_owned();
 
@@ -489,14 +511,24 @@ impl PhysicalExpr for WindowExpr {
                 Ok(out.into_column())
             },
             Explode => {
-                let out = ac.aggregated().explode(false)?;
+                let out = if self.phys_function.is_scalar() {
+                    ac.get_values().clone()
+                } else {
+                    ac.aggregated().explode(ExplodeOptions {
+                        empty_as_null: true,
+                        keep_nulls: true,
+                    })?
+                };
                 Ok(out.into_column())
             },
             Map => {
                 // TODO!
                 // investigate if sorted arrays can be return directly
                 let out_column = ac.aggregated();
-                let flattened = out_column.explode(false)?;
+                let flattened = out_column.explode(ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                })?;
                 // we extend the lifetime as we must convince the compiler that ac lives
                 // long enough. We drop `GrouBy` when we are done with `ac`.
                 let ac = unsafe {
@@ -568,9 +600,9 @@ impl PhysicalExpr for WindowExpr {
                                 ))
                             } else {
                                 let df_right =
-                                    unsafe { DataFrame::new_no_checks_height_from_first(keys) };
+                                    unsafe { DataFrame::new_unchecked_infer_height(keys) };
                                 let df_left = unsafe {
-                                    DataFrame::new_no_checks_height_from_first(group_by_columns)
+                                    DataFrame::new_unchecked_infer_height(group_by_columns)
                                 };
                                 Ok(Arc::new(
                                     private_left_join_multiple_keys(&df_left, &df_right, true)?.1,
@@ -584,9 +616,7 @@ impl PhysicalExpr for WindowExpr {
                                 jt
                             } else {
                                 let jt = get_join_tuples()?;
-                                state
-                                    .window_cache
-                                    .insert_join(cache_key.clone(), jt.clone());
+                                state.window_cache.insert_join(cache_key, jt.clone());
                                 jt
                             }
                         } else {
@@ -601,8 +631,8 @@ impl PhysicalExpr for WindowExpr {
         }
     }
 
-    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.function.to_field(input_schema, Context::Default)
+    fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
+        Ok(self.output_field.clone())
     }
 
     fn is_scalar(&self) -> bool {
@@ -612,11 +642,380 @@ impl PhysicalExpr for WindowExpr {
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
-        _df: &DataFrame,
-        _groups: &'a GroupPositions,
-        _state: &ExecutionState,
+        df: &DataFrame,
+        groups: &'a GroupPositions,
+        state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        polars_bail!(InvalidOperation: "window expression not allowed in aggregation");
+        if self.group_by.is_empty()
+            || !self.all_group_by_are_elementwise
+            || (self.order_by.is_some() && !self.order_by_is_elementwise)
+        {
+            polars_bail!(
+                InvalidOperation:
+                "window expression with non-elementwise `partition_by` or `order_by` not allowed in aggregation context"
+            );
+        }
+
+        let length_preserving_height = if let Some((c, _)) = state.element.as_ref() {
+            c.len()
+        } else {
+            df.height()
+        };
+
+        let function_is_scalar = self.phys_function.is_scalar();
+        let needs_remap_to_rows =
+            matches!(self.mapping, WindowMapping::GroupsToRows) && !function_is_scalar;
+
+        let partition_by_columns = self
+            .group_by
+            .iter()
+            .map(|e| {
+                let mut e = e.evaluate(df, state)?;
+                if e.len() == 1 {
+                    e = e.new_from_index(0, length_preserving_height);
+                }
+                // Sanity check: Length Preserving.
+                assert_eq!(e.len(), length_preserving_height,);
+                Ok(e)
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let order_by = match &self.order_by {
+            None => None,
+            Some((e, options)) => {
+                let mut e = e.evaluate(df, state)?;
+                if e.len() == 1 {
+                    e = e.new_from_index(0, length_preserving_height);
+                }
+                // Sanity check: Length Preserving.
+                assert_eq!(e.len(), length_preserving_height);
+                let arr: Option<PrimitiveArray<IdxSize>> = if needs_remap_to_rows {
+                    feature_gated!("rank", {
+                        // Performance: precompute the rank here, so we can avoid dispatching per group
+                        // later.
+                        use polars_ops::series::SeriesRank;
+                        let arr = e.as_materialized_series().rank(
+                            RankOptions {
+                                method: RankMethod::Ordinal,
+                                descending: false,
+                            },
+                            None,
+                        );
+                        let arr = arr.idx()?;
+                        let arr = arr.rechunk();
+                        Some(arr.downcast_as_array().clone())
+                    })
+                } else {
+                    None
+                };
+
+                Some((e.clone(), arr, *options))
+            },
+        };
+
+        let (num_unique_ids, unique_ids) = if partition_by_columns.len() == 1 {
+            partition_by_columns[0].unique_id()?
+        } else {
+            ChunkUnique::unique_id(&encode_rows_unordered(&partition_by_columns)?)?
+        };
+
+        // All the groups within the existing groups.
+        let subgroups_approx_capacity = groups.len();
+        let mut subgroups: Vec<(IdxSize, UnitVec<IdxSize>)> =
+            Vec::with_capacity(subgroups_approx_capacity);
+
+        // Indices for the output groups. Not used with `WindowMapping::Explode`.
+        let mut gather_indices_offset = 0;
+        let mut gather_indices: Vec<(IdxSize, UnitVec<IdxSize>)> =
+            Vec::with_capacity(if matches!(self.mapping, WindowMapping::Explode) {
+                0
+            } else {
+                groups.len()
+            });
+        // Slices for the output groups. Only used with `WindowMapping::Explode`.
+        let mut strategy_explode_groups: Vec<[IdxSize; 2]> =
+            Vec::with_capacity(if matches!(self.mapping, WindowMapping::Explode) {
+                groups.len()
+            } else {
+                0
+            });
+
+        // Amortized vectors to reorder based on `order_by`.
+        let mut amort_arg_sort = Vec::new();
+        let mut amort_offsets = Vec::new();
+
+        // Amortized vectors to gather per group data.
+        let mut amort_subgroups_order = Vec::with_capacity(num_unique_ids as usize);
+        let mut amort_subgroups_sizes = Vec::with_capacity(num_unique_ids as usize);
+        let mut amort_subgroups_indices = (0..num_unique_ids)
+            .map(|_| (0, UnitVec::new()))
+            .collect::<Vec<(IdxSize, UnitVec<IdxSize>)>>();
+
+        macro_rules! map_window_groups {
+            ($iter:expr, $get:expr) => {
+                let mut subgroup_gather_indices =
+                    UnitVec::with_capacity(if matches!(self.mapping, WindowMapping::Explode) {
+                        0
+                    } else {
+                        $iter.len()
+                    });
+
+                amort_subgroups_order.clear();
+                amort_subgroups_sizes.clear();
+                amort_subgroups_sizes.resize(num_unique_ids as usize, 0);
+
+                // Determine sizes per subgroup.
+                for i in $iter.clone() {
+                    let id = *unsafe { unique_ids.get_unchecked(i as usize) };
+                    let size = unsafe { amort_subgroups_sizes.get_unchecked_mut(id as usize) };
+                    if *size == 0 {
+                        unsafe { amort_subgroups_order.push_unchecked(id) };
+                    }
+                    *size += 1;
+                }
+
+                if matches!(self.mapping, WindowMapping::Explode) {
+                    strategy_explode_groups.push([
+                        subgroups.len() as IdxSize,
+                        amort_subgroups_order.len() as IdxSize,
+                    ]);
+                }
+
+                // Set starting gather indices and reserve capacity per subgroup.
+                let mut offset = if needs_remap_to_rows {
+                    gather_indices_offset
+                } else {
+                    subgroups.len() as IdxSize
+                };
+                for &id in &amort_subgroups_order {
+                    let size = *unsafe { amort_subgroups_sizes.get_unchecked(id as usize) };
+                    let (next_gather_idx, indices) =
+                        unsafe { amort_subgroups_indices.get_unchecked_mut(id as usize) };
+                    indices.reserve(size as usize);
+                    *next_gather_idx = offset;
+                    offset += if needs_remap_to_rows { size } else { 1 };
+                }
+
+                // Collect gather indices.
+                if matches!(self.mapping, WindowMapping::Explode) {
+                    for i in $iter {
+                        let id = *unsafe { unique_ids.get_unchecked(i as usize) };
+                        let (_, indices) =
+                            unsafe { amort_subgroups_indices.get_unchecked_mut(id as usize) };
+                        unsafe { indices.push_unchecked(i) };
+                    }
+                } else {
+                    // If we are remapping exploded rows back to rows and are reordering, we need
+                    // to ensure we reorder the gather indices as well. Reordering the `subgroup`
+                    // indices is done later.
+                    //
+                    // We having precalculated both the `unique_ids` and `order_by_ranks` in
+                    // efficient kernels, we can now relatively efficient arg_sort per group. This
+                    // is still horrendously slow, but at least not as bad as it would be if you
+                    // did this naively.
+                    if needs_remap_to_rows && let Some((_, arr, options)) = &order_by {
+                        let arr = arr.as_ref().unwrap();
+                        amort_arg_sort.clear();
+                        amort_arg_sort.extend(0..$iter.len() as IdxSize);
+                        match arr.validity() {
+                            None => {
+                                let arr = arr.values().as_slice();
+                                amort_arg_sort.sort_by(|a, b| {
+                                    let in_group_idx_a = $get(*a as usize) as usize;
+                                    let in_group_idx_b = $get(*b as usize) as usize;
+
+                                    let order_a = unsafe { arr.get_unchecked(in_group_idx_a) };
+                                    let order_b = unsafe { arr.get_unchecked(in_group_idx_b) };
+
+                                    let mut cmp = order_a.cmp(&order_b);
+                                    // Performance: This can generally be handled branchlessly.
+                                    if options.descending {
+                                        cmp = cmp.reverse();
+                                    }
+                                    cmp
+                                });
+                            },
+                            Some(validity) => {
+                                let arr = arr.values().as_slice();
+                                amort_arg_sort.sort_by(|a, b| {
+                                    let in_group_idx_a = $get(*a as usize) as usize;
+                                    let in_group_idx_b = $get(*b as usize) as usize;
+
+                                    let is_valid_a =
+                                        unsafe { validity.get_bit_unchecked(in_group_idx_a) };
+                                    let is_valid_b =
+                                        unsafe { validity.get_bit_unchecked(in_group_idx_b) };
+                                    let order_a = unsafe { arr.get_unchecked(in_group_idx_a) };
+                                    let order_b = unsafe { arr.get_unchecked(in_group_idx_b) };
+
+                                    if !is_valid_a & !is_valid_b {
+                                        return Ordering::Equal;
+                                    }
+
+                                    let mut cmp = order_a.cmp(&order_b);
+                                    if !is_valid_a {
+                                        cmp = Ordering::Less;
+                                    }
+                                    if !is_valid_b {
+                                        cmp = Ordering::Greater;
+                                    }
+                                    if options.descending
+                                        | ((!is_valid_a | !is_valid_b) & options.nulls_last)
+                                    {
+                                        cmp = cmp.reverse();
+                                    }
+                                    cmp
+                                });
+                            },
+                        }
+
+                        amort_offsets.clear();
+                        amort_offsets.resize($iter.len(), 0);
+                        for &id in &amort_subgroups_order {
+                            amort_subgroups_sizes[id as usize] = 0;
+                        }
+
+                        for &idx in &amort_arg_sort {
+                            let in_group_idx = $get(idx as usize);
+                            let id = *unsafe { unique_ids.get_unchecked(in_group_idx as usize) };
+                            amort_offsets[idx as usize] = amort_subgroups_sizes[id as usize];
+                            amort_subgroups_sizes[id as usize] += 1;
+                        }
+
+                        for (i, offset) in $iter.zip(&amort_offsets) {
+                            let id = *unsafe { unique_ids.get_unchecked(i as usize) };
+                            let (next_gather_idx, indices) =
+                                unsafe { amort_subgroups_indices.get_unchecked_mut(id as usize) };
+                            unsafe {
+                                subgroup_gather_indices.push_unchecked(*next_gather_idx + *offset)
+                            };
+                            unsafe { indices.push_unchecked(i) };
+                        }
+                    } else {
+                        for i in $iter {
+                            let id = *unsafe { unique_ids.get_unchecked(i as usize) };
+                            let (next_gather_idx, indices) =
+                                unsafe { amort_subgroups_indices.get_unchecked_mut(id as usize) };
+                            unsafe { subgroup_gather_indices.push_unchecked(*next_gather_idx) };
+                            *next_gather_idx += IdxSize::from(needs_remap_to_rows);
+                            unsafe { indices.push_unchecked(i) };
+                        }
+                    }
+                }
+
+                // Push groups into nested_groups.
+                subgroups.extend(amort_subgroups_order.iter().map(|&id| {
+                    let (_, indices) =
+                        unsafe { amort_subgroups_indices.get_unchecked_mut(id as usize) };
+                    let indices = std::mem::take(indices);
+                    (*unsafe { indices.get_unchecked(0) }, indices)
+                }));
+
+                if !matches!(self.mapping, WindowMapping::Explode) {
+                    gather_indices_offset += subgroup_gather_indices.len() as IdxSize;
+                    gather_indices.push((
+                        subgroup_gather_indices.first().copied().unwrap_or(0),
+                        subgroup_gather_indices,
+                    ));
+                }
+            };
+        }
+        match groups.as_ref() {
+            GroupsType::Idx(idxs) => {
+                for g in idxs.all() {
+                    map_window_groups!(g.iter().copied(), (|i: usize| g[i]));
+                }
+            },
+            GroupsType::Slice {
+                groups,
+                overlapping: _,
+                monotonic: _,
+            } => {
+                for [s, l] in groups.iter() {
+                    let s = *s;
+                    let l = *l;
+                    let iter = unsafe { TrustMyLength::new(s..s + l, l as usize) };
+                    map_window_groups!(iter, (|i: usize| s + i as IdxSize));
+                }
+            },
+        }
+
+        let mut subgroups = GroupsType::Idx(subgroups.into());
+        if let Some((order_by, _, options)) = order_by {
+            subgroups =
+                update_groups_sort_by(&subgroups, order_by.as_materialized_series(), &options)?;
+        }
+        let subgroups = subgroups.into_sliceable();
+        let mut data = self
+            .phys_function
+            .evaluate_on_groups(df, &subgroups, state)?
+            .finalize();
+
+        let final_groups = if matches!(self.mapping, WindowMapping::Explode) {
+            if !function_is_scalar {
+                let (data_s, offsets) = data.list()?.explode_and_offsets(ExplodeOptions {
+                    empty_as_null: false,
+                    keep_nulls: false,
+                })?;
+                data = data_s.into_column();
+
+                let mut exploded_offset = 0;
+                for [start, length] in strategy_explode_groups.iter_mut() {
+                    let exploded_start = exploded_offset;
+                    let exploded_length = offsets
+                        .lengths()
+                        .skip(*start as usize)
+                        .take(*length as usize)
+                        .sum::<usize>() as IdxSize;
+                    exploded_offset += exploded_length;
+                    *start = exploded_start;
+                    *length = exploded_length;
+                }
+            }
+            GroupsType::new_slice(strategy_explode_groups, false, true)
+        } else {
+            if needs_remap_to_rows {
+                let data_l = data.list()?;
+                assert_eq!(data_l.len(), subgroups.len());
+                let lengths = data_l.lst_lengths();
+                let length_mismatch = match subgroups.as_ref() {
+                    GroupsType::Idx(idx) => idx
+                        .all()
+                        .iter()
+                        .zip(&lengths)
+                        .any(|(i, l)| i.len() as IdxSize != l.unwrap()),
+                    GroupsType::Slice {
+                        groups,
+                        overlapping: _,
+                        monotonic: _,
+                    } => groups
+                        .iter()
+                        .zip(&lengths)
+                        .any(|([_, i], l)| *i != l.unwrap()),
+                };
+
+                polars_ensure!(
+                    !length_mismatch,
+                    expr = self.expr, ShapeMismatch:
+                    "the length of the window expression did not match that of the group"
+                );
+
+                data = data_l
+                    .explode(ExplodeOptions {
+                        empty_as_null: false,
+                        keep_nulls: true,
+                    })?
+                    .into_column();
+            }
+            GroupsType::Idx(gather_indices.into())
+        }
+        .into_sliceable();
+
+        Ok(AggregationContext {
+            state: AggState::NotAggregated(data),
+            groups: Cow::Owned(final_groups),
+            update_groups: UpdateGroups::No,
+            original_len: false,
+        })
     }
 
     fn as_expression(&self) -> Option<&Expr> {

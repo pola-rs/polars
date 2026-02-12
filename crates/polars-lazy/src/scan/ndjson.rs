@@ -1,6 +1,6 @@
 use std::num::NonZeroUsize;
-use std::sync::Arc;
 
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::{HiveOptions, RowIndex};
@@ -8,7 +8,7 @@ use polars_plan::dsl::{
     CastColumnsPolicy, DslPlan, ExtraColumnsPolicy, FileScanDsl, MissingColumnsPolicy, ScanSources,
 };
 use polars_plan::prelude::{NDJsonReadOptions, UnifiedScanArgs};
-use polars_utils::plpath::PlPath;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::slice_enum::Slice;
 
 use crate::prelude::LazyFrame;
@@ -31,7 +31,7 @@ pub struct LazyJsonLineReader {
 }
 
 impl LazyJsonLineReader {
-    pub fn new_paths(paths: Arc<[PlPath]>) -> Self {
+    pub fn new_paths(paths: Buffer<PlRefPath>) -> Self {
         Self::new_with_sources(ScanSources::Paths(paths))
     }
 
@@ -52,8 +52,8 @@ impl LazyJsonLineReader {
         }
     }
 
-    pub fn new(path: PlPath) -> Self {
-        Self::new_with_sources(ScanSources::Paths([path].into()))
+    pub fn new(path: PlRefPath) -> Self {
+        Self::new_with_sources(ScanSources::Paths(Buffer::from_iter([path])))
     }
 
     /// Add a row index column.
@@ -132,14 +132,19 @@ impl LazyFileListReader for LazyJsonLineReader {
             rechunk: self.rechunk,
             cache: false,
             glob: true,
+            hidden_file_prefix: None,
             projection: None,
+            column_mapping: None,
+            default_values: None,
             row_index: self.row_index,
             pre_slice: self.n_rows.map(|len| Slice::Positive { offset: 0, len }),
             cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
             missing_columns_policy: MissingColumnsPolicy::Raise,
             extra_columns_policy: ExtraColumnsPolicy::Raise,
             include_file_paths: self.include_file_paths,
-            deletion_files: Default::default(),
+            deletion_files: None,
+            table_statistics: None,
+            row_count: None,
         };
 
         let options = NDJsonReadOptions {

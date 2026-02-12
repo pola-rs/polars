@@ -9,11 +9,14 @@ use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
-fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
+fn get_exploded(
+    series: &Series,
+    options: ExplodeOptions,
+) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
     match series.dtype() {
-        DataType::List(_) => series.list().unwrap().explode_and_offsets(false),
+        DataType::List(_) => series.list().unwrap().explode_and_offsets(options),
         #[cfg(feature = "dtype-array")]
-        DataType::Array(_, _) => series.array().unwrap().explode_and_offsets(false),
+        DataType::Array(_, _) => series.array().unwrap().explode_and_offsets(options),
         _ => polars_bail!(opq = explode, series.dtype()),
     }
 }
@@ -24,30 +27,52 @@ fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
 pub struct UnpivotArgsIR {
     pub on: Vec<PlSmallStr>,
     pub index: Vec<PlSmallStr>,
-    pub variable_name: Option<PlSmallStr>,
-    pub value_name: Option<PlSmallStr>,
+    pub variable_name: PlSmallStr,
+    pub value_name: PlSmallStr,
+}
+
+impl UnpivotArgsIR {
+    pub fn new(
+        all_column_names: Vec<PlSmallStr>,
+        on: Option<Vec<PlSmallStr>>,
+        index: Vec<PlSmallStr>,
+        value_name: Option<PlSmallStr>,
+        variable_name: Option<PlSmallStr>,
+    ) -> Self {
+        let on = on.unwrap_or_else(|| {
+            // If value vars is empty we take all columns that are not in id_vars.
+            let index_set = PlHashSet::from_iter(index.iter().cloned());
+            all_column_names
+                .into_iter()
+                .filter(|s| !index_set.contains(s))
+                .collect()
+        });
+
+        Self {
+            on,
+            index,
+            variable_name: variable_name.unwrap_or_else(|| PlSmallStr::from_static("variable")),
+            value_name: value_name.unwrap_or_else(|| PlSmallStr::from_static("value")),
+        }
+    }
 }
 
 impl DataFrame {
-    pub fn explode_impl(&self, mut columns: Vec<Column>) -> PolarsResult<DataFrame> {
+    pub fn explode_impl(
+        &self,
+        mut columns: Vec<Column>,
+        options: ExplodeOptions,
+    ) -> PolarsResult<DataFrame> {
         polars_ensure!(!columns.is_empty(), InvalidOperation: "no columns provided in explode");
         let mut df = self.clone();
-        if self.is_empty() {
+        if self.shape_has_zero() {
             for s in &columns {
-                df.with_column(s.as_materialized_series().explode(false)?)?;
+                df.with_column(s.as_materialized_series().explode(options)?.into_column())?;
             }
             return Ok(df);
         }
-        columns.sort_by(|sa, sb| {
-            self.check_name_to_idx(sa.name().as_str())
-                .expect("checked above")
-                .partial_cmp(
-                    &self
-                        .check_name_to_idx(sb.name().as_str())
-                        .expect("checked above"),
-                )
-                .expect("cmp usize -> Ordering")
-        });
+
+        columns.sort_by_key(|c| self.try_get_column_index(c.name()).unwrap());
 
         // first remove all the exploded columns
         for s in &columns {
@@ -57,8 +82,7 @@ impl DataFrame {
         let exploded_columns = POOL.install(|| {
             columns
                 .par_iter()
-                .map(Column::as_materialized_series)
-                .map(get_exploded)
+                .map(|c| get_exploded(c.as_materialized_series(), options))
                 .map(|s| s.map(|(s, o)| (Column::from(s), o)))
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
@@ -68,9 +92,13 @@ impl DataFrame {
             df: &mut DataFrame,
             exploded: Column,
         ) -> PolarsResult<()> {
-            if exploded.len() == df.height() || df.width() == 0 {
-                let col_idx = original_df.check_name_to_idx(exploded.name().as_str())?;
-                df.columns.insert(col_idx, exploded);
+            if df.shape() == (0, 0) {
+                unsafe { df.set_height(exploded.len()) };
+            }
+
+            if exploded.len() == df.height() {
+                let col_idx = original_df.try_get_column_index(exploded.name().as_str())?;
+                unsafe { df.columns_mut() }.insert(col_idx, exploded);
             } else {
                 polars_bail!(
                     ShapeMismatch: "exploded column(s) {:?} doesn't have the same length: {} \
@@ -101,9 +129,15 @@ impl DataFrame {
             Ok(())
         };
         let process_first = || {
+            let validity = columns[0].rechunk_validity();
             let (exploded, offsets) = &exploded_columns[0];
 
-            let row_idx = offsets_to_indexes(offsets.as_slice(), exploded.len());
+            let row_idx = offsets_to_indexes(
+                offsets.as_slice(),
+                exploded.len(),
+                options,
+                validity.as_ref(),
+            );
             let mut row_idx = IdxCa::from_vec(PlSmallStr::EMPTY, row_idx);
             row_idx.set_sorted_flag(IsSorted::Ascending);
 
@@ -136,7 +170,7 @@ impl DataFrame {
     ///
     /// let s0 = Series::new("B".into(), [1, 2, 3]);
     /// let s1 = Series::new("C".into(), [1, 1, 1]);
-    /// let df = DataFrame::new(vec![list, s0, s1])?;
+    /// let df = DataFrame::new_infer_height(vec![list, s0, s1])?;
     /// let exploded = df.explode(["foo"])?;
     ///
     /// println!("{:?}", df);
@@ -182,15 +216,15 @@ impl DataFrame {
     ///  | 2   | 3   | 1   |
     ///  +-----+-----+-----+
     /// ```
-    pub fn explode<I, S>(&self, columns: I) -> PolarsResult<DataFrame>
+    pub fn explode<I, S>(&self, columns: I, options: ExplodeOptions) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
-        S: Into<PlSmallStr>,
+        S: AsRef<str>,
     {
         // We need to sort the column by order of original occurrence. Otherwise the insert by index
         // below will panic
-        let columns = self.select_columns(columns)?;
-        self.explode_impl(columns)
+        let columns = self.select_to_vec(columns)?;
+        self.explode_impl(columns, options)
     }
 }
 
@@ -209,8 +243,16 @@ mod test {
 
         let s0 = Column::new(PlSmallStr::from_static("B"), [1, 2, 3]);
         let s1 = Column::new(PlSmallStr::from_static("C"), [1, 1, 1]);
-        let df = DataFrame::new(vec![list, s0.clone(), s1.clone()]).unwrap();
-        let exploded = df.explode(["foo"]).unwrap();
+        let df = DataFrame::new_infer_height(vec![list, s0, s1]).unwrap();
+        let exploded = df
+            .explode(
+                ["foo"],
+                ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                },
+            )
+            .unwrap();
         assert_eq!(exploded.shape(), (9, 3));
         assert_eq!(
             exploded
@@ -255,9 +297,15 @@ mod test {
         );
         let s0 = Column::new(PlSmallStr::from_static("B"), [1, 2, 3]);
         let s1 = Column::new(PlSmallStr::from_static("C"), [1, 1, 1]);
-        let df = DataFrame::new(vec![list, s0.clone(), s1.clone()])?;
+        let df = DataFrame::new_infer_height(vec![list, s0.clone(), s1.clone()])?;
 
-        let out = df.explode(["foo"])?;
+        let out = df.explode(
+            ["foo"],
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )?;
         let expected = df![
             "foo" => [Some(1), Some(2), Some(3), Some(1), Some(1), Some(1), None],
             "B" => [1, 1, 1, 2, 2, 2, 3],
@@ -274,8 +322,14 @@ mod test {
                 s1.as_materialized_series().clone(),
             ],
         );
-        let df = DataFrame::new(vec![list, s0, s1])?;
-        let out = df.explode(["foo"])?;
+        let df = DataFrame::new_infer_height(vec![list, s0, s1])?;
+        let out = df.explode(
+            ["foo"],
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )?;
         let expected = df![
             "foo" => [Some(1), Some(2), Some(3), None, Some(1), Some(1), Some(1)],
             "B" => [1, 1, 1, 2, 3, 3, 3],
@@ -292,9 +346,15 @@ mod test {
         let s0 = Series::new(PlSmallStr::from_static("a"), &[1i32, 2, 3]);
         let s1 = Series::new(PlSmallStr::from_static("b"), &[1i32, 1, 1]);
         let list = Column::new(PlSmallStr::from_static("foo"), &[s0, s1]);
-        let df = DataFrame::new(vec![list])?;
+        let df = DataFrame::new_infer_height(vec![list])?;
 
-        let out = df.explode(["foo"])?;
+        let out = df.explode(
+            ["foo"],
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )?;
         let out = out
             .column("foo")?
             .as_materialized_series()

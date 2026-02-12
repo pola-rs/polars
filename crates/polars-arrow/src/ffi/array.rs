@@ -1,17 +1,16 @@
 //! Contains functionality to load an ArrayData from the C Data Interface
 use std::sync::Arc;
 
+use polars_buffer::{Buffer, SharedStorage};
 use polars_error::{PolarsResult, polars_bail};
 
 use super::ArrowArray;
 use crate::array::*;
 use crate::bitmap::Bitmap;
 use crate::bitmap::utils::bytes_for;
-use crate::buffer::Buffer;
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::ffi::schema::get_child;
-use crate::storage::SharedStorage;
-use crate::types::NativeType;
+use crate::types::{NativeType, PrimitiveType, months_days_ns};
 use crate::{ffi, match_integer_type, with_match_primitive_type_full};
 
 /// Reads a valid `ffi` interface into a `Box<dyn Array>`
@@ -23,6 +22,9 @@ pub unsafe fn try_from<A: ArrowArrayRef>(array: A) -> PolarsResult<Box<dyn Array
     Ok(match array.dtype().to_physical_type() {
         Null => Box::new(NullArray::try_from_ffi(array)?),
         Boolean => Box::new(BooleanArray::try_from_ffi(array)?),
+        Primitive(PrimitiveType::MonthDayNano) => {
+            Box::new(PrimitiveArray::<months_days_ns>::try_from_ffi(array)?)
+        },
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             Box::new(PrimitiveArray::<$T>::try_from_ffi(array)?)
         }),
@@ -103,7 +105,7 @@ impl ArrowArray {
         let (offset, mut buffers, children, dictionary) =
             offset_buffers_children_dictionary(array.as_ref());
 
-        let variadic_buffer_sizes = match array.dtype() {
+        let variadic_buffer_sizes = match array.dtype().to_storage() {
             ArrowDataType::BinaryView => {
                 let arr = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
                 let boxed = arr.variadic_buffer_lengths().into_boxed_slice();
@@ -252,10 +254,13 @@ unsafe fn create_buffer_known_len<T: NativeType>(
     index: usize,
 ) -> PolarsResult<Buffer<T>> {
     if len == 0 {
+        // Zero-length arrays might have invalid pointers for zero-length slices in Rust,
+        // so this is more than just an optimization.
         return Ok(Buffer::new());
     }
     let ptr: *mut T = get_buffer_ptr(array, dtype, index)?;
-    let storage = SharedStorage::from_internal_arrow_array(ptr, len, owner);
+    let slice = core::slice::from_raw_parts(ptr, len);
+    let storage = SharedStorage::from_slice_with_owner(slice, owner);
     Ok(Buffer::from_storage(storage))
 }
 
@@ -270,26 +275,33 @@ unsafe fn create_buffer<T: NativeType>(
     owner: InternalArrowArray,
     index: usize,
 ) -> PolarsResult<Buffer<T>> {
-    let len = buffer_len(array, dtype, index)?;
+    let buf_len = buffer_len(array, dtype, index)?;
 
-    if len == 0 {
+    if buf_len == 0 {
+        // Zero-length arrays might have invalid pointers for zero-length slices in Rust,
+        // so this is more than just an optimization.
         return Ok(Buffer::new());
     }
 
     let offset = buffer_offset(array, dtype, index);
     let ptr: *mut T = get_buffer_ptr(array, dtype, index)?;
+    let len = buf_len - offset;
 
-    // We have to check alignment.
-    // This is the zero-copy path.
-    if ptr.align_offset(align_of::<T>()) == 0 {
-        let storage = SharedStorage::from_internal_arrow_array(ptr, len, owner);
-        Ok(Buffer::from_storage(storage).sliced(offset, len - offset))
-    }
-    // This is the path where alignment isn't correct.
-    // We copy the data to a new vec
-    else {
-        let buf = std::slice::from_raw_parts(ptr, len - offset).to_vec();
-        Ok(Buffer::from(buf))
+    // We have to check alignment, for zero-copy to be valid.
+    if ptr.is_aligned() {
+        let slice = core::slice::from_raw_parts(ptr.add(offset), len);
+        let storage = SharedStorage::from_slice_with_owner(slice, owner);
+        Ok(Buffer::from_storage(storage))
+    } else {
+        // Byte-wise copy for misaligned buffers.
+        let mut v = Vec::with_capacity(len);
+        core::ptr::copy_nonoverlapping(
+            ptr.add(offset).cast::<u8>(),
+            v.spare_capacity_mut().as_mut_ptr().cast::<u8>(),
+            len * size_of::<T>(),
+        );
+        v.set_len(len);
+        Ok(Buffer::from(v))
     }
 }
 
@@ -309,15 +321,17 @@ unsafe fn create_bitmap(
 ) -> PolarsResult<Bitmap> {
     let len: usize = array.length.try_into().expect("length to fit in `usize`");
     if len == 0 {
+        // Zero-length arrays might have invalid pointers for zero-length slices in Rust,
+        // so this is more than just an optimization.
         return Ok(Bitmap::new());
     }
     let ptr = get_buffer_ptr(array, dtype, index)?;
 
     // Pointer of u8 has alignment 1, so we don't have to check alignment.
-
     let offset: usize = array.offset.try_into().expect("offset to fit in `usize`");
     let bytes_len = bytes_for(offset + len);
-    let storage = SharedStorage::from_internal_arrow_array(ptr, bytes_len, owner);
+    let slice = core::slice::from_raw_parts(ptr, bytes_len);
+    let storage = SharedStorage::from_slice_with_owner(slice, owner);
 
     let null_count = if is_validity {
         Some(array.null_count())
@@ -334,7 +348,7 @@ fn buffer_offset(array: &ArrowArray, dtype: &ArrowDataType, i: usize) -> usize {
     match (dtype.to_physical_type(), i) {
         (LargeUtf8, 2) | (LargeBinary, 2) | (Utf8, 2) | (Binary, 2) => 0,
         (FixedSizeBinary, 1) => {
-            if let ArrowDataType::FixedSizeBinary(size) = dtype.to_logical_type() {
+            if let ArrowDataType::FixedSizeBinary(size) = dtype.to_storage() {
                 let offset: usize = array.offset.try_into().expect("Offset to fit in `usize`");
                 offset * *size
             } else {
@@ -349,14 +363,14 @@ fn buffer_offset(array: &ArrowArray, dtype: &ArrowDataType, i: usize) -> usize {
 unsafe fn buffer_len(array: &ArrowArray, dtype: &ArrowDataType, i: usize) -> PolarsResult<usize> {
     Ok(match (dtype.to_physical_type(), i) {
         (PhysicalType::FixedSizeBinary, 1) => {
-            if let ArrowDataType::FixedSizeBinary(size) = dtype.to_logical_type() {
+            if let ArrowDataType::FixedSizeBinary(size) = dtype.to_storage() {
                 *size * (array.offset as usize + array.length as usize)
             } else {
                 unreachable!()
             }
         },
         (PhysicalType::FixedSizeList, 1) => {
-            if let ArrowDataType::FixedSizeList(_, size) = dtype.to_logical_type() {
+            if let ArrowDataType::FixedSizeList(_, size) = dtype.to_storage() {
                 *size * (array.offset as usize + array.length as usize)
             } else {
                 unreachable!()

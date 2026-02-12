@@ -133,13 +133,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:examples]
     let result = df
-        .clone()
         .lazy()
         .select([
             col("Type 1")
                 .head(Some(3))
                 .over_with_options(Some(["Type 1"]), None, WindowMapping::Explode)?
-                .flatten(),
+                .explode(ExplodeOptions {
+                    empty_as_null: false,
+                    keep_nulls: false,
+                }),
             col("Name")
                 .sort_by(
                     ["Speed"],
@@ -147,7 +149,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .head(Some(3))
                 .over_with_options(Some(["Type 1"]), None, WindowMapping::Explode)?
-                .flatten()
+                .explode(ExplodeOptions {
+                    empty_as_null: false,
+                    keep_nulls: false,
+                })
                 .alias("fastest/group"),
             col("Name")
                 .sort_by(
@@ -156,13 +161,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .head(Some(3))
                 .over_with_options(Some(["Type 1"]), None, WindowMapping::Explode)?
-                .flatten()
+                .explode(ExplodeOptions {
+                    empty_as_null: false,
+                    keep_nulls: false,
+                })
                 .alias("strongest/group"),
             col("Name")
                 .sort(Default::default())
                 .head(Some(3))
                 .over_with_options(Some(["Type 1"]), None, WindowMapping::Explode)?
-                .flatten()
+                .explode(ExplodeOptions {
+                    empty_as_null: false,
+                    keep_nulls: false,
+                })
                 .alias("sorted_by_alphabet"),
         ])
         .collect()?;

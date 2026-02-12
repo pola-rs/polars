@@ -1,7 +1,7 @@
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_sql::*;
-use polars_utils::plpath::PlPath;
+use polars_utils::pl_path::PlRefPath;
 
 #[test]
 #[cfg(feature = "csv")]
@@ -19,12 +19,12 @@ fn iss_7437() -> PolarsResult<()> {
             SELECT "category" as category
             FROM foods
             GROUP BY "category"
-    "#,
+        "#,
         )?
         .collect()?
         .sort(["category"], SortMultipleOptions::default())?;
 
-    let expected = LazyCsvReader::new(PlPath::new("../../examples/datasets/foods1.csv"))
+    let expected = LazyCsvReader::new(PlRefPath::new("../../examples/datasets/foods1.csv"))
         .finish()?
         .group_by(vec![col("category").alias("category")])
         .agg(vec![])
@@ -57,7 +57,7 @@ fn iss_7436() {
         .unwrap()
         .collect()
         .unwrap();
-    let expected = LazyCsvReader::new(PlPath::new("../../examples/datasets/foods1.csv"))
+    let expected = LazyCsvReader::new(PlRefPath::new("../../examples/datasets/foods1.csv"))
         .finish()
         .unwrap()
         .select(&[
@@ -126,20 +126,7 @@ fn iss_8419() {
     }
     .unwrap()
     .lazy();
-    let expected = df
-        .clone()
-        .select(&[
-            col("Year"),
-            col("Country"),
-            col("Sales"),
-            col("Sales")
-                .sort(SortOptions::default().with_order_descending(true))
-                .cum_sum(false)
-                .alias("SalesCumulative"),
-        ])
-        .sort(["SalesCumulative"], Default::default())
-        .collect()
-        .unwrap();
+
     let mut ctx = SQLContext::new();
     ctx.register("df", df);
 
@@ -154,7 +141,63 @@ fn iss_8419() {
     ORDER BY
         SalesCumulative
     "#;
+
     let df = ctx.execute(query).unwrap().collect().unwrap();
+    let expected = df! {
+      "Year"   => [2020, 2020, 2019, 2019, 2018, 2018],
+      "Country"=> ["UK", "US", "UK", "US", "UK", "US"],
+      "Sales"  => [6000, 5000, 4000, 3000, 2000, 1000],
+      "SalesCumulative" => [6000, 11000, 15000, 18000, 20000, 21000]
+    }
+    .unwrap();
 
     assert!(df.equals(&expected))
+}
+
+#[test]
+fn iss_23134() -> PolarsResult<()> {
+    // Reproduce issue: https://github.com/pola-rs/polars/issues/23134
+    // Applying function to a column of group_by results in a list
+
+    // Create test data
+    let df = df! {
+        "a" => ["a", "a", "b"],
+        "b" => [1, 1, 2]
+    }?;
+
+    let mut ctx = SQLContext::new();
+    ctx.register("test", df.lazy());
+
+    let result1 = ctx
+        .execute("SELECT a, b FROM test GROUP BY a, b")?
+        .collect()?;
+
+    // This should return 2 rows with distinct (a, b) pairs
+    assert_eq!(result1.height(), 2);
+
+    let result2 = ctx
+        .execute("SELECT CONCAT(a, ' kek') as c, b FROM test GROUP BY a, b")?
+        .collect()?;
+
+    // Check the result structure
+    let c_column = result2.column("c")?;
+
+    // BUG: Currently returns List[String] instead of String
+    // The issue is that it returns ["a kek", "a kek"] and ["b kek"] instead of "a kek" and "b kek"
+    assert_eq!(c_column.dtype(), &DataType::String);
+
+    let result3 = ctx
+        .execute("SELECT CONCAT(a, ' kek'), b FROM test GROUP BY a, b")?
+        .collect()?;
+
+    // Check the result structure
+    let columns: Vec<String> = result3
+        .get_column_names()
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
+    // a and b
+    assert_eq!(columns, vec!["a", "b"]);
+
+    Ok(())
 }

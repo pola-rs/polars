@@ -21,7 +21,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:group_by]
     let annual_average_df = df
-        .clone()
         .lazy()
         .group_by_dynamic(
             col("Date"),
@@ -66,7 +65,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let out = df
-        .clone()
         .lazy()
         .group_by_dynamic(
             col("time"),
@@ -88,16 +86,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ((col("time").last() - col("time").first()).map(
                 // had to use map as .duration().days() is not available
                 |s| {
-                    Ok(Some(
-                        s.duration()?
-                            .physical()
-                            .into_iter()
-                            .map(|d| d.map(|v| v / 1000 / 24 / 60 / 60))
-                            .collect::<Int64Chunked>()
-                            .into_column(),
-                    ))
+                    Ok(s.duration()?
+                        .physical()
+                        .into_iter()
+                        .map(|d| d.map(|v| v / 1000 / 24 / 60 / 60))
+                        .collect::<Int64Chunked>()
+                        .into_column())
                 },
-                GetOutput::from_type(DataType::Int64),
+                |_, f| Ok(Field::new(f.name().clone(), DataType::Int64)),
             ) + lit(1))
             .alias("days_in_month"),
         ])
@@ -130,7 +126,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:group_by_dyn2]
     let out = df
-        .clone()
         .lazy()
         .group_by_dynamic(
             col("time"),

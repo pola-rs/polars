@@ -7,16 +7,19 @@ use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
-use crate::pipe::RecvPort;
+use crate::pipe::{PortReceiver, RecvPort, port_channel};
 
+#[cfg(feature = "asof_join")]
+pub mod asof_join;
 pub mod cross_join;
 pub mod equi_join;
 pub mod in_memory;
+pub mod merge_join;
 #[cfg(feature = "semi_anti_join")]
 pub mod semi_anti_join;
+mod utils;
 
 static JOIN_SAMPLE_LIMIT: LazyLock<usize> = LazyLock::new(|| {
     std::env::var("POLARS_JOIN_SAMPLE_LIMIT")
@@ -62,7 +65,7 @@ impl BufferedStream {
         recv_port: Option<RecvPort<'_>>,
         scope: &'s TaskScope<'s, 'env>,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) -> Option<Vec<Receiver<Morsel>>> {
+    ) -> Option<Vec<PortReceiver>> {
         let receivers = if let Some(p) = recv_port {
             p.parallel().into_iter().map(Some).collect_vec()
         } else {
@@ -72,7 +75,7 @@ impl BufferedStream {
         let source_token = SourceToken::new();
         let mut out = Vec::new();
         for orig_recv in receivers {
-            let (mut new_send, new_recv) = connector();
+            let (mut new_send, new_recv) = port_channel(None);
             out.push(new_recv);
             let source_token = source_token.clone();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {

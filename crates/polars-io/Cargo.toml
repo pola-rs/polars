@@ -9,18 +9,21 @@ repository = { workspace = true }
 description = "IO related logic for the Polars DataFrame library"
 
 [dependencies]
+polars-buffer = { workspace = true }
+polars-compute = { workspace = true }
+polars-config = { workspace = true }
 polars-core = { workspace = true }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
 polars-parquet = { workspace = true, optional = true }
 polars-schema = { workspace = true }
 polars-time = { workspace = true, features = [], optional = true }
-polars-utils = { workspace = true, features = ['mmap'] }
+polars-utils = { workspace = true, features = ['mmap', 'sysinfo'] }
 
 arrow = { workspace = true }
 async-trait = { workspace = true, optional = true }
 atoi_simd = { workspace = true, optional = true }
-blake3 = { version = "1.6.1", optional = true }
+blake3 = { workspace = true, optional = true }
 bytes = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
@@ -39,7 +42,6 @@ pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, optional = true, features = ["json"] }
-ryu = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { version = "1", optional = true }
@@ -48,8 +50,7 @@ simdutf8 = { workspace = true, optional = true }
 strum = { workspace = true, optional = true }
 strum_macros = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["fs", "net", "rt-multi-thread", "time", "sync"], optional = true }
-tokio-util = { workspace = true, features = ["io", "io-util"], optional = true }
-url = { workspace = true, optional = true }
+zmij = { workspace = true, optional = true }
 zstd = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
@@ -70,7 +71,15 @@ json = [
   "dtype-struct",
   "csv",
 ]
-serde = ["dep:serde", "polars-core/serde-lazy", "polars-parquet/serde", "polars-utils/serde"]
+scan_lines = []
+serde = [
+  "dep:serde",
+  "polars-buffer/serde",
+  "polars-config/serde",
+  "polars-core/serde-lazy",
+  "polars-parquet/serde",
+  "polars-utils/serde",
+]
 dsl-schema = ["dep:schemars", "polars-core/dsl-schema", "polars-parquet/dsl-schema", "polars-utils/dsl-schema"]
 # support for arrows ipc file parsing
 ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
@@ -78,15 +87,18 @@ ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 ipc_streaming = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrow avro parsing
 avro = ["arrow/io_avro", "arrow/io_avro_compression"]
-csv = ["atoi_simd", "polars-core/rows", "itoa", "ryu", "fast-float2", "simdutf8"]
+csv = ["atoi_simd", "polars-core/rows", "itoa", "zmij", "fast-float2", "simdutf8"]
 decompress = ["flate2/zlib-rs", "zstd"]
 dtype-u8 = ["polars-core/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16"]
+dtype-u128 = ["polars-core/dtype-u128"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
 dtype-i128 = ["polars-core/dtype-i128"]
+dtype-f16 = ["polars-core/dtype-f16"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
+dtype-extension = ["polars-core/dtype-extension"]
 object = ["polars-core/object"]
 dtype-datetime = [
   "polars-core/dtype-datetime",
@@ -112,15 +124,14 @@ async = [
   "async-trait",
   "futures",
   "tokio",
-  "tokio-util",
   "polars-error/regex",
   "polars-parquet?/async",
+  "polars-utils/async-utils",
 ]
 cloud = [
   "object_store",
   "async",
   "polars-error/object_store",
-  "url",
   "serde_json",
   "serde",
   "file_cache",
@@ -135,6 +146,7 @@ http = ["object_store/http", "cloud"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
 simd = []
 python = ["pyo3", "polars-error/python", "polars-utils/python"]
+allow_unused = []
 
 [package.metadata.docs.rs]
 all-features = true

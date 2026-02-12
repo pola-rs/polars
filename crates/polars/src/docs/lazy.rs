@@ -277,7 +277,7 @@
 //!
 //!             Ok(Some(out.into_series()))
 //!         },
-//!         GetOutput::from_type(DataType::Float32),
+//!         |_, f| Ok(Field::new(f.name().clone(), DataType::Float32))
 //!     )])
 //!     .collect()
 //! }

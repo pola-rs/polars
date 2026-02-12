@@ -39,8 +39,14 @@ pub fn replace(s: &Series, old: &ListChunked, new: &ListChunked) -> PolarsResult
         nyi = "`replace` with a replacement pattern per row"
     );
 
-    let old = old.explode(true)?;
-    let new = new.explode(true)?;
+    let old = old.explode(ExplodeOptions {
+        empty_as_null: false,
+        keep_nulls: true,
+    })?;
+    let new = new.explode(ExplodeOptions {
+        empty_as_null: false,
+        keep_nulls: true,
+    })?;
 
     if old.is_empty() {
         return Ok(s.clone());
@@ -83,8 +89,14 @@ pub fn replace_or_default(
         nyi = "`replace_strict` with a replacement pattern per row"
     );
 
-    let old = old.explode(true)?;
-    let new = new.explode(true)?;
+    let old = old.explode(ExplodeOptions {
+        empty_as_null: false,
+        keep_nulls: true,
+    })?;
+    let new = new.explode(ExplodeOptions {
+        empty_as_null: false,
+        keep_nulls: true,
+    })?;
 
     polars_ensure!(
         default.len() == s.len() || default.len() == 1,
@@ -136,8 +148,14 @@ pub fn replace_strict(
         nyi = "`replace_strict` with a replacement pattern per row"
     );
 
-    let old = old.explode(true)?;
-    let new = new.explode(true)?;
+    let old = old.explode(ExplodeOptions {
+        empty_as_null: false,
+        keep_nulls: true,
+    })?;
+    let new = new.explode(ExplodeOptions {
+        empty_as_null: false,
+        keep_nulls: true,
+    })?;
 
     if old.is_empty() {
         polars_ensure!(
@@ -148,10 +166,20 @@ pub fn replace_strict(
     }
     validate_old(&old)?;
 
+    // Extra check because strict_cast is too permissive, e.g. allows string -> struct cast.
+    if old.dtype().can_cast_to(s.dtype()) != Some(true) {
+        polars_bail!(
+            InvalidOperation: "cannot use values of type `{}` to replace values in a column of type `{}`",
+            old.dtype(),
+            s.dtype()
+        )
+    }
+
     let old = old.strict_cast(s.dtype())?;
+
     let new = match return_dtype {
         Some(dtype) => new.strict_cast(&dtype)?,
-        None => new.clone(),
+        None => new,
     };
 
     if new.len() == 1 {
@@ -305,7 +333,7 @@ fn create_replacer(mut old: Series, mut new: Series, add_mask: bool) -> PolarsRe
     } else {
         vec![old.into(), new.into()]
     };
-    let out = unsafe { DataFrame::new_no_checks(len, cols) };
+    let out = unsafe { DataFrame::new_unchecked(len, cols) };
     Ok(out)
 }
 

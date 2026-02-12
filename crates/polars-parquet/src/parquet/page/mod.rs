@@ -92,6 +92,10 @@ impl CompressedDataPage {
         self.num_rows
     }
 
+    pub fn null_count(&self) -> Option<usize> {
+        self.header().null_count()
+    }
+
     /// Decodes the raw statistics into a statistics
     pub fn statistics(&self) -> Option<ParquetResult<Statistics>> {
         match &self.header {
@@ -260,13 +264,6 @@ impl Page {
         match self {
             Self::Data(page) => page.buffer.to_mut(),
             Self::Dict(page) => page.buffer.to_mut(),
-        }
-    }
-
-    pub(crate) fn unwrap_data(self) -> DataPage {
-        match self {
-            Self::Data(page) => page,
-            _ => panic!(),
         }
     }
 }

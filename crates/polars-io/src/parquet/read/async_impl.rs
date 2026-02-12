@@ -4,6 +4,7 @@ use arrow::datatypes::ArrowSchemaRef;
 use object_store::path::Path as ObjectPath;
 use polars_core::prelude::*;
 use polars_parquet::write::FileMetadata;
+use polars_utils::pl_path::PlRefPath;
 
 use crate::cloud::{
     CloudLocation, CloudOptions, PolarsObjectStore, build_object_store, object_path_from_str,
@@ -20,7 +21,7 @@ pub struct ParquetObjectStore {
 
 impl ParquetObjectStore {
     pub async fn from_uri(
-        uri: &str,
+        uri: PlRefPath,
         options: Option<&CloudOptions>,
         metadata: Option<FileMetadataRef>,
     ) -> PolarsResult<Self> {

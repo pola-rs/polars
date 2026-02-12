@@ -4,7 +4,7 @@ pub use polars_io::csv::write::CsvWriterOptions;
 #[cfg(feature = "ipc")]
 pub use polars_io::ipc::IpcWriterOptions;
 #[cfg(feature = "json")]
-pub use polars_io::json::JsonWriterOptions;
+pub use polars_io::ndjson::NDJsonWriterOptions;
 #[cfg(feature = "parquet")]
 pub use polars_io::parquet::write::ParquetWriteOptions;
 pub use polars_ops::prelude::{JoinArgs, JoinType, JoinValidation};
@@ -14,8 +14,8 @@ pub use polars_ops::prelude::{RankMethod, RankOptions};
 pub use polars_plan::client::prepare_cloud_plan;
 pub use polars_plan::dsl::AnonymousScanOptions;
 pub use polars_plan::plans::{AnonymousScan, AnonymousScanArgs, Literal, LiteralValue, NULL, Null};
-pub use polars_plan::prelude::UnionArgs;
 pub(crate) use polars_plan::prelude::*;
+pub use polars_plan::prelude::{PlanCallback, UnionArgs};
 #[cfg(feature = "rolling_window_by")]
 pub use polars_time::Duration;
 #[cfg(feature = "dynamic_group_by")]

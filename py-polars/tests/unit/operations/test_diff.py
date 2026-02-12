@@ -1,7 +1,7 @@
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal
 
 
@@ -23,7 +23,7 @@ def test_diff_scalarity() -> None:
         }
     )
 
-    with pytest.raises(ComputeError, match="'n' must be scalar value"):
+    with pytest.raises(ShapeError, match="'n' must be a scalar value"):
         df.select(pl.col("a").diff("n"))
 
     result = df.select(pl.col("a").diff(pl.col("n").mean().cast(pl.Int32)))

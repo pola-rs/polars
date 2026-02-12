@@ -14,25 +14,21 @@ use crate::utils::EnterPolarsExt;
 #[pymethods]
 impl PyDataFrame {
     /// Serialize into binary data.
-    fn serialize_binary(slf: Bound<'_, Self>, py_f: PyObject) -> PyResult<()> {
+    fn serialize_binary(slf: Bound<'_, Self>, py_f: Py<PyAny>) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let mut writer = BufWriter::new(file);
 
-        let mut slf_1 = slf.try_borrow_mut();
-        let slf_1: Result<&mut PyDataFrame, _> = slf_1.as_deref_mut();
-        let mut slf_2: Option<PyDataFrame> = (slf_1.is_err()).then(|| (*slf.borrow()).clone());
-
-        let slf: &mut PyDataFrame = slf_1.unwrap_or_else(|_| slf_2.as_mut().unwrap());
-
         Ok(slf
+            .borrow()
             .df
+            .write()
             .serialize_into_writer(&mut writer)
             .map_err(PyPolarsErr::from)?)
     }
 
     /// Deserialize a file-like object containing binary data into a DataFrame.
     #[staticmethod]
-    fn deserialize_binary(py: Python<'_>, py_f: PyObject) -> PyResult<Self> {
+    fn deserialize_binary(py: Python<'_>, py_f: Py<PyAny>) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
         let mut file = BufReader::new(file);
 
@@ -41,11 +37,11 @@ impl PyDataFrame {
 
     /// Serialize into a JSON string.
     #[cfg(feature = "json")]
-    pub fn serialize_json(&mut self, py: Python<'_>, py_f: PyObject) -> PyResult<()> {
+    pub fn serialize_json(&self, py: Python<'_>, py_f: Py<PyAny>) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
         py.enter_polars(|| {
-            serde_json::to_writer(writer, &self.df)
+            serde_json::to_writer(writer, &*self.df.read())
                 .map_err(|err| ComputeError::new_err(err.to_string()))
         })
     }

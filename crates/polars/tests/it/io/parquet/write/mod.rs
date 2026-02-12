@@ -7,6 +7,7 @@ use std::io::{Cursor, Read, Seek};
 use polars::io::SerReader;
 use polars::io::parquet::read::ParquetReader;
 use polars::io::parquet::write::ParquetWriter;
+use polars_buffer::Buffer;
 use polars_core::df;
 use polars_core::prelude::*;
 use polars_parquet::parquet::compression::{BrotliLevel, CompressionOptions};
@@ -19,7 +20,6 @@ use polars_parquet::parquet::write::{
     Compressor, DynIter, DynStreamingIterator, FileWriter, Version, WriteOptions,
 };
 use polars_parquet::read::read_metadata;
-use polars_utils::mmap::MemReader;
 use primitive::array_to_page_v1;
 
 use super::{Array, alltypes_plain, alltypes_statistics};
@@ -42,7 +42,9 @@ pub fn array_to_page(
 }
 
 fn read_column<R: Read + Seek>(reader: &mut R) -> ParquetResult<(Array, Option<Statistics>)> {
-    let memreader = MemReader::from_reader(reader)?;
+    let mut v = Vec::new();
+    reader.read_to_end(&mut v)?;
+    let memreader = Cursor::new(Buffer::from_vec(v));
     let (a, statistics) = super::read::read_column(memreader, 0, "col")?;
     Ok((a, statistics))
 }
@@ -87,7 +89,7 @@ fn test_column(column: &str, compression: CompressionOptions) -> ParquetResult<(
     let writer = Cursor::new(vec![]);
     let mut writer = FileWriter::new(writer, schema, options, None);
 
-    writer.write(DynIter::new(columns))?;
+    writer.write(u64::MAX, DynIter::new(columns))?;
     writer.end(None)?;
 
     let data = writer.into_inner().into_inner();
@@ -202,7 +204,7 @@ fn basic() -> ParquetResult<()> {
     let writer = Cursor::new(vec![]);
     let mut writer = FileWriter::new(writer, schema, options, None);
 
-    writer.write(DynIter::new(columns))?;
+    writer.write(u64::MAX, DynIter::new(columns))?;
     writer.end(None)?;
 
     let data = writer.into_inner().into_inner();

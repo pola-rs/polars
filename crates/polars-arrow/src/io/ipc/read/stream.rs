@@ -1,7 +1,8 @@
-use std::io::Read;
+use std::io::{Read, Seek};
 
 use arrow_format::ipc::planus::ReadAsRoot;
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err};
+use polars_utils::bool::UnsafeBool;
 
 use super::super::CONTINUATION_MARKER;
 use super::common::*;
@@ -86,14 +87,14 @@ impl StreamState {
 
 /// Reads the next item, yielding `None` if the stream is done,
 /// and a [`StreamState`] otherwise.
-fn read_next<R: Read>(
+fn read_next<R: Read + Seek>(
     reader: &mut R,
     metadata: &StreamMetadata,
     dictionaries: &mut Dictionaries,
     message_buffer: &mut Vec<u8>,
-    data_buffer: &mut Vec<u8>,
     projection: &Option<ProjectionInfo>,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<Option<StreamState>> {
     // determine metadata length
     let mut meta_length: [u8; 4] = [0; 4];
@@ -153,16 +154,7 @@ fn read_next<R: Read>(
 
     match header {
         arrow_format::ipc::MessageHeaderRef::RecordBatch(batch) => {
-            data_buffer.clear();
-            data_buffer.try_reserve(block_length)?;
-            reader
-                .by_ref()
-                .take(block_length as u64)
-                .read_to_end(data_buffer)?;
-
-            let file_size = data_buffer.len() as u64;
-
-            let mut reader = std::io::Cursor::new(data_buffer);
+            let cur_pos = reader.stream_position()?;
 
             let chunk = read_record_batch(
                 batch,
@@ -172,11 +164,18 @@ fn read_next<R: Read>(
                 None,
                 dictionaries,
                 metadata.version,
-                &mut reader,
+                &mut (&mut *reader).take(block_length as u64),
                 0,
-                file_size,
                 scratch,
+                checked,
             );
+
+            let new_pos = reader.stream_position()?;
+            let read_size = new_pos - cur_pos;
+
+            reader.seek(std::io::SeekFrom::Current(
+                block_length as i64 - read_size as i64,
+            ))?;
 
             if let Some(ProjectionInfo { map, .. }) = projection {
                 // re-order according to projection
@@ -188,26 +187,25 @@ fn read_next<R: Read>(
             }
         },
         arrow_format::ipc::MessageHeaderRef::DictionaryBatch(batch) => {
-            data_buffer.clear();
-            data_buffer.try_reserve(block_length)?;
-            reader
-                .by_ref()
-                .take(block_length as u64)
-                .read_to_end(data_buffer)?;
-
-            let file_size = data_buffer.len() as u64;
-            let mut dict_reader = std::io::Cursor::new(&data_buffer);
+            let cur_pos = reader.stream_position()?;
 
             read_dictionary(
                 batch,
                 &metadata.schema,
                 &metadata.ipc_schema,
                 dictionaries,
-                &mut dict_reader,
+                &mut (&mut *reader).take(block_length as u64),
                 0,
-                file_size,
                 scratch,
+                checked,
             )?;
+
+            let new_pos = reader.stream_position()?;
+            let read_size = new_pos - cur_pos;
+
+            reader.seek(std::io::SeekFrom::Current(
+                block_length as i64 - read_size as i64,
+            ))?;
 
             // read the next message until we encounter a RecordBatch message
             read_next(
@@ -215,9 +213,9 @@ fn read_next<R: Read>(
                 metadata,
                 dictionaries,
                 message_buffer,
-                data_buffer,
                 projection,
                 scratch,
+                checked,
             )
         },
         _ => polars_bail!(oos = OutOfSpecKind::UnexpectedMessageType),
@@ -235,13 +233,13 @@ pub struct StreamReader<R: Read> {
     metadata: StreamMetadata,
     dictionaries: Dictionaries,
     finished: bool,
-    data_buffer: Vec<u8>,
     message_buffer: Vec<u8>,
     projection: Option<ProjectionInfo>,
     scratch: Vec<u8>,
+    checked: UnsafeBool,
 }
 
-impl<R: Read> StreamReader<R> {
+impl<R: Read + Seek> StreamReader<R> {
     /// Try to create a new stream reader
     ///
     /// The first message in the stream is the schema, the reader will fail if it does not
@@ -256,11 +254,21 @@ impl<R: Read> StreamReader<R> {
             metadata,
             dictionaries: Default::default(),
             finished: false,
-            data_buffer: Default::default(),
             message_buffer: Default::default(),
             projection,
             scratch: Default::default(),
+            checked: UnsafeBool::default(),
         }
+    }
+
+    /// # Safety
+    /// Don't do expensive checks.
+    /// This means the data source has to be trusted to be correct.
+    pub unsafe fn unchecked(mut self) -> Self {
+        unsafe {
+            self.checked = UnsafeBool::new_false();
+        }
+        self
     }
 
     /// Return the schema of the stream
@@ -290,9 +298,9 @@ impl<R: Read> StreamReader<R> {
             &self.metadata,
             &mut self.dictionaries,
             &mut self.message_buffer,
-            &mut self.data_buffer,
             &self.projection,
             &mut self.scratch,
+            self.checked,
         )?;
         if batch.is_none() {
             self.finished = true;
@@ -301,7 +309,7 @@ impl<R: Read> StreamReader<R> {
     }
 }
 
-impl<R: Read> Iterator for StreamReader<R> {
+impl<R: Read + Seek> Iterator for StreamReader<R> {
     type Item = PolarsResult<StreamState>;
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -7,7 +7,8 @@ use arrow::bitmap::Bitmap;
 use arrow::bitmap::utils::count_zeros;
 use arrow::datatypes::ArrowDataType;
 use arrow::legacy::utils::CustomIterTools;
-use arrow::types::{days_ms, f16, i256, months_days_ns};
+use arrow::types::{days_ms, i256, months_days_ns};
+use polars_utils::float16::pf16;
 
 use super::TotalEqKernel;
 use crate::comparisons::dyn_array::{array_tot_eq_missing_kernel, array_tot_ne_missing_kernel};
@@ -23,7 +24,7 @@ where
     if bm.len() == 1 {
         bm
     } else {
-        assert!(width > 0 && bm.len() % width == 0);
+        assert!(width > 0 && bm.len().is_multiple_of(width));
 
         let (slice, offset, _len) = bm.as_slice();
         (0..bm.len() / width)
@@ -40,11 +41,10 @@ impl TotalEqKernel for FixedSizeListArray {
         // make any sense.
 
         assert_eq!(self.len(), other.len());
-        let ArrowDataType::FixedSizeList(self_type, self_width) = self.dtype().to_logical_type()
-        else {
+        let ArrowDataType::FixedSizeList(self_type, self_width) = self.dtype().to_storage() else {
             panic!("array comparison called with non-array type");
         };
-        let ArrowDataType::FixedSizeList(other_type, other_width) = other.dtype().to_logical_type()
+        let ArrowDataType::FixedSizeList(other_type, other_width) = other.dtype().to_storage()
         else {
             panic!("array comparison called with non-array type");
         };
@@ -67,11 +67,10 @@ impl TotalEqKernel for FixedSizeListArray {
 
     fn tot_ne_kernel(&self, other: &Self) -> Bitmap {
         assert_eq!(self.len(), other.len());
-        let ArrowDataType::FixedSizeList(self_type, self_width) = self.dtype().to_logical_type()
-        else {
+        let ArrowDataType::FixedSizeList(self_type, self_width) = self.dtype().to_storage() else {
             panic!("array comparison called with non-array type");
         };
-        let ArrowDataType::FixedSizeList(other_type, other_width) = other.dtype().to_logical_type()
+        let ArrowDataType::FixedSizeList(other_type, other_width) = other.dtype().to_storage()
         else {
             panic!("array comparison called with non-array type");
         };
@@ -93,10 +92,10 @@ impl TotalEqKernel for FixedSizeListArray {
     }
 
     fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        let ArrowDataType::FixedSizeList(self_type, width) = self.dtype().to_logical_type() else {
+        let ArrowDataType::FixedSizeList(self_type, width) = self.dtype().to_storage() else {
             panic!("array comparison called with non-array type");
         };
-        assert_eq!(self_type.dtype(), other.dtype().to_logical_type());
+        assert_eq!(self_type.dtype(), other.dtype().to_storage());
 
         let width = *width;
 
@@ -114,10 +113,10 @@ impl TotalEqKernel for FixedSizeListArray {
     }
 
     fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        let ArrowDataType::FixedSizeList(self_type, width) = self.dtype().to_logical_type() else {
+        let ArrowDataType::FixedSizeList(self_type, width) = self.dtype().to_storage() else {
             panic!("array comparison called with non-array type");
         };
-        assert_eq!(self_type.dtype(), other.dtype().to_logical_type());
+        assert_eq!(self_type.dtype(), other.dtype().to_storage());
 
         let width = *width;
 
@@ -174,7 +173,7 @@ macro_rules! compare {
             PH::Primitive(PR::UInt32) => call_binary!(PrimitiveArray<u32>),
             PH::Primitive(PR::UInt64) => call_binary!(PrimitiveArray<u64>),
             PH::Primitive(PR::UInt128) => call_binary!(PrimitiveArray<u128>),
-            PH::Primitive(PR::Float16) => call_binary!(PrimitiveArray<f16>),
+            PH::Primitive(PR::Float16) => call_binary!(PrimitiveArray<pf16>),
             PH::Primitive(PR::Float32) => call_binary!(PrimitiveArray<f32>),
             PH::Primitive(PR::Float64) => call_binary!(PrimitiveArray<f64>),
             PH::Primitive(PR::Int256) => call_binary!(PrimitiveArray<i256>),
@@ -182,6 +181,7 @@ macro_rules! compare {
             PH::Primitive(PR::MonthDayNano) => {
                 call_binary!(PrimitiveArray<months_days_ns>)
             },
+            PH::Primitive(PR::MonthDayMillis) => unimplemented!(),
 
             #[cfg(feature = "dtype-array")]
             PH::FixedSizeList => call_binary!(arrow::array::FixedSizeListArray),
@@ -210,6 +210,7 @@ macro_rules! compare {
             PH::Dictionary(I::UInt16) => call_binary!(DictionaryArray<u16>),
             PH::Dictionary(I::UInt32) => call_binary!(DictionaryArray<u32>),
             PH::Dictionary(I::UInt64) => call_binary!(DictionaryArray<u64>),
+            PH::Dictionary(I::UInt128) => call_binary!(DictionaryArray<u128>),
         }
     }};
 }

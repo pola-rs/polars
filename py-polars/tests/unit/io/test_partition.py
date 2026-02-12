@@ -1,24 +1,21 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 
 import polars as pl
-from polars.io.partition import (
-    PartitionByKey,
-    PartitionMaxSize,
-    PartitionParted,
-)
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric.strategies import dataframes
+from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
-    from polars.io.partition import BasePartitionContext, KeyedPartitionContext
+    from polars._typing import EngineType
+    from polars.io.partition import FileProviderArgs
 
 
 class IOType(TypedDict):
@@ -36,14 +33,67 @@ io_types: list[IOType] = [
     {"ext": "ipc", "scan": pl.scan_ipc, "sink": pl.LazyFrame.sink_ipc},
 ]
 
+engines: list[EngineType] = [
+    "streaming",
+    "in-memory",
+]
+
+
+def test_partition_by_api() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"at least one of \('key', 'max_rows_per_file', 'approximate_bytes_per_file'\) must be specified for PartitionBy",
+    ):
+        pl.PartitionBy("")
+
+    error_cx = pytest.raises(
+        ValueError, match="cannot use 'include_key' without specifying 'key'"
+    )
+
+    with error_cx:
+        pl.PartitionBy("", include_key=True, max_rows_per_file=1)
+
+    with error_cx:
+        pl.PartitionBy("", include_key=False, max_rows_per_file=1)
+
+    assert (
+        pl.PartitionBy("", key="key")._pl_partition_by.approximate_bytes_per_file
+        == 4_294_967_295
+    )
+
+    # If `max_rows_per_file` was given then `approximate_bytes_per_file` should
+    # default to disabled (u64::MAX).
+    assert (
+        pl.PartitionBy(
+            "", max_rows_per_file=1
+        )._pl_partition_by.approximate_bytes_per_file
+        == (1 << 64) - 1
+    )
+
+    assert (
+        pl.PartitionBy(
+            "", key="key", max_rows_per_file=1
+        )._pl_partition_by.approximate_bytes_per_file
+        == (1 << 64) - 1
+    )
+
+    assert (
+        pl.PartitionBy(
+            "", max_rows_per_file=1, approximate_bytes_per_file=1024
+        )._pl_partition_by.approximate_bytes_per_file
+        == 1024
+    )
+
 
 @pytest.mark.parametrize("io_type", io_types)
+@pytest.mark.parametrize("engine", engines)
 @pytest.mark.parametrize("length", [0, 1, 4, 5, 6, 7])
 @pytest.mark.parametrize("max_size", [1, 2, 3])
 @pytest.mark.write_disk
 def test_max_size_partition(
     tmp_path: Path,
     io_type: IOType,
+    engine: EngineType,
     length: int,
     max_size: int,
 ) -> None:
@@ -51,8 +101,8 @@ def test_max_size_partition(
 
     (io_type["sink"])(
         lf,
-        PartitionMaxSize(tmp_path, max_size=max_size),
-        engine="streaming",
+        pl.PartitionBy(tmp_path, max_rows_per_file=max_size),
+        engine=engine,
         # We need to sync here because platforms do not guarantee that a close on
         # one thread is immediately visible on another thread.
         #
@@ -63,7 +113,7 @@ def test_max_size_partition(
 
     i = 0
     while length > 0:
-        assert (io_type["scan"])(tmp_path / f"{i}.{io_type['ext']}").select(
+        assert (io_type["scan"])(tmp_path / f"{i:08}.{io_type['ext']}").select(
             pl.len()
         ).collect()[0, 0] == min(max_size, length)
 
@@ -71,10 +121,40 @@ def test_max_size_partition(
         i += 1
 
 
+def test_partition_by_max_rows_per_file() -> None:
+    files = {}
+
+    def file_path_provider(args: FileProviderArgs) -> Any:
+        f = io.BytesIO()
+        files[args.index_in_partition] = f
+        return f
+
+    df = pl.select(x=pl.int_range(0, 100))
+    df.lazy().sink_parquet(
+        pl.PartitionBy("", file_path_provider=file_path_provider, max_rows_per_file=10)
+    )
+
+    for f in files.values():
+        f.seek(0)
+
+    assert_frame_equal(
+        pl.scan_parquet([files[i] for i in range(len(files))]).collect(),  # type: ignore[arg-type]
+        df,
+    )
+
+    for f in files.values():
+        f.seek(0)
+
+    assert [
+        pl.scan_parquet(files[i]).select(pl.len()).collect().item()
+        for i in range(len(files))
+    ] == [10, 10, 10, 10, 10, 10, 10, 10, 10, 10]
+
+
 @pytest.mark.parametrize("io_type", io_types)
+@pytest.mark.parametrize("engine", engines)
 def test_max_size_partition_lambda(
-    tmp_path: Path,
-    io_type: IOType,
+    tmp_path: Path, io_type: IOType, engine: EngineType
 ) -> None:
     length = 17
     max_size = 3
@@ -82,12 +162,14 @@ def test_max_size_partition_lambda(
 
     (io_type["sink"])(
         lf,
-        PartitionMaxSize(
+        pl.PartitionBy(
             tmp_path,
-            file_path=lambda ctx: ctx.file_path.with_name("abc-" + ctx.file_path.name),
-            max_size=max_size,
+            file_path_provider=lambda args: (
+                tmp_path / f"abc-{args.index_in_partition:08}.{io_type['ext']}"
+            ),
+            max_rows_per_file=max_size,
         ),
-        engine="streaming",
+        engine=engine,
         # We need to sync here because platforms do not guarantee that a close on
         # one thread is immediately visible on another thread.
         #
@@ -98,7 +180,7 @@ def test_max_size_partition_lambda(
 
     i = 0
     while length > 0:
-        assert (io_type["scan"])(tmp_path / f"abc-{i}.{io_type['ext']}").select(
+        assert (io_type["scan"])(tmp_path / f"abc-{i:08}.{io_type['ext']}").select(
             pl.len()
         ).collect()[0, 0] == min(max_size, length)
 
@@ -107,19 +189,25 @@ def test_max_size_partition_lambda(
 
 
 @pytest.mark.parametrize("io_type", io_types)
+@pytest.mark.parametrize("engine", engines)
 @pytest.mark.write_disk
 def test_partition_by_key(
     tmp_path: Path,
     io_type: IOType,
+    engine: EngineType,
 ) -> None:
     lf = pl.Series("a", [i % 4 for i in range(7)], pl.Int64).to_frame().lazy()
 
     (io_type["sink"])(
         lf,
-        PartitionByKey(
-            tmp_path, file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}", by="a"
+        pl.PartitionBy(
+            tmp_path,
+            file_path_provider=lambda args: (
+                f"{args.partition_keys.item()}.{io_type['ext']}"
+            ),
+            key="a",
         ),
-        engine="streaming",
+        engine=engine,
         # We need to sync here because platforms do not guarantee that a close on
         # one thread is immediately visible on another thread.
         #
@@ -152,12 +240,14 @@ def test_partition_by_key(
     # Change the datatype.
     (io_type["sink"])(
         lf,
-        PartitionByKey(
+        pl.PartitionBy(
             tmp_path,
-            file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}",
-            by=pl.col.a.cast(pl.String()),
+            file_path_provider=lambda args: (
+                f"{args.partition_keys.item()}.{io_type['ext']}"
+            ),
+            key=pl.col.a.cast(pl.String()),
         ),
-        engine="streaming",
+        engine=engine,
         sync_on_close="data",
     )
 
@@ -187,94 +277,13 @@ def test_partition_by_key(
     )
 
 
-@pytest.mark.parametrize("io_type", io_types)
-@pytest.mark.write_disk
-def test_partition_parted(
-    tmp_path: Path,
-    io_type: IOType,
-) -> None:
-    s = pl.Series("a", [1, 1, 2, 3, 3, 4, 4, 4, 6], pl.Int64)
-    lf = s.to_frame().lazy()
-
-    (io_type["sink"])(
-        lf,
-        PartitionParted(
-            tmp_path, file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}", by="a"
-        ),
-        engine="streaming",
-        # We need to sync here because platforms do not guarantee that a close on
-        # one thread is immediately visible on another thread.
-        #
-        # "Multithreaded processes and close()"
-        # https://man7.org/linux/man-pages/man2/close.2.html
-        sync_on_close="data",
-    )
-
-    rle = s.rle()
-
-    for i, row in enumerate(rle.struct.unnest().rows(named=True)):
-        assert_series_equal(
-            (io_type["scan"])(tmp_path / f"{i}.{io_type['ext']}").collect().to_series(),
-            pl.Series("a", [row["value"]] * row["len"], pl.Int64),
-        )
-
-    scan_flags = (
-        {"schema_overrides": pl.Schema({"a_str": pl.String()})}
-        if io_type["ext"] == "csv"
-        else {}
-    )
-
-    # Change the datatype.
-    (io_type["sink"])(
-        lf,
-        PartitionParted(
-            tmp_path,
-            file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}",
-            by=[pl.col.a, pl.col.a.cast(pl.String()).alias("a_str")],
-        ),
-        engine="streaming",
-        sync_on_close="data",
-    )
-
-    for i, row in enumerate(rle.struct.unnest().rows(named=True)):
-        assert_frame_equal(
-            (io_type["scan"])(
-                tmp_path / f"{i}.{io_type['ext']}", **scan_flags
-            ).collect(),
-            pl.DataFrame(
-                [
-                    pl.Series("a", [row["value"]] * row["len"], pl.Int64),
-                    pl.Series("a_str", [str(row["value"])] * row["len"], pl.String),
-                ]
-            ),
-        )
-
-    # No include key.
-    (io_type["sink"])(
-        lf,
-        PartitionParted(
-            tmp_path,
-            file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}",
-            by=[pl.col.a.cast(pl.String()).alias("a_str")],
-            include_key=False,
-        ),
-        engine="streaming",
-        sync_on_close="data",
-    )
-
-    for i, row in enumerate(rle.struct.unnest().rows(named=True)):
-        assert_series_equal(
-            (io_type["scan"])(tmp_path / f"{i}.{io_type['ext']}").collect().to_series(),
-            pl.Series("a", [row["value"]] * row["len"], pl.Int64),
-        )
-
-
 # We only deal with self-describing formats
 @pytest.mark.parametrize("io_type", [io_types[2], io_types[3]])
-@pytest.mark.write_disk
+@example(df=pl.DataFrame({"a": [0.0, -0.0]}, schema={"a": pl.Float16}))
 @given(
     df=dataframes(
         min_cols=1,
+        min_size=1,
         excluded_dtypes=[
             pl.Decimal,  # Bug see: https://github.com/pola-rs/polars/issues/21684
             pl.Duration,  # Bug see: https://github.com/pola-rs/polars/issues/21964
@@ -284,61 +293,30 @@ def test_partition_parted(
             pl.Struct,
             pl.Array,
             pl.List,
+            pl.Extension,  # Can't be cast to string
         ],
     )
 )
 def test_partition_by_key_parametric(
-    tmp_path_factory: pytest.TempPathFactory,
     io_type: IOType,
     df: pl.DataFrame,
 ) -> None:
     col1 = df.columns[0]
 
-    tmp_path = tmp_path_factory.mktemp("data")
-
-    dfs = df.partition_by(col1)
-    (io_type["sink"])(
-        df.lazy(),
-        PartitionByKey(
-            tmp_path, file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}", by=col1
-        ),
-        engine="streaming",
-        # We need to sync here because platforms do not guarantee that a close on
-        # one thread is immediately visible on another thread.
-        #
-        # "Multithreaded processes and close()"
-        # https://man7.org/linux/man-pages/man2/close.2.html
-        sync_on_close="data",
-    )
-
-    for i, df in enumerate(dfs):
-        assert_frame_equal(
-            df,
-            (io_type["scan"])(
-                tmp_path / f"{i}.{io_type['ext']}",
-            ).collect(),
-        )
-
-
-def test_max_size_partition_collect_files(tmp_path: Path) -> None:
-    length = 17
-    max_size = 3
-    lf = pl.Series("a", range(length), pl.Int64).to_frame().lazy()
-
-    io_type = io_types[0]
     output_files = []
 
-    def file_path_cb(ctx: BasePartitionContext) -> Path:
-        print(ctx)
-        print(ctx.full_path)
-        output_files.append(ctx.full_path)
-        print(ctx.file_path)
-        return ctx.file_path
+    def file_path_provider(args: FileProviderArgs) -> io.BytesIO:
+        f = io.BytesIO()
+        output_files.append(f)
+        return f
 
     (io_type["sink"])(
-        lf,
-        PartitionMaxSize(tmp_path, file_path=file_path_cb, max_size=max_size),
-        engine="streaming",
+        df.lazy(),
+        pl.PartitionBy(
+            "",
+            file_path_provider=file_path_provider,
+            key=col1,
+        ),
         # We need to sync here because platforms do not guarantee that a close on
         # one thread is immediately visible on another thread.
         #
@@ -347,11 +325,29 @@ def test_max_size_partition_collect_files(tmp_path: Path) -> None:
         sync_on_close="data",
     )
 
-    assert output_files == [tmp_path / f"{i}.{io_type['ext']}" for i in range(6)]
+    for f in output_files:
+        f.seek(0)
+
+    assert_frame_equal(
+        io_type["scan"](output_files).collect(),
+        df,
+        check_row_order=False,
+    )
+
+
+def test_partition_by_file_naming_preserves_order(tmp_path: Path) -> None:
+    df = pl.DataFrame({"x": range(100)})
+    df.lazy().sink_parquet(pl.PartitionBy(tmp_path, max_rows_per_file=1))
+
+    output_files = sorted(tmp_path.iterdir())
+    assert len(output_files) == 100
+
+    assert_frame_equal(pl.scan_parquet(output_files).collect(), df)
 
 
 @pytest.mark.parametrize(("io_type"), io_types)
-def test_partition_to_memory(io_type: IOType) -> None:
+@pytest.mark.parametrize("engine", engines)
+def test_partition_to_memory(io_type: IOType, engine: EngineType) -> None:
     df = pl.DataFrame(
         {
             "a": [5, 10, 1996],
@@ -360,156 +356,182 @@ def test_partition_to_memory(io_type: IOType) -> None:
 
     output_files = {}
 
-    def file_path_cb(ctx: BasePartitionContext) -> io.BytesIO:
+    def file_path_provider(args: FileProviderArgs) -> io.BytesIO:
         f = io.BytesIO()
-        output_files[ctx.file_path] = f
+        output_files[args.index_in_partition] = f
         return f
 
-    io_type["sink"](df.lazy(), PartitionMaxSize("", file_path=file_path_cb, max_size=1))
+    io_type["sink"](
+        df.lazy(),
+        pl.PartitionBy("", file_path_provider=file_path_provider, max_rows_per_file=1),
+        engine=engine,
+    )
 
     assert len(output_files) == df.height
-    for i, (_, value) in enumerate(output_files.items()):
-        value.seek(0)
-        assert_frame_equal(io_type["scan"](value).collect(), df.slice(i, 1))
+
+    for f in output_files.values():
+        f.seek(0)
+
+    assert_frame_equal(
+        io_type["scan"](output_files[0]).collect(), pl.DataFrame({"a": [5]})
+    )
+    assert_frame_equal(
+        io_type["scan"](output_files[1]).collect(), pl.DataFrame({"a": [10]})
+    )
+    assert_frame_equal(
+        io_type["scan"](output_files[2]).collect(), pl.DataFrame({"a": [1996]})
+    )
 
 
-def test_partition_key_order_22645() -> None:
-    paths = []
-
-    def cb(ctx: KeyedPartitionContext) -> io.BytesIO:
-        paths.append(ctx.file_path.parent)
-        return io.BytesIO()  # return an dummy output
-
-    pl.LazyFrame({"a": [1, 2, 3]}).sink_parquet(
-        pl.io.PartitionByKey(
-            "",
-            file_path=cb,
-            by=[pl.col.a.alias("b"), (pl.col.a + 42).alias("c")],
+@pytest.mark.write_disk
+def test_partition_key_order_22645(tmp_path: Path) -> None:
+    pl.LazyFrame({"a": [1]}).sink_parquet(
+        pl.PartitionBy(
+            tmp_path,
+            key=[pl.col.a.alias("b"), (pl.col.a + 42).alias("c")],
         ),
     )
 
-    paths.sort()
-    assert [p.parts for p in paths] == [
-        ("b=1", "c=43"),
-        ("b=2", "c=44"),
-        ("b=3", "c=45"),
-    ]
-
-
-@pytest.mark.parametrize(("io_type"), io_types)
-@pytest.mark.parametrize(
-    ("df", "sorts"),
-    [
-        (pl.DataFrame({"a": [2, 1, 0, 4, 3, 5, 7, 8, 9]}), "a"),
-        (
-            pl.DataFrame(
-                {"a": [2, 1, 0, 4, 3, 5, 7, 8, 9], "b": [f"s{i}" for i in range(9)]}
-            ),
-            "a",
-        ),
-        (
-            pl.DataFrame(
-                {"a": [2, 1, 0, 4, 3, 5, 7, 8, 9], "b": [f"s{i}" for i in range(9)]}
-            ),
-            ["a", "b"],
-        ),
-        (
-            pl.DataFrame(
-                {"a": [2, 1, 0, 4, 3, 5, 7, 8, 9], "b": [f"s{i}" for i in range(9)]}
-            ),
-            "b",
-        ),
-        (
-            pl.DataFrame(
-                {"a": [2, 1, 0, 4, 3, 5, 7, 8, 9], "b": [f"s{i}" for i in range(9)]}
-            ),
-            pl.col.a - pl.col.b.str.slice(1).cast(pl.Int64),
-        ),
-    ],
-)
-def test_partition_to_memory_sort_by(
-    io_type: IOType, df: pl.DataFrame, sorts: str | pl.Expr | list[str | pl.Expr]
-) -> None:
-    output_files = {}
-
-    def file_path_cb(ctx: BasePartitionContext) -> io.BytesIO:
-        f = io.BytesIO()
-        output_files[ctx.file_path] = f
-        return f
-
-    io_type["sink"](
-        df.lazy(),
-        PartitionMaxSize(
-            "", file_path=file_path_cb, max_size=3, per_partition_sort_by=sorts
-        ),
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path / "b=1" / "c=43").collect(),
+        pl.DataFrame({"a": [1], "b": [1], "c": [43]}),
     )
 
-    assert len(output_files) == df.height / 3
-    for i, (_, value) in enumerate(output_files.items()):
-        value.seek(0)
-        assert_frame_equal(
-            io_type["scan"](value).collect(), df.slice(i * 3, 3).sort(sorts)
+
+@pytest.mark.write_disk
+def test_parquet_preserve_order_within_partition_23376(tmp_path: Path) -> None:
+    ll = list(range(20))
+    df = pl.DataFrame({"a": ll})
+    df.lazy().sink_parquet(pl.PartitionBy(tmp_path, max_rows_per_file=1))
+    out = pl.scan_parquet(tmp_path).collect().to_series().to_list()
+    assert ll == out
+
+
+@pytest.mark.write_disk
+def test_file_path_cb_new_cloud_path(tmp_path: Path) -> None:
+    i = 0
+
+    def new_path(_: Any) -> str:
+        nonlocal i
+        p = format_file_uri(f"{tmp_path}/pms-{i:08}.parquet")
+        i += 1
+        return p
+
+    df = pl.DataFrame({"a": [1, 2]})
+    df.lazy().sink_csv(
+        pl.PartitionBy(
+            "s3://bucket-x", file_path_provider=new_path, max_rows_per_file=1
         )
+    )
+
+    assert_frame_equal(pl.scan_csv(tmp_path).collect(), df, check_row_order=False)
 
 
-@pytest.mark.parametrize(("io_type"), io_types)
-def test_partition_to_memory_finish_callback(io_type: IOType) -> None:
+@pytest.mark.write_disk
+def test_partition_empty_string_24545(tmp_path: Path) -> None:
     df = pl.DataFrame(
         {
-            "a": [5, 10, 1996],
+            "a": ["", None, "abc", "xyz"],
+            "b": [1, 2, 3, 4],
         }
     )
 
-    output_files = {}
+    df.write_parquet(tmp_path, partition_by="a")
 
-    def file_path_cb(ctx: BasePartitionContext) -> io.BytesIO:
-        f = io.BytesIO()
-        output_files[ctx.file_path] = f
-        return f
+    assert_frame_equal(pl.read_parquet(tmp_path), df)
 
-    num_calls = 0
 
-    def finish_callback(df: pl.DataFrame) -> None:
-        nonlocal num_calls
-        num_calls += 1
+@pytest.mark.write_disk
+@pytest.mark.parametrize("dtype", [pl.Int64(), pl.Date(), pl.Datetime()])
+def test_partition_empty_dtype_24545(tmp_path: Path, dtype: pl.DataType) -> None:
+    df = pl.DataFrame({"b": [1, 2, 3, 4]}).with_columns(
+        a=pl.col.b.cast(dtype),
+    )
 
-        if io_type["ext"] == "parquet":
-            assert df.height == 3
+    df.write_parquet(tmp_path, partition_by="a")
+    extra = pl.select(b=pl.lit(0, pl.Int64), a=pl.lit(None, dtype))
+    extra.write_parquet(Path(tmp_path / "a=" / "000.parquet"), mkdir=True)
 
-    io_type["sink"](
+    assert_frame_equal(pl.read_parquet(tmp_path), pl.concat([extra, df]))
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+def test_partition_approximate_size(tmp_path: Path) -> None:
+    n_rows = 500_000
+    df = pl.select(a=pl.repeat(0, n_rows), b=pl.int_range(0, n_rows))
+
+    root = tmp_path
+    df.lazy().sink_parquet(
+        pl.PartitionBy(root, approximate_bytes_per_file=200000),
+        row_group_size=10_000,
+    )
+
+    files = sorted(root.iterdir())
+
+    assert len(files) == 30
+
+    assert [
+        pl.scan_parquet(x).select(pl.len()).collect().item() for x in files
+    ] == 29 * [16667] + [16657]
+
+    assert_frame_equal(pl.scan_parquet(root).collect(), df)
+
+
+def test_sink_partitioned_forbid_non_elementwise_key_expr_25535() -> None:
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot use non-elementwise expressions for PartitionBy keys",
+    ):
+        pl.LazyFrame({"a": 1}).sink_parquet(pl.PartitionBy("", key=pl.col("a").sum()))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("scan_func", "sink_func"),
+    [
+        (pl.scan_parquet, pl.LazyFrame.sink_parquet),
+        (pl.scan_ipc, pl.LazyFrame.sink_ipc),
+    ],
+)
+def test_sink_partitioned_no_columns_in_file_25535(
+    tmp_path: Path, scan_func: Any, sink_func: Any
+) -> None:
+    df = pl.DataFrame({"x": [1, 1, 1, 1, 1]})
+    partitioned_root = tmp_path / "partitioned"
+    sink_func(
         df.lazy(),
-        PartitionMaxSize(
-            "", file_path=file_path_cb, max_size=1, finish_callback=finish_callback
-        ),
-    )
-    assert num_calls == 1
-
-    with pytest.raises(FileNotFoundError):
-        io_type["sink"](
-            df.lazy(),
-            PartitionMaxSize(
-                "/path/to/non-existent-paths",
-                max_size=1,
-                finish_callback=finish_callback,
-            ),
-        )
-    assert num_calls == 1  # Should not get called here
-
-
-def test_finish_callback_nested_23306() -> None:
-    data = [{"a": "foo", "b": "bar", "c": ["hello", "ciao", "hola", "bonjour"]}]
-
-    lf = pl.LazyFrame(data)
-
-    def finish_callback(df: None | pl.DataFrame = None) -> None:
-        assert df is not None
-        assert df.height == 1
-
-    partitioning = pl.PartitionByKey(
-        "/",
-        file_path=lambda _: io.BytesIO(),
-        by=["a", "b"],
-        finish_callback=finish_callback,
+        pl.PartitionBy(partitioned_root, key="x", include_key=False),
     )
 
-    lf.sink_parquet(partitioning, mkdir=True)
+    assert_frame_equal(scan_func(partitioned_root).collect(), df)
+
+    max_size_root = tmp_path / "max-size"
+    sink_func(
+        pl.LazyFrame(height=10),
+        pl.PartitionBy(max_size_root, max_rows_per_file=2),
+    )
+
+    assert sum(1 for _ in max_size_root.iterdir()) == 5
+    assert scan_func(max_size_root).collect().shape == (10, 0)
+    assert scan_func(max_size_root).select(pl.len()).collect().item() == 10
+
+
+def test_partition_by_scalar_expr_26294(tmp_path: Path) -> None:
+    pl.LazyFrame(height=5).sink_parquet(
+        pl.PartitionBy(tmp_path, key=pl.lit(1, dtype=pl.Int64))
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).collect(),
+        pl.DataFrame({"literal": [1, 1, 1, 1, 1]}),
+    )
+
+
+def test_partition_by_diff_expr_26370(tmp_path: Path) -> None:
+    q = pl.LazyFrame({"x": [1, 2]}).cast(pl.Decimal(precision=1))
+    q = q.with_columns(pl.col("x").diff().alias("y"), pl.lit(1).alias("z"))
+
+    q.sink_parquet(pl.PartitionBy(tmp_path, key="z"))
+
+    assert_frame_equal(pl.scan_parquet(tmp_path).collect(), q.collect())

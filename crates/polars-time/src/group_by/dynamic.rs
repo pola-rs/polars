@@ -79,8 +79,8 @@ fn check_sortedness_slice(v: &[i64]) -> PolarsResult<()> {
     Ok(())
 }
 
-const LB_NAME: &str = "_lower_boundary";
-const UP_NAME: &str = "_upper_boundary";
+pub const LB_NAME: &str = "_lower_boundary";
+pub const UB_NAME: &str = "_upper_boundary";
 
 pub trait PolarsTemporalGroupby {
     fn rolling(
@@ -141,8 +141,8 @@ impl Wrap<&DataFrame> {
         let (dt, tu, tz): (Column, TimeUnit, Option<TimeZone>) = match time_type {
             Datetime(tu, tz) => (time.clone(), *tu, tz.clone()),
             Date => (
-                time.cast(&Datetime(TimeUnit::Milliseconds, None))?,
-                TimeUnit::Milliseconds,
+                time.cast(&Datetime(TimeUnit::Microseconds, None))?,
+                TimeUnit::Microseconds,
                 None,
             ),
             UInt32 | UInt64 | Int32 => {
@@ -212,8 +212,8 @@ impl Wrap<&DataFrame> {
         let (dt, tu) = match time_type {
             Datetime(tu, _) => (time.clone(), *tu),
             Date => (
-                time.cast(&Datetime(TimeUnit::Milliseconds, None))?,
-                TimeUnit::Milliseconds,
+                time.cast(&Datetime(TimeUnit::Microseconds, None))?,
+                TimeUnit::Microseconds,
             ),
             Int32 => {
                 let time_type = Datetime(TimeUnit::Nanoseconds, None);
@@ -227,7 +227,7 @@ impl Wrap<&DataFrame> {
                 )?;
                 let out = out.cast(&Int64).unwrap().cast(&Int32).unwrap();
                 for k in &mut keys {
-                    if k.name().as_str() == UP_NAME || k.name().as_str() == LB_NAME {
+                    if k.name().as_str() == UB_NAME || k.name().as_str() == LB_NAME {
                         *k = k.cast(&Int64).unwrap().cast(&Int32).unwrap()
                     }
                 }
@@ -245,7 +245,7 @@ impl Wrap<&DataFrame> {
                 )?;
                 let out = out.cast(&Int64).unwrap();
                 for k in &mut keys {
-                    if k.name().as_str() == UP_NAME || k.name().as_str() == LB_NAME {
+                    if k.name().as_str() == UB_NAME || k.name().as_str() == LB_NAME {
                         *k = k.cast(&Int64).unwrap()
                     }
                 }
@@ -309,29 +309,14 @@ impl Wrap<&DataFrame> {
                 _ => unreachable!(),
             };
 
-        let groups = if group_by.is_none() {
-            let vals = dt.physical().downcast_iter().next().unwrap();
-            let ts = vals.values().as_slice();
-            let (groups, lower, upper) = group_by_windows(
-                w,
-                ts,
-                options.closed_window,
-                tu,
-                tz,
-                include_lower_bound,
-                include_upper_bound,
-                options.start_by,
-            )?;
-            update_bounds(lower, upper);
-            PolarsResult::Ok(GroupsType::Slice {
-                groups,
-                rolling: false,
-            })
-        } else {
-            let vals = dt.physical().downcast_iter().next().unwrap();
-            let ts = vals.values().as_slice();
+        let overlapping = match options.closed_window {
+            ClosedWindow::Both => options.period >= options.every,
+            _ => options.period > options.every,
+        };
 
-            let groups = group_by.as_ref().unwrap();
+        let groups = if let Some(groups) = group_by.as_ref() {
+            let vals = dt.physical().downcast_iter().next().unwrap();
+            let ts = vals.values().as_slice();
 
             let iter = groups.par_iter().map(|[start, len]| {
                 let group_offset = *start;
@@ -374,10 +359,22 @@ impl Wrap<&DataFrame> {
             });
 
             update_bounds(lower, upper);
-            PolarsResult::Ok(GroupsType::Slice {
-                groups,
-                rolling: false,
-            })
+            PolarsResult::Ok(GroupsType::new_slice(groups, overlapping, true))
+        } else {
+            let vals = dt.physical().downcast_iter().next().unwrap();
+            let ts = vals.values().as_slice();
+            let (groups, lower, upper) = group_by_windows(
+                w,
+                ts,
+                options.closed_window,
+                tu,
+                tz,
+                include_lower_bound,
+                include_upper_bound,
+                options.start_by,
+            )?;
+            update_bounds(lower, upper);
+            PolarsResult::Ok(GroupsType::new_slice(groups, overlapping, true))
         }?;
         // note that if 'group_by' is none we can be sure that the index column, the lower column and the
         // upper column remain/are sorted
@@ -388,7 +385,7 @@ impl Wrap<&DataFrame> {
         let lower =
             lower_bound.map(|lower| Int64Chunked::new_vec(PlSmallStr::from_static(LB_NAME), lower));
         let upper =
-            upper_bound.map(|upper| Int64Chunked::new_vec(PlSmallStr::from_static(UP_NAME), upper));
+            upper_bound.map(|upper| Int64Chunked::new_vec(PlSmallStr::from_static(UB_NAME), upper));
 
         if options.label == Label::Left {
             let mut lower = lower.clone().unwrap();
@@ -433,30 +430,10 @@ impl Wrap<&DataFrame> {
     ) -> PolarsResult<(Column, GroupPositions)> {
         let mut dt = dt.rechunk();
 
-        let groups = if group_by.is_none() {
-            // a requirement for the index
-            // so we can set this such that downstream code has this info
-            dt.set_sorted_flag(IsSorted::Ascending);
+        let groups = if let Some(groups) = group_by {
             let dt = dt.datetime().unwrap();
             let vals = dt.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
-            PolarsResult::Ok(GroupsType::Slice {
-                groups: group_by_values(
-                    options.period,
-                    options.offset,
-                    ts,
-                    options.closed_window,
-                    tu,
-                    tz,
-                )?,
-                rolling: true,
-            })
-        } else {
-            let dt = dt.datetime().unwrap();
-            let vals = dt.physical().downcast_iter().next().unwrap();
-            let ts = vals.values().as_slice();
-
-            let groups = group_by.unwrap();
 
             let iter = groups.into_par_iter().map(|[start, len]| {
                 let group_offset = start;
@@ -484,10 +461,23 @@ impl Wrap<&DataFrame> {
 
             let groups = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
             let groups = POOL.install(|| flatten_par(&groups));
-            PolarsResult::Ok(GroupsType::Slice {
-                groups,
-                rolling: true,
-            })
+            PolarsResult::Ok(GroupsType::new_slice(groups, true, true))
+        } else {
+            // a requirement for the index
+            // so we can set this such that downstream code has this info
+            dt.set_sorted_flag(IsSorted::Ascending);
+            let dt = dt.datetime().unwrap();
+            let vals = dt.physical().downcast_iter().next().unwrap();
+            let ts = vals.values().as_slice();
+            let groups = group_by_values(
+                options.period,
+                options.offset,
+                ts,
+                options.closed_window,
+                tu,
+                tz,
+            )?;
+            PolarsResult::Ok(GroupsType::new_slice(groups, true, true))
         }?;
 
         let dt = dt.cast(time_type).unwrap();
@@ -533,7 +523,7 @@ mod test {
             .into_column();
             date.set_sorted_flag(IsSorted::Ascending);
             let a = Column::new("a".into(), [3, 7, 5, 9, 2, 1]);
-            let df = DataFrame::new(vec![date, a.clone()])?;
+            let df = DataFrame::new_infer_height(vec![date, a.clone()])?;
 
             let (_, groups) = df
                 .rolling(
@@ -580,7 +570,7 @@ mod test {
         date.set_sorted_flag(IsSorted::Ascending);
 
         let a = Column::new("a".into(), [3, 7, 5, 9, 2, 1]);
-        let df = DataFrame::new(vec![date, a.clone()])?;
+        let df = DataFrame::new_infer_height(vec![date, a.clone()])?;
 
         let (_, groups) = df
             .rolling(

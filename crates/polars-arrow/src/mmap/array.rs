@@ -107,7 +107,7 @@ fn get_num_rows_and_null_count(node: &Node) -> PolarsResult<(usize, usize)> {
     Ok((num_rows, null_count))
 }
 
-fn mmap_binary<O: Offset, T: AsRef<[u8]>>(
+fn mmap_binary<O: Offset, T: AsRef<[u8]> + Send + Sync + 'static>(
     data: Arc<T>,
     node: &Node,
     block_offset: usize,
@@ -135,7 +135,7 @@ fn mmap_binary<O: Offset, T: AsRef<[u8]>>(
     })
 }
 
-fn mmap_binview<T: AsRef<[u8]>>(
+fn mmap_binview<T: AsRef<[u8]> + Send + Sync + 'static>(
     data: Arc<T>,
     node: &Node,
     block_offset: usize,
@@ -182,7 +182,7 @@ fn mmap_binview<T: AsRef<[u8]>>(
     })
 }
 
-fn mmap_fixed_size_binary<T: AsRef<[u8]>>(
+fn mmap_fixed_size_binary<T: AsRef<[u8]> + Send + Sync + 'static>(
     data: Arc<T>,
     node: &Node,
     block_offset: usize,
@@ -215,7 +215,7 @@ fn mmap_fixed_size_binary<T: AsRef<[u8]>>(
     })
 }
 
-fn mmap_null<T: AsRef<[u8]>>(
+fn mmap_null<T: AsRef<[u8]> + Send + Sync + 'static>(
     data: Arc<T>,
     node: &Node,
     _block_offset: usize,
@@ -236,7 +236,7 @@ fn mmap_null<T: AsRef<[u8]>>(
     })
 }
 
-fn mmap_boolean<T: AsRef<[u8]>>(
+fn mmap_boolean<T: AsRef<[u8]> + Send + Sync + 'static>(
     data: Arc<T>,
     node: &Node,
     block_offset: usize,
@@ -267,7 +267,7 @@ fn mmap_boolean<T: AsRef<[u8]>>(
     })
 }
 
-fn mmap_primitive<P: NativeType, T: AsRef<[u8]>>(
+fn mmap_primitive<P: NativeType, T: AsRef<[u8]> + Send + Sync + 'static>(
     data: Arc<T>,
     node: &Node,
     block_offset: usize,
@@ -300,14 +300,20 @@ fn mmap_primitive<P: NativeType, T: AsRef<[u8]>>(
             )
         }
     } else {
-        let mut values = vec![P::default(); num_rows];
+        let mut values: Vec<P> = Vec::with_capacity(num_rows);
+        let num_bytes = num_rows * std::mem::size_of::<P>();
+
+        assert!(bytes.len() >= num_bytes);
         unsafe {
             std::ptr::copy_nonoverlapping(
                 bytes.as_ptr(),
                 values.as_mut_ptr() as *mut u8,
-                bytes.len(),
-            )
+                num_bytes,
+            );
+
+            values.set_len(num_rows);
         };
+
         // Now we need to keep the new buffer alive
         let owned_data = Arc::new((
             // We can drop the original ref if we don't have a validity
@@ -333,7 +339,7 @@ fn mmap_primitive<P: NativeType, T: AsRef<[u8]>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn mmap_list<O: Offset, T: AsRef<[u8]>>(
+fn mmap_list<O: Offset, T: AsRef<[u8]> + Send + Sync + 'static>(
     data: Arc<T>,
     node: &Node,
     block_offset: usize,
@@ -379,7 +385,7 @@ fn mmap_list<O: Offset, T: AsRef<[u8]>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn mmap_fixed_size_list<T: AsRef<[u8]>>(
+fn mmap_fixed_size_list<T: AsRef<[u8]> + Send + Sync + 'static>(
     data: Arc<T>,
     node: &Node,
     block_offset: usize,
@@ -422,7 +428,7 @@ fn mmap_fixed_size_list<T: AsRef<[u8]>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn mmap_struct<T: AsRef<[u8]>>(
+fn mmap_struct<T: AsRef<[u8]> + Send + Sync + 'static>(
     data: Arc<T>,
     node: &Node,
     block_offset: usize,
@@ -472,7 +478,7 @@ fn mmap_struct<T: AsRef<[u8]>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn mmap_dict<K: DictionaryKey, T: AsRef<[u8]>>(
+fn mmap_dict<K: DictionaryKey, T: AsRef<[u8]> + Send + Sync + 'static>(
     data: Arc<T>,
     node: &Node,
     block_offset: usize,
@@ -509,7 +515,7 @@ fn mmap_dict<K: DictionaryKey, T: AsRef<[u8]>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn get_array<T: AsRef<[u8]>>(
+fn get_array<T: AsRef<[u8]> + Send + Sync + 'static>(
     data: Arc<T>,
     block_offset: usize,
     dtype: &ArrowDataType,
@@ -598,7 +604,7 @@ fn get_array<T: AsRef<[u8]>>(
 
 #[allow(clippy::too_many_arguments)]
 /// Maps a memory region to an [`Array`].
-pub(crate) unsafe fn mmap<T: AsRef<[u8]>>(
+pub(crate) unsafe fn mmap<T: AsRef<[u8]> + Send + Sync + 'static>(
     data: Arc<T>,
     block_offset: usize,
     dtype: ArrowDataType,

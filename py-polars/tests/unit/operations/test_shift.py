@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -15,6 +15,14 @@ def test_shift() -> None:
     assert_series_equal(a.shift(-1), pl.Series("a", [2, 3, None]))
     assert_series_equal(a.shift(-2), pl.Series("a", [3, None, None]))
     assert_series_equal(a.shift(-1, fill_value=10), pl.Series("a", [2, 3, 10]))
+
+
+def test_shift_object() -> None:
+    a = pl.Series("a", [1, 2, 3], dtype=pl.Object)
+    assert a.shift(1).to_list() == [None, 1, 2]
+    assert a.shift(-1).to_list() == [2, 3, None]
+    assert a.shift(-2, fill_value=pl.lit(0, dtype=pl.Object)).to_list() == [3, 0, 0]
+    assert a.shift(1).dtype == pl.Object
 
 
 def test_shift_frame(fruits_cars: pl.DataFrame) -> None:
@@ -145,16 +153,16 @@ def test_shift_n_nonscalar() -> None:
         }
     )
     with pytest.raises(
-        ComputeError,
-        match="'n' must be scalar value",
+        ShapeError,
+        match="'n' must be a scalar value",
     ):
         # Note: Expressions are not in the signature for `n`, but they work.
         # We can still verify that n is scalar up-front.
         df.shift(pl.col("b"), fill_value=1)  # type: ignore[arg-type]
 
     with pytest.raises(
-        ComputeError,
-        match="'n' must be scalar value",
+        ShapeError,
+        match="'n' must be a scalar value",
     ):
         df.select(pl.col("a").shift(pl.col("b"), fill_value=1))
 
@@ -167,13 +175,46 @@ def test_shift_fill_value_nonscalar() -> None:
         }
     )
     with pytest.raises(
-        ComputeError,
-        match="'fill_value' must be scalar value",
+        ShapeError,
+        match="'fill_value' must be a scalar value",
     ):
         df.shift(1, fill_value=pl.col("b"))
 
     with pytest.raises(
-        ComputeError,
-        match="'fill_value' must be scalar value",
+        ShapeError,
+        match="'fill_value' must be a scalar value",
     ):
         df.select(pl.col("a").shift(1, fill_value=pl.col("b")))
+
+
+def test_shift_array_list_eval_24672() -> None:
+    s = pl.Series([[[1], [2], [3]]], dtype=pl.List(pl.Array(pl.Int64, 1)))
+    expected = pl.Series([[None, [1], [2]]], dtype=pl.List(pl.Array(pl.Int64, 1)))
+    out = s.list.eval(pl.element().shift())
+    assert_series_equal(expected, out)
+
+
+def test_streaming_shift_25226() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4]})
+
+    q = df.lazy().with_columns(b=pl.col("a").shift(), c=pl.col("a").min())
+    assert_frame_equal(
+        q.collect(),
+        df.with_columns(b=pl.Series([None, 1, 2, 3]), c=pl.lit(1, pl.Int64)),
+    )
+
+    q = df.lazy().with_columns(b=pl.col("a").shift(n=-1), c=pl.col("a").min())
+    assert_frame_equal(
+        q.collect(),
+        df.with_columns(b=pl.Series([2, 3, 4, None]), c=pl.lit(1, pl.Int64)),
+    )
+
+
+def test_streaming_shift_with_head_26098() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    q = df.lazy().select(pl.col("a").shift(-1)).head(1)
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        pl.DataFrame({"a": [2]}),
+    )

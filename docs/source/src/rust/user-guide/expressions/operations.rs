@@ -86,7 +86,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let result = long_df
-        .clone()
         .lazy()
         .select([
             col("numbers").n_unique().alias("n_unique"),
@@ -121,7 +120,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:collatz]
     let result = df
-        .clone()
         .lazy()
         .select([
             col("nrs"),

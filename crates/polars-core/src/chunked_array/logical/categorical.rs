@@ -1,11 +1,14 @@
+use std::hash::BuildHasher;
 use std::marker::PhantomData;
 
 use arrow::bitmap::BitmapBuilder;
 use num_traits::Zero;
+use polars_utils::hashing::{_boost_hash_combine, folded_multiply};
 
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::flags::StatisticsFlags;
 use crate::chunked_array::ops::ChunkFullNull;
+use crate::hashing::get_null_hash_value;
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::handle_casting_failures;
@@ -35,7 +38,13 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
     }
 
     pub(crate) fn get_flags(&self) -> StatisticsFlags {
-        self.phys.get_flags()
+        // If we use lexical ordering then physical sortedness does not imply
+        // our sortedness.
+        let mut flags = self.phys.get_flags();
+        if self.uses_lexical_ordering() {
+            flags.set_sorted(IsSorted::Not);
+        }
+        flags
     }
 
     /// Set flags for the ChunkedArray.
@@ -72,6 +81,7 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
         assert!(dtype.cat_physical().ok() == Some(T::physical()));
 
         unsafe {
+            let mut invariants_violated = false;
             let mut validity = BitmapBuilder::new();
             for arr in cat_ids.downcast_iter_mut() {
                 validity.reserve(arr.len());
@@ -90,10 +100,16 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
                 }
 
                 if arr.null_count() != validity.unset_bits() {
+                    invariants_violated = true;
                     arr.set_validity(core::mem::take(&mut validity).into_opt_validity());
                 } else {
                     validity.clear();
                 }
+            }
+
+            if invariants_violated {
+                cat_ids.set_flags(StatisticsFlags::empty());
+                cat_ids.compute_len();
             }
         }
 
@@ -281,6 +297,63 @@ impl<T: PolarsCategoricalType> LogicalType for CategoricalChunked<T> {
             dt if dt.is_integer() => self.phys.clone().cast_with_options(dtype, options),
 
             _ => polars_bail!(ComputeError: "cannot cast categorical types to {dtype:?}"),
+        }
+    }
+}
+
+impl<T: PolarsCategoricalType> VecHash for CategoricalChunked<T>
+where
+    ChunkedArray<<T as PolarsCategoricalType>::PolarsPhysical>: VecHash,
+{
+    fn vec_hash(
+        &self,
+        random_state: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
+        if self.is_enum() {
+            self.phys.vec_hash(random_state, buf)
+        } else {
+            buf.clear();
+            buf.reserve(self.phys.len());
+            let mult = random_state.hash_one(0);
+            let null = get_null_hash_value(&random_state);
+
+            let mapping = self.get_mapping();
+            for opt_cat in self.phys.iter() {
+                if let Some(cat) = opt_cat {
+                    let base_h = unsafe { mapping.cat_to_hash_unchecked(cat.as_cat()) };
+                    buf.push(folded_multiply(base_h, mult));
+                } else {
+                    buf.push(null);
+                }
+            }
+            Ok(())
+        }
+    }
+
+    fn vec_hash_combine(
+        &self,
+        random_state: PlSeedableRandomStateQuality,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
+        if self.is_enum() {
+            self.phys.vec_hash_combine(random_state, hashes)
+        } else {
+            let mult = random_state.hash_one(0);
+            let null = get_null_hash_value(&random_state);
+
+            let mapping = self.get_mapping();
+            assert!(self.phys.len() == hashes.len());
+            for (opt_cat, h) in self.phys.iter().zip(hashes.iter_mut()) {
+                let our_h = if let Some(cat) = opt_cat {
+                    let base_h = unsafe { mapping.cat_to_hash_unchecked(cat.as_cat()) };
+                    folded_multiply(base_h, mult)
+                } else {
+                    null
+                };
+                *h = _boost_hash_combine(our_h, *h);
+            }
+            Ok(())
         }
     }
 }

@@ -30,11 +30,17 @@ async fn main() {
 // --8<-- [start:scan_parquet_query]
 // --8<-- [end:scan_parquet_query]
 
+// --8<-- [start:storage_options_retry_configuration]
+// --8<-- [end:storage_options_retry_configuration]
+
 // --8<-- [start:scan_parquet_storage_options_aws]
 // --8<-- [end:scan_parquet_storage_options_aws]
 
 // --8<-- [start:credential_provider_class]
 // --8<-- [end:credential_provider_class]
+
+// --8<-- [start:credential_provider_class_global_default]
+// --8<-- [end:credential_provider_class_global_default]
 
 // --8<-- [start:credential_provider_custom_func]
 // --8<-- [end:credential_provider_custom_func]
@@ -47,3 +53,6 @@ async fn main() {
 
 // --8<-- [start:write_parquet]
 // --8<-- [end:write_parquet]
+
+// --8<-- [start:write_file_object]
+// --8<-- [end:write_file_object]

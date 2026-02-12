@@ -1,4 +1,4 @@
-use std::borrow::Borrow;
+use std::borrow::{Borrow, BorrowMut};
 use std::hash::Hash;
 #[cfg(feature = "cse")]
 use std::hash::Hasher;
@@ -9,7 +9,7 @@ use polars_utils::format_pl_smallstr;
 use serde::{Deserialize, Serialize};
 
 use super::*;
-use crate::constants::{get_len_name, get_literal_name};
+use crate::constants::{get_len_name, get_literal_name, get_pl_element_name};
 
 #[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -60,7 +60,7 @@ impl OutputName {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct ExprIR {
     /// Output name of this expression.
@@ -81,22 +81,19 @@ impl PartialEq for ExprIR {
     }
 }
 
-impl Clone for ExprIR {
-    fn clone(&self) -> Self {
-        let output_dtype = OnceLock::new();
-        if let Some(dt) = self.output_dtype.get() {
-            output_dtype.set(dt.clone()).unwrap()
-        }
-
-        ExprIR {
-            output_name: self.output_name.clone(),
-            node: self.node,
-            output_dtype,
-        }
+impl Borrow<Node> for ExprIR {
+    fn borrow(&self) -> &Node {
+        &self.node
     }
 }
 
-impl Borrow<Node> for ExprIR {
+impl BorrowMut<Node> for ExprIR {
+    fn borrow_mut(&mut self) -> &mut Node {
+        &mut self.node
+    }
+}
+
+impl Borrow<Node> for &ExprIR {
     fn borrow(&self) -> &Node {
         &self.node
     }
@@ -110,6 +107,11 @@ impl ExprIR {
             node,
             output_dtype: OnceLock::new(),
         }
+    }
+
+    pub fn from_column_name(name: PlSmallStr, expr_arena: &mut Arena<AExpr>) -> Self {
+        let node = expr_arena.add(AExpr::Column(name.clone()));
+        ExprIR::new(node, OutputName::ColumnLhs(name))
     }
 
     pub fn with_dtype(self, dtype: DataType) -> Self {
@@ -130,15 +132,24 @@ impl ExprIR {
         out.node = node;
         for (_, ae) in arena.iter(node) {
             match ae {
+                AExpr::Element => {
+                    out.output_name = OutputName::ColumnLhs(get_pl_element_name());
+                    break;
+                },
                 AExpr::Column(name) => {
                     out.output_name = OutputName::ColumnLhs(name.clone());
+                    break;
+                },
+                #[cfg(feature = "dtype-struct")]
+                AExpr::StructField(name) => {
+                    out.output_name = OutputName::Field(name.clone());
                     break;
                 },
                 AExpr::Literal(lv) => {
                     if let LiteralValue::Series(s) = lv {
                         out.output_name = OutputName::LiteralLhs(s.name().clone());
                     } else {
-                        out.output_name = OutputName::LiteralLhs(get_literal_name().clone());
+                        out.output_name = OutputName::LiteralLhs(get_literal_name());
                     }
                     break;
                 },
@@ -194,7 +205,7 @@ impl ExprIR {
         }
     }
 
-    pub(crate) fn set_node(&mut self, node: Node) {
+    pub fn set_node(&mut self, node: Node) {
         self.node = node;
         self.output_dtype = OnceLock::new();
     }
@@ -268,31 +279,25 @@ impl ExprIR {
         is_scalar_ae(self.node, expr_arena)
     }
 
-    pub fn dtype(
-        &self,
-        schema: &Schema,
-        ctxt: Context,
-        expr_arena: &Arena<AExpr>,
-    ) -> PolarsResult<&DataType> {
+    pub fn is_length_preserving(&self, expr_arena: &Arena<AExpr>) -> bool {
+        is_length_preserving_ae(self.node, expr_arena)
+    }
+
+    pub fn dtype(&self, schema: &Schema, expr_arena: &Arena<AExpr>) -> PolarsResult<&DataType> {
         match self.output_dtype.get() {
             Some(dtype) => Ok(dtype),
             None => {
                 let dtype = expr_arena
                     .get(self.node)
-                    .to_dtype(schema, ctxt, expr_arena)?;
+                    .to_dtype(&ToFieldContext::new(expr_arena, schema))?;
                 let _ = self.output_dtype.set(dtype);
                 Ok(self.output_dtype.get().unwrap())
             },
         }
     }
 
-    pub fn field(
-        &self,
-        schema: &Schema,
-        ctxt: Context,
-        expr_arena: &Arena<AExpr>,
-    ) -> PolarsResult<Field> {
-        let dtype = self.dtype(schema, ctxt, expr_arena)?;
+    pub fn field(&self, schema: &Schema, expr_arena: &Arena<AExpr>) -> PolarsResult<Field> {
+        let dtype = self.dtype(schema, expr_arena)?;
         let name = self.output_name();
         Ok(Field::new(name.clone(), dtype.clone()))
     }
@@ -325,8 +330,7 @@ impl From<&ExprIR> for Node {
 }
 
 pub(crate) fn name_to_expr_ir(name: PlSmallStr, expr_arena: &mut Arena<AExpr>) -> ExprIR {
-    let node = expr_arena.add(AExpr::Column(name.clone()));
-    ExprIR::new(node, OutputName::ColumnLhs(name))
+    ExprIR::from_column_name(name, expr_arena)
 }
 
 pub(crate) fn names_to_expr_irs<I, S>(names: I, expr_arena: &mut Arena<AExpr>) -> Vec<ExprIR>

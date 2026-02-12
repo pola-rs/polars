@@ -1,22 +1,19 @@
 mod from;
 mod new;
-pub mod reduce;
+#[cfg(any(feature = "serde", feature = "dsl-schema"))]
+mod serde;
 
 use std::hash::Hash;
 
 use polars_error::PolarsResult;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use crate::chunked_array::cast::CastOptions;
 use crate::datatypes::{AnyValue, DataType};
 use crate::prelude::{Column, Series};
 
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct Scalar {
     dtype: DataType,
     value: AnyValue<'static>,
@@ -87,9 +84,7 @@ impl Scalar {
     }
 
     pub fn as_any_value(&self) -> AnyValue<'_> {
-        self.value
-            .strict_cast(&self.dtype)
-            .unwrap_or_else(|| self.value.clone())
+        self.value.clone()
     }
 
     pub fn into_series(self, name: PlSmallStr) -> Series {
@@ -126,5 +121,98 @@ impl Scalar {
         self.dtype = self.dtype.to_physical();
         self.value = self.value.to_physical();
         self
+    }
+}
+
+#[cfg(all(test, feature = "proptest", not(miri)))]
+mod tests {
+    use std::rc::Rc;
+
+    use proptest::prelude::*;
+
+    use crate::chunked_array::cast::CastOptions;
+    use crate::datatypes::proptest::{
+        AnyValueArbitraryOptions, AnyValueArbitrarySelection, DataTypeArbitraryOptions,
+        DataTypeArbitrarySelection, anyvalue_strategy, dtypes_strategy,
+    };
+    use crate::scalar::Scalar;
+
+    fn test_anyvalue_options() -> AnyValueArbitraryOptions {
+        AnyValueArbitraryOptions {
+            allowed_dtypes: AnyValueArbitrarySelection::all()
+                & !AnyValueArbitrarySelection::CATEGORICAL
+                & !AnyValueArbitrarySelection::CATEGORICAL_OWNED
+                & !AnyValueArbitrarySelection::ENUM
+                & !AnyValueArbitrarySelection::ENUM_OWNED
+                & !AnyValueArbitrarySelection::OBJECT
+                & !AnyValueArbitrarySelection::OBJECT_OWNED
+                & !AnyValueArbitrarySelection::LIST
+                & !AnyValueArbitrarySelection::ARRAY
+                & !AnyValueArbitrarySelection::STRUCT
+                & !AnyValueArbitrarySelection::STRUCT_OWNED
+                & !AnyValueArbitrarySelection::DATETIME
+                & !AnyValueArbitrarySelection::DATETIME_OWNED
+                & !AnyValueArbitrarySelection::DATE
+                & !AnyValueArbitrarySelection::TIME
+                & !AnyValueArbitrarySelection::DURATION
+                & !AnyValueArbitrarySelection::BINARY_OWNED,
+            categories_range: 1..=3,
+            ..Default::default()
+        }
+    }
+
+    fn test_dtype_options() -> DataTypeArbitraryOptions {
+        DataTypeArbitraryOptions {
+            allowed_dtypes: DataTypeArbitrarySelection::all()
+                & !DataTypeArbitrarySelection::CATEGORICAL
+                & !DataTypeArbitrarySelection::ENUM
+                & !DataTypeArbitrarySelection::OBJECT
+                & !DataTypeArbitrarySelection::LIST
+                & !DataTypeArbitrarySelection::ARRAY
+                & !DataTypeArbitrarySelection::STRUCT
+                & !DataTypeArbitrarySelection::DATETIME
+                & !DataTypeArbitrarySelection::DATE
+                & !DataTypeArbitrarySelection::TIME
+                & !DataTypeArbitrarySelection::DURATION
+                & !DataTypeArbitrarySelection::BINARY_OFFSET,
+            categories_range: 1..=3,
+            ..Default::default()
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+        #[test]
+        fn test_scalar_cast_with_options(
+            source_value in anyvalue_strategy(Rc::new(test_anyvalue_options()), 0),
+            target_dtype in dtypes_strategy(Rc::new(test_dtype_options()), 0),
+        ) {
+            let source_dtype = source_value.dtype();
+            let scalar = Scalar::new(source_dtype.clone(), source_value.clone());
+
+            let cast_result = scalar.cast_with_options(&target_dtype, CastOptions::default());
+
+            if let Ok(casted_scalar) = cast_result {
+                prop_assert_eq!(casted_scalar.dtype(), &target_dtype);
+            }
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+        #[test]
+        fn test_scalar_cast_identity(
+            source_value in anyvalue_strategy(Rc::new(test_anyvalue_options()), 0),
+        ) {
+            let source_dtype = source_value.dtype();
+            let scalar = Scalar::new(source_dtype.clone(), source_value);
+
+            let result = scalar.clone().cast_with_options(&source_dtype, CastOptions::default());
+
+            prop_assert!(result.is_ok());
+            if let Ok(casted) = result {
+                prop_assert_eq!(casted.dtype(), scalar.dtype());
+            }
+        }
     }
 }

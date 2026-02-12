@@ -1,3 +1,5 @@
+use crate::float16::pf16;
+
 // These min/max operators don't follow our total order strictly. Instead
 // if exactly one of the two arguments is NaN the skip_nan varieties returns
 // the non-nan argument, whereas the propagate_nan varieties give the nan
@@ -13,6 +15,16 @@ pub trait MinMax: Sized {
     // min/max, they're slightly faster.
     fn nan_min_lt(&self, other: &Self) -> bool;
     fn nan_max_lt(&self, other: &Self) -> bool;
+
+    #[inline(always)]
+    fn nan_min_gt(&self, other: &Self) -> bool {
+        other.nan_min_lt(self)
+    }
+
+    #[inline(always)]
+    fn nan_max_gt(&self, other: &Self) -> bool {
+        other.nan_max_lt(self)
+    }
 
     // Binary operators that return either the minimum or maximum.
     #[inline(always)]
@@ -116,6 +128,7 @@ macro_rules! impl_float_min_max {
     };
 }
 
+impl_float_min_max!(pf16);
 impl_float_min_max!(f32);
 impl_float_min_max!(f64);
 

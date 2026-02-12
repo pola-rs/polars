@@ -3,7 +3,7 @@
 import polars as pl
 import polars_cloud as pc
 
-ctx = pc.ComputeContext(cpus=16, memory=64)
+ctx = pc.ComputeContext(workspace="your-workspace", cpus=16, memory=64)
 
 query = (
     pl.scan_parquet("s3://my-dataset/")

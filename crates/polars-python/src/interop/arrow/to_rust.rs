@@ -17,49 +17,7 @@ pub fn field_to_rust_arrow(obj: Bound<'_, PyAny>) -> PyResult<ArrowField> {
     // make the conversion through PyArrow's private API
     obj.call_method1("_export_to_c", (schema_ptr as Py_uintptr_t,))?;
     let field = unsafe { ffi::import_field_from_c(schema.as_ref()).map_err(PyPolarsErr::from)? };
-    Ok(normalize_arrow_fields(&field))
-}
-
-fn normalize_arrow_fields(field: &ArrowField) -> ArrowField {
-    // normalize fields with extension dtypes that are otherwise standard dtypes associated
-    // with (for us) irrelevant metadata; recreate the field using the inner (standard) dtype
-    match field {
-        ArrowField {
-            dtype: ArrowDataType::Struct(fields),
-            ..
-        } => {
-            let mut normalized = false;
-            let normalized_fields: Vec<_> = fields
-                .iter()
-                .map(|f| {
-                    // note: google bigquery column data is returned as a standard arrow dtype, but the
-                    // sql type it was loaded from is associated as metadata (resulting in an extension dtype)
-                    if let ArrowDataType::Extension(ext_type) = &f.dtype {
-                        if ext_type.name.starts_with("google:sqlType:") {
-                            normalized = true;
-                            return ArrowField::new(
-                                f.name.clone(),
-                                ext_type.inner.clone(),
-                                f.is_nullable,
-                            );
-                        }
-                    }
-                    f.clone()
-                })
-                .collect();
-
-            if normalized {
-                ArrowField::new(
-                    field.name.clone(),
-                    ArrowDataType::Struct(normalized_fields),
-                    field.is_nullable,
-                )
-            } else {
-                field.clone()
-            }
-        },
-        _ => field.clone(),
-    }
+    Ok(field)
 }
 
 pub fn field_to_rust(obj: Bound<'_, PyAny>) -> PyResult<Field> {
@@ -138,7 +96,7 @@ pub fn to_rust_df(
             .collect::<Vec<_>>();
 
         // no need to check as a record batch has the same guarantees
-        return Ok(unsafe { DataFrame::new_no_checks_height_from_first(columns) });
+        return Ok(unsafe { DataFrame::new_unchecked_infer_height(columns) });
     }
 
     let dfs = rb
@@ -149,7 +107,17 @@ pub fn to_rust_df(
             let columns = (0..schema.len())
                 .map(|i| {
                     let array = rb.call_method1("column", (i,))?;
-                    let arr = array_to_rust(&array)?;
+                    let mut arr = array_to_rust(&array)?;
+
+                    // Only the schema contains extension type info, restore.
+                    // TODO: nested?
+                    let dtype = schema.get_at_index(i).unwrap().1.dtype();
+                    if let ArrowDataType::Extension(ext) = dtype {
+                        if *arr.dtype() == ext.inner {
+                            *arr.dtype_mut() = dtype.clone();
+                        }
+                    }
+
                     run_parallel |= matches!(
                         arr.dtype(),
                         ArrowDataType::Utf8 | ArrowDataType::Dictionary(_, _, _)
@@ -206,7 +174,7 @@ pub fn to_rust_df(
             }?;
 
             // no need to check as a record batch has the same guarantees
-            Ok(unsafe { DataFrame::new_no_checks_height_from_first(columns) })
+            Ok(unsafe { DataFrame::new_unchecked_infer_height(columns) })
         })
         .collect::<PyResult<Vec<_>>>()?;
 

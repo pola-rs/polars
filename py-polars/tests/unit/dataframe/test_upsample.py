@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
@@ -76,7 +76,7 @@ def test_upsample(time_zone: str | None, tzinfo: ZoneInfo | timezone | None) -> 
     assert_frame_equal(up, expected)
 
 
-@pytest.mark.parametrize("time_zone", [None, "US/Central"])
+@pytest.mark.parametrize("time_zone", [None, "America/Chicago"])
 def test_upsample_crossing_dst(time_zone: str | None) -> None:
     df = pl.DataFrame(
         {
@@ -281,3 +281,81 @@ def test_upsample_sorted_only_within_group_but_no_group_by_provided() -> None:
         match=r"argument in operation 'upsample' is not sorted, please sort the 'expr/series/column' first",
     ):
         df.upsample(time_column="time", every="1mo")
+
+
+def test_upsample_date() -> None:
+    df = pl.DataFrame({"date": [date(2025, 1, 1), date(2026, 1, 1)]})
+    result = df.upsample(time_column="date", every="3mo")
+    expected = pl.DataFrame(
+        {
+            "date": [
+                date(2025, 1, 1),
+                date(2025, 4, 1),
+                date(2025, 7, 1),
+                date(2025, 10, 1),
+                date(2026, 1, 1),
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_upsample_with_group_by_15530() -> None:
+    df = pl.DataFrame(
+        {
+            "time": [
+                datetime(2025, 1, 1, 9, 0),
+                datetime(2025, 1, 1, 9, 0),
+                datetime(2025, 1, 1, 9, 2),
+                datetime(2025, 1, 1, 9, 2),
+            ],
+            "symbol": ["AAPL", "MSFT", "AAPL", "MSFT"],
+            "price": [100.0, 50.0, 102.0, 52.0],
+        }
+    )
+
+    assert_frame_equal(
+        df.upsample(
+            time_column="time",
+            every="1m",
+            group_by="symbol",
+            maintain_order=True,
+        ),
+        pl.DataFrame(
+            {
+                "time": [
+                    datetime(2025, 1, 1, 9, 0),
+                    datetime(2025, 1, 1, 9, 1),
+                    datetime(2025, 1, 1, 9, 2),
+                    datetime(2025, 1, 1, 9, 0),
+                    datetime(2025, 1, 1, 9, 1),
+                    datetime(2025, 1, 1, 9, 2),
+                ],
+                "symbol": ["AAPL", "AAPL", "AAPL", "MSFT", "MSFT", "MSFT"],
+                "price": [100.0, None, 102.0, 50.0, None, 52.0],
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        df.upsample(
+            time_column="time", every="1d", group_by="time", maintain_order=True
+        ),
+        df,
+    )
+
+    assert_frame_equal(
+        df.select("time").upsample(
+            time_column="time", every="1d", group_by="time", maintain_order=True
+        ),
+        df.select("time"),
+    )
+
+    with pytest.raises(
+        pl.exceptions.DuplicateError, match="'time' has more than one occurrence"
+    ):
+        df.upsample(
+            time_column="time",
+            every="1d",
+            group_by=["time", "time"],
+        )

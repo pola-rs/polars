@@ -14,7 +14,6 @@ pub struct QuantileWindow<'a, T: NativeType> {
 }
 
 impl<
-    'a,
     T: NativeType
         + Float
         + std::iter::Sum
@@ -26,31 +25,38 @@ impl<
         + Zero
         + SealedRolling
         + Sub<Output = T>,
-> RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
+> RollingAggWindowNoNulls<T> for QuantileWindow<'_, T>
 {
-    fn new(
+    type This<'a> = QuantileWindow<'a, T>;
+
+    fn new<'a>(
         slice: &'a [T],
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
-    ) -> Self {
+    ) -> Self::This<'a> {
         let params = params.unwrap();
         let RollingFnParams::Quantile(params) = params else {
             unreachable!("expected Quantile params");
         };
 
-        Self {
+        QuantileWindow {
             sorted: SortedBuf::new(slice, start, end, window_size),
             prob: params.prob,
             method: params.method,
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
+    unsafe fn update(&mut self, start: usize, end: usize) {
         self.sorted.update(start, end);
-        let length = self.sorted.len();
+    }
 
+    fn get_agg(&self, _idx: usize) -> Option<T> {
+        let length = self.sorted.len();
+        if length == 0 {
+            return None;
+        }
         let idx = match self.method {
             Linear => {
                 // Maybe add a fast path for median case? They could branch depending on odd/even.
@@ -63,27 +69,23 @@ impl<
                     Some(self.sorted.get(idx))
                 } else {
                     let proportion = T::from(float_idx_top - idx as f64).unwrap();
-                    let mut vals = self.sorted.index_range(idx..top_idx + 1);
-                    let vi = *vals.next().unwrap();
-                    let vj = *vals.next().unwrap();
-
+                    let vi = self.sorted.get(idx);
+                    let vj = self.sorted.get(idx + 1);
                     Some(proportion * (vj - vi) + vi)
                 };
             },
             Midpoint => {
                 let length_f = length as f64;
-                let idx = (length_f * self.prob) as usize;
-                let idx = std::cmp::min(idx, length - 1);
 
+                let idx = ((length_f - 1.0) * self.prob).floor() as usize;
+                let idx = std::cmp::min(idx, length - 1);
                 let top_idx = ((length_f - 1.0) * self.prob).ceil() as usize;
+
                 return if top_idx == idx {
                     Some(self.sorted.get(idx))
                 } else {
-                    let top_idx = idx + 1;
-                    let mut vals = self.sorted.index_range(idx..top_idx + 1);
-                    let mid = *vals.next().unwrap();
-                    let mid_plus_1 = *vals.next().unwrap();
-
+                    let mid = self.sorted.get(idx);
+                    let mid_plus_1 = self.sorted.get(idx + 1);
                     Some((mid + mid_plus_1) / (T::one() + T::one()))
                 };
             },
@@ -100,6 +102,10 @@ impl<
         };
 
         Some(self.sorted.get(idx))
+    }
+
+    fn slice_len(&self) -> usize {
+        self.sorted.slice_len()
     }
 }
 
@@ -152,7 +158,7 @@ where
                 )));
             }
 
-            rolling_apply_agg_window::<QuantileWindow<_>, _, _>(
+            rolling_apply_agg_window::<QuantileWindow<_>, _, _, _>(
                 values,
                 window_size,
                 min_periods,

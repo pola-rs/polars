@@ -4,9 +4,7 @@ use polars_core::prelude::*;
 use polars_ops::prelude::floor_div_series;
 
 use super::*;
-use crate::expressions::{
-    AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
-};
+use crate::expressions::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
 
 #[derive(Clone)]
 pub struct BinaryExpr {
@@ -71,10 +69,12 @@ pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResu
         Operator::Plus => left + right,
         Operator::Minus => left - right,
         Operator::Multiply => left * right,
-        Operator::Divide => left / right,
+        Operator::RustDivide => left / right,
         Operator::TrueDivide => match left.dtype() {
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => left / right,
+            #[cfg(feature = "dtype-f16")]
+            Float16 => left / right,
             Duration(_) | Date | Datetime(_, _) | Float32 | Float64 => left / right,
             #[cfg(feature = "dtype-array")]
             Array(..) => left / right,
@@ -82,6 +82,9 @@ pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResu
             _ if right.dtype().is_array() => left / right,
             List(_) => left / right,
             _ if right.dtype().is_list() => left / right,
+            _ if left.dtype().is_string() || right.dtype().is_string() => {
+                polars_bail!(InvalidOperation: "cannot divide using strings")
+            },
             _ => {
                 if right.dtype().is_temporal() {
                     return left / right;
@@ -122,40 +125,73 @@ impl BinaryExpr {
     fn apply_elementwise<'a>(
         &self,
         mut ac_l: AggregationContext<'a>,
-        ac_r: AggregationContext,
+        mut ac_r: AggregationContext<'a>,
         aggregated: bool,
     ) -> PolarsResult<AggregationContext<'a>> {
-        // We want to be able to mutate in place, so we take the lhs to make sure that we drop.
-        let lhs = ac_l.get_values().clone();
-        let rhs = ac_r.get_values().clone();
+        // At this stage, there is no combination of AggregatedList and NotAggregated ACs.
 
-        // Drop lhs so that we might operate in place.
-        drop(ac_l.take());
+        // Check group lengths in case of all AggList
+        if [&ac_l, &ac_r]
+            .iter()
+            .all(|ac| matches!(ac.state, AggState::AggregatedList(_)))
+        {
+            ac_l.groups().check_lengths(ac_r.groups())?;
+        }
 
-        let out = apply_operator_owned(lhs, rhs, self.op)?;
-        ac_l.with_values(out, aggregated, Some(&self.expr))?;
-        Ok(ac_l)
+        match (ac_l.agg_state(), ac_r.agg_state()) {
+            (AggState::AggregatedList(s), _) | (_, AggState::AggregatedList(s)) => {
+                let ca = s.list().unwrap();
+                let [col_l, col_r] = [&ac_l, &ac_r].map(|ac| ac.flat_naive().into_owned());
+
+                let out = ca.apply_to_inner(&|_| {
+                    apply_operator(&col_l, &col_r, self.op).map(|c| c.take_materialized_series())
+                })?;
+                let out = out.into_column();
+
+                if ac_l.is_literal() {
+                    std::mem::swap(&mut ac_l, &mut ac_r);
+                }
+
+                ac_l.with_values(out.into_column(), true, Some(&self.expr))?;
+                Ok(ac_l)
+            },
+
+            _ => {
+                // We want to be able to mutate in place, so we take the lhs to make sure that we drop.
+                let lhs = ac_l.get_values().clone();
+                let rhs = ac_r.get_values().clone();
+
+                let out = apply_operator_owned(lhs, rhs, self.op)?;
+
+                if ac_l.is_literal() {
+                    std::mem::swap(&mut ac_l, &mut ac_r);
+                }
+
+                // Drop lhs so that we might operate in place.
+                drop(ac_l.take());
+
+                ac_l.with_values(out, aggregated, Some(&self.expr))?;
+                Ok(ac_l)
+            },
+        }
     }
 
     fn apply_all_literal<'a>(
         &self,
         mut ac_l: AggregationContext<'a>,
-        mut ac_r: AggregationContext<'a>,
+        ac_r: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let name = self.output_field.name().clone();
-        ac_l.groups();
-        ac_r.groups();
-        polars_ensure!(ac_l.groups.len() == ac_r.groups.len(), ComputeError: "lhs and rhs should have same group length");
+        debug_assert!(ac_l.is_literal() && ac_r.is_literal());
+        polars_ensure!(ac_l.groups.len() == ac_r.groups.len(),
+            ComputeError: "lhs and rhs should have same number of groups");
+
         let left_c = ac_l.get_values().rechunk().into_column();
         let right_c = ac_r.get_values().rechunk().into_column();
         let res_c = apply_operator(&left_c, &right_c, self.op)?;
-        ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
-        let res_s = if res_c.len() == 1 {
-            res_c.new_from_index(0, ac_l.groups.len())
-        } else {
-            ListChunked::full(name, res_c.as_materialized_series(), ac_l.groups.len()).into_column()
-        };
-        ac_l.with_values(res_s, true, Some(&self.expr))?;
+        polars_ensure!(res_c.len() == 1,
+            ComputeError: "binary operation on literals expected 1 value, found {}", res_c.len());
+
+        ac_l.with_literal(res_c);
         Ok(ac_l)
     }
 
@@ -241,73 +277,101 @@ impl PhysicalExpr for BinaryExpr {
             )
         });
         let mut ac_l = result_a?;
-        let ac_r = result_b?;
+        let mut ac_r = result_b?;
 
-        match (ac_l.agg_state(), ac_r.agg_state()) {
-            (AggState::Literal(s), AggState::NotAggregated(_))
-            | (AggState::NotAggregated(_), AggState::Literal(s)) => match s.len() {
-                1 => self.apply_elementwise(ac_l, ac_r, false),
-                _ => self.apply_group_aware(ac_l, ac_r),
-            },
-            (AggState::Literal(_), AggState::Literal(_)) => self.apply_all_literal(ac_l, ac_r),
-            (AggState::NotAggregated(_), AggState::NotAggregated(_)) => {
-                self.apply_elementwise(ac_l, ac_r, false)
-            },
-            (
-                AggState::AggregatedScalar(_) | AggState::Literal(_),
-                AggState::AggregatedScalar(_) | AggState::Literal(_),
-            ) => self.apply_elementwise(ac_l, ac_r, true),
-            (AggState::AggregatedScalar(_), AggState::NotAggregated(_))
-            | (AggState::NotAggregated(_), AggState::AggregatedScalar(_)) => {
+        // Aggregate NotAggregated into AggregatedList, but only if strictly required AND
+        // when there is no risk of memory explosion.
+        // See ApplyExpr for additional context
+        let mut has_agg_list = false;
+        let mut has_agg_scalar = false;
+        let mut has_not_agg = false;
+        let mut has_not_agg_with_overlapping_groups = false;
+        let mut not_agg_groups_may_diverge = false;
+
+        let mut previous: Option<&AggregationContext<'_>> = None;
+        for ac in [&ac_l, &ac_r] {
+            match ac.state {
+                AggState::AggregatedList(_) => {
+                    has_agg_list = true;
+                },
+                AggState::AggregatedScalar(_) => has_agg_scalar = true,
+                AggState::NotAggregated(_) => {
+                    has_not_agg = true;
+                    if let Some(p) = previous {
+                        not_agg_groups_may_diverge |= !p.groups.is_same(&ac.groups)
+                    }
+                    previous = Some(ac);
+                    if ac.groups.is_overlapping() {
+                        has_not_agg_with_overlapping_groups = true;
+                    }
+                },
+                _ => {},
+            }
+        }
+
+        let all_literal = !(has_agg_list || has_agg_scalar || has_not_agg);
+        let elementwise_must_aggregate =
+            has_not_agg && (has_agg_list || not_agg_groups_may_diverge);
+        let mut aggregated = has_agg_list || has_agg_scalar;
+
+        // Arithmetic on Decimal is fallible
+        let has_decimal_dtype =
+            ac_l.get_values().dtype().is_decimal() || ac_r.get_values().dtype().is_decimal();
+        let is_fallible = has_decimal_dtype && self.op.is_arithmetic();
+
+        // Broadcast in NotAgg or AggList requires group_aware
+        let check_broadcast = [&ac_l, &ac_r].iter().all(|ac| {
+            matches!(
+                ac.agg_state(),
+                AggState::NotAggregated(_) | AggState::AggregatedList(_)
+            )
+        });
+        let has_broadcast = check_broadcast
+            && ac_l
+                .groups()
+                .iter()
+                .zip(ac_r.groups().iter())
+                .any(|(l, r)| l.len() != r.len() && (l.len() == 1 || r.len() == 1));
+
+        // Dispatch
+        // See ApplyExpr for reference logic, except that we do any required
+        // aggregation inline. All BinaryExprs are elementwise.
+        if all_literal {
+            // Fast path
+            self.apply_all_literal(ac_l, ac_r)
+        } else if has_agg_scalar && (has_agg_list || has_not_agg) {
+            // Not compatible
+            self.apply_group_aware(ac_l, ac_r)
+        } else if elementwise_must_aggregate && has_not_agg_with_overlapping_groups {
+            // Compatible but calling aggregated() is too expensive
+            self.apply_group_aware(ac_l, ac_r)
+        } else if is_fallible
+            && (!ac_l.groups_cover_all_values() || !ac_r.groups_cover_all_values())
+        {
+            // Fallible expression and there are elements that are masked out.
+            self.apply_group_aware(ac_l, ac_r)
+        } else {
+            if elementwise_must_aggregate {
+                for ac in [&mut ac_l, &mut ac_r] {
+                    if matches!(ac.state, AggState::NotAggregated(_)) {
+                        ac.aggregated();
+                    }
+                }
+                aggregated = true;
+            }
+            if has_broadcast {
                 self.apply_group_aware(ac_l, ac_r)
-            },
-            (AggState::AggregatedList(lhs), AggState::AggregatedList(rhs)) => {
-                let lhs = lhs.list().unwrap();
-                let rhs = rhs.list().unwrap();
-                let out = lhs.apply_to_inner(&|lhs| {
-                    apply_operator(&lhs.into_column(), &rhs.get_inner().into_column(), self.op)
-                        .map(|c| c.take_materialized_series())
-                })?;
-                ac_l.with_values(out.into_column(), true, Some(&self.expr))?;
-                Ok(ac_l)
-            },
-            _ => self.apply_group_aware(ac_l, ac_r),
+            } else {
+                self.apply_elementwise(ac_l, ac_r, aggregated)
+            }
         }
     }
 
-    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.expr.to_field(input_schema, Context::Default)
+    fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
+        Ok(self.output_field.clone())
     }
 
     fn is_scalar(&self) -> bool {
         self.is_scalar
-    }
-
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        Some(self)
-    }
-}
-
-impl PartitionedAggregation for BinaryExpr {
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        let left = self.left.as_partitioned_aggregator().unwrap();
-        let right = self.right.as_partitioned_aggregator().unwrap();
-        let left = left.evaluate_partitioned(df, groups, state)?;
-        let right = right.evaluate_partitioned(df, groups, state)?;
-        apply_operator(&left, &right, self.op)
-    }
-
-    fn finalize(
-        &self,
-        partitioned: Column,
-        _groups: &GroupPositions,
-        _state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        Ok(partitioned)
     }
 }

@@ -44,6 +44,7 @@ These functions are available from the Polars module root and can be used as exp
    duration
    element
    exclude
+   field
    first
    fold
    format
@@ -75,6 +76,7 @@ These functions are available from the Polars module root and can be used as exp
    repeat
    rolling_corr
    rolling_cov
+   row_index
    select
    sql
    sql_expr

@@ -11,16 +11,13 @@ mod inner {
     use polars_utils::unitvec;
 
     pub struct SlicePushDown {
-        #[expect(unused)]
-        pub new_streaming: bool,
         scratch: UnitVec<Node>,
         pub(super) maintain_errors: bool,
     }
 
     impl SlicePushDown {
-        pub fn new(maintain_errors: bool, new_streaming: bool) -> Self {
+        pub fn new(maintain_errors: bool) -> Self {
             Self {
-                new_streaming,
                 scratch: unitvec![],
                 maintain_errors,
             }
@@ -36,7 +33,7 @@ mod inner {
 
 pub(super) use inner::SlicePushDown;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 struct State {
     offset: i64,
     len: IdxSize,
@@ -148,11 +145,10 @@ impl SlicePushDown {
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
         let inputs = lp.get_inputs();
-        let exprs = lp.get_exprs();
 
         let new_inputs = inputs
-            .iter()
-            .map(|&node| {
+            .into_iter()
+            .map(|node| {
                 let alp = lp_arena.take(node);
                 // No state, so we do not push down the slice here.
                 let state = None;
@@ -160,8 +156,8 @@ impl SlicePushDown {
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
-            .collect::<PolarsResult<Vec<_>>>()?;
-        let lp = lp.with_exprs_and_input(exprs, new_inputs);
+            .collect::<PolarsResult<UnitVec<_>>>()?;
+        let lp = lp.with_inputs(new_inputs);
 
         self.no_pushdown_finish_opt(lp, state, lp_arena)
     }
@@ -175,18 +171,17 @@ impl SlicePushDown {
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
         let inputs = lp.get_inputs();
-        let exprs = lp.get_exprs();
 
         let new_inputs = inputs
-            .iter()
-            .map(|&node| {
+            .into_iter()
+            .map(|node| {
                 let alp = lp_arena.take(node);
                 let alp = self.pushdown(alp, state, lp_arena, expr_arena)?;
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
-            .collect::<PolarsResult<Vec<_>>>()?;
-        Ok(lp.with_exprs_and_input(exprs, new_inputs))
+            .collect::<PolarsResult<UnitVec<_>>>()?;
+        Ok(lp.with_inputs(new_inputs))
     }
 
     #[recursive]
@@ -221,8 +216,8 @@ impl SlicePushDown {
                 output_schema,
                 mut unified_scan_args,
                 predicate,
+                predicate_file_skip_applied,
                 scan_type,
-                id: _,
             }, Some(state)) if predicate.is_none() && match &*scan_type {
                 #[cfg(feature = "parquet")]
                 FileScanIR::Parquet { .. } => true,
@@ -239,6 +234,9 @@ impl SlicePushDown {
                 #[cfg(feature = "python")]
                 FileScanIR::PythonDataset { .. } => true,
 
+                #[cfg(feature = "scan_lines")]
+                FileScanIR::Lines { .. } => true,
+
                 // TODO: This can be `true` after Anonymous scan dispatches to new-streaming.
                 FileScanIR::Anonymous { .. } => state.offset == 0,
             }  =>  {
@@ -252,7 +250,7 @@ impl SlicePushDown {
                     scan_type,
                     unified_scan_args,
                     predicate,
-                    id: Default::default(),
+                    predicate_file_skip_applied,
                 };
 
                 Ok(lp)
@@ -267,15 +265,21 @@ impl SlicePushDown {
                 };
                 Ok(lp)
             }
-            (Union {mut inputs, mut options }, Some(state)) => {
-                if state.offset == 0 {
-                    for input in &mut inputs {
-                        let input_lp = lp_arena.take(*input);
-                        let input_lp = self.pushdown(input_lp, Some(state), lp_arena, expr_arena)?;
-                        lp_arena.replace(*input, input_lp);
-                    }
+            (Union {mut inputs, mut options }, opt_state) => {
+                let subplan_slice: Option<State> = opt_state
+                    .filter(|x| x.offset >= 0)
+                    .and_then(|x| x.len.checked_add(x.offset.try_into().unwrap()))
+                    .map(|len| State {
+                        offset: 0,
+                        len,
+                    });
+
+                for input in &mut inputs {
+                    let input_lp = lp_arena.take(*input);
+                    let input_lp = self.pushdown(input_lp, subplan_slice, lp_arena, expr_arena)?;
+                    lp_arena.replace(*input, input_lp);
                 }
-                options.slice = Some((state.offset, state.len as usize));
+                options.slice = opt_state.map(|x| (x.offset, x.len.try_into().unwrap()));
                 let lp = Union {inputs, options};
                 Ok(lp)
             },
@@ -286,7 +290,7 @@ impl SlicePushDown {
                 left_on,
                 right_on,
                 mut options
-            }, Some(state)) if !matches!(options.options, Some(JoinTypeOptionsIR::Cross { .. })) => {
+            }, Some(state)) if !matches!(options.options, Some(JoinTypeOptionsIR::CrossAndFilter { .. })) => {
                 // first restart optimization in both inputs and get the updated LP
                 let lp_left = lp_arena.take(input_left);
                 let lp_left = self.pushdown(lp_left, None, lp_arena, expr_arena)?;
@@ -340,52 +344,93 @@ impl SlicePushDown {
                     options,
                 })
             }
-            (Sort {input, by_column, mut slice,
-                sort_options}, Some(state)) => {
+            (Sort {input, by_column, slice, sort_options}, Some(state)) => {
+                // The slice argument on Sort should be inserted by slice pushdown,
+                // so it shouldn't exist yet (or be idempotently the same).
+                let new_slice = Some((state.offset, state.len as usize));
+                assert!(slice.is_none() || slice == new_slice);
+
                 // first restart optimization in inputs and get the updated LP
                 let input_lp = lp_arena.take(input);
                 let input_lp = self.pushdown(input_lp, None, lp_arena, expr_arena)?;
-                let input= lp_arena.add(input_lp);
+                let input = lp_arena.add(input_lp);
 
-                slice = Some((state.offset, state.len as usize));
                 Ok(Sort {
                     input,
                     by_column,
-                    slice,
+                    slice: new_slice,
                     sort_options
                 })
             }
             (Slice {
                 input,
                 offset,
-                len
-            }, Some(previous_state)) => {
+                mut len
+            }, Some(outer_slice)) => {
                 let alp = lp_arena.take(input);
-                let state = Some(if previous_state.offset == offset  {
-                    State {
-                        offset,
-                        len: std::cmp::min(len, previous_state.len)
+
+                // Both are positive, can combine into a single slice.
+                if outer_slice.offset >= 0 && offset >= 0 {
+                    let state = State {
+                        offset: offset.checked_add(outer_slice.offset).unwrap(),
+                        len: if len as i128 > outer_slice.offset as i128 {
+                            (len - outer_slice.offset as IdxSize).min(outer_slice.len)
+                        } else {
+                            0
+                        },
+                    };
+                    return self.pushdown(alp, Some(state), lp_arena, expr_arena);
+                }
+
+                // If offset is negative the length can never be greater than it.
+                if offset < 0 {
+                    #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u64.
+                    if len as u64 > offset.unsigned_abs() as u64 {
+                        len = offset.unsigned_abs() as IdxSize;
                     }
-                } else {
-                    State {
-                        offset,
-                        len
-                    }
-                });
-                let lp = self.pushdown(alp, state, lp_arena, expr_arena)?;
+                }
+
+                // Both are negative, can also combine (but not so simply).
+                if outer_slice.offset < 0 && offset < 0 {
+                    // We use 128-bit arithmetic to avoid overflows, clamping at the end.
+                    let inner_start_rel_end = offset as i128;
+                    let inner_stop_rel_end = inner_start_rel_end + len as i128;
+                    let naive_outer_start_rel_end = inner_stop_rel_end + outer_slice.offset as i128;
+                    let naive_outer_stop_rel_end = naive_outer_start_rel_end + outer_slice.len as i128;
+                    let clamped_outer_start_rel_end = naive_outer_start_rel_end.max(inner_start_rel_end);
+                    let clamped_outer_stop_rel_end = naive_outer_stop_rel_end.max(clamped_outer_start_rel_end);
+
+                    let state = State {
+                        offset: clamped_outer_start_rel_end.clamp(i64::MIN as i128, i64::MAX as i128) as i64,
+                        len: (clamped_outer_stop_rel_end - clamped_outer_start_rel_end).min(IdxSize::MAX as i128) as IdxSize,
+                    };
+                    return self.pushdown(alp, Some(state), lp_arena, expr_arena);
+                }
+
+                let inner_slice = Some(State { offset, len });
+                let lp = self.pushdown(alp, inner_slice, lp_arena, expr_arena)?;
                 let input = lp_arena.add(lp);
                 Ok(Slice {
                     input,
-                    offset: previous_state.offset,
-                    len: previous_state.len
+                    offset: outer_slice.offset,
+                    len: outer_slice.len
                 })
             }
             (Slice {
                 input,
                 offset,
-                len
+                mut len
             }, None) => {
                 let alp = lp_arena.take(input);
+
+                // If offset is negative the length can never be greater than it.
+                if offset < 0 {
+                    #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u64.
+                    if len as u64 > offset.unsigned_abs() as u64 {
+                        len = offset.unsigned_abs() as IdxSize;
+                    }
+                }
+
                 let state = Some(State {
                     offset,
                     len

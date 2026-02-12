@@ -47,7 +47,7 @@ impl PlCredentialProvider {
     /// Intended to be called with an internal `CredentialProviderBuilder` from
     /// py-polars.
     #[cfg(feature = "python")]
-    pub fn from_python_builder(func: pyo3::PyObject) -> Self {
+    pub fn from_python_builder(func: pyo3::Py<pyo3::PyAny>) -> Self {
         Self::Python(python_impl::PythonCredentialProvider::Builder(Arc::new(
             PythonObject(func),
         )))
@@ -65,11 +65,16 @@ impl PlCredentialProvider {
     /// credential provider.
     ///
     /// This returns `Option` as the auto-initialization case is fallible and falls back to None.
-    pub(crate) fn try_into_initialized(self) -> PolarsResult<Option<Self>> {
+    pub(crate) fn try_into_initialized(
+        self,
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<Option<Self>> {
         match self {
             Self::Function(_) => Ok(Some(self)),
             #[cfg(feature = "python")]
-            Self::Python(v) => Ok(v.try_into_initialized()?.map(Self::Python)),
+            Self::Python(v) => Ok(v
+                .try_into_initialized(clear_cached_credentials)?
+                .map(Self::Python)),
         }
     }
 }
@@ -380,15 +385,15 @@ impl serde::Serialize for PlCredentialProvider {
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for PlCredentialProvider {
-    fn schema_name() -> String {
-        "PlCredentialProvider".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PlCredentialProvider".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "PlCredentialProvider"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         Vec::<u8>::json_schema(generator)
     }
 }
@@ -431,18 +436,16 @@ impl<C: Clone> FetchedCredentialsCache<C> {
             .unwrap()
             .as_secs();
 
-        // Ensure the credential is valid for at least this many seconds to
-        // accommodate for latency.
-        const REQUEST_TIME_BUFFER: u64 = 7;
-
-        if last_fetched_expiry.saturating_sub(current_time) < REQUEST_TIME_BUFFER {
+        if *last_fetched_expiry <= current_time {
             if verbose {
                 eprintln!(
-                    "[FetchedCredentialsCache]: Call update_func: current_time = {}\
-                     , last_fetched_expiry = {}",
+                    "[FetchedCredentialsCache]: \
+                    Call update_func: current_time = {}, \
+                    last_fetched_expiry = {}",
                     current_time, *last_fetched_expiry
                 )
             }
+
             let (credentials, expiry) = update_func.await?;
 
             *last_fetched_credentials = credentials;
@@ -498,10 +501,10 @@ mod python_impl {
     use polars_error::{PolarsError, PolarsResult};
     use polars_utils::pl_str::PlSmallStr;
     use polars_utils::python_function::PythonObject;
-    use pyo3::Python;
     use pyo3::exceptions::PyValueError;
     use pyo3::pybacked::PyBackedStr;
     use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
+    use pyo3::{Python, intern};
 
     use super::IntoCredentialProvider;
 
@@ -534,13 +537,17 @@ mod python_impl {
         /// This exists as a separate step that must be called beforehand. This approach is easier
         /// as the alternative is to refactor the `IntoCredentialProvider` trait to return
         /// `PolarsResult<Option<T>>` for every single function.
-        pub(super) fn try_into_initialized(self) -> PolarsResult<Option<Self>> {
+        pub(super) fn try_into_initialized(
+            self,
+            clear_cached_credentials: bool,
+        ) -> PolarsResult<Option<Self>> {
             match self {
                 Self::Builder(py_object) => {
-                    let opt_initialized_py_object = Python::with_gil(|py| {
-                        let build_fn = py_object.getattr(py, "build_credential_provider")?;
+                    let opt_initialized_py_object = Python::attach(|py| {
+                        let build_fn =
+                            py_object.getattr(py, intern!(py, "build_credential_provider"))?;
 
-                        let v = build_fn.call0(py)?;
+                        let v = build_fn.call1(py, (clear_cached_credentials,))?;
                         let v = (!v.is_none(py)).then_some(v);
 
                         pyo3::PyResult::Ok(v)
@@ -600,7 +607,7 @@ mod python_impl {
                         token: None,
                     };
 
-                    let expiry = Python::with_gil(|py| {
+                    let expiry = Python::attach(|py| {
                         let v = func.0.call0(py)?.into_bound(py);
                         let (storage_options, expiry) =
                             v.extract::<(pyo3::Bound<'_, PyDict>, Option<u64>)>()?;
@@ -675,7 +682,7 @@ mod python_impl {
                     static VALID_KEYS_MSG: &str =
                         "valid configuration keys are: account_key, bearer_token";
 
-                    let expiry = Python::with_gil(|py| {
+                    let expiry = Python::attach(|py| {
                         let v = func.0.call0(py)?.into_bound(py);
                         let (storage_options, expiry) =
                             v.extract::<(pyo3::Bound<'_, PyDict>, Option<u64>)>()?;
@@ -740,7 +747,7 @@ mod python_impl {
                         bearer: String::new(),
                     };
 
-                    let expiry = Python::with_gil(|py| {
+                    let expiry = Python::attach(|py| {
                         let v = func.0.call0(py)?.into_bound(py);
                         let (storage_options, expiry) =
                             v.extract::<(pyo3::Bound<'_, PyDict>, Option<u64>)>()?;
@@ -781,11 +788,14 @@ mod python_impl {
         fn storage_update_options(&self) -> PolarsResult<Vec<(PlSmallStr, PlSmallStr)>> {
             let py_object = self.unwrap_as_provider_ref();
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 py_object
                     .getattr(py, "_storage_update_options")
                     .map_or(Ok(vec![]), |f| {
-                        let v = f.call0(py)?.extract::<pyo3::Bound<'_, PyDict>>(py)?;
+                        let v = f
+                            .call0(py)?
+                            .extract::<pyo3::Bound<'_, PyDict>>(py)
+                            .map_err(pyo3::PyErr::from)?;
 
                         let mut out = Vec::with_capacity(v.len());
 

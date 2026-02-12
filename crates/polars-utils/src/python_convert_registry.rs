@@ -2,25 +2,68 @@ use std::any::Any;
 use std::ops::Deref;
 use std::sync::{Arc, LazyLock, RwLock};
 
-use pyo3::{Py, PyAny, PyResult};
+use pyo3::types::PyAnyMethods;
+use pyo3::{Py, PyAny, PyResult, Python};
 
-pub type PythonToPartitionTarget = Arc<dyn Fn(Py<PyAny>) -> PyResult<Box<dyn Any>> + Send + Sync>;
-pub type DataFrameToPython = Arc<dyn Fn(Box<dyn Any>) -> PyResult<Py<PyAny>> + Send + Sync>;
+pub type FromPython = Arc<dyn Fn(Py<PyAny>) -> PyResult<Box<dyn Any>> + Send + Sync>;
+pub type ToPython = Arc<dyn for<'a> Fn(&'a dyn Any) -> PyResult<Py<PyAny>> + Send + Sync>;
 
 #[derive(Clone)]
 pub struct FromPythonConvertRegistry {
-    pub partition_target_cb_result: PythonToPartitionTarget,
+    pub file_provider_result: FromPython,
+    pub series: FromPython,
+    pub df: FromPython,
+    pub dsl_plan: FromPython,
+    pub schema: FromPython,
 }
 
 #[derive(Clone)]
 pub struct ToPythonConvertRegistry {
-    pub df: DataFrameToPython,
+    pub df: ToPython,
+    pub series: ToPython,
+    pub dsl_plan: ToPython,
+    pub schema: ToPython,
+}
+
+impl ToPythonConvertRegistry {
+    /// Convert a Rust `DataFrame` to a Python `pl.DataFrame` object.
+    pub fn df_to_wrapped_pydf(&self, df: &dyn Any) -> PyResult<Py<PyAny>> {
+        static WRAP_DF: LazyLock<Py<PyAny>> = LazyLock::new(|| {
+            Python::attach(|py| {
+                py.import("polars._utils.wrap")
+                    .unwrap()
+                    .getattr("wrap_df")
+                    .unwrap()
+                    .unbind()
+            })
+        });
+
+        let pydf = (self.df)(df)?;
+
+        Python::attach(|py| WRAP_DF.call1(py, (pydf,)))
+    }
 }
 
 #[derive(Clone)]
 pub struct PythonConvertRegistry {
     pub from_py: FromPythonConvertRegistry,
     pub to_py: ToPythonConvertRegistry,
+}
+
+impl PythonConvertRegistry {
+    pub fn py_file_provider_args_dataclass(&self) -> &'static Py<PyAny> {
+        static CLS: LazyLock<Py<PyAny>> = LazyLock::new(|| {
+            Python::attach(|py| {
+                py.import("polars.io.partition")
+                    .unwrap()
+                    .getattr("FileProviderArgs")
+                    .unwrap()
+                    .unbind()
+            })
+        });
+
+        &CLS
+    }
 }
 
 static PYTHON_CONVERT_REGISTRY: LazyLock<RwLock<Option<PythonConvertRegistry>>> =

@@ -10,15 +10,23 @@ from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_map_return_py_object() -> None:
     df = pl.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
 
-    result = df.select([pl.all().map_batches(lambda s: reduce(lambda a, b: a + b, s))])
+    result = df.select(
+        [
+            pl.all().map_batches(
+                lambda s: reduce(lambda a, b: a + b, s), returns_scalar=True
+            )
+        ]
+    )
 
     expected = pl.DataFrame({"A": [6], "B": [15]})
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_map_no_dtype_set_8531() -> None:
     df = pl.DataFrame({"a": [1]})
 
@@ -34,14 +42,18 @@ def test_error_on_reducing_map() -> None:
     df = pl.DataFrame(
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
     )
-    with pytest.raises(
-        InvalidOperationError,
-        match=(
-            r"output length of `map` \(1\) must be equal to "
-            r"the input length \(6\); consider using `apply` instead"
+    assert_frame_equal(
+        df.group_by("id").agg(
+            pl.map_batches(["t", "y"], np.mean, pl.Float64(), returns_scalar=True)
         ),
-    ):
-        df.group_by("id").agg(pl.map_batches(["t", "y"], np.mean))
+        pl.DataFrame(
+            {
+                "id": [0, 1],
+                "t": [2.166667, 7.333333],
+            }
+        ),
+        check_row_order=False,
+    )
 
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
 
@@ -55,7 +67,9 @@ def test_error_on_reducing_map() -> None:
         df.select(
             pl.col("x")
             .map_batches(
-                lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest(),
+                lambda x: pl.Series(
+                    [x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest()]
+                ),
                 is_elementwise=True,
             )
             .over("group")
@@ -66,9 +80,13 @@ def test_map_batches_group() -> None:
     df = pl.DataFrame(
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
     )
-    assert df.group_by("id").agg(
-        pl.col("t").map_batches(lambda s: s.sum(), return_dtype=pl.self_dtype())
-    ).sort("id").to_dict(as_series=False) == {"id": [0, 1], "t": [[11], [35]]}
+    with pytest.raises(
+        TypeError,
+        match="`map` with `returns_scalar=False` must return a Series; found 'int'",
+    ):
+        df.group_by("id").agg(
+            pl.col("t").map_batches(lambda s: s.sum(), return_dtype=pl.self_dtype())
+        )
     # If returns_scalar is True, the result won't be wrapped in a list:
     assert df.group_by("id").agg(
         pl.col("t").map_batches(
@@ -100,7 +118,7 @@ def test_lazy_map_schema() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="Expected 'LazyFrame.map' to return a 'DataFrame', got a",
+        match=r"Expected 'LazyFrame\.map' to return a 'DataFrame', got a",
     ):
         df.lazy().map_batches(custom).collect()  # type: ignore[arg-type]
 
@@ -112,7 +130,7 @@ def test_lazy_map_schema() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="The output schema of 'LazyFrame.map' is incorrect. Expected",
+        match=r"The output schema of 'LazyFrame\.map' is incorrect\. Expected",
     ):
         df.lazy().map_batches(custom2).collect()
 
@@ -128,3 +146,28 @@ def test_map_batches_collect_schema_17327() -> None:
     )
     expected = pl.Schema({"a": pl.Int64(), "b": pl.List(pl.Int64)})
     assert q.collect_schema() == expected
+
+
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
+@pytest.mark.parametrize(
+    ("data", "literal", "expected_data"),
+    [
+        ([0, 1, 2, 3], 10, [10, 11, 12, 13]),
+        ([0.0, 1.0, 2.0, 3.0], 10.5, [10.5, 11.5, 12.5, 13.5]),
+        (["hello", "world"], " there", ["hello there", "world there"]),
+    ],
+)
+def test_map_batches_no_return_dtype_25601(
+    data: list[object], literal: object, expected_data: list[object]
+) -> None:
+    # previously this would panic with "internal error: entered unreachable code"
+    # when trying to create default values for Unknown dtype literal inference
+    result = pl.DataFrame({"colx": data}).select(
+        pl.map_batches(
+            exprs=["colx", pl.lit(literal)],
+            function=lambda d: d[0] + d[1],
+            return_dtype=None,
+        )
+    )
+    expected = pl.DataFrame({"colx": expected_data})
+    assert_frame_equal(result, expected)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import multiprocessing
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import boto3
 import pytest
@@ -9,9 +9,10 @@ from moto.server import ThreadedMotoServer
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from tests.conftest import PlMonkeyPatch
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
     from pathlib import Path
 
 pytestmark = [
@@ -27,7 +28,7 @@ pytestmark = [
 @pytest.fixture(scope="module")
 def monkeypatch_module() -> Any:
     """Allow module-scoped monkeypatching."""
-    with pytest.MonkeyPatch.context() as mp:
+    with PlMonkeyPatch.context() as mp:
         yield mp
 
 
@@ -103,3 +104,10 @@ def test_lazy_count_s3(s3: str) -> None:
     assert "FAST_COUNT" in lf.explain()
     expected = pl.DataFrame({"len": [54]}, schema={"len": pl.UInt32})
     assert_frame_equal(lf.collect(), expected)
+
+
+def test_read_parquet_metadata(s3: str) -> None:
+    metadata = pl.read_parquet_metadata(
+        "s3://bucket/foods1.parquet", storage_options={"endpoint_url": s3}
+    )
+    assert "ARROW:schema" in metadata

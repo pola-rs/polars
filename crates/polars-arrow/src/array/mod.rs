@@ -13,7 +13,7 @@
 //!
 //! All immutable arrays implement the trait object [`Array`] and that can be downcast
 //! to a concrete struct based on [`PhysicalType`](crate::datatypes::PhysicalType) available from [`Array::dtype`].
-//! All immutable arrays are backed by [`Buffer`](crate::buffer::Buffer) and thus cloning and slicing them is `O(1)`.
+//! All immutable arrays are backed by [`Buffer`](polars_buffer::Buffer) and thus cloning and slicing them is `O(1)`.
 //!
 //! Most arrays contain a [`MutableArray`] counterpart that is neither cloneable nor sliceable, but
 //! can be operated in-place.
@@ -60,6 +60,18 @@ pub trait Splitable: Sized {
     unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self);
 }
 
+impl<T> Splitable for Buffer<T> {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let left = self.clone().sliced_unchecked(..offset);
+        let right = self.clone().sliced_unchecked(offset..);
+        (left, right)
+    }
+}
+
 /// A trait representing an immutable Arrow array. Arrow arrays are trait objects
 /// that are infallibly downcast to concrete types according to the [`Array::dtype`].
 pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
@@ -81,6 +93,8 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// The [`ArrowDataType`] of the [`Array`]. In combination with [`Array::as_any`], this can be
     /// used to downcast trait objects (`dyn Array`) to concrete arrays.
     fn dtype(&self) -> &ArrowDataType;
+
+    fn dtype_mut(&mut self) -> &mut ArrowDataType;
 
     /// The validity of the [`Array`]: every array has an optional [`Bitmap`] that, when available
     /// specifies whether the array slot is valid or not (null).
@@ -582,6 +596,11 @@ macro_rules! impl_common_array {
         }
 
         #[inline]
+        fn dtype_mut(&mut self) -> &mut ArrowDataType {
+            &mut self.dtype
+        }
+
+        #[inline]
         fn split_at_boxed(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>) {
             let (lhs, rhs) = $crate::array::Splitable::split_at(self, offset);
             (Box::new(lhs), Box::new(rhs))
@@ -648,7 +667,7 @@ pub fn clone(array: &dyn Array) -> Box<dyn Array> {
 
 // see https://users.rust-lang.org/t/generic-for-dyn-a-or-box-dyn-a-or-arc-dyn-a/69430/3
 // for details
-impl<'a> AsRef<(dyn Array + 'a)> for dyn Array {
+impl<'a> AsRef<dyn Array + 'a> for dyn Array {
     fn as_ref(&self) -> &(dyn Array + 'a) {
         self
     }
@@ -661,6 +680,7 @@ mod dictionary;
 mod fixed_size_binary;
 mod fixed_size_list;
 mod list;
+pub use list::LIST_VALUES_NAME;
 mod map;
 mod null;
 mod primitive;
@@ -705,6 +725,7 @@ pub use iterator::ArrayValuesIter;
 pub use list::{ListArray, ListArrayBuilder, ListValuesIter, MutableListArray};
 pub use map::MapArray;
 pub use null::{MutableNullArray, NullArray, NullArrayBuilder};
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 pub use primitive::*;
 pub use static_array::{ParameterFreeDtypeStaticArray, StaticArray};

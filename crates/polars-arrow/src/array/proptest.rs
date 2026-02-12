@@ -200,6 +200,9 @@ pub fn array_with_dtype(
         ArrowDataType::UInt64 => primitive_array::<u64>(size_range)
             .prop_map(PrimitiveArray::boxed)
             .boxed(),
+        ArrowDataType::UInt128 => primitive_array::<u128>(size_range)
+            .prop_map(PrimitiveArray::boxed)
+            .boxed(),
         ArrowDataType::Float32 => primitive_array::<f32>(size_range)
             .prop_map(PrimitiveArray::boxed)
             .boxed(),

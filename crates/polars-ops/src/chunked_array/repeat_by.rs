@@ -1,5 +1,5 @@
 use arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
-use arrow::array::{Array, ListArray};
+use arrow::array::{Array, IntoBoxedArray, ListArray, NullArray};
 use arrow::bitmap::BitmapBuilder;
 use arrow::offset::Offsets;
 use arrow::pushable::Pushable;
@@ -133,6 +133,73 @@ fn repeat_by_list(ca: &ListChunked, by: &IdxCa) -> PolarsResult<ListChunked> {
     }
 }
 
+fn repeat_by_null(ca: &NullChunked, by: &IdxCa) -> PolarsResult<ListChunked> {
+    check_lengths(ca.len(), by.len())?;
+
+    match (ca.len(), by.len()) {
+        (left_len, right_len) if left_len == right_len => {
+            let arr_length = by.iter().flatten().map(|x| x as usize).sum();
+            let arr = NullArray::new(ArrowDataType::Null, arr_length);
+
+            let mut validity = BitmapBuilder::with_capacity(by.len());
+            let mut offsets = Offsets::<i64>::with_capacity(by.len());
+            for n_repeat in by.iter() {
+                validity.push(n_repeat.is_some());
+                if let Some(repeats) = n_repeat {
+                    offsets.push(repeats as usize);
+                } else {
+                    offsets.push_null();
+                }
+            }
+
+            let array = LargeListArray::new(
+                ListArray::<i64>::default_datatype(arr.dtype().clone()),
+                offsets.into(),
+                arr.into_boxed(),
+                validity.into_opt_validity(),
+            );
+
+            Ok(unsafe {
+                ListChunked::from_chunks_and_dtype(
+                    ca.name().clone(),
+                    vec![array.into_boxed()],
+                    DataType::List(Box::new(DataType::Null)),
+                )
+            })
+        },
+        (_, 1) => {
+            let by = new_by(by, ca.len());
+            repeat_by_null(ca, &by)
+        },
+        (1, _) => {
+            let new_array = ca.new_from_index(0, by.len());
+            let new_array = new_array.null().unwrap();
+            repeat_by_null(new_array, by)
+        },
+        // we have already checked the length
+        _ => unreachable!(),
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+fn repeat_by_array(ca: &ArrayChunked, by: &IdxCa) -> PolarsResult<ListChunked> {
+    check_lengths(ca.len(), by.len())?;
+
+    match (ca.len(), by.len()) {
+        (left_len, right_len) if left_len == right_len => Ok(repeat_by_generic_inner(ca, by)),
+        (_, 1) => {
+            let by = new_by(by, ca.len());
+            repeat_by_array(ca, &by)
+        },
+        (1, _) => {
+            let new_array = ca.new_from_index(0, by.len());
+            repeat_by_array(&new_array, by)
+        },
+        // we have already checked the length
+        _ => unreachable!(),
+    }
+}
+
 #[cfg(feature = "dtype-struct")]
 fn repeat_by_struct(ca: &StructChunked, by: &IdxCa) -> PolarsResult<ListChunked> {
     check_lengths(ca.len(), by.len())?;
@@ -188,24 +255,27 @@ fn repeat_by_generic_inner<T: PolarsDataType>(ca: &ChunkedArray<T>, by: &IdxCa) 
 
 pub fn repeat_by(s: &Series, by: &IdxCa) -> PolarsResult<ListChunked> {
     let s_phys = s.to_physical_repr();
-    use DataType::*;
+    use DataType as D;
     let out = match s_phys.dtype() {
-        Boolean => repeat_by_bool(s_phys.bool().unwrap(), by),
-        String => {
+        D::Null => repeat_by_null(s_phys.null().unwrap(), by),
+        D::Boolean => repeat_by_bool(s_phys.bool().unwrap(), by),
+        D::String => {
             let ca = s_phys.str().unwrap();
             repeat_by_binary(&ca.as_binary(), by)
-                .and_then(|ca| ca.apply_to_inner(&|s| unsafe { s.cast_unchecked(&String) }))
+                .and_then(|ca| ca.apply_to_inner(&|s| unsafe { s.cast_unchecked(&D::String) }))
         },
-        Binary => repeat_by_binary(s_phys.binary().unwrap(), by),
+        D::Binary => repeat_by_binary(s_phys.binary().unwrap(), by),
         dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dt, |$T| {
                 let ca: &ChunkedArray<$T> = s_phys.as_ref().as_ref().as_ref();
                 repeat_by_primitive(ca, by)
             })
         },
-        List(_) => repeat_by_list(s_phys.list().unwrap(), by),
+        D::List(_) => repeat_by_list(s_phys.list().unwrap(), by),
         #[cfg(feature = "dtype-struct")]
-        Struct(_) => repeat_by_struct(s_phys.struct_().unwrap(), by),
+        D::Struct(_) => repeat_by_struct(s_phys.struct_().unwrap(), by),
+        #[cfg(feature = "dtype-array")]
+        D::Array(_, _) => repeat_by_array(s_phys.array().unwrap(), by),
         _ => polars_bail!(opq = repeat_by, s.dtype()),
     };
     out.and_then(|ca| {

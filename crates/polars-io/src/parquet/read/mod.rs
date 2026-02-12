@@ -18,7 +18,6 @@
 mod async_impl;
 mod mmap;
 mod options;
-mod predicates;
 mod read_impl;
 mod reader;
 mod utils;
@@ -26,7 +25,7 @@ mod utils;
 const ROW_COUNT_OVERFLOW_ERR: PolarsError = PolarsError::ComputeError(ErrString::new_static(
     "\
 Parquet file produces more than pow(2, 32) rows; \
-consider compiling with polars-bigidx feature (polars-u64-idx package on python), \
+consider compiling with polars-bigidx feature (pip install polars[rt64]), \
 or set 'streaming'",
 ));
 
@@ -42,7 +41,6 @@ pub use utils::materialize_empty_df;
 
 pub mod _internal {
     pub use super::mmap::to_deserializer;
-    pub use super::predicates::collect_statistics_with_live_columns;
     pub use super::read_impl::{PrefilterMaskSetting, calc_prefilter_cost};
     pub use super::utils::ensure_matching_dtypes_if_found;
 }

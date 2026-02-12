@@ -5,6 +5,7 @@ use polars_error::{PolarsResult, feature_gated};
 
 use super::list_utils::NumericOp;
 use super::{IntoSeries, ListChunked, ListType, NumOpsDispatchInner, Series};
+use crate::prelude::DataType;
 
 impl NumOpsDispatchInner for ListType {
     fn add_to(lhs: &ListChunked, rhs: &Series) -> PolarsResult<Series> {
@@ -28,6 +29,7 @@ impl NumOpsDispatchInner for ListType {
     }
 }
 
+#[cfg_attr(not(feature = "list_arithmetic"), allow(unused))]
 #[derive(Clone)]
 pub struct NumericListOp(NumericOp);
 
@@ -54,6 +56,15 @@ impl NumericListOp {
 
     pub fn floor_div() -> Self {
         Self(NumericOp::FloorDiv)
+    }
+
+    pub fn try_get_leaf_supertype(
+        &self,
+        prim_dtype_lhs: &DataType,
+        prim_dtype_rhs: &DataType,
+    ) -> PolarsResult<DataType> {
+        self.0
+            .try_get_leaf_supertype(prim_dtype_lhs, prim_dtype_rhs)
     }
 }
 
@@ -272,7 +283,7 @@ mod inner {
                 ) && validity_rhs.as_ref().is_some_and(|x| x.set_bits() == 0))
             {
                 return Ok(Either::Right(ListChunked::full_null_with_dtype(
-                    output_name.clone(),
+                    output_name,
                     output_len,
                     output_inner_dtype.as_ref(),
                 )));

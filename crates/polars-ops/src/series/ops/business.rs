@@ -97,6 +97,7 @@ pub fn business_day_count(
             )
         },
     };
+    let out = out.with_name(start_dates.name().clone());
     Ok(out.into_series())
 }
 

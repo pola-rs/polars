@@ -1,7 +1,11 @@
+use std::time::Instant;
+
+use parking_lot::Mutex;
 use polars_error::PolarsResult;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
 use crate::execute::StreamingExecutionState;
+use crate::metrics::GraphMetrics;
 use crate::nodes::ComputeNode;
 
 slotmap::new_key_type! {
@@ -71,12 +75,16 @@ impl Graph {
     }
 
     /// Updates all the nodes' states until a fixed point is reached.
-    pub fn update_all_states(&mut self, state: &StreamingExecutionState) -> PolarsResult<()> {
+    pub fn update_all_states(
+        &mut self,
+        state: &StreamingExecutionState,
+        metrics: Option<&Mutex<GraphMetrics>>,
+    ) -> PolarsResult<()> {
         let mut to_update: Vec<_> = self.nodes.keys().collect();
         let mut scheduled_for_update: SecondaryMap<GraphNodeKey, ()> =
             self.nodes.keys().map(|k| (k, ())).collect();
 
-        let verbose = std::env::var("POLARS_VERBOSE_STATE_UPDATE").as_deref() == Ok("1");
+        let verbose = polars_config::config().verbose();
 
         let mut recv_state = Vec::new();
         let mut send_state = Vec::new();
@@ -97,12 +105,25 @@ impl Graph {
                     node.compute.name()
                 );
             }
+            let start = (metrics.is_some() || verbose).then(Instant::now);
+            if let Some(lock) = metrics {
+                lock.lock().start_state_update(node_key);
+            }
+
             node.compute
                 .update_state(&mut recv_state, &mut send_state, state)?;
+            let elapsed = start.map(|s| s.elapsed());
+            if let Some(lock) = metrics {
+                let is_done = recv_state.iter().all(|s| *s == PortState::Done)
+                    && send_state.iter().all(|s| *s == PortState::Done);
+                lock.lock()
+                    .stop_state_update(node_key, elapsed.unwrap(), is_done);
+            }
             if verbose {
                 eprintln!(
-                    "updating {}, after: {recv_state:?} {send_state:?}",
-                    node.compute.name()
+                    "updating {}, after: {recv_state:?} {send_state:?} (took {:?})",
+                    node.compute.name(),
+                    elapsed.unwrap()
                 );
             }
 
@@ -149,6 +170,7 @@ pub struct GraphNode {
 
 /// A pipe sends data between nodes.
 #[allow(unused)] // TODO: remove.
+#[derive(Clone)]
 pub struct LogicalPipe {
     // Node that we send data to.
     pub sender: GraphNodeKey,

@@ -16,3 +16,4 @@ Descriptive
     DataFrame.n_chunks
     DataFrame.n_unique
     DataFrame.null_count
+    DataFrame.show

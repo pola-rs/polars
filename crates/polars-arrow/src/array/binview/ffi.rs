@@ -1,6 +1,4 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 
 use super::BinaryViewArrayGeneric;
@@ -48,7 +46,7 @@ unsafe impl<T: ViewType + ?Sized> ToFfi for BinaryViewArrayGeneric<T> {
             views: self.views.clone(),
             buffers: self.buffers.clone(),
             phantom: Default::default(),
-            total_bytes_len: AtomicU64::new(self.total_bytes_len.load(Ordering::Relaxed)),
+            total_bytes_len: self.total_bytes_len.clone(),
             total_buffer_len: self.total_buffer_len,
         }
     }
@@ -68,7 +66,7 @@ impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArray
             return Ok(Self::new_unchecked_unknown_md(
                 dtype,
                 views,
-                Arc::from([]),
+                Buffer::new(),
                 validity,
                 None,
             ));
@@ -92,7 +90,7 @@ impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArray
         Ok(Self::new_unchecked_unknown_md(
             dtype,
             views,
-            Arc::from(variadic_buffers),
+            Buffer::from(variadic_buffers),
             validity,
             None,
         ))

@@ -1,27 +1,22 @@
-use std::path::Path;
 use std::sync::{Arc, LazyLock};
 use std::time::UNIX_EPOCH;
 
 use polars_error::{PolarsError, PolarsResult};
-use polars_utils::plpath::PlPathRef;
+use polars_utils::pl_path::{CloudScheme, PlRefPath};
 
 use super::cache::{FILE_CACHE, get_env_file_cache_ttl};
 use super::entry::FileCacheEntry;
 use super::file_fetcher::{CloudFileFetcher, LocalFileFetcher};
 use crate::cloud::{CloudLocation, CloudOptions, build_object_store, object_path_from_str};
 use crate::path_utils::{POLARS_TEMP_DIR_BASE_PATH, ensure_directory_init};
-use crate::pl_async;
 
-pub static FILE_CACHE_PREFIX: LazyLock<Box<Path>> = LazyLock::new(|| {
-    let path = POLARS_TEMP_DIR_BASE_PATH
-        .join("file-cache/")
-        .into_boxed_path();
+pub static FILE_CACHE_PREFIX: LazyLock<PlRefPath> = LazyLock::new(|| {
+    let path = PlRefPath::try_from_path(&POLARS_TEMP_DIR_BASE_PATH.join("file-cache/")).unwrap();
 
     if let Err(err) = ensure_directory_init(path.as_ref()) {
         panic!(
             "failed to create file cache directory: path = {}, err = {}",
-            path.to_str().unwrap(),
-            err
+            path, err
         );
     }
 
@@ -29,12 +24,15 @@ pub static FILE_CACHE_PREFIX: LazyLock<Box<Path>> = LazyLock::new(|| {
 });
 
 pub(super) fn last_modified_u64(metadata: &std::fs::Metadata) -> u64 {
-    metadata
-        .modified()
-        .unwrap()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
+    u64::try_from(
+        metadata
+            .modified()
+            .unwrap()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+    )
+    .unwrap()
 }
 
 pub(super) fn update_last_accessed(file: &std::fs::File) {
@@ -49,82 +47,90 @@ pub(super) fn update_last_accessed(file: &std::fs::File) {
     }
 }
 
-pub fn init_entries_from_uri_list(
-    uri_list: &[Arc<str>],
+pub async fn init_entries_from_uri_list(
+    uri_list: impl ExactSizeIterator<Item = PlRefPath> + Send + 'static,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<Vec<Arc<FileCacheEntry>>> {
-    if uri_list.is_empty() {
+    init_entries_from_uri_list_impl(Box::new(uri_list), cloud_options).await
+}
+
+async fn init_entries_from_uri_list_impl(
+    uri_list: Box<dyn ExactSizeIterator<Item = PlRefPath> + Send + 'static>,
+    cloud_options: Option<&CloudOptions>,
+) -> PolarsResult<Vec<Arc<FileCacheEntry>>> {
+    #[allow(clippy::len_zero)]
+    if uri_list.len() == 0 {
         return Ok(Default::default());
     }
 
-    let first_uri = uri_list.first().unwrap().as_ref();
+    let mut uri_list = uri_list.peekable();
+
+    let first_uri = uri_list.peek().unwrap().clone();
 
     let file_cache_ttl = cloud_options
         .map(|x| x.file_cache_ttl)
         .unwrap_or_else(get_env_file_cache_ttl);
 
-    if PlPathRef::new(first_uri).is_cloud_url() {
-        let object_stores = pl_async::get_runtime().block_in_place_on(async {
-            futures::future::try_join_all(
-                (0..if first_uri.starts_with("http") {
-                    // Object stores for http are tied to the path.
-                    uri_list.len()
-                } else {
-                    1
-                })
-                    .map(|i| async move {
-                        let (_, object_store) =
-                            build_object_store(&uri_list[i], cloud_options, false).await?;
-                        PolarsResult::Ok(object_store)
-                    }),
-            )
-            .await
-        })?;
+    if first_uri.has_scheme() {
+        let shared_object_store = if !matches!(
+            first_uri.scheme(),
+            Some(CloudScheme::Http | CloudScheme::Https) // Object stores for http are tied to the path.
+        ) {
+            let (_, object_store) = build_object_store(first_uri, cloud_options, false).await?;
+            Some(object_store)
+        } else {
+            None
+        };
 
-        uri_list
-            .iter()
-            .enumerate()
-            .map(|(i, uri)| {
+        futures::future::try_join_all(uri_list.map(|uri| {
+            let shared_object_store = shared_object_store.clone();
+
+            async move {
+                let object_store = if let Some(shared_object_store) = shared_object_store.clone() {
+                    shared_object_store
+                } else {
+                    let (_, object_store) =
+                        build_object_store(uri.clone(), cloud_options, false).await?;
+                    object_store
+                };
+
                 FILE_CACHE.init_entry(
                     uri.clone(),
-                    || {
+                    &|| {
                         let CloudLocation { prefix, .. } =
-                            CloudLocation::new(uri.as_ref(), false).unwrap();
+                            CloudLocation::new(uri.clone(), false).unwrap();
                         let cloud_path = object_path_from_str(&prefix)?;
-
-                        let object_store =
-                            object_stores[std::cmp::min(i, object_stores.len() - 1)].clone();
-                        let uri = uri.clone();
+                        let object_store = object_store.clone();
 
                         Ok(Arc::new(CloudFileFetcher {
-                            uri,
+                            uri: uri.clone(),
                             object_store,
                             cloud_path,
                         }))
                     },
                     file_cache_ttl,
                 )
-            })
-            .collect::<PolarsResult<Vec<_>>>()
+            }
+        }))
+        .await
     } else {
-        uri_list
-            .iter()
-            .map(|uri| {
-                let uri = std::fs::canonicalize(uri.as_ref()).map_err(|err| {
-                    let msg = Some(format!("{}: {}", err, uri.as_ref()).into());
-                    PolarsError::IO {
-                        error: err.into(),
-                        msg,
-                    }
-                })?;
-                let uri = Arc::<str>::from(uri.to_str().unwrap());
+        let mut out = Vec::with_capacity(uri_list.len());
+        for uri in uri_list {
+            let uri = tokio::fs::canonicalize(uri.as_str()).await.map_err(|err| {
+                let msg = Some(format!("{}: {}", err, uri).into());
+                PolarsError::IO {
+                    error: err.into(),
+                    msg,
+                }
+            })?;
+            let uri = PlRefPath::try_from_pathbuf(uri)?;
 
-                FILE_CACHE.init_entry(
-                    uri.clone(),
-                    || Ok(Arc::new(LocalFileFetcher::from_uri(uri.clone()))),
-                    file_cache_ttl,
-                )
-            })
-            .collect::<PolarsResult<Vec<_>>>()
+            out.push(FILE_CACHE.init_entry(
+                uri.clone(),
+                &|| Ok(Arc::new(LocalFileFetcher::from_uri(uri.clone()))),
+                file_cache_ttl,
+            )?)
+        }
+        Ok(out)
     }
 }

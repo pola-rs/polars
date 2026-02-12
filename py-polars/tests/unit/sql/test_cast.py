@@ -41,6 +41,7 @@ def test_cast() -> None:
               b::bigint AS b_i64,
               d::tinyint AS d_i8,
               d::hugeint AS d_i128,
+              d::uhugeint as d_u128,
               a::int1 AS a_i8,
               a::int2 AS a_i16,
               a::int4 AS a_i32,
@@ -84,6 +85,7 @@ def test_cast() -> None:
         "b_i64": pl.Int64,
         "d_i8": pl.Int8,
         "d_i128": pl.Int128,
+        "d_u128": pl.UInt128,
         "a_i8": pl.Int8,
         "a_i16": pl.Int16,
         "a_i32": pl.Int32,
@@ -124,11 +126,11 @@ def test_cast() -> None:
         (5.0, 5.5, 2.0),
     ]
     assert res.select(cs.integer()).rows() == [
-        (1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1),
-        (2, 2, 2, 0, 0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 0),
-        (3, 3, 3, 1, 1, 3, 3, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 3, 1),
-        (4, 4, 4, 0, 0, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4, 4, 4, 4, 0),
-        (5, 5, 5, 1, 1, 5, 5, 5, 5, 5, 1, 5, 5, 5, 5, 5, 5, 5, 1),
+        (1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1),
+        (2, 2, 2, 0, 0, 0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 0),
+        (3, 3, 3, 1, 1, 1, 3, 3, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 3, 1),
+        (4, 4, 4, 0, 0, 0, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4, 4, 4, 4, 0),
+        (5, 5, 5, 1, 1, 1, 5, 5, 5, 5, 5, 1, 5, 5, 5, 5, 5, 5, 5, 1),
     ]
     assert res.select(cs.string()).rows() == [
         ("1", "1.1", "true"),
@@ -185,6 +187,8 @@ def test_cast_errors(values: Any, cast_op: str, error: str) -> None:
     assert None in res.to_series()
 
 
+@pytest.mark.may_fail_cloud  # reason: eager construct to_struct
+@pytest.mark.xfail  # this is a construct we cannot deal with anymore
 def test_cast_json() -> None:
     df = pl.DataFrame({"txt": ['{"a":[1,2,3],"b":["x","y","z"],"c":5.0}']})
 

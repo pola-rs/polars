@@ -235,8 +235,8 @@ where
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
     let out = if left_by.width() == 1 {
-        let left_by_s = left_by.get_columns()[0].to_physical_repr();
-        let right_by_s = right_by.get_columns()[0].to_physical_repr();
+        let left_by_s = left_by.columns()[0].to_physical_repr();
+        let right_by_s = right_by.columns()[0].to_physical_repr();
         let left_dtype = left_by_s.dtype();
         let right_dtype = right_by_s.dtype();
         polars_ensure!(left_dtype == right_dtype,
@@ -276,13 +276,29 @@ where
 
                 use BitRepr as B;
                 match (left_by, right_by) {
-                    (B::Small(left_by), B::Small(right_by)) => {
+                    (B::U8(left_by), B::U8(right_by)) => {
+                        asof_join_by_numeric::<T, UInt8Type, A, F>(
+                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
+                        )?
+                    },
+                    (B::U16(left_by), B::U16(right_by)) => {
+                        asof_join_by_numeric::<T, UInt16Type, A, F>(
+                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
+                        )?
+                    },
+                    (B::U32(left_by), B::U32(right_by)) => {
                         asof_join_by_numeric::<T, UInt32Type, A, F>(
                             &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
                         )?
                     },
-                    (B::Large(left_by), B::Large(right_by)) => {
+                    (B::U64(left_by), B::U64(right_by)) => {
                         asof_join_by_numeric::<T, UInt64Type, A, F>(
+                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
+                        )?
+                    },
+                    #[cfg(feature = "dtype-u128")]
+                    (B::U128(left_by), B::U128(right_by)) => {
+                        asof_join_by_numeric::<T, UInt128Type, A, F>(
                             &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
                         )?
                     },
@@ -292,7 +308,7 @@ where
             },
         }
     } else {
-        for (lhs, rhs) in left_by.get_columns().iter().zip(right_by.get_columns()) {
+        for (lhs, rhs) in left_by.columns().iter().zip(right_by.columns()) {
             polars_ensure!(lhs.dtype() == rhs.dtype(),
                 ComputeError: "mismatching dtypes in 'by' parameter of asof-join: `{}` and `{}`", lhs.dtype(), rhs.dtype()
             );
@@ -320,7 +336,7 @@ fn dispatch_join_strategy<T: PolarsDataType>(
     allow_eq: bool,
 ) -> PolarsResult<IdxArr>
 where
-    for<'a> T::Physical<'a>: PartialOrd,
+    for<'a> T::Physical<'a>: TotalOrd,
 {
     let right_asof = left_asof.unpack_series_matching_type(right_asof)?;
 
@@ -414,6 +430,27 @@ fn dispatch_join_type(
                 ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
             )
         },
+        #[cfg(feature = "dtype-i128")]
+        DataType::Int128 => {
+            let ca = left_asof.i128().unwrap();
+            dispatch_join_strategy_numeric(
+                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+            )
+        },
+        #[cfg(feature = "dtype-u128")]
+        DataType::UInt128 => {
+            let ca = left_asof.u128().unwrap();
+            dispatch_join_strategy_numeric(
+                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+            )
+        },
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca = left_asof.f16().unwrap();
+            dispatch_join_strategy_numeric(
+                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+            )
+        },
         DataType::Float32 => {
             let ca = left_asof.f32().unwrap();
             dispatch_join_strategy_numeric(
@@ -450,7 +487,7 @@ fn dispatch_join_type(
                 allow_eq,
             )
         },
-        _ => {
+        DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16 => {
             let left_asof = left_asof.cast(&DataType::Int32).unwrap();
             let right_asof = right_asof.cast(&DataType::Int32).unwrap();
             let ca = left_asof.i32().unwrap();
@@ -464,6 +501,7 @@ fn dispatch_join_type(
                 allow_eq,
             )
         },
+        dt => polars_bail!(opq = asof_join, dt),
     }
 }
 
@@ -485,17 +523,15 @@ pub trait AsofJoinBy: IntoDf {
         allow_eq: bool,
         check_sortedness: bool,
     ) -> PolarsResult<DataFrame> {
-        let (self_sliced_slot, other_sliced_slot, left_slice_s, right_slice_s); // Keeps temporaries alive.
+        let (self_sliced_slot, left_slice_s); // Keeps temporaries alive.
         let (self_df, other_df, left_key, right_key);
         if let Some((offset, len)) = slice {
             self_sliced_slot = self.to_df().slice(offset, len);
-            other_sliced_slot = other.slice(offset, len);
             left_slice_s = left_on.slice(offset, len);
-            right_slice_s = right_on.slice(offset, len);
             left_key = &left_slice_s;
-            right_key = &right_slice_s;
+            right_key = right_on;
             self_df = &self_sliced_slot;
-            other_df = &other_sliced_slot;
+            other_df = other;
         } else {
             self_df = self.to_df();
             other_df = other;
@@ -518,15 +554,12 @@ pub trait AsofJoinBy: IntoDf {
         let mut left_by = self_df.select(left_by)?;
         let mut right_by = other_df.select(right_by)?;
 
-        unsafe {
-            for (l, r) in left_by
-                .get_columns_mut()
-                .iter_mut()
-                .zip(right_by.get_columns_mut().iter_mut())
-            {
-                *l = l.to_physical_repr();
-                *r = r.to_physical_repr();
-            }
+        for (l, r) in unsafe { left_by.columns_mut() }
+            .iter_mut()
+            .zip(unsafe { right_by.columns_mut() }.iter_mut())
+        {
+            *l = l.to_physical_repr();
+            *r = r.to_physical_repr();
         }
 
         let right_join_tuples = dispatch_join_type(
@@ -545,12 +578,12 @@ pub trait AsofJoinBy: IntoDf {
         }
 
         let cols = other_df
-            .get_columns()
+            .columns()
             .iter()
             .filter(|s| !drop_these.contains(&s.name()))
             .cloned()
             .collect();
-        let proj_other_df = unsafe { DataFrame::new_no_checks(other_df.height(), cols) };
+        let proj_other_df = unsafe { DataFrame::new_unchecked(other_df.height(), cols) };
 
         let left = self_df.clone();
 

@@ -1,6 +1,8 @@
+use std::path::{Component, Path};
+
 use polars_core::prelude::*;
 use polars_io::prelude::schema_inference::{finish_infer_field_schema, infer_field_schema};
-use polars_utils::plpath::PlPath;
+use polars_utils::pl_path::PlRefPath;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -9,42 +11,18 @@ use serde::{Deserialize, Serialize};
 pub struct HivePartitionsDf(DataFrame);
 
 impl HivePartitionsDf {
-    pub fn get_projection_schema_and_indices(
-        &self,
-        names: &PlHashSet<PlSmallStr>,
-    ) -> (SchemaRef, Vec<usize>) {
-        let mut out_schema = Schema::with_capacity(self.schema().len());
-        let mut out_indices = Vec::with_capacity(self.0.get_columns().len());
+    /// Filter the columns to those contained in `projected_columns`.
+    pub fn filter_columns(&self, projected_columns: &Schema) -> Self {
+        let columns: Vec<_> = self
+            .df()
+            .columns()
+            .iter()
+            .filter(|c| projected_columns.contains(c.name()))
+            .cloned()
+            .collect();
 
-        for (i, column) in self.0.get_columns().iter().enumerate() {
-            let name = column.name();
-            if names.contains(name.as_str()) {
-                out_indices.push(i);
-                out_schema
-                    .insert_at_index(out_schema.len(), name.clone(), column.dtype().clone())
-                    .unwrap();
-            }
-        }
-
-        (out_schema.into(), out_indices)
-    }
-
-    pub fn apply_projection(&mut self, column_indices: &[usize]) {
-        let schema = self.schema();
-        let projected_schema = schema.try_project_indices(column_indices).unwrap();
-        self.0 = self.0.select(projected_schema.iter_names_cloned()).unwrap();
-    }
-
-    pub fn take_indices(&self, row_indexes: &[IdxSize]) -> Self {
-        if !row_indexes.is_empty() {
-            let mut max_idx = 0;
-            for &i in row_indexes {
-                max_idx = max_idx.max(i);
-            }
-            assert!(max_idx < self.0.height() as IdxSize);
-        }
-        // SAFETY: Checked bounds before.
-        Self(unsafe { self.0.take_slice_unchecked(row_indexes) })
+        let height = self.df().height();
+        unsafe { DataFrame::new_unchecked(height, columns) }.into()
     }
 
     pub fn df(&self) -> &DataFrame {
@@ -67,7 +45,7 @@ impl From<DataFrame> for HivePartitionsDf {
 /// # Safety
 /// `hive_start_idx <= [min path length]`
 pub fn hive_partitions_from_paths(
-    paths: &[PlPath],
+    paths: &[PlRefPath],
     hive_start_idx: usize,
     schema: Option<SchemaRef>,
     reader_schema: &Schema,
@@ -76,6 +54,14 @@ pub fn hive_partitions_from_paths(
     let Some(path) = paths.first() else {
         return Ok(None);
     };
+
+    // generate an iterator for path segments
+    fn get_normal_components(path: &Path) -> Box<dyn Iterator<Item = &str> + '_> {
+        Box::new(path.components().filter_map(|c| match c {
+            Component::Normal(seg) => Some(seg.to_str().unwrap()),
+            _ => None,
+        }))
+    }
 
     fn parse_hive_string_and_decode(part: &'_ str) -> Option<(&'_ str, std::borrow::Cow<'_, str>)> {
         let (k, v) = parse_hive_string(part)?;
@@ -88,9 +74,10 @@ pub fn hive_partitions_from_paths(
 
     // generate (k,v) tuples from 'k=v' partition strings
     macro_rules! get_hive_parts_iter {
-        ($e:expr) => {{
-            let file_index = $e.get_normal_components().count() - 1;
-            let path_parts = $e.get_normal_components();
+        ($pl_path:expr) => {{
+            let path: &Path = $pl_path.as_std_path();
+            let file_index = get_normal_components(path).count() - 1;
+            let path_parts = get_normal_components(path);
 
             path_parts.enumerate().filter_map(move |(index, part)| {
                 if index == file_index {
@@ -103,9 +90,8 @@ pub fn hive_partitions_from_paths(
     }
 
     let hive_schema = if let Some(ref schema) = schema {
-        let path = path.as_ref();
-        let path = path.offset_bytes(hive_start_idx);
-        Arc::new(get_hive_parts_iter!(path).map(|(name, _)| {
+        let path = path.sliced(hive_start_idx..path.as_str().len());
+        Arc::new(get_hive_parts_iter!(&path).map(|(name, _)| {
                 let Some(dtype) = schema.get(name) else {
                     polars_bail!(
                         SchemaFieldNotFound:
@@ -124,14 +110,13 @@ pub fn hive_partitions_from_paths(
                 Ok(Field::new(PlSmallStr::from_str(name), dtype))
             }).collect::<PolarsResult<Schema>>()?)
     } else {
-        let path = path.as_ref();
-        let path = path.offset_bytes(hive_start_idx);
+        let path = path.sliced(hive_start_idx..path.as_str().len());
 
         let mut hive_schema = Schema::with_capacity(16);
         let mut schema_inference_map: PlHashMap<&str, PlHashSet<DataType>> =
             PlHashMap::with_capacity(16);
 
-        for (name, _) in get_hive_parts_iter!(path) {
+        for (name, _) in get_hive_parts_iter!(&path) {
             // If the column is also in the file we can use the dtype stored there.
             if let Some(dtype) = reader_schema.get(name) {
                 let dtype = if !try_parse_dates && dtype.is_temporal() {
@@ -154,9 +139,8 @@ pub fn hive_partitions_from_paths(
 
         if !schema_inference_map.is_empty() {
             for path in paths {
-                let path = path.as_ref();
-                let path = path.offset_bytes(hive_start_idx);
-                for (name, value) in get_hive_parts_iter!(path) {
+                let path = path.sliced(hive_start_idx..path.as_str().len());
+                for (name, value) in get_hive_parts_iter!(&path) {
                     let Some(entry) = schema_inference_map.get_mut(name) else {
                         continue;
                     };
@@ -177,7 +161,7 @@ pub fn hive_partitions_from_paths(
         Arc::new(hive_schema)
     };
 
-    let mut buffers = polars_io::csv::read::buffer::init_buffers(
+    let mut buffers = polars_io::csv::read::builder::init_builders(
         &(0..hive_schema.len()).collect::<Vec<_>>(),
         paths.len(),
         hive_schema.as_ref(),
@@ -187,9 +171,8 @@ pub fn hive_partitions_from_paths(
     )?;
 
     for path in paths {
-        let path = path.as_ref();
-        let path = path.offset_bytes(hive_start_idx);
-        for (name, value) in get_hive_parts_iter!(path) {
+        let path = path.sliced(hive_start_idx..path.as_str().len());
+        for (name, value) in get_hive_parts_iter!(&path) {
             let Some(index) = hive_schema.index_of(name) else {
                 polars_bail!(
                     SchemaFieldNotFound:
@@ -201,7 +184,7 @@ pub fn hive_partitions_from_paths(
 
             let buf = buffers.get_mut(index).unwrap();
 
-            if !value.is_empty() && value != "__HIVE_DEFAULT_PARTITION__" {
+            if value != "__HIVE_DEFAULT_PARTITION__" {
                 buf.add(value.as_bytes(), false, false, false)?;
             } else {
                 buf.add_null(false);
@@ -215,7 +198,7 @@ pub fn hive_partitions_from_paths(
         .collect::<PolarsResult<Vec<_>>>()?;
     buffers.sort_by_key(|s| reader_schema.index_of(s.name()).unwrap_or(usize::MAX));
 
-    Ok(Some(HivePartitionsDf(DataFrame::new_with_height(
+    Ok(Some(HivePartitionsDf(DataFrame::new(
         paths.len(),
         buffers,
     )?)))

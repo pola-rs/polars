@@ -27,6 +27,7 @@ from zoneinfo import ZoneInfo
         (pl.UInt16, pl.Float64),
         (pl.UInt32, pl.Float64),
         (pl.UInt64, pl.Float64),
+        (pl.UInt128, pl.Float64),
         (pl.Float32, pl.Float32),
         (pl.Float64, pl.Float64),
     ],
@@ -160,3 +161,6 @@ def test_interpolate_decimal_22475(
         pl.col("data").cast(pl.Decimal(scale=2))
     )
     assert_frame_equal(out, expected)
+
+    q = df_decimal.lazy().with_columns(pl.col("data").interpolate(method=method))
+    assert q.collect_schema() == q.collect().schema

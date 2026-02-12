@@ -2,6 +2,9 @@
 # Packages that we require for unit tests that run on CI
 # (installable via `make requirements-all`)
 # -------------------------------------------------------
+duckdb
 torch
 jax[cpu]
 pyiceberg>=0.7.1
+pyiceberg-core
+polars-ds==0.10.0

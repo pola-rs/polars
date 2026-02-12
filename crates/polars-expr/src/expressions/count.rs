@@ -4,7 +4,7 @@ use polars_core::prelude::*;
 use polars_plan::constants::LEN;
 
 use super::*;
-use crate::expressions::{AggregationContext, PartitionedAggregation, PhysicalExpr};
+use crate::expressions::{AggregationContext, PhysicalExpr};
 
 pub struct CountExpr {
     expr: Expr,
@@ -22,7 +22,11 @@ impl PhysicalExpr for CountExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column> {
-        Ok(Series::new(PlSmallStr::from_static("len"), [df.height() as IdxSize]).into_column())
+        Ok(Column::new_scalar(
+            PlSmallStr::from_static(LEN),
+            Scalar::from(df.height() as IdxSize),
+            1,
+        ))
     }
 
     fn evaluate_on_groups<'a>(
@@ -40,37 +44,7 @@ impl PhysicalExpr for CountExpr {
         Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE))
     }
 
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        Some(self)
-    }
-
     fn is_scalar(&self) -> bool {
         true
-    }
-}
-
-impl PartitionedAggregation for CountExpr {
-    #[allow(clippy::ptr_arg)]
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        self.evaluate_on_groups(df, groups, state)
-            .map(|mut ac| ac.aggregated().into_column())
-    }
-
-    /// Called to merge all the partitioned results in a final aggregate.
-    #[allow(clippy::ptr_arg)]
-    fn finalize(
-        &self,
-        partitioned: Column,
-        groups: &GroupPositions,
-        _state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        // SAFETY: groups are in bounds.
-        let agg = unsafe { partitioned.agg_sum(groups) };
-        Ok(agg.with_name(PlSmallStr::from_static(LEN)))
     }
 }

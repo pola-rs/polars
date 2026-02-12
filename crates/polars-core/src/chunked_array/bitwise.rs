@@ -1,4 +1,4 @@
-use std::ops::{BitAnd, BitOr, BitXor, Not};
+use std::ops::{BitAnd, BitOr, BitXor};
 
 use arrow::compute;
 use arrow::compute::bitwise;
@@ -106,40 +106,26 @@ impl BitXor for &BooleanChunked {
     type Output = BooleanChunked;
 
     fn bitxor(self, rhs: Self) -> Self::Output {
-        match (self.len(), rhs.len()) {
+        if let Some((scalar, other_ca)) = match (self.len(), rhs.len()) {
             // make sure that we fall through if both are equal unit lengths
             // otherwise we stackoverflow
-            (1, 1) => {},
-            (1, _) => {
-                return match self.get(0) {
-                    Some(true) => {
-                        let mut rhs = rhs.not();
-                        rhs.rename(self.name().clone());
-                        rhs
-                    },
-                    Some(false) => {
-                        let mut rhs = rhs.clone();
-                        rhs.rename(self.name().clone());
-                        rhs
-                    },
-                    None => &self.new_from_index(0, rhs.len()) | rhs,
-                };
-            },
-            (_, 1) => {
-                return match rhs.get(0) {
-                    Some(true) => self.not(),
-                    Some(false) => self.clone(),
-                    None => self | &rhs.new_from_index(0, self.len()),
-                };
-            },
-            _ => {},
+            (1, 1) => None,
+            (1, _) => Some((self.get(0), rhs)),
+            (_, 1) => Some((rhs.get(0), self)),
+            _ => None,
+        } {
+            match scalar {
+                Some(false) => other_ca.clone(),
+                None => BooleanChunked::full_null(self.name().clone(), other_ca.len()),
+                Some(true) => !other_ca,
+            }
+        } else {
+            arity::binary(self, rhs, |l_arr, r_arr| {
+                let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
+                let values = l_arr.values() ^ r_arr.values();
+                BooleanArray::from_data_default(values, validity)
+            })
         }
-
-        arity::binary(self, rhs, |l_arr, r_arr| {
-            let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
-            let values = l_arr.values() ^ r_arr.values();
-            BooleanArray::from_data_default(values, validity)
-        })
     }
 }
 

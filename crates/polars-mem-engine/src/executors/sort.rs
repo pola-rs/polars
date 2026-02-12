@@ -16,7 +16,7 @@ impl SortExec {
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
         state.should_stop()?;
-        df.as_single_chunk_par();
+        df.rechunk_mut_par();
 
         let height = df.height();
 

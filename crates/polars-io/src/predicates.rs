@@ -18,14 +18,12 @@ pub trait PhysicalIoExpr: Send + Sync {
 #[derive(Debug, Clone)]
 pub enum SpecializedColumnPredicate {
     Equal(Scalar),
-
+    /// A closed (inclusive) range.
     Between(Scalar, Scalar),
-
     EqualOneOf(Box<[Scalar]>),
-
     StartsWith(Box<[u8]>),
     EndsWith(Box<[u8]>),
-    StartEndsWith(Box<[u8]>, Box<[u8]>),
+    RegexMatch(regex::bytes::Regex),
 }
 
 #[derive(Clone)]
@@ -63,7 +61,7 @@ impl ColumnPredicateExpr {
                 ),
                 S::StartsWith(s) => P::StartsWith(s),
                 S::EndsWith(s) => P::EndsWith(s),
-                S::StartEndsWith(start, end) => P::StartEndsWith(start, end),
+                S::RegexMatch(s) => P::RegexMatch(s),
             })
         });
 
@@ -88,7 +86,7 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
             Series::from_chunk_and_dtype(self.column_name.clone(), values.to_boxed(), &self.dtype)
                 .unwrap();
         let column = series.into_column();
-        let df = unsafe { DataFrame::new_no_checks(values.len(), vec![column]) };
+        let df = unsafe { DataFrame::new_unchecked(values.len(), vec![column]) };
 
         // @TODO: Probably these unwraps should be removed.
         let true_mask = self.expr.evaluate_io(&df).unwrap();
@@ -104,7 +102,7 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
     }
     fn evaluate_null(&self) -> bool {
         let column = Column::full_null(self.column_name.clone(), 1, &self.dtype);
-        let df = unsafe { DataFrame::new_no_checks(1, vec![column]) };
+        let df = unsafe { DataFrame::new_unchecked(1, vec![column]) };
 
         // @TODO: Probably these unwraps should be removed.
         let true_mask = self.expr.evaluate_io(&df).unwrap();
@@ -168,14 +166,14 @@ pub fn apply_predicate(
     predicate: Option<&dyn PhysicalIoExpr>,
     parallel: bool,
 ) -> PolarsResult<()> {
-    if let (Some(predicate), false) = (&predicate, df.get_columns().is_empty()) {
+    if let (Some(predicate), false) = (&predicate, df.columns().is_empty()) {
         let s = predicate.evaluate_io(df)?;
         let mask = s.bool().expect("filter predicates was not of type boolean");
 
         if parallel {
             *df = df.filter(mask)?;
         } else {
-            *df = df._filter_seq(mask)?;
+            *df = df.filter_seq(mask)?;
         }
     }
     Ok(())
@@ -394,7 +392,7 @@ pub trait SkipBatchPredicate: Send + Sync {
         // SAFETY:
         // * Each column is length = 1
         // * We have an IndexSet, so each column name is unique
-        let df = unsafe { DataFrame::new_no_checks(1, columns) };
+        let df = unsafe { DataFrame::new_unchecked(1, columns) };
         Ok(self.evaluate_with_stat_df(&df)?.get_bit(0))
     }
     fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap>;
@@ -487,18 +485,12 @@ impl ScanIOPredicate {
         }
         self.live_columns = Arc::new(live_columns);
 
-        let mut predicate_on_all_null_inserted_column = false;
-
         if let Some(skip_batch_predicate) = self.skip_batch_predicate.take() {
             let mut sbp_constant_columns = Vec::with_capacity(constant_columns.len() * 3);
             for (c, v) in constant_columns.iter() {
                 sbp_constant_columns.push((format_pl_smallstr!("{c}_min"), v.clone()));
                 sbp_constant_columns.push((format_pl_smallstr!("{c}_max"), v.clone()));
                 let nc = if v.is_null() {
-                    if self.column_predicates.predicates.contains_key(c) {
-                        predicate_on_all_null_inserted_column = true;
-                    }
-
                     AnyValue::Null
                 } else {
                     (0 as IdxSize).into()
@@ -517,13 +509,6 @@ impl ScanIOPredicate {
             column_predicates.predicates.remove(c);
         }
         self.column_predicates = Arc::new(column_predicates);
-
-        if predicate_on_all_null_inserted_column {
-            // TODO:
-            // We currently switch this to false because don't skip the batch properly on all-NULL inserted columns.
-            // It can be removed once the batch is being skipped properly.
-            Arc::make_mut(&mut self.column_predicates).is_sumwise_complete = false;
-        }
 
         self.predicate = Arc::new(PhysicalExprWithConstCols {
             constants: constant_columns,

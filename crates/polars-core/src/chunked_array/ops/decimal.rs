@@ -1,3 +1,5 @@
+use polars_compute::decimal::dec128_verify_prec_scale;
+
 use crate::chunked_array::cast::CastOptions;
 use crate::prelude::*;
 
@@ -9,23 +11,38 @@ impl StringChunked {
     ///
     /// If the decimal `precision` and `scale` are already known, consider
     /// using the `cast` method.
-    pub fn to_decimal(&self, infer_length: usize) -> PolarsResult<Series> {
+    pub fn to_decimal_infer(&self, infer_length: usize) -> PolarsResult<Series> {
         let mut scale = 0;
+        let mut prec_past_scale = 0;
         let mut iter = self.into_iter();
         let mut valid_count = 0;
         while let Some(Some(v)) = iter.next() {
-            let scale_value = arrow::compute::decimal::infer_scale(v.as_bytes());
-            scale = std::cmp::max(scale, scale_value);
+            let mut bytes = v.as_bytes();
+            if bytes.first() == Some(&b'-') || bytes.first() == Some(&b'+') {
+                bytes = &bytes[1..];
+            }
+            while bytes.first() == Some(&b'0') {
+                bytes = &bytes[1..];
+            }
+            if let Some(separator) = bytes.iter().position(|b| *b == b'.') {
+                scale = scale.max(bytes.len() - 1 - separator);
+                prec_past_scale = prec_past_scale.max(separator);
+            } else {
+                prec_past_scale = prec_past_scale.max(bytes.len());
+            }
+
             valid_count += 1;
             if valid_count == infer_length {
                 break;
             }
         }
 
-        self.cast_with_options(
-            &DataType::Decimal(None, Some(scale as usize)),
-            CastOptions::NonStrict,
-        )
+        self.to_decimal(prec_past_scale + scale, scale)
+    }
+
+    pub fn to_decimal(&self, prec: usize, scale: usize) -> PolarsResult<Series> {
+        dec128_verify_prec_scale(prec, scale)?;
+        self.cast_with_options(&DataType::Decimal(prec, scale), CastOptions::NonStrict)
     }
 }
 
@@ -36,7 +53,7 @@ mod test {
         use super::*;
         let vals = [
             "1.0",
-            "invalid",
+            "bad",
             "225.0",
             "3.00045",
             "-4.0",
@@ -44,13 +61,13 @@ mod test {
             "5.25251525353",
         ];
         let s = StringChunked::from_slice(PlSmallStr::from_str("test"), &vals);
-        let s = s.to_decimal(6).unwrap();
-        assert_eq!(s.dtype(), &DataType::Decimal(None, Some(5)));
+        let s = s.to_decimal_infer(6).unwrap();
+        assert_eq!(s.dtype(), &DataType::Decimal(8, 5));
         assert_eq!(s.len(), 7);
-        assert_eq!(s.get(0).unwrap(), AnyValue::Decimal(100000, 5));
+        assert_eq!(s.get(0).unwrap(), AnyValue::Decimal(100000, 6, 5));
         assert_eq!(s.get(1).unwrap(), AnyValue::Null);
-        assert_eq!(s.get(3).unwrap(), AnyValue::Decimal(300045, 5));
-        assert_eq!(s.get(4).unwrap(), AnyValue::Decimal(-400000, 5));
-        assert_eq!(s.get(6).unwrap(), AnyValue::Decimal(525251, 5));
+        assert_eq!(s.get(3).unwrap(), AnyValue::Decimal(300045, 6, 5));
+        assert_eq!(s.get(4).unwrap(), AnyValue::Decimal(-400000, 6, 5));
+        assert_eq!(s.get(6).unwrap(), AnyValue::Decimal(525252, 6, 5));
     }
 }

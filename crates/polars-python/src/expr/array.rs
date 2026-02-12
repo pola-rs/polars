@@ -1,5 +1,4 @@
 use polars::prelude::*;
-use polars_plan::utils::PlanCallback;
 use polars_utils::python_function::PythonObject;
 use pyo3::prelude::*;
 use pyo3::pymethods;
@@ -31,6 +30,10 @@ impl PyExpr {
 
     fn arr_var(&self, ddof: u8) -> Self {
         self.inner.clone().arr().var(ddof).into()
+    }
+
+    fn arr_mean(&self) -> Self {
+        self.inner.clone().arr().mean().into()
     }
 
     fn arr_median(&self) -> Self {
@@ -116,7 +119,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (name_gen))]
-    fn arr_to_struct(&self, name_gen: Option<PyObject>) -> Self {
+    fn arr_to_struct(&self, name_gen: Option<Py<PyAny>>) -> Self {
         let name_gen = name_gen.map(|o| PlanCallback::new_python(PythonObject(o)));
         self.inner.clone().arr().to_struct(name_gen).into()
     }
@@ -149,7 +152,22 @@ impl PyExpr {
         self.inner.clone().arr().shift(n.inner).into()
     }
 
-    fn arr_explode(&self) -> Self {
-        self.inner.clone().arr().explode().into()
+    fn arr_explode(&self, empty_as_null: bool, keep_nulls: bool) -> Self {
+        self.inner
+            .clone()
+            .arr()
+            .explode(ExplodeOptions {
+                empty_as_null,
+                keep_nulls,
+            })
+            .into()
+    }
+
+    fn arr_eval(&self, expr: PyExpr, as_list: bool) -> Self {
+        self.inner.clone().arr().eval(expr.inner, as_list).into()
+    }
+
+    fn arr_agg(&self, expr: PyExpr) -> Self {
+        self.inner.clone().arr().agg(expr.inner).into()
     }
 }

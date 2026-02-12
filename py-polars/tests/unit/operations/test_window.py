@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+from datetime import date, datetime, time, timedelta
+from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
+
 import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import TimeUnit, WindowMappingStrategy
 
 
 def test_over_args() -> None:
@@ -157,6 +165,189 @@ def test_quantile_as_window() -> None:
     assert_series_equal(result, expected)
 
 
+def test_quantile_as_window_date() -> None:
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 1, 2, 2, 2, 2],
+            "value": [date(2025, 1, x) for x in range(1, 9)],
+        }
+    )
+    result = df.lazy().select(
+        nearest=pl.col("value").quantile(0.5, "nearest").over("group"),
+        higher=pl.col("value").quantile(0.5, "higher").over("group"),
+        lower=pl.col("value").quantile(0.5, "lower").over("group"),
+        linear=pl.col("value").quantile(0.5, "linear").over("group"),
+    )
+    dt = pl.Datetime("us")
+    expected = pl.DataFrame(
+        {
+            "nearest": pl.Series(
+                [datetime(2025, 1, 3)] * 4 + [datetime(2025, 1, 7)] * 4, dtype=dt
+            ),
+            "higher": pl.Series(
+                [datetime(2025, 1, 3)] * 4 + [datetime(2025, 1, 7)] * 4, dtype=dt
+            ),
+            "lower": pl.Series(
+                [datetime(2025, 1, 2)] * 4 + [datetime(2025, 1, 6)] * 4, dtype=dt
+            ),
+            "linear": pl.Series(
+                [datetime(2025, 1, 2, 12)] * 4 + [datetime(2025, 1, 6, 12)] * 4,
+                dtype=dt,
+            ),
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {
+            "nearest": dt,
+            "higher": dt,
+            "lower": dt,
+            "linear": dt,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+@pytest.mark.parametrize("time_zone", [None, "Asia/Tokyo"])
+def test_quantile_as_window_datetime(tu: TimeUnit, time_zone: str | None) -> None:
+    dt = pl.Datetime(tu, time_zone)
+    tz = ZoneInfo(time_zone) if time_zone else None
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 1, 2, 2, 2, 2],
+            "value": pl.Series(
+                [
+                    datetime(2025, 1, 1, tzinfo=tz),
+                    datetime(2025, 1, 2, tzinfo=tz),
+                    datetime(2025, 1, 3, tzinfo=tz),
+                    datetime(2025, 1, 4, tzinfo=tz),
+                    datetime(2025, 1, 5, tzinfo=tz),
+                    datetime(2025, 1, 6, tzinfo=tz),
+                    datetime(2025, 1, 7, tzinfo=tz),
+                    datetime(2025, 1, 8, tzinfo=tz),
+                ],
+                dtype=dt,
+            ),
+        }
+    )
+    result = df.lazy().select(
+        nearest=pl.col("value").quantile(0.5, "nearest").over("group"),
+        higher=pl.col("value").quantile(0.5, "higher").over("group"),
+        lower=pl.col("value").quantile(0.5, "lower").over("group"),
+        linear=pl.col("value").quantile(0.5, "linear").over("group"),
+    )
+    expected = pl.DataFrame(
+        {
+            "nearest": pl.Series(
+                [datetime(2025, 1, 3, tzinfo=tz)] * 4
+                + [datetime(2025, 1, 7, tzinfo=tz)] * 4,
+                dtype=dt,
+            ),
+            "higher": pl.Series(
+                [datetime(2025, 1, 3, tzinfo=tz)] * 4
+                + [datetime(2025, 1, 7, tzinfo=tz)] * 4,
+                dtype=dt,
+            ),
+            "lower": pl.Series(
+                [datetime(2025, 1, 2, tzinfo=tz)] * 4
+                + [datetime(2025, 1, 6, tzinfo=tz)] * 4,
+                dtype=dt,
+            ),
+            "linear": pl.Series(
+                [datetime(2025, 1, 2, 12, tzinfo=tz)] * 4
+                + [datetime(2025, 1, 6, 12, tzinfo=tz)] * 4,
+                dtype=dt,
+            ),
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {
+            "nearest": dt,
+            "higher": dt,
+            "lower": dt,
+            "linear": dt,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+def test_quantile_as_window_duration(tu: TimeUnit) -> None:
+    dt = pl.Duration(tu)
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 1, 2, 2, 2, 2],
+            "value": pl.Series([timedelta(days=x) for x in range(1, 9)], dtype=dt),
+        }
+    )
+    result = df.lazy().select(
+        nearest=pl.col("value").quantile(0.5, "nearest").over("group"),
+        higher=pl.col("value").quantile(0.5, "higher").over("group"),
+        lower=pl.col("value").quantile(0.5, "lower").over("group"),
+        linear=pl.col("value").quantile(0.5, "linear").over("group"),
+    )
+    expected = pl.DataFrame(
+        {
+            "nearest": pl.Series(
+                [timedelta(days=3)] * 4 + [timedelta(days=7)] * 4, dtype=dt
+            ),
+            "higher": pl.Series(
+                [timedelta(days=3)] * 4 + [timedelta(days=7)] * 4, dtype=dt
+            ),
+            "lower": pl.Series(
+                [timedelta(days=2)] * 4 + [timedelta(days=6)] * 4, dtype=dt
+            ),
+            "linear": pl.Series(
+                [timedelta(days=2, hours=12)] * 4 + [timedelta(days=6, hours=12)] * 4,
+                dtype=dt,
+            ),
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {
+            "nearest": dt,
+            "higher": dt,
+            "lower": dt,
+            "linear": dt,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+def test_quantile_as_window_time() -> None:
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 1, 2, 2, 2, 2],
+            "value": pl.Series([time(hour=x) for x in range(1, 9)]),
+        }
+    )
+    result = df.lazy().select(
+        nearest=pl.col("value").quantile(0.5, "nearest").over("group"),
+        higher=pl.col("value").quantile(0.5, "higher").over("group"),
+        lower=pl.col("value").quantile(0.5, "lower").over("group"),
+        linear=pl.col("value").quantile(0.5, "linear").over("group"),
+    )
+    expected = pl.DataFrame(
+        {
+            "nearest": pl.Series([time(hour=3)] * 4 + [time(hour=7)] * 4),
+            "higher": pl.Series([time(hour=3)] * 4 + [time(hour=7)] * 4),
+            "lower": pl.Series([time(hour=2)] * 4 + [time(hour=6)] * 4),
+            "linear": pl.Series(
+                [time(hour=2, minute=30)] * 4 + [time(hour=6, minute=30)] * 4
+            ),
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {
+            "nearest": pl.Time,
+            "higher": pl.Time,
+            "lower": pl.Time,
+            "linear": pl.Time,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
 def test_cumulative_eval_window_functions() -> None:
     df = pl.DataFrame(
         {
@@ -214,7 +405,7 @@ def test_window_cached_keys_sorted_update_4183() -> None:
     )
     expected = pl.DataFrame(
         {"count": [2, 2, 1], "rank": [1, 2, 1]},
-        schema={"count": pl.UInt32, "rank": pl.UInt32},
+        schema={"count": pl.get_index_type(), "rank": pl.get_index_type()},
     )
     assert_frame_equal(result, expected)
 
@@ -398,7 +589,7 @@ def test_window_filtered_false_15483() -> None:
             "group": ["A", "A"],
             "value": [None, None],
         },
-        schema_overrides={"value": pl.UInt32},
+        schema_overrides={"value": pl.get_index_type()},
     )
     assert_frame_equal(out, expected)
 
@@ -698,3 +889,161 @@ def test_window_fold_22493() -> None:
                 .alias("prod"),
             )
         )
+
+
+@pytest.mark.parametrize(
+    "mapping_strategy",
+    ["group_to_rows", "join", "explode"],
+)
+@pytest.mark.parametrize(
+    "query", [pl.col.x.sum().gather([0, 0, 0]), pl.col.x.implode().gather([0, 0, 0])]
+)
+def test_aggregate_gather_over_dtype_24632(
+    mapping_strategy: WindowMappingStrategy, query: pl.Expr
+) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    q = df.lazy().select(query.over(1, mapping_strategy=mapping_strategy))
+    assert q.collect_schema() == q.collect().schema
+
+
+@pytest.mark.may_fail_auto_streaming  # reason: issue
+# https://github.com/pola-rs/polars/issues/24865
+@pytest.mark.parametrize(
+    ("expr", "mapping_strategy", "result"),
+    [
+        # baseline
+        (pl.col.x, "group_to_rows", [1, 2, 3]),
+        (pl.col.x, "join", [[1, 2], [1, 2], [3]]),
+        (pl.col.x, "explode", [1, 2, 3]),
+        # no agg, length-preserving
+        (pl.col.x.reverse(), "group_to_rows", [2, 1, 3]),
+        (pl.col.x.reverse(), "join", [[2, 1], [2, 1], [3]]),
+        (pl.col.x.reverse(), "explode", [2, 1, 3]),
+        # agg to scalar
+        (pl.col.x.first(), "group_to_rows", [1, 1, 3]),
+        (pl.col.x.first(), "join", [1, 1, 3]),
+        (pl.col.x.first(), "explode", [1, 3]),
+        # agg to scalar (list)
+        (pl.col.x.implode(), "group_to_rows", [[1, 2], [1, 2], [3]]),
+        (pl.col.x.implode(), "join", [[1, 2], [1, 2], [3]]),
+        (pl.col.x.implode(), "explode", [[1, 2], [3]]),
+        # mix of no agg and agg to scalar
+        (pl.col.x.first() + pl.col.y, "group_to_rows", [5, 6, 9]),
+        (pl.col.x.first() + pl.col.y, "join", [[5, 6], [5, 6], [9]]),
+        (pl.col.x.first() + pl.col.y, "explode", [5, 6, 9]),
+        # mix of no agg and agg to scalar, re-ordered
+        (pl.col.x + pl.col.y.first(), "group_to_rows", [5, 6, 9]),
+        (pl.col.x + pl.col.y.first(), "join", [[5, 6], [5, 6], [9]]),
+        (pl.col.x + pl.col.y.first(), "explode", [5, 6, 9]),
+        # not length preserving - head
+        (pl.col.x.head(1), "group_to_rows", None),  # Must raise
+        (pl.col.x.head(1), "join", [[1], [1], [3]]),
+        (pl.col.x.head(1), "explode", [1, 3]),
+        # not length preserving - gather
+        (pl.col.x.gather([0, 0]), "group_to_rows", None),  # Must raise
+        (pl.col.x.gather([0, 0]), "join", [[1, 1], [1, 1], [3, 3]]),
+        (pl.col.x.gather([0, 0]), "explode", [1, 1, 3, 3]),
+        # agg to scalar (list), then agg length preserving
+        (pl.col.x.implode().reverse(), "group_to_rows", [[1, 2], [1, 2], [3]]),
+        (pl.col.x.implode().reverse(), "join", [[1, 2], [1, 2], [3]]),
+        (pl.col.x.implode().reverse(), "explode", [[1, 2], [3]]),
+    ],
+)
+def test_mapping_strategy_scalar_matrix(
+    expr: pl.Expr, mapping_strategy: WindowMappingStrategy, result: list[int] | None
+) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "x": [1, 2, 3], "y": [4, 5, 6]})
+
+    q = df.lazy().select(expr.over(pl.col.g, mapping_strategy=mapping_strategy))
+    expected = pl.DataFrame({"x": result})
+
+    if not result:
+        with pytest.raises(ShapeError):
+            q.collect()
+    else:
+        out = q.collect()
+        print(out)
+        print(expected)
+        assert q.collect_schema() == out.schema
+        assert_frame_equal(out, expected)
+
+
+@pytest.mark.may_fail_auto_streaming  # reason: issue
+# https://github.com/pola-rs/polars/issues/24865
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col.x.head(0),
+        pl.col.x.head(1),
+        pl.col.x.gather([]),
+        pl.col.x.gather([0]),
+        pl.col.x.gather([0, 0]),
+    ],
+)
+def test_shape_mismatch(expr: pl.Expr) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "x": [1, 2, 3]})
+
+    q = df.lazy().select(expr.over(pl.col.g))
+    with pytest.raises(ShapeError):
+        q.collect()
+
+
+def test_clear_cache_on_stacked_filters_24806() -> None:
+    df = pl.LazyFrame({"x": [1, 2]})
+    predicate = (pl.col.x > 1).over(9)
+    out = df.filter(predicate).filter(predicate).collect()
+    expected = pl.DataFrame({"x": [2]})
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    "expr", [pl.col.a, pl.col.a.first(), pl.col.b, pl.col.b.first()]
+)
+@pytest.mark.parametrize(
+    "over",
+    [
+        pl.lit(42),
+        pl.col.g,
+        pl.col.g.first(),
+        [pl.col.g, pl.lit(42)],
+        [pl.lit(42), pl.col.g],
+        [pl.col.g, pl.col.h],
+        [pl.col.g.first(), pl.col.h],
+    ],
+)
+def test_over_literal_or_scalar_24756(expr: pl.Expr, over: pl.Expr) -> None:
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": ["x", "y", "z"], "g": [10, 10, 20], "h": [10, 10, 20]}
+    )
+
+    out = df.select(expr.over(over))
+    assert out.shape == (3, 1)
+
+
+def test_shape_mismatch_group_by_slice() -> None:
+    q = pl.LazyFrame(
+        {
+            "x": [True, True, False],
+            "t": [1, 1, 3],
+        }
+    ).select(pl.col.t.mode().over(pl.col("x").rle_id()))
+
+    with pytest.raises(
+        ShapeError, match="expressions must have matching group lengths"
+    ):
+        q.collect()
+
+
+def test_shape_mismatch_group_by_unique_slice() -> None:
+    q = pl.LazyFrame(
+        {
+            "x": [True, True, False],
+            "t": [1, 1, 3],
+        }
+    ).select(pl.col.t.unique().over(pl.col("x").rle_id()))
+
+    with pytest.raises(
+        ShapeError,
+        match="the length of the window expression did not match that of the group",
+    ):
+        q.collect()

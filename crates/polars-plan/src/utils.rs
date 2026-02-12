@@ -1,9 +1,8 @@
-use std::fmt::{self, Formatter};
+use std::fmt::Formatter;
 use std::iter::FlatMap;
 
 use polars_core::prelude::*;
-#[cfg(feature = "python")]
-use polars_utils::python_function::PythonFunction;
+use polars_utils::format_pl_smallstr;
 
 use self::visitor::{AexprNode, RewritingVisitor, TreeWalker};
 use crate::constants::get_len_name;
@@ -62,7 +61,13 @@ where
 }
 
 pub fn has_aexpr_window(current_node: Node, arena: &Arena<AExpr>) -> bool {
-    has_aexpr(current_node, arena, |e| matches!(e, AExpr::Window { .. }))
+    has_aexpr(current_node, arena, |e| {
+        #[cfg(feature = "dynamic_group_by")]
+        if matches!(e, AExpr::Rolling { .. }) {
+            return true;
+        }
+        matches!(e, AExpr::Over { .. })
+    })
 }
 
 pub fn has_aexpr_literal(current_node: Node, arena: &Arena<AExpr>) -> bool {
@@ -99,37 +104,52 @@ pub fn has_null(current_expr: &Expr) -> bool {
     )
 }
 
-pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<PlSmallStr> {
-    for (_, ae) in arena.iter(node) {
-        match ae {
-            // don't follow the partition by branch
-            AExpr::Window { function, .. } => return aexpr_output_name(*function, arena),
-            AExpr::Column(name) => return Ok(name.clone()),
-            AExpr::Len => return Ok(get_len_name()),
-            AExpr::Literal(val) => return Ok(val.output_column_name().clone()),
-            AExpr::Ternary { truthy, .. } => return aexpr_output_name(*truthy, arena),
-            _ => {},
-        }
-    }
-    let expr = node_to_expr(node, arena);
-    polars_bail!(
-        ComputeError:
-        "unable to find root column name for expr '{expr:?}' when calling 'output_name'",
-    );
-}
-
 /// output name of expr
 pub fn expr_output_name(expr: &Expr) -> PolarsResult<PlSmallStr> {
     for e in expr {
         match e {
             // don't follow the partition by branch
-            Expr::Window { function, .. } => return expr_output_name(function),
+            #[cfg(feature = "dynamic_group_by")]
+            Expr::Rolling { function, .. } => return expr_output_name(function),
+            Expr::Over { function, .. } => return expr_output_name(function),
+
             Expr::Column(name) => return Ok(name.clone()),
             Expr::Alias(_, name) => return Ok(name.clone()),
             Expr::KeepName(_) => polars_bail!(nyi = "`name.keep` is not allowed here"),
             Expr::RenameAlias { expr, function } => return function.call(&expr_output_name(expr)?),
             Expr::Len => return Ok(get_len_name()),
-            Expr::Literal(val) => return Ok(val.output_column_name().clone()),
+            Expr::Literal(val) => return Ok(val.output_column_name()),
+
+            #[cfg(feature = "dtype-struct")]
+            Expr::Function {
+                input: _,
+                function: FunctionExpr::StructExpr(StructFunction::FieldByName(name)),
+            } => return Ok(name.clone()),
+
+            // Selector with single by_name is fine.
+            Expr::Selector(Selector::ByName { names, .. }) if names.len() == 1 => {
+                return Ok(names[0].clone());
+            },
+
+            #[cfg(feature = "dtype-struct")]
+            Expr::Function {
+                function:
+                    FunctionExpr::StructExpr(StructFunction::SelectFields(Selector::ByName {
+                        names,
+                        ..
+                    })),
+                ..
+            } if names.len() == 1 => return Ok(names[0].clone()),
+
+            // Other selectors aren't possible right now.
+            Expr::Selector(_) => break,
+
+            #[cfg(feature = "dtype-struct")]
+            Expr::Function {
+                function: FunctionExpr::StructExpr(StructFunction::SelectFields(_)),
+                ..
+            } => break,
+
             _ => {},
         }
     }
@@ -196,38 +216,46 @@ pub(crate) fn expr_to_leaf_column_exprs_iter(expr: &Expr) -> impl Iterator<Item 
 }
 
 /// Take a list of expressions and a schema and determine the output schema.
-pub fn expressions_to_schema(
+pub fn expressions_to_schema<E>(
     expr: &[Expr],
     schema: &Schema,
-    ctxt: Context,
-) -> PolarsResult<Schema> {
+    duplicate_err_msg_func: E,
+) -> PolarsResult<Schema>
+where
+    E: Fn(&str) -> String,
+{
     let mut expr_arena = Arena::with_capacity(4 * expr.len());
-    expr.iter()
-        .map(|expr| {
-            let mut field = expr.to_field_amortized(schema, ctxt, &mut expr_arena)?;
 
+    Schema::try_from_iter_check_duplicates(
+        expr.iter().map(|expr| {
+            let mut field = expr.to_field_amortized(schema, &mut expr_arena)?;
             field.dtype = field.dtype.materialize_unknown(true)?;
             Ok(field)
-        })
-        .collect()
+        }),
+        |duplicate_name: &str| {
+            polars_err!(
+                Duplicate:
+                "{}. It's possible that multiple expressions are returning the same default column name. \
+                If this is the case, try renaming the columns with `.alias(\"new_name\")` to avoid \
+                duplicate column names.",
+                duplicate_err_msg_func(duplicate_name)
+            )
+        },
+    )
 }
 
 pub fn aexpr_to_leaf_names_iter(
     node: Node,
-    arena: &Arena<AExpr>,
-) -> impl Iterator<Item = PlSmallStr> + '_ {
+    arena: &'_ Arena<AExpr>,
+) -> impl Iterator<Item = &'_ PlSmallStr> + '_ {
     aexpr_to_column_nodes_iter(node, arena).map(|node| match arena.get(node.0) {
-        AExpr::Column(name) => name.clone(),
+        AExpr::Column(name) => name,
         _ => unreachable!(),
     })
 }
 
 pub fn aexpr_to_leaf_names(node: Node, arena: &Arena<AExpr>) -> Vec<PlSmallStr> {
-    aexpr_to_leaf_names_iter(node, arena).collect()
-}
-
-pub fn aexpr_to_leaf_name(node: Node, arena: &Arena<AExpr>) -> PlSmallStr {
-    aexpr_to_leaf_names_iter(node, arena).next().unwrap()
+    aexpr_to_leaf_names_iter(node, arena).cloned().collect()
 }
 
 /// check if a selection/projection can be done on the downwards schema
@@ -254,14 +282,13 @@ pub(crate) fn check_input_column_node(
 pub(crate) fn aexprs_to_schema<I: IntoIterator<Item = K>, K: Into<Node>>(
     expr: I,
     schema: &Schema,
-    ctxt: Context,
     arena: &Arena<AExpr>,
 ) -> Schema {
     expr.into_iter()
         .map(|node| {
             arena
                 .get(node.into())
-                .to_field(schema, ctxt, arena)
+                .to_field(&ToFieldContext::new(arena, schema))
                 .unwrap()
         })
         .collect()
@@ -270,20 +297,20 @@ pub(crate) fn aexprs_to_schema<I: IntoIterator<Item = K>, K: Into<Node>>(
 pub(crate) fn expr_irs_to_schema<I: IntoIterator<Item = K>, K: AsRef<ExprIR>>(
     expr: I,
     schema: &Schema,
-    ctxt: Context,
     arena: &Arena<AExpr>,
-) -> Schema {
+) -> PolarsResult<Schema> {
     expr.into_iter()
         .map(|e| {
             let e = e.as_ref();
-            let mut field = e.field(schema, ctxt, arena).expect("should be resolved");
-
-            // TODO! (can this be removed?)
-            if let Some(name) = e.get_alias() {
-                field.name = name.clone()
-            }
-            field.dtype = field.dtype.materialize_unknown(true).unwrap();
-            field
+            let field = e.field(schema, arena).map(move |mut field| {
+                // TODO! (can this be removed?)
+                if let Some(name) = e.get_alias() {
+                    field.name = name.clone()
+                }
+                field.dtype = field.dtype.materialize_unknown(true).unwrap();
+                field
+            })?;
+            Ok(field)
         })
         .collect()
 }
@@ -338,115 +365,34 @@ pub fn rename_columns(
         .node()
 }
 
-#[derive(Eq, PartialEq)]
-pub enum PlanCallback<Args, Out> {
-    #[cfg(feature = "python")]
-    Python(SpecialEq<Arc<polars_utils::python_function::PythonFunction>>),
-    Rust(SpecialEq<Arc<dyn Fn(Args) -> PolarsResult<Out> + Send + Sync>>),
-}
+/// Rename any `StructField(x)` to its corresponding `Column(prefix_x)` using the provided prefix.
+#[cfg(feature = "dtype-struct")]
+pub fn structfield_to_column(
+    node: Node,
+    expr_arena: &mut Arena<AExpr>,
+    prefix: &PlSmallStr,
+) -> Node {
+    struct MapStructFields<'a>(&'a PlSmallStr);
+    impl RewritingVisitor for MapStructFields<'_> {
+        type Node = AexprNode;
+        type Arena = Arena<AExpr>;
 
-impl<Args, Out> fmt::Debug for PlanCallback<Args, Out> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("PlanCallback::")?;
-        std::mem::discriminant(self).fmt(f)
-    }
-}
+        fn mutate(
+            &mut self,
+            node: Self::Node,
+            arena: &mut Self::Arena,
+        ) -> PolarsResult<Self::Node> {
+            if let AExpr::StructField(name) = arena.get(node.node()) {
+                let new_name = format_pl_smallstr!("{}{}", self.0, name);
+                return Ok(AexprNode::new(arena.add(AExpr::Column(new_name))));
+            }
 
-#[cfg(feature = "serde")]
-impl<Args, Out> serde::Serialize for PlanCallback<Args, Out> {
-    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        use serde::ser::Error;
-
-        #[cfg(feature = "python")]
-        if let Self::Python(v) = self {
-            return v.serialize(_serializer);
-        }
-
-        Err(S::Error::custom(format!(
-            "cannot serialize 'opaque' function in {self:?}"
-        )))
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de, Args, Out> serde::Deserialize<'de> for PlanCallback<Args, Out> {
-    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[cfg(feature = "python")]
-        {
-            Ok(Self::Python(SpecialEq::new(Arc::new(
-                polars_utils::python_function::PythonFunction::deserialize(_deserializer)?,
-            ))))
-        }
-        #[cfg(not(feature = "python"))]
-        {
-            use serde::de::Error;
-            Err(D::Error::custom("cannot deserialize PlanCallback"))
-        }
-    }
-}
-
-#[cfg(feature = "dsl-schema")]
-impl<Args, Out> schemars::JsonSchema for PlanCallback<Args, Out> {
-    fn schema_name() -> String {
-        "PlanCallback".to_owned()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "PlanCallback"))
-    }
-
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
-        Vec::<u8>::json_schema(generator)
-    }
-}
-
-impl<Args, Out> std::hash::Hash for PlanCallback<Args, Out> {
-    fn hash<H: std::hash::Hasher>(&self, _state: &mut H) {
-        // no-op.
-    }
-}
-
-impl<Args, Out> Clone for PlanCallback<Args, Out> {
-    fn clone(&self) -> Self {
-        match self {
-            #[cfg(feature = "python")]
-            Self::Python(p) => Self::Python(p.clone()),
-            Self::Rust(f) => Self::Rust(f.clone()),
-        }
-    }
-}
-
-#[cfg(feature = "python")]
-impl<Args: for<'py> pyo3::IntoPyObject<'py>, Out: for<'py> pyo3::FromPyObject<'py>>
-    PlanCallback<Args, Out>
-{
-    pub fn call(&self, args: Args) -> PolarsResult<Out> {
-        match self {
-            #[cfg(feature = "python")]
-            Self::Python(pyfn) => pyo3::Python::with_gil(|py| {
-                let out = pyfn.call1(py, (args,))?.extract::<Out>(py)?;
-                Ok(out)
-            }),
-            Self::Rust(f) => f(args),
+            Ok(node)
         }
     }
 
-    pub fn new_python(pyfn: PythonFunction) -> Self {
-        Self::Python(SpecialEq::new(Arc::new(pyfn)))
-    }
-}
-
-#[cfg(not(feature = "python"))]
-impl<Args, Out> PlanCallback<Args, Out> {
-    pub fn call(&self, args: Args) -> PolarsResult<Out> {
-        match self {
-            Self::Rust(f) => f(args),
-        }
-    }
+    AexprNode::new(node)
+        .rewrite(&mut MapStructFields(prefix), expr_arena)
+        .unwrap()
+        .node()
 }

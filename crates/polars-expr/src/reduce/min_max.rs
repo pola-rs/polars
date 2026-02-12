@@ -13,11 +13,19 @@ use polars_utils::min_max::MinMax;
 
 use super::*;
 
-pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn GroupedReduction> {
+pub fn new_min_reduction(
+    dtype: DataType,
+    propagate_nans: bool,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
+    // TODO: Move the error checks up and make this function infallible
     use DataType::*;
     use VecMaskGroupedReduction as VMGR;
-    match &dtype {
+    Ok(match &dtype {
         Boolean => Box::new(BoolMinGroupedReduction::default()),
+        #[cfg(all(feature = "dtype-f16", feature = "propagate_nans"))]
+        Float16 if propagate_nans => {
+            Box::new(VMGR::new(dtype, NumReducer::<NanMin<Float16Type>>::new()))
+        },
         #[cfg(feature = "propagate_nans")]
         Float32 if propagate_nans => {
             Box::new(VMGR::new(dtype, NumReducer::<NanMin<Float32Type>>::new()))
@@ -26,6 +34,8 @@ pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
         Float64 if propagate_nans => {
             Box::new(VMGR::new(dtype, NumReducer::<NanMin<Float64Type>>::new()))
         },
+        #[cfg(feature = "dtype-f16")]
+        Float16 => Box::new(VMGR::new(dtype, NumReducer::<Min<Float16Type>>::new())),
         Float32 => Box::new(VMGR::new(dtype, NumReducer::<Min<Float32Type>>::new())),
         Float64 => Box::new(VMGR::new(dtype, NumReducer::<Min<Float64Type>>::new())),
         Null => Box::new(NullGroupedReduction::default()),
@@ -41,15 +51,23 @@ pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
         Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), |$C| {
             Box::new(VMGR::new(dtype.clone(), CatMinReducer::<$C>(map.clone(), PhantomData)))
         }),
-        _ => unimplemented!(),
-    }
+        _ => polars_bail!(InvalidOperation: "`min` operation not supported for dtype `{dtype}`"),
+    })
 }
 
-pub fn new_max_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn GroupedReduction> {
+pub fn new_max_reduction(
+    dtype: DataType,
+    propagate_nans: bool,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
+    // TODO: Move the error checks up and make this function infallible
     use DataType::*;
     use VecMaskGroupedReduction as VMGR;
-    match &dtype {
+    Ok(match &dtype {
         Boolean => Box::new(BoolMaxGroupedReduction::default()),
+        #[cfg(all(feature = "dtype-f16", feature = "propagate_nans"))]
+        Float16 if propagate_nans => {
+            Box::new(VMGR::new(dtype, NumReducer::<NanMax<Float16Type>>::new()))
+        },
         #[cfg(feature = "propagate_nans")]
         Float32 if propagate_nans => {
             Box::new(VMGR::new(dtype, NumReducer::<NanMax<Float32Type>>::new()))
@@ -58,6 +76,8 @@ pub fn new_max_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
         Float64 if propagate_nans => {
             Box::new(VMGR::new(dtype, NumReducer::<NanMax<Float64Type>>::new()))
         },
+        #[cfg(feature = "dtype-f16")]
+        Float16 => Box::new(VMGR::new(dtype, NumReducer::<Max<Float16Type>>::new())),
         Float32 => Box::new(VMGR::new(dtype, NumReducer::<Max<Float32Type>>::new())),
         Float64 => Box::new(VMGR::new(dtype, NumReducer::<Max<Float64Type>>::new())),
         Null => Box::new(NullGroupedReduction::default()),
@@ -73,8 +93,8 @@ pub fn new_max_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
         Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), |$C| {
             Box::new(VMGR::new(dtype.clone(), CatMaxReducer::<$C>(map.clone(), PhantomData)))
         }),
-        _ => unimplemented!(),
-    }
+        _ => polars_bail!(InvalidOperation: "`max` operation not supported for dtype `{dtype}`"),
+    })
 }
 
 // These two variants ignore nans.
@@ -308,10 +328,11 @@ impl GroupedReduction for BoolMinGroupedReduction {
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &DataType::Boolean);
@@ -328,11 +349,12 @@ impl GroupedReduction for BoolMinGroupedReduction {
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &DataType::Boolean);
         assert!(subset.len() == group_idxs.len());
         let values = values.as_materialized_series(); // @scalar-opt
@@ -388,16 +410,8 @@ impl GroupedReduction for BoolMinGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
-        let arr = BooleanArray::from(v.freeze())
-            .with_validity(Some(m.freeze()))
-            .boxed();
-        Ok(unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                PlSmallStr::EMPTY,
-                vec![arr],
-                &DataType::Boolean,
-            )
-        })
+        let arr = BooleanArray::from(v.freeze()).with_validity(Some(m.freeze()));
+        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -430,10 +444,11 @@ impl GroupedReduction for BoolMaxGroupedReduction {
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &DataType::Boolean);
@@ -450,11 +465,12 @@ impl GroupedReduction for BoolMaxGroupedReduction {
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &DataType::Boolean);
         assert!(subset.len() == group_idxs.len());
         let values = values.as_materialized_series(); // @scalar-opt
@@ -510,16 +526,8 @@ impl GroupedReduction for BoolMaxGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
-        let arr = BooleanArray::from(v.freeze())
-            .with_validity(Some(m.freeze()))
-            .boxed();
-        Ok(unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                PlSmallStr::EMPTY,
-                vec![arr],
-                &DataType::Boolean,
-            )
-        })
+        let arr = BooleanArray::from(v.freeze()).with_validity(Some(m.freeze()));
+        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -680,10 +688,11 @@ impl GroupedReduction for NullGroupedReduction {
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         _group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &DataType::Null);
 
         // no-op
@@ -692,11 +701,12 @@ impl GroupedReduction for NullGroupedReduction {
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &DataType::Null);
         assert!(subset.len() == group_idxs.len());
 

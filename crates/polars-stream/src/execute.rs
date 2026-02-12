@@ -1,29 +1,54 @@
+use std::sync::Arc;
+
+use crossbeam_channel::Sender;
+use parking_lot::Mutex;
 use polars_core::POOL;
 use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_utils::aliases::PlHashSet;
+use polars_utils::relaxed_cell::RelaxedCell;
+use polars_utils::reuse_vec::reuse_vec;
 use slotmap::{SecondaryMap, SparseSecondaryMap};
+use tokio::task::JoinHandle;
 
 use crate::async_executor;
 use crate::graph::{Graph, GraphNode, GraphNodeKey, LogicalPipeKey, PortState};
+use crate::metrics::{GraphMetrics, MetricsBuilder};
 use crate::pipe::PhysicalPipe;
 
 #[derive(Clone)]
 pub struct StreamingExecutionState {
-    // The number of parallel pipelines we have within each stream.
+    /// The number of parallel pipelines we have within each stream.
     pub num_pipelines: usize,
 
-    // The ExecutionState passed to any non-streaming operations.
+    /// The ExecutionState passed to any non-streaming operations.
     pub in_memory_exec_state: ExecutionState,
+
+    query_tasks_send: Sender<JoinHandle<PolarsResult<()>>>,
+    subphase_tasks_send: Sender<JoinHandle<PolarsResult<()>>>,
 }
 
-impl Default for StreamingExecutionState {
-    fn default() -> Self {
-        Self {
-            num_pipelines: POOL.current_num_threads(),
-            in_memory_exec_state: ExecutionState::default(),
-        }
+impl StreamingExecutionState {
+    /// Spawns a task which is awaited at the end of the query.
+    #[allow(unused)]
+    pub fn spawn_query_task<F: Future<Output = PolarsResult<()>> + Send + 'static>(&self, fut: F) {
+        self.query_tasks_send
+            .send(polars_io::pl_async::get_runtime().spawn(fut))
+            .unwrap();
+    }
+
+    /// Spawns a task which is awaited at the end of the current subphase. That is
+    /// if called inside `update_state` it is awaited after the state update, and
+    /// if called inside `spawn` it is awaited after the execution of that phase is
+    /// complete.
+    pub fn spawn_subphase_task<F: Future<Output = PolarsResult<()>> + Send + 'static>(
+        &self,
+        fut: F,
+    ) {
+        self.subphase_tasks_send
+            .send(polars_io::pl_async::get_runtime().spawn(fut))
+            .unwrap();
     }
 }
 
@@ -86,35 +111,38 @@ fn find_runnable_subgraph(graph: &mut Graph) -> (PlHashSet<GraphNodeKey>, Vec<Lo
     // Find pipeline blockers, choose a subset with at most one memory intensive
     // pipeline blocker, and return the subgraph needed to feed them.
     let blockers = find_runnable_pipeline_blockers(graph);
-    let (mut expensive, cheap): (Vec<_>, Vec<_>) = blockers.into_iter().partition(|b| {
+    let (expensive, cheap): (Vec<_>, Vec<_>) = blockers.into_iter().partition(|b| {
         graph.nodes[*b]
             .compute
             .is_memory_intensive_pipeline_blocker()
     });
 
-    // TODO: choose which expensive pipeline blocker to run more intelligently.
-    expensive.sort_by_key(|node_key| {
-        // Prefer to run nodes whose outputs are ready to be consumed.
-        // outputs_ready_to_receive
-        graph.nodes[*node_key]
-            .outputs
-            .iter()
-            .filter(|o| graph.pipes[**o].recv_state == PortState::Ready)
-            .count()
-    });
+    // If all expensive pipeline blockers left are sinks (InMemorySink), we're not
+    // gaining anything by only running a subset.
+    let only_expensive_sinks_left = expensive
+        .iter()
+        .all(|node_key| graph.nodes[*node_key].outputs.is_empty());
 
     let mut to_run = cheap;
-    if let Some(node) = expensive.pop() {
-        to_run.push(node);
+    if only_expensive_sinks_left {
+        to_run.extend(expensive);
+    } else {
+        // TODO: choose which expensive pipeline blocker(s) to run more intelligently.
+        let best = expensive.into_iter().max_by_key(|node_key| {
+            // Prefer to run nodes whose outputs are ready to be consumed. Also
+            // prefer to run nodes which have outputs over in-memory sinks.
+            let num_outputs = graph.nodes[*node_key].outputs.len();
+            let num_outputs_ready_to_recv = graph.nodes[*node_key]
+                .outputs
+                .iter()
+                .filter(|o| graph.pipes[**o].recv_state == PortState::Ready)
+                .count();
+            (num_outputs_ready_to_recv, num_outputs)
+        });
+        to_run.extend(best);
     }
-    expand_ready_subgraph(graph, to_run)
-}
 
-/// Re-uses the memory for a vec while clearing it. Allows casting the type of
-/// the vec at the same time. The stdlib specializes collect() to re-use the
-/// memory.
-fn reuse_vec<T, U>(v: Vec<T>) -> Vec<U> {
-    v.into_iter().filter_map(|_| None).collect()
+    expand_ready_subgraph(graph, to_run)
 }
 
 /// Runs the given subgraph. Assumes the set of pipes is correct for the subgraph.
@@ -122,12 +150,22 @@ fn run_subgraph(
     graph: &mut Graph,
     nodes: &PlHashSet<GraphNodeKey>,
     pipes: &[LogicalPipeKey],
+    pipe_seq_offsets: &mut SecondaryMap<LogicalPipeKey, Arc<RelaxedCell<u64>>>,
     state: &StreamingExecutionState,
+    metrics: Option<Arc<Mutex<GraphMetrics>>>,
 ) -> PolarsResult<()> {
     // Construct physical pipes for the logical pipes we'll use.
     let mut physical_pipes = SecondaryMap::new();
     for pipe_key in pipes.iter().copied() {
-        physical_pipes.insert(pipe_key, PhysicalPipe::new(state.num_pipelines));
+        let seq_offset = pipe_seq_offsets
+            .entry(pipe_key)
+            .unwrap()
+            .or_default()
+            .clone();
+        physical_pipes.insert(
+            pipe_key,
+            PhysicalPipe::new(state.num_pipelines, pipe_key, seq_offset, metrics.clone()),
+        );
     }
 
     // We do a topological sort of the graph: we want to spawn each node,
@@ -182,7 +220,16 @@ fn run_subgraph(
                 send_ports.push(output_pipe.as_mut().map(|p| p.send_port()));
             }
 
-            // Spawn a task per pipeline.
+            // Spawn the tasks.
+            let pre_spawn_offset = join_handles.len();
+
+            if let Some(graph_metrics) = metrics.clone() {
+                node.compute.set_metrics_builder(MetricsBuilder {
+                    graph_key: node_key,
+                    graph_metrics,
+                });
+            }
+
             node.compute.spawn(
                 scope,
                 &mut recv_ports[..],
@@ -190,6 +237,12 @@ fn run_subgraph(
                 state,
                 &mut join_handles,
             );
+            if let Some(lock) = metrics.as_ref() {
+                let mut m = lock.lock();
+                for handle in &join_handles[pre_spawn_offset..] {
+                    m.add_task(node_key, handle.metrics().unwrap().clone());
+                }
+            }
 
             // Ensure the ports were consumed.
             assert!(recv_ports.iter().all(|p| p.is_none()));
@@ -237,21 +290,12 @@ fn run_subgraph(
         }
 
         // Wait until all tasks are done.
-        // Only now do we turn on/off wait statistics tracking to reduce noise
-        // from task startup.
-        if std::env::var("POLARS_TRACK_WAIT_STATS").as_deref() == Ok("1") {
-            async_executor::track_task_wait_statistics(true);
-        }
-        let ret = polars_io::pl_async::get_runtime().block_on(async move {
+        polars_io::pl_async::get_runtime().block_on(async move {
             for handle in join_handles {
                 handle.await?;
             }
             PolarsResult::Ok(())
-        });
-        if std::env::var("POLARS_TRACK_WAIT_STATS").as_deref() == Ok("1") {
-            async_executor::track_task_wait_statistics(false);
-        }
-        ret
+        })
     })?;
 
     Ok(())
@@ -259,14 +303,20 @@ fn run_subgraph(
 
 pub fn execute_graph(
     graph: &mut Graph,
+    metrics: Option<Arc<Mutex<GraphMetrics>>>,
 ) -> PolarsResult<SparseSecondaryMap<GraphNodeKey, DataFrame>> {
     // Get the number of threads from the rayon thread-pool as that respects our config.
     let num_pipelines = POOL.current_num_threads();
     async_executor::set_num_threads(num_pipelines);
 
+    let (query_tasks_send, query_tasks_recv) = crossbeam_channel::unbounded();
+    let (subphase_tasks_send, subphase_tasks_recv) = crossbeam_channel::unbounded();
+
     let state = StreamingExecutionState {
         num_pipelines,
         in_memory_exec_state: ExecutionState::default(),
+        query_tasks_send,
+        subphase_tasks_send,
     };
 
     // Ensure everything is properly connected.
@@ -281,11 +331,27 @@ pub fn execute_graph(
         }
     }
 
+    let mut pipe_seq_offsets = SecondaryMap::new();
     loop {
+        // Update the states.
         if polars_core::config::verbose() {
             eprintln!("polars-stream: updating graph state");
         }
-        graph.update_all_states(&state)?;
+        graph.update_all_states(&state, metrics.as_deref())?;
+
+        if let Some(m) = metrics.as_ref() {
+            m.lock().flush(&graph.pipes);
+        }
+
+        polars_io::pl_async::get_runtime().block_on(async {
+            // TODO: track this in metrics.
+            while let Ok(handle) = subphase_tasks_recv.try_recv() {
+                handle.await.unwrap()?;
+            }
+            PolarsResult::Ok(())
+        })?;
+
+        // Find a subgraph to run.
         let (nodes, pipes) = find_runnable_subgraph(graph);
         if polars_core::config::verbose() {
             for node in &nodes {
@@ -295,10 +361,27 @@ pub fn execute_graph(
                 );
             }
         }
+
         if nodes.is_empty() {
             break;
         }
-        run_subgraph(graph, &nodes, &pipes, &state)?;
+
+        // Run the subgraph until phase completion.
+        run_subgraph(
+            graph,
+            &nodes,
+            &pipes,
+            &mut pipe_seq_offsets,
+            &state,
+            metrics.clone(),
+        )?;
+        polars_io::pl_async::get_runtime().block_on(async {
+            // TODO: track this in metrics.
+            while let Ok(handle) = subphase_tasks_recv.try_recv() {
+                handle.await.unwrap()?;
+            }
+            PolarsResult::Ok(())
+        })?;
         if polars_core::config::verbose() {
             eprintln!("polars-stream: done running graph phase");
         }
@@ -308,6 +391,15 @@ pub fn execute_graph(
     for pipe in graph.pipes.values() {
         assert!(pipe.send_state == PortState::Done && pipe.recv_state == PortState::Done);
     }
+
+    // Finalize query tasks.
+    polars_io::pl_async::get_runtime().block_on(async {
+        // TODO: track this in metrics.
+        while let Ok(handle) = query_tasks_recv.try_recv() {
+            handle.await.unwrap()?;
+        }
+        PolarsResult::Ok(())
+    })?;
 
     // Extract output from in-memory nodes.
     let mut out = SparseSecondaryMap::new();

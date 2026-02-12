@@ -64,6 +64,7 @@ def test_to_datetime_precision() -> None:
             [789321000, 987456000],
             [789321456, 987456321],
         ),
+        strict=False,
     )
     for time_unit, suffix, expected_values in test_data:
         ds = s.str.to_datetime(f"%Y-%m-%d %H:%M:%S{suffix}", time_unit=time_unit)
@@ -483,10 +484,10 @@ def test_strptime_invalid_timezone() -> None:
 def test_to_datetime_ambiguous_or_non_existent() -> None:
     with pytest.raises(
         ComputeError,
-        match="datetime '2021-11-07 01:00:00' is ambiguous in time zone 'US/Central'",
+        match="datetime '2021-11-07 01:00:00' is ambiguous in time zone 'America/Chicago'",
     ):
         pl.Series(["2021-11-07 01:00"]).str.to_datetime(
-            time_unit="us", time_zone="US/Central"
+            time_unit="us", time_zone="America/Chicago"
         )
     with pytest.raises(
         ComputeError,
@@ -684,7 +685,7 @@ def test_to_time_subseconds(data: str, format: str, expected: time) -> None:
 
 def test_to_time_format_warning() -> None:
     s = pl.Series(["05:10:10.074000"])
-    with pytest.warns(ChronoFormatWarning, match=".%f"):
+    with pytest.warns(ChronoFormatWarning, match=r".%f"):
         result = s.str.to_time("%H:%M:%S.%f").item()
     assert result == time(5, 10, 10, 74)
 
@@ -754,7 +755,7 @@ def test_strptime_ambiguous_earliest(exact: bool) -> None:
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_to_datetime_out_of_range_13401(time_unit: TimeUnit) -> None:
     s = pl.Series(["2020-January-01 12:34:66"])
-    with pytest.raises(InvalidOperationError, match="conversion .* failed"):
+    with pytest.raises(InvalidOperationError, match=r"conversion .* failed"):
         s.str.to_datetime("%Y-%B-%d %H:%M:%S", time_unit=time_unit)
     assert (
         s.str.to_datetime("%Y-%B-%d %H:%M:%S", strict=False, time_unit=time_unit).item()
@@ -824,3 +825,100 @@ def test_matching_strings_but_different_format_22495(value: str) -> None:
     s = pl.Series("my_strings", [value])
     result = s.str.to_date("%Y-%m-%d", strict=False).item()
     assert result is None
+
+
+def test_date_parse_omit_day_month() -> None:
+    fmt_B = "%Y %B"
+    fmt_b = "%Y %b"
+    df = (
+        pl.select(date=pl.date_range(pl.date(2022, 1, 1), pl.date(2022, 12, 1), "1mo"))
+        .with_columns(
+            strdateB=pl.col("date").dt.strftime(fmt_B),
+            strdateb=pl.col("date").dt.strftime(fmt_b),
+        )
+        .with_columns(
+            round_tripB=pl.col("strdateB").str.strptime(pl.Date, fmt_B),
+            round_tripb=pl.col("strdateb").str.strptime(pl.Date, fmt_b),
+        )
+    )
+    check = df.filter(
+        ~pl.all_horizontal(
+            pl.col("date") == pl.col("round_tripB"),
+            pl.col("date") == pl.col("round_tripb"),
+        )
+    )
+    assert check.height == 0
+
+    s = pl.Series(
+        [
+            "2022 January",
+            "2022 February",
+            "2022 March",
+            "2022 April",
+            "2022 May",
+            "2022 June",
+            "2022 July",
+            "2022 August",
+            "2022 September",
+            "2022 October",
+            "2022 November",
+            "2022 December",
+        ]
+    )
+    result = s.str.strptime(pl.Date, "%Y %B")
+    expected = pl.Series(
+        [
+            date(2022, 1, 1),
+            date(2022, 2, 1),
+            date(2022, 3, 1),
+            date(2022, 4, 1),
+            date(2022, 5, 1),
+            date(2022, 6, 1),
+            date(2022, 7, 1),
+            date(2022, 8, 1),
+            date(2022, 9, 1),
+            date(2022, 10, 1),
+            date(2022, 11, 1),
+            date(2022, 12, 1),
+        ]
+    )
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("length", [1, 5])
+def test_eager_inference_on_expr(length: int) -> None:
+    s = pl.Series("a", ["2025-04-06T18:57:42.77123Z"] * length)
+
+    assert_series_equal(
+        s.str.strptime(pl.Datetime),
+        pl.Series(
+            "a",
+            [
+                datetime(
+                    2025, 4, 6, 18, 57, 42, 771230, tzinfo=timezone(timedelta(hours=0))
+                )
+            ]
+            * length,
+        ),
+    )
+
+    with pytest.raises(
+        ComputeError,
+        match="`strptime` / `to_datetime` was called with no format and no time zone, but a time zone is part of the data",
+    ):
+        s.to_frame().select(pl.col("a").str.strptime(pl.Datetime))
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_strptime_in_group_by(maintain_order: bool) -> None:
+    df = pl.DataFrame({"g": [1, 2], "a": ["AAA", "2025-01-01"]})
+
+    assert_frame_equal(
+        df.group_by("g", maintain_order=maintain_order).agg(
+            pl.col.a.filter(pl.col.a != "AAA").str.to_date("%Y-%m-%d").min()
+        ),
+        pl.DataFrame({"g": [1, 2], "a": [None, "2025-01-01"]}).with_columns(
+            pl.col.a.str.to_date("%Y-%m-%d")
+        ),
+        check_row_order=maintain_order,
+    )

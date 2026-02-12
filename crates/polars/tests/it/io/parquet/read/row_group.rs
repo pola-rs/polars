@@ -1,15 +1,15 @@
-use std::io::{Read, Seek};
+use std::io::{Cursor, Read, Seek};
 
 use arrow::array::Array;
 use arrow::datatypes::{ArrowSchemaRef, Field};
 use arrow::record_batch::RecordBatchT;
 use polars::prelude::ArrowSchema;
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_parquet::arrow::read::{Filter, column_iter_to_arrays};
 use polars_parquet::parquet::metadata::ColumnChunkMetadata;
 use polars_parquet::parquet::read::{BasicDecompressor, PageReader};
 use polars_parquet::read::RowGroupMetadata;
-use polars_utils::mmap::MemReader;
 
 /// An [`Iterator`] of [`RecordBatchT`] that (dynamically) adapts a vector of iterators of [`Array`] into
 /// an iterator of [`RecordBatchT`].
@@ -115,13 +115,13 @@ pub fn to_deserializer(
     columns: Vec<(&ColumnChunkMetadata, Vec<u8>)>,
     field: Field,
     filter: Option<Filter>,
-) -> PolarsResult<Box<dyn Array>> {
+) -> PolarsResult<Vec<Box<dyn Array>>> {
     let (columns, types): (Vec<_>, Vec<_>) = columns
         .into_iter()
         .map(|(column_meta, chunk)| {
             let len = chunk.len();
             let pages = PageReader::new(
-                MemReader::from_vec(chunk),
+                Cursor::new(Buffer::from_vec(chunk)),
                 column_meta,
                 vec![],
                 len * 2 + 1024,
@@ -151,7 +151,7 @@ pub fn read_columns_many<R: Read + Seek>(
     row_group: &RowGroupMetadata,
     fields: &ArrowSchema,
     filter: Option<Filter>,
-) -> PolarsResult<Vec<Box<dyn Array>>> {
+) -> PolarsResult<Vec<Vec<Box<dyn Array>>>> {
     // reads all the necessary columns for all fields from the row group
     // This operation is IO-bounded `O(C)` where C is the number of columns in the row group
     let field_columns = fields

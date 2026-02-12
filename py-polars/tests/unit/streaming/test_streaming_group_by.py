@@ -14,6 +14,8 @@ from tests.unit.conftest import INTEGER_DTYPES
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tests.conftest import PlMonkeyPatch
+
 pytestmark = pytest.mark.xdist_group("streaming")
 
 
@@ -60,8 +62,6 @@ def test_streaming_group_by_types() -> None:
                     [
                         pl.col("person_name").first().alias("str_first"),
                         pl.col("person_name").last().alias("str_last"),
-                        pl.col("person_name").mean().alias("str_mean"),
-                        pl.col("person_name").sum().alias("str_sum"),
                         pl.col("bool").first().alias("bool_first"),
                         pl.col("bool").last().alias("bool_last"),
                         pl.col("bool").mean().alias("bool_mean"),
@@ -82,12 +82,10 @@ def test_streaming_group_by_types() -> None:
         assert out.schema == {
             "str_first": pl.String,
             "str_last": pl.String,
-            "str_mean": pl.String,
-            "str_sum": pl.String,
             "bool_first": pl.Boolean,
             "bool_last": pl.Boolean,
             "bool_mean": pl.Float64,
-            "bool_sum": pl.UInt32,
+            "bool_sum": pl.get_index_type(),
             # "date_sum": pl.Date,
             # "date_mean": pl.Date,
             "date_first": pl.Date,
@@ -99,8 +97,6 @@ def test_streaming_group_by_types() -> None:
         assert out.to_dict(as_series=False) == {
             "str_first": ["bob"],
             "str_last": ["foo"],
-            "str_mean": [None],
-            "str_sum": [None],
             "bool_first": [True],
             "bool_last": [False],
             "bool_mean": [0.5],
@@ -123,7 +119,6 @@ def test_streaming_group_by_types() -> None:
                     pl.col("person_name").first().alias("str_first"),
                     pl.col("person_name").last().alias("str_last"),
                     pl.col("person_name").mean().alias("str_mean"),
-                    pl.col("person_name").sum().alias("str_sum"),
                     pl.col("bool").first().alias("bool_first"),
                     pl.col("bool").last().alias("bool_first"),
                 ]
@@ -211,11 +206,11 @@ def random_integers() -> pl.Series:
 def test_streaming_group_by_ooc_q1(
     random_integers: pl.Series,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
-    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    plmonkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
+    plmonkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
     lf = random_integers.to_frame().lazy()
     result = (
@@ -239,11 +234,11 @@ def test_streaming_group_by_ooc_q1(
 def test_streaming_group_by_ooc_q2(
     random_integers: pl.Series,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
-    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    plmonkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
+    plmonkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
     lf = random_integers.cast(str).to_frame().lazy()
     result = (
@@ -267,11 +262,11 @@ def test_streaming_group_by_ooc_q2(
 def test_streaming_group_by_ooc_q3(
     random_integers: pl.Series,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
-    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    plmonkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
+    plmonkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
     lf = pl.LazyFrame({"a": random_integers, "b": random_integers})
     result = (

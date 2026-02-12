@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import operator
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -14,6 +15,8 @@ from polars.testing.asserts.series import assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType, PythonDataType
 
 
@@ -622,16 +625,16 @@ def test_invalid_cast_float_to_decimal(value: float) -> None:
     s = pl.Series([value], dtype=pl.Float64)
     with pytest.raises(
         InvalidOperationError,
-        match=r"conversion from `f64` to `decimal\[\*,0\]` failed",
+        match=r"conversion from `f64` to `decimal\[10,2\]` failed",
     ):
-        s.cast(pl.Decimal)
+        s.cast(pl.Decimal(10, 2))
 
 
 def test_err_on_time_datetime_cast() -> None:
     s = pl.Series([time(10, 0, 0), time(11, 30, 59)])
     with pytest.raises(
         InvalidOperationError,
-        match="casting from Time to Datetime\\(Microseconds, None\\) not supported; consider using `dt.combine`",
+        match=r"casting from Time to Datetime\('μs'\) not supported; consider using `dt\.combine`",
     ):
         s.cast(pl.Datetime)
 
@@ -1005,3 +1008,67 @@ def test_not_prune_necessary_cast() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": pl.UInt16})
     result = lf.select(pl.col("a").cast(pl.UInt8))
     assert "strict_cast" in result.explain()
+
+
+@pytest.mark.parametrize("target_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("inner_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("op", [operator.mul, operator.truediv])
+def test_cast_optimizer_in_list_eval_23924(
+    inner_dtype: PolarsDataType,
+    target_dtype: PolarsDataType,
+    op: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    print(inner_dtype, target_dtype)
+    if target_dtype in INTEGER_DTYPES:
+        df = pl.Series("a", [[1]], dtype=pl.List(target_dtype)).to_frame()
+    else:
+        df = pl.Series("a", [[1.0]], dtype=pl.List(target_dtype)).to_frame()
+    q = df.lazy().select(
+        pl.col("a").list.eval(
+            (op(pl.element(), pl.element().cast(inner_dtype))).cast(target_dtype)
+        )
+    )
+    assert q.collect_schema() == q.collect().schema
+
+
+def test_lit_cast_arithmetic_23677() -> None:
+    df = pl.DataFrame({"a": [1]}, schema={"a": pl.Float32})
+    q = df.lazy().select(pl.col("a") / pl.lit(1, pl.Int32))
+    expected = pl.Schema({"a": pl.Float64})
+    assert q.collect().schema == expected
+
+
+@pytest.mark.parametrize("col_dtype", NUMERIC_DTYPES + [pl.Unknown])
+@pytest.mark.parametrize("lit_dtype", NUMERIC_DTYPES + [pl.Unknown])
+@pytest.mark.parametrize("op", [operator.mul, operator.truediv])
+def test_lit_cast_arithmetic_matrix_schema(
+    col_dtype: PolarsDataType,
+    lit_dtype: PolarsDataType,
+    op: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    # Note (hacky): simply casting to 'pl.Unknown' would create
+    # `Unknown(UnknownKind::Any())` which is not what we want: the
+    # default maps to `Unknown(UnknownKind::Int(_)))` so we adjust
+    df = (
+        pl.DataFrame({"a": [1]})
+        if col_dtype == pl.Unknown
+        else pl.DataFrame({"a": [1]}, schema={"a": col_dtype})
+    )
+    q = (
+        df.lazy().select(op(pl.col("a"), pl.lit(1)))
+        if lit_dtype == pl.Unknown
+        else df.lazy().select(op(pl.col("a"), pl.lit(1, lit_dtype)))
+    )
+    assert q.collect_schema() == q.collect().schema
+
+
+def test_strict_cast_nested() -> None:
+    df = pl.DataFrame({"a": ["42", "10a"]})
+    struct = pl.Struct({"x": pl.Int32})
+    with pytest.raises(InvalidOperationError):
+        df.cast(struct, strict=True)
+
+    assert_frame_equal(
+        df.cast(struct, strict=False),
+        pl.DataFrame({"a": [{"x": 42}, {"x": None}]}, schema={"a": struct}),
+    )

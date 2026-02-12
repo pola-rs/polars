@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import operator
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -14,6 +14,8 @@ from tests.unit.operations.arithmetic.utils import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType
 
 
@@ -246,6 +248,14 @@ def test_list_arithmetic_values(
     # Type upcasting for Boolean and Null
 
     # Check boolean upcasting
+    dtypes = [pl.Boolean, pl.Boolean, pl.get_index_type()]
+    l, r, o = materialize_series(True, True, 2)  # noqa: E741
+    assert_series_equal(exec_op(l, r, op.add), o)
+
+    dtypes = [pl.Boolean, pl.Boolean, pl.Float64]
+    l, r, o = materialize_series(True, True, 1.0)  # noqa: E741
+    assert_series_equal(exec_op(l, r, op.truediv), o)
+
     dtypes = [pl.Boolean, pl.UInt8, pl.UInt8]
 
     l, r, o = materialize_series(True, 3, 4)  # noqa: E741
@@ -259,7 +269,7 @@ def test_list_arithmetic_values(
 
     l, r, o = materialize_series(True, 3, 0)  # noqa: E741
     if list_side != "none":
-        # TODO: FIXME: We get an error on non-lists with this:
+        # TODO: We get an error on non-lists with this:
         # "floor_div operation not supported for dtype `bool`"
         assert_series_equal(exec_op(l, r, op.floordiv), o)
 
@@ -1024,3 +1034,39 @@ def test_list_to_primitive_arithmetic() -> None:
         out = pl.select(r=rhs).select(pl.col("r") - lhs).to_series().alias("")  # noqa: PIE794
 
         assert_series_equal(out, expect)
+
+
+def test_list_boolean_arithmetic_23146() -> None:
+    """Test that boolean arithmetic in lists works and returns UInt32."""
+    # Boolean list + Boolean list with single value
+    result = pl.select(pl.lit([True]) + [True])
+    expected = pl.DataFrame({"literal": [[2]]}, schema={"literal": pl.List(pl.UInt32)})
+    assert_frame_equal(result, expected)
+
+    # Boolean list + Boolean list with multiple values
+    result = pl.select(pl.lit([True, False]) + [True, True])
+    expected = pl.DataFrame(
+        {"literal": [[2, 1]]}, schema={"literal": pl.List(pl.UInt32)}
+    )
+    assert_frame_equal(result, expected)
+
+    # Boolean list + Scalar integer (supertype with Int32)
+    result = pl.select(pl.lit([True, False]) + 1)
+    expected = pl.DataFrame(
+        {"literal": [[2, 1]]}, schema={"literal": pl.List(pl.Int32)}
+    )
+    assert_frame_equal(result, expected)
+
+    # Boolean list arithmetic on DataFrame columns
+    df = pl.DataFrame(
+        {"a": [[True, False]], "b": [[1, 2]]},
+        schema={"a": pl.List(pl.Boolean), "b": pl.List(pl.Int64)},
+    )
+    result = df.select(pl.col("a") + pl.col("b"))
+    expected = pl.DataFrame({"a": [[2, 2]]}, schema={"a": pl.List(pl.Int64)})
+    assert_frame_equal(result, expected)
+
+    # Division test
+    df = pl.DataFrame({"a": [[True, False]], "b": [[128, 128]]})
+    result = df.select(pl.col("a") / pl.col("b"))
+    assert result.schema == {"a": pl.List(pl.Float64)}

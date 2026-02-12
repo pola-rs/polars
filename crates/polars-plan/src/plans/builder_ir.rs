@@ -43,9 +43,9 @@ impl<'a> IRBuilder<'a> {
 
         // Run the optimizer
         let mut conversion_optimizer = ConversionOptimizer::new(true, true, true);
-        conversion_optimizer.fill_scratch(&b.lp_arena.get(b.root).get_exprs(), b.expr_arena);
+        conversion_optimizer.fill_scratch(b.lp_arena.get(b.root).exprs(), b.expr_arena);
         conversion_optimizer
-            .optimize_exprs(b.expr_arena, b.lp_arena, b.root)
+            .optimize_exprs(b.expr_arena, b.lp_arena, b.root, false)
             .map_err(|e| e.context(format!("optimizing '{ir_name}' failed").into()))?;
 
         Ok(b)
@@ -54,7 +54,8 @@ impl<'a> IRBuilder<'a> {
     /// An escape hatch to add an `Expr`. Working with IR is preferred.
     pub fn add_expr(&mut self, expr: Expr) -> PolarsResult<ExprIR> {
         let schema = self.lp_arena.get(self.root).schema(self.lp_arena);
-        to_expr_ir(expr, self.expr_arena, &schema, false)
+        let mut ctx = ExprToIRContext::new(self.expr_arena, &schema);
+        to_expr_ir(expr, &mut ctx)
     }
 
     pub fn project(self, exprs: Vec<ExprIR>, options: ProjectionOptions) -> Self {
@@ -63,8 +64,8 @@ impl<'a> IRBuilder<'a> {
             self
         } else {
             let input_schema = self.schema();
-            let schema =
-                expr_irs_to_schema(&exprs, &input_schema, Context::Default, self.expr_arena);
+            let schema = expr_irs_to_schema(&exprs, &input_schema, self.expr_arena)
+                .expect("no valid schema can be derived for the query");
 
             let lp = IR::Select {
                 expr: exprs,
@@ -210,7 +211,8 @@ impl<'a> IRBuilder<'a> {
         let schema = self.schema();
         let mut new_schema = (**schema).clone();
 
-        let hstack_schema = expr_irs_to_schema(&exprs, &schema, Context::Default, self.expr_arena);
+        let hstack_schema = expr_irs_to_schema(&exprs, &schema, self.expr_arena)
+            .expect("no valid schema can be derived for the query");
         new_schema.merge(hstack_schema);
 
         let lp = IR::HStack {
@@ -236,7 +238,7 @@ impl<'a> IRBuilder<'a> {
             let field = self
                 .expr_arena
                 .get(node)
-                .to_field(&schema, Context::Default, self.expr_arena)
+                .to_field(&ToFieldContext::new(self.expr_arena, &schema))
                 .unwrap();
 
             expr_irs.push(
@@ -256,11 +258,12 @@ impl<'a> IRBuilder<'a> {
     }
 
     // call this if the schema needs to be updated
-    pub fn explode(self, columns: Arc<[PlSmallStr]>) -> Self {
+    pub fn explode(self, columns: Arc<[PlSmallStr]>, options: ExplodeOptions) -> Self {
         let lp = IR::MapFunction {
             input: self.root,
             function: FunctionIR::Explode {
                 columns,
+                options,
                 schema: Default::default(),
             },
         };
@@ -271,13 +274,13 @@ impl<'a> IRBuilder<'a> {
         self,
         keys: Vec<ExprIR>,
         aggs: Vec<ExprIR>,
-        apply: Option<Arc<dyn DataFrameUdf>>,
+        apply: Option<PlanCallback<DataFrame, DataFrame>>,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
     ) -> Self {
         let current_schema = self.schema();
-        let mut schema =
-            expr_irs_to_schema(&keys, &current_schema, Context::Default, self.expr_arena);
+        let mut schema = expr_irs_to_schema(&keys, &current_schema, self.expr_arena)
+            .expect("no valid schema can be derived for the key expression");
 
         #[cfg(feature = "dynamic_group_by")]
         {
@@ -296,13 +299,18 @@ impl<'a> IRBuilder<'a> {
             }
         }
 
-        let agg_schema = expr_irs_to_schema(
-            &aggs,
-            &current_schema,
-            Context::Aggregation,
-            self.expr_arena,
-        );
-        schema.merge(agg_schema);
+        let mut aggs_schema = expr_irs_to_schema(&aggs, &current_schema, self.expr_arena)
+            .expect("no valid schema can be derived for the agg expression");
+
+        // Coerce aggregation column(s) into List unless not needed (auto-implode)
+        debug_assert!(aggs_schema.len() == aggs.len());
+        for ((_name, dtype), expr) in aggs_schema.iter_mut().zip(&aggs) {
+            if !expr.is_scalar(self.expr_arena) {
+                *dtype = dtype.clone().implode();
+            }
+        }
+
+        schema.merge(aggs_schema);
 
         let lp = IR::GroupBy {
             input: self.root,
@@ -368,6 +376,14 @@ impl<'a> IRBuilder<'a> {
                 offset,
                 schema: Default::default(),
             },
+        };
+        self.add_alp(lp)
+    }
+
+    pub fn hint(self, hint: HintIR) -> Self {
+        let lp = IR::MapFunction {
+            input: self.root,
+            function: FunctionIR::Hint(hint),
         };
         self.add_alp(lp)
     }

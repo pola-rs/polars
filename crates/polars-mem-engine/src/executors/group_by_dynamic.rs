@@ -10,8 +10,9 @@ pub(crate) struct GroupByDynamicExec {
     #[cfg(feature = "dynamic_group_by")]
     pub(crate) options: DynamicGroupOptions,
     pub(crate) input_schema: SchemaRef,
+    pub(crate) output_schema: SchemaRef,
     pub(crate) slice: Option<(i64, usize)>,
-    pub(crate) apply: Option<Arc<dyn DataFrameUdf>>,
+    pub(crate) apply: Option<PlanCallback<DataFrame, DataFrame>>,
 }
 
 impl GroupByDynamicExec {
@@ -23,7 +24,7 @@ impl GroupByDynamicExec {
     ) -> PolarsResult<DataFrame> {
         use crate::executors::group_by_rolling::sort_and_groups;
 
-        df.as_single_chunk_par();
+        df.rechunk_mut_par();
 
         let mut keys = self
             .keys
@@ -47,12 +48,7 @@ impl GroupByDynamicExec {
 
         if let Some(f) = &self.apply {
             let gb = GroupBy::new(&df, vec![], groups, None);
-            let out = gb.apply(move |df| f.call_udf(df))?;
-            return Ok(if let Some((offset, len)) = self.slice {
-                out.slice(offset, len)
-            } else {
-                out
-            });
+            return gb.apply_sliced(self.slice, move |df| f.call(df), Some(&self.output_schema));
         }
 
         let mut groups = &groups;
@@ -80,7 +76,7 @@ impl GroupByDynamicExec {
         columns.push(time_key);
         columns.extend(agg_columns);
 
-        DataFrame::new(columns)
+        DataFrame::new_infer_height(columns)
     }
 }
 

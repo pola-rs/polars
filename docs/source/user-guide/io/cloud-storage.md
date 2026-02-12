@@ -66,6 +66,21 @@ use for authentication. This can be done in a few ways:
 {{code_block('user-guide/io/cloud-storage','credential_provider_custom_func_azure',['scan_parquet',
 'CredentialProviderAzure'])}}
 
+### Set a default credential provider to use
+
+- It is possible to globally configure a default credential provider, so that it does not need to be
+  passed to every I/O function call. This can be convenient in the case where there are many cloud
+  I/O operations that use the same credential provider.
+
+{{code_block('user-guide/io/cloud-storage','credential_provider_class_global_default',['scan_parquet',
+'CredentialProviderAWS'])}}
+
+## Cloud retry configuration
+
+- Retry behavior such as maximum retries and backoff can be configured via `storage_options`:
+
+{{code_block('user-guide/io/cloud-storage','storage_options_retry_configuration',['scan_parquet'])}}
+
 ## Scanning with PyArrow
 
 We can also scan from cloud storage using PyArrow. This is particularly useful for partitioned
@@ -77,7 +92,12 @@ We first create a PyArrow dataset and then create a `LazyFrame` from the dataset
 
 ## Writing to cloud storage
 
-We can write a `DataFrame` to cloud storage in Python using s3fs for S3, adlfs for Azure Blob
-Storage and gcsfs for Google Cloud Storage. In this example, we write a Parquet file to S3.
+`DataFrame`s can also be written to cloud storage by passing a cloud URL:
 
 {{code_block('user-guide/io/cloud-storage','write_parquet',['write_parquet'])}}
+
+Note that `DataFrame`s can also be written to any Python file object that supports writes. This can
+be helpful for performing operations that are not yet natively supported, e.g. writing a compressed
+CSV directly to cloud:
+
+{{code_block('user-guide/io/cloud-storage','write_file_object',['write_csv'])}}

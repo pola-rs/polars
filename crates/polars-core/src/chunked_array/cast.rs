@@ -10,7 +10,7 @@ use super::flags::StatisticsFlags;
 #[cfg(feature = "dtype-datetime")]
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
-use crate::utils::handle_casting_failures;
+use crate::utils::{handle_array_casting_failures, handle_casting_failures};
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
@@ -60,10 +60,11 @@ pub(crate) fn cast_chunks(
             let out = polars_compute::cast::cast(arr.as_ref(), &arrow_dtype, options);
             if check_nulls {
                 out.and_then(|new| {
-                    polars_ensure!(arr.null_count() == new.null_count(), ComputeError: "strict cast failed");
+                    if arr.null_count() != new.null_count() {
+                        handle_array_casting_failures(&**arr, &*new)?;
+                    }
                     Ok(new)
                 })
-
             } else {
                 out
             }
@@ -113,7 +114,7 @@ fn cast_impl_inner(
         #[cfg(feature = "dtype-time")]
         Time => out.into_time(),
         #[cfg(feature = "dtype-decimal")]
-        Decimal(precision, scale) => out.into_decimal(*precision, scale.unwrap_or(0))?,
+        Decimal(precision, scale) => out.into_decimal(*precision, *scale)?,
         _ => out,
     };
 
@@ -295,24 +296,13 @@ impl ChunkCast for StringChunked {
                 cast_single_to_struct(self.name().clone(), &self.chunks, fields, options)
             },
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(precision, scale) => match (precision, scale) {
-                (precision, Some(scale)) => {
-                    let chunks = self.downcast_iter().map(|arr| {
-                        polars_compute::cast::binview_to_decimal(
-                            &arr.to_binview(),
-                            *precision,
-                            *scale,
-                        )
+            DataType::Decimal(precision, scale) => {
+                let chunks = self.downcast_iter().map(|arr| {
+                    polars_compute::cast::binview_to_decimal(&arr.to_binview(), *precision, *scale)
                         .to(ArrowDataType::Int128)
-                    });
-                    Ok(Int128Chunked::from_chunk_iter(self.name().clone(), chunks)
-                        .into_decimal_unchecked(*precision, *scale)
-                        .into_series())
-                },
-                (None, None) => self.to_decimal(100),
-                _ => {
-                    polars_bail!(ComputeError: "expected 'precision' or 'scale' when casting to Decimal")
-                },
+                });
+                let ca = Int128Chunked::from_chunk_iter(self.name().clone(), chunks);
+                Ok(ca.into_decimal_unchecked(*precision, *scale).into_series())
             },
             #[cfg(feature = "dtype-date")]
             DataType::Date => {
@@ -475,11 +465,6 @@ impl ChunkCast for ListChunked {
             #[cfg(feature = "dtype-array")]
             Array(child_type, width) => {
                 let physical_type = dtype.to_physical();
-
-                // TODO @ cat-rework: can we implement this now?
-                // TODO!: properly implement this recursively.
-                #[cfg(feature = "dtype-categorical")]
-                polars_ensure!(!matches!(&**child_type, Categorical(_, _)), InvalidOperation: "array of categorical is not yet supported");
 
                 // cast to the physical type to avoid logical chunks.
                 let chunks = cast_chunks(ca.chunks(), &physical_type, options)?;

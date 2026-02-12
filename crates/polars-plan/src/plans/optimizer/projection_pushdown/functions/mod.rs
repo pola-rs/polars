@@ -17,23 +17,30 @@ pub(super) fn process_functions(
 ) -> PolarsResult<IR> {
     use FunctionIR::*;
     match function {
-        Explode { columns, .. } => {
+        Explode {
+            columns, options, ..
+        } => {
             columns
                 .iter()
                 .for_each(|name| add_str_to_accumulated(name.clone(), &mut ctx, expr_arena));
             proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
             Ok(IRBuilder::new(input, expr_arena, lp_arena)
-                .explode(columns.clone())
+                .explode(columns, options)
                 .build())
         },
         #[cfg(feature = "pivot")]
         Unpivot { ref args, .. } => {
-            let lp = IR::MapFunction {
-                input,
-                function: function.clone(),
-            };
-
-            process_unpivot(proj_pd, lp, args, input, ctx, lp_arena, expr_arena)
+            process_unpivot(proj_pd, args, input, ctx, lp_arena, expr_arena)
+        },
+        Hint(hint) => {
+            let hint = hint.project(&ctx.projected_names);
+            proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
+            Ok(match hint {
+                None => lp_arena.get(input).clone(),
+                Some(hint) => IRBuilder::new(input, expr_arena, lp_arena)
+                    .hint(hint)
+                    .build(),
+            })
         },
         _ => {
             if function.allow_projection_pd() && ctx.has_pushed_down() {

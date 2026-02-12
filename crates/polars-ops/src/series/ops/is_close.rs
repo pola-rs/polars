@@ -16,13 +16,21 @@ pub fn is_close(
     if abs_tol < 0.0 {
         polars_bail!(ComputeError: "`abs_tol` must be non-negative but got {}", abs_tol);
     }
-    if !(0.0..1.0).contains(&rel_tol) {
-        polars_bail!(ComputeError: "`rel_tol` must be in the range [0, 1) but got {}", rel_tol);
+    if rel_tol < 0.0 {
+        polars_bail!(ComputeError: "`rel_tol` must be non-negative but got {}", rel_tol);
     }
     validate_numeric(s.dtype())?;
     validate_numeric(other.dtype())?;
 
     let ca = match (s.dtype(), other.dtype()) {
+        #[cfg(feature = "dtype-f16")]
+        (DataType::Float16, DataType::Float16) => apply_binary_kernel_broadcast(
+            s.f16().unwrap(),
+            other.f16().unwrap(),
+            |l, r| is_close_kernel::<Float16Type>(l, r, abs_tol, rel_tol, nans_equal),
+            |v, ca| is_close_kernel_unary::<Float16Type>(ca, v.as_(), abs_tol, rel_tol, nans_equal),
+            |ca, v| is_close_kernel_unary::<Float16Type>(ca, v.as_(), abs_tol, rel_tol, nans_equal),
+        ),
         (DataType::Float32, DataType::Float32) => apply_binary_kernel_broadcast(
             s.f32().unwrap(),
             other.f32().unwrap(),

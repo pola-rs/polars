@@ -94,6 +94,16 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_max(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
         self.0
             .physical()
@@ -395,6 +405,14 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0
+            .physical()
+            .deposit(validity)
+            .into_duration(self.0.time_unit())
+            .into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -459,6 +477,10 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.physical().n_unique()
     }
 
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        ChunkUnique::unique_id(self.0.physical())
+    }
+
     #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.0.physical().arg_unique()
@@ -518,38 +540,49 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         ))
     }
 
-    fn var_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
-        // Why do we go via MilliSeconds here? Seems wrong to me.
-        // I think we should fix/inspect the tests that fail if we remain on the time-unit here.
-        let sc = self
-            .0
-            .cast_time_unit(TimeUnit::Milliseconds)
-            .physical()
-            .var_reduce(ddof);
-        let to = self.dtype().to_physical();
-        let v = sc.value().cast(&to);
-        Ok(Scalar::new(
-            DataType::Duration(TimeUnit::Milliseconds),
-            v.as_duration(TimeUnit::Milliseconds),
-        ))
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        let mean = self.mean().map(|v| v as i64);
+        let av = AnyValue::from(mean).as_duration(self.0.time_unit());
+        Ok(Scalar::new(self.dtype().clone(), av))
     }
+
     fn median_reduce(&self) -> PolarsResult<Scalar> {
-        let v: AnyValue = self.median().map(|v| v as i64).into();
-        let to = self.dtype().to_physical();
-        let v = v.cast(&to);
-        Ok(Scalar::new(
-            self.dtype().clone(),
-            v.as_duration(self.0.time_unit()),
-        ))
+        let mean = self.median().map(|v| v as i64);
+        let av = AnyValue::from(mean).as_duration(self.0.time_unit());
+        Ok(Scalar::new(self.dtype().clone(), av))
     }
+
     fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
         let v = self.0.physical().quantile_reduce(quantile, method)?;
-        let to = self.dtype().to_physical();
-        let v = v.value().cast(&to);
+        let v = v.value().cast(&DataType::Int64);
         Ok(Scalar::new(
             self.dtype().clone(),
             v.as_duration(self.0.time_unit()),
         ))
+    }
+
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let result = self.0.physical().quantiles_reduce(quantiles, method)?;
+        if let AnyValue::List(float_s) = result.value() {
+            let float_ca = float_s.f64().unwrap();
+            let int_s = float_ca
+                .iter()
+                .map(|v: Option<f64>| v.map(|f| f as i64))
+                .collect::<Int64Chunked>()
+                .into_duration(self.0.time_unit())
+                .into_series();
+            Ok(Scalar::new(
+                DataType::List(Box::new(self.dtype().clone())),
+                AnyValue::List(int_s),
+            ))
+        } else {
+            polars_bail!(ComputeError: "expected list scalar from quantiles_reduce")
+        }
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(ChunkApproxNUnique::approx_n_unique(self.0.physical()))
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

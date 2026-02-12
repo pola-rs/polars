@@ -14,6 +14,8 @@ mod datetime;
 mod decimal;
 #[cfg(feature = "dtype-duration")]
 mod duration;
+#[cfg(feature = "dtype-extension")]
+mod extension;
 mod floats;
 mod list;
 pub(crate) mod null;
@@ -28,6 +30,7 @@ mod time;
 use std::any::Any;
 use std::borrow::Cow;
 
+use arrow::bitmap::Bitmap;
 use polars_compute::rolling::QuantileMethod;
 use polars_utils::aliases::PlSeedableRandomStateQuality;
 
@@ -39,6 +42,7 @@ use crate::chunked_array::ops::compare_inner::{
 };
 
 // Utility wrapper struct
+#[repr(transparent)]
 pub(crate) struct SeriesWrap<T>(pub T);
 
 impl<T: PolarsDataType> From<ChunkedArray<T>> for SeriesWrap<ChunkedArray<T>> {
@@ -138,6 +142,16 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "algorithm_group_by")]
+            unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+                self.0.agg_arg_min(groups)
+            }
+
+            #[cfg(feature = "algorithm_group_by")]
+            unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+                self.0.agg_arg_max(groups)
+            }
+
+            #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
                 use DataType::*;
                 match self.dtype() {
@@ -210,7 +224,7 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "rolling_window")]
             fn rolling_map(
                 &self,
-                _f: &dyn Fn(&Series) -> Series,
+                _f: &dyn Fn(&Series) -> PolarsResult<Series>,
                 _options: RollingOptionsFixedWindow,
             ) -> PolarsResult<Series> {
                 ChunkRollApply::rolling_map(&self.0, _f, _options).map(|ca| ca.into_series())
@@ -302,6 +316,10 @@ macro_rules! impl_dyn_series {
                 self.0.take_unchecked(indices).into_series()
             }
 
+            fn deposit(&self, validity: &Bitmap) -> Series {
+                self.0.deposit(validity).into_series()
+            }
+
             fn len(&self) -> usize {
                 self.0.len()
             }
@@ -354,6 +372,10 @@ macro_rules! impl_dyn_series {
                 ChunkUnique::arg_unique(&self.0)
             }
 
+            fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+                ChunkUnique::unique_id(&self.0)
+            }
+
             fn is_null(&self) -> BooleanChunked {
                 self.0.is_null()
             }
@@ -383,6 +405,9 @@ macro_rules! impl_dyn_series {
             fn min_reduce(&self) -> PolarsResult<Scalar> {
                 Ok(ChunkAggSeries::min_reduce(&self.0))
             }
+            fn mean_reduce(&self) -> PolarsResult<Scalar> {
+                Ok(Scalar::new(DataType::Float64, self.mean().into()))
+            }
             fn median_reduce(&self) -> PolarsResult<Scalar> {
                 Ok(QuantileAggSeries::median_reduce(&self.0))
             }
@@ -392,12 +417,21 @@ macro_rules! impl_dyn_series {
             fn std_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
                 Ok(VarAggSeries::std_reduce(&self.0, ddof))
             }
+
             fn quantile_reduce(
                 &self,
                 quantile: f64,
                 method: QuantileMethod,
             ) -> PolarsResult<Scalar> {
                 QuantileAggSeries::quantile_reduce(&self.0, quantile, method)
+            }
+
+            fn quantiles_reduce(
+                &self,
+                quantiles: &[f64],
+                method: QuantileMethod,
+            ) -> PolarsResult<Scalar> {
+                QuantileAggSeries::quantiles_reduce(&self.0, quantiles, method)
             }
 
             #[cfg(feature = "bitwise")]
@@ -467,6 +501,8 @@ impl_dyn_series!(UInt8Chunked, UInt8Type);
 impl_dyn_series!(UInt16Chunked, UInt16Type);
 impl_dyn_series!(UInt32Chunked, UInt32Type);
 impl_dyn_series!(UInt64Chunked, UInt64Type);
+#[cfg(feature = "dtype-u128")]
+impl_dyn_series!(UInt128Chunked, UInt128Type);
 #[cfg(feature = "dtype-i8")]
 impl_dyn_series!(Int8Chunked, Int8Type);
 #[cfg(feature = "dtype-i16")]
@@ -518,6 +554,6 @@ impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
             .unwrap()
             .clone();
 
-        Some(BitRepr::Small(repr))
+        Some(BitRepr::U32(repr))
     }
 }

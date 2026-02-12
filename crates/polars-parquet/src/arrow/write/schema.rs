@@ -1,7 +1,8 @@
-use std::borrow::Cow;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
-use arrow::datatypes::{ArrowDataType, ArrowSchema, ExtensionType, Field, TimeUnit};
+use arrow::datatypes::{
+    ArrowDataType, ArrowSchema, ExtensionType, Field, PARQUET_EMPTY_STRUCT, TimeUnit,
+};
 use arrow::io::ipc::write::{default_ipc_fields, schema_to_bytes};
 use base64::Engine as _;
 use base64::engine::general_purpose;
@@ -9,7 +10,6 @@ use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::super::ARROW_SCHEMA_META_KEY;
-use super::ColumnWriteOptions;
 use crate::arrow::write::decimal_length_from_precision;
 use crate::parquet::metadata::KeyValue;
 use crate::parquet::schema::Repetition;
@@ -17,14 +17,24 @@ use crate::parquet::schema::types::{
     GroupConvertedType, GroupLogicalType, IntegerType, ParquetType, PhysicalType,
     PrimitiveConvertedType, PrimitiveLogicalType, TimeUnit as ParquetTimeUnit,
 };
-use crate::write::ChildWriteOptions;
 
 fn convert_field(field: Field) -> Field {
+    let mut metadata = field.metadata;
+
+    if let ArrowDataType::Struct(fields) = &field.dtype
+        && fields.is_empty()
+    {
+        Arc::make_mut(metadata.get_or_insert_default()).insert(
+            PlSmallStr::from_static(PARQUET_EMPTY_STRUCT),
+            PlSmallStr::EMPTY,
+        );
+    }
+
     Field {
         name: field.name,
         dtype: convert_dtype(field.dtype),
         is_nullable: field.is_nullable,
-        metadata: field.metadata,
+        metadata,
     }
 }
 
@@ -38,8 +48,6 @@ fn convert_dtype(dtype: ArrowDataType) -> ArrowDataType {
             }
             D::Struct(fields)
         },
-        D::BinaryView => D::LargeBinary,
-        D::Utf8View => D::LargeUtf8,
         D::Dictionary(it, dtype, sorted) => {
             let dtype = convert_dtype(*dtype);
             D::Dictionary(it, Box::new(dtype), sorted)
@@ -55,109 +63,8 @@ fn convert_dtype(dtype: ArrowDataType) -> ArrowDataType {
     }
 }
 
-fn insert_field_metadata(field: &mut Cow<Field>, options: &ColumnWriteOptions) {
-    if !options.metadata.is_empty() {
-        let field = field.to_mut();
-        let mut metadata = field.metadata.as_deref().cloned().unwrap_or_default();
-
-        for kv in &options.metadata {
-            metadata.insert(
-                kv.key.as_str().into(),
-                kv.value.as_deref().unwrap_or_default().into(),
-            );
-        }
-        field.metadata = Some(Arc::new(metadata));
-    }
-
-    if let Some(v) = options.required {
-        if v == field.is_nullable {
-            let field = field.to_mut();
-            field.is_nullable = !v;
-        }
-    }
-
-    use ArrowDataType as D;
-    match field.dtype() {
-        D::Struct(f) => {
-            let ChildWriteOptions::Struct(o) = &options.children else {
-                unreachable!();
-            };
-
-            let mut new_fields = Vec::new();
-            for (i, (child_field, child_options)) in f.iter().zip(o.children.as_slice()).enumerate()
-            {
-                let mut child_field = Cow::Borrowed(child_field);
-                insert_field_metadata(&mut child_field, child_options);
-
-                if let Cow::Owned(child_field) = child_field {
-                    new_fields.reserve(f.len());
-                    new_fields.extend(f[..i].iter().cloned());
-                    new_fields.push(child_field);
-                    break;
-                }
-            }
-
-            if new_fields.is_empty() {
-                return;
-            }
-
-            new_fields.extend(
-                f[new_fields.len()..]
-                    .iter()
-                    .zip(&o.children[new_fields.len()..])
-                    .map(|(child_field, child_options)| {
-                        let mut child_field = Cow::Borrowed(child_field);
-                        insert_field_metadata(&mut child_field, child_options);
-                        child_field.into_owned()
-                    }),
-            );
-            field
-                .to_mut()
-                .map_dtype_mut(|dtype| *dtype = D::Struct(new_fields));
-        },
-        D::List(f) | D::FixedSizeList(f, _) | D::LargeList(f) => {
-            let ChildWriteOptions::ListLike(o) = &options.children else {
-                unreachable!();
-            };
-
-            let mut child_field = Cow::Borrowed(f.as_ref());
-            insert_field_metadata(&mut child_field, &o.child);
-
-            if let Cow::Owned(child_field) = child_field {
-                let child_field = Box::new(child_field);
-                field.to_mut().map_dtype_mut(|dtype| {
-                    *dtype = match dtype {
-                        D::List(_) => D::List(child_field),
-                        D::LargeList(_) => D::LargeList(child_field),
-                        D::FixedSizeList(_, width) => D::FixedSizeList(child_field, *width),
-                        _ => unreachable!(),
-                    }
-                });
-            }
-        },
-        _ => {},
-    }
-}
-
-pub fn schema_to_metadata_key(schema: &ArrowSchema, options: &[ColumnWriteOptions]) -> KeyValue {
-    let mut schema_mut = None;
-    for (f, options) in schema.iter_values().zip(options) {
-        let mut field = Cow::Borrowed(f);
-        insert_field_metadata(&mut field, options);
-
-        if let Cow::Owned(field) = field {
-            let schema_mut = schema_mut.get_or_insert_with(|| schema.clone());
-            *schema_mut.get_mut(f.name.as_str()).unwrap() = field;
-        }
-    }
-
-    let mut schema = schema;
-    if let Some(schema_mut) = &schema_mut {
-        schema = schema_mut;
-    }
-
-    // Convert schema until more arrow readers are aware of binview
-    let serialized_schema = if schema.iter_values().any(|field| field.dtype.is_view()) {
+pub fn schema_to_metadata_key(schema: &ArrowSchema) -> KeyValue {
+    let serialized_schema = if schema.iter_values().any(|field| field.dtype.is_nested()) {
         let schema = schema
             .iter_values()
             .map(|field| convert_field(field.clone()))
@@ -185,20 +92,20 @@ pub fn schema_to_metadata_key(schema: &ArrowSchema, options: &[ColumnWriteOption
 }
 
 /// Creates a [`ParquetType`] from a [`Field`].
-pub fn to_parquet_type(field: &Field, options: &ColumnWriteOptions) -> PolarsResult<ParquetType> {
+pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
     let name = field.name.clone();
-    let repetition = if options.required.unwrap_or(!field.is_nullable) {
-        Repetition::Required
-    } else {
+    let repetition = if field.is_nullable {
         Repetition::Optional
+    } else {
+        Repetition::Required
     };
 
-    let field_id = options.field_id;
+    let field_id: Option<i32> = None;
 
     // create type from field
     let (physical_type, primitive_converted_type, primitive_logical_type) = match field
         .dtype()
-        .to_logical_type()
+        .to_storage()
     {
         ArrowDataType::Null => (
             PhysicalType::Int32,
@@ -212,6 +119,11 @@ pub fn to_parquet_type(field: &Field, options: &ColumnWriteOptions) -> PolarsRes
         // no natural representation in parquet; leave it as is.
         // arrow consumers MAY use the arrow schema in the metadata to parse them.
         ArrowDataType::Date64 => (PhysicalType::Int64, None, None),
+        ArrowDataType::Float16 => (
+            PhysicalType::FixedLenByteArray(2),
+            None,
+            Some(PrimitiveLogicalType::Float16),
+        ),
         ArrowDataType::Float32 => (PhysicalType::Float, None, None),
         ArrowDataType::Float64 => (PhysicalType::Double, None, None),
         ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::BinaryView => {
@@ -302,22 +214,30 @@ pub fn to_parquet_type(field: &Field, options: &ColumnWriteOptions) -> PolarsRes
         ),
         ArrowDataType::Struct(fields) => {
             if fields.is_empty() {
-                polars_bail!(InvalidOperation:
-                    "Unable to write struct type with no child field to Parquet. Consider adding a dummy child field.".to_string(),
-                )
+                static ALLOW_EMPTY_STRUCTS: LazyLock<bool> = LazyLock::new(|| {
+                    std::env::var("POLARS_ALLOW_PQ_EMPTY_STRUCT").is_ok_and(|v| v.as_str() == "1")
+                });
+
+                if *ALLOW_EMPTY_STRUCTS {
+                    return Ok(ParquetType::try_from_primitive(
+                        name,
+                        PhysicalType::Boolean,
+                        repetition,
+                        None,
+                        None,
+                        field_id,
+                    )?);
+                } else {
+                    polars_bail!(InvalidOperation:
+                        "Unable to write struct type with no child field to Parquet. Consider adding a dummy child field.".to_string(),
+                    )
+                }
             }
-
-            let ChildWriteOptions::Struct(struct_write_options) = &options.children else {
-                unreachable!();
-            };
-
-            assert_eq!(fields.len(), struct_write_options.children.len());
 
             // recursively convert children to types/nodes
             let fields = fields
                 .iter()
-                .zip(struct_write_options.children.as_slice())
-                .map(|(f, c)| to_parquet_type(f, c))
+                .map(to_parquet_type)
                 .collect::<PolarsResult<Vec<_>>>()?;
             return Ok(ParquetType::from_group(
                 name, repetition, None, None, fields, field_id,
@@ -325,8 +245,8 @@ pub fn to_parquet_type(field: &Field, options: &ColumnWriteOptions) -> PolarsRes
         },
         ArrowDataType::Dictionary(_, value, _) => {
             assert!(!value.is_nested());
-            let dict_field = Field::new(name.clone(), value.as_ref().clone(), field.is_nullable);
-            return to_parquet_type(&dict_field, options);
+            let dict_field = Field::new(name, value.as_ref().clone(), field.is_nullable);
+            return to_parquet_type(&dict_field);
         },
         ArrowDataType::FixedSizeBinary(size) => {
             (PhysicalType::FixedLenByteArray(*size), None, None)
@@ -383,16 +303,14 @@ pub fn to_parquet_type(field: &Field, options: &ColumnWriteOptions) -> PolarsRes
             Some(PrimitiveConvertedType::Interval),
             None,
         ),
-        ArrowDataType::Int128 => (PhysicalType::FixedLenByteArray(16), None, None),
+        ArrowDataType::UInt128 | ArrowDataType::Int128 => {
+            (PhysicalType::FixedLenByteArray(16), None, None)
+        },
         ArrowDataType::List(f)
         | ArrowDataType::FixedSizeList(f, _)
         | ArrowDataType::LargeList(f) => {
             let mut f = f.clone();
             f.name = PlSmallStr::from_static("element");
-
-            let ChildWriteOptions::ListLike(list_write_options) = &options.children else {
-                unreachable!();
-            };
 
             return Ok(ParquetType::from_group(
                 name,
@@ -404,7 +322,7 @@ pub fn to_parquet_type(field: &Field, options: &ColumnWriteOptions) -> PolarsRes
                     Repetition::Repeated,
                     None,
                     None,
-                    vec![to_parquet_type(&f, &list_write_options.child)?],
+                    vec![to_parquet_type(&f)?],
                     None,
                 )],
                 field_id,

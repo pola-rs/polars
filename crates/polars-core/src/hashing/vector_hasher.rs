@@ -25,17 +25,13 @@ pub trait VecHash {
         &self,
         _random_state: PlSeedableRandomStateQuality,
         _buf: &mut Vec<u64>,
-    ) -> PolarsResult<()> {
-        polars_bail!(un_impl = vec_hash);
-    }
+    ) -> PolarsResult<()>;
 
     fn vec_hash_combine(
         &self,
         _random_state: PlSeedableRandomStateQuality,
         _hashes: &mut [u64],
-    ) -> PolarsResult<()> {
-        polars_bail!(un_impl = vec_hash_combine);
-    }
+    ) -> PolarsResult<()>;
 }
 
 pub(crate) fn get_null_hash_value(random_state: &PlSeedableRandomStateQuality) -> u64 {
@@ -181,6 +177,10 @@ vec_hash_numeric!(UInt16Chunked);
 vec_hash_numeric!(UInt8Chunked);
 vec_hash_numeric!(Float64Chunked);
 vec_hash_numeric!(Float32Chunked);
+#[cfg(feature = "dtype-f16")]
+vec_hash_numeric!(Float16Chunked);
+#[cfg(feature = "dtype-u128")]
+vec_hash_numeric!(UInt128Chunked);
 #[cfg(any(feature = "dtype-decimal", feature = "dtype-i128"))]
 vec_hash_numeric!(Int128Chunked);
 
@@ -248,7 +248,7 @@ impl VecHash for BinaryChunked {
         buf.clear();
         buf.reserve(self.len());
         self.downcast_iter()
-            .for_each(|arr| hash_binview_array(arr, random_state, buf));
+            .for_each(|arr| hash_binview_array(arr, random_state.clone(), buf));
         Ok(())
     }
 
@@ -301,7 +301,7 @@ impl VecHash for BinaryOffsetChunked {
         buf.clear();
         buf.reserve(self.len());
         self.downcast_iter()
-            .for_each(|arr| _hash_binary_array(arr, random_state, buf));
+            .for_each(|arr| _hash_binary_array(arr, random_state.clone(), buf));
         Ok(())
     }
 
@@ -486,9 +486,9 @@ pub fn _df_rows_to_hashes_threaded_vertical(
     let hashes = POOL.install(|| {
         keys.into_par_iter()
             .map(|df| {
-                let hb = build_hasher;
+                let hb = build_hasher.clone();
                 let mut hashes = vec![];
-                columns_to_hashes(df.get_columns(), Some(hb), &mut hashes)?;
+                columns_to_hashes(df, Some(hb), &mut hashes)?;
                 Ok(UInt64Chunked::from_vec(PlSmallStr::EMPTY, hashes))
             })
             .collect::<PolarsResult<Vec<_>>>()
@@ -497,18 +497,28 @@ pub fn _df_rows_to_hashes_threaded_vertical(
 }
 
 pub fn columns_to_hashes(
-    keys: &[Column],
+    keys: &DataFrame,
     build_hasher: Option<PlSeedableRandomStateQuality>,
     hashes: &mut Vec<u64>,
 ) -> PolarsResult<PlSeedableRandomStateQuality> {
     let build_hasher = build_hasher.unwrap_or_default();
 
-    let mut iter = keys.iter();
+    if keys.width() == 0 {
+        let null_h = get_null_hash_value(&build_hasher);
+
+        for _ in 0..keys.height() {
+            hashes.push(null_h);
+        }
+
+        return Ok(build_hasher);
+    }
+
+    let mut iter = keys.columns().iter();
     let first = iter.next().expect("at least one key");
-    first.vec_hash(build_hasher, hashes)?;
+    first.vec_hash(build_hasher.clone(), hashes)?;
 
     for keys in iter {
-        keys.vec_hash_combine(build_hasher, hashes)?;
+        keys.vec_hash_combine(build_hasher.clone(), hashes)?;
     }
 
     Ok(build_hasher)

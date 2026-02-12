@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import pyarrow as pa
@@ -29,6 +29,9 @@ from polars.interchange.protocol import (
 from polars.testing import assert_frame_equal, assert_series_equal
 
 NE = Endianness.NATIVE
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_from_dataframe_polars() -> None:
@@ -158,6 +161,7 @@ def test_from_dataframe_chunked() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud  # reason: chunking
 def test_from_dataframe_chunked_string() -> None:
     df = pl.Series("a", ["a", None, "bc", "d", None, "efg"]).to_frame()
     df_chunked = pl.concat([df[:1], df[1:3], df[3:]], rechunk=False)
@@ -328,7 +332,7 @@ def test_column_to_series_use_sentinel_invalid_value() -> None:
 
     with pytest.raises(
         TypeError,
-        match="invalid sentinel value for column of type Datetime\\(time_unit='ns', time_zone=None\\): 'invalid'",
+        match=r"invalid sentinel value for column of type Datetime\(time_unit='ns', time_zone=None\): 'invalid'",
     ):
         _column_to_series(col, dtype, allow_copy=True)
 
@@ -596,9 +600,9 @@ def test_construct_validity_buffer_from_bytemask_zero_copy_fails(
         )
 
 
-def test_interchange_protocol_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_interchange_protocol_fallback(plmonkeypatch: PlMonkeyPatch) -> None:
     df_pd = pd.DataFrame({"a": [1, 2, 3]})
-    monkeypatch.setattr(df_pd, "__arrow_c_stream__", lambda *args, **kwargs: 1 / 0)
+    plmonkeypatch.setattr(df_pd, "__arrow_c_stream__", lambda *args, **kwargs: 1 / 0)
     with pytest.warns(
         UserWarning, match="Falling back to Dataframe Interchange Protocol"
     ):

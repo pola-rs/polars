@@ -64,6 +64,7 @@ impl<K> FixedIndexTable<K> {
         &mut self,
         hash: u64,
         key: Q,
+        force_insert: bool,
         mut eq: E,
         mut insert: I,
         mut evict_insert: V,
@@ -145,7 +146,8 @@ impl<K> FixedIndexTable<K> {
             let hr = select_unpredictable(self.prng >> 63 != 0, h1, h2);
             self.prng = self.prng.wrapping_add(hash);
             let slot = self.slots.get_unchecked_mut(hr);
-            if slot.last_access_tag == tag {
+
+            if (slot.last_access_tag == tag) | force_insert {
                 slot.tag = tag;
                 let evict_key = self.keys.get_unchecked_mut(slot.key_index as usize);
                 evict_insert(key, evict_key);

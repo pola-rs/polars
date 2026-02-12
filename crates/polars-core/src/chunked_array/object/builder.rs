@@ -67,6 +67,7 @@ where
             .unwrap_or(0);
 
         let arr = Box::new(ObjectArray {
+            dtype: ArrowDataType::FixedSizeBinary(size_of::<T>()),
             values: self.values.into(),
             validity: null_bitmap,
         });
@@ -134,6 +135,7 @@ where
         let field = Arc::new(Field::new(name, DataType::Object(T::type_name())));
         let len = v.len();
         let arr = Box::new(ObjectArray {
+            dtype: ArrowDataType::FixedSizeBinary(size_of::<T>()),
             values: v.into(),
             validity: None,
         });
@@ -150,6 +152,7 @@ where
         let len = v.len();
         let null_count = validity.as_ref().map(|v| v.unset_bits()).unwrap_or(0);
         let arr = Box::new(ObjectArray {
+            dtype: ArrowDataType::FixedSizeBinary(size_of::<T>()),
             values: v.into(),
             validity,
         });
@@ -169,10 +172,8 @@ pub(crate) fn object_series_to_arrow_array(s: &Series) -> ArrayRef {
 
     // SAFETY: 0..len is in bounds
     let list_s = unsafe {
-        s.agg_list(&GroupsType::Slice {
-            groups: vec![[0, s.len() as IdxSize]],
-            rolling: false,
-        })
+        let groups = vec![[0, s.len() as IdxSize]];
+        s.agg_list(&GroupsType::new_slice(groups, false, true))
     };
     let arr = &list_s.chunks()[0];
     let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
@@ -191,6 +192,7 @@ impl<T: PolarsObject> ArrayBuilder for ObjectChunkedBuilder<T> {
 
     fn freeze(self) -> Box<dyn Array> {
         Box::new(ObjectArray {
+            dtype: ArrowDataType::FixedSizeBinary(size_of::<T>()),
             values: self.values.into(),
             validity: self.bitmask_builder.into_opt_validity(),
         })
@@ -198,6 +200,7 @@ impl<T: PolarsObject> ArrayBuilder for ObjectChunkedBuilder<T> {
 
     fn freeze_reset(&mut self) -> Box<dyn Array> {
         Box::new(ObjectArray {
+            dtype: ArrowDataType::FixedSizeBinary(size_of::<T>()),
             values: core::mem::take(&mut self.values).into(),
             validity: core::mem::take(&mut self.bitmask_builder).into_opt_validity(),
         })

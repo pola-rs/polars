@@ -38,7 +38,7 @@ pub fn aexpr_to_column_predicates(
     let mut leaf_names = Vec::with_capacity(2);
     for minterm in minterms {
         leaf_names.clear();
-        leaf_names.extend(aexpr_to_leaf_names_iter(minterm, expr_arena));
+        leaf_names.extend(aexpr_to_leaf_names_iter(minterm, expr_arena).cloned());
 
         if leaf_names.len() != 1 {
             is_sumwise_complete = false;
@@ -66,6 +66,11 @@ pub fn aexpr_to_column_predicates(
             },
             #[cfg(feature = "object")]
             D::Object(_) => {
+                is_sumwise_complete = false;
+                continue;
+            },
+            #[cfg(feature = "dtype-f16")]
+            D::Float16 => {
                 is_sumwise_complete = false;
                 continue;
             },
@@ -100,13 +105,55 @@ pub fn aexpr_to_column_predicates(
                         let aexpr = expr_arena.get(minterm);
 
                         match aexpr {
+                            #[cfg(all(feature = "regex", feature = "strings"))]
+                            AExpr::Function {
+                                input,
+                                function: IRFunctionExpr::StringExpr(str_function),
+                                options: _,
+                            } if matches!(
+                                str_function,
+                                crate::plans::IRStringFunction::Contains { literal: _, strict: true } |
+                                crate::plans::IRStringFunction::EndsWith |
+                                crate::plans::IRStringFunction::StartsWith
+                            ) => {
+                                use crate::plans::IRStringFunction;
+
+                                assert_eq!(input.len(), 2);
+                                into_column(input[0].node(), expr_arena)?;
+                                let lv = constant_evaluate(
+                                        input[1].node(),
+                                        expr_arena,
+                                        schema,
+                                        0,
+                                    )??;
+
+                                if !lv.is_scalar() {
+                                    return None;
+                                }
+                                let lv = lv.extract_str()?;
+
+                                match str_function {
+                                    IRStringFunction::Contains { literal, strict: _ } => {
+                                        let pattern = if *literal {
+                                            regex::escape(lv)
+                                        } else {
+                                            lv.to_string()
+                                        };
+                                        let pattern = regex::bytes::Regex::new(&pattern).ok()?;
+                                        Some(SpecializedColumnPredicate::RegexMatch(pattern))
+                                    },
+                                    IRStringFunction::StartsWith => Some(SpecializedColumnPredicate::StartsWith(lv.as_bytes().into())),
+                                    IRStringFunction::EndsWith => Some(SpecializedColumnPredicate::EndsWith(lv.as_bytes().into())),
+                                    _ => unreachable!(),
+                                }
+                            },
                             AExpr::Function {
                                 input,
                                 function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
                                 options: _,
                             } => {
                                 assert_eq!(input.len(), 1);
-                                if into_column(input[0].node(), expr_arena, schema, 0)
+                                if into_column(input[0].node(), expr_arena)
                                     .is_some()
                                 {
                                     Some(SpecializedColumnPredicate::Equal(Scalar::null(
@@ -122,15 +169,17 @@ pub fn aexpr_to_column_predicates(
                                 function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }),
                                 options: _,
                             } => {
+                                into_column(input[0].node(), expr_arena)?;
+
                                 let (Some(l), Some(r)) = (
                                     constant_evaluate(
-                                        input[0].node(),
+                                        input[1].node(),
                                         expr_arena,
                                         schema,
                                         0,
                                     )?,
                                     constant_evaluate(
-                                        input[1].node(),
+                                        input[2].node(),
                                         expr_arena,
                                         schema,
                                         0,
@@ -138,7 +187,6 @@ pub fn aexpr_to_column_predicates(
                                 ) else {
                                     return None;
                                 };
-
                                 let l = l.to_any_value()?;
                                 let r = r.to_any_value()?;
                                 if l.dtype() != dtype || r.dtype() != dtype {
@@ -151,7 +199,6 @@ pub fn aexpr_to_column_predicates(
                                     ClosedInterval::Right => (false, true),
                                     ClosedInterval::None => (false, false),
                                 };
-
                                 is_between(
                                     &dtype,
                                     Some(Scalar::new(dtype.clone(), l.into_static())),
@@ -166,7 +213,7 @@ pub fn aexpr_to_column_predicates(
                                 function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
                                 options: _,
                             } => {
-                                into_column(input[0].node(), expr_arena, schema, 0)?;
+                                into_column(input[0].node(), expr_arena)?;
 
                                 let values = constant_evaluate(
                                     input[1].node(),
@@ -190,7 +237,6 @@ pub fn aexpr_to_column_predicates(
                                     return None;
                                 }
 
-                                let values = values.rechunk();
                                 let values = values.iter()
                                     .map(|av| {
                                         Scalar::new(dtype.clone(), av.into_static())
@@ -209,7 +255,7 @@ pub fn aexpr_to_column_predicates(
                                 }
 
                                 assert_eq!(input.len(), 1);
-                                if into_column(input[0].node(), expr_arena, schema, 0)
+                                if into_column(input[0].node(), expr_arena)
                                     .is_some()
                                 {
                                     Some(SpecializedColumnPredicate::Equal(false.into()))
@@ -274,8 +320,8 @@ fn is_between(
     }
     assert!(low.is_some() || high.is_some());
 
-    low_closed &= low.is_some();
-    high_closed &= high.is_some();
+    low_closed |= low.is_none();
+    high_closed |= high.is_none();
 
     let mut low = low.map_or_else(|| dtype.min().unwrap(), |sc| sc.to_physical());
     let mut high = high.map_or_else(|| dtype.max().unwrap(), |sc| sc.to_physical());
@@ -291,7 +337,14 @@ fn is_between(
                     if !high_closed {
                         *h = h.checked_sub(1)?;
                     }
-                    assert!(*l <= *h);
+                    if *l > *h {
+                        // Really this ought to indicate that nothing should be
+                        // loaded since the condition is impossible, but unclear
+                        // how to do that at this abstraction layer. Could add
+                        // SpecializedColumnPredicate::Impossible or something,
+                        // maybe.
+                        return None;
+                    }
                 },
                 )+
                 _ => return None,
@@ -305,4 +358,92 @@ fn is_between(
     );
 
     Some(SpecializedColumnPredicate::Between(low, high))
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_error::PolarsResult;
+
+    use super::*;
+    use crate::dsl::Expr;
+    use crate::dsl::functions::col;
+    use crate::plans::{ExprToIRContext, to_expr_ir, typed_lit};
+
+    /// Given a single-column `Expr`, call `aexpr_to_column_predicates()` and
+    /// return the corresponding column's `Option<SpecializedColumnPredicate>`.
+    fn column_predicate_for_expr(
+        col_dtype: DataType,
+        col_name: &str,
+        expr: Expr,
+    ) -> PolarsResult<Option<SpecializedColumnPredicate>> {
+        let mut arena = Arena::new();
+        let schema = Schema::from_iter_check_duplicates([(col_name.into(), col_dtype)])?;
+        let mut ctx = ExprToIRContext::new(&mut arena, &schema);
+        let expr_ir = to_expr_ir(expr, &mut ctx)?;
+        let column_predicates = aexpr_to_column_predicates(expr_ir.node(), &mut arena, &schema);
+        assert_eq!(column_predicates.predicates.len(), 1);
+        let Some((col_name2, (_, predicate))) =
+            column_predicates.predicates.clone().into_iter().next()
+        else {
+            panic!(
+                "Unexpected column predicates: {:?}",
+                column_predicates.predicates
+            );
+        };
+        assert_eq!(col_name, col_name2);
+        Ok(predicate)
+    }
+
+    #[test]
+    fn column_predicate_for_inequality_operators() -> PolarsResult<()> {
+        let col_name = "testcol";
+        // Array of (expr, expected minimum, expected maximum):
+        let test_values: [(Expr, i8, i8); _] = [
+            (col(col_name).lt(typed_lit(10i8)), -128, 9),
+            (col(col_name).lt(typed_lit(-11i8)), -128, -12),
+            (col(col_name).gt(typed_lit(17i8)), 18, 127),
+            (col(col_name).gt(typed_lit(-10i8)), -9, 127),
+            (col(col_name).lt_eq(typed_lit(10i8)), -128, 10),
+            (col(col_name).lt_eq(typed_lit(-11i8)), -128, -11),
+            (col(col_name).gt_eq(typed_lit(17i8)), 17, 127),
+            (col(col_name).gt_eq(typed_lit(-10i8)), -10, 127),
+        ];
+        for (expr, expected_min, expected_max) in test_values {
+            let predicate = column_predicate_for_expr(DataType::Int8, col_name, expr.clone())?;
+            if let Some(SpecializedColumnPredicate::Between(actual_min, actual_max)) = predicate {
+                assert_eq!(
+                    (expected_min.into(), expected_max.into()),
+                    (actual_min, actual_max)
+                );
+            } else {
+                panic!("{predicate:?} is unexpected for {expr:?}");
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn column_predicate_is_between() -> PolarsResult<()> {
+        let col_name = "testcol";
+        // ClosedInterval, expected min, expected max:
+        let test_values: [(_, i8, i8); _] = [
+            (ClosedInterval::Both, 1, 10),
+            (ClosedInterval::Left, 1, 9),
+            (ClosedInterval::Right, 2, 10),
+            (ClosedInterval::None, 2, 9),
+        ];
+        for (interval, expected_min, expected_max) in test_values {
+            let expr = col(col_name).is_between(typed_lit(1i8), typed_lit(10i8), interval);
+            let predicate = column_predicate_for_expr(DataType::Int8, col_name, expr.clone())?;
+            if let Some(SpecializedColumnPredicate::Between(actual_min, actual_max)) = predicate {
+                assert_eq!(
+                    (expected_min.into(), expected_max.into()),
+                    (actual_min, actual_max)
+                );
+            } else {
+                panic!("{predicate:?} is unexpected for {expr:?}");
+            }
+        }
+        Ok(())
+    }
 }

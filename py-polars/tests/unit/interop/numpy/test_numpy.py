@@ -5,6 +5,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import polars as pl
+from polars.testing import assert_series_equal
 
 
 @pytest.fixture(
@@ -17,7 +18,7 @@ import polars as pl
         ("uint16", [1, 3, 2], pl.UInt16, np.uint16),
         ("uint32", [1, 3, 2], pl.UInt32, np.uint32),
         ("uint64", [1, 3, 2], pl.UInt64, np.uint64),
-        ("float16", [-123.0, 0.0, 456.0], pl.Float32, np.float16),
+        ("float16", [-123.0, 0.0, 456.0], pl.Float16, np.float16),
         ("float32", [21.7, 21.8, 21], pl.Float32, np.float32),
         ("float64", [21.7, 21.8, 21], pl.Float64, np.float64),
         ("bool", [True, False, False], pl.Boolean, np.bool_),
@@ -68,7 +69,7 @@ def test_numpy_to_lit() -> None:
 def test_numpy_disambiguation() -> None:
     a = np.array([1, 2])
     df = pl.DataFrame({"a": a})
-    result = df.with_columns(b=a).to_dict(as_series=False)  # type: ignore[arg-type]
+    result = df.with_columns(b=a).to_dict(as_series=False)
     expected = {
         "a": [1, 2],
         "b": [1, 2],
@@ -91,7 +92,7 @@ def test_respect_dtype_with_series_from_numpy() -> None:
         (np.uint16, pl.UInt16),
         (np.uint32, pl.UInt32),
         (np.uint64, pl.UInt64),
-        (np.float16, pl.Float32),  # << note: we don't currently have a native f16
+        (np.float16, pl.Float16),
         (np.float32, pl.Float32),
         (np.float64, pl.Float64),
     ],
@@ -100,3 +101,8 @@ def test_init_from_numpy_values(np_dtype_cls: Any, expected_pl_dtype: Any) -> No
     # test init from raw numpy values (vs arrays)
     s = pl.Series("n", [np_dtype_cls(0), np_dtype_cls(4), np_dtype_cls(8)])
     assert s.dtype == expected_pl_dtype
+
+
+def test_from_numpy_nonbit_bools_24296() -> None:
+    a = np.array([24, 15, 32, 1, 0], dtype=np.uint8).view(bool)
+    assert_series_equal(pl.Series(a), pl.Series([True, True, True, True, False]))

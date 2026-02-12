@@ -9,7 +9,9 @@ repository = { workspace = true }
 description = "Core of the Polars DataFrame library"
 
 [dependencies]
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true, features = ["gather"] }
+polars-config = { workspace = true }
 polars-dtype = { workspace = true }
 polars-error = { workspace = true }
 polars-row = { workspace = true }
@@ -24,11 +26,14 @@ chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 comfy-table = { version = "7.1.1", default-features = false, optional = true }
 either = { workspace = true }
+getrandom = { workspace = true }
+half = { workspace = true, optional = true, features = ["num-traits", "bytemuck"] }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
 ndarray = { workspace = true, optional = true }
 num-traits = { workspace = true }
+proptest = { workspace = true, optional = true }
 rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
 rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
@@ -46,6 +51,9 @@ uuid = { workspace = true, features = ["js"] }
 
 [dev-dependencies]
 bincode = { workspace = true }
+# used to run formal property testing
+polars-core = { path = ".", features = ["proptest"] }
+proptest = { workspace = true }
 serde_json = { workspace = true }
 
 [build-dependencies]
@@ -57,6 +65,7 @@ nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "arrow/nightly"]
 avx512 = []
 docs = []
 temporal = ["regex", "chrono", "polars-error/regex"]
+proptest = ["dep:proptest", "dtype-u8", "dtype-u16", "dtype-i8", "dtype-i16", "dtype-u128", "dtype-i128"]
 random = ["rand", "rand_distr"]
 algorithm_group_by = []
 default = ["algorithm_group_by"]
@@ -117,9 +126,12 @@ dtype-i8 = []
 dtype-i16 = []
 dtype-i128 = ["polars-compute/dtype-i128"]
 dtype-decimal = ["arrow/dtype-decimal", "polars-compute/cast", "polars-compute/dtype-decimal", "dtype-i128"]
+dtype-extension = ["polars-dtype/dtype-extension"]
 dtype-u8 = []
 dtype-u16 = []
-dtype-categorical = []
+dtype-u128 = ["polars-compute/dtype-u128"]
+dtype-f16 = ["polars-compute/dtype-f16"]
+dtype-categorical = ["polars-dtype/dtype-categorical"]
 dtype-struct = []
 
 # scale to terabytes?
@@ -129,6 +141,8 @@ python = ["polars-error/python"]
 serde = [
   "dep:serde",
   "bitflags/serde",
+  "polars-buffer/serde",
+  "polars-config/serde",
   "polars-schema/serde",
   "polars-utils/serde",
   "polars-compute/serde",
@@ -146,6 +160,7 @@ dsl-schema = [
   "polars-schema/dsl-schema",
   "polars-utils/dsl-schema",
 ]
+allow_unused = []
 
 docs-selection = [
   "ndarray",

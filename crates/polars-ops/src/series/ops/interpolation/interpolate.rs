@@ -168,6 +168,8 @@ fn interpolate_linear(s: &Series) -> Series {
                 }
             } else {
                 match s.dtype() {
+                    #[cfg(feature = "dtype-f16")]
+                    DataType::Float16 => linear_interp_signed(s.f16().unwrap()),
                     DataType::Float32 => linear_interp_signed(s.f32().unwrap()),
                     DataType::Float64 => linear_interp_signed(s.f64().unwrap()),
                     DataType::Int8
@@ -178,7 +180,8 @@ fn interpolate_linear(s: &Series) -> Series {
                     | DataType::UInt8
                     | DataType::UInt16
                     | DataType::UInt32
-                    | DataType::UInt64 => {
+                    | DataType::UInt64
+                    | DataType::UInt128 => {
                         linear_interp_signed(s.cast(&DataType::Float64).unwrap().f64().unwrap())
                     },
                     _ => s.as_ref().clone(),
