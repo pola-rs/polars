@@ -53,10 +53,54 @@ fn num_threads() -> usize {
         .get()
 }
 
-/// Per-thread local memory budget (64 MB). When a thread's local usage
-/// exceeds this, it signals the global `MemoryManager` to coordinate
-/// (e.g. trigger spilling).
-const LOCAL_LIMIT: usize = 64 * 1024 * 1024;
+/// Per-thread local memory budget. When a thread's local usage exceeds this,
+/// it signals the global `MemoryManager` to coordinate (e.g. trigger spilling).
+///
+/// Override with `POLARS_OOC_LOCAL_LIMIT` (bytes). Default: 64 MB.
+fn local_limit() -> usize {
+    return *LOCAL_LIMIT;
+
+    static LOCAL_LIMIT: LazyLock<usize> = LazyLock::new(|| {
+        let mut v: usize = 64 * 1024 * 1024;
+        if let Ok(s) = std::env::var("POLARS_OOC_LOCAL_LIMIT") {
+            v = s
+                .parse::<usize>()
+                .unwrap_or_else(|_| panic!("invalid value for POLARS_OOC_LOCAL_LIMIT: {s}"))
+        }
+        v
+    });
+}
+
+/// Spill policy from `POLARS_OOC_SPILL_POLICY`. Default: `in_memory`.
+///
+/// Values: `in_memory`, `spill`.
+fn spill_policy() -> SpillPolicy {
+    return *SPILL_POLICY;
+
+    static SPILL_POLICY: LazyLock<SpillPolicy> =
+        LazyLock::new(
+            || match std::env::var("POLARS_OOC_SPILL_POLICY").as_deref() {
+                Ok("spill") => SpillPolicy::Spill,
+                Ok("in_memory") | Err(_) => SpillPolicy::InMemory,
+                Ok(other) => panic!("invalid value for POLARS_OOC_SPILL_POLICY: {other}"),
+            },
+        );
+}
+
+/// Spill format from `POLARS_OOC_SPILL_FORMAT`. Default: `ipc`.
+///
+/// Values: `ipc`.
+fn spill_format() -> Format {
+    return *SPILL_FORMAT;
+
+    static SPILL_FORMAT: LazyLock<Format> =
+        LazyLock::new(
+            || match std::env::var("POLARS_OOC_SPILL_FORMAT").as_deref() {
+                Ok("ipc") | Err(_) => Format::Ipc,
+                Ok(other) => panic!("invalid value for POLARS_OOC_SPILL_FORMAT: {other}"),
+            },
+        );
+}
 
 struct ThreadLocalData {
     slots: SlotMap<DfKey, Entry>,
@@ -89,7 +133,7 @@ pub struct MemoryManager {
 
 impl Default for MemoryManager {
     fn default() -> Self {
-        Self::new(SpillPolicy::default())
+        Self::new(spill_policy())
     }
 }
 
@@ -98,7 +142,7 @@ impl MemoryManager {
         let n = num_threads();
         Self {
             policy,
-            spiller: Spiller::new(Format::Ipc),
+            spiller: Spiller::new(spill_format()),
             stores: (0..n).map(|_| ThreadLocalMemoryManager::new()).collect(),
             total_bytes: AtomicUsize::new(0),
         }
@@ -159,7 +203,7 @@ impl MemoryManager {
             });
             (
                 key,
-                !matches!(self.policy, SpillPolicy::InMemory) && tl.local_bytes > LOCAL_LIMIT,
+                !matches!(self.policy, SpillPolicy::InMemory) && tl.local_bytes > local_limit(),
             )
         };
 
