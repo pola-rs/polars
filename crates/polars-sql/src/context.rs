@@ -920,7 +920,7 @@ impl SQLContext {
                     // Require non-empty to avoid duplicate column errors from nested self-joins.
                     polars_bail!(
                         SQLInterface:
-                        "cannot join on unnamed relation; please provide an alias"
+                        "cannot JOIN on unnamed relation; please provide an alias"
                     )
                 }
                 let left_schema = self.get_frame_schema(&mut lf)?;
@@ -1829,7 +1829,8 @@ impl SQLContext {
                         .insert(alias.name.value.clone(), lf.clone());
                     Ok((alias.name.value.clone(), lf))
                 } else {
-                    polars_bail!(SQLSyntax: "derived tables must have aliases");
+                    let lf = self.execute_query_no_ctes(subquery)?;
+                    Ok(("".to_string(), lf))
                 }
             },
             TableFactor::UNNEST {
