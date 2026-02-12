@@ -551,21 +551,18 @@ impl SQLContext {
                 let rf = LazyFrame::from_logical_plan(plans.pop().unwrap(), Default::default());
                 let lf = LazyFrame::from_logical_plan(plans.pop().unwrap(), Default::default());
 
+                let lf_cols: Vec<_> = schemas[0].iter_names_cloned().map(col).collect();
+                let rf_cols: Vec<_> = schemas[1].iter_names_cloned().map(col).collect();
                 let join = lf
                     .join_builder()
                     .with(rf)
                     .how(join_type.clone())
                     .join_nulls(true);
                 let joined_tbl = match quantifier {
-                    SetQuantifier::ByName => {
-                        let lf_cols: Vec<_> = schemas[0].iter_names_cloned().map(col).collect();
-                        join.on(lf_cols).finish()
-                    },
+                    SetQuantifier::ByName => join.on(lf_cols).finish(),
                     SetQuantifier::Distinct | SetQuantifier::None => {
                         polars_ensure!(schemas[0].len() == schemas[1].len(), SQLInterface: "{} requires equal number of columns in each table (use '{} BY NAME' to combine mismatched tables", op_name, op_name);
-                        join.left_on([all().as_expr()])
-                            .right_on([all().as_expr()])
-                            .finish()
+                        join.left_on(lf_cols).right_on(rf_cols).finish()
                     },
                     _ => {
                         polars_bail!(SQLInterface: "'{} {}' is not supported", op_name, quantifier.to_string())
