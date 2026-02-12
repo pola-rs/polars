@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use parking_lot::Mutex;
-use polars_core::error::{PolarsError, PolarsResult, polars_err};
+use polars_core::error::{PolarsError, PolarsResult, polars_bail, polars_err};
 use polars_core::prelude::DataFrame;
 use slotmap::{Key, KeyData, SlotMap, new_key_type};
 
@@ -138,7 +138,8 @@ impl MemoryManager {
         let mut tl = self.lock(token);
         let entry = tl.slots.remove(key).ok_or_else(|| Self::not_found(token))?;
         tl.local_bytes -= entry.size_bytes;
-        self.total_bytes.fetch_sub(entry.size_bytes, Ordering::Relaxed);
+        self.total_bytes
+            .fetch_sub(entry.size_bytes, Ordering::Relaxed);
         Ok((!entry.is_spilled).then_some(entry.df))
     }
 
@@ -156,7 +157,10 @@ impl MemoryManager {
                 size_bytes,
                 is_spilled: false,
             });
-            (key, tl.local_bytes > LOCAL_LIMIT)
+            (
+                key,
+                !matches!(self.policy, SpillPolicy::InMemory) && tl.local_bytes > LOCAL_LIMIT,
+            )
         };
 
         self.total_bytes.fetch_add(size_bytes, Ordering::Relaxed);
@@ -254,10 +258,12 @@ impl MemoryManager {
         Ok(r)
     }
 
-    /// Check global memory and trigger spilling if over budget.
+    /// Trigger spilling to free memory.
     async fn coordinate_spill(&self, _thread_idx: u32) -> PolarsResult<()> {
         match self.policy {
-            SpillPolicy::InMemory => Ok(()),
+            SpillPolicy::InMemory => {
+                polars_bail!(OutOfCore: "coordinate_spill called with InMemory policy")
+            },
             SpillPolicy::Spill => {
                 // TODO: implement spill.
                 unimplemented!("spill coordination")
@@ -265,10 +271,12 @@ impl MemoryManager {
         }
     }
 
-    /// Check global memory and trigger spilling if over budget (blocking).
+    /// Trigger spilling to free memory (blocking).
     fn coordinate_spill_sync(&self, _thread_idx: u32) -> PolarsResult<()> {
         match self.policy {
-            SpillPolicy::InMemory => Ok(()),
+            SpillPolicy::InMemory => {
+                polars_bail!(OutOfCore: "coordinate_spill_sync called with InMemory policy")
+            },
             SpillPolicy::Spill => {
                 // TODO: implement spill.
                 unimplemented!("spill coordination")
