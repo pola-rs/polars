@@ -2257,21 +2257,25 @@ def test_scan_iceberg_idxsize_limit() -> None:
         q.select(pl.len()).collect()
 
 
-def test_iceberg_filter_bool_26474() -> None:
+@pytest.mark.write_disk
+def test_iceberg_filter_bool_26474(tmp_path: Path) -> None:
     catalog = SqlCatalog(
-        "test", uri="sqlite:///:memory:", warehouse="file:///tmp/iceberg_mre"
+        "test", uri="sqlite:///:memory:", warehouse=format_file_uri_iceberg(tmp_path)
     )
     catalog.create_namespace("default")
-    table = catalog.create_table(
+    tbl = catalog.create_table(
         "default.test",
         IcebergSchema(
             NestedField(1, "id", LongType()),
             NestedField(2, "is_active", BooleanType()),
         ),
     )
-    pl.DataFrame({"id": [1, 2, 3], "is_active": [True, False, True]}).write_iceberg(
-        table, mode="append"
-    )
 
-    assert pl.scan_iceberg(table).filter(pl.col("is_active")).collect().height == 2
-    assert pl.scan_iceberg(table).filter(~pl.col("is_active")).collect().height == 1
+    pl.DataFrame({"id": [1], "is_active": [True]}).write_iceberg(tbl, mode="append")
+    pl.DataFrame({"id": [2], "is_active": [False]}).write_iceberg(tbl, mode="append")
+    pl.DataFrame({"id": [3], "is_active": [None]}).write_iceberg(tbl, mode="append")
+
+    assert(sum(1 for _ in tbl.scan().plan_files()) == 3)
+
+    assert pl.scan_iceberg(tbl).filter(pl.col("is_active")).collect().height == 1
+    assert pl.scan_iceberg(tbl).filter(~pl.col("is_active")).collect().height == 1
