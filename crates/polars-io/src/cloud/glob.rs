@@ -235,7 +235,7 @@ pub async fn glob(
     let path = Some(&path);
 
     let mut locations = store
-        .exec_with_store_retry_on_err(|store| async move {
+        .exec_with_rebuild_retry_on_err(|store| async move {
             store
                 .list(path)
                 .try_filter_map(|x| async move {

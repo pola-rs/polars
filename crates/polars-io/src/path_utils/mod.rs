@@ -265,7 +265,7 @@ async fn expand_path_cloud(
         let prefix_ref = &prefix;
 
         let mut paths = store
-            .exec_with_store_retry_on_err(|s| async move {
+            .exec_with_rebuild_retry_on_err(|s| async move {
                 let out = s
                     .list(Some(prefix_ref))
                     .try_filter_map(|x| async move {

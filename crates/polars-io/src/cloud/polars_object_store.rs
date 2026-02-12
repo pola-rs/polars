@@ -155,7 +155,7 @@ mod inner {
             Ok((*current_store).clone())
         }
 
-        pub async fn exec_with_store_retry_on_err<'s, 'f, Fn, Fut, O>(
+        pub async fn exec_with_rebuild_retry_on_err<'s, 'f, Fn, Fut, O>(
             &'s self,
             mut func: Fn,
         ) -> PolarsResult<O>
@@ -251,7 +251,7 @@ impl PolarsObjectStore {
                 .io_metrics()
                 .record_io_read(
                     range.len() as u64,
-                    self.exec_with_store_retry_on_err(|s| async move {
+                    self.exec_with_rebuild_retry_on_err(|s| async move {
                         s.get_range(path, range.start as u64..range.end as u64)
                             .await
                     }),
@@ -277,7 +277,7 @@ impl PolarsObjectStore {
                     .io_metrics()
                     .record_io_read(
                         range.len() as u64,
-                        self.exec_with_store_retry_on_err(|s| async move {
+                        self.exec_with_rebuild_retry_on_err(|s| async move {
                             s.get_range(path, range.start as u64..range.end as u64)
                                 .await
                         }),
@@ -434,7 +434,7 @@ impl PolarsObjectStore {
     /// Fetch the metadata of the parquet file, do not memoize it.
     pub async fn head(&self, path: &Path) -> PolarsResult<ObjectMeta> {
         with_concurrency_budget(1, || {
-            self.exec_with_store_retry_on_err(|s| {
+            self.exec_with_rebuild_retry_on_err(|s| {
                 async move {
                     let head_result = self
                         .io_metrics()
