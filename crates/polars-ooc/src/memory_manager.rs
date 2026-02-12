@@ -5,7 +5,7 @@
 
 use std::cell::Cell;
 use std::sync::LazyLock;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use parking_lot::Mutex;
 use polars_core::error::{PolarsError, PolarsResult, polars_err};
@@ -84,6 +84,7 @@ pub struct MemoryManager {
     policy: SpillPolicy,
     spiller: Spiller,
     stores: Box<[ThreadLocalMemoryManager]>,
+    total_bytes: AtomicUsize,
 }
 
 impl Default for MemoryManager {
@@ -99,6 +100,7 @@ impl MemoryManager {
             policy,
             spiller: Spiller::new(Format::Ipc),
             stores: (0..n).map(|_| ThreadLocalMemoryManager::new()).collect(),
+            total_bytes: AtomicUsize::new(0),
         }
     }
 
@@ -136,6 +138,7 @@ impl MemoryManager {
         let mut tl = self.lock(token);
         let entry = tl.slots.remove(key).ok_or_else(|| Self::not_found(token))?;
         tl.local_bytes -= entry.size_bytes;
+        self.total_bytes.fetch_sub(entry.size_bytes, Ordering::Relaxed);
         Ok((!entry.is_spilled).then_some(entry.df))
     }
 
@@ -156,6 +159,7 @@ impl MemoryManager {
             (key, tl.local_bytes > LOCAL_LIMIT)
         };
 
+        self.total_bytes.fetch_add(size_bytes, Ordering::Relaxed);
         (Token::new(idx, height, key.data().as_ffi()), over_limit)
     }
 
@@ -270,6 +274,11 @@ impl MemoryManager {
                 unimplemented!("spill coordination")
             },
         }
+    }
+
+    /// Total bytes currently stored across all threads.
+    pub fn total_bytes(&self) -> usize {
+        self.total_bytes.load(Ordering::Relaxed)
     }
 
     /// Frees the stored DataFrame without returning it.
