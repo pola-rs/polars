@@ -117,7 +117,7 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
             } else {
                 true
             };
-            
+
             if new_shared_opt {
                 *self.shared_optimum.write() = self.peek_optimum().cloned();
             }
@@ -155,7 +155,7 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
                 self.to_prune.insert(dfs_key, ());
             }
         }
-        
+
         new_optimum
     }
 
@@ -212,7 +212,7 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
         self.to_prune.clear();
         Some(ret.unwrap())
     }
-    
+
     fn peek_optimum(&self) -> Option<&P> {
         self.heap.peek().map(|x| &x.0)
     }
@@ -250,10 +250,10 @@ impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> DfByKeyR
             inner: BottomKWithPayload::new(self.inner.k, self.inner.shared_optimum.clone()),
         })
     }
-    
+
     fn new_pred(&self) -> Arc<dyn PredicateExpr> {
         Arc::new(PrimitiveBottomKPredicate::<T, REVERSE, NULLS_LAST> {
-            shared_optimum: self.inner.shared_optimum.clone()
+            shared_optimum: self.inner.shared_optimum.clone(),
         })
     }
 
@@ -282,8 +282,11 @@ impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> DfByKeyR
     }
 }
 
-struct PrimitiveBottomKPredicate<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> {
-    shared_optimum: Arc<RwLock<Option<ReorderWithNulls<TotalOrdWrap<T::Physical<'static>>, REVERSE, NULLS_LAST>>>>,
+struct PrimitiveBottomKPredicate<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool>
+{
+    shared_optimum: Arc<
+        RwLock<Option<ReorderWithNulls<TotalOrdWrap<T::Physical<'static>>, REVERSE, NULLS_LAST>>>,
+    >,
 }
 
 impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> PredicateExpr
@@ -293,12 +296,19 @@ impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> Predicat
         let Some(v) = self.shared_optimum.read().clone() else {
             return Ok(None);
         };
-        
+
         if columns[0].dtype().is_null() || matches!(columns[0], Column::Scalar(_)) {
-            let cv = columns[0].get(0)?.null_to_none().map(|v| TotalOrdWrap(v.try_extract().unwrap()));
+            let cv = columns[0]
+                .get(0)?
+                .null_to_none()
+                .map(|v| TotalOrdWrap(v.try_extract().unwrap()));
             let keep = ReorderWithNulls(cv) < v;
             let s = Scalar::new(DataType::Boolean, AnyValue::Boolean(keep));
-            Ok(Some(Column::new_scalar(PlSmallStr::EMPTY, s, columns[0].len())))
+            Ok(Some(Column::new_scalar(
+                PlSmallStr::EMPTY,
+                s,
+                columns[0].len(),
+            )))
         } else {
             let keys = columns[0].as_materialized_series();
             let key_ca: &ChunkedArray<T> = keys.as_phys_any().downcast_ref().unwrap();
@@ -334,7 +344,7 @@ impl<const REVERSE: bool, const NULLS_LAST: bool> DfByKeyReducer
 
     fn new_pred(&self) -> Arc<dyn PredicateExpr> {
         Arc::new(BinaryBottomKPredicate {
-            shared_optimum: self.inner.shared_optimum.clone()
+            shared_optimum: self.inner.shared_optimum.clone(),
         })
     }
 
@@ -377,7 +387,7 @@ impl<const REVERSE: bool, const NULLS_LAST: bool> PredicateExpr
         let Some(v) = self.shared_optimum.read().clone() else {
             return Ok(None);
         };
-        
+
         if columns[0].dtype().is_null() || matches!(columns[0], Column::Scalar(_)) {
             let scalar = columns[0].get(0)?;
             let cv = match &scalar {
@@ -390,7 +400,11 @@ impl<const REVERSE: bool, const NULLS_LAST: bool> PredicateExpr
             };
             let keep = ReorderWithNulls(cv) < v.as_deref();
             let s = Scalar::new(DataType::Boolean, AnyValue::Boolean(keep));
-            Ok(Some(Column::new_scalar(PlSmallStr::EMPTY, s, columns[0].len())))
+            Ok(Some(Column::new_scalar(
+                PlSmallStr::EMPTY,
+                s,
+                columns[0].len(),
+            )))
         } else {
             let keys = columns[0].as_materialized_series();
             let key_ca = if let Ok(ca_str) = keys.str() {

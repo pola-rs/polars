@@ -58,9 +58,12 @@ where
 #[repr(transparent)]
 pub struct ReorderWithNulls<T, const DESCENDING: bool, const NULLS_LAST: bool>(pub Option<T>);
 
-impl<T, const DESCENDING: bool, const NULLS_LAST: bool> ReorderWithNulls<T, DESCENDING, NULLS_LAST> {
+impl<T, const DESCENDING: bool, const NULLS_LAST: bool>
+    ReorderWithNulls<T, DESCENDING, NULLS_LAST>
+{
     pub fn as_deref(&self) -> ReorderWithNulls<&<T as Deref>::Target, DESCENDING, NULLS_LAST>
-    where T: Deref
+    where
+        T: Deref,
     {
         let x = self.0.as_deref();
         ReorderWithNulls(x)

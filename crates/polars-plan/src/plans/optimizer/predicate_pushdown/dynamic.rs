@@ -79,9 +79,7 @@ impl DynamicPred {
             let mut guard = self.inner.pred.write().unwrap();
             *guard = Some(pred);
         }
-        self.inner
-            .is_set
-            .store(true, Ordering::Release);
+        self.inner.is_set.store(true, Ordering::Release);
     }
 
     pub fn evaluate(&self, columns: &[Column]) -> PolarsResult<Column> {
