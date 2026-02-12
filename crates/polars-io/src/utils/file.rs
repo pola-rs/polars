@@ -318,9 +318,11 @@ mod async_writeable {
             .and_then(|x| x.try_into_async_writeable())
         }
 
+        /// If this writer holds a cloud writer, it will `mem::take(T)`. `T` is unmodified for other
+        /// writer types.
         pub async fn write_all_owned<T>(&mut self, src: &mut T) -> io::Result<()>
         where
-            T: AsRef<[u8]> + Default,
+            T: AsRef<[u8]> + Default + Drop, // `Drop` is to exclude `&[u8]` slices.
             Bytes: From<T>,
         {
             match self {
