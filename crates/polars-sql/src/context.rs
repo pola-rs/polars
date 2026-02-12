@@ -498,7 +498,7 @@ impl SQLContext {
                 set_quantifier,
                 left,
                 right,
-            } => self.process_except_intersect(left, right, set_quantifier, query),
+            } => self.process_except_intersect(left, right, *set_quantifier, query),
 
             SetExpr::Values(Values {
                 explicit_row: _,
@@ -530,7 +530,7 @@ impl SQLContext {
         &mut self,
         left: &SetExpr,
         right: &SetExpr,
-        quantifier: &SetQuantifier,
+        quantifier: SetQuantifier,
         query: &Query,
     ) -> PolarsResult<LazyFrame> {
         let (join_type, op_name) = match *query.body {
@@ -543,31 +543,37 @@ impl SQLContext {
 
         // Note: each side of the EXCEPT/INTERSECT operation should execute
         // in isolation to prevent context state leakage between them
-        let mut lf = self.execute_isolated(|ctx| ctx.process_query(left, query))?;
-        let mut rf = self.execute_isolated(|ctx| ctx.process_query(right, query))?;
-        let lf_schema = self.get_frame_schema(&mut lf)?;
+        let lf = self.execute_isolated(|ctx| ctx.process_query(left, query))?;
+        let rf = self.execute_isolated(|ctx| ctx.process_query(right, query))?;
 
-        let lf_cols: Vec<_> = lf_schema.iter_names_cloned().map(col).collect();
-        let rf_cols = match quantifier {
-            SetQuantifier::ByName => None,
-            SetQuantifier::Distinct | SetQuantifier::None => {
-                let rf_schema = self.get_frame_schema(&mut rf)?;
-                let rf_cols: Vec<_> = rf_schema.iter_names_cloned().map(col).collect();
-                if lf_cols.len() != rf_cols.len() {
-                    polars_bail!(SQLInterface: "{} requires equal number of columns in each table (use '{} BY NAME' to combine mismatched tables)", op_name, op_name)
-                }
-                Some(rf_cols)
+        let cb = PlanCallback::new(
+            move |(mut plans, schemas): (Vec<DslPlan>, Vec<SchemaRef>)| {
+                let rf = LazyFrame::from_logical_plan(plans.pop().unwrap(), Default::default());
+                let lf = LazyFrame::from_logical_plan(plans.pop().unwrap(), Default::default());
+
+                let lf_cols: Vec<_> = schemas[0].iter_names_cloned().map(col).collect();
+                let rf_cols: Vec<_> = schemas[1].iter_names_cloned().map(col).collect();
+                let join = lf
+                    .join_builder()
+                    .with(rf)
+                    .how(join_type.clone())
+                    .join_nulls(true);
+                let joined_tbl = match quantifier {
+                    SetQuantifier::ByName => join.on(lf_cols).finish(),
+                    SetQuantifier::Distinct | SetQuantifier::None => {
+                        polars_ensure!(schemas[0].len() == schemas[1].len(), SQLInterface: "{} requires equal number of columns in each table (use '{} BY NAME' to combine mismatched tables", op_name, op_name);
+                        join.left_on(lf_cols).right_on(rf_cols).finish()
+                    },
+                    _ => {
+                        polars_bail!(SQLInterface: "'{} {}' is not supported", op_name, quantifier.to_string())
+                    },
+                };
+                Ok(joined_tbl
+                    .unique(None, UniqueKeepStrategy::Any)
+                    .logical_plan)
             },
-            _ => {
-                polars_bail!(SQLInterface: "'{} {}' is not supported", op_name, quantifier.to_string())
-            },
-        };
-        let join = lf.join_builder().with(rf).how(join_type).join_nulls(true);
-        let joined_tbl = match rf_cols {
-            Some(rf_cols) => join.left_on(lf_cols).right_on(rf_cols).finish(),
-            None => join.on(lf_cols).finish(),
-        };
-        let lf = joined_tbl.unique(None, UniqueKeepStrategy::Any);
+        );
+        let lf = lf.pipe_with_schemas(vec![rf], cb);
         self.process_order_by(lf, &query.order_by, None)
     }
 
