@@ -139,7 +139,7 @@ impl InternalCloudWriter {
             handle.await.unwrap();
         }
 
-        multipart.complete().await?;
+        multipart.finish().await?;
 
         Ok(())
     }

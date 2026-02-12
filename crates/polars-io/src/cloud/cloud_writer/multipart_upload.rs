@@ -26,7 +26,7 @@ impl PlMultipartUpload {
         async move { fut.await.map_err(|e| error_cx.attach_err_info(e).into()) }
     }
 
-    pub async fn complete(&mut self) -> PolarsResult<object_store::PutResult> {
+    pub async fn finish(&mut self) -> PolarsResult<object_store::PutResult> {
         self.inner
             .complete()
             .await
