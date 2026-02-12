@@ -379,6 +379,11 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     )
     .unwrap();
     m.add(
+        "OutOfCoreError",
+        py.get_type::<exceptions::OutOfCoreError>(),
+    )
+    .unwrap();
+    m.add(
         "SQLInterfaceError",
         py.get_type::<exceptions::SQLInterfaceError>(),
     )

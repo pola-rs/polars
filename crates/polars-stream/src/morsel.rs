@@ -1,7 +1,9 @@
 use std::future::Future;
 use std::sync::Arc;
 
+use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
+use polars_ooc::{Token, mm};
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::async_primitives::wait_group::WaitToken;
@@ -164,5 +166,20 @@ impl Morsel {
 
     pub fn replace_source_token(&mut self, new_token: SourceToken) -> SourceToken {
         core::mem::replace(&mut self.source_token, new_token)
+    }
+
+    /// Store the DataFrame in the global memory manager (async), consuming the morsel.
+    /// Returns the Token and SourceToken. Drops seq and consume_token.
+    pub async fn store_morsel(self) -> PolarsResult<(Token, SourceToken)> {
+        let token = mm().store(self.df).await?;
+        Ok((token, self.source_token))
+    }
+
+    /// Store the DataFrame in the global memory manager (async), consuming the morsel.
+    /// Returns the Token and MorselSeq. Drops source_token and consume_token.
+    pub async fn into_token_and_seq(self) -> PolarsResult<(MorselSeq, Token)> {
+        let seq = self.seq;
+        let token = mm().store(self.df).await?;
+        Ok((seq, token))
     }
 }

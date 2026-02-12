@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
+use polars_ooc::mm;
 
 use super::compute_node_prelude::*;
 use crate::async_primitives::wait_group::WaitGroup;
@@ -25,7 +26,7 @@ struct ShiftState {
     offset: i64,
     rows_received: usize,
     rows_sent: usize,
-    buffer: VecDeque<DataFrame>,
+    tokens: VecDeque<Token>,
     fill: DataFrame,
     seq: MorselSeq,
 }
@@ -49,7 +50,7 @@ impl ShiftState {
                         continue;
                     }
                     self.rows_received += morsel.df().height();
-                    self.buffer.push_back(morsel.into_df());
+                    self.tokens.push_back(mm().store(morsel.into_df()).await?);
                 }
             }
 
@@ -59,11 +60,17 @@ impl ShiftState {
                 let len = self.rows_received.min(self.offset as usize) - self.rows_sent;
                 df = self.fill.new_from_index(0, len);
             } else {
-                let src = self.buffer.front_mut().unwrap();
+                let src = self.tokens.front_mut().unwrap();
                 let len = self.rows_received - self.rows_sent;
-                (df, *src) = src.split_at(len as i64);
+                df = mm()
+                    .with_df_mut(src, |src| {
+                        let (head, tail) = src.split_at(len as i64);
+                        *src = tail;
+                        head
+                    })
+                    .await?;
                 if src.height() == 0 {
-                    self.buffer.pop_front();
+                    self.tokens.pop_front();
                 }
             };
             self.rows_sent += df.height();
@@ -166,6 +173,9 @@ impl ComputeNode for ShiftNode {
 
         // Are we done?
         if send[0] == PortState::Done {
+            if let Self::Shifting(shift_state) = self {
+                mm().drop_all_sync(shift_state.tokens.drain(..))?;
+            }
             *self = Self::Done;
         } else if recv[0] == PortState::Done {
             if let Self::Shifting(shift_state) = self {
@@ -211,7 +221,7 @@ impl ComputeNode for ShiftNode {
                     offset,
                     rows_received: 0,
                     rows_sent: 0,
-                    buffer: VecDeque::new(),
+                    tokens: VecDeque::new(),
                     fill: fill_frame,
                     seq: MorselSeq::default(),
                 })

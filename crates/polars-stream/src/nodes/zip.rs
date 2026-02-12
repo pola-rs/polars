@@ -6,10 +6,12 @@ use polars_core::prelude::{Column, IntoColumn};
 use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_error::polars_ensure;
+use polars_ooc::mm;
 use polars_utils::itertools::Itertools;
 
 use super::compute_node_prelude::*;
 use crate::DEFAULT_ZIP_HEAD_BUFFER_SIZE;
+use crate::async_primitives::wait_group::WaitToken;
 use crate::morsel::SourceToken;
 use crate::physical_plan::ZipBehavior;
 
@@ -26,7 +28,7 @@ struct InputHead {
     stream_exhausted: bool,
 
     // A FIFO queue of morsels belonging to this input stream.
-    morsels: VecDeque<Morsel>,
+    morsels: VecDeque<(Token, SourceToken, Option<WaitToken>)>,
 
     // The total length of the morsels in the input head.
     total_len: usize,
@@ -43,7 +45,7 @@ impl InputHead {
         }
     }
 
-    fn add_morsel(&mut self, mut morsel: Morsel) {
+    async fn add_morsel(&mut self, mut morsel: Morsel) -> PolarsResult<()> {
         self.total_len += morsel.df().height();
 
         if self.is_broadcast.is_none() {
@@ -57,8 +59,14 @@ impl InputHead {
         }
 
         if morsel.df().height() > 0 {
-            self.morsels.push_back(morsel);
+            // TODO: the consume token should be dropped before buffering to
+            // unblock backpressure, but the original code kept it alive until
+            // the drain loop. Keeping that behavior for now but needs checking.
+            let consume_token = morsel.take_consume_token();
+            let (token, source_token) = morsel.store_morsel().await?;
+            self.morsels.push_back((token, source_token, consume_token));
         }
+        Ok(())
     }
 
     fn notify_no_more_morsels(&mut self) {
@@ -74,16 +82,16 @@ impl InputHead {
 
     fn min_len(&self) -> Option<usize> {
         if self.is_broadcast == Some(false) {
-            self.morsels.front().map(|m| m.df().height())
+            self.morsels.front().map(|(token, _, _)| token.height())
         } else {
             None
         }
     }
 
-    fn take(&mut self, len: usize) -> DataFrame {
+    async fn take(&mut self, len: usize) -> PolarsResult<DataFrame> {
         let columns: Vec<Column> = if self.is_broadcast.unwrap() {
-            self.morsels[0]
-                .df()
+            mm().df(&self.morsels[0].0)
+                .await?
                 .columns()
                 .iter()
                 .map(|s| s.new_from_index(0, len))
@@ -91,13 +99,14 @@ impl InputHead {
         } else if self.total_len > 0 {
             self.total_len -= len;
 
-            return if self.morsels[0].df().height() == len {
-                self.morsels.pop_front().unwrap().into_df()
+            return Ok(if self.morsels[0].0.height() == len {
+                mm().take(self.morsels.pop_front().unwrap().0).await?
             } else {
-                let (head, tail) = self.morsels[0].df().split_at(len as i64);
-                *self.morsels[0].df_mut() = tail;
+                let (head, tail) = mm().df(&self.morsels[0].0).await?.split_at(len as i64);
+                mm().with_df_mut(&mut self.morsels[0].0, |df| *df = tail)
+                    .await?;
                 head
-            };
+            });
         } else {
             self.schema
                 .iter()
@@ -105,20 +114,21 @@ impl InputHead {
                 .collect()
         };
 
-        unsafe { DataFrame::new_unchecked(len, columns) }
+        Ok(unsafe { DataFrame::new_unchecked(len, columns) })
     }
 
-    fn consume_broadcast(&mut self) -> DataFrame {
+    async fn consume_broadcast(&mut self) -> PolarsResult<DataFrame> {
         assert!(self.is_broadcast == Some(true) && self.total_len == 1);
-        let out = self.morsels.pop_front().unwrap().into_df();
-        self.clear();
-        out
+        let out = mm().take(self.morsels.pop_front().unwrap().0).await?;
+        self.clear()?;
+        Ok(out)
     }
 
-    fn clear(&mut self) {
+    fn clear(&mut self) -> PolarsResult<()> {
+        mm().drop_all_sync(self.morsels.drain(..).map(|(token, _, _)| token))?;
         self.total_len = 0;
         self.is_broadcast = Some(false);
-        self.morsels.clear();
+        Ok(())
     }
 }
 
@@ -206,7 +216,7 @@ impl ComputeNode for ZipNode {
         // Are we completely done?
         if send[0] == PortState::Done || all_output_sent {
             for input_head in &mut self.input_heads {
-                input_head.clear();
+                input_head.clear()?;
             }
             send[0] = PortState::Done;
             recv.fill(PortState::Done);
@@ -278,7 +288,7 @@ impl ComputeNode for ZipNode {
                     if let Some(recv) = opt_recv {
                         while !self.input_heads[recv_idx].ready_to_send() {
                             if let Some(morsel) = recv.recv().await {
-                                self.input_heads[recv_idx].add_morsel(morsel);
+                                self.input_heads[recv_idx].add_morsel(morsel).await?;
                             } else {
                                 break;
                             }
@@ -304,7 +314,7 @@ impl ComputeNode for ZipNode {
                 };
 
                 for input_head in &mut self.input_heads {
-                    out.push(input_head.take(common_size));
+                    out.push(input_head.take(common_size).await?);
                 }
                 let out_df = concat_df_horizontal(&out, false, true, false)?;
                 out.clear();
@@ -325,9 +335,9 @@ impl ComputeNode for ZipNode {
             // that was still flowing through the pipelines into input_heads for
             // the next phase.
             for input_head in &mut self.input_heads {
-                for morsel in &mut input_head.morsels {
-                    morsel.source_token().stop();
-                    drop(morsel.take_consume_token());
+                for (_, source_token, consume_token) in &mut input_head.morsels {
+                    source_token.stop();
+                    drop(consume_token.take());
                 }
             }
 
@@ -336,7 +346,7 @@ impl ComputeNode for ZipNode {
                     while let Some(mut morsel) = recv.recv().await {
                         morsel.source_token().stop();
                         drop(morsel.take_consume_token());
-                        self.input_heads[recv_idx].add_morsel(morsel);
+                        self.input_heads[recv_idx].add_morsel(morsel).await?;
                     }
                 }
             }
@@ -349,7 +359,7 @@ impl ComputeNode for ZipNode {
                 .all(|h| h.is_broadcast == Some(true));
             if all_broadcast {
                 for input_head in &mut self.input_heads {
-                    out.push(input_head.consume_broadcast());
+                    out.push(input_head.consume_broadcast().await?);
                 }
                 let out_df = concat_df_horizontal(&out, false, true, false)?;
                 out.clear();

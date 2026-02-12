@@ -11,6 +11,7 @@ create_exception!(polars.exceptions, DuplicateError, PolarsError);
 create_exception!(polars.exceptions, InvalidOperationError, PolarsError);
 create_exception!(polars.exceptions, NoDataError, PolarsError);
 create_exception!(polars.exceptions, OutOfBoundsError, PolarsError);
+create_exception!(polars.exceptions, OutOfCoreError, PolarsError);
 create_exception!(polars.exceptions, SQLInterfaceError, PolarsError);
 create_exception!(polars.exceptions, SQLSyntaxError, PolarsError);
 create_exception!(polars.exceptions, SchemaError, PolarsError);

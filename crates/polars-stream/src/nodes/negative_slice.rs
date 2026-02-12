@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_ooc::mm;
 
 use super::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
@@ -17,7 +18,7 @@ enum NegativeSliceState {
 
 #[derive(Default)]
 struct Buffer {
-    frames: VecDeque<DataFrame>,
+    tokens: VecDeque<Token>,
     total_len: usize,
 }
 
@@ -52,6 +53,9 @@ impl ComputeNode for NegativeSliceNode {
         use NegativeSliceState::*;
 
         if send[0] == PortState::Done || self.length == 0 {
+            if let Buffering(buffer) = &mut self.state {
+                mm().drop_all_sync(buffer.tokens.drain(..))?;
+            }
             self.state = Done;
         }
 
@@ -62,26 +66,32 @@ impl ComputeNode for NegativeSliceNode {
                 let signed_stop_offset =
                     signed_start_offset.saturating_add_unsigned(self.length as u64);
 
-                // Trim the frames in the buffer to just those that are relevant.
+                // Trim the tokens in the buffer to just those that are relevant.
                 while buffer.total_len > 0
-                    && signed_start_offset >= buffer.frames.front().unwrap().height() as i64
+                    && signed_start_offset >= buffer.tokens.front().unwrap().height() as i64
                 {
-                    let len = buffer.frames.pop_front().unwrap().height();
+                    let token = buffer.tokens.pop_front().unwrap();
+                    let len = token.height();
+                    mm().drop_sync(token)?;
                     buffer.total_len -= len;
                     signed_start_offset -= len as i64;
                 }
 
-                while !buffer.frames.is_empty()
-                    && buffer.total_len as i64 - buffer.frames.back().unwrap().height() as i64
+                while !buffer.tokens.is_empty()
+                    && buffer.total_len as i64 - buffer.tokens.back().unwrap().height() as i64
                         > signed_stop_offset
                 {
-                    buffer.total_len -= buffer.frames.pop_back().unwrap().height();
+                    let token = buffer.tokens.pop_back().unwrap();
+                    buffer.total_len -= token.height();
+                    mm().drop_sync(token)?;
                 }
 
                 if buffer.total_len == 0 {
                     self.state = Done;
                 } else {
-                    let mut df = accumulate_dataframes_vertical_unchecked(buffer.frames.drain(..));
+                    let mut df = accumulate_dataframes_vertical_unchecked(
+                        mm().take_all_sync(buffer.tokens.drain(..))?,
+                    );
                     let clamped_start = signed_start_offset.max(0);
                     let len = (signed_stop_offset - clamped_start).max(0) as usize;
                     df = df.slice(clamped_start, len);
@@ -125,12 +135,14 @@ impl ComputeNode for NegativeSliceNode {
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = recv.recv().await {
                         buffer.total_len += morsel.df().height();
-                        buffer.frames.push_back(morsel.into_df());
+                        buffer.tokens.push_back(mm().store(morsel.into_df()).await?);
 
-                        if buffer.total_len - buffer.frames.front().unwrap().height()
+                        if buffer.total_len - buffer.tokens.front().unwrap().height()
                             >= max_buffer_needed
                         {
-                            buffer.total_len -= buffer.frames.pop_front().unwrap().height();
+                            let token = buffer.tokens.pop_front().unwrap();
+                            buffer.total_len -= token.height();
+                            mm().take(token).await?;
                         }
                     }
 

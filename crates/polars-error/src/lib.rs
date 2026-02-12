@@ -91,6 +91,7 @@ pub enum PolarsError {
         msg: Option<ErrString>,
     },
     NoData(ErrString),
+    OutOfCore(ErrString),
     OutOfBounds(ErrString),
     SchemaFieldNotFound(ErrString),
     SchemaMismatch(ErrString),
@@ -153,6 +154,7 @@ impl Display for PolarsError {
                 None => write!(f, "{error}"),
             },
             NoData(msg) => write!(f, "no data: {msg}"),
+            OutOfCore(msg) => write!(f, "out-of-core: {msg}"),
             SchemaFieldNotFound(msg) => write!(f, "field not found: {msg}"),
             ShapeMismatch(msg) => write!(f, "lengths don't match: {msg}"),
             StringCacheMismatch(msg) => write!(f, "string caches don't match: {msg}"),
@@ -280,6 +282,7 @@ impl PolarsError {
                 }
             },
             NoData(msg) => NoData(func(msg).into()),
+            OutOfCore(msg) => OutOfCore(func(msg).into()),
             OutOfBounds(msg) => OutOfBounds(func(msg).into()),
             SchemaFieldNotFound(msg) => SchemaFieldNotFound(func(msg).into()),
             SchemaMismatch(msg) => SchemaMismatch(func(msg).into()),
