@@ -5,6 +5,6 @@
 /crates/polars-parquet/  @ritchie46 @orlp @c-peters @coastalwhite
 /crates/polars-time/  @ritchie46 @orlp @c-peters @MarcoGorelli
 /crates/polars-python/  @ritchie46 @c-peters @alexander-beedie @MarcoGorelli @reswqa
-/crates/polars-python/src/lazyframe/visit.rs  @ritchie46 @c-peters @alexander-beedie @MarcoGorelli @reswqa @wence-
-/crates/polars-python/src/lazyframe/visitor/  @ritchie46 @c-peters @alexander-beedie @MarcoGorelli @reswqa @wence-
+/crates/polars-python/src/lazyframe/visit.rs  @ritchie46 @c-peters @alexander-beedie @MarcoGorelli @reswqa @wence- @Matt711
+/crates/polars-python/src/lazyframe/visitor/  @ritchie46 @c-peters @alexander-beedie @MarcoGorelli @reswqa @wence- @Matt711
 /py-polars/  @ritchie46 @c-peters @alexander-beedie @MarcoGorelli @reswqa
