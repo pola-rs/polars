@@ -85,7 +85,8 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
 def test_cross_join_stack() -> None:
     morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
     if morsel_size is not None and int(morsel_size) < 1000:
-        pytest.skip("test disabled for small morsel sizes")
+        pytest.skip("test is too slow for small morsel sizes")
+
     a = pl.Series(np.arange(100_000)).to_frame().lazy()
     t0 = time.time()
     assert a.join(a, how="cross").head().collect(engine="streaming").shape == (5, 2)
@@ -165,7 +166,7 @@ def test_streaming_sortedness_propagation_9494() -> None:
 def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None:
     morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
     if morsel_size is not None and int(morsel_size) < 1000:
-        pytest.skip("test disabled for small morsel sizes")
+        pytest.skip("test is too slow for small morsel sizes")
 
     tmp_path.mkdir(exist_ok=True)
     p0 = tmp_path / "df0.parquet"

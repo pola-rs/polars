@@ -21,7 +21,7 @@ def test_streaming_out_of_core_unique(
 ) -> None:
     morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
     if morsel_size is not None and int(morsel_size) < 1000:
-        pytest.skip("test disabled for small morsel sizes")
+        pytest.skip("test is too slow for small morsel sizes")
 
     tmp_path.mkdir(exist_ok=True)
     monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
