@@ -12,7 +12,7 @@ use polars_error::{PolarsError, PolarsResult};
 use polars_utils::pl_path::PlRefPath;
 use tokio::io::AsyncWriteExt;
 
-use crate::metrics::{HEAD_RESPONSE_SIZE_ESTIMATE, OptIOMetrics};
+use crate::metrics::HEAD_RESPONSE_SIZE_ESTIMATE;
 use crate::pl_async::{
     self, MAX_BUDGET_PER_REQUEST, get_concurrency_limit, get_download_chunk_size,
     tune_with_concurrency_budget, with_concurrency_budget,
