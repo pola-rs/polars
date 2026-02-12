@@ -118,8 +118,8 @@ mod inner {
             self
         }
 
-        pub fn io_metrics(&self) -> OptIOMetrics {
-            self.io_metrics.clone()
+        pub fn io_metrics(&self) -> &OptIOMetrics {
+            &self.io_metrics
         }
 
         /// Gets the underlying [`ObjectStore`] implementation.
@@ -241,28 +241,24 @@ impl PolarsObjectStore {
         &'a self,
         path: &'a Path,
         ranges: T,
-        io_metrics: OptIOMetrics,
     ) -> impl Stream<Item = PolarsResult<Buffer<u8>>> + use<'a, T> {
-        futures::stream::iter(ranges.map(move |range| {
-            let io_metrics = io_metrics.clone();
-
-            async move {
-                if range.is_empty() {
-                    return Ok(Buffer::new());
-                }
-
-                let out = io_metrics
-                    .record_io_read(
-                        range.len() as u64,
-                        self.exec_with_store_retry_on_err(|s| async move {
-                            s.get_range(path, range.start as u64..range.end as u64)
-                                .await
-                        }),
-                    )
-                    .await?;
-
-                Ok(Buffer::from_owner(out))
+        futures::stream::iter(ranges.map(move |range| async move {
+            if range.is_empty() {
+                return Ok(Buffer::new());
             }
+
+            let out = self
+                .io_metrics()
+                .record_io_read(
+                    range.len() as u64,
+                    self.exec_with_store_retry_on_err(|s| async move {
+                        s.get_range(path, range.start as u64..range.end as u64)
+                            .await
+                    }),
+                )
+                .await?;
+
+            Ok(Buffer::from_owner(out))
         }))
         // Add a limit locally as this gets run inside a single `tune_with_concurrency_budget`.
         .buffered(get_concurrency_limit() as usize)
@@ -273,12 +269,12 @@ impl PolarsObjectStore {
             return Ok(Buffer::new());
         }
 
-        let io_metrics = self.io_metrics();
         let parts = split_range(range.clone());
 
         if parts.len() == 1 {
             let out = tune_with_concurrency_budget(1, move || async move {
-                let bytes = io_metrics
+                let bytes = self
+                    .io_metrics()
                     .record_io_read(
                         range.len() as u64,
                         self.exec_with_store_retry_on_err(|s| async move {
@@ -297,7 +293,7 @@ impl PolarsObjectStore {
             let parts = tune_with_concurrency_budget(
                 parts.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
                 || {
-                    self.build_buffered_ranges_stream(path, parts, io_metrics)
+                    self.build_buffered_ranges_stream(path, parts)
                         .try_collect::<Vec<Buffer<u8>>>()
                 },
             )
@@ -333,12 +329,10 @@ impl PolarsObjectStore {
 
         let ranges_len = ranges.len();
         let (merged_ranges, merged_ends): (Vec<_>, Vec<_>) = merge_ranges(ranges).unzip();
-        let io_metrics = self.io_metrics();
 
         let mut out = PlHashMap::with_capacity(ranges_len);
 
-        let mut stream =
-            self.build_buffered_ranges_stream(path, merged_ranges.iter().cloned(), io_metrics);
+        let mut stream = self.build_buffered_ranges_stream(path, merged_ranges.iter().cloned());
 
         tune_with_concurrency_budget(
             merged_ranges.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
@@ -411,13 +405,12 @@ impl PolarsObjectStore {
 
     pub async fn download(&self, path: &Path, file: &mut tokio::fs::File) -> PolarsResult<()> {
         let size = self.head(path).await?.size;
-        let io_metrics = self.io_metrics();
         let parts = split_range(0..size as usize);
 
         tune_with_concurrency_budget(
             parts.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
             || async {
-                let mut stream = self.build_buffered_ranges_stream(path, parts, io_metrics);
+                let mut stream = self.build_buffered_ranges_stream(path, parts);
                 let mut len = 0;
                 while let Some(bytes) = stream.try_next().await? {
                     len += bytes.len();
@@ -440,43 +433,41 @@ impl PolarsObjectStore {
 
     /// Fetch the metadata of the parquet file, do not memoize it.
     pub async fn head(&self, path: &Path) -> PolarsResult<ObjectMeta> {
-        let io_metrics = self.io_metrics();
+        with_concurrency_budget(1, || {
+            self.exec_with_store_retry_on_err(|s| {
+                async move {
+                    let head_result = self
+                        .io_metrics()
+                        .record_io_read(HEAD_RESPONSE_SIZE_ESTIMATE, s.head(path))
+                        .await;
 
-        with_concurrency_budget(1, || async {
-            let head_result = io_metrics
-                .record_io_read(
-                    HEAD_RESPONSE_SIZE_ESTIMATE,
-                    self.exec_with_store_retry_on_err(|s| async move { s.head(path).await }),
-                )
-                .await;
-
-            if head_result.is_err() {
-                // Pre-signed URLs forbid the HEAD method, but we can still retrieve the header
-                // information with a range 0-1 request.
-                let get_range_0_1_result = io_metrics
-                    .record_io_read(
-                        HEAD_RESPONSE_SIZE_ESTIMATE + 1,
-                        self.exec_with_store_retry_on_err(|s| async move {
-                            s.get_opts(
-                                path,
-                                object_store::GetOptions {
-                                    range: Some((0..1).into()),
-                                    ..Default::default()
-                                },
+                    if head_result.is_err() {
+                        // Pre-signed URLs forbid the HEAD method, but we can still retrieve the header
+                        // information with a range 0-1 request.
+                        let get_range_0_1_result = self
+                            .io_metrics()
+                            .record_io_read(
+                                HEAD_RESPONSE_SIZE_ESTIMATE + 1,
+                                s.get_opts(
+                                    path,
+                                    object_store::GetOptions {
+                                        range: Some((0..1).into()),
+                                        ..Default::default()
+                                    },
+                                ),
                             )
-                            .await
-                        }),
-                    )
-                    .await;
+                            .await;
 
-                if let Ok(v) = get_range_0_1_result {
-                    return Ok(v.meta);
+                        if let Ok(v) = get_range_0_1_result {
+                            return Ok(v.meta);
+                        }
+                    }
+
+                    let out = head_result?;
+
+                    Ok(out)
                 }
-            }
-
-            let out = head_result?;
-
-            Ok(out)
+            })
         })
         .await
     }
