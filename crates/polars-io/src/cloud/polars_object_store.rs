@@ -10,7 +10,7 @@ use polars_buffer::Buffer;
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_error::{PolarsError, PolarsResult};
 use polars_utils::pl_path::PlRefPath;
-use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
 use crate::metrics::{HEAD_RESPONSE_SIZE_ESTIMATE, OptIOMetrics};
 use crate::pl_async::{
@@ -70,7 +70,6 @@ mod inner {
     use std::future::Future;
     use std::sync::Arc;
 
-    use bytes::Bytes;
     use object_store::ObjectStore;
     use polars_core::config;
     use polars_error::{PolarsError, PolarsResult};
