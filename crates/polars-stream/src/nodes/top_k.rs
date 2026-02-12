@@ -7,7 +7,7 @@ use polars_core::prelude::*;
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::with_match_physical_numeric_polars_type;
-use polars_plan::plans::DynamicPred;
+use polars_plan::plans::{DynamicPred, PredicateExpr};
 use polars_utils::IdxSize;
 use polars_utils::priority::Priority;
 use polars_utils::sort::ReorderWithNulls;
@@ -412,6 +412,16 @@ impl TopKNode {
         key_selectors: Vec<StreamExpr>,
         dyn_pred: Option<DynamicPred>,
     ) -> Self {
+        if let Some(p) = &dyn_pred {
+            struct Test;
+            impl PredicateExpr for Test {
+                fn evaluate(&self, columns: &[Column]) -> PolarsResult<Column> {
+                    unimplemented!()
+                }
+            }
+
+            p.set(Arc::new(Test));
+        }
         Self {
             reverse,
             nulls_last,

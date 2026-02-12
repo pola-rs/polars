@@ -1055,6 +1055,6 @@ pub fn repeat(args: &[Column]) -> PolarsResult<Column> {
     Ok(c.new_from_index(0, n))
 }
 
-pub fn dynamic_expr(columns: &[Column], pred: &DynamicPred) -> PolarsResult<Column> {
+pub fn dynamic_pred(columns: &[Column], pred: &DynamicPred) -> PolarsResult<Column> {
     pred.evaluate(columns)
 }

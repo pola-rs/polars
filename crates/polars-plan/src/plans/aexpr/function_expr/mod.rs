@@ -388,7 +388,7 @@ pub enum IRFunctionExpr {
     RowEncode(Vec<DataType>, RowEncodingVariant),
     #[cfg(feature = "dtype-struct")]
     RowDecode(Vec<Field>, RowEncodingVariant),
-    DynamicExpr {
+    DynamicPred {
         pred: DynamicPred,
     },
 }
@@ -694,7 +694,7 @@ impl Hash for IRFunctionExpr {
                 fs.hash(state);
                 variants.hash(state);
             },
-            DynamicExpr { pred } => {
+            DynamicPred { pred } => {
                 pred.id().hash(state);
             },
         }
@@ -911,7 +911,7 @@ impl Display for IRFunctionExpr {
             RowEncode(..) => "row_encode",
             #[cfg(feature = "dtype-struct")]
             RowDecode(..) => "row_decode",
-            DynamicExpr { pred } => "dynamic_predicate",
+            DynamicPred { pred } => "dynamic_predicate",
         };
         write!(f, "{s}")
     }
@@ -1241,7 +1241,7 @@ impl IRFunctionExpr {
             F::RowEncode(..) => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-struct")]
             F::RowDecode(..) => FunctionOptions::elementwise(),
-            F::DynamicExpr { .. } => FunctionOptions::elementwise(),
+            F::DynamicPred { .. } => FunctionOptions::elementwise(),
         }
     }
 }

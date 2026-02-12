@@ -1429,8 +1429,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::RowDecode(..) => {
                     return Err(PyNotImplementedError::new_err("row_decode"));
                 },
-                IRFunctionExpr::DynamicExpr { .. } => {
-                    return Err(PyNotImplementedError::new_err("dyn_expr"));
+                IRFunctionExpr::DynamicPred { .. } => {
+                    return Err(PyNotImplementedError::new_err("dynamic_pred"));
                 },
             }?,
             options: py.None(),

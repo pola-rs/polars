@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
 use std::sync::RwLock;
@@ -10,15 +11,16 @@ use serde::{Deserialize, Serialize};
 
 use super::*;
 
-pub trait DynamicExpr: Send + Sync {
-    // Invariant: Output Column must be of type `Boolean`.
+pub trait PredicateExpr: Send + Sync + Any {
+    // Invariant: output column must be of type `Boolean`. If true a value is
+    // included, if false it is filtered out.
     fn evaluate(&self, columns: &[Column]) -> PolarsResult<Column>;
 }
 
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 struct Inner {
     #[cfg_attr(feature = "ir_serde", serde(skip))]
-    pred: RwLock<Option<Box<dyn DynamicExpr>>>,
+    pred: RwLock<Option<Arc<dyn PredicateExpr>>>,
     #[cfg_attr(feature = "ir_serde", serde(skip))]
     is_set: AtomicBool,
     id: UniqueId,
@@ -63,7 +65,7 @@ impl DynamicPred {
         &self.inner.id
     }
 
-    pub fn set(&self, pred: Box<dyn DynamicExpr>) {
+    pub fn set(&self, pred: Arc<dyn PredicateExpr>) {
         {
             let mut guard = self.inner.pred.write().unwrap();
             *guard = Some(pred);
@@ -95,7 +97,7 @@ impl DynamicPred {
 
 pub fn new_dynamic_pred(node: Node, arena: &mut Arena<AExpr>) -> (Node, DynamicPred) {
     let pred = DynamicPred::new();
-    let function = IRFunctionExpr::DynamicExpr { pred: pred.clone() };
+    let function = IRFunctionExpr::DynamicPred { pred: pred.clone() };
     let options = function.function_options();
     let aexpr = AExpr::Function {
         input: vec![ExprIR::from_node(node, arena)],
