@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import date, datetime
 
 import pytest
@@ -101,6 +102,9 @@ def test_date_range_24h_interval_raises() -> None:
 
 
 def test_long_date_range_12461() -> None:
+    morsel_size_env = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
+    if morsel_size_env is not None and int(morsel_size_env) < 1000:
+        pytest.skip("test is too slow for small morsel sizes")
     result = pl.date_range(
         start=date(1900, 1, 1), end=date(2300, 1, 1), interval="1d", eager=True
     )

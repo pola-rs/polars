@@ -159,7 +159,20 @@ jobs:
           -n auto
           -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"
           -k 'not test_polars_import'
-          --cov --cov-report xml:main.xml --cov-fail-under=0
+          --cov --cov-report xml:auto-streaming.xml --cov-fail-under=0
+
+      - name: Run Python tests - streaming with morsel size 4
+        working-directory: py-polars
+        env:
+          POLARS_AUTO_NEW_STREAMING: 1
+          POLARS_IDEAL_MORSEL_SIZE: 4
+          POLARS_TIMEOUT_MS: 60000
+        run: >
+          pytest
+          -n auto
+          -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"
+          -k 'not test_polars_import'
+          --cov --cov-report xml:small-morsel.xml --cov-fail-under=0
 
       - name: Run Python tests - async reader
         working-directory: py-polars
@@ -182,6 +195,8 @@ jobs:
           path: |
             coverage-python.lcov
             py-polars/main.xml
+            py-polars/auto-streaming.xml
+            py-polars/small-morsel.xml
             py-polars/async.xml
 
   upload-coverage:

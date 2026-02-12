@@ -165,7 +165,8 @@ def test_sink_empty(sink: Any, scan: Any) -> None:
 
 @pytest.mark.parametrize(("scan", "sink"), SINKS)
 def test_sink_boolean_panic_25806(sink: Any, scan: Any) -> None:
-    df = pl.select(bool=pl.repeat(True, 300_000))
+    morsel_size = int(os.environ.get("POLARS_IDEAL_MORSEL_SIZE", 100_000))
+    df = pl.select(bool=pl.repeat(True, 3 * morsel_size))
 
     f = io.BytesIO()
     sink(df.lazy(), f)

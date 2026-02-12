@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -18,6 +19,10 @@ pytestmark = pytest.mark.xdist_group("streaming")
 def test_streaming_out_of_core_unique(
     io_files_path: Path, tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
+    morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
+    if morsel_size is not None and int(morsel_size) < 1000:
+        pytest.skip("test is too slow for small morsel sizes")
+
     tmp_path.mkdir(exist_ok=True)
     monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
