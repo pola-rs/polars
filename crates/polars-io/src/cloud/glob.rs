@@ -235,21 +235,16 @@ pub async fn glob(
     let path = Some(&path);
 
     let mut locations = store
-        .try_exec_rebuild_on_err(|store| async move {
-            Ok(store
-                .exec_with_store(|st| async move {
-                    let store = st;
-                    store
-                        .list(path)
-                        .try_filter_map(|x| async move {
-                            let out = (x.size > 0 && matcher.is_matching(x.location.as_ref()))
-                                .then_some(x.location);
-                            Ok(out)
-                        })
-                        .try_collect::<Vec<_>>()
-                        .await
+        .exec_with_rebuild_retry_on_err(|store| async move {
+            store
+                .list(path)
+                .try_filter_map(|x| async move {
+                    let out = (x.size > 0 && matcher.is_matching(x.location.as_ref()))
+                        .then_some(x.location);
+                    Ok(out)
                 })
-                .await?)
+                .try_collect::<Vec<_>>()
+                .await
         })
         .await?;
 

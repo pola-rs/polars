@@ -262,34 +262,28 @@ async fn expand_path_cloud(
         }
 
         let cloud_location = &cloud_location;
+        let prefix_ref = &prefix;
 
         let mut paths = store
-            .try_exec_rebuild_on_err(|store_cx| {
-                let cx = store_cx.clone();
+            .exec_with_rebuild_retry_on_err(|s| async move {
+                let out = s
+                    .list(Some(prefix_ref))
+                    .try_filter_map(|x| async move {
+                        let out = (x.size > 0).then(|| {
+                            PlRefPath::new({
+                                format_path(
+                                    cloud_location.scheme,
+                                    &cloud_location.bucket,
+                                    x.location.as_ref(),
+                                )
+                            })
+                        });
+                        Ok(out)
+                    })
+                    .try_collect::<Vec<_>>()
+                    .await?;
 
-                async {
-                    let store_cx = cx;
-                    let out = store_cx
-                        .exec_with_store(|s| {
-                            s.list(Some(&prefix))
-                                .try_filter_map(|x| async move {
-                                    let out = (x.size > 0).then(|| {
-                                        PlRefPath::new({
-                                            format_path(
-                                                cloud_location.scheme,
-                                                &cloud_location.bucket,
-                                                x.location.as_ref(),
-                                            )
-                                        })
-                                    });
-                                    Ok(out)
-                                })
-                                .try_collect::<Vec<_>>()
-                        })
-                        .await?;
-
-                    Ok(out)
-                }
+                Ok(out)
             })
             .await?;
 

@@ -165,11 +165,27 @@ impl Display for PolarsError {
 }
 
 impl From<io::Error> for PolarsError {
-    fn from(value: io::Error) -> Self {
-        PolarsError::IO {
-            error: Arc::new(value),
-            msg: None,
+    fn from(mut value: io::Error) -> Self {
+        if let Some(polars_err) = value
+            .get_mut()
+            .and_then(|e| e.downcast_mut::<PolarsError>())
+        {
+            std::mem::replace(
+                polars_err,
+                PolarsError::ComputeError(ErrString::new_static("")),
+            )
+        } else {
+            PolarsError::IO {
+                error: Arc::new(value),
+                msg: None,
+            }
         }
+    }
+}
+
+impl From<PolarsError> for io::Error {
+    fn from(value: PolarsError) -> Self {
+        io::Error::other(value)
     }
 }
 
@@ -177,20 +193,6 @@ impl From<io::Error> for PolarsError {
 impl From<regex::Error> for PolarsError {
     fn from(err: regex::Error) -> Self {
         PolarsError::ComputeError(format!("regex error: {err}").into())
-    }
-}
-
-// TODO: Remove this conversion after reworking cloud writer
-#[cfg(feature = "object_store")]
-impl From<object_store::Error> for PolarsError {
-    fn from(err: object_store::Error) -> Self {
-        if let object_store::Error::Generic { store, source } = &err {
-            if let Some(polars_err) = source.as_ref().downcast_ref::<PolarsError>() {
-                return polars_err.wrap_msg(|s| format!("{s} (store: {store})"));
-            }
-        }
-
-        std::io::Error::other(format!("object-store error: {err}")).into()
     }
 }
 
@@ -608,5 +610,26 @@ pub mod __private {
     #[must_use]
     pub fn must_use(error: crate::PolarsError) -> crate::PolarsError {
         error
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{ErrString, PolarsError};
+
+    #[test]
+    fn test_polars_error_roundtrips_through_std_io_error() {
+        use PolarsError::ComputeError;
+
+        let error_magic = "err_magic_3";
+        let error = ComputeError(ErrString::new_static(error_magic));
+
+        let io_error: std::io::Error = error.into();
+        let error: PolarsError = io_error.into();
+
+        match error {
+            ComputeError(s) if &*s == error_magic => {},
+            e => panic!("error type mismatch: {e}"),
+        };
     }
 }

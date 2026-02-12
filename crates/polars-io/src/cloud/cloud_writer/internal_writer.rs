@@ -3,10 +3,12 @@ use std::num::NonZeroUsize;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 use object_store::PutPayload;
+use polars_error::{PolarsError, PolarsResult};
 use polars_utils::async_utils::error_capture::{ErrorCapture, ErrorHandle};
 use polars_utils::async_utils::tokio_handle_ext;
 
 use crate::cloud::PolarsObjectStore;
+use crate::cloud::cloud_writer::multipart_upload::PlMultipartUpload;
 use crate::metrics::OptIOMetrics;
 
 /// Cloud writer that provides the `put()` function, does not perform any buffering.
@@ -27,21 +29,25 @@ pub(super) enum InternalCloudWriterState {
 type WriterState = InternalCloudWriterState;
 
 pub(super) struct StartedState {
-    multipart: Box<dyn object_store::MultipartUpload>,
+    multipart: PlMultipartUpload,
     tasks: FuturesUnordered<tokio_handle_ext::AbortOnDropHandle<()>>,
-    error_handle: ErrorHandle<object_store::Error>,
-    error_capture: ErrorCapture<object_store::Error>,
+    error_handle: ErrorHandle<PolarsError>,
+    error_capture: ErrorCapture<PolarsError>,
 }
 
 impl InternalCloudWriter {
-    pub(super) async fn start(&mut self) -> object_store::Result<()> {
+    pub(super) async fn start(&mut self) -> PolarsResult<()> {
         if let WriterState::NotStarted = &self.state {
-            let multipart = self
-                .store
-                .to_dyn_object_store()
-                .await
-                .put_multipart_opts(&self.path, object_store::PutMultipartOptions::default())
-                .await?;
+            let path_ref = &self.path;
+            let multipart = PlMultipartUpload::new(
+                self.store
+                    .exec_with_rebuild_retry_on_err(|s| async move {
+                        s.put_multipart_opts(path_ref, object_store::PutMultipartOptions::default())
+                            .await
+                    })
+                    .await?,
+                self.store.error_context(),
+            );
 
             let (error_capture, error_handle) = ErrorCapture::new();
 
@@ -56,7 +62,7 @@ impl InternalCloudWriter {
         Ok(())
     }
 
-    async fn get_or_init_started_state(&mut self) -> object_store::Result<&mut StartedState> {
+    async fn get_or_init_started_state(&mut self) -> PolarsResult<&mut StartedState> {
         loop {
             match &self.state {
                 WriterState::Started(_) => {
@@ -86,7 +92,7 @@ impl InternalCloudWriter {
         Some(state)
     }
 
-    pub(super) async fn put(&mut self, payload: PutPayload) -> object_store::Result<()> {
+    pub(super) async fn put(&mut self, payload: PutPayload) -> PolarsResult<()> {
         let io_metrics = self.io_metrics.clone();
         let max_concurrency = self.max_concurrency.get();
 
@@ -102,7 +108,7 @@ impl InternalCloudWriter {
         }
 
         let num_bytes = payload.content_length() as u64;
-        let upload_fut = state.multipart.put_part(payload);
+        let upload_fut = state.multipart.put(payload);
 
         let fut = async move { io_metrics.record_bytes_tx(num_bytes, upload_fut).await };
 
@@ -115,7 +121,7 @@ impl InternalCloudWriter {
         Ok(())
     }
 
-    pub(super) async fn finish(&mut self) -> object_store::Result<()> {
+    pub(super) async fn finish(&mut self) -> PolarsResult<()> {
         let Some(StartedState {
             mut multipart,
             tasks,
@@ -130,10 +136,10 @@ impl InternalCloudWriter {
         error_handle.join().await?;
 
         for handle in tasks {
-            handle.await?;
+            handle.await.unwrap();
         }
 
-        multipart.complete().await?;
+        multipart.finish().await?;
 
         Ok(())
     }
