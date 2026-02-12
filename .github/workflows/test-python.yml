@@ -35,7 +35,6 @@ defaults:
 jobs:
   test-python:
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.ideal_morsel_size == 4 }}
     env:
       POLARS_IDEAL_MORSEL_SIZE: ${{ matrix.ideal_morsel_size }}
     strategy:
