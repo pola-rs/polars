@@ -2275,7 +2275,7 @@ def test_iceberg_filter_bool_26474(tmp_path: Path) -> None:
     pl.DataFrame({"id": [2], "is_active": [False]}).write_iceberg(tbl, mode="append")
     pl.DataFrame({"id": [3], "is_active": [None]}).write_iceberg(tbl, mode="append")
 
-    assert(sum(1 for _ in tbl.scan().plan_files()) == 3)
+    assert sum(1 for _ in tbl.scan().plan_files()) == 3
 
     assert pl.scan_iceberg(tbl).filter(pl.col("is_active")).collect().height == 1
     assert pl.scan_iceberg(tbl).filter(~pl.col("is_active")).collect().height == 1
