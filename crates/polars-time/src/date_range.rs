@@ -169,6 +169,5 @@ pub(crate) fn datetime_range_i64(
             }
         },
     }
-    debug_assert!(size >= ts.len());
     Ok(ts)
 }

@@ -2,8 +2,11 @@ use arrow::temporal_conversions::timestamp_ns_to_datetime;
 use chrono::prelude::*;
 use polars_core::prelude::*;
 
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+use crate::date_range::datetime_range_i64;
 use crate::prelude::*;
 
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 #[test]
 fn test_date_range() {
     // Test month as interval in date range
@@ -42,6 +45,7 @@ fn test_date_range() {
     assert_eq!(dates, expected);
 }
 
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 #[test]
 fn test_feb_date_range() {
     let start = NaiveDate::from_ymd_opt(2022, 2, 1)
@@ -183,6 +187,7 @@ fn test_offset() {
     assert_eq!(b.start, start);
 }
 
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 #[test]
 fn test_boundaries() {
     let start = NaiveDate::from_ymd_opt(2021, 12, 16)
@@ -372,6 +377,7 @@ fn test_boundaries() {
     assert_eq!(groups[2], [5, 1]); // 02:00:00 -> 02:30:00
 }
 
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 #[test]
 fn test_boundaries_2() {
     let start = NaiveDate::from_ymd_opt(2021, 12, 16)
@@ -506,6 +512,7 @@ fn test_boundaries_2() {
     );
 }
 
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 #[test]
 fn test_boundaries_ms() {
     let start = NaiveDate::from_ymd_opt(2021, 12, 16)
@@ -695,6 +702,7 @@ fn test_boundaries_ms() {
     assert_eq!(groups[2], [5, 1]); // 02:00:00 -> 02:30:00
 }
 
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 #[test]
 fn test_rolling_lookback() {
     // Test month as interval in date range
@@ -941,4 +949,353 @@ fn test_group_by_windows_offsets_3776() {
     )
     .unwrap();
     assert_eq!(groups, [[0, 1], [1, 1], [2, 1]]);
+}
+
+#[cfg(feature = "timezones")]
+mod dst_tests {
+    use std::str::FromStr;
+
+    use arrow::legacy::time_zone::Tz;
+
+    use super::*;
+    use crate::prelude::StartBy;
+    use crate::windows::bounds::Bounds;
+    use crate::windows::window::Window;
+
+    fn datetime_to_us(ndt: NaiveDateTime, tz: &Tz) -> i64 {
+        match tz.from_local_datetime(&ndt) {
+            chrono::LocalResult::Single(dt) => dt.timestamp_micros(),
+            chrono::LocalResult::Ambiguous(earliest, _) => earliest.timestamp_micros(),
+            chrono::LocalResult::None => {
+                let adjusted = ndt + chrono::Duration::hours(1);
+                let dt = tz.from_local_datetime(&adjusted).unwrap();
+                dt.timestamp_micros()
+            },
+        }
+    }
+
+    #[test]
+    fn test_bounds_iter_datapoint_dst_gap() {
+        // Europe/London: 1:00 AM March 31 2024 is in DST gap
+        // start + 17d period lands in the gap
+        let tz = Tz::from_str("Europe/London").unwrap();
+
+        let start = NaiveDate::from_ymd_opt(2024, 3, 14)
+            .unwrap()
+            .and_hms_opt(1, 0, 0)
+            .unwrap();
+        let stop = NaiveDate::from_ymd_opt(2024, 3, 20)
+            .unwrap()
+            .and_hms_opt(1, 0, 0)
+            .unwrap();
+
+        let start_ts = datetime_to_us(start, &tz);
+        let stop_ts = datetime_to_us(stop, &tz);
+
+        let window = Window::new(
+            Duration::parse("1d"),
+            Duration::parse("17d"),
+            Duration::parse("0d"),
+        );
+
+        let boundary = Bounds::new(start_ts, stop_ts);
+
+        let result = window.get_overlapping_bounds_iter(
+            boundary,
+            ClosedWindow::Both,
+            TimeUnit::Microseconds,
+            Some(&tz),
+            StartBy::DataPoint,
+        );
+
+        assert!(result.is_ok());
+        let bounds: Vec<_> = result.unwrap().collect();
+        assert!(!bounds.is_empty());
+    }
+
+    #[test]
+    fn test_bounds_iter_windowbound_dst_gap() {
+        // America/New_York: 2:00 AM March 10 2024 is in DST gap
+        let tz = Tz::from_str("America/New_York").unwrap();
+
+        let start = NaiveDate::from_ymd_opt(2024, 3, 5)
+            .unwrap()
+            .and_hms_opt(2, 30, 0)
+            .unwrap();
+        let stop = NaiveDate::from_ymd_opt(2024, 3, 15)
+            .unwrap()
+            .and_hms_opt(2, 30, 0)
+            .unwrap();
+
+        let start_ts = datetime_to_us(start, &tz);
+        let stop_ts = datetime_to_us(stop, &tz);
+
+        let window = Window::new(
+            Duration::parse("1d"),
+            Duration::parse("5d"),
+            Duration::parse("0d"),
+        );
+
+        let boundary = Bounds::new(start_ts, stop_ts);
+
+        let result = window.get_overlapping_bounds_iter(
+            boundary,
+            ClosedWindow::Both,
+            TimeUnit::Microseconds,
+            Some(&tz),
+            StartBy::WindowBound,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_bounds_iter_monday_dst_gap() {
+        let tz = Tz::from_str("America/New_York").unwrap();
+
+        let start = NaiveDate::from_ymd_opt(2024, 3, 4)
+            .unwrap()
+            .and_hms_opt(2, 0, 0)
+            .unwrap();
+        let stop = NaiveDate::from_ymd_opt(2024, 3, 18)
+            .unwrap()
+            .and_hms_opt(2, 0, 0)
+            .unwrap();
+
+        let start_ts = datetime_to_us(start, &tz);
+        let stop_ts = datetime_to_us(stop, &tz);
+
+        let window = Window::new(
+            Duration::parse("1w"),
+            Duration::parse("1w"),
+            Duration::parse("0d"),
+        );
+
+        let boundary = Bounds::new(start_ts, stop_ts);
+
+        let result = window.get_overlapping_bounds_iter(
+            boundary,
+            ClosedWindow::Both,
+            TimeUnit::Microseconds,
+            Some(&tz),
+            StartBy::Monday,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_bounds_iter_sunday_offset_dst_gap() {
+        // offset="2h" lands on 2:00 AM March 10 (DST gap)
+        let tz = Tz::from_str("America/New_York").unwrap();
+
+        let start = NaiveDate::from_ymd_opt(2024, 3, 3)
+            .unwrap()
+            .and_hms_opt(2, 0, 0)
+            .unwrap();
+        let stop = NaiveDate::from_ymd_opt(2024, 3, 17)
+            .unwrap()
+            .and_hms_opt(2, 0, 0)
+            .unwrap();
+
+        let start_ts = datetime_to_us(start, &tz);
+        let stop_ts = datetime_to_us(stop, &tz);
+
+        let window = Window::new(
+            Duration::parse("1w"),
+            Duration::parse("1w"),
+            Duration::parse("2h"),
+        );
+
+        let boundary = Bounds::new(start_ts, stop_ts);
+
+        let result = window.get_overlapping_bounds_iter(
+            boundary,
+            ClosedWindow::Both,
+            TimeUnit::Microseconds,
+            Some(&tz),
+            StartBy::Sunday,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_earliest_bounds_offset_dst_gap() {
+        // offset="2h" lands on 2:00 AM March 10 (DST gap)
+        let tz = Tz::from_str("America/New_York").unwrap();
+
+        let start = NaiveDate::from_ymd_opt(2024, 3, 10)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+
+        let start_ts = datetime_to_us(start, &tz);
+
+        let window = Window::new(
+            Duration::parse("1h"),
+            Duration::parse("3h"),
+            Duration::parse("2h"),
+        );
+
+        let result = window.get_earliest_bounds_us(start_ts, ClosedWindow::Both, Some(&tz));
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_earliest_bounds_period_lands_on_dst_gap() {
+        // Period calculation lands on DST gap (2:00 AM March 10)
+        // Start at March 5 2:00 AM, period of 5 days lands on March 10 2:00 AM
+        let tz = Tz::from_str("America/New_York").unwrap();
+
+        let start = NaiveDate::from_ymd_opt(2024, 3, 5)
+            .unwrap()
+            .and_hms_opt(2, 0, 0)
+            .unwrap();
+
+        let start_ts = datetime_to_us(start, &tz);
+
+        let window = Window::new(
+            Duration::parse("1d"),
+            Duration::parse("5d"),
+            Duration::parse("0d"),
+        );
+
+        let result = window.get_earliest_bounds_us(start_ts, ClosedWindow::Both, Some(&tz));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_earliest_bounds_europe_london_dst_gap() {
+        // Europe/London: 1:00 AM March 31 2024 is in DST gap
+        let tz = Tz::from_str("Europe/London").unwrap();
+
+        let start = NaiveDate::from_ymd_opt(2024, 3, 14)
+            .unwrap()
+            .and_hms_opt(1, 0, 0)
+            .unwrap();
+
+        let start_ts = datetime_to_us(start, &tz);
+
+        let window = Window::new(
+            Duration::parse("1d"),
+            Duration::parse("17d"), // 17 days lands on March 31
+            Duration::parse("0d"),
+        );
+
+        let result = window.get_earliest_bounds_us(start_ts, ClosedWindow::Both, Some(&tz));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_earliest_bounds_ns_dst_gap() {
+        // Test nanosecond precision with DST gap
+        let tz = Tz::from_str("America/New_York").unwrap();
+
+        let start = NaiveDate::from_ymd_opt(2024, 3, 5)
+            .unwrap()
+            .and_hms_opt(2, 0, 0)
+            .unwrap();
+
+        let start_ts = tz
+            .from_local_datetime(&start)
+            .unwrap()
+            .timestamp_nanos_opt()
+            .unwrap();
+
+        let window = Window::new(
+            Duration::parse("1d"),
+            Duration::parse("5d"),
+            Duration::parse("0d"),
+        );
+
+        let result = window.get_earliest_bounds_ns(start_ts, ClosedWindow::Both, Some(&tz));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_earliest_bounds_ms_dst_gap() {
+        // Test millisecond precision with DST gap
+        let tz = Tz::from_str("America/New_York").unwrap();
+
+        let start = NaiveDate::from_ymd_opt(2024, 3, 5)
+            .unwrap()
+            .and_hms_opt(2, 0, 0)
+            .unwrap();
+
+        let start_ts = tz.from_local_datetime(&start).unwrap().timestamp_millis();
+
+        let window = Window::new(
+            Duration::parse("1d"),
+            Duration::parse("5d"),
+            Duration::parse("0d"),
+        );
+
+        let result = window.get_earliest_bounds_ms(start_ts, ClosedWindow::Both, Some(&tz));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_bounds_iter_windowbound_europe_london() {
+        // Europe/London: test WindowBound with period crossing DST gap
+        let tz = Tz::from_str("Europe/London").unwrap();
+
+        let start = NaiveDate::from_ymd_opt(2024, 3, 14)
+            .unwrap()
+            .and_hms_opt(1, 0, 0)
+            .unwrap();
+        let stop = NaiveDate::from_ymd_opt(2024, 3, 20)
+            .unwrap()
+            .and_hms_opt(1, 0, 0)
+            .unwrap();
+
+        let start_ts = datetime_to_us(start, &tz);
+        let stop_ts = datetime_to_us(stop, &tz);
+
+        let window = Window::new(
+            Duration::parse("1d"),
+            Duration::parse("17d"),
+            Duration::parse("0d"),
+        );
+
+        let boundary = Bounds::new(start_ts, stop_ts);
+
+        let result = window.get_overlapping_bounds_iter(
+            boundary,
+            ClosedWindow::Both,
+            TimeUnit::Microseconds,
+            Some(&tz),
+            StartBy::WindowBound,
+        );
+
+        assert!(result.is_ok());
+        let bounds: Vec<_> = result.unwrap().collect();
+        assert!(!bounds.is_empty());
+    }
+
+    #[test]
+    fn test_ensure_window_stride_through_dst_gap() {
+        // Test that ensure_t_in_or_in_front_of_window handles striding
+        // through DST gaps correctly. Start before DST, window lands after.
+        let tz = Tz::from_str("America/New_York").unwrap();
+
+        // Start at Feb 10 2:00 AM, need to stride forward to find window
+        let t = NaiveDate::from_ymd_opt(2024, 3, 12)
+            .unwrap()
+            .and_hms_opt(2, 0, 0)
+            .unwrap();
+        let t_ts = datetime_to_us(t, &tz);
+
+        // Window starts at Feb 1, every=1w, period=2d
+        // Should stride forward through March 10 DST transition
+        let window = Window::new(
+            Duration::parse("1w"),
+            Duration::parse("2d"),
+            Duration::parse("0d"),
+        );
+
+        let result = window.get_earliest_bounds_us(t_ts, ClosedWindow::Both, Some(&tz));
+        assert!(result.is_ok());
+    }
 }

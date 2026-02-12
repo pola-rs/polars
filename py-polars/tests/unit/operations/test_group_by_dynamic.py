@@ -792,6 +792,97 @@ def test_group_by_dynamic_monthly_crossing_dst() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_group_by_dynamic_dst_datapoint_uk_25410() -> None:
+    # Europe/London: 1:00 AM March 31 2024 is in DST gap
+    # start + 17d period lands in the gap
+    start_dt = datetime(2024, 3, 14, 1, 0)
+    stop_dt = datetime(2024, 3, 20, 1, 0)
+
+    date_range = pl.datetime_range(
+        start_dt, stop_dt, "1d", time_zone="Europe/London", eager=True
+    )
+
+    df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
+
+    result = df.group_by_dynamic(
+        "time",
+        every="1d",
+        period="17d",
+        closed="both",
+        start_by="datapoint",
+    ).agg(pl.col("value").count())
+
+    assert result.height > 0
+
+
+def test_group_by_dynamic_dst_windowbound_25410() -> None:
+    # 3:30 AM avoids DST gap while spanning the transition
+    start_dt = datetime(2024, 3, 5, 3, 30)
+    stop_dt = datetime(2024, 3, 15, 3, 30)
+
+    date_range = pl.datetime_range(
+        start_dt, stop_dt, "1d", time_zone="America/New_York", eager=True
+    )
+
+    df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
+
+    result = df.group_by_dynamic(
+        "time",
+        every="1d",
+        period="5d",
+        closed="both",
+        start_by="window",
+    ).agg(pl.col("value").count())
+
+    assert result.height > 0
+
+
+def test_group_by_dynamic_dst_sunday_offset_25410() -> None:
+    # 3:00 AM avoids DST gap while spanning the transition
+    start_dt = datetime(2024, 3, 3, 3, 0)
+    stop_dt = datetime(2024, 3, 17, 3, 0)
+
+    date_range = pl.datetime_range(
+        start_dt, stop_dt, "1d", time_zone="America/New_York", eager=True
+    )
+
+    df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
+
+    result = df.group_by_dynamic(
+        "time",
+        every="1w",
+        period="1w",
+        offset="2h",
+        closed="both",
+        start_by="sunday",
+    ).agg(pl.col("value").count())
+
+    assert result.height > 0
+
+
+def test_group_by_dynamic_dst_offset_gap_25410() -> None:
+    # offset="2h" lands on 2:00 AM March 10 (DST gap)
+    start_dt = datetime(2024, 3, 10, 0, 0)
+    stop_dt = datetime(2024, 3, 10, 12, 0)
+
+    date_range = pl.datetime_range(
+        start_dt, stop_dt, "1h", time_zone="America/New_York", eager=True
+    )
+
+    df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
+
+    result = df.group_by_dynamic(
+        "time",
+        every="1h",
+        period="3h",
+        offset="2h",
+        closed="both",
+        start_by="window",
+    ).agg(pl.col("value").count())
+
+    assert result.height > 0
+
+
 def test_group_by_dynamic_2d_9333() -> None:
     df = pl.DataFrame({"ts": [datetime(2000, 1, 1, 3)], "values": [10.0]})
     df = df.with_columns(pl.col("ts").set_sorted())
