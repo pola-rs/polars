@@ -1,14 +1,20 @@
+from __future__ import annotations
+
 import io
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
-from polars._typing import EngineType
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
+    from tests.conftest import PlMonkeyPatch
+
 
 SINKS = [
     (pl.scan_ipc, pl.LazyFrame.sink_ipc),
@@ -339,7 +345,7 @@ def test_sink_path_slicing_utf8_boundaries_26324(
 @pytest.mark.parametrize("partitioned", [True, False])
 @pytest.mark.write_disk
 def test_sink_metrics(
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
     file_format: str,
     tmp_path: Path,
@@ -349,7 +355,7 @@ def test_sink_metrics(
 
     df = pl.DataFrame({"a": 1})
 
-    with monkeypatch.context() as cx:
+    with plmonkeypatch.context() as cx:
         cx.setenv("POLARS_LOG_METRICS", "1")
         cx.setenv("POLARS_FORCE_ASYNC", "1")
         capfd.readouterr()

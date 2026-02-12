@@ -21,6 +21,7 @@ from polars.io.cloud.credential_provider._providers import (
     CachingCredentialProvider,
     UserProvidedGCPToken,
 )
+from tests.conftest import PlMonkeyPatch
 
 
 @pytest.mark.parametrize(
@@ -32,9 +33,7 @@ from polars.io.cloud.credential_provider._providers import (
         pl.scan_ipc,
     ],
 )
-def test_credential_provider_scan(
-    io_func: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_credential_provider_scan(io_func: Any, plmonkeypatch: PlMonkeyPatch) -> None:
     err_magic = "err_magic_3"
 
     def raises(*_: None, **__: None) -> None:
@@ -42,7 +41,7 @@ def test_credential_provider_scan(
 
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
 
-    monkeypatch.setattr(CredentialProviderBuilder, "__init__", raises)
+    plmonkeypatch.setattr(CredentialProviderBuilder, "__init__", raises)
 
     with pytest.raises(AssertionError, match=err_magic):
         io_func("s3://bucket/path", credential_provider="auto")
@@ -81,17 +80,17 @@ def test_credential_provider_scan(
 def test_credential_provider_serialization_auto_init(
     provider_class: polars.io.cloud.credential_provider.CredentialProvider,
     path: str,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     def raises_1(*a: Any, **kw: Any) -> None:
         msg = "err_magic_1"
         raise AssertionError(msg)
 
-    monkeypatch.setattr(provider_class, "__init__", raises_1)
+    plmonkeypatch.setattr(provider_class, "__init__", raises_1)
 
     # If this is not set we will get an error before hitting the credential
     # provider logic when polars attempts to retrieve the region from AWS.
-    monkeypatch.setenv("AWS_REGION", "eu-west-1")
+    plmonkeypatch.setenv("AWS_REGION", "eu-west-1")
 
     # Credential provider should not be initialized during query plan construction.
     q = pl.scan_parquet(path)
@@ -107,7 +106,7 @@ def test_credential_provider_serialization_auto_init(
         msg = "err_magic_2"
         raise AssertionError(msg)
 
-    monkeypatch.setattr(provider_class, "__init__", raises_2)
+    plmonkeypatch.setattr(provider_class, "__init__", raises_2)
 
     # Check that auto-initialization happens upon executing the deserialized
     # query.
@@ -136,9 +135,9 @@ def test_credential_provider_serialization_custom_provider() -> None:
 
 
 def test_credential_provider_gcp_skips_config_autoload(
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_PATH", "__non_existent")
+    plmonkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_PATH", "__non_existent")
 
     with pytest.raises(OSError, match="__non_existent"):
         pl.scan_parquet("gs://.../...", credential_provider=None).collect()
@@ -153,14 +152,14 @@ def test_credential_provider_gcp_skips_config_autoload(
 
 
 def test_credential_provider_aws_import_error_with_requested_profile(
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     def _session(self: Any) -> None:
         msg = "err_magic_3"
         raise ImportError(msg)
 
-    monkeypatch.setattr(pl.CredentialProviderAWS, "_session", _session)
-    monkeypatch.setenv("AWS_REGION", "eu-west-1")
+    plmonkeypatch.setattr(pl.CredentialProviderAWS, "_session", _session)
+    plmonkeypatch.setenv("AWS_REGION", "eu-west-1")
 
     q = pl.scan_parquet(
         "s3://.../...",
@@ -193,16 +192,16 @@ def test_credential_provider_aws_import_error_with_requested_profile(
 @pytest.mark.write_disk
 def test_credential_provider_aws_endpoint_url_scan_no_parameters(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
 
-    _set_default_credentials(tmp_path, monkeypatch)
+    _set_default_credentials(tmp_path, plmonkeypatch)
     cfg_file_path = tmp_path / "config"
 
-    monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     cfg_file_path.write_text("""\
 [default]
@@ -227,16 +226,16 @@ endpoint_url = http://localhost:333
 @pytest.mark.write_disk
 def test_credential_provider_aws_endpoint_url_serde(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
 
-    _set_default_credentials(tmp_path, monkeypatch)
+    _set_default_credentials(tmp_path, plmonkeypatch)
     cfg_file_path = tmp_path / "config"
 
-    monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     cfg_file_path.write_text("""\
 [default]
@@ -261,16 +260,16 @@ endpoint_url = http://localhost:777
 @pytest.mark.write_disk
 def test_credential_provider_aws_endpoint_url_with_storage_options(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
 
-    _set_default_credentials(tmp_path, monkeypatch)
+    _set_default_credentials(tmp_path, plmonkeypatch)
     cfg_file_path = tmp_path / "config"
 
-    monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     cfg_file_path.write_text("""\
 [default]
@@ -318,13 +317,13 @@ endpoint_url = http://localhost:333
 def test_credential_provider_aws_endpoint_url_passed_in_storage_options(
     storage_options: dict[str, str],
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
 
-    _set_default_credentials(tmp_path, monkeypatch)
+    _set_default_credentials(tmp_path, plmonkeypatch)
     cfg_file_path = tmp_path / "config"
-    monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
+    plmonkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
 
     cfg_file_path.write_text("""\
 [default]
@@ -346,7 +345,7 @@ endpoint_url = http://localhost:333
         q.collect()
 
 
-def _set_default_credentials(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _set_default_credentials(tmp_path: Path, plmonkeypatch: PlMonkeyPatch) -> None:
     creds_file_path = tmp_path / "credentials"
 
     creds_file_path.write_text("""\
@@ -355,12 +354,12 @@ aws_access_key_id=Z
 aws_secret_access_key=Z
 """)
 
-    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(creds_file_path))
+    plmonkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(creds_file_path))
 
 
 @pytest.mark.slow
 def test_credential_provider_python_builder_cache(
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     # Tests caching of building credential providers.
@@ -370,7 +369,7 @@ def test_credential_provider_python_builder_cache(
             "aws_secret_access_key": "...",
         }, None
 
-    with monkeypatch.context() as cx:
+    with plmonkeypatch.context() as cx:
         provider_init = Mock(wraps=pl.CredentialProviderAWS.__init__)
 
         cx.setattr(
@@ -439,7 +438,7 @@ def test_credential_provider_python_builder_cache(
 
         assert provider_init.call_count == 6
 
-    with monkeypatch.context() as cx:
+    with plmonkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
         builder = _init_credential_provider_builder(
             "auto",
@@ -469,7 +468,7 @@ def test_credential_provider_python_builder_cache(
 
 @pytest.mark.slow
 def test_credential_provider_python_credentials_cache(
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     credentials_func = Mock(
         wraps=lambda: (
@@ -481,7 +480,7 @@ def test_credential_provider_python_credentials_cache(
         )
     )
 
-    monkeypatch.setattr(
+    plmonkeypatch.setattr(
         pl.CredentialProviderAWS,
         "retrieve_credentials_impl",
         credentials_func,
@@ -497,7 +496,7 @@ def test_credential_provider_python_credentials_cache(
     provider()
     assert credentials_func.call_count == 1
 
-    monkeypatch.setenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING", "1")
+    plmonkeypatch.setenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING", "1")
 
     provider()
     assert credentials_func.call_count == 2
@@ -505,7 +504,7 @@ def test_credential_provider_python_credentials_cache(
     provider()
     assert credentials_func.call_count == 3
 
-    monkeypatch.delenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING")
+    plmonkeypatch.delenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING")
 
     provider()
     assert credentials_func.call_count == 4
@@ -546,7 +545,7 @@ def test_no_pickle_option() -> None:
 
 @pytest.mark.write_disk
 def test_credential_provider_aws_expiry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     credential_file_path = tmp_path / "credentials.json"
 
@@ -571,7 +570,7 @@ def test_credential_provider_aws_expiry(
 credential_process = "{sys.executable}" -c "from pathlib import Path; print(Path('{credential_file_path_str}').read_text())"
 """)
 
-    monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
+    plmonkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
 
     creds, expiry = pl.CredentialProviderAWS(profile_name="cred_process")()
 
@@ -643,11 +642,11 @@ def test_credential_provider_rebuild_clears_cache(
     scan_path: str,
     initial_credentials: dict[str, str],
     updated_credentials: dict[str, str],
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     assert initial_credentials != updated_credentials
 
-    monkeypatch.setattr(
+    plmonkeypatch.setattr(
         credential_provider_class,
         "retrieve_credentials_impl",
         lambda *_: (initial_credentials, None),
@@ -675,7 +674,7 @@ def test_credential_provider_rebuild_clears_cache(
     provider_local()
 
     # Now update the the retrieval function to return updated credentials.
-    monkeypatch.setattr(
+    plmonkeypatch.setattr(
         credential_provider_class,
         "retrieve_credentials_impl",
         lambda *_: (updated_credentials, None),
@@ -708,17 +707,17 @@ def test_credential_provider_rebuild_clears_cache(
 
 
 def test_user_gcp_token_provider(
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     provider = UserProvidedGCPToken("A")
     assert provider() == ({"bearer_token": "A"}, None)
-    monkeypatch.setenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING", "1")
+    plmonkeypatch.setenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING", "1")
     assert provider() == ({"bearer_token": "A"}, None)
 
 
-def test_auto_init_cache_key_memoize(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_auto_init_cache_key_memoize(plmonkeypatch: PlMonkeyPatch) -> None:
     get_cache_key_impl = Mock(wraps=AutoInit.get_cache_key_impl)
-    monkeypatch.setattr(
+    plmonkeypatch.setattr(
         AutoInit,
         "get_cache_key_impl",
         lambda *a, **kw: get_cache_key_impl(*a, **kw),
@@ -774,7 +773,7 @@ def test_credential_provider_init_from_partition_target(
 
 
 @pytest.mark.slow
-def test_cache_user_credential_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cache_user_credential_provider(plmonkeypatch: PlMonkeyPatch) -> None:
     user_provider = Mock(
         return_value=(
             {"aws_access_key_id": "...", "aws_secret_access_key": "..."},
@@ -801,7 +800,7 @@ def test_cache_user_credential_provider(monkeypatch: pytest.MonkeyPatch) -> None
 
     assert user_provider.call_count == 3
 
-    monkeypatch.setenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", "0")
+    plmonkeypatch.setenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", "0")
 
     with pytest.raises(OSError, match="http://localhost:333"):
         get_q().collect()
@@ -810,11 +809,11 @@ def test_cache_user_credential_provider(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 @pytest.mark.slow
-def test_credential_provider_global_config(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_credential_provider_global_config(plmonkeypatch: PlMonkeyPatch) -> None:
     import polars as pl
     import polars.io.cloud.credential_provider._builder
 
-    monkeypatch.setattr(
+    plmonkeypatch.setattr(
         polars.io.cloud.credential_provider._builder,
         "DEFAULT_CREDENTIAL_PROVIDER",
         None,
@@ -829,8 +828,8 @@ def test_credential_provider_global_config(monkeypatch: pytest.MonkeyPatch) -> N
 
     pl.Config.set_default_credential_provider(provider)
 
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "...")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "...")
+    plmonkeypatch.setenv("AWS_ACCESS_KEY_ID", "...")
+    plmonkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "...")
 
     def get_q() -> pl.LazyFrame:
         return pl.scan_parquet(
@@ -874,7 +873,7 @@ def test_credential_provider_global_config(monkeypatch: pytest.MonkeyPatch) -> N
     def raises(*_: None, **__: None) -> None:
         raise AssertionError(err_magic)
 
-    monkeypatch.setattr(CredentialProviderBuilder, "__init__", raises)
+    plmonkeypatch.setattr(CredentialProviderBuilder, "__init__", raises)
 
     with pytest.raises(AssertionError, match=err_magic):
         get_q().collect()

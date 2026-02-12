@@ -15,6 +15,7 @@ from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import JoinStrategy
+    from tests.conftest import PlMonkeyPatch
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -54,8 +55,10 @@ def test_streaming_block_on_literals_6054() -> None:
 
 @pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: non-pure map_batches
-def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+def test_streaming_streamable_functions(
+    plmonkeypatch: PlMonkeyPatch, capfd: Any
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
     calls = 0
 
     def func(df: pl.DataFrame) -> pl.DataFrame:
@@ -127,8 +130,8 @@ def test_streaming_literal_expansion() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
-def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+def test_streaming_apply(plmonkeypatch: PlMonkeyPatch, capfd: Any) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     q = pl.DataFrame({"a": [1, 2]}).lazy()
     with pytest.warns(

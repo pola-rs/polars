@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from tests.conftest import PlMonkeyPatch
+
 
 def helper_dataset_test(
     file_path: Path,
@@ -236,10 +238,10 @@ def test_pyarrow_dataset_comm_subplan_elim(tmp_path: Path) -> None:
 
 def test_pyarrow_dataset_predicate_verbose_log(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
 
     df = pl.DataFrame({"a": [1, 2, 3]})
     file_path_0 = tmp_path / "0"
