@@ -119,6 +119,7 @@ impl Error for PolarsError {
             | PolarsError::Duplicate(_)
             | PolarsError::InvalidOperation(_)
             | PolarsError::NoData(_)
+            | PolarsError::OutOfCore(_)
             | PolarsError::OutOfBounds(_)
             | PolarsError::SchemaFieldNotFound(_)
             | PolarsError::SchemaMismatch(_)
