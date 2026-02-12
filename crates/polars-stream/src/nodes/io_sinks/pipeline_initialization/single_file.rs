@@ -76,11 +76,13 @@ pub fn start_single_file_sink_pipeline(
             "{node_name}: start_single_file_sink_pipeline: \
             file_writer_starter: {}, \
             takeable_rows_provider: {:?}, \
+            inflight_morsel_limit: {}, \
             upload_chunk_size: {}, \
             upload_concurrency: {}, \
             io_metrics: {}",
             file_writer_starter.writer_name(),
             takeable_rows_provider,
+            inflight_morsel_limit,
             upload_chunk_size,
             upload_max_concurrency,
             io_metrics.is_some(),
