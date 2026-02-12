@@ -41,6 +41,7 @@ impl std::convert::From<PyPolarsErr> for PyErr {
                 },
                 PolarsError::SQLInterface(err) => SQLInterface::new_err(err.to_string()),
                 PolarsError::SQLSyntax(err) => SQLSyntax::new_err(err.to_string()),
+                PolarsError::OutOfCore(err) => OutOfCoreError::new_err(err.to_string()),
                 PolarsError::Context { error, .. } => convert(*error),
                 PolarsError::Python { error } => error.0,
             }
@@ -76,3 +77,4 @@ create_exception!(exceptions, DuplicateError, PyException);
 create_exception!(exceptions, StringCacheMismatchError, PyException);
 create_exception!(exceptions, SQLInterface, PyException);
 create_exception!(exceptions, SQLSyntax, PyException);
+create_exception!(exceptions, OutOfCoreError, PyException);
