@@ -1326,6 +1326,9 @@ class Series:
         if self.dtype.is_temporal() and not isinstance(self.dtype, Duration):
             msg = "first cast to integer before multiplying datelike dtypes"
             raise TypeError(msg)
+        # Handle timedelta multiplication to preserve Duration type
+        if isinstance(other, timedelta):
+            return self.to_frame().select(F.col(self.name) * F.lit(other)).to_series()
         if isinstance(other, (int, float)) and (
             self.dtype.is_decimal() or isinstance(self.dtype, Duration)
         ):
@@ -1392,6 +1395,9 @@ class Series:
         if self.dtype.is_temporal() and not isinstance(self.dtype, Duration):
             msg = "first cast to integer before multiplying datelike dtypes"
             raise TypeError(msg)
+        # Handle timedelta multiplication to preserve Duration type
+        if isinstance(other, timedelta):
+            return self.to_frame().select(F.lit(other) * F.col(self.name)).to_series()
         if isinstance(other, (int, float)) and (
             self.dtype.is_decimal() or isinstance(self.dtype, Duration)
         ):
