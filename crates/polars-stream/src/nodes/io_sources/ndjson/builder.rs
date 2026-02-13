@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
+#[cfg(feature = "json")]
+use polars_io::metrics::IOMetrics;
 use polars_plan::dsl::{NDJsonReadOptions, ScanSource};
 use polars_utils::relaxed_cell::RelaxedCell;
 
@@ -17,6 +19,7 @@ pub struct NdjsonReaderBuilder {
     pub prefetch_limit: RelaxedCell<usize>,
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
+    pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
 }
 
 impl std::fmt::Debug for NdjsonReaderBuilder {
@@ -73,13 +76,17 @@ impl FileReaderBuilder for NdjsonReaderBuilder {
             .unwrap()
     }
 
+    fn set_io_metrics(&self, io_metrics: Arc<IOMetrics>) {
+        self.io_metrics.set(io_metrics).ok().unwrap()
+    }
+
     fn build_file_reader(
         &self,
         source: ScanSource,
         cloud_options: Option<Arc<CloudOptions>>,
         _scan_source_idx: usize,
     ) -> Box<dyn FileReader> {
-        // use crate::metrics::OptIOMetrics; //kdn TODO IO
+        use crate::metrics::OptIOMetrics;
         use crate::nodes::io_sources::ndjson::ChunkPrefetchSync;
 
         let scan_source = source;
@@ -88,11 +95,12 @@ impl FileReaderBuilder for NdjsonReaderBuilder {
         };
         let verbose = config::verbose();
 
-        let byte_source_builder = if scan_source.is_cloud_url() || config::force_async() {
-            DynByteSourceBuilder::ObjectStore
-        } else {
-            DynByteSourceBuilder::Mmap
-        };
+        let byte_source_builder =
+            if scan_source.is_cloud_url() || polars_config::config().force_async() {
+                DynByteSourceBuilder::ObjectStore
+            } else {
+                DynByteSourceBuilder::Mmap
+            };
 
         let reader = NDJsonFileReader {
             scan_source,
@@ -109,6 +117,7 @@ impl FileReaderBuilder for NdjsonReaderBuilder {
                 current_all_spawned: None,
             },
             init_data: None,
+            io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
         };
 
         Box::new(reader) as _

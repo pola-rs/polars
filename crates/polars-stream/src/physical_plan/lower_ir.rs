@@ -667,17 +667,15 @@ pub fn lower_ir(
                     FileScanIR::Csv { options } => Arc::new(Arc::clone(options)) as _,
 
                     #[cfg(feature = "json")]
-                    FileScanIR::NDJson { options } => {
-                        Arc::new(
-                            crate::nodes::io_sources::ndjson::builder::NdjsonReaderBuilder {
-                                options: Arc::new(options.clone()),
-                                prefetch_limit: RelaxedCell::new_usize(0),
-                                prefetch_semaphore: std::sync::OnceLock::new(),
-                                shared_prefetch_wait_group_slot: Default::default(),
-                                // io_metrics: std::sync::OnceLock::new(), //kdn TODO IO
-                            },
-                        ) as _
-                    },
+                    FileScanIR::NDJson { options } => Arc::new(
+                        crate::nodes::io_sources::ndjson::builder::NdjsonReaderBuilder {
+                            options: Arc::new(options.clone()),
+                            prefetch_limit: RelaxedCell::new_usize(0),
+                            prefetch_semaphore: std::sync::OnceLock::new(),
+                            shared_prefetch_wait_group_slot: Default::default(),
+                            io_metrics: std::sync::OnceLock::new(),
+                        },
+                    ) as _,
                     // Arc::new(options.clone()) as _,
                     #[cfg(feature = "python")]
                     FileScanIR::PythonDataset {
@@ -702,6 +700,7 @@ pub fn lower_ir(
                             prefetch_limit: RelaxedCell::new_usize(0),
                             prefetch_semaphore: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
+                            io_metrics: std::sync::OnceLock::new(),
                         }) as _
                     },
 

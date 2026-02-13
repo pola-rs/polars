@@ -503,11 +503,16 @@ pub async fn ndjson_file_info(
 
         let first_scan_source = first_scan_source.into_owned()?.clone();
         let cloud_options = cloud_options.cloned();
+        // TODO. Support IOMetrics collection during planning phase.
         let byte_source = pl_async::get_runtime()
             .spawn(async move {
                 first_scan_source
                     .as_scan_source_ref()
-                    .to_dyn_byte_source(&DynByteSourceBuilder::ObjectStore, cloud_options.as_ref())
+                    .to_dyn_byte_source(
+                        &DynByteSourceBuilder::ObjectStore,
+                        cloud_options.as_ref(),
+                        None,
+                    )
                     .await
             })
             .await
@@ -528,7 +533,7 @@ pub async fn ndjson_file_info(
         let mut truncated_bytes: Vec<u8> = Vec::with_capacity(INITIAL_FETCH);
         let mut reached_eof = false;
 
-        let schema = loop {
+        loop {
             let range = offset..std::cmp::min(file_size, offset + fetch_size);
 
             let byte_source = byte_source.clone();
@@ -592,8 +597,7 @@ pub async fn ndjson_file_info(
                 &mut buf_reader,
                 ndjson_options.infer_schema_length,
             )?);
-        };
-        schema
+        }
     } else {
         // Download the entire object.
         // Warning - this is potentially memory-expensive in the case of a cloud source, and goes

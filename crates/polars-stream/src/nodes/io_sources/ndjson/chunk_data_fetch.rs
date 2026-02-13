@@ -7,7 +7,6 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::async_primitives::wait_group::WaitToken;
-// use crate::metrics::OptIOMetrics; // kdn TODO IO
 use crate::utils::tokio_handle_ext;
 
 /// Represents (unaligned) byte-data that will be assembled into newline-aligned LineBatches.
@@ -26,7 +25,6 @@ pub(super) struct ChunkDataFetcher {
     )>,
     pub(super) prefetch_semaphore: Arc<Semaphore>,
     pub(super) prefetch_current_all_spawned: Option<WaitToken>,
-    // pub(super) io_metrics: OptIOMetrics, //kdn TODO IO
 }
 
 impl ChunkDataFetcher {
@@ -46,7 +44,6 @@ impl ChunkDataFetcher {
             let current_byte_source = self.byte_source.clone();
             let memory_prefetch_func = self.memory_prefetch_func;
             let io_runtime = polars_io::pl_async::get_runtime();
-            // let io_metrics = self.io_metrics.clone(); //kdn TODO IO
 
             let range = byte_offset..std::cmp::min(file_size, byte_offset + chunk_size);
             let range_len = range.len();
@@ -69,7 +66,6 @@ impl ChunkDataFetcher {
                         // @NOTE. Performance can be optimized by grouping requests and downloading
                         // through `get_ranges()`.
                         current_byte_source.get_range(range.clone()).await?
-                        // io_metrics.record_download(range.len() as u64, fut).await? //kdn TODO IO
                     };
 
                 PolarsResult::Ok(ChunkData { fetched_bytes })
