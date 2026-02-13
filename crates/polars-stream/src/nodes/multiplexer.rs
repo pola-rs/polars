@@ -193,6 +193,12 @@ impl ComputeNode for MultiplexerNode {
                         if sender.send(morsel).await.is_err() {
                             return Ok(());
                         }
+                        if buffered_source_token.stop_requested()
+                            && let Ok(rx_morsel) = rx.try_recv()
+                        {
+                            rx_morsel.source_token().stop();
+                            buf.push_front(rx_morsel);
+                        }
                         wait_group.wait().await;
                     }
 
