@@ -12,6 +12,7 @@ use negative_slice_pass::MorselStreamReverser;
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_io::cloud::CloudOptions;
+use polars_io::metrics::OptIOMetrics;
 use polars_io::pl_async;
 use polars_io::utils::byte_source::{ByteSource, DynByteSource, DynByteSourceBuilder};
 use polars_io::utils::chunk_buf_reader::{ChunkBufReader, ReaderSource};
@@ -54,6 +55,7 @@ pub struct NDJsonFileReader {
     pub byte_source_builder: DynByteSourceBuilder,
     pub chunk_prefetch_sync: ChunkPrefetchSync,
     pub init_data: Option<InitializedState>,
+    pub io_metrics: OptIOMetrics,
 }
 
 pub(crate) struct ChunkPrefetchSync {
@@ -84,12 +86,17 @@ impl FileReader for NDJsonFileReader {
         let scan_source = self.scan_source.clone();
         let byte_source_builder = self.byte_source_builder.clone();
         let cloud_options = self.cloud_options.clone();
+        let io_metrics = self.io_metrics.clone();
 
         let byte_source = pl_async::get_runtime()
             .spawn(async move {
                 scan_source
                     .as_scan_source_ref()
-                    .to_dyn_byte_source(&byte_source_builder, cloud_options.as_deref())
+                    .to_dyn_byte_source(
+                        &byte_source_builder,
+                        cloud_options.as_deref(),
+                        io_metrics.0,
+                    )
                     .await
             })
             .await
@@ -404,7 +411,7 @@ impl FileReader for NDJsonFileReader {
         };
 
         // Prepare parameters for Prefetch task.
-        const DEFAULT_NDJSON_CHUNK_SIZE: usize = 8 * 1024 * 1024;
+        const DEFAULT_NDJSON_CHUNK_SIZE: usize = 32 * 1024 * 1024;
         let memory_prefetch_func = get_memory_prefetch_func(verbose);
         let chunk_size = std::env::var("POLARS_NDJSON_CHUNK_SIZE")
             .map(|x| {
@@ -432,7 +439,6 @@ impl FileReader for NDJsonFileReader {
                 Option::take(&mut self.chunk_prefetch_sync.prev_all_spawned);
             let prefetch_current_all_spawned =
                 Option::take(&mut self.chunk_prefetch_sync.current_all_spawned);
-            // let io_metrics = self.io_metrics.clone(); //kdn TODO IO
 
             Some(tokio_handle_ext::AbortOnDropHandle(io_runtime.spawn(
                 async move {
@@ -459,6 +465,7 @@ impl FileReader for NDJsonFileReader {
             None
         };
 
+        // Number of fetched chunks to keep in the resolver channel.
         let resolver_capacity = 4;
         let (sync_send, sync_recv) = std::sync::mpsc::sync_channel::<Buffer<u8>>(resolver_capacity);
 
