@@ -191,7 +191,7 @@ impl ComputeNode for MultiplexerNode {
                         morsel.replace_source_token(buffered_source_token.clone());
                         morsel.set_consume_token(wait_group.token());
                         if sender.send(morsel).await.is_err() {
-                            break;
+                            return Ok(());
                         }
                         wait_group.wait().await;
                     }
@@ -200,7 +200,7 @@ impl ComputeNode for MultiplexerNode {
                     while let Some(mut morsel) = rx.recv().await {
                         morsel.set_consume_token(wait_group.token());
                         if sender.send(morsel).await.is_err() {
-                            break;
+                            return Ok(());
                         }
                         wait_group.wait().await;
                     }
