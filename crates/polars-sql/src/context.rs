@@ -574,61 +574,51 @@ impl SQLContext {
 
         // Note: each side of the UNION operation should execute
         // in isolation to prevent context state leakage between them
-        let lf = self.execute_isolated(|ctx| ctx.process_query(left, query))?;
-        let rf = self.execute_isolated(|ctx| ctx.process_query(right, query))?;
+        let mut lf = self.execute_isolated(|ctx| ctx.process_query(left, query))?;
+        let mut rf = self.execute_isolated(|ctx| ctx.process_query(right, query))?;
 
-        let cb = PlanCallback::new(
-            move |(mut plans, schemas): (Vec<DslPlan>, Vec<SchemaRef>)| {
-                let mut rf = LazyFrame::from(plans.pop().unwrap());
-                let lf = LazyFrame::from(plans.pop().unwrap());
-
-                let opts = UnionArgs {
-                    parallel: true,
-                    to_supertypes: true,
-                    maintain_order: false,
-                    ..Default::default()
-                };
-                let out = match quantifier {
-                    // UNION [ALL | DISTINCT]
-                    SetQuantifier::All | SetQuantifier::Distinct | SetQuantifier::None => {
-                        let lf_schema = &schemas[0];
-                        let rf_schema = &schemas[1];
-                        if lf_schema.len() != rf_schema.len() {
-                            polars_bail!(SQLInterface: "UNION requires equal number of columns in each table (use 'UNION BY NAME' to combine mismatched tables)")
-                        }
-                        // rename `rf` columns to match `lf` if they differ; SQL behaves
-                        // positionally on UNION ops (unless using the "BY NAME" qualifier)
-                        if lf_schema.iter_names().ne(rf_schema.iter_names()) {
-                            rf = rf.rename(rf_schema.iter_names(), lf_schema.iter_names(), true);
-                        }
-                        let concatenated = concat(vec![lf, rf], opts);
-                        match quantifier {
-                            SetQuantifier::Distinct | SetQuantifier::None => {
-                                concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
-                            },
-                            _ => concatenated,
-                        }
-                    },
-                    // UNION ALL BY NAME
-                    #[cfg(feature = "diagonal_concat")]
-                    SetQuantifier::AllByName => concat_lf_diagonal(vec![lf, rf], opts),
-                    // UNION [DISTINCT] BY NAME
-                    #[cfg(feature = "diagonal_concat")]
-                    SetQuantifier::ByName | SetQuantifier::DistinctByName => {
-                        let concatenated = concat_lf_diagonal(vec![lf, rf], opts);
+        let opts = UnionArgs {
+            parallel: true,
+            to_supertypes: true,
+            maintain_order: false,
+            ..Default::default()
+        };
+        let lf = match quantifier {
+            // UNION [ALL | DISTINCT]
+            SetQuantifier::All | SetQuantifier::Distinct | SetQuantifier::None => {
+                let lf_schema = self.get_frame_schema(&mut lf)?;
+                let rf_schema = self.get_frame_schema(&mut rf)?;
+                if lf_schema.len() != rf_schema.len() {
+                    polars_bail!(SQLInterface: "UNION requires equal number of columns in each table (use 'UNION BY NAME' to combine mismatched tables)")
+                }
+                // rename `rf` columns to match `lf` if they differ; SQL behaves
+                // positionally on UNION ops (unless using the "BY NAME" qualifier)
+                if lf_schema.iter_names().ne(rf_schema.iter_names()) {
+                    rf = rf.rename(rf_schema.iter_names(), lf_schema.iter_names(), true);
+                }
+                let concatenated = concat(vec![lf, rf], opts);
+                match quantifier {
+                    SetQuantifier::Distinct | SetQuantifier::None => {
                         concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
                     },
-                    #[allow(unreachable_patterns)]
-                    _ => {
-                        polars_bail!(SQLInterface: "'UNION {}' is not currently supported", quantifier)
-                    },
-                };
-
-                out.map(|lf| lf.logical_plan)
+                    _ => concatenated,
+                }
             },
-        );
+            // UNION ALL BY NAME
+            #[cfg(feature = "diagonal_concat")]
+            SetQuantifier::AllByName => concat_lf_diagonal(vec![lf, rf], opts),
+            // UNION [DISTINCT] BY NAME
+            #[cfg(feature = "diagonal_concat")]
+            SetQuantifier::ByName | SetQuantifier::DistinctByName => {
+                let concatenated = concat_lf_diagonal(vec![lf, rf], opts);
+                concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
+            },
+            #[allow(unreachable_patterns)]
+            _ => {
+                polars_bail!(SQLInterface: "'UNION {}' is not currently supported", quantifier)
+            },
+        }?;
 
-        let lf = lf.pipe_with_schemas(vec![rf], cb);
         self.process_order_by(lf, &query.order_by, None)
     }
 
