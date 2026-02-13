@@ -207,8 +207,8 @@ def _(a: Attribute) -> Any:
 
 @_convert_predicate.register(BinOp)
 def _(a: BinOp) -> Any:
-    lhs = _convert_predicate(a.left)
-    rhs = _convert_predicate(a.right)
+    lhs = _ensure_boolean_expression(_convert_predicate(a.left))
+    rhs = _ensure_boolean_expression(_convert_predicate(a.right))
 
     op = a.op
     if isinstance(op, BitAnd):
