@@ -41,7 +41,7 @@ pub fn create_scan_predicate(
     let mut hive_predicate = None;
     let mut hive_predicate_is_full_predicate = false;
 
-    #[expect(clippy::never_loop)]
+    #[expect(clippy::never_loop, clippy::while_let_loop)]
     loop {
         let Some(hive_schema) = hive_schema else {
             break;
@@ -214,7 +214,7 @@ pub fn initialize_scan_predicate<'a>(
     table_statistics: Option<&TableStatistics>,
     verbose: bool,
 ) -> PolarsResult<(Option<SkipFilesMask>, Option<&'a ScanIOPredicate>)> {
-    #[expect(clippy::never_loop)]
+    #[expect(clippy::never_loop, clippy::while_let_loop)]
     loop {
         let Some(predicate) = predicate else {
             break;
