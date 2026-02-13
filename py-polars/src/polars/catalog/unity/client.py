@@ -15,6 +15,7 @@ from polars.catalog.unity.models import (
     NamespaceInfo,
     TableInfo,
 )
+from polars.io.cloud.credential_provider._providers import CredentialProviderAzure
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -639,6 +640,17 @@ class Catalog:
 
             if storage_update_options:
                 storage_options = {**(storage_options or {}), **storage_update_options}
+
+            if table_info.storage_location is not None and (
+                azure_storage_account_name
+                := CredentialProviderAzure._extract_adls_uri_storage_account(
+                    table_info.storage_location
+                )
+            ):
+                storage_options = storage_options or {}
+                storage_options["azure_storage_account_name"] = (
+                    azure_storage_account_name
+                )
 
             for _ in v:
                 pass
