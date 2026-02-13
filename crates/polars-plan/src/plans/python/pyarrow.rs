@@ -10,6 +10,17 @@ pub struct PyarrowArgs {
     // pyarrow doesn't allow `filter([True, False])`
     // but does allow `filter(field("a").isin([True, False]))`
     allow_literal_series: bool,
+    /// When true, AND expressions with non-convertible children return only
+    /// the convertible parts. The caller MUST ensure the full predicate is
+    /// preserved elsewhere (e.g., as a SELECTION in the IR plan).
+    partial_and: bool,
+}
+
+impl PyarrowArgs {
+    pub fn with_partial_and(mut self) -> Self {
+        self.partial_and = true;
+        self
+    }
 }
 
 fn to_py_datetime(v: i64, tu: &TimeUnit, tz: Option<&TimeZone>) -> String {
@@ -43,9 +54,22 @@ pub fn predicate_to_pa(
     match expr_arena.get(predicate) {
         AExpr::BinaryExpr { left, right, op } => {
             if op.is_comparison_or_bitwise() {
-                let left = predicate_to_pa(*left, expr_arena, args)?;
-                let right = predicate_to_pa(*right, expr_arena, args)?;
-                Some(format!("({left} {op} {right})"))
+                if args.partial_and && matches!(op, Operator::And) {
+                    // AND: allow partial conversion. Dropped parts remain as
+                    // post-scan SELECTION filters in the Polars engine.
+                    let left_result = predicate_to_pa(*left, expr_arena, args);
+                    let right_result = predicate_to_pa(*right, expr_arena, args);
+                    match (left_result, right_result) {
+                        (Some(l), Some(r)) => Some(format!("({l} & {r})")),
+                        (Some(l), None) => Some(l),
+                        (None, Some(r)) => Some(r),
+                        (None, None) => None,
+                    }
+                } else {
+                    let left = predicate_to_pa(*left, expr_arena, args)?;
+                    let right = predicate_to_pa(*right, expr_arena, args)?;
+                    Some(format!("({left} {op} {right})"))
+                }
             } else {
                 None
             }
@@ -214,5 +238,155 @@ pub fn predicate_to_pa(
             }
         },
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_utils::pl_str::PlSmallStr;
+
+    use super::*;
+
+    /// Helper: add a column reference node to the arena.
+    fn col(arena: &mut Arena<AExpr>, name: &str) -> Node {
+        arena.add(AExpr::Column(PlSmallStr::from(name)))
+    }
+
+    /// Helper: add an integer literal node to the arena.
+    fn lit_int(arena: &mut Arena<AExpr>, v: i128) -> Node {
+        arena.add(AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(v))))
+    }
+
+    /// Helper: add a binary expression node to the arena.
+    fn binexpr(arena: &mut Arena<AExpr>, left: Node, op: Operator, right: Node) -> Node {
+        arena.add(AExpr::BinaryExpr { left, op, right })
+    }
+
+    /// Build `col(name) > lit(v)` — a simple convertible comparison.
+    fn col_gt_lit(arena: &mut Arena<AExpr>, name: &str, v: i128) -> Node {
+        let c = col(arena, name);
+        let l = lit_int(arena, v);
+        binexpr(arena, c, Operator::Gt, l)
+    }
+
+    /// Build `col(name) < lit(v)` — a simple convertible comparison.
+    fn col_lt_lit(arena: &mut Arena<AExpr>, name: &str, v: i128) -> Node {
+        let c = col(arena, name);
+        let l = lit_int(arena, v);
+        binexpr(arena, c, Operator::Lt, l)
+    }
+
+    /// Build `col(a) * col(b) > lit(v)` — non-convertible (Multiply is not
+    /// comparison/bitwise).
+    fn mul_gt_lit(arena: &mut Arena<AExpr>, a: &str, b: &str, v: i128) -> Node {
+        let ca = col(arena, a);
+        let cb = col(arena, b);
+        let mul = binexpr(arena, ca, Operator::Multiply, cb);
+        let l = lit_int(arena, v);
+        binexpr(arena, mul, Operator::Gt, l)
+    }
+
+    #[test]
+    fn test_full_and_converts_with_partial() {
+        let mut arena = Arena::new();
+        let left = col_gt_lit(&mut arena, "a", 5);
+        let right = col_lt_lit(&mut arena, "b", 10);
+        let and = binexpr(&mut arena, left, Operator::And, right);
+
+        let args = PyarrowArgs::default().with_partial_and();
+        let result = predicate_to_pa(and, &arena, args);
+        assert!(result.is_some());
+        let s = result.unwrap();
+        assert!(s.contains('&'), "expected AND: {s}");
+        assert!(s.contains("'a'"), "expected col a: {s}");
+        assert!(s.contains("'b'"), "expected col b: {s}");
+    }
+
+    #[test]
+    fn test_mixed_and_partial_on() {
+        let mut arena = Arena::new();
+        let convertible = col_gt_lit(&mut arena, "a", 5);
+        let non_convertible = mul_gt_lit(&mut arena, "a", "b", 10);
+        let and = binexpr(&mut arena, convertible, Operator::And, non_convertible);
+
+        let args = PyarrowArgs::default().with_partial_and();
+        let result = predicate_to_pa(and, &arena, args);
+        assert!(
+            result.is_some(),
+            "partial_and should return convertible side"
+        );
+        let s = result.unwrap();
+        assert!(s.contains("'a'"), "expected col a: {s}");
+        assert!(s.contains("5"), "expected literal 5: {s}");
+    }
+
+    #[test]
+    fn test_mixed_and_partial_off() {
+        let mut arena = Arena::new();
+        let convertible = col_gt_lit(&mut arena, "a", 5);
+        let non_convertible = mul_gt_lit(&mut arena, "a", "b", 10);
+        let and = binexpr(&mut arena, convertible, Operator::And, non_convertible);
+
+        let result = predicate_to_pa(and, &arena, Default::default());
+        assert!(
+            result.is_none(),
+            "without partial_and, mixed AND should be None"
+        );
+    }
+
+    #[test]
+    fn test_all_non_convertible_and() {
+        let mut arena = Arena::new();
+        let left = mul_gt_lit(&mut arena, "a", "b", 5);
+        let right = mul_gt_lit(&mut arena, "c", "d", 10);
+        let and = binexpr(&mut arena, left, Operator::And, right);
+
+        let args = PyarrowArgs::default().with_partial_and();
+        let result = predicate_to_pa(and, &arena, args);
+        assert!(result.is_none(), "all non-convertible AND should be None");
+    }
+
+    #[test]
+    fn test_or_with_non_convertible_never_splits() {
+        let mut arena = Arena::new();
+        let convertible = col_gt_lit(&mut arena, "a", 5);
+        let non_convertible = mul_gt_lit(&mut arena, "a", "b", 10);
+        let or = binexpr(&mut arena, convertible, Operator::Or, non_convertible);
+
+        let args = PyarrowArgs::default().with_partial_and();
+        let result = predicate_to_pa(or, &arena, args);
+        assert!(
+            result.is_none(),
+            "OR with non-convertible side must be None"
+        );
+    }
+
+    #[test]
+    fn test_nested_and_one_bad_leaf() {
+        let mut arena = Arena::new();
+        // ((a > 5) & (b < 10)) & (c * d > 0)
+        let left_inner = col_gt_lit(&mut arena, "a", 5);
+        let right_inner = col_lt_lit(&mut arena, "b", 10);
+        let inner_and = binexpr(&mut arena, left_inner, Operator::And, right_inner);
+        let bad_leaf = mul_gt_lit(&mut arena, "c", "d", 0);
+        let outer_and = binexpr(&mut arena, inner_and, Operator::And, bad_leaf);
+
+        let args = PyarrowArgs::default().with_partial_and();
+        let result = predicate_to_pa(outer_and, &arena, args);
+        assert!(
+            result.is_some(),
+            "nested AND should return convertible branch"
+        );
+        let s = result.unwrap();
+        assert!(s.contains("'a'"), "expected col a: {s}");
+        assert!(s.contains("'b'"), "expected col b: {s}");
+        assert!(
+            !s.contains("'c'"),
+            "should not contain non-convertible col c: {s}"
+        );
+        assert!(
+            !s.contains("'d'"),
+            "should not contain non-convertible col d: {s}"
+        );
     }
 }

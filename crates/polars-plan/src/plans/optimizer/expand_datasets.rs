@@ -68,7 +68,7 @@ pub(super) fn expand_datasets(
                 dataset_object,
                 cached_ir,
             } => {
-                use crate::plans::pyarrow::predicate_to_pa;
+                use crate::plans::pyarrow::{PyarrowArgs, predicate_to_pa};
 
                 let cached_ir = cached_ir.clone();
                 let mut guard = cached_ir.lock().unwrap();
@@ -124,7 +124,11 @@ pub(super) fn expand_datasets(
                     .has_row_index_or_slice()
                     && let Some(predicate) = &predicate
                 {
-                    predicate_to_pa(predicate.node(), expr_arena, Default::default())
+                    predicate_to_pa(
+                        predicate.node(),
+                        expr_arena,
+                        PyarrowArgs::default().with_partial_and(),
+                    )
                 } else {
                     None
                 };
