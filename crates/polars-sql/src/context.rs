@@ -32,14 +32,6 @@ use crate::sql_visitors::{
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
 
-fn clear_lf(lf: LazyFrame) -> LazyFrame {
-    let cb = PlanCallback::new(move |(_, schemas): (Vec<DslPlan>, Vec<SchemaRef>)| {
-        let schema = &schemas[0];
-        Ok(DataFrame::empty_with_schema(schema).lazy().logical_plan)
-    });
-    lf.pipe_with_schema(cb)
-}
-
 #[derive(Clone)]
 pub struct TableInfo {
     pub(crate) frame: LazyFrame,
@@ -810,7 +802,7 @@ impl SQLContext {
             let (_, lf) = self.get_table(&tbl_expr.relation)?;
             if selection.is_none() {
                 // no WHERE clause; equivalent to TRUNCATE (drop all rows)
-                Ok(clear_lf(lf))
+                Ok(lf.clear())
             } else {
                 // apply constraint as inverted filter (drops rows matching the selection)
                 Ok(self.process_where(lf.clone(), selection, true, None)?)
@@ -835,7 +827,7 @@ impl SQLContext {
                     }
                     let tbl = table_names[0].name.to_string();
                     if let Some(lf) = self.table_map.write().unwrap().get_mut(&tbl) {
-                        *lf = clear_lf(lf.clone());
+                        *lf = lf.clone().clear();
                         Ok(lf.clone())
                     } else {
                         polars_bail!(SQLInterface: "table '{}' does not exist", tbl);
@@ -1598,7 +1590,7 @@ impl SQLContext {
             if (all_true && !invert_filter) || (all_false && invert_filter) {
                 return Ok(lf);
             } else if (all_false && !invert_filter) || (all_true && invert_filter) {
-                return Ok(clear_lf(lf));
+                return Ok(lf.clear());
             }
 
             // ...otherwise parse and apply the filter as normal
@@ -1764,7 +1756,7 @@ impl SQLContext {
                         .value
                         .as_str();
                     if let Some(table) = self.table_map.read().unwrap().get(like_table).cloned() {
-                        clear_lf(table)
+                        table.clear()
                     } else {
                         polars_bail!(SQLInterface: "table given in LIKE does not exist: {}", like_table)
                     }
