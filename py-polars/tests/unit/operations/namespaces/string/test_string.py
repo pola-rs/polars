@@ -1244,11 +1244,17 @@ def test_replace_expressions() -> None:
     assert out.to_dict(as_series=False) == {"foo": ["A", "xyz 678 910t"]}
     out = df.select([pl.col("foo").str.replace(pl.col("foo").last(), "value")])
     assert out.to_dict(as_series=False) == {"foo": ["123 bla 45 asd", "value"]}
+    out = df.select([df["foo"].str.replace("xyz 678 910t", "value")])
+    assert out.to_dict(as_series=False) == {"foo": ["123 bla 45 asd", "value"]}
 
     df = pl.DataFrame(
         {"foo": ["1 bla 45 asd", "xyz 6t"], "pat": [r"\d", r"\W"], "value": ["A", "B"]}
     )
     out = df.select([pl.col("foo").str.replace_all(pl.col("pat").first(), "value")])
+    assert out.to_dict(as_series=False) == {
+        "foo": ["value bla valuevalue asd", "xyz valuet"]
+    }
+    out = df.select(df["foo"].str.replace_all(r"\d", "value"))
     assert out.to_dict(as_series=False) == {
         "foo": ["value bla valuevalue asd", "xyz valuet"]
     }
