@@ -616,8 +616,8 @@ class Catalog:
         dict[str, Any] | None,
     ]:
         from polars.io.cloud.credential_provider._builder import (
-            CredentialProviderBuilder,
             CredentialProviderAzure,
+            CredentialProviderBuilder,
         )
 
         if credential_provider != "auto":
