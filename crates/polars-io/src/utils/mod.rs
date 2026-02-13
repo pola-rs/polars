@@ -4,6 +4,7 @@ mod other;
 pub use other::*;
 #[cfg(any(feature = "async", feature = "cloud"))]
 pub mod byte_source;
+pub mod chunk_buf_reader;
 pub mod file;
 pub mod mkdir;
 pub mod slice;
