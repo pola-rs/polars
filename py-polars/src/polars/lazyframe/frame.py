@@ -104,6 +104,7 @@ from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
+    import polars._plr as plr
     from polars._plr import PyLazyFrame, get_engine_affinity
 
 if TYPE_CHECKING:
@@ -120,9 +121,6 @@ if TYPE_CHECKING:
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars._plr import PyExpr, PySelector
-
-    with contextlib.suppress(ImportError):  # Module not available when building docs
-        import polars._plr as plr
 
     from polars import DataFrame, DataType, Expr
     from polars._dependencies import numpy as np
@@ -1230,14 +1228,32 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         summary = dict(zip(schema, column_metrics, strict=True))
 
         # cast by column type (numeric/bool -> float), (other -> string)
+        # note: for non-numeric columns, count/null_count are formatted with
+        # the thousands_separator config setting to match numeric columns.
+        thousands_sep = plr.get_thousands_separator()
+
+        def _fmt_count(v: int) -> str:
+            """Format count value with thousands separator."""
+            if not thousands_sep:
+                return str(v)
+            return f"{v:,}".replace(",", thousands_sep)
+
         for c in schema:
             summary[c] = [  # type: ignore[assignment]
                 (
                     None
                     if (v is None or isinstance(v, dict))
-                    else (float(v) if (c in has_numeric_result) else str(v))
+                    else (
+                        float(v)
+                        if (c in has_numeric_result)
+                        else (
+                            _fmt_count(int(v))
+                            if metric in ("count", "null_count")
+                            else str(v)
+                        )
+                    )
                 )
-                for v in summary[c]
+                for metric, v in zip(metrics, summary[c], strict=True)
             ]
 
         # return results as a DataFrame

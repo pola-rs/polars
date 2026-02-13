@@ -234,3 +234,25 @@ def test_df_describe_object() -> None:
         {"statistic": ["count", "null_count"], "object": ["3", "0"]}
     )
     assert_frame_equal(result.head(2), expected)
+
+
+# https://github.com/pola-rs/polars/issues/25946
+def test_df_describe_thousands_separator_string_columns() -> None:
+    df = pl.DataFrame(
+        {
+            "numeric": list(range(2000)),
+            "string": ["a"] * 2000,
+        }
+    )
+
+    with pl.Config(thousands_separator=","):
+        result = df.describe()
+
+    # count/null_count for string columns should use thousands separator
+    count_row = result.filter(pl.col("statistic") == "count")
+    assert count_row["numeric"][0] == 2000.0
+    assert count_row["string"][0] == "2,000"
+
+    null_count_row = result.filter(pl.col("statistic") == "null_count")
+    assert null_count_row["numeric"][0] == 0.0
+    assert null_count_row["string"][0] == "0"
