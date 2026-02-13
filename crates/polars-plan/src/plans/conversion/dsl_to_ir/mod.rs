@@ -349,7 +349,23 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::Slice { input, offset, len } => {
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(slice)))?;
-            IR::Slice { input, offset, len }
+
+            if len == 0 {
+                let input_schema = ctxt
+                    .lp_arena
+                    .get(input)
+                    .schema(ctxt.lp_arena)
+                    .as_ref()
+                    .clone();
+
+                IR::DataFrameScan {
+                    df: Arc::new(DataFrame::empty_with_schema(&input_schema)),
+                    schema: input_schema.clone(),
+                    output_schema: None,
+                }
+            } else {
+                IR::Slice { input, offset, len }
+            }
         },
         DslPlan::DataFrameScan { df, schema } => IR::DataFrameScan {
             df,
