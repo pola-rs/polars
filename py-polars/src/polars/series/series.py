@@ -8144,17 +8144,20 @@ class Series:
         ]
         """
 
-    def reinterpret(self, *, signed: bool = True) -> Series:
+    def reinterpret(
+        self,
+        dtype: type[int | float] | PolarsDataType,
+    ) -> Series:
         """
-        Reinterpret the underlying bits as a signed/unsigned integer.
+        Reinterpret the underlying bits as a signed/unsigned integer or float.
 
-        This operation is only allowed for 64bit integers. For lower bits integers,
-        you can safely use that cast operation.
+        This operation is only allowed for numeric typesof the same size.
+        For lower bits numbers, you can safely use the cast operation.
 
         Parameters
         ----------
-        signed
-            If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
+        dtype
+            DataType to reinterpret to.
 
         Examples
         --------
@@ -8167,7 +8170,7 @@ class Series:
                 -2
                 3
         ]
-        >>> s.reinterpret(signed=False)
+        >>> s.reinterpret(pl.UInt64)
         shape: (3,)
         Series: 'a' [u64]
         [
