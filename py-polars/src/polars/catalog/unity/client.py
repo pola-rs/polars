@@ -641,11 +641,15 @@ class Catalog:
             if storage_update_options:
                 storage_options = {**(storage_options or {}), **storage_update_options}
 
-            if table_info.storage_location is not None and (
-                azure_storage_account_name
-                := CredentialProviderAzure._extract_adls_uri_storage_account(
-                    table_info.storage_location
+            if (
+                table_info.storage_location is not None
+                and (
+                    azure_storage_account_name
+                    := CredentialProviderAzure._extract_adls_uri_storage_account(
+                        table_info.storage_location
+                    )
                 )
+                is not None
             ):
                 storage_options = storage_options or {}
                 storage_options["azure_storage_account_name"] = (
