@@ -15,7 +15,6 @@ from polars.catalog.unity.models import (
     NamespaceInfo,
     TableInfo,
 )
-from polars.io.cloud.credential_provider._providers import CredentialProviderAzure
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -618,6 +617,7 @@ class Catalog:
     ]:
         from polars.io.cloud.credential_provider._builder import (
             CredentialProviderBuilder,
+            CredentialProviderAzure,
         )
 
         if credential_provider != "auto":
