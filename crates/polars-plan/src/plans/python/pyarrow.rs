@@ -45,6 +45,51 @@ fn sanitize(name: &str) -> Option<&str> {
     }
 }
 
+/// Format a `Series` as a Python list literal, e.g. `['a','b']` or `[1,2,3]`.
+/// Returns `None` if the series is empty, too large (>100), or contains
+/// values that cannot be safely represented.
+fn series_to_pa_list(s: &polars_core::prelude::Series) -> Option<String> {
+    if s.is_empty() || s.len() > 100 {
+        return None;
+    }
+    let mut list_repr = String::with_capacity(s.len() * 5);
+    list_repr.push('[');
+    for av in s.iter() {
+        match av {
+            AnyValue::Boolean(v) => {
+                let s = if v { "True" } else { "False" };
+                write!(list_repr, "{s},").unwrap();
+            },
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::Datetime(v, tu, tz) => {
+                let dtm = to_py_datetime(v, &tu, tz);
+                write!(list_repr, "{dtm},").unwrap();
+            },
+            #[cfg(feature = "dtype-date")]
+            AnyValue::Date(v) => {
+                write!(list_repr, "to_py_date({v}),").unwrap();
+            },
+            AnyValue::String(s) => {
+                let _ = sanitize(s)?;
+                write!(list_repr, "{av},").unwrap();
+            },
+            // Hard to sanitize
+            AnyValue::Binary(_) | AnyValue::List(_) => return None,
+            #[cfg(feature = "dtype-array")]
+            AnyValue::Array(_, _) => return None,
+            #[cfg(feature = "dtype-struct")]
+            AnyValue::Struct(_, _, _) => return None,
+            _ => {
+                write!(list_repr, "{av},").unwrap();
+            },
+        }
+    }
+    // pop last comma
+    list_repr.pop();
+    list_repr.push(']');
+    Some(list_repr)
+}
+
 // convert to a pyarrow expression that can be evaluated with pythons eval
 pub fn predicate_to_pa(
     predicate: Node,
@@ -79,47 +124,16 @@ pub fn predicate_to_pa(
             Some(format!("pa.compute.field('{name}')"))
         },
         AExpr::Literal(LiteralValue::Series(s)) => {
-            if !args.allow_literal_series || s.is_empty() || s.len() > 100 {
+            if !args.allow_literal_series {
                 None
             } else {
-                let mut list_repr = String::with_capacity(s.len() * 5);
-                list_repr.push('[');
-                for av in s.iter() {
-                    match av {
-                        AnyValue::Boolean(v) => {
-                            let s = if v { "True" } else { "False" };
-                            write!(list_repr, "{s},").unwrap();
-                        },
-                        #[cfg(feature = "dtype-datetime")]
-                        AnyValue::Datetime(v, tu, tz) => {
-                            let dtm = to_py_datetime(v, &tu, tz);
-                            write!(list_repr, "{dtm},").unwrap();
-                        },
-                        #[cfg(feature = "dtype-date")]
-                        AnyValue::Date(v) => {
-                            write!(list_repr, "to_py_date({v}),").unwrap();
-                        },
-                        AnyValue::String(s) => {
-                            let _ = sanitize(s)?;
-                            write!(list_repr, "{av},").unwrap();
-                        },
-                        // Hard to sanitize
-                        AnyValue::Binary(_) | AnyValue::List(_) => return None,
-                        #[cfg(feature = "dtype-array")]
-                        AnyValue::Array(_, _) => return None,
-                        #[cfg(feature = "dtype-struct")]
-                        AnyValue::Struct(_, _, _) => return None,
-                        _ => {
-                            write!(list_repr, "{av},").unwrap();
-                        },
-                    }
-                }
-                // pop last comma
-                list_repr.pop();
-                list_repr.push(']');
-                Some(list_repr)
+                series_to_pa_list(s)
             }
         },
+        // Guard against DynLiteralValue::List reaching to_any_value() which
+        // contains a todo!() panic. In practice the optimizer materializes
+        // Dyn(List) to Scalar before predicate_to_pa is called.
+        AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::List(_))) => None,
         AExpr::Literal(lv) => {
             let av = lv.to_any_value()?;
             let dtype = av.dtype();
@@ -144,8 +158,18 @@ pub fn predicate_to_pa(
                 },
                 #[cfg(feature = "dtype-datetime")]
                 AnyValue::Datetime(v, tu, tz) => Some(to_py_datetime(v, &tu, tz)),
+                AnyValue::List(s) => {
+                    // List values appear here when a Scalar literal wraps a
+                    // list-typed AnyValue (e.g. `is_in` values after optimizer
+                    // materializes DynLiteralValue::List → Scalar).
+                    if args.allow_literal_series {
+                        series_to_pa_list(&s)
+                    } else {
+                        None
+                    }
+                },
                 // Hard to sanitize
-                AnyValue::Binary(_) | AnyValue::List(_) => None,
+                AnyValue::Binary(_) => None,
                 #[cfg(feature = "dtype-array")]
                 AnyValue::Array(_, _) => None,
                 #[cfg(feature = "dtype-struct")]
@@ -243,9 +267,11 @@ pub fn predicate_to_pa(
 
 #[cfg(test)]
 mod tests {
+    use polars_core::prelude::{NamedFrom, Scalar, Series};
     use polars_utils::pl_str::PlSmallStr;
 
     use super::*;
+    use crate::plans::expr_ir::{ExprIR, OutputName};
 
     /// Helper: add a column reference node to the arena.
     fn col(arena: &mut Arena<AExpr>, name: &str) -> Node {
@@ -284,6 +310,35 @@ mod tests {
         let mul = binexpr(arena, ca, Operator::Multiply, cb);
         let l = lit_int(arena, v);
         binexpr(arena, mul, Operator::Gt, l)
+    }
+
+    /// Build an `is_in` AExpr::Function node: `col(name).is_in(values_literal)`.
+    #[cfg(feature = "is_in")]
+    fn is_in_node(arena: &mut Arena<AExpr>, col_name: &str, values_node: Node) -> Node {
+        let col_node = col(arena, col_name);
+        let col_ir = ExprIR::new(col_node, OutputName::ColumnLhs(PlSmallStr::from(col_name)));
+        let val_ir = ExprIR::from_node(values_node, arena);
+        arena.add(AExpr::Function {
+            input: vec![col_ir, val_ir],
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal: false }),
+            options: FunctionOptions::default(),
+        })
+    }
+
+    /// Build a Scalar literal node containing a list of strings.
+    #[cfg(feature = "is_in")]
+    fn lit_str_list(arena: &mut Arena<AExpr>, values: &[&str]) -> Node {
+        let series = Series::new(PlSmallStr::from("values"), values);
+        let scalar = Scalar::new_list(series);
+        arena.add(AExpr::Literal(LiteralValue::Scalar(scalar)))
+    }
+
+    /// Build a Scalar literal node containing a list of integers.
+    #[cfg(feature = "is_in")]
+    fn lit_int_list(arena: &mut Arena<AExpr>, values: &[i64]) -> Node {
+        let series = Series::new(PlSmallStr::from("values"), values);
+        let scalar = Scalar::new_list(series);
+        arena.add(AExpr::Literal(LiteralValue::Scalar(scalar)))
     }
 
     #[test]
@@ -388,5 +443,37 @@ mod tests {
             !s.contains("'d'"),
             "should not contain non-convertible col d: {s}"
         );
+    }
+
+    #[cfg(feature = "is_in")]
+    #[test]
+    fn test_is_in_string_list_converts() {
+        let mut arena = Arena::new();
+        let vals = lit_str_list(&mut arena, &["Engineering", "HR"]);
+        let is_in = is_in_node(&mut arena, "department", vals);
+
+        let result = predicate_to_pa(is_in, &arena, Default::default());
+        assert!(result.is_some(), "is_in with string list should convert");
+        let s = result.unwrap();
+        assert!(s.contains("isin"), "expected isin: {s}");
+        assert!(s.contains("'department'"), "expected column name: {s}");
+        assert!(
+            s.contains("Engineering") && s.contains("HR"),
+            "expected list values: {s}"
+        );
+    }
+
+    #[cfg(feature = "is_in")]
+    #[test]
+    fn test_is_in_int_list_converts() {
+        let mut arena = Arena::new();
+        let vals = lit_int_list(&mut arena, &[1, 2, 3]);
+        let is_in = is_in_node(&mut arena, "id", vals);
+
+        let result = predicate_to_pa(is_in, &arena, Default::default());
+        assert!(result.is_some(), "is_in with int list should convert");
+        let s = result.unwrap();
+        assert!(s.contains("isin"), "expected isin: {s}");
+        assert!(s.contains("[1,2,3]"), "expected int list: {s}");
     }
 }
