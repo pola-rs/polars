@@ -1338,3 +1338,23 @@ def test_list_get_decimal_25830() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_list_sort_struct_with_categorical_26383() -> None:
+    # List sort on struct containing categorical should not panic.
+    df = pl.DataFrame({"x": ["a", "b"]}).cast(pl.Categorical)
+    result = df.select(pl.col("x").value_counts().sort().over(1))
+    expected = pl.DataFrame(
+        {"x": [{"x": "a", "count": 1}, {"x": "b", "count": 1}]}
+    ).cast({"x": pl.Struct({"x": pl.Categorical, "count": pl.UInt32})})
+    assert_frame_equal(result, expected)
+
+
+def test_list_sort_struct_with_enum_26383() -> None:
+    # List sort on struct containing enum should not panic.
+    df = pl.DataFrame({"x": ["a", "b"]}).cast(pl.Enum(["a", "b", "c"]))
+    result = df.select(pl.col("x").value_counts().sort().over(1))
+    expected = pl.DataFrame(
+        {"x": [{"x": "a", "count": 1}, {"x": "b", "count": 1}]}
+    ).cast({"x": pl.Struct({"x": pl.Enum(["a", "b", "c"]), "count": pl.UInt32})})
+    assert_frame_equal(result, expected)
