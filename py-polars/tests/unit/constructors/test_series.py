@@ -149,6 +149,29 @@ def test_series_init_pandas_timestamp_18127() -> None:
     assert result.dtype == pl.Datetime("us", "UTC")
 
 
+def test_series_init_pandas_timestamp_14432() -> None:
+    # Test pd.Timestamp without timezone (issue #14432)
+    result = pl.Series([pd.Timestamp("2000-01-01T12:30:00")])
+    assert result.dtype == pl.Datetime("us")
+    assert result[0] == datetime(2000, 1, 1, 12, 30, 0)
+
+    # Test multiple pd.Timestamp values
+    result = pl.Series(
+        [
+            pd.Timestamp("2020-01-01"),
+            pd.Timestamp("2020-06-15"),
+            pd.Timestamp("2020-12-31"),
+        ]
+    )
+    assert result.dtype == pl.Datetime("us")
+    assert result.len() == 3
+
+    # Test pd.Timestamp with None values
+    result = pl.Series([pd.Timestamp("2020-01-01"), None, pd.Timestamp("2020-01-03")])
+    assert result.dtype == pl.Datetime("us")
+    assert result[1] is None
+
+
 def test_series_init_np_2d_zero_zero_shape() -> None:
     arr = np.array([]).reshape(0, 0)
     assert_series_equal(
