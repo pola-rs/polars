@@ -13,6 +13,7 @@ from polars.testing.asserts.series import assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_index_not_silently_excluded() -> None:
@@ -335,11 +336,11 @@ def test_untrusted_categorical_input() -> None:
 
 
 @pytest.fixture
-def _set_pyarrow_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
+def _set_pyarrow_unavailable(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setattr(
         "polars._utils.construction.dataframe._PYARROW_AVAILABLE", False
     )
-    monkeypatch.setattr("polars._utils.construction.series._PYARROW_AVAILABLE", False)
+    plmonkeypatch.setattr("polars._utils.construction.series._PYARROW_AVAILABLE", False)
 
 
 @pytest.mark.usefixtures("_set_pyarrow_unavailable")
@@ -383,8 +384,8 @@ def test_from_pandas_pyarrow_not_available_fails() -> None:
         pl.from_pandas(pd.DataFrame({"a": [None, "foo"]}))
 
 
-def test_from_pandas_nan_to_null_16453(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
+def test_from_pandas_nan_to_null_16453(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setattr(
         "polars._utils.construction.dataframe._MIN_NUMPY_SIZE_FOR_MULTITHREADING", 2
     )
     df = pd.DataFrame(

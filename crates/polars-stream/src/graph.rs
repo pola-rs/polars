@@ -84,7 +84,7 @@ impl Graph {
         let mut scheduled_for_update: SecondaryMap<GraphNodeKey, ()> =
             self.nodes.keys().map(|k| (k, ())).collect();
 
-        let verbose = std::env::var("POLARS_VERBOSE_STATE_UPDATE").as_deref() == Ok("1");
+        let verbose = polars_config::config().verbose();
 
         let mut recv_state = Vec::new();
         let mut send_state = Vec::new();

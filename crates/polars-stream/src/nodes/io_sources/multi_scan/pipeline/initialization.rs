@@ -194,6 +194,7 @@ async fn finish_initialize_multi_scan_pipeline(
                     .spawn(is_compressed_source(
                         config.sources.get(0).unwrap().into_owned()?,
                         config.cloud_options.clone(),
+                        config.io_metrics(),
                     ))
                     .await
                     .unwrap()? =>

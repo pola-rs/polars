@@ -11,7 +11,6 @@ use polars_error::PolarsResult;
 use polars_io::ipc::{IpcWriter, IpcWriterOptions};
 use polars_io::utils::file::Writeable;
 use polars_io::{SerWriter, schema_to_arrow_checked};
-use tokio::io::AsyncWriteExt;
 
 use crate::nodes::io_sinks::writers::interface::FileOpenTaskHandle;
 use crate::nodes::io_sinks::writers::ipc::IpcBatch;
@@ -40,7 +39,7 @@ impl IOWriter {
             Writeable::Cloud(cloudwriter) => {
                 // The zero-copy implementation takes ownership of the encoded data and, after
                 // framing and aligning, passes it to the object_store via the BufWriter::put() method.
-                let mut bufwriter = cloudwriter.try_into_inner()?;
+                let mut cloud_writer = cloudwriter.into_cloud_writer().await?;
                 let mut record_blocks = vec![];
                 let mut dictionary_blocks = vec![];
                 let mut block_offsets = 0;
@@ -49,7 +48,7 @@ impl IOWriter {
                 // Start with header.
                 let offset = push_magic(&mut sink_queue, true);
                 for bytes in sink_queue.drain(..) {
-                    bufwriter.put(bytes).await?;
+                    cloud_writer.write_all_owned(bytes).await?;
                 }
                 block_offsets += offset;
 
@@ -61,7 +60,7 @@ impl IOWriter {
                 };
                 let (meta, data) = push_message(&mut sink_queue, encoded_data);
                 for bytes in sink_queue.drain(..) {
-                    bufwriter.put(bytes).await?;
+                    cloud_writer.write_all_owned(bytes).await?;
                 }
                 block_offsets += meta + data;
 
@@ -77,7 +76,7 @@ impl IOWriter {
 
                             let (meta, data) = push_message(&mut sink_queue, encoded_data);
                             for bytes in sink_queue.drain(..) {
-                                bufwriter.put(bytes).await?;
+                                cloud_writer.write_all_owned(bytes).await?;
                             }
 
                             let block = arrow_ipc_block(block_offsets, meta, data);
@@ -94,7 +93,7 @@ impl IOWriter {
 
                             let (meta, data) = push_message(&mut sink_queue, encoded_dictionary);
                             for bytes in sink_queue.drain(..) {
-                                bufwriter.put(bytes).await?;
+                                cloud_writer.write_all_owned(bytes).await?;
                             }
 
                             let block = arrow_ipc_block(block_offsets, meta, data);
@@ -115,11 +114,11 @@ impl IOWriter {
                 );
                 push_magic(&mut sink_queue, false);
                 for bytes in sink_queue.drain(..) {
-                    bufwriter.put(bytes).await?;
+                    cloud_writer.write_all_owned(bytes).await?;
                 }
 
                 // Finish.
-                bufwriter.shutdown().await?;
+                cloud_writer.finish().await?;
             },
             mut file => {
                 let mut buffered_file = file.as_buffered();

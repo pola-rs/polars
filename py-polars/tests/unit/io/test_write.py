@@ -12,6 +12,8 @@ from tests.unit.io.conftest import format_file_uri
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from tests.conftest import PlMonkeyPatch
+
 READ_WRITE_FUNC_PARAM = [
     (pl.read_parquet, pl.DataFrame.write_parquet),
     (lambda *a: pl.scan_csv(*a).collect(), pl.DataFrame.write_csv),
@@ -65,9 +67,9 @@ def test_write_async_force_async(
     write_func: Callable[[pl.DataFrame, Path], None],
     opt_absolute_fn: Callable[[Path], Path],
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     tmp_path.mkdir(exist_ok=True)
     path = opt_absolute_fn(tmp_path / "1")
 

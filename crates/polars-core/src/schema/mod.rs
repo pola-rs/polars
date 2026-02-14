@@ -107,7 +107,7 @@ impl SchemaExt for Schema {
 
 pub trait SchemaNamesAndDtypes {
     const IS_ARROW: bool;
-    type DataType: Debug + Clone + Default + PartialEq;
+    type DataType: Debug + Clone + PartialEq;
 
     fn iter_names_and_dtypes(
         &self,

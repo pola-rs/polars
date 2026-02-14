@@ -102,37 +102,37 @@ requirements-all:  ## Install/refresh all Python requirements (including those n
 .PHONY: build
 build: .venv  ## Compile and install Python Polars for development
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) $(ARGS) --uv \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-mindebug
 build-mindebug: .venv  ## Same as build, but don't include full debug information
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --profile mindebug-dev $(ARGS) --uv \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --profile mindebug-dev $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-release
 build-release: .venv  ## Compile and install Python Polars binary with optimizations, with minimal debug symbols
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --release $(ARGS) --uv \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --release $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-nodebug-release
 build-nodebug-release: .venv  ## Same as build-release, but without any debug symbols at all (a bit faster to build)
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --profile nodebug-release $(ARGS) --uv \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --profile nodebug-release $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-debug-release
 build-debug-release: .venv  ## Same as build-release, but with full debug symbols turned on (a bit slower to build)
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --profile debug-release $(ARGS) --uv \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --profile debug-release $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-dist-release
 build-dist-release: .venv  ## Compile and install Python Polars binary with super slow extra optimization turned on, for distribution
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --profile dist-release $(ARGS) --uv \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --profile dist-release $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: check

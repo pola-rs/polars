@@ -345,8 +345,8 @@ pub async fn csv_file_info(
     csv_options: &mut CsvReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
+    use polars_core::POOL;
     use polars_core::error::feature_gated;
-    use polars_core::{POOL, config};
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
     // Holding _first_scan_source should guarantee sources is not empty.
@@ -357,7 +357,8 @@ pub async fn csv_file_info(
     // * See if we can do this without downloading the entire file
 
     // prints the error message if paths is empty.
-    let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
+    let run_async =
+        sources.is_cloud_url() || (sources.is_paths() && polars_config::config().force_async());
 
     let cache_entries = {
         if run_async {
@@ -458,10 +459,10 @@ pub async fn ndjson_file_info(
     ndjson_options: &NDJsonReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
-    use polars_core::config;
     use polars_core::error::feature_gated;
 
-    let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
+    let run_async =
+        sources.is_cloud_url() || (sources.is_paths() && polars_config::config().force_async());
 
     let cache_entries = {
         if run_async {

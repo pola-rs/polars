@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_frame_not_equal
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_tail_union() -> None:
@@ -337,7 +342,7 @@ def test_slice_empty_morsel_input() -> None:
     ],
 )
 def test_slice_pushdown_pushes_past_fallible(
-    base_query: pl.LazyFrame, monkeypatch: pytest.MonkeyPatch
+    base_query: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     # Ensure baseline fails
     with pytest.raises(ComputeError, match="index is out of bounds"):

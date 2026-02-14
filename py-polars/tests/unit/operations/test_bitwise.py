@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import typing
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.mark.parametrize("op", ["and_", "or_"])
@@ -327,9 +331,9 @@ def test_bitwise_boolean(expr: pl.Expr, result: list[bool]) -> None:
 # Although there is no way to deterministically trigger the `evict` path
 # in the code, the below test will do so with high likelihood
 # POLARS_MAX_THREADS is only honored when tested in isolation, see issue #22070
-def test_bitwise_boolean_evict_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
-    monkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+def test_bitwise_boolean_evict_path(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "1")
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
     n_groups = 100
     group_size_pairs = 10
     group_size = group_size_pairs * 2

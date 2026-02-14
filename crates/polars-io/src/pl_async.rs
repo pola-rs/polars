@@ -261,7 +261,7 @@ impl RuntimeManager {
     fn new() -> Self {
         let n_threads = std::env::var("POLARS_ASYNC_THREAD_COUNT")
             .map(|x| x.parse::<usize>().expect("integer"))
-            .unwrap_or(POOL.current_num_threads().clamp(1, 4));
+            .unwrap_or(usize::min(POOL.current_num_threads(), 32));
 
         let max_blocking = std::env::var("POLARS_MAX_BLOCKING_THREAD_COUNT")
             .map(|x| x.parse::<usize>().expect("integer"))
@@ -269,6 +269,7 @@ impl RuntimeManager {
 
         if polars_core::config::verbose() {
             eprintln!("async thread count: {n_threads}");
+            eprintln!("blocking thread count: {max_blocking}");
         }
 
         let rt = Builder::new_multi_thread()
