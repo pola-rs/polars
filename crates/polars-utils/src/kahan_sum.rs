@@ -21,6 +21,14 @@ impl<T: IsFloat + Num + Copy> KahanSum<T> {
     pub fn sum(&self) -> T {
         self.sum
     }
+
+    pub fn err(&self) -> T {
+        self.err
+    }
+
+    pub fn set_err(&mut self, err: T) {
+        self.err = err;
+    }
 }
 
 impl<T: Num> Default for KahanSum<T> {

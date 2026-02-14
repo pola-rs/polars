@@ -471,6 +471,13 @@ def test_cumulative_over_groups() -> None:
     }
 
 
+def test_cum_mean_kahan() -> None:
+    # naive f64 summation would fail this test due to catastrophic cancellation :p
+    data = [1e16] + [1.0] * 1000 + [-1e16]
+    res = pl.Series("n", data, dtype=pl.Float64).cum_mean()
+    assert res[-1] == pytest.approx(1000.0 / 1002, rel=1e-12)
+
+
 @pytest.mark.parametrize("no_optimization", [False, True])
 def test_cumulative_streaming_vs_memory(no_optimization: bool) -> None:
     opts = pl.QueryOptFlags()
