@@ -30,6 +30,8 @@ use polars_compute::decimal::{
     i128_to_dec128,
 };
 
+use crate::utils::Container;
+
 #[derive(Debug, Clone, Default)]
 pub enum AnyValue<'a> {
     #[default]
@@ -810,7 +812,6 @@ impl<'a> From<&AnyValue<'a>> for DataType {
 impl AnyValue<'_> {
     pub fn hash_impl<H: Hasher>(&self, state: &mut H, cheap: bool) {
         use AnyValue::*;
-        std::mem::discriminant(self).hash(state);
         match self {
             Int8(v) => v.hash(state),
             Int16(v) => v.hash(state),
@@ -823,12 +824,12 @@ impl AnyValue<'_> {
             UInt64(v) => v.hash(state),
             UInt128(v) => feature_gated!("dtype-u128", v.hash(state)),
             String(v) => v.hash(state),
-            StringOwned(v) => v.hash(state),
+            StringOwned(v) => v.as_str().hash(state),
             Float16(v) => v.to_ne_bytes().hash(state),
             Float32(v) => v.to_ne_bytes().hash(state),
             Float64(v) => v.to_ne_bytes().hash(state),
             Binary(v) => v.hash(state),
-            BinaryOwned(v) => v.hash(state),
+            BinaryOwned(v) => v.as_slice().hash(state),
             Boolean(v) => v.hash(state),
             List(v) => {
                 if !cheap || v.len() < CHEAP_SERIES_HASH_LIMIT {
@@ -854,7 +855,8 @@ impl AnyValue<'_> {
             DatetimeOwned(v, tu, tz) => {
                 v.hash(state);
                 tu.hash(state);
-                tz.hash(state);
+                // Hash the Arc's content the same way as the reference
+                tz.as_ref().map(|arc_tz| arc_tz.as_ref()).hash(state);
             },
             #[cfg(feature = "dtype-duration")]
             Duration(v, tz) => {
@@ -880,7 +882,11 @@ impl AnyValue<'_> {
                 }
             },
             #[cfg(feature = "dtype-struct")]
-            StructOwned(v) => v.0.hash(state),
+            StructOwned(v) => {
+                if !cheap {
+                    v.0.hash(state)
+                }
+            },
             #[cfg(feature = "dtype-decimal")]
             Decimal(v, s, p) => {
                 v.hash(state);
@@ -1792,5 +1798,51 @@ mod test {
 
             assert_eq!(dt_p, dt);
         }
+    }
+}
+// tests for hash_impl #25542
+#[cfg(test)]
+mod tests {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    use super::*;
+
+    fn hash<T: Hash>(t: &T) -> u64 {
+        let mut s = DefaultHasher::new();
+        t.hash(&mut s);
+        s.finish()
+    }
+
+    #[test]
+    fn test_string_variants_hash_equal() {
+        let a = AnyValue::String("hello");
+        let b = AnyValue::StringOwned("hello".into());
+
+        assert_eq!(a, b, "String and StringOwned should be equal");
+        assert_eq!(
+            hash(&a),
+            hash(&b),
+            "String and StringOwned must hash the same"
+        );
+    }
+
+    #[test]
+    fn test_binary_variants_hash_equal() {
+        let a = AnyValue::Binary(&[0, 1, 2]);
+        let b = AnyValue::BinaryOwned(vec![0, 1, 2]);
+
+        assert_eq!(a, b);
+        assert_eq!(hash(&a), hash(&b));
+    }
+
+    #[test]
+    fn test_hashset_dedup_works() {
+        use crate::prelude::PlHashSet;
+
+        let mut set = PlHashSet::new();
+        assert!(set.insert(AnyValue::String("hello test")));
+        assert!(!set.insert(AnyValue::StringOwned("hello test".into())));
+        assert_eq!(set.len(), 1);
     }
 }
