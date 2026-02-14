@@ -1419,7 +1419,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
         parse_multiple_options("integer_cast", integer_cast_object, |v| {
             match v {
                 "upcast" => integer_upcast = true,
-                "to-float" => integer_to_float_cast = true,
+                "allow-float" => integer_to_float_cast = true,
                 "forbid" => {},
                 v => {
                     return Err(PyValueError::new_err(format!(

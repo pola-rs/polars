@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 
 FloatCastOption: TypeAlias = Literal["upcast", "downcast"]
-IntegerCastOption: TypeAlias = Literal["upcast", "to-float"]
+IntegerCastOption: TypeAlias = Literal["upcast", "allow-float"]
 DatetimeCastOption: TypeAlias = Literal["nanosecond-downcast", "convert-timezone"]
 
 _DEFAULT_CAST_OPTIONS_ICEBERG: ScanCastOptions | None = None

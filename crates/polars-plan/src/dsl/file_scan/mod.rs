@@ -695,7 +695,9 @@ impl CastColumnsPolicy {
 
         if target_dtype.is_float() && incoming_dtype.is_integer() {
             return if !self.integer_to_float_cast {
-                mismatch_err("hint: pass cast_options=pl.ScanCastOptions(integer_cast='to-float')")
+                mismatch_err(
+                    "hint: pass cast_options=pl.ScanCastOptions(integer_cast='allow-float')",
+                )
             } else {
                 Ok(true)
             };

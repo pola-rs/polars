@@ -537,7 +537,7 @@ def test_scan_cast_options_integer_to_float(float_dtype: pl.DataType) -> None:
         pl.scan_parquet(
             f,
             schema={"a": float_dtype},
-            cast_options=pl.ScanCastOptions(integer_cast="to-float"),
+            cast_options=pl.ScanCastOptions(integer_cast="allow-float"),
         ).collect(),
         pl.DataFrame({"a": [1.0]}, schema={"a": float_dtype}),
     )

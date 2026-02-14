@@ -309,7 +309,9 @@ impl ColumnSelectorBuilder {
             return if self.cast_columns_policy.integer_to_float_cast {
                 attach_cast(CastOptions::Overflowing)
             } else {
-                mismatch_err("hint: pass cast_options=pl.ScanCastOptions(integer_cast='to-float')")
+                mismatch_err(
+                    "hint: pass cast_options=pl.ScanCastOptions(integer_cast='allow-float')",
+                )
             };
         }
 
