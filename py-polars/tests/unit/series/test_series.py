@@ -1074,6 +1074,12 @@ def test_skew() -> None:
     )
 
 
+def test_skew_stability_large_values() -> None:
+    s = pl.Series([0.0, 1.1288e103])
+    assert s.skew() == 0.0
+    assert pl.concat([s.head(1), s.tail(1)]).skew() == 0.0
+
+
 def test_kurtosis() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
     expected = -0.6406250000000004
