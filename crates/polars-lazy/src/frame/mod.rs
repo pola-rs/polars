@@ -2120,6 +2120,13 @@ impl LazyGroupBy {
     /// }
     /// ```
     pub fn agg<E: AsRef<[Expr]>>(self, aggs: E) -> LazyFrame {
+        // GH-23870: opt out from the aggregation if the underlying dataframe is empty
+        if let DslPlan::DataFrameScan { ref df, .. } = self.logical_plan {
+            if df.shape().eq(&(0, 0)) {
+                return LazyFrame::from_logical_plan(self.logical_plan, self.opt_state);
+            }
+        }
+
         #[cfg(feature = "dynamic_group_by")]
         let lp = DslBuilder::from(self.logical_plan)
             .group_by(

@@ -597,3 +597,19 @@ fn test_anonymous_function_returns_scalar_all_null_20679() {
 
     assert_eq!(grouped_df.columns()[1].dtype(), &DataType::Null);
 }
+
+#[test]
+fn test_agg_on_empty_df() {
+    // GH-23870
+    let empty_df = DataFrame::empty();
+
+    let out = empty_df
+        .clone()
+        .lazy()
+        .group_by([lit(1)])
+        .agg([len()])
+        .collect()
+        .unwrap();
+
+    assert_eq!(empty_df, out);
+}
