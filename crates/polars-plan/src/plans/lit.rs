@@ -213,6 +213,8 @@ impl LiteralValue {
     pub(crate) fn output_column_name(&self) -> PlSmallStr {
         match self {
             LiteralValue::Series(s) => s.name().clone(),
+            // LiteralValue::Scalar(s) if let Some(name) = s.name() => name,
+            LiteralValue::Scalar(s) if s.name().is_some() => s.name().unwrap().clone(),
             _ => get_literal_name(),
         }
     }

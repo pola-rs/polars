@@ -4,6 +4,7 @@ from polars.dataframe import DataFrame
 from polars.datatype_expr import DataTypeExpr
 from polars.datatypes import DataType, DataTypeClass
 from polars.expr import Expr, When
+from polars.functions import lit, select
 from polars.lazyframe import LazyFrame
 from polars.schema import Schema
 from polars.selectors import Selector
@@ -20,4 +21,6 @@ __all__ = [
     "Selector",
     "Series",
     "When",
+    "lit",
+    "select",
 ]

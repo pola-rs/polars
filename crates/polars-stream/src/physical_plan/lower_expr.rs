@@ -1,3 +1,4 @@
+use std::iter;
 use std::sync::Arc;
 
 use polars_core::chunked_array::cast::CastOptions;
@@ -501,21 +502,25 @@ fn build_fallback_node_with_ctx(
 
 fn simplify_input_streams(
     orig_input: PhysStream,
-    mut input_streams: PlIndexSet<PhysStream>,
+    mut input_streams: PlIndexSet<(PhysStream, bool)>,
     ctx: &mut LowerExprContext,
-) -> PolarsResult<PlIndexSet<PhysStream>> {
+) -> PolarsResult<PlIndexSet<(PhysStream, bool)>> {
     // Flatten nested zips (ensures the original input columns only occur once).
     if input_streams.len() > 1 {
         let mut flattened_input_streams = PlIndexSet::with_capacity(input_streams.len());
-        for input_stream in input_streams {
+        for (input_stream, is_scalar) in input_streams {
             if let PhysNodeKind::Zip {
                 inputs,
+                may_broadcast,
                 zip_behavior: ZipBehavior::Broadcast,
             } = &ctx.phys_sm[input_stream.node].kind
             {
-                flattened_input_streams.extend(inputs);
+                flattened_input_streams.extend(iter::zip(
+                    inputs.iter().copied(),
+                    may_broadcast.iter().copied(),
+                ));
             } else {
-                flattened_input_streams.insert(input_stream);
+                flattened_input_streams.insert((input_stream, is_scalar));
             }
         }
         input_streams = flattened_input_streams;
@@ -525,7 +530,7 @@ fn simplify_input_streams(
     let mut combined_exprs = vec![];
     input_streams = input_streams
         .into_iter()
-        .filter(|input_stream| {
+        .filter(|(input_stream, _is_scalar)| {
             if let PhysNodeKind::Reduce {
                 input: inner,
                 exprs,
@@ -547,7 +552,7 @@ fn simplify_input_streams(
             exprs: combined_exprs,
         };
         let reduce_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-        input_streams.insert(PhysStream::first(reduce_node_key));
+        input_streams.insert((PhysStream::first(reduce_node_key), true));
     }
 
     Ok(input_streams)
@@ -610,6 +615,7 @@ fn lower_exprs_with_ctx(
     let mut fallback_subset = Vec::new();
 
     // Streams containing the columns used for executing transformed expressions.
+    // The boolean corresponds to whatever the stream can be considered a scalar.
     let mut input_streams = PlIndexSet::new();
 
     // The final transformed expressions that will be selected from the zipped
@@ -617,9 +623,10 @@ fn lower_exprs_with_ctx(
     let mut transformed_exprs = Vec::with_capacity(exprs.len());
 
     for expr in exprs.iter().copied() {
+        let is_scalar = is_scalar_ae(expr, ctx.expr_arena);
         if is_elementwise_rec_cached(expr, ctx.expr_arena, ctx.cache) {
             if !is_input_independent_ctx(expr, ctx) {
-                input_streams.insert(input);
+                input_streams.insert((input, is_scalar));
             }
             transformed_exprs.push(expr);
             continue;
@@ -653,7 +660,7 @@ fn lower_exprs_with_ctx(
                     extend_original: false,
                 };
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
-                input_streams.insert(PhysStream::first(node_key));
+                input_streams.insert((PhysStream::first(node_key), is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(exploded_name)));
             },
             AExpr::Column(_) => unreachable!("column should always be streamable"),
@@ -661,7 +668,7 @@ fn lower_exprs_with_ctx(
                 let out_name = unique_column_name();
                 let inner_expr = ExprIR::new(expr, OutputName::Alias(out_name.clone()));
                 let node_key = build_input_independent_node_with_ctx(&[inner_expr], ctx)?;
-                input_streams.insert(PhysStream::first(node_key));
+                input_streams.insert((PhysStream::first(node_key), is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
@@ -683,7 +690,7 @@ fn lower_exprs_with_ctx(
                     repeats: repeats_stream,
                 };
                 let repeat_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-                input_streams.insert(PhysStream::first(repeat_node_key));
+                input_streams.insert((PhysStream::first(repeat_node_key), is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
@@ -732,7 +739,7 @@ fn lower_exprs_with_ctx(
                 let concat_node_key = ctx
                     .phys_sm
                     .insert(PhysNode::new(output_schema, concat_kind));
-                input_streams.insert(PhysStream::first(concat_node_key));
+                input_streams.insert((PhysStream::first(concat_node_key), is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
@@ -761,7 +768,7 @@ fn lower_exprs_with_ctx(
                     inputs: concat_streams,
                 };
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
-                input_streams.insert(PhysStream::first(node_key));
+                input_streams.insert((PhysStream::first(node_key), is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
@@ -793,7 +800,7 @@ fn lower_exprs_with_ctx(
                     StreamingLowerIRContext::from(&*ctx),
                     false,
                 )?;
-                input_streams.insert(group_by_stream);
+                input_streams.insert((group_by_stream, is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_name)));
             },
 
@@ -847,7 +854,7 @@ fn lower_exprs_with_ctx(
                     false,
                 )?;
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_count_name)));
-                input_streams.insert(stream);
+                input_streams.insert((stream, is_scalar));
             },
             AExpr::Function {
                 input: ref inner_exprs,
@@ -927,7 +934,7 @@ fn lower_exprs_with_ctx(
                     )
                     .node(),
                 );
-                input_streams.insert(stream);
+                input_streams.insert((stream, is_scalar));
             },
 
             #[cfg(feature = "mode")]
@@ -1000,7 +1007,7 @@ fn lower_exprs_with_ctx(
 
                 transformed_exprs
                     .push(AExprBuilder::col(tmp_value_name.clone(), ctx.expr_arena).node());
-                input_streams.insert(stream);
+                input_streams.insert((stream, is_scalar));
             },
 
             AExpr::Function {
@@ -1062,7 +1069,7 @@ fn lower_exprs_with_ctx(
                 let stream = build_select_stream_with_ctx(stream, &[expr], ctx)?;
 
                 transformed_exprs.push(AExprBuilder::col(idx_name.clone(), ctx.expr_arena).node());
-                input_streams.insert(stream);
+                input_streams.insert((stream, is_scalar));
             },
 
             #[cfg(feature = "is_in")]
@@ -1136,7 +1143,7 @@ fn lower_exprs_with_ctx(
                 let node_key = ctx
                     .phys_sm
                     .insert(PhysNode::new(Arc::new(output_schema), node_kind));
-                input_streams.insert(PhysStream::first(node_key));
+                input_streams.insert((PhysStream::first(node_key), is_scalar));
                 transformed_exprs.push(left_col_expr);
             },
 
@@ -1180,7 +1187,7 @@ fn lower_exprs_with_ctx(
                 let node_key = ctx
                     .phys_sm
                     .insert(PhysNode::new(Arc::new(output_schema), node_kind));
-                input_streams.insert(PhysStream::first(node_key));
+                input_streams.insert((PhysStream::first(node_key), is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key)));
             },
 
@@ -1250,7 +1257,7 @@ fn lower_exprs_with_ctx(
                 }
 
                 let (stream, nodes) = lower_exprs_with_ctx(input, &[output.node()], ctx)?;
-                input_streams.insert(stream);
+                input_streams.insert((stream, is_scalar));
                 transformed_exprs.extend(nodes);
             },
 
@@ -1286,7 +1293,7 @@ fn lower_exprs_with_ctx(
                 let node_key = ctx
                     .phys_sm
                     .insert(PhysNode::new(Arc::new(output_schema), node_kind));
-                input_streams.insert(PhysStream::first(node_key));
+                input_streams.insert((PhysStream::first(node_key), is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key)));
             },
 
@@ -1310,7 +1317,7 @@ fn lower_exprs_with_ctx(
                 let node_key = ctx
                     .phys_sm
                     .insert(PhysNode::new(Arc::new(output_schema), node_kind));
-                input_streams.insert(PhysStream::first(node_key));
+                input_streams.insert((PhysStream::first(node_key), is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key.clone())));
             },
 
@@ -1332,7 +1339,7 @@ fn lower_exprs_with_ctx(
 
                 let output_schema = ctx.phys_sm[input.node].output_schema.clone();
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
-                input_streams.insert(PhysStream::first(node_key));
+                input_streams.insert((PhysStream::first(node_key), is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key.clone())));
             },
 
@@ -1357,7 +1364,7 @@ fn lower_exprs_with_ctx(
                 let node_key = ctx
                     .phys_sm
                     .insert(PhysNode::new(Arc::new(output_schema), node_kind));
-                input_streams.insert(PhysStream::first(node_key));
+                input_streams.insert((PhysStream::first(node_key), is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key.clone())));
             },
 
@@ -1386,7 +1393,7 @@ fn lower_exprs_with_ctx(
                     &[row_idx_col_expr_ir],
                     ctx,
                 )?;
-                input_streams.insert(row_idx_stream);
+                input_streams.insert((row_idx_stream, is_scalar));
                 transformed_exprs.push(row_idx_col_aexpr);
             },
 
@@ -1443,7 +1450,7 @@ fn lower_exprs_with_ctx(
                     &[row_idx_col_expr_ir],
                     ctx,
                 )?;
-                input_streams.insert(row_idx_stream);
+                input_streams.insert((row_idx_stream, is_scalar));
                 transformed_exprs.push(row_idx_col_aexpr);
             },
 
@@ -1476,7 +1483,7 @@ fn lower_exprs_with_ctx(
                     },
                     _ => unreachable!(),
                 }
-                input_streams.insert(trans_input);
+                input_streams.insert((trans_input, is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(new_node));
             },
 
@@ -1508,7 +1515,7 @@ fn lower_exprs_with_ctx(
                     extend_original: false,
                 };
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
-                input_streams.insert(PhysStream::first(node_key));
+                input_streams.insert((PhysStream::first(node_key), is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
@@ -1519,7 +1526,7 @@ fn lower_exprs_with_ctx(
                     op,
                     right: trans_exprs[1],
                 };
-                input_streams.insert(trans_input);
+                input_streams.insert((trans_input, is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(bin_expr));
             },
             AExpr::Eval {
@@ -1537,7 +1544,7 @@ fn lower_exprs_with_ctx(
                         evaluation,
                         variant,
                     };
-                    input_streams.insert(trans_input);
+                    input_streams.insert((trans_input, is_scalar));
                     transformed_exprs.push(ctx.expr_arena.add(eval_expr));
                 },
                 EvalVariant::Cumulative { .. } => {
@@ -1706,7 +1713,7 @@ fn lower_exprs_with_ctx(
                 let exit_node = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
 
                 // Finalize.
-                input_streams.insert(stream);
+                input_streams.insert((stream, is_scalar));
                 transformed_exprs.push(exit_node);
             },
             AExpr::Ternary {
@@ -1721,7 +1728,7 @@ fn lower_exprs_with_ctx(
                     truthy: trans_exprs[1],
                     falsy: trans_exprs[2],
                 };
-                input_streams.insert(trans_input);
+                input_streams.insert((trans_input, is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(tern_expr));
             },
             AExpr::Cast {
@@ -1730,7 +1737,7 @@ fn lower_exprs_with_ctx(
                 options,
             } => {
                 let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], ctx)?;
-                input_streams.insert(trans_input);
+                input_streams.insert((trans_input, is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Cast {
                     expr: trans_exprs[0],
                     dtype,
@@ -1756,7 +1763,7 @@ fn lower_exprs_with_ctx(
                 };
                 let output_schema = ctx.phys_sm[select_stream.node].output_schema.clone();
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-                input_streams.insert(PhysStream::first(node_key));
+                input_streams.insert((PhysStream::first(node_key), is_scalar));
                 transformed_exprs.push(col_expr);
             },
 
@@ -1794,7 +1801,7 @@ fn lower_exprs_with_ctx(
                 let sort_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
 
                 let sorted_col_expr = ctx.expr_arena.add(AExpr::Column(sorted_name.clone()));
-                input_streams.insert(PhysStream::first(sort_node_key));
+                input_streams.insert((PhysStream::first(sort_node_key), is_scalar));
                 transformed_exprs.push(sorted_col_expr);
             },
 
@@ -1849,7 +1856,7 @@ fn lower_exprs_with_ctx(
                 };
                 let output_schema = ctx.phys_sm[data_stream.node].output_schema.clone();
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-                input_streams.insert(PhysStream::first(node_key));
+                input_streams.insert((PhysStream::first(node_key), is_scalar));
                 transformed_exprs.push(out_col_node);
             },
 
@@ -1873,7 +1880,7 @@ fn lower_exprs_with_ctx(
                 };
                 let output_schema = ctx.phys_sm[select_stream.node].output_schema.clone();
                 let filter_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-                input_streams.insert(PhysStream::first(filter_node_key));
+                input_streams.insert((PhysStream::first(filter_node_key), is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
@@ -1883,7 +1890,7 @@ fn lower_exprs_with_ctx(
                 function: _,
             } => {
                 let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
-                input_streams.insert(trans_stream);
+                input_streams.insert((trans_stream, is_scalar));
                 transformed_exprs.push(trans_expr);
             },
             // Aggregates.
@@ -1902,7 +1909,7 @@ fn lower_exprs_with_ctx(
                 | IRAggExpr::Std { .. }
                 | IRAggExpr::Count { .. } => {
                     let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
-                    input_streams.insert(trans_stream);
+                    input_streams.insert((trans_stream, is_scalar));
                     transformed_exprs.push(trans_expr);
                 },
                 IRAggExpr::NUnique(inner) => {
@@ -1945,7 +1952,7 @@ fn lower_exprs_with_ctx(
                     };
 
                     let reduce_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-                    input_streams.insert(PhysStream::first(reduce_node_key));
+                    input_streams.insert((PhysStream::first(reduce_node_key), is_scalar));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_name)));
                 },
                 IRAggExpr::Median(_)
@@ -1967,7 +1974,7 @@ fn lower_exprs_with_ctx(
                 ..
             } => {
                 let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
-                input_streams.insert(trans_stream);
+                input_streams.insert((trans_stream, is_scalar));
                 transformed_exprs.push(trans_expr);
             },
 
@@ -1977,7 +1984,7 @@ fn lower_exprs_with_ctx(
                 ..
             } => {
                 let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
-                input_streams.insert(trans_stream);
+                input_streams.insert((trans_stream, is_scalar));
                 transformed_exprs.push(trans_expr);
             },
 
@@ -1992,7 +1999,7 @@ fn lower_exprs_with_ctx(
                 ..
             } => {
                 let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
-                input_streams.insert(trans_stream);
+                input_streams.insert((trans_stream, is_scalar));
                 transformed_exprs.push(trans_expr);
             },
 
@@ -2006,7 +2013,7 @@ fn lower_exprs_with_ctx(
                     exprs: vec![expr_ir],
                 };
                 let reduce_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-                input_streams.insert(PhysStream::first(reduce_node_key));
+                input_streams.insert((PhysStream::first(reduce_node_key), is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
@@ -2043,7 +2050,7 @@ fn lower_exprs_with_ctx(
                         prepare_visualization: ctx.prepare_visualization,
                     },
                 )?;
-                input_streams.insert(filter_stream);
+                input_streams.insert((filter_stream, is_scalar));
                 transformed_exprs.push(AExprBuilder::col(out_name.clone(), ctx.expr_arena).node());
             },
 
@@ -2067,7 +2074,7 @@ fn lower_exprs_with_ctx(
                     length: length_stream,
                 };
                 let slice_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-                input_streams.insert(PhysStream::first(slice_node_key));
+                input_streams.insert((PhysStream::first(slice_node_key), is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
@@ -2099,7 +2106,7 @@ fn lower_exprs_with_ctx(
                     },
                 ));
 
-                input_streams.insert(PhysStream::first(node_key));
+                input_streams.insert((PhysStream::first(node_key), is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
@@ -2134,7 +2141,7 @@ fn lower_exprs_with_ctx(
                     _ => unreachable!(),
                 };
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-                input_streams.insert(PhysStream::first(node_key));
+                input_streams.insert((PhysStream::first(node_key), is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
@@ -2172,7 +2179,7 @@ fn lower_exprs_with_ctx(
                 let input_columns = aexpr_to_leaf_names(function, ctx.expr_arena)
                     .into_iter()
                     .map(|n| AExprBuilder::col(n.clone(), ctx.expr_arena).expr_ir(n))
-                    .chain(std::iter::once(index_column_expr_ir.clone()))
+                    .chain(iter::once(index_column_expr_ir.clone()))
                     .collect::<Vec<_>>();
                 let input = build_select_stream_with_ctx(input, &input_columns, ctx)?;
 
@@ -2196,7 +2203,7 @@ fn lower_exprs_with_ctx(
                         .expr_ir(out_name.clone())],
                     ctx,
                 )?;
-                input_streams.insert(input);
+                input_streams.insert((input, is_scalar));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
@@ -2213,7 +2220,13 @@ fn lower_exprs_with_ctx(
 
     if !fallback_subset.is_empty() {
         let fallback_node = build_fallback_node_with_ctx(input, &fallback_subset, ctx)?;
-        input_streams.insert(PhysStream::first(fallback_node));
+        // This can always be false B/C the memory engine is the one handling broadcasting
+        input_streams.insert((
+            PhysStream::first(fallback_node),
+            fallback_subset
+                .iter()
+                .all(|expr| is_scalar_ae(expr.node(), ctx.expr_arena)),
+        ));
     }
 
     // Simplify the input nodes (also ensures the original input only occurs
@@ -2222,16 +2235,20 @@ fn lower_exprs_with_ctx(
 
     if input_streams.len() == 1 {
         // No need for any multiplexing/zipping, can directly execute.
-        return Ok((input_streams.into_iter().next().unwrap(), transformed_exprs));
+        return Ok((
+            input_streams.into_iter().next().unwrap().0,
+            transformed_exprs,
+        ));
     }
 
-    let zip_inputs = input_streams.into_iter().collect_vec();
+    let (zip_inputs, may_broadcast): (Vec<_>, _) = input_streams.into_iter().collect();
     let output_schema = zip_inputs
         .iter()
         .flat_map(|stream| ctx.phys_sm[stream.node].output_schema.iter_fields())
         .collect();
     let zip_kind = PhysNodeKind::Zip {
         inputs: zip_inputs,
+        may_broadcast,
         zip_behavior: ZipBehavior::Broadcast,
     };
     let zip_node = ctx

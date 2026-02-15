@@ -17,6 +17,7 @@ use crate::prelude::{Column, Series};
 pub struct Scalar {
     dtype: DataType,
     value: AnyValue<'static>,
+    name: Option<PlSmallStr>,
 }
 
 impl Hash for Scalar {
@@ -31,6 +32,7 @@ impl Default for Scalar {
         Self {
             dtype: DataType::Null,
             value: AnyValue::Null,
+            name: None,
         }
     }
 }
@@ -38,7 +40,11 @@ impl Default for Scalar {
 impl Scalar {
     #[inline(always)]
     pub const fn new(dtype: DataType, value: AnyValue<'static>) -> Self {
-        Self { dtype, value }
+        Self {
+            dtype,
+            value,
+            name: None,
+        }
     }
 
     pub const fn null(dtype: DataType) -> Self {
@@ -120,6 +126,15 @@ impl Scalar {
     pub fn to_physical(mut self) -> Scalar {
         self.dtype = self.dtype.to_physical();
         self.value = self.value.to_physical();
+        self
+    }
+
+    pub fn name(&self) -> Option<&PlSmallStr> {
+        self.name.as_ref()
+    }
+
+    pub fn with_name(mut self, name: PlSmallStr) -> Self {
+        self.name = Some(name);
         self
     }
 }

@@ -569,13 +569,19 @@ pub fn lower_ir(
             } else {
                 ZipBehavior::NullExtend
             };
+
+            // may_broadcast only matters for `ZipBehavior::Broadcast` which isn't used here
+            let may_broadcast = vec![false; inputs.len()];
+
             let inputs = inputs
                 .clone() // Needed to borrow ir_arena mutably.
                 .into_iter()
                 .map(|input| lower_ir!(input))
                 .collect::<Result<_, _>>()?;
+
             PhysNodeKind::Zip {
                 inputs,
+                may_broadcast,
                 zip_behavior,
             }
         },

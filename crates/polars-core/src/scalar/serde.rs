@@ -320,7 +320,11 @@ impl TryFrom<SerializableScalar> for Scalar {
                 let (avs, fields) = scs
                     .into_iter()
                     .map(|(name, scalar)| {
-                        let Scalar { dtype, value } = Scalar::try_from(scalar)?;
+                        let Scalar {
+                            dtype,
+                            value,
+                            name: _,
+                        } = Scalar::try_from(scalar)?;
                         Ok((value, Field::new(name, dtype)))
                     })
                     .collect::<PolarsResult<(Vec<AnyValue<'static>>, Vec<Field>)>>()?;
