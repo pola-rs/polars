@@ -1,13 +1,16 @@
+use arrow::array::PrimitiveArray;
 #[cfg(feature = "dtype-date")]
 use chrono::DateTime;
-use polars_core::prelude::arity::{binary_elementwise_values, try_binary_elementwise};
+use polars_core::prelude::arity::{binary_elementwise, try_binary_elementwise, unary_elementwise};
 use polars_core::prelude::*;
+use polars_core::series::amortized_iter::AmortSeries;
 #[cfg(feature = "dtype-date")]
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 use polars_utils::binary_search::{find_first_ge_index, find_first_gt_index};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::prelude::ListNameSpaceImpl;
 #[cfg(feature = "timezones")]
 use crate::prelude::replace_time_zone;
 
@@ -32,28 +35,34 @@ pub fn business_day_count(
     start: &Series,
     end: &Series,
     week_mask: [bool; 7],
-    holidays: &[i32],
+    holidays: &Series,
 ) -> PolarsResult<Series> {
     if !week_mask.iter().any(|&x| x) {
         polars_bail!(ComputeError:"`week_mask` must have at least one business day");
     }
+    polars_ensure!(
+        holidays.len() == 1 || start.len() == 1 || end.len() == 1 || holidays.len() == start.len(),
+        ShapeMismatch: "number of holiday lists must be either 1 or the number of dates"
+    );
 
-    // Sort now so we can use `binary_search` in the hot for-loop.
-    let holidays = normalise_holidays(holidays, &week_mask);
+    let holidays = prep_holidays(holidays, week_mask)?;
+    let mut holidays_lists = HolidaysListsExtractor::new(&holidays);
     let start_dates = start.date()?;
     let end_dates = end.date()?;
     let n_business_days_in_week_mask = week_mask.iter().filter(|&x| *x).count() as i32;
 
     let out = match (start_dates.len(), end_dates.len()) {
         (_, 1) => {
-            if let Some(end_date) = end_dates.physical().get(0) {
+            if let Some(end_date) = end_dates.physical().get(0)
+                && let Some(holidays_list) = holidays_lists.get_next()
+            {
                 start_dates.physical().apply_values(|start_date| {
                     business_day_count_impl(
                         start_date,
                         end_date,
                         &week_mask,
                         n_business_days_in_week_mask,
-                        &holidays,
+                        holidays_list,
                     )
                 })
             } else {
@@ -61,14 +70,16 @@ pub fn business_day_count(
             }
         },
         (1, _) => {
-            if let Some(start_date) = start_dates.physical().get(0) {
+            if let Some(start_date) = start_dates.physical().get(0)
+                && let Some(holidays_list) = holidays_lists.get_next()
+            {
                 end_dates.physical().apply_values(|end_date| {
                     business_day_count_impl(
                         start_date,
                         end_date,
                         &week_mask,
                         n_business_days_in_week_mask,
-                        &holidays,
+                        holidays_list,
                     )
                 })
             } else {
@@ -82,17 +93,20 @@ pub fn business_day_count(
                 start_dates.len(),
                 end_dates.len()
             );
-            binary_elementwise_values(
+            binary_elementwise(
                 start_dates.physical(),
                 end_dates.physical(),
-                |start_date, end_date| {
-                    business_day_count_impl(
-                        start_date,
-                        end_date,
-                        &week_mask,
-                        n_business_days_in_week_mask,
-                        &holidays,
-                    )
+                |start_date, end_date| match (start_date, end_date, holidays_lists.get_next()) {
+                    (Some(start_date), Some(end_date), Some(holidays_list)) => {
+                        Some(business_day_count_impl(
+                            start_date,
+                            end_date,
+                            &week_mask,
+                            n_business_days_in_week_mask,
+                            holidays_list,
+                        ))
+                    },
+                    _ => None,
                 },
             )
         },
@@ -152,12 +166,16 @@ pub fn add_business_days(
     start: &Series,
     n: &Series,
     week_mask: [bool; 7],
-    holidays: &[i32],
+    holidays: &Series,
     roll: Roll,
 ) -> PolarsResult<Series> {
     if !week_mask.iter().any(|&x| x) {
         polars_bail!(ComputeError:"`week_mask` must have at least one business day");
     }
+    polars_ensure!(
+        holidays.len() == 1 || holidays.len() == start.len(),
+        ShapeMismatch: "number of holiday lists must be either 1 or the number of dates"
+    );
 
     match start.dtype() {
         DataType::Date => {},
@@ -206,8 +224,9 @@ pub fn add_business_days(
         _ => polars_bail!(InvalidOperation: "expected date or datetime, got {}", start.dtype()),
     }
 
-    // Sort now so we can use `binary_search` in the hot for-loop.
-    let holidays = normalise_holidays(holidays, &week_mask);
+    let holidays = prep_holidays(holidays, week_mask)?;
+    let mut holidays_lists = HolidaysListsExtractor::new(&holidays);
+
     let start_dates = start.date()?;
     let n = match &n.dtype() {
         DataType::Int64 | DataType::UInt64 | DataType::UInt32 => n.cast(&DataType::Int32)?,
@@ -221,19 +240,21 @@ pub fn add_business_days(
 
     let out: Int32Chunked = match (start_dates.len(), n.len()) {
         (_, 1) => {
-            if let Some(n) = n.get(0) {
+            if let Some(n) = n.get(0)
+                && let Some(holidays) = holidays_lists.get_next()
+            {
                 start_dates
                     .physical()
                     .try_apply_nonnull_values_generic(|start_date| {
                         let (start_date, day_of_week) =
-                            roll_start_date(start_date, roll, &week_mask, &holidays)?;
+                            roll_start_date(start_date, roll, &week_mask, holidays)?;
                         Ok::<i32, PolarsError>(add_business_days_impl(
                             start_date,
                             day_of_week,
                             n,
                             &week_mask,
                             n_business_days_in_week_mask,
-                            &holidays,
+                            holidays,
                         ))
                     })?
             } else {
@@ -241,9 +262,11 @@ pub fn add_business_days(
             }
         },
         (1, _) => {
-            if let Some(start_date) = start_dates.physical().get(0) {
+            if let Some(start_date) = start_dates.physical().get(0)
+                && let Some(holidays) = holidays_lists.get_next()
+            {
                 let (start_date, day_of_week) =
-                    roll_start_date(start_date, roll, &week_mask, &holidays)?;
+                    roll_start_date(start_date, roll, &week_mask, holidays)?;
                 n.apply_values(|n| {
                     add_business_days_impl(
                         start_date,
@@ -251,7 +274,7 @@ pub fn add_business_days(
                         n,
                         &week_mask,
                         n_business_days_in_week_mask,
-                        &holidays,
+                        holidays,
                     )
                 })
             } else {
@@ -266,17 +289,18 @@ pub fn add_business_days(
                 n.len()
             );
             try_binary_elementwise(start_dates.physical(), n, |opt_start_date, opt_n| {
-                match (opt_start_date, opt_n) {
-                    (Some(start_date), Some(n)) => {
+                let holidays = holidays_lists.get_next();
+                match (opt_start_date, opt_n, holidays) {
+                    (Some(start_date), Some(n), Some(holidays)) => {
                         let (start_date, day_of_week) =
-                            roll_start_date(start_date, roll, &week_mask, &holidays)?;
+                            roll_start_date(start_date, roll, &week_mask, holidays)?;
                         Ok::<Option<i32>, PolarsError>(Some(add_business_days_impl(
                             start_date,
                             day_of_week,
                             n,
                             &week_mask,
                             n_business_days_in_week_mask,
-                            &holidays,
+                            holidays,
                         )))
                     },
                     _ => Ok(None),
@@ -347,11 +371,15 @@ fn add_business_days_impl(
 pub fn is_business_day(
     dates: &Series,
     week_mask: [bool; 7],
-    holidays: &[i32],
+    holidays: &Series,
 ) -> PolarsResult<Series> {
     if !week_mask.iter().any(|&x| x) {
         polars_bail!(ComputeError:"`week_mask` must have at least one business day");
     }
+    polars_ensure!(
+        holidays.len() == 1 || holidays.len() == dates.len(),
+        ShapeMismatch: "number of holiday lists must be either 1 or the number of dates"
+    );
 
     match dates.dtype() {
         DataType::Date => {},
@@ -372,20 +400,23 @@ pub fn is_business_day(
         _ => polars_bail!(InvalidOperation: "expected date or datetime, got {}", dates.dtype()),
     }
 
-    // Sort now so we can use `binary_search` in the hot for-loop.
-    let holidays = normalise_holidays(holidays, &week_mask);
+    let holidays = prep_holidays(holidays, week_mask)?;
+    let mut holidays_lists = HolidaysListsExtractor::new(&holidays);
+
     let dates = dates.date()?;
-    let out: BooleanChunked =
-        dates
-            .physical()
-            .apply_nonnull_values_generic(DataType::Boolean, |date| {
+    let out: BooleanChunked = unary_elementwise(dates.physical(), |date| {
+        match (date, holidays_lists.get_next()) {
+            (Some(date), Some(holidays)) => {
                 let day_of_week = get_day_of_week(date);
                 // SAFETY: week_mask is length 7, day_of_week is between 0 and 6
-                unsafe {
+                Some(unsafe {
                     (*week_mask.get_unchecked(day_of_week))
                         && holidays.binary_search(&date).is_err()
-                }
-            });
+                })
+            },
+            _ => None,
+        }
+    });
     Ok(out.into_series())
 }
 
@@ -433,8 +464,7 @@ fn roll_start_date(
 }
 
 /// Sort and deduplicate holidays and remove holidays that are not business days.
-fn normalise_holidays(holidays: &[i32], week_mask: &[bool; 7]) -> Vec<i32> {
-    let mut holidays: Vec<i32> = holidays.to_vec();
+fn normalise_holidays(holidays: &mut Vec<i32>, week_mask: &[bool; 7]) {
     holidays.sort_unstable();
     let mut previous_holiday: Option<i32> = None;
     holidays.retain(|&x| {
@@ -446,7 +476,118 @@ fn normalise_holidays(holidays: &[i32], week_mask: &[bool; 7]) -> Vec<i32> {
         previous_holiday = Some(x);
         true
     });
-    holidays
+}
+
+/// Convert from List of Date to normalized List of Int32 (see
+/// `normalize_holidays`), trying to minimize allocations along the way.
+///
+/// If a list contains a null, that is considered an error.
+fn prep_holidays(holidays: &Series, week_mask: [bool; 7]) -> PolarsResult<ListChunked> {
+    polars_ensure!(
+        holidays.dtype().is_list() && holidays.dtype().inner_dtype() == Some(&DataType::Date),
+        ComputeError: "holidays list had wrong data type {}, expected List of Date", holidays.dtype()
+    );
+    let holidays = holidays.list()?;
+
+    let mut builder: ListPrimitiveChunkedBuilder<Int32Type> = ListPrimitiveChunkedBuilder::new(
+        holidays.name().clone(),
+        holidays.len(),
+        holidays.lst_lengths().sum().unwrap_or(0) as usize,
+        DataType::Int32,
+    );
+    let mut staging = vec![];
+
+    for maybe_s in holidays.amortized_iter() {
+        match maybe_s {
+            Some(s) => {
+                staging.clear();
+                for chunk in s.as_ref().date()?.physical().chunks() {
+                    let array = chunk
+                        .as_any()
+                        .downcast_ref::<PrimitiveArray<i32>>()
+                        .unwrap();
+                    polars_ensure!(
+                        array.validity().is_none(),
+                        ComputeError: "list of holidays contained a null: {}", s.as_ref()
+                    );
+                    let holidays_list = array.as_slice().unwrap();
+                    staging.extend_from_slice(holidays_list);
+                }
+                normalise_holidays(&mut staging, &week_mask);
+                builder.append_slice(&staging);
+            },
+            None => {
+                builder.append_null();
+            },
+        }
+    }
+    Ok(builder.finish())
+}
+
+/// Extract lists of holidays into &[i32] from the result of ``prep_holidays()``.
+///
+/// If the initial Series was of length 1, repeat that value forever.
+struct HolidaysListsExtractor<'a> {
+    amortized_iter: Box<dyn Iterator<Item = Option<AmortSeries>> + 'a>,
+    staging: Vec<i32>,
+    // None -> not repeating, Some(val) -> slice if true, otherwise null.
+    repeating_value: Option<bool>,
+}
+
+impl<'a> HolidaysListsExtractor<'a> {
+    fn new(holidays_lists: &'a ListChunked) -> Self {
+        let mut amortized_iter = Box::new(holidays_lists.amortized_iter());
+        let mut staging = vec![];
+        let repeating_value = if holidays_lists.len() == 1 {
+            match amortized_iter.next() {
+                Some(Some(amort_series)) => {
+                    Self::extract_from_amort_series(&mut staging, &amort_series);
+                    Some(true)
+                },
+                Some(None) => Some(false),
+                // Shouldn't actually happen:
+                None => None,
+            }
+        } else {
+            None
+        };
+        Self {
+            amortized_iter,
+            staging,
+            repeating_value,
+        }
+    }
+
+    fn extract_from_amort_series(staging: &mut Vec<i32>, amort_series: &AmortSeries) {
+        staging.clear();
+        for chunk in amort_series.as_ref().i32().unwrap().chunks() {
+            let slice = chunk
+                .as_any()
+                .downcast_ref::<PrimitiveArray<i32>>()
+                .unwrap()
+                .as_slice()
+                .unwrap();
+            staging.extend_from_slice(slice);
+        }
+    }
+
+    /// Get the next slice of holidays.
+    ///
+    /// Since we never use anything beyond this, no point in using the Iterator
+    /// trait, Option<Option<>> just makes things harder for the caller.
+    fn get_next(&mut self) -> Option<&[i32]> {
+        if let Some(repeat_a_value) = self.repeating_value {
+            return repeat_a_value.then_some(&self.staging);
+        }
+
+        match self.amortized_iter.next() {
+            Some(Some(amort_series)) => {
+                Self::extract_from_amort_series(&mut self.staging, &amort_series);
+                Some(&self.staging)
+            },
+            _ => None,
+        }
+    }
 }
 
 fn get_day_of_week(x: i32) -> usize {

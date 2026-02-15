@@ -713,29 +713,9 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Business(f) => {
             use {BusinessFunction as B, IRBusinessFunction as IB};
             F::Business(match f {
-                IB::BusinessDayCount {
-                    week_mask,
-                    holidays,
-                } => B::BusinessDayCount {
-                    week_mask,
-                    holidays,
-                },
-                IB::AddBusinessDay {
-                    week_mask,
-                    holidays,
-                    roll,
-                } => B::AddBusinessDay {
-                    week_mask,
-                    holidays,
-                    roll,
-                },
-                IB::IsBusinessDay {
-                    week_mask,
-                    holidays,
-                } => B::IsBusinessDay {
-                    week_mask,
-                    holidays,
-                },
+                IB::BusinessDayCount { week_mask } => B::BusinessDayCount { week_mask },
+                IB::AddBusinessDay { week_mask, roll } => B::AddBusinessDay { week_mask, roll },
+                IB::IsBusinessDay { week_mask } => B::IsBusinessDay { week_mask },
             })
         },
         #[cfg(feature = "abs")]

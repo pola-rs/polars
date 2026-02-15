@@ -533,28 +533,14 @@ pub(super) fn convert_functions(
         },
         #[cfg(feature = "business")]
         F::Business(business_function) => I::Business(match business_function {
-            BusinessFunction::BusinessDayCount {
-                week_mask,
-                holidays,
-            } => IRBusinessFunction::BusinessDayCount {
-                week_mask,
-                holidays,
+            BusinessFunction::BusinessDayCount { week_mask } => {
+                IRBusinessFunction::BusinessDayCount { week_mask }
             },
-            BusinessFunction::AddBusinessDay {
-                week_mask,
-                holidays,
-                roll,
-            } => IRBusinessFunction::AddBusinessDay {
-                week_mask,
-                holidays,
-                roll,
+            BusinessFunction::AddBusinessDay { week_mask, roll } => {
+                IRBusinessFunction::AddBusinessDay { week_mask, roll }
             },
-            BusinessFunction::IsBusinessDay {
-                week_mask,
-                holidays,
-            } => IRBusinessFunction::IsBusinessDay {
-                week_mask,
-                holidays,
+            BusinessFunction::IsBusinessDay { week_mask } => {
+                IRBusinessFunction::IsBusinessDay { week_mask }
             },
         }),
         #[cfg(feature = "abs")]
