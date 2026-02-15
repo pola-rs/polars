@@ -11191,12 +11191,14 @@ Consider using {self}.implode() instead"""
         old
             Value or sequence of values to replace.
             Accepts expression input. Sequences are parsed as Series,
+            sequences containing expressions are converted to a when/then chain,
             other non-expression inputs are parsed as literals.
             Also accepts a mapping of values to their replacement as syntactic sugar for
             `replace(old=Series(mapping.keys()), new=Series(mapping.values()))`.
         new
             Value or sequence of values to replace by.
             Accepts expression input. Sequences are parsed as Series,
+            sequences containing expressions are converted to a when/then chain,
             other non-expression inputs are parsed as literals.
             Length must match the length of `old` or have length 1.
 
@@ -11314,6 +11316,26 @@ Consider using {self}.implode() instead"""
         │ 2   ┆ 5.0 ┆ 2        │
         │ 3   ┆ 1.0 ┆ 10       │
         └─────┴─────┴──────────┘
+
+        Sequences can contain expressions, which are converted to a when/then chain.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]})
+        >>> df.with_columns(
+        ...     replaced=pl.col("a").replace(
+        ...         old=[pl.col("a").min(), pl.col("a").max()],
+        ...         new=[pl.col("b").first(), pl.col("b").last()],
+        ...     )
+        ... )
+        shape: (3, 3)
+        ┌─────┬─────┬──────────┐
+        │ a   ┆ b   ┆ replaced │
+        │ --- ┆ --- ┆ ---      │
+        │ i64 ┆ i64 ┆ i64      │
+        ╞═════╪═════╪══════════╡
+        │ 1   ┆ 10  ┆ 10       │
+        │ 2   ┆ 20  ┆ 2        │
+        │ 3   ┆ 30  ┆ 30       │
+        └─────┴─────┴──────────┘
         """
         if return_dtype is not None:
             issue_deprecation_warning(
@@ -11339,16 +11361,39 @@ Consider using {self}.implode() instead"""
                 raise TypeError(msg)
             new = list(old.values())
             old = list(old.keys())
+
+        old_is_seq = isinstance(old, Sequence) and not isinstance(old, (str, pl.Series))
+        new_is_seq = isinstance(new, Sequence) and not isinstance(new, (str, pl.Series))
+        has_expr_in_old = old_is_seq and any(isinstance(v, Expr) for v in old)  # type: ignore[union-attr]
+        has_expr_in_new = new_is_seq and any(isinstance(v, Expr) for v in new)  # type: ignore[union-attr]
+
+        if has_expr_in_old or has_expr_in_new:
+            old_list = list(old) if old_is_seq else [old]  # type: ignore[arg-type, misc]
+            new_list = list(new) if new_is_seq else [new]  # type: ignore[arg-type]
+
+            if len(new_list) == 1 and len(old_list) > 1:
+                new_list = new_list * len(old_list)
+
+            if len(old_list) != len(new_list):
+                msg = f"lengths of `old` ({len(old_list)}) and `new` ({len(new_list)}) must match"
+                raise ValueError(msg)
+
+            # when(False).then(self) preserves the column name
+            result: Expr = F.when(F.lit(False)).then(self)
+            for old_val, new_val in zip(old_list, new_list, strict=True):
+                cond = self.is_null() if old_val is None else self == old_val
+                result = result.when(cond).then(new_val)  # type: ignore[attr-defined]
+            result = result.otherwise(self)  # type: ignore[attr-defined]
         else:
-            if isinstance(old, Sequence) and not isinstance(old, (str, pl.Series)):
+            if old_is_seq:
                 old = pl.Series(old)
-            if isinstance(new, Sequence) and not isinstance(new, (str, pl.Series)):
+            if new_is_seq:
                 new = pl.Series(new)
 
-        old_pyexpr = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
-        new_pyexpr = parse_into_expression(new, str_as_lit=True)
+            old_pyexpr = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
+            new_pyexpr = parse_into_expression(new, str_as_lit=True)  # type: ignore[arg-type]
 
-        result = wrap_expr(self._pyexpr.replace(old_pyexpr, new_pyexpr))
+            result = wrap_expr(self._pyexpr.replace(old_pyexpr, new_pyexpr))
 
         if return_dtype is not None:
             result = result.cast(return_dtype)
@@ -11371,17 +11416,20 @@ Consider using {self}.implode() instead"""
         old
             Value or sequence of values to replace.
             Accepts expression input. Sequences are parsed as Series,
+            sequences containing expressions are converted to a when/then chain,
             other non-expression inputs are parsed as literals.
             Also accepts a mapping of values to their replacement as syntactic sugar for
             `replace_strict(old=Series(mapping.keys()), new=Series(mapping.values()))`.
         new
             Value or sequence of values to replace by.
             Accepts expression input. Sequences are parsed as Series,
+            sequences containing expressions are converted to a when/then chain,
             other non-expression inputs are parsed as literals.
             Length must match the length of `old` or have length 1.
         default
             Set values that were not replaced to this value. If no default is specified,
             (default), an error is raised if any values were not replaced.
+            Required when `old` or `new` contains expressions within a sequence.
             Accepts expression input. Non-expression inputs are parsed as literals.
         return_dtype
             The data type of the resulting expression. If set to `None` (default),
@@ -11526,6 +11574,28 @@ Consider using {self}.implode() instead"""
         │ 2   ┆ 5.0 ┆ 5.0      │
         │ 3   ┆ 1.0 ┆ 10.0     │
         └─────┴─────┴──────────┘
+
+        Sequences can contain expressions, which are converted to a when/then chain.
+        A `default` is required in this case.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]})
+        >>> df.with_columns(
+        ...     replaced=pl.col("a").replace_strict(
+        ...         old=[pl.col("a").min(), pl.col("a").max()],
+        ...         new=[pl.col("b").first(), pl.col("b").last()],
+        ...         default=-1,
+        ...     )
+        ... )
+        shape: (3, 3)
+        ┌─────┬─────┬──────────┐
+        │ a   ┆ b   ┆ replaced │
+        │ --- ┆ --- ┆ ---      │
+        │ i64 ┆ i64 ┆ i64      │
+        ╞═════╪═════╪══════════╡
+        │ 1   ┆ 10  ┆ 10       │
+        │ 2   ┆ 20  ┆ -1       │
+        │ 3   ┆ 30  ┆ 30       │
+        └─────┴─────┴──────────┘
         """  # noqa: W505
         if new is no_default:
             if not isinstance(old, Mapping):
@@ -11535,6 +11605,39 @@ Consider using {self}.implode() instead"""
                 raise TypeError(msg)
             new = list(old.values())
             old = list(old.keys())
+
+        old_is_seq = isinstance(old, Sequence) and not isinstance(old, (str, pl.Series))
+        new_is_seq = isinstance(new, Sequence) and not isinstance(new, (str, pl.Series))
+        has_expr_in_old = old_is_seq and any(isinstance(v, Expr) for v in old)  # type: ignore[union-attr]
+        has_expr_in_new = new_is_seq and any(isinstance(v, Expr) for v in new)  # type: ignore[union-attr]
+
+        if has_expr_in_old or has_expr_in_new:
+            if default is no_default:
+                msg = "`default` is required when using expressions in `old` or `new`"
+                raise TypeError(msg)
+
+            old_list = list(old) if old_is_seq else [old]  # type: ignore[arg-type, misc]
+            new_list = list(new) if new_is_seq else [new]  # type: ignore[arg-type]
+
+            if len(new_list) == 1 and len(old_list) > 1:
+                new_list = new_list * len(old_list)
+
+            if len(old_list) != len(new_list):
+                msg = f"lengths of `old` ({len(old_list)}) and `new` ({len(new_list)}) must match"
+                raise ValueError(msg)
+
+            # when(False).then(self) preserves the column name
+            result: Expr = F.when(F.lit(False)).then(self)
+            for old_val, new_val in zip(old_list, new_list, strict=True):
+                cond = self.is_null() if old_val is None else self == old_val
+                result = result.when(cond).then(new_val)  # type: ignore[attr-defined]
+
+            result = result.otherwise(default)  # type: ignore[attr-defined]
+
+            if return_dtype is not None:
+                result = result.cast(return_dtype)
+
+            return result
 
         old_pyexpr = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
         new_pyexpr = parse_into_expression(new, str_as_lit=True)  # type: ignore[arg-type]
