@@ -157,10 +157,15 @@ pub fn python_scan_predicate(
 )> {
     let mut predicate_serialized = None;
     let predicate = if let PythonPredicate::Polars(e) = &options.predicate {
+        // Clone the expression so we can release the borrow on `options`
+        // before mutating `options.predicate` below.
+        let e = e.clone();
+
         // Convert to a pyarrow eval string.
         if matches!(options.python_source, PythonScanSource::Pyarrow) {
             use polars_core::config::verbose_print_sensitive;
 
+            // First try exact (all-or-nothing) conversion.
             let predicate_pa = polars_plan::plans::python::pyarrow::predicate_to_pa(
                 e.node(),
                 expr_arena,
@@ -179,10 +184,36 @@ pub fn python_scan_predicate(
 
             if let Some(eval_str) = predicate_pa {
                 options.predicate = PythonPredicate::PyArrow(eval_str);
-                // We don't have to use a physical expression as pyarrow deals with the filter.
+                // The full predicate converted; pyarrow handles it.
                 None
             } else {
-                Some(create_physical_expr(e, expr_arena, &options.schema, state)?)
+                // Exact conversion failed. Try partial AND: push convertible
+                // clauses to pyarrow while keeping the full predicate as a
+                // physical post-filter for correctness.
+                let partial_pa = polars_plan::plans::python::pyarrow::predicate_to_pa(
+                    e.node(),
+                    expr_arena,
+                    polars_plan::plans::python::pyarrow::PyarrowArgs::default().with_partial_and(),
+                );
+
+                verbose_print_sensitive(|| {
+                    format!(
+                        "python_scan_predicate: partial AND result: {}",
+                        partial_pa.as_deref().unwrap_or("<no convertible clauses>")
+                    )
+                });
+
+                if let Some(eval_str) = partial_pa {
+                    options.predicate = PythonPredicate::PyArrow(eval_str);
+                }
+                // Always keep the physical predicate so Polars applies the
+                // full filter after the scan.
+                Some(create_physical_expr(
+                    &e,
+                    expr_arena,
+                    &options.schema,
+                    state,
+                )?)
             }
         }
         // Convert to physical expression for the case the reader cannot consume the predicate.
@@ -190,7 +221,12 @@ pub fn python_scan_predicate(
             let dsl_expr = e.to_expr(expr_arena);
             predicate_serialized = polars_plan::plans::python::predicate::serialize(&dsl_expr)?;
 
-            Some(create_physical_expr(e, expr_arena, &options.schema, state)?)
+            Some(create_physical_expr(
+                &e,
+                expr_arena,
+                &options.schema,
+                state,
+            )?)
         }
     } else {
         None
