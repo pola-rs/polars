@@ -1,19 +1,23 @@
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
-use std::ops::{Mul, Neg};
+use std::ops::{Add, Mul, Neg};
 
-#[cfg(feature = "timezones")]
-use arrow::legacy::kernels::{Ambiguous, NonExistent};
 use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::{
     MICROSECONDS, MILLISECONDS, NANOSECONDS, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
     timestamp_us_to_datetime,
 };
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+#[cfg(feature = "timezones")]
+use chrono::TimeZone as ChronoTimeZone;
+#[cfg(feature = "timezones")]
+use chrono::offset::LocalResult;
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike};
+#[cfg(feature = "timezones")]
+use chrono_tz::OffsetComponents;
 use polars_core::datatypes::DataType;
 use polars_core::prelude::{
-    PolarsResult, TimeZone, datetime_to_timestamp_ms, datetime_to_timestamp_ns,
-    datetime_to_timestamp_us, polars_bail,
+    Ambiguous, NonExistent, PolarsResult, TimeZone, datetime_to_timestamp_ms,
+    datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,
 };
 use polars_error::polars_ensure;
 #[cfg(feature = "serde")]
@@ -24,7 +28,9 @@ use super::calendar::{
     NTE_NS_WEEK,
 };
 #[cfg(feature = "timezones")]
-use crate::utils::{localize_datetime_opt, try_localize_datetime, unlocalize_datetime};
+use crate::utils::try_localize_datetime;
+#[cfg(feature = "timezones")]
+use crate::utils::unlocalize_datetime;
 use crate::windows::calendar::{DAYS_PER_MONTH, is_leap_year};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -587,63 +593,57 @@ impl Duration {
         )
     }
 
-    /// Localize result to given time zone, respecting DST fold of original datetime.
-    /// For example, 2022-11-06 01:30:00 CST truncated by 1 hour becomes 2022-11-06 01:00:00 CST,
-    /// whereas 2022-11-06 01:30:00 CDT truncated by 1 hour becomes 2022-11-06 01:00:00 CDT.
+    /// Localize result to given time zone, respecting RFC5545 to deal with non-existent or
+    /// ambiguous results.
     ///
-    /// * `original_dt_local` - original datetime, without time zone.
-    ///   E.g. if the original datetime was 2022-11-06 01:30:00 CST, then this would
-    ///   be 2022-11-06 01:30:00.
+    /// For ambiguous and non-existent results, we preserve the DST fold of the original datetime.
+    ///
     /// * `original_dt_utc` - original datetime converted to UTC. E.g. if the
     ///   original datetime was 2022-11-06 01:30:00 CST, then this would
     ///   be 2022-11-06 07:30:00.
     /// * `result_dt_local` - result, without time zone.
+    /// * `tz` - time zone.
     #[cfg(feature = "timezones")]
-    fn localize_result(
+    fn localize_result_rfc_5545(
         &self,
-        original_dt_local: NaiveDateTime,
         original_dt_utc: NaiveDateTime,
         result_dt_local: NaiveDateTime,
         tz: &Tz,
     ) -> PolarsResult<NaiveDateTime> {
-        match localize_datetime_opt(result_dt_local, tz, Ambiguous::Raise) {
-            Some(dt) => Ok(dt.expect("we didn't use Ambiguous::Null")),
-            None => {
-                if try_localize_datetime(
-                    original_dt_local,
-                    tz,
-                    Ambiguous::Earliest,
-                    NonExistent::Raise,
-                )?
-                .expect("we didn't use Ambiguous::Null or NonExistent::Null")
-                    == original_dt_utc
-                {
-                    Ok(try_localize_datetime(
-                        result_dt_local,
-                        tz,
-                        Ambiguous::Earliest,
-                        NonExistent::Raise,
-                    )?
-                    .expect("we didn't use Ambiguous::Null or NonExistent::Null"))
-                } else if try_localize_datetime(
-                    original_dt_local,
-                    tz,
-                    Ambiguous::Latest,
-                    NonExistent::Raise,
-                )?
-                .expect("we didn't use Ambiguous::Null or NonExistent::Null")
-                    == original_dt_utc
-                {
-                    Ok(try_localize_datetime(
-                        result_dt_local,
-                        tz,
-                        Ambiguous::Latest,
-                        NonExistent::Raise,
-                    )?
-                    .expect("we didn't use Ambiguous::Null or NonExistent::Null"))
-                } else {
-                    unreachable!()
+        let result_localized = tz.from_local_datetime(&result_dt_local);
+        match result_localized {
+            LocalResult::Single(result) => Ok(result.naive_utc()),
+            LocalResult::Ambiguous(result_earliest, result_latest) => {
+                let original_localized = tz.from_utc_datetime(&original_dt_utc);
+                let original_dst_offset = original_localized.offset().dst_offset();
+                if result_earliest.offset().dst_offset() == original_dst_offset {
+                    return Ok(result_earliest.naive_utc());
                 }
+                if result_latest.offset().dst_offset() == original_dst_offset {
+                    return Ok(result_latest.naive_utc());
+                }
+                polars_bail!(ComputeError: "Could not localize datetime '{}' to time zone '{}'", result_dt_local, tz);
+            },
+            LocalResult::None => {
+                let original_localized = tz.from_utc_datetime(&original_dt_utc);
+                let original_dst_offset = original_localized.offset().dst_offset();
+                let shifted: NaiveDateTime;
+                if original_dst_offset.num_minutes() != 0 {
+                    shifted = result_dt_local.add(original_dst_offset);
+                } else if let Some(next_hour) = tz
+                    .from_local_datetime(&result_dt_local.add(TimeDelta::hours(1)))
+                    .earliest()
+                {
+                    // Try shifting forwards to get the DST offset of the would-be-result.
+                    let result_dst_offset = next_hour.offset().dst_offset();
+                    shifted = result_dt_local.add(-result_dst_offset);
+                } else {
+                    polars_bail!(ComputeError: "Could not localize datetime '{}' to time zone '{}'", result_dt_local, tz);
+                }
+                Ok(
+                    try_localize_datetime(shifted, tz, Ambiguous::Raise, NonExistent::Raise)?
+                        .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
+                )
             },
         }
     }
@@ -674,7 +674,7 @@ impl Duration {
                 let result_timestamp = t - remainder;
                 let result_dt_local = _timestamp_to_datetime(result_timestamp);
                 let result_dt_utc =
-                    self.localize_result(original_dt_local, original_dt_utc, result_dt_local, tz)?;
+                    self.localize_result_rfc_5545(original_dt_utc, result_dt_local, tz)?;
                 Ok(_datetime_to_timestamp(result_dt_utc))
             },
             _ => {
@@ -730,12 +730,8 @@ impl Duration {
             // for UTC, use fastpath below (same as naive)
             Some(tz) if tz != &chrono_tz::UTC => {
                 let result_dt_local = _timestamp_to_datetime(result_t_local);
-                let result_dt_utc = self.localize_result(
-                    _original_dt_local.unwrap(),
-                    _original_dt_utc.unwrap(),
-                    result_dt_local,
-                    tz,
-                )?;
+                let result_dt_utc =
+                    self.localize_result_rfc_5545(_original_dt_utc.unwrap(), result_dt_local, tz)?;
                 Ok(_datetime_to_timestamp(result_dt_utc))
             },
             _ => Ok(result_t_local),
@@ -818,7 +814,7 @@ impl Duration {
             Some(tz) if tz != &chrono_tz::UTC => {
                 let result_dt_local = timestamp_to_datetime(t - remainder_days * daily_duration);
                 let result_dt_utc =
-                    self.localize_result(original_dt_local, original_dt_utc, result_dt_local, tz)?;
+                    self.localize_result_rfc_5545(original_dt_utc, result_dt_local, tz)?;
                 Ok(datetime_to_timestamp(result_dt_utc))
             },
             _ => Ok(t - remainder_days * daily_duration),
@@ -946,67 +942,76 @@ impl Duration {
         let d = self;
 
         if d.months > 0 {
-            let ts = match tz {
-                #[cfg(feature = "timezones")]
-                // for UTC, use fastpath below (same as naive)
-                Some(tz) if tz != &chrono_tz::UTC => {
-                    unlocalize_datetime(timestamp_to_datetime(t), tz)
-                },
-                _ => timestamp_to_datetime(t),
-            };
-            let dt = Self::add_month(ts, d.months, d.negative);
             t = match tz {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
-                Some(tz) if tz != &chrono_tz::UTC => datetime_to_timestamp(
-                    try_localize_datetime(dt, tz, Ambiguous::Raise, NonExistent::Raise)?
-                        .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
-                ),
-                _ => datetime_to_timestamp(dt),
+                Some(tz) if tz != &chrono_tz::UTC => {
+                    let original_dt_utc = timestamp_to_datetime(t);
+                    let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
+                    let result_dt_local = Self::add_month(original_dt_local, d.months, d.negative);
+                    datetime_to_timestamp(self.localize_result_rfc_5545(
+                        original_dt_utc,
+                        result_dt_local,
+                        tz,
+                    )?)
+                },
+                _ => datetime_to_timestamp(Self::add_month(
+                    timestamp_to_datetime(t),
+                    d.months,
+                    d.negative,
+                )),
             };
         }
 
         if d.weeks > 0 {
             let t_weeks = nsecs_to_unit(NS_WEEK) * self.weeks;
-            match tz {
+            t = match tz {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => {
-                    t = datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
-                    t += if d.negative { -t_weeks } else { t_weeks };
-                    t = datetime_to_timestamp(
-                        try_localize_datetime(
-                            timestamp_to_datetime(t),
-                            tz,
-                            Ambiguous::Raise,
-                            NonExistent::Raise,
-                        )?
-                        .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
-                    );
+                    let original_dt_utc = timestamp_to_datetime(t);
+                    let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
+                    let mut result_timestamp_local = datetime_to_timestamp(original_dt_local);
+                    result_timestamp_local += if d.negative { -t_weeks } else { t_weeks };
+                    let result_dt_local = timestamp_to_datetime(result_timestamp_local);
+                    datetime_to_timestamp(self.localize_result_rfc_5545(
+                        original_dt_utc,
+                        result_dt_local,
+                        tz,
+                    )?)
                 },
-                _ => t += if d.negative { -t_weeks } else { t_weeks },
+                _ => {
+                    if d.negative {
+                        t - t_weeks
+                    } else {
+                        t + t_weeks
+                    }
+                },
             };
         }
 
         if d.days > 0 {
             let t_days = nsecs_to_unit(NS_DAY) * self.days;
-            match tz {
+            t = match tz {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => {
-                    t = datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
+                    let original_dt_utc = timestamp_to_datetime(t);
+                    let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
+                    t = datetime_to_timestamp(original_dt_local);
                     t += if d.negative { -t_days } else { t_days };
-                    t = datetime_to_timestamp(
-                        try_localize_datetime(
-                            timestamp_to_datetime(t),
-                            tz,
-                            Ambiguous::Raise,
-                            NonExistent::Raise,
-                        )?
-                        .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
-                    );
+                    let result_dt_local = timestamp_to_datetime(t);
+                    let result_dt_utc =
+                        self.localize_result_rfc_5545(original_dt_utc, result_dt_local, tz)?;
+                    datetime_to_timestamp(result_dt_utc)
                 },
-                _ => t += if d.negative { -t_days } else { t_days },
+                _ => {
+                    if d.negative {
+                        t - t_days
+                    } else {
+                        t + t_days
+                    }
+                },
             };
         }
 

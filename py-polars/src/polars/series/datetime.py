@@ -1820,8 +1820,9 @@ class DateTimeNameSpace:
             - 1y    (1 calendar year)
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
+            (which may not be 24 hours, due to daylight savings - in cases of ambiguity,
+            we follow RFC-5545 and preserve the DST fold of the original datetime).
+            Similarly for "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
 
         Returns
