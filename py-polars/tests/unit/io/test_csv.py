@@ -21,6 +21,7 @@ from polars._utils.various import normalize_filepath
 from polars.exceptions import ComputeError, InvalidOperationError, NoDataError
 from polars.io.csv import BatchedCsvReader
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.conftest import PlMonkeyPatch
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -35,16 +36,16 @@ def foods_file_path(io_files_path: Path) -> Path:
 
 
 @pytest.fixture(params=["chunk-size-default", "chunk-size-7"])
-def chunk_override(request: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+def chunk_override(request: Any, plmonkeypatch: PlMonkeyPatch) -> None:
     env_var_name = "POLARS_FORCE_CSV_INFER_CHUNK_SIZE"
 
     if request.param == "chunk-size-default":
-        monkeypatch.delenv(env_var_name, raising=False)
+        plmonkeypatch.delenv(env_var_name, raising=False)
     elif request.param == "chunk-size-7":
         # 7 is good because it can contain some test lines fully but not all
         # and it tests chunks merging. The chunks in question are only the ones
         # for schema inference and start point finding.
-        monkeypatch.setenv(env_var_name, "7")
+        plmonkeypatch.setenv(env_var_name, "7")
     else:
         pytest.fail("unreachable")
 
@@ -603,9 +604,9 @@ def test_column_rename_and_schema_overrides(chunk_override: None) -> None:
 
 
 def test_compressed_csv(
-    chunk_override: None, io_files_path: Path, monkeypatch: pytest.MonkeyPatch
+    chunk_override: None, io_files_path: Path, plmonkeypatch: PlMonkeyPatch
 ) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
 
     # gzip compression
     csv = textwrap.dedent(
@@ -955,7 +956,7 @@ def test_csv_globbing(chunk_override: None, io_files_path: Path) -> None:
     df = pl.read_csv(path)
     assert df.shape == (135, 4)
 
-    with pytest.MonkeyPatch.context() as mp:
+    with PlMonkeyPatch.context() as mp:
         mp.setenv("POLARS_FORCE_ASYNC", "0")
 
         with pytest.raises(ValueError):
@@ -966,7 +967,7 @@ def test_csv_globbing(chunk_override: None, io_files_path: Path) -> None:
     assert df.row(-1) == ("seafood", 1)
     assert df.row(0) == ("vegetables", 2)
 
-    with pytest.MonkeyPatch.context() as mp:
+    with PlMonkeyPatch.context() as mp:
         mp.setenv("POLARS_FORCE_ASYNC", "0")
 
         with pytest.raises(ValueError):
@@ -2094,9 +2095,9 @@ def test_invalid_csv_raise(chunk_override: None) -> None:
 
 @pytest.mark.write_disk
 def test_partial_read_compressed_file(
-    chunk_override: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    chunk_override: None, tmp_path: Path, plmonkeypatch: PlMonkeyPatch
 ) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
 
     df = pl.DataFrame(
         {"idx": range(1_000), "dt": date(2025, 12, 31), "txt": "hello world"}
@@ -2285,7 +2286,7 @@ def test_read_csv_decimal_type_decimal_comma_24414(chunk_override: None) -> None
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_fsspec_not_available(chunk_override: None) -> None:
-    with pytest.MonkeyPatch.context() as mp:
+    with PlMonkeyPatch.context() as mp:
         mp.setenv("POLARS_FORCE_ASYNC", "0")
         mp.setattr("polars.io._utils._FSSPEC_AVAILABLE", False)
 
@@ -3131,3 +3132,8 @@ def test_provided_schema_mismatch_truncate(chunk_override: None, read_fn: str) -
     )
     expected = [pl.Series("A", [1])]
     assert_frame_equal(df, pl.DataFrame(expected))
+
+
+def test_read_batch_csv_deprecations_26479(foods_file_path: Path) -> None:
+    with pytest.warns(DeprecationWarning, match=r"`read_csv_batched` is deprecated"):
+        pl.read_csv_batched(foods_file_path)

@@ -1,14 +1,20 @@
+from __future__ import annotations
+
 import io
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
-from polars._typing import EngineType
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
+    from tests.conftest import PlMonkeyPatch
+
 
 SINKS = [
     (pl.scan_ipc, pl.LazyFrame.sink_ipc),
@@ -165,7 +171,8 @@ def test_sink_empty(sink: Any, scan: Any) -> None:
 
 @pytest.mark.parametrize(("scan", "sink"), SINKS)
 def test_sink_boolean_panic_25806(sink: Any, scan: Any) -> None:
-    df = pl.select(bool=pl.repeat(True, 300_000))
+    morsel_size = int(os.environ.get("POLARS_IDEAL_MORSEL_SIZE", 100_000))
+    df = pl.select(bool=pl.repeat(True, 3 * morsel_size))
 
     f = io.BytesIO()
     sink(df.lazy(), f)
@@ -332,3 +339,40 @@ def test_sink_path_slicing_utf8_boundaries_26324(
     df.write_parquet(file_name)
 
     assert_frame_equal(pl.scan_parquet(file_name).collect(), df)
+
+
+@pytest.mark.parametrize("file_format", ["parquet", "ipc", "csv", "ndjson"])
+@pytest.mark.parametrize("partitioned", [True, False])
+@pytest.mark.write_disk
+def test_sink_metrics(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    file_format: str,
+    tmp_path: Path,
+    partitioned: bool,
+) -> None:
+    path = tmp_path / "a"
+
+    df = pl.DataFrame({"a": 1})
+
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_LOG_METRICS", "1")
+        cx.setenv("POLARS_FORCE_ASYNC", "1")
+        capfd.readouterr()
+        getattr(pl.LazyFrame, f"sink_{file_format}")(
+            df.lazy(),
+            path
+            if not partitioned
+            else pl.PartitionBy("", file_path_provider=(lambda _: path), key="a"),
+        )
+        capture = capfd.readouterr().err
+
+    [line] = (x for x in capture.splitlines() if x.startswith("io-sink"))
+
+    logged_bytes_sent = int(
+        pl.select(pl.lit(line).str.extract(r"total_bytes_sent=(\d+)")).item()
+    )
+
+    assert logged_bytes_sent == path.stat().st_size
+
+    assert_frame_equal(getattr(pl, f"scan_{file_format}")(path).collect(), df)

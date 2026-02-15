@@ -43,6 +43,7 @@ bytemuck = { version = "1.22", features = ["derive", "extern_crate_alloc"] }
 bytes = { version = "1.11" }
 chrono = { version = "<=0.4.41", default-features = false, features = ["std"] }
 chrono-tz = "0.10"
+color-backtrace = { version = "0.7.2", default-features = false, features = ["use-btparse-crate"] }
 compact_str = { version = "0.9.0", features = ["serde"] }
 crossbeam-channel = "0.5.15"
 crossbeam-deque = "0.8.5"
@@ -71,7 +72,7 @@ num-bigint = "0.4.6"
 num-derive = "0.4.2"
 num-traits = "0.2"
 numpy = "0.27"
-object_store = { version = "0.13", default-features = false, features = ["fs"] }
+object_store = { version = "0.13.1", default-features = false, features = ["fs"] }
 parking_lot = "0.12"
 percent-encoding = "2.3"
 pin-project-lite = "0.2"
@@ -113,6 +114,7 @@ zstd = "0.13"
 polars = { version = "0.53.0", path = "crates/polars", default-features = false }
 polars-buffer = { version = "0.53.0", path = "crates/polars-buffer", default-features = false }
 polars-compute = { version = "0.53.0", path = "crates/polars-compute", default-features = false }
+polars-config = { version = "0.53.0", path = "crates/polars-config", default-features = false }
 polars-core = { version = "0.53.0", path = "crates/polars-core", default-features = false }
 polars-dtype = { version = "0.53.0", path = "crates/polars-dtype", default-features = false }
 polars-dylib = { version = "0.53.0", path = "crates/polars-dylib", default-features = false }
@@ -162,6 +164,8 @@ collapsible_if = "allow"
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
 tikv-jemallocator = { git = "https://github.com/pola-rs/jemallocator", rev = "c7991e5bb6b3e9f79db6b0f48dcda67c5c3d2936" }
+object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", branch = "feat_checksum_crc64" }
+color-backtrace = { git = "https://github.com/orlp/color-backtrace", rev = "bb62ccf1e9eb1f6b7af5f16acff1fd7151a876dd" }
 
 [profile.mindebug-dev]
 inherits = "dev"

@@ -262,32 +262,28 @@ async fn expand_path_cloud(
         }
 
         let cloud_location = &cloud_location;
+        let prefix_ref = &prefix;
 
         let mut paths = store
-            .try_exec_rebuild_on_err(|store| {
-                let st = store.clone();
+            .exec_with_rebuild_retry_on_err(|s| async move {
+                let out = s
+                    .list(Some(prefix_ref))
+                    .try_filter_map(|x| async move {
+                        let out = (x.size > 0).then(|| {
+                            PlRefPath::new({
+                                format_path(
+                                    cloud_location.scheme,
+                                    &cloud_location.bucket,
+                                    x.location.as_ref(),
+                                )
+                            })
+                        });
+                        Ok(out)
+                    })
+                    .try_collect::<Vec<_>>()
+                    .await?;
 
-                async {
-                    let store = st;
-                    let out = store
-                        .list(Some(&prefix))
-                        .try_filter_map(|x| async move {
-                            let out = (x.size > 0).then(|| {
-                                PlRefPath::new({
-                                    format_path(
-                                        cloud_location.scheme,
-                                        &cloud_location.bucket,
-                                        x.location.as_ref(),
-                                    )
-                                })
-                            });
-                            Ok(out)
-                        })
-                        .try_collect::<Vec<_>>()
-                        .await?;
-
-                    Ok(out)
-                }
+                Ok(out)
             })
             .await?;
 
@@ -352,7 +348,9 @@ pub async fn expand_paths_hive(
         check_directory_level,
     };
 
-    if first_path_has_scheme || { cfg!(not(target_family = "windows")) && config::force_async() } {
+    if first_path_has_scheme || {
+        cfg!(not(target_family = "windows")) && polars_config::config().force_async()
+    } {
         #[cfg(feature = "cloud")]
         {
             if first_path.scheme() == Some(CloudScheme::Hf) {

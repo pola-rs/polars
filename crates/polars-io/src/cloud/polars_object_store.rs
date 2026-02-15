@@ -1,35 +1,86 @@
+use std::fmt::Display;
 use std::ops::Range;
+use std::sync::Arc;
 
-use futures::{StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt as _, TryStreamExt as _};
 use hashbrown::hash_map::RawEntryMut;
 use object_store::path::Path;
 use object_store::{ObjectMeta, ObjectStore, ObjectStoreExt};
 use polars_buffer::Buffer;
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_error::{PolarsError, PolarsResult};
-use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+use polars_utils::pl_path::PlRefPath;
+use tokio::io::AsyncWriteExt;
 
-use crate::metrics::{HEAD_RESPONSE_SIZE_ESTIMATE, OptIOMetrics};
+use crate::metrics::HEAD_RESPONSE_SIZE_ESTIMATE;
 use crate::pl_async::{
     self, MAX_BUDGET_PER_REQUEST, get_concurrency_limit, get_download_chunk_size,
     tune_with_concurrency_budget, with_concurrency_budget,
 };
 
+#[derive(Debug)]
+pub struct PolarsObjectStoreError {
+    pub base_url: PlRefPath,
+    pub source: object_store::Error,
+}
+
+impl PolarsObjectStoreError {
+    pub fn from_url(base_url: &PlRefPath) -> impl FnOnce(object_store::Error) -> Self {
+        |error| Self {
+            base_url: base_url.clone(),
+            source: error,
+        }
+    }
+}
+
+impl Display for PolarsObjectStoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "object-store error: {} (path: {})",
+            self.source, &self.base_url
+        )
+    }
+}
+
+impl std::error::Error for PolarsObjectStoreError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
+impl From<PolarsObjectStoreError> for std::io::Error {
+    fn from(value: PolarsObjectStoreError) -> Self {
+        std::io::Error::other(value)
+    }
+}
+
+impl From<PolarsObjectStoreError> for PolarsError {
+    fn from(value: PolarsObjectStoreError) -> Self {
+        PolarsError::IO {
+            error: Arc::new(value.into()),
+            msg: None,
+        }
+    }
+}
+
 mod inner {
+
+    use std::borrow::Cow;
     use std::future::Future;
     use std::sync::Arc;
 
     use object_store::ObjectStore;
     use polars_core::config;
-    use polars_error::PolarsResult;
+    use polars_error::{PolarsError, PolarsResult};
     use polars_utils::relaxed_cell::RelaxedCell;
 
-    use crate::cloud::PolarsObjectStoreBuilder;
+    use crate::cloud::{ObjectStoreErrorContext, PolarsObjectStoreBuilder};
     use crate::metrics::{IOMetrics, OptIOMetrics};
 
     #[derive(Debug)]
     struct Inner {
-        store: tokio::sync::Mutex<Arc<dyn ObjectStore>>,
+        store: tokio::sync::RwLock<Arc<dyn ObjectStore>>,
         builder: PolarsObjectStoreBuilder,
     }
 
@@ -53,7 +104,7 @@ mod inner {
             let initial_store = store.clone();
             Self {
                 inner: Arc::new(Inner {
-                    store: tokio::sync::Mutex::new(store),
+                    store: tokio::sync::RwLock::new(store),
                     builder,
                 }),
                 initial_store,
@@ -67,16 +118,16 @@ mod inner {
             self
         }
 
-        pub fn io_metrics(&self) -> OptIOMetrics {
-            self.io_metrics.clone()
+        pub fn io_metrics(&self) -> &OptIOMetrics {
+            &self.io_metrics
         }
 
         /// Gets the underlying [`ObjectStore`] implementation.
-        pub async fn to_dyn_object_store(&self) -> Arc<dyn ObjectStore> {
+        async fn to_dyn_object_store(&self) -> Cow<'_, Arc<dyn ObjectStore>> {
             if !self.rebuilt.load() {
-                self.initial_store.clone()
+                Cow::Borrowed(&self.initial_store)
             } else {
-                self.inner.store.lock().await.clone()
+                Cow::Owned(self.inner.store.read().await.clone())
             }
         }
 
@@ -84,7 +135,7 @@ mod inner {
             &self,
             from_version: &Arc<dyn ObjectStore>,
         ) -> PolarsResult<Arc<dyn ObjectStore>> {
-            let mut current_store = self.inner.store.lock().await;
+            let mut current_store = self.inner.store.write().await;
 
             // If this does not eq, then `inner` was already re-built by another thread.
             if Arc::ptr_eq(&*current_store, from_version) {
@@ -104,14 +155,17 @@ mod inner {
             Ok((*current_store).clone())
         }
 
-        pub async fn try_exec_rebuild_on_err<Fn, Fut, O>(&self, mut func: Fn) -> PolarsResult<O>
+        pub async fn exec_with_rebuild_retry_on_err<'s, 'f, Fn, Fut, O>(
+            &'s self,
+            mut func: Fn,
+        ) -> PolarsResult<O>
         where
-            Fn: FnMut(&Arc<dyn ObjectStore>) -> Fut,
-            Fut: Future<Output = PolarsResult<O>>,
+            Fn: FnMut(Cow<'s, Arc<dyn ObjectStore>>) -> Fut + 'f,
+            Fut: Future<Output = object_store::Result<O>>,
         {
             let store = self.to_dyn_object_store().await;
 
-            let out = func(&store).await;
+            let out = func(store.clone()).await;
 
             let orig_err = match out {
                 Ok(v) => return Ok(v),
@@ -120,7 +174,7 @@ mod inner {
 
             if config::verbose() {
                 eprintln!(
-                    "[PolarsObjectStore]: got error: {}, will attempt re-build",
+                    "[PolarsObjectStore]: got error: {}, will rebuild store and retry",
                     &orig_err
                 );
             }
@@ -130,7 +184,9 @@ mod inner {
                 .await
                 .map_err(|e| e.wrap_msg(|e| format!("{e}; original error: {orig_err}")))?;
 
-            func(&store).await.map_err(|e| {
+            func(Cow::Owned(store)).await.map_err(|e| {
+                let e: PolarsError = self.error_context().attach_err_info(e).into();
+
                 if self.inner.builder.is_azure()
                     && std::env::var("POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY").as_deref()
                         != Ok("1")
@@ -149,6 +205,30 @@ and use the storage account keys from Azure CLI to authenticate"
                 }
             })
         }
+
+        pub fn error_context(&self) -> ObjectStoreErrorContext {
+            ObjectStoreErrorContext::new(self.inner.builder.path().clone())
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ObjectStoreErrorContext {
+    path: PlRefPath,
+}
+
+impl ObjectStoreErrorContext {
+    pub fn new(path: PlRefPath) -> Self {
+        Self { path }
+    }
+
+    pub fn attach_err_info(self, err: object_store::Error) -> PolarsObjectStoreError {
+        let ObjectStoreErrorContext { path } = self;
+
+        PolarsObjectStoreError {
+            base_url: path,
+            source: err,
+        }
     }
 }
 
@@ -157,32 +237,28 @@ pub use inner::PolarsObjectStore;
 pub type ObjectStorePath = object_store::path::Path;
 
 impl PolarsObjectStore {
-    /// Returns a buffered stream that downloads concurrently up to the concurrency limit.
-    fn get_buffered_ranges_stream<'a, T: Iterator<Item = Range<usize>>>(
-        store: &'a dyn ObjectStore,
+    pub fn build_buffered_ranges_stream<'a, T: Iterator<Item = Range<usize>>>(
+        &'a self,
         path: &'a Path,
         ranges: T,
-        io_metrics: OptIOMetrics,
-    ) -> impl StreamExt<Item = PolarsResult<Buffer<u8>>>
-    + TryStreamExt<Ok = Buffer<u8>, Error = PolarsError, Item = PolarsResult<Buffer<u8>>>
-    + use<'a, T> {
-        futures::stream::iter(ranges.map(move |range| {
-            let io_metrics = io_metrics.clone();
-
-            async move {
-                if range.is_empty() {
-                    return Ok(Buffer::new());
-                }
-
-                let out = io_metrics
-                    .record_io_read(
-                        range.len() as u64,
-                        store.get_range(path, range.start as u64..range.end as u64),
-                    )
-                    .await?;
-
-                Ok(Buffer::from_owner(out))
+    ) -> impl Stream<Item = PolarsResult<Buffer<u8>>> + use<'a, T> {
+        futures::stream::iter(ranges.map(move |range| async move {
+            if range.is_empty() {
+                return Ok(Buffer::new());
             }
+
+            let out = self
+                .io_metrics()
+                .record_io_read(
+                    range.len() as u64,
+                    self.exec_with_rebuild_retry_on_err(|s| async move {
+                        s.get_range(path, range.start as u64..range.end as u64)
+                            .await
+                    }),
+                )
+                .await?;
+
+            Ok(Buffer::from_owner(out))
         }))
         // Add a limit locally as this gets run inside a single `tune_with_concurrency_budget`.
         .buffered(get_concurrency_limit() as usize)
@@ -193,54 +269,46 @@ impl PolarsObjectStore {
             return Ok(Buffer::new());
         }
 
-        let io_metrics = self.io_metrics();
+        let parts = split_range(range.clone());
 
-        self.try_exec_rebuild_on_err(move |store| {
-            let range = range.clone();
-            let st = store.clone();
-            let io_metrics = io_metrics.clone();
-
-            async move {
-                let store = st;
-                let parts = split_range(range.clone());
-
-                if parts.len() == 1 {
-                    let out = tune_with_concurrency_budget(1, move || async move {
-                        let bytes = io_metrics
-                            .record_io_read(
-                                range.len() as u64,
-                                store.get_range(path, range.start as u64..range.end as u64),
-                            )
-                            .await?;
-
-                        PolarsResult::Ok(Buffer::from_owner(bytes))
-                    })
-                    .await?;
-
-                    Ok(out)
-                } else {
-                    let parts = tune_with_concurrency_budget(
-                        parts.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
-                        || {
-                            Self::get_buffered_ranges_stream(&store, path, parts, io_metrics)
-                                .try_collect::<Vec<Buffer<u8>>>()
-                        },
+        if parts.len() == 1 {
+            let out = tune_with_concurrency_budget(1, move || async move {
+                let bytes = self
+                    .io_metrics()
+                    .record_io_read(
+                        range.len() as u64,
+                        self.exec_with_rebuild_retry_on_err(|s| async move {
+                            s.get_range(path, range.start as u64..range.end as u64)
+                                .await
+                        }),
                     )
                     .await?;
 
-                    let mut combined = Vec::with_capacity(range.len());
+                PolarsResult::Ok(Buffer::from_owner(bytes))
+            })
+            .await?;
 
-                    for part in parts {
-                        combined.extend_from_slice(&part)
-                    }
+            Ok(out)
+        } else {
+            let parts = tune_with_concurrency_budget(
+                parts.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
+                || {
+                    self.build_buffered_ranges_stream(path, parts)
+                        .try_collect::<Vec<Buffer<u8>>>()
+                },
+            )
+            .await?;
 
-                    assert_eq!(combined.len(), range.len());
+            let mut combined = Vec::with_capacity(range.len());
 
-                    PolarsResult::Ok(Buffer::from_vec(combined))
-                }
+            for part in parts {
+                combined.extend_from_slice(&part)
             }
-        })
-        .await
+
+            assert_eq!(combined.len(), range.len());
+
+            PolarsResult::Ok(Buffer::from_vec(combined))
+        }
     }
 
     /// Fetch byte ranges into a HashMap keyed by the range start. This will mutably sort the
@@ -261,187 +329,126 @@ impl PolarsObjectStore {
 
         let ranges_len = ranges.len();
         let (merged_ranges, merged_ends): (Vec<_>, Vec<_>) = merge_ranges(ranges).unzip();
-        let io_metrics = self.io_metrics();
 
-        self.try_exec_rebuild_on_err(|store| {
-            let st = store.clone();
-            let io_metrics = io_metrics.clone();
+        let mut out = PlHashMap::with_capacity(ranges_len);
 
-            async {
-                let store = st;
-                let mut out = PlHashMap::with_capacity(ranges_len);
+        let mut stream = self.build_buffered_ranges_stream(path, merged_ranges.iter().cloned());
 
-                let mut stream = Self::get_buffered_ranges_stream(
-                    &store,
-                    path,
-                    merged_ranges.iter().cloned(),
-                    io_metrics,
-                );
+        tune_with_concurrency_budget(
+            merged_ranges.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
+            || async {
+                let mut len = 0;
+                let mut current_offset = 0;
+                let mut ends_iter = merged_ends.iter();
 
-                tune_with_concurrency_budget(
-                    merged_ranges.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
-                    || async {
-                        let mut len = 0;
-                        let mut current_offset = 0;
-                        let mut ends_iter = merged_ends.iter();
+                let mut splitted_parts = vec![];
 
-                        let mut splitted_parts = vec![];
+                while let Some(bytes) = stream.try_next().await? {
+                    len += bytes.len();
+                    let end = *ends_iter.next().unwrap();
 
-                        while let Some(bytes) = stream.try_next().await? {
-                            len += bytes.len();
-                            let end = *ends_iter.next().unwrap();
+                    if end == 0 {
+                        splitted_parts.push(bytes);
+                        continue;
+                    }
 
-                            if end == 0 {
-                                splitted_parts.push(bytes);
-                                continue;
-                            }
+                    let full_range = ranges[current_offset..end]
+                        .iter()
+                        .cloned()
+                        .reduce(|l, r| l.start.min(r.start)..l.end.max(r.end))
+                        .unwrap();
 
-                            let full_range = ranges[current_offset..end]
-                                .iter()
-                                .cloned()
-                                .reduce(|l, r| l.start.min(r.start)..l.end.max(r.end))
-                                .unwrap();
+                    let bytes = if splitted_parts.is_empty() {
+                        bytes
+                    } else {
+                        let mut out = Vec::with_capacity(full_range.len());
 
-                            let bytes = if splitted_parts.is_empty() {
-                                bytes
-                            } else {
-                                let mut out = Vec::with_capacity(full_range.len());
-
-                                for x in splitted_parts.drain(..) {
-                                    out.extend_from_slice(&x);
-                                }
-
-                                out.extend_from_slice(&bytes);
-                                Buffer::from(out)
-                            };
-
-                            assert_eq!(bytes.len(), full_range.len());
-
-                            for range in &ranges[current_offset..end] {
-                                let slice = bytes.clone().sliced(
-                                    range.start - full_range.start..range.end - full_range.start,
-                                );
-
-                                match out.raw_entry_mut().from_key(&range.start) {
-                                    RawEntryMut::Vacant(slot) => {
-                                        slot.insert(range.start, slice);
-                                    },
-                                    RawEntryMut::Occupied(mut slot) => {
-                                        if slot.get_mut().len() < slice.len() {
-                                            *slot.get_mut() = slice;
-                                        }
-                                    },
-                                }
-                            }
-
-                            current_offset = end;
+                        for x in splitted_parts.drain(..) {
+                            out.extend_from_slice(&x);
                         }
 
-                        assert!(splitted_parts.is_empty());
+                        out.extend_from_slice(&bytes);
+                        Buffer::from(out)
+                    };
 
-                        PolarsResult::Ok(pl_async::Size::from(len as u64))
-                    },
-                )
-                .await?;
+                    assert_eq!(bytes.len(), full_range.len());
 
-                Ok(out)
-            }
-        })
-        .await
+                    for range in &ranges[current_offset..end] {
+                        let slice = bytes
+                            .clone()
+                            .sliced(range.start - full_range.start..range.end - full_range.start);
+
+                        match out.raw_entry_mut().from_key(&range.start) {
+                            RawEntryMut::Vacant(slot) => {
+                                slot.insert(range.start, slice);
+                            },
+                            RawEntryMut::Occupied(mut slot) => {
+                                if slot.get_mut().len() < slice.len() {
+                                    *slot.get_mut() = slice;
+                                }
+                            },
+                        }
+                    }
+
+                    current_offset = end;
+                }
+
+                assert!(splitted_parts.is_empty());
+
+                PolarsResult::Ok(pl_async::Size::from(len as u64))
+            },
+        )
+        .await?;
+
+        Ok(out)
     }
 
     pub async fn download(&self, path: &Path, file: &mut tokio::fs::File) -> PolarsResult<()> {
-        let opt_size = self.head(path).await.ok().map(|x| x.size);
+        let size = self.head(path).await?.size;
+        let parts = split_range(0..size as usize);
 
-        let initial_pos = file.stream_position().await?;
-        let io_metrics = self.io_metrics();
+        tune_with_concurrency_budget(
+            parts.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
+            || async {
+                let mut stream = self.build_buffered_ranges_stream(path, parts);
+                let mut len = 0;
+                while let Some(bytes) = stream.try_next().await? {
+                    len += bytes.len();
+                    file.write_all(&bytes).await?;
+                }
 
-        self.try_exec_rebuild_on_err(|store| {
-            let st = store.clone();
-            let io_metrics = io_metrics.clone();
+                assert_eq!(len, size as usize);
 
-            // Workaround for "can't move captured variable".
-            let file: &mut tokio::fs::File = unsafe { std::mem::transmute_copy(&file) };
+                PolarsResult::Ok(pl_async::Size::from(len as u64))
+            },
+        )
+        .await?;
 
-            async {
-                file.set_len(initial_pos).await?; // Reset if this function was called again.
+        // Dropping is delayed for tokio async files so we need to explicitly
+        // flush here (https://github.com/tokio-rs/tokio/issues/2307#issuecomment-596336451).
+        file.sync_all().await.map_err(PolarsError::from)?;
 
-                let store = st;
-                let parts = opt_size
-                    .map(|x| split_range(0..x as usize))
-                    .filter(|x| x.len() > 1);
-
-                if let Some(parts) = parts {
-                    tune_with_concurrency_budget(
-                        parts.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
-                        || async {
-                            let mut stream =
-                                Self::get_buffered_ranges_stream(&store, path, parts, io_metrics);
-                            let mut len = 0;
-                            while let Some(bytes) = stream.try_next().await? {
-                                len += bytes.len();
-                                file.write_all(&bytes).await?;
-                            }
-
-                            assert_eq!(len, opt_size.unwrap() as usize);
-
-                            PolarsResult::Ok(pl_async::Size::from(len as u64))
-                        },
-                    )
-                    .await?
-                } else {
-                    tune_with_concurrency_budget(1, || async {
-                        let io_session = io_metrics.start_io_session();
-
-                        let mut stream = store.get(path).await?.into_stream();
-                        let mut len = 0;
-
-                        while let Some(bytes) = stream.try_next().await? {
-                            len += bytes.len();
-                            io_metrics.add_bytes_requested(bytes.len() as u64);
-                            io_metrics.add_bytes_received(bytes.len() as u64);
-                            file.write_all(&bytes).await?;
-                        }
-
-                        drop(io_session);
-
-                        PolarsResult::Ok(pl_async::Size::from(len as u64))
-                    })
-                    .await?
-                };
-
-                // Dropping is delayed for tokio async files so we need to explicitly
-                // flush here (https://github.com/tokio-rs/tokio/issues/2307#issuecomment-596336451).
-                file.sync_all().await.map_err(PolarsError::from)?;
-
-                Ok(())
-            }
-        })
-        .await
+        Ok(())
     }
 
     /// Fetch the metadata of the parquet file, do not memoize it.
     pub async fn head(&self, path: &Path) -> PolarsResult<ObjectMeta> {
-        let io_metrics = self.io_metrics();
-
-        self.try_exec_rebuild_on_err(|store| {
-            let st = store.clone();
-            let io_metrics = io_metrics.clone();
-
-            async move {
-                with_concurrency_budget(1, || async {
-                    let store = st;
-                    let head_result = io_metrics
-                        .record_io_read(HEAD_RESPONSE_SIZE_ESTIMATE, store.head(path))
+        with_concurrency_budget(1, || {
+            self.exec_with_rebuild_retry_on_err(|s| {
+                async move {
+                    let head_result = self
+                        .io_metrics()
+                        .record_io_read(HEAD_RESPONSE_SIZE_ESTIMATE, s.head(path))
                         .await;
 
                     if head_result.is_err() {
                         // Pre-signed URLs forbid the HEAD method, but we can still retrieve the header
                         // information with a range 0-1 request.
-                        let get_range_0_1_result = io_metrics
+                        let get_range_0_1_result = self
+                            .io_metrics()
                             .record_io_read(
                                 HEAD_RESPONSE_SIZE_ESTIMATE + 1,
-                                store.get_opts(
+                                s.get_opts(
                                     path,
                                     object_store::GetOptions {
                                         range: Some((0..1).into()),
@@ -459,9 +466,8 @@ impl PolarsObjectStore {
                     let out = head_result?;
 
                     Ok(out)
-                })
-                .await
-            }
+                }
+            })
         })
         .await
     }

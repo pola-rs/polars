@@ -11,13 +11,18 @@ import pytest
 from hypothesis import given, settings
 
 import polars as pl
+from polars._typing import AsofJoinStrategy
+from polars.datatypes.group import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric.strategies.core import dataframes
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import JoinStrategy, MaintainOrderJoin
+    from polars._typing import AsofJoinStrategy, JoinStrategy, MaintainOrderJoin
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -596,3 +601,60 @@ def test_merge_join_applicable(
     else:
         assert "merge-join" not in typing.cast("str", dot)
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+@pytest.mark.parametrize("allow_exact_matches", [False, True])
+@pytest.mark.parametrize("coalesce", [False, True])
+@pytest.mark.parametrize(
+    "dtypes",
+    [
+        FLOAT_DTYPES,
+        INTEGER_DTYPES,
+        {pl.String, pl.Binary},
+        {pl.Date},
+        {
+            pl.Datetime("ms"),
+            pl.Datetime("us"),
+            pl.Datetime("ns"),
+        },
+        {
+            pl.Datetime("ms", time_zone="Europe/Amsterdam"),
+            pl.Datetime("us", time_zone="Europe/Amsterdam"),
+            pl.Datetime("ns", time_zone="Europe/Amsterdam"),
+        },
+        {pl.Time},
+        {pl.Duration("ms"), pl.Duration("us"), pl.Duration("ns")},
+    ],
+)
+@given(data=st.data())
+def test_streaming_asof_join(
+    data: st.DataObject,
+    strategy: AsofJoinStrategy,
+    allow_exact_matches: bool,
+    coalesce: bool,
+    dtypes: set[pl.DataType],
+) -> None:
+    if dtypes & {pl.String, pl.Binary} and strategy == "nearest":
+        pytest.skip("asof join with string/binary does not support 'nearest' strategy")
+
+    dtype = data.draw(st.sampled_from(list(dtypes)))
+    df_st = dataframes(
+        min_cols=1, max_cols=1, allowed_dtypes=[dtype], allow_time_zones=False
+    )
+    left_df = data.draw(df_st)
+    right_df = data.draw(df_st)
+
+    left = left_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
+    right = right_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
+
+    q = left.join_asof(
+        right,
+        on="key",
+        strategy=strategy,
+        allow_exact_matches=allow_exact_matches,
+        coalesce=coalesce,
+    )
+    expected = q.collect(engine="in-memory")
+    actual = q.collect(engine="streaming")
+    assert_frame_equal(actual, expected)

@@ -719,6 +719,11 @@ fn visualize_plan_rec(
             input_right,
             args: _,
         } => ("cross-join".to_string(), &[*input_left, *input_right][..]),
+        PhysNodeKind::AsOfJoin {
+            input_left,
+            input_right,
+            ..
+        } => ("asof_join".to_string(), &[*input_left, *input_right][..]),
         #[cfg(feature = "merge_sorted")]
         PhysNodeKind::MergeSorted {
             input_left,

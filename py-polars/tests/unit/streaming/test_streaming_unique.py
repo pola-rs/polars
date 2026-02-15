@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -10,19 +11,25 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tests.conftest import PlMonkeyPatch
+
 pytestmark = pytest.mark.xdist_group("streaming")
 
 
 @pytest.mark.write_disk
 @pytest.mark.slow
 def test_streaming_out_of_core_unique(
-    io_files_path: Path, tmp_path: Path, monkeypatch: Any, capfd: Any
+    io_files_path: Path, tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any
 ) -> None:
+    morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
+    if morsel_size is not None and int(morsel_size) < 1000:
+        pytest.skip("test is too slow for small morsel sizes")
+
     tmp_path.mkdir(exist_ok=True)
-    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-    monkeypatch.setenv("POLARS_STREAMING_GROUPBY_SPILL_SIZE", "256")
+    plmonkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
+    plmonkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_STREAMING_GROUPBY_SPILL_SIZE", "256")
     df = pl.read_csv(io_files_path / "foods*.csv")
     # this creates 10M rows
     q = df.lazy()

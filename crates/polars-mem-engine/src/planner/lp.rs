@@ -293,7 +293,7 @@ fn create_physical_plan_impl(
             },
         },
         SinkMultiple { .. } => {
-            unreachable!("should be handled with create_multiple_physical_plans")
+            polars_bail!(InvalidOperation: "lazy multisinks only supported on streaming engine")
         },
         Union { inputs, options } => {
             let inputs = state.with_new_branch(|new_state| {

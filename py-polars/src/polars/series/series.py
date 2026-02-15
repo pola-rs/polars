@@ -9429,7 +9429,7 @@ class Series:
         """Evaluate the number of set bits."""
 
     def bitwise_count_zeros(self) -> Self:
-        """Evaluate the number of unset Self."""
+        """Evaluate the number of unset bits."""
 
     def bitwise_leading_ones(self) -> Self:
         """Evaluate the number most-significant set bits before seeing an unset bit."""

@@ -35,14 +35,21 @@ defaults:
 jobs:
   test-python:
     runs-on: ${{ matrix.os }}
+    env:
+      POLARS_IDEAL_MORSEL_SIZE: ${{ matrix.ideal_morsel_size }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
         python-version: ['3.10', '3.12', '3.13', '3.14', '3.14t']
+        ideal_morsel_size: [100000]
         include:
           - os: windows-latest
             python-version: '3.14'
+            ideal_morsel_size: 100000
+          - os: ubuntu-latest
+            python-version: '3.14'
+            ideal_morsel_size: 4
 
     steps:
       - uses: actions/checkout@v6

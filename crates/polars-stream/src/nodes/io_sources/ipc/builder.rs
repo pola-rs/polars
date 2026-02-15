@@ -96,11 +96,12 @@ impl FileReaderBuilder for IpcReaderBuilder {
             None
         };
 
-        let byte_source_builder = if scan_source.is_cloud_url() || config::force_async() {
-            DynByteSourceBuilder::ObjectStore
-        } else {
-            DynByteSourceBuilder::Mmap
-        };
+        let byte_source_builder =
+            if scan_source.is_cloud_url() || polars_config::config().force_async() {
+                DynByteSourceBuilder::ObjectStore
+            } else {
+                DynByteSourceBuilder::Mmap
+            };
 
         let reader = IpcFileReader {
             scan_source,
