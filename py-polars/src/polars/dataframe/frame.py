@@ -4509,26 +4509,40 @@ class DataFrame:
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
 
+                # Try to get the name and version of the underlying ADBC driver to help
+                # with error messages and backwards compatibility
+
                 # We can reliably introspect the underlying driver from a URI
                 # We can also introspect instantiated connections when PyArrow is
                 # installed. Otherwise, the underlying driver is unknown
                 # Ref: https://github.com/apache/arrow-adbc/issues/2828
                 if isinstance(connection, str):
                     adbc_module_name = _get_adbc_module_name_from_uri(connection)
+                    adbc_driver = _import_optional_adbc_driver(
+                        adbc_module_name, dbapi_submodule=False
+                    )
+                    adbc_driver_str_version = getattr(
+                        adbc_driver,
+                        "__version__",
+                        driver_manager_str_version,
+                    )
                 elif _PYARROW_AVAILABLE:
                     adbc_module_name = (
                         f"adbc_driver_{conn.adbc_get_info()['vendor_name'].lower()}"
                     )
+                    try:
+                        adbc_driver = _import_optional_adbc_driver(
+                            adbc_module_name, dbapi_submodule=False
+                        )
+                        adbc_driver_str_version = getattr(
+                            adbc_driver,
+                            "__version__",
+                            driver_manager_str_version,
+                        )
+                    except ModuleNotFoundError:
+                        adbc_driver_str_version = driver_manager_str_version
                 else:
                     adbc_module_name = "Unknown"
-
-                if adbc_module_name != "Unknown":
-                    adbc_driver = _import_optional_adbc_driver(
-                        adbc_module_name, dbapi_submodule=False
-                    )
-                    adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
-                else:
-                    adbc_driver = "Unknown"
                     # If we can't introspect the driver, guess that it has the same
                     # version as the driver manager. This is what happens by default
                     # when installed
