@@ -1448,6 +1448,8 @@ def test_lf_properties() -> None:
         assert lf.dtypes == [pl.Int64, pl.Float64, pl.String]
     with pytest.warns(PerformanceWarning):
         assert lf.width == 3
+    with pytest.warns(PerformanceWarning):
+        assert "foo" in lf
 
 
 def test_lf_unnest() -> None:
