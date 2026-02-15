@@ -212,7 +212,9 @@ ExplainFormat: TypeAlias = Literal["plain", "tree"]
 
 # type signature for allowed frame init
 FrameInitTypes: TypeAlias = Union[
-    Mapping[str, Union[Sequence[object], Mapping[str, Sequence[object]], "Series"]],
+    Mapping[
+        str, Union[Sequence[object], Mapping[str, Sequence[object]], "Series", None]
+    ],
     Sequence[Any],
     "np.ndarray[Any, Any]",
     "pa.Table",
@@ -220,6 +222,7 @@ FrameInitTypes: TypeAlias = Union[
     "ArrowArrayExportable",
     "ArrowStreamExportable",
     "torch.Tensor",
+    "DataFrame",
 ]
 
 # Excel IO
