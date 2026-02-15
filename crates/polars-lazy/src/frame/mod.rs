@@ -1482,9 +1482,9 @@ impl LazyFrame {
 
         // GH-23870: opt out from joining if both underlying dataframes are empty
         if let DslPlan::DataFrameScan { ref schema, .. } = self.logical_plan {
-            if schema.len() == 0 {
+            if schema.is_empty() {
                 if let DslPlan::DataFrameScan { ref schema, .. } = other.logical_plan {
-                    if schema.len() == 0 {
+                    if schema.is_empty() {
                         return LazyFrame::from_logical_plan(self.logical_plan, self.opt_state);
                     }
                 }
@@ -2133,7 +2133,7 @@ impl LazyGroupBy {
     pub fn agg<E: AsRef<[Expr]>>(self, aggs: E) -> LazyFrame {
         // GH-23870: opt out from the aggregation if the underlying dataframe is empty
         if let DslPlan::DataFrameScan { ref schema, .. } = self.logical_plan {
-            if schema.len() == 0 {
+            if schema.is_empty() {
                 return LazyFrame::from_logical_plan(self.logical_plan, self.opt_state);
             }
         }
@@ -2358,9 +2358,9 @@ impl JoinBuilder {
 
         // GH-23870: opt out from joining if both underlying dataframes are empty
         if let DslPlan::DataFrameScan { ref schema, .. } = self.lf.logical_plan {
-            if schema.len() == 0 {
+            if schema.is_empty() {
                 if let DslPlan::DataFrameScan { ref schema, .. } = other.logical_plan {
-                    if schema.len() == 0 {
+                    if schema.is_empty() {
                         return LazyFrame::from_logical_plan(self.lf.logical_plan, opt_state);
                     }
                 }
