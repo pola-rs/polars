@@ -3134,6 +3134,38 @@ def test_provided_schema_mismatch_truncate(chunk_override: None, read_fn: str) -
     assert_frame_equal(df, pl.DataFrame(expected))
 
 
+def test_read_csv_parquet_file_error(tmp_path: Path) -> None:
+    """Test that reading a parquet file with read_csv gives a helpful error."""
+    # Create a simple parquet file
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    parquet_file = tmp_path / "test.parquet"
+    df.write_parquet(parquet_file)
+
+    # Test reading parquet file with read_csv (file path, detected by extension)
+    with pytest.raises(
+        ValueError,
+        match=r"appears to be a Parquet file[\s\S]*Use `pl\.read_parquet\(\)`",
+    ):
+        pl.read_csv(parquet_file)
+
+    # Test reading parquet file with non-.parquet extension (detected by magic bytes)
+    parquet_file_no_ext = tmp_path / "test.dat"
+    parquet_file_no_ext.write_bytes(parquet_file.read_bytes())
+    with pytest.raises(
+        ValueError,
+        match=r"appears to be a Parquet file[\s\S]*Use `pl\.read_parquet\(\)`",
+    ):
+        pl.read_csv(parquet_file_no_ext)
+
+    # Test reading parquet bytes with read_csv
+    parquet_bytes = parquet_file.read_bytes()
+    with pytest.raises(
+        ValueError,
+        match=r"appears to be in Parquet format[\s\S]*Use `pl\.read_parquet\(\)`",
+    ):
+        pl.read_csv(parquet_bytes)
+
+
 def test_read_batch_csv_deprecations_26479(foods_file_path: Path) -> None:
     with pytest.warns(DeprecationWarning, match=r"`read_csv_batched` is deprecated"):
         pl.read_csv_batched(foods_file_path)

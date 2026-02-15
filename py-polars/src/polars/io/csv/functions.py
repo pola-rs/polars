@@ -52,6 +52,39 @@ if TYPE_CHECKING:
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
 
 
+def _check_not_parquet(source: str | Path | IO[str] | IO[bytes] | bytes) -> None:
+    """Raise a helpful error if the source appears to be a Parquet file."""
+    if isinstance(source, (str, Path)):
+        source_str = str(source)
+        if source_str.lower().endswith(".parquet"):
+            msg = (
+                f"the file {source_str!r} appears to be a Parquet file,"
+                " but you are trying to read it as CSV."
+                "\n\nUse `pl.read_parquet()` or `pl.scan_parquet()` instead."
+            )
+            raise ValueError(msg)
+        is_parquet_magic = False
+        try:
+            with Path(source).open("rb") as f:
+                is_parquet_magic = f.read(4) == b"PAR1"
+        except OSError:
+            pass
+        if is_parquet_magic:
+            msg = (
+                f"the file {source_str!r} appears to be a Parquet file,"
+                " but you are trying to read it as CSV."
+                "\n\nUse `pl.read_parquet()` or `pl.scan_parquet()` instead."
+            )
+            raise ValueError(msg)
+    elif isinstance(source, bytes) and source[:4] == b"PAR1":
+        msg = (
+            "the provided data appears to be in Parquet format,"
+            " but you are trying to read it as CSV."
+            "\n\nUse `pl.read_parquet()` or `pl.scan_parquet()` instead."
+        )
+        raise ValueError(msg)
+
+
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
@@ -290,6 +323,9 @@ def read_csv(
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
     _check_arg_is_1byte("eol_char", eol_char, can_be_empty=False)
+
+    # Check if the source is a parquet file and provide a helpful error message
+    _check_not_parquet(source)
 
     projection, columns = parse_columns_arg(columns)
     storage_options = storage_options or {}
