@@ -76,7 +76,6 @@ def test_write_async_force_async(
     df = pl.DataFrame({"x": 1})
 
     write_func(df, path)
-
     assert_frame_equal(read_func(path), df)
 
 
