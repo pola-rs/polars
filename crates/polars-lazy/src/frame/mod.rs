@@ -1480,6 +1480,17 @@ impl LazyFrame {
             panic!("impl error: slice is not handled")
         }
 
+        // GH-23870: opt out from joining if both underlying dataframe is empty
+        if let DslPlan::DataFrameScan { ref df, .. } = self.logical_plan {
+            if df.shape().eq(&(0, 0)) {
+                if let DslPlan::DataFrameScan { ref df, .. } = other.logical_plan {
+                    if df.shape().eq(&(0, 0)) {
+                        return LazyFrame::from_logical_plan(self.logical_plan, self.opt_state);
+                    }
+                }
+            }
+        }
+
         let mut builder = self
             .join_builder()
             .with(other)

@@ -192,3 +192,38 @@ fn test_join_duplicate_7314() -> PolarsResult<()> {
     assert_eq!(out.get_column_names(), &["a", "c"]);
     Ok(())
 }
+
+#[test]
+fn test_join_two_empty_dfs() {
+    let empty_df = DataFrame::empty();
+
+    let out = empty_df
+        .clone()
+        .lazy()
+        .inner_join(DataFrame::empty().lazy(), lit(1), lit(1))
+        .collect()
+        .unwrap();
+
+    assert_eq!(empty_df, out);
+}
+
+#[test]
+fn test_join_left_empty_df() {
+    let left_df = DataFrame::empty();
+
+    let right_df = df![
+        "a" => [1, 2, 2],
+        "b" => [4, 5, 6],
+        "d" => [1, 1, 1],
+    ]
+    .unwrap();
+
+    let out = left_df
+        .clone()
+        .lazy()
+        .inner_join(right_df.clone().lazy(), lit(1), lit(1))
+        .collect()
+        .unwrap();
+
+    assert_eq!(out, right_df);
+}
