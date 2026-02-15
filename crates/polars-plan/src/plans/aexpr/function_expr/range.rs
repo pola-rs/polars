@@ -161,14 +161,20 @@ impl IRRangeFunction {
         use IRRangeFunction as R;
         match self {
             R::IntRange { .. } => {
-                FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+                FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+            },
+            R::IntRanges { .. } => {
+                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
             R::LinearSpace { .. } => {
-                FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+                FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+            },
+            R::LinearSpaces { .. } => {
+                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
             #[cfg(feature = "dtype-date")]
             R::DateRange { .. } => {
-                FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+                FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
             #[cfg(feature = "dtype-date")]
             R::DateRanges { .. } => {
@@ -176,7 +182,7 @@ impl IRRangeFunction {
             },
             #[cfg(feature = "dtype-datetime")]
             R::DatetimeRange { .. } => {
-                FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+                FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
             #[cfg(feature = "dtype-datetime")]
             R::DatetimeRanges { .. } => {
@@ -184,13 +190,7 @@ impl IRRangeFunction {
             },
             #[cfg(feature = "dtype-time")]
             R::TimeRange { .. } => {
-                FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-            },
-            R::IntRanges { .. } => {
-                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-            },
-            R::LinearSpaces { .. } => {
-                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+                FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
             #[cfg(feature = "dtype-time")]
             R::TimeRanges { .. } => {
