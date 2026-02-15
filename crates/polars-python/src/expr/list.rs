@@ -242,4 +242,9 @@ impl PyExpr {
         }
         .into()
     }
+
+    #[cfg(feature = "list_zip")]
+    fn list_zip(&self, other: PyExpr, pad: bool) -> Self {
+        self.inner.clone().list().zip(other.inner, pad).into()
+    }
 }

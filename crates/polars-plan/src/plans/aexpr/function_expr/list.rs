@@ -58,6 +58,8 @@ pub enum IRListFunction {
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
     ToStruct(Arc<[PlSmallStr]>),
+    #[cfg(feature = "list_zip")]
+    Zip(bool),
 }
 
 impl<'a> FieldsMapper<'a> {
@@ -149,6 +151,31 @@ impl IRListFunction {
                 .ensure_is_list()?
                 .try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
             NUnique => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "list_zip")]
+            Zip(_) => {
+                let fields = mapper.args();
+                polars_ensure!(
+                    fields.len() == 2,
+                    ComputeError: "zip expects exactly 2 columns, got {}",
+                    fields.len()
+                );
+                polars_ensure!(
+                    fields[0].name() != fields[1].name(),
+                    Duplicate: "column with name '{}' has more than one occurrence",
+                    fields[0].name()
+                );
+                let struct_fields: Vec<Field> = fields
+                    .iter()
+                    .map(|f| {
+                        let inner_dtype = match f.dtype() {
+                            DataType::List(inner) => inner.as_ref().clone(),
+                            dt => dt.clone(),
+                        };
+                        Field::new(f.name().clone(), inner_dtype)
+                    })
+                    .collect();
+                mapper.with_dtype(DataType::List(Box::new(DataType::Struct(struct_fields))))
+            },
             #[cfg(feature = "list_to_struct")]
             ToStruct(names) => mapper.try_map_dtype(|dtype| {
                 let DataType::List(inner_dtype) = dtype else {
@@ -218,6 +245,8 @@ impl IRListFunction {
             L::ToArray(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "list_to_struct")]
             L::ToStruct(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_zip")]
+            L::Zip(_) => FunctionOptions::elementwise(),
         }
     }
 }
@@ -291,6 +320,8 @@ impl Display for IRListFunction {
             ToArray(_) => "to_array",
             #[cfg(feature = "list_to_struct")]
             ToStruct(_) => "to_struct",
+            #[cfg(feature = "list_zip")]
+            Zip(_) => "zip",
         };
         write!(f, "list.{name}")
     }
