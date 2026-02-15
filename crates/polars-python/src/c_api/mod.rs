@@ -265,6 +265,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::config_reload_env_var))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::py_get_ir_version))
+        .unwrap();
 
     #[cfg(feature = "sql")]
     m.add_wrapped(wrap_pyfunction!(functions::sql_expr))
