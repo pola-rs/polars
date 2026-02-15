@@ -1480,11 +1480,11 @@ impl LazyFrame {
             panic!("impl error: slice is not handled")
         }
 
-        // GH-23870: opt out from joining if both underlying dataframe is empty
-        if let DslPlan::DataFrameScan { ref df, .. } = self.logical_plan {
-            if df.shape().eq(&(0, 0)) {
-                if let DslPlan::DataFrameScan { ref df, .. } = other.logical_plan {
-                    if df.shape().eq(&(0, 0)) {
+        // GH-23870: opt out from joining if both underlying dataframes are empty
+        if let DslPlan::DataFrameScan { ref schema, .. } = self.logical_plan {
+            if schema.len() == 0 {
+                if let DslPlan::DataFrameScan { ref schema, .. } = other.logical_plan {
+                    if schema.len() == 0 {
                         return LazyFrame::from_logical_plan(self.logical_plan, self.opt_state);
                     }
                 }
@@ -2132,8 +2132,8 @@ impl LazyGroupBy {
     /// ```
     pub fn agg<E: AsRef<[Expr]>>(self, aggs: E) -> LazyFrame {
         // GH-23870: opt out from the aggregation if the underlying dataframe is empty
-        if let DslPlan::DataFrameScan { ref df, .. } = self.logical_plan {
-            if df.shape().eq(&(0, 0)) {
+        if let DslPlan::DataFrameScan { ref schema, .. } = self.logical_plan {
+            if schema.len() == 0 {
                 return LazyFrame::from_logical_plan(self.logical_plan, self.opt_state);
             }
         }
@@ -2355,6 +2355,17 @@ impl JoinBuilder {
     pub fn finish(self) -> LazyFrame {
         let opt_state = self.lf.opt_state;
         let other = self.other.expect("'with' not set in join builder");
+
+        // GH-23870: opt out from joining if both underlying dataframes are empty
+        if let DslPlan::DataFrameScan { ref schema, .. } = self.lf.logical_plan {
+            if schema.len() == 0 {
+                if let DslPlan::DataFrameScan { ref schema, .. } = other.logical_plan {
+                    if schema.len() == 0 {
+                        return LazyFrame::from_logical_plan(self.lf.logical_plan, opt_state);
+                    }
+                }
+            }
+        }
 
         let args = JoinArgs {
             how: self.how,
