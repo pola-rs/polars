@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 
 FloatCastOption: TypeAlias = Literal["upcast", "downcast"]
+IntegerCastOption: TypeAlias = Literal["upcast", "allow-float"]
 DatetimeCastOption: TypeAlias = Literal["nanosecond-downcast", "convert-timezone"]
 
 _DEFAULT_CAST_OPTIONS_ICEBERG: ScanCastOptions | None = None
@@ -21,7 +22,9 @@ class ScanCastOptions:
     def __init__(
         self,
         *,
-        integer_cast: Literal["upcast", "forbid"] = "forbid",
+        integer_cast: Literal["forbid"]
+        | IntegerCastOption
+        | Collection[IntegerCastOption] = "forbid",
         float_cast: Literal["forbid"]
         | FloatCastOption
         | Collection[FloatCastOption] = "forbid",
@@ -37,8 +40,8 @@ class ScanCastOptions:
         Common configuration for scanning files.
 
         .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
