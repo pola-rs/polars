@@ -75,8 +75,7 @@ impl BytesBufferer {
             self.commit_active_copy_buffer();
 
             if self.tail_coalesce_num_items >= cloud_writer_coalesce_run_length() {
-                self.coalesce_tail(self.tail_coalesce_num_items, self.tail_coalesce_byte_offset);
-                self.reset_tail_coalesce_counters();
+                self.coalesce_tail();
                 continue;
             }
 
@@ -126,22 +125,28 @@ impl BytesBufferer {
         }
     }
 
-    fn coalesce_tail(&mut self, num_items: usize, byte_offset: usize) {
+    fn coalesce_tail(&mut self) {
+        if self.tail_coalesce_num_items < 2 {
+            return;
+        }
+
         assert_eq!(self.copy_buffer.capacity(), 0);
-        assert!(num_items >= 2);
-        assert!(byte_offset < self.target_output_size);
+        assert!(self.tail_coalesce_byte_offset < self.target_output_size);
 
-        self.copy_buffer.reserve_exact(usize::min(
+        let copy_buffer_reserve = usize::min(
             self.copy_buffer_reserve_size,
-            self.target_output_size - byte_offset,
-        ));
+            self.target_output_size - self.tail_coalesce_byte_offset,
+        );
 
-        assert!(self.copy_buffer.capacity() >= (self.num_bytes_buffered - byte_offset));
+        assert!(copy_buffer_reserve >= (self.num_bytes_buffered - self.tail_coalesce_byte_offset));
 
-        let drain_start = self.buffered_bytes.len() - num_items;
+        let drain_start: usize = self.buffered_bytes.len() - self.tail_coalesce_num_items;
+        let drain_range = drain_start..;
+        self.reset_tail_coalesce_counters();
 
+        self.copy_buffer.reserve_exact(copy_buffer_reserve);
         self.buffered_bytes
-            .drain(drain_start..)
+            .drain(drain_range)
             .for_each(|bytes| self.copy_buffer.extend_from_slice(&bytes));
     }
 
@@ -160,12 +165,12 @@ impl BytesBufferer {
         }
     }
 
-    pub(super) fn has_complete_chunk(&self) -> bool {
+    pub(super) fn is_full(&self) -> bool {
         self.num_bytes_buffered >= usize::max(1, self.target_output_size)
     }
 
-    pub(super) fn flush_complete_chunk(&mut self) -> Option<PutPayload> {
-        self.has_complete_chunk().then(|| self.flush().unwrap())
+    pub(super) fn flush_full_chunk(&mut self) -> Option<PutPayload> {
+        self.is_full().then(|| self.flush().unwrap())
     }
 
     pub(super) fn flush(&mut self) -> Option<PutPayload> {

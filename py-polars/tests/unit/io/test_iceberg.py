@@ -57,6 +57,7 @@ from polars.io.iceberg._utils import (
     _convert_predicate,
     _normalize_windows_iceberg_file_uri,
     _to_ast,
+    try_convert_pyarrow_predicate,
 )
 from polars.testing import assert_frame_equal
 from tests.unit.io.conftest import normalize_path_separator_pl
@@ -278,6 +279,14 @@ class TestIcebergExpressions:
 
         expr = _to_ast("(pa.compute.field('ts') == pa.compute.scalar(False))")
         assert _convert_predicate(expr) == EqualTo("ts", False)
+
+    def test_bare_boolean_field(self) -> None:
+        expr = try_convert_pyarrow_predicate("pa.compute.field('is_active')")
+        assert expr == EqualTo("is_active", True)
+
+    def test_bare_boolean_field_negated(self) -> None:
+        expr = try_convert_pyarrow_predicate("~pa.compute.field('is_active')")
+        assert expr == Not(EqualTo("is_active", True))
 
 
 @pytest.mark.write_disk
@@ -2248,3 +2257,53 @@ def test_scan_iceberg_idxsize_limit() -> None:
         match=r"row count \(4294967296\) exceeded maximum supported of 4294967295.*Consider installing 'polars\[rt64\]'.",
     ):
         q.select(pl.len()).collect()
+
+
+@pytest.mark.write_disk
+def test_iceberg_filter_bool_26474(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "test", uri="sqlite:///:memory:", warehouse=format_file_uri_iceberg(tmp_path)
+    )
+    catalog.create_namespace("default")
+    tbl = catalog.create_table(
+        "default.test",
+        IcebergSchema(
+            NestedField(1, "id", LongType()),
+            NestedField(2, "foo", BooleanType()),
+        ),
+    )
+
+    schema = {"id": pl.Int64, "foo": pl.Boolean}
+
+    dfs = [
+        pl.DataFrame({"id": [1], "foo": [True]}, schema=schema),
+        pl.DataFrame({"id": [2], "foo": [False]}, schema=schema),
+        pl.DataFrame({"id": [3], "foo": [None]}, schema=schema),
+    ]
+
+    for df in dfs:
+        df.write_iceberg(tbl, mode="append")
+
+    assert sum(1 for _ in tbl.scan().plan_files()) == 3
+
+    dfs_concat = pl.concat(dfs)
+
+    for predicate in [
+        pl.col("foo"),
+        ~pl.col("foo"),
+        pl.col("foo") & pl.col("foo"),
+        pl.col("foo") | pl.col("foo"),
+        pl.col("foo") ^ pl.col("foo"),
+        pl.col("foo") & ~pl.col("foo"),
+        pl.col("foo") | ~pl.col("foo"),
+        pl.col("foo") ^ pl.col("foo"),
+        pl.col("foo") & pl.col("foo") | pl.col("foo"),
+        pl.col("foo") | pl.col("foo") & pl.col("foo"),
+        pl.col("foo") == True,  # noqa: E712
+        pl.col("foo") == False,  # noqa: E712
+    ]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).filter(predicate).collect(),
+            dfs_concat.filter(predicate),
+            check_row_order=False,
+        )

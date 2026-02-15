@@ -251,6 +251,7 @@ mod async_writeable {
     use std::sync::Arc;
     use std::task::{Context, Poll};
 
+    use bytes::Bytes;
     use polars_error::{PolarsError, PolarsResult};
     use polars_utils::file::close_file;
     use polars_utils::pl_path::PlRefPath;
@@ -314,6 +315,19 @@ mod async_writeable {
                 io_metrics,
             )
             .and_then(|x| x.try_into_async_writeable())
+        }
+
+        /// If this writer holds a cloud writer, it will `mem::take(T)`. `T` is unmodified for other
+        /// writer types.
+        pub async fn write_all_owned<T>(&mut self, src: &mut T) -> io::Result<()>
+        where
+            T: AsRef<[u8]> + Default + Drop, // `Drop` is to exclude `&[u8]` slices.
+            Bytes: From<T>,
+        {
+            match self {
+                Self::Cloud(v) => v.write_all_owned(Bytes::from(std::mem::take(src))).await,
+                Self::Dyn(_) | Self::Local(_) => self.write_all(src.as_ref()).await,
+            }
         }
 
         pub async fn sync_all(&mut self) -> io::Result<()> {
