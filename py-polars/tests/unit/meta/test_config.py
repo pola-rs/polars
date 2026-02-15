@@ -1011,3 +1011,22 @@ def test_unset_config_env_vars(
 
     with pl.Config(**{config_setting: None}):  # type: ignore[arg-type]
         assert environment_variable not in os.environ
+
+
+def test_thousands_sep_string() -> None:
+    df = pl.DataFrame(
+        {"int": [1000, 2000], "float": [1000.0, 2000.0], "string": ["1000", "2000.0"]}
+    )
+
+    with pl.Config(thousands_separator="a"):
+        assert (
+            str(df) == "shape: (2, 3)\n"
+            "┌───────┬─────────┬─────────┐\n"
+            "│ int   ┆ float   ┆ string  │\n"
+            "│ ---   ┆ ---     ┆ ---     │\n"
+            "│ i64   ┆ f64     ┆ str     │\n"
+            "╞═══════╪═════════╪═════════╡\n"
+            "│ 1a000 ┆ 1a000.0 ┆ 1a000   │\n"
+            "│ 2a000 ┆ 2a000.0 ┆ 2a000.0 │\n"
+            "└───────┴─────────┴─────────┘"
+        )

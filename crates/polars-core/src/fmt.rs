@@ -866,7 +866,7 @@ fn fmt_int_string_custom(num: &str, group_size: u8, group_separator: &str) -> St
     }
 }
 
-fn fmt_int_string(num: &str) -> String {
+pub fn fmt_int_string(num: &str) -> String {
     fmt_int_string_custom(num, 3, &get_thousands_separator())
 }
 
@@ -902,7 +902,7 @@ fn fmt_float_string_custom(
     }
 }
 
-fn fmt_float_string(num: &str) -> String {
+pub fn fmt_float_string(num: &str) -> String {
     fmt_float_string_custom(num, 3, &get_thousands_separator(), get_decimal_separator())
 }
 
