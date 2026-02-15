@@ -1,0 +1,6 @@
+﻿polars.Expr.rolling\_var
+========================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.rolling_var

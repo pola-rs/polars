@@ -1,0 +1,6 @@
+﻿polars.Expr.cumsum
+==================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.cumsum

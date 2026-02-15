@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Builder"],"fn":["init_builders","validate_utf8"],"struct":["CategoricalField","DatetimeField","DecimalField","Utf8Field"]};

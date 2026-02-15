@@ -1,0 +1,6 @@
+﻿polars.threadpool\_size
+=======================
+
+.. currentmodule:: polars
+
+.. autofunction:: threadpool_size

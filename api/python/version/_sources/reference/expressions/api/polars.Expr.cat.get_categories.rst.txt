@@ -1,0 +1,6 @@
+﻿polars.Expr.cat.get_categories
+==============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.cat.get_categories

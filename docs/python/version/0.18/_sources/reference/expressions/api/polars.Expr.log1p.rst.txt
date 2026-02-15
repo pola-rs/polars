@@ -1,0 +1,6 @@
+﻿polars.Expr.log1p
+=================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.log1p

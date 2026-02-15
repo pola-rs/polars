@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["total_memory"],"static":["MEMINFO"],"struct":["MemInfo"]};

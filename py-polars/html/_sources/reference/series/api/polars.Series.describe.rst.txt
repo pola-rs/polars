@@ -1,0 +1,6 @@
+﻿polars.Series.describe
+======================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.describe

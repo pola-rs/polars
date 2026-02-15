@@ -1,0 +1,6 @@
+﻿polars.DataFrame.write\_ipc
+===========================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.write_ipc

@@ -1,0 +1,6 @@
+﻿polars.Expr.sinh
+================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.sinh

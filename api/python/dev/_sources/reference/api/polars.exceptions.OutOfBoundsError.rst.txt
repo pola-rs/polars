@@ -1,0 +1,6 @@
+﻿polars.exceptions.OutOfBoundsError
+==================================
+
+.. currentmodule:: polars.exceptions
+
+.. autoexception:: OutOfBoundsError

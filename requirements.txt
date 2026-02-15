@@ -1,0 +1,20 @@
+altair
+pandas
+pyarrow
+graphviz
+hvplot
+matplotlib
+plotnine
+seaborn
+plotly
+numba >= 0.54
+numpy
+
+# one of the associated packages (watchdog) only has macOS wheels up to py3.13 at the moment
+# ref: https://github.com/gorakhargosh/watchdog/issues/1143
+mkdocs-material==9.6.20; python_version < "3.14" or sys_platform != "darwin"
+mkdocs-macros-plugin==1.3.7; python_version < "3.14" or sys_platform != "darwin"
+mkdocs-redirects==1.2.1; python_version < "3.14" or sys_platform != "darwin"
+material-plausible-plugin==0.3.0; python_version < "3.14" or sys_platform != "darwin"
+markdown-exec[ansi]==1.10.0; python_version < "3.14" or sys_platform != "darwin"
+pygithub==2.6.1

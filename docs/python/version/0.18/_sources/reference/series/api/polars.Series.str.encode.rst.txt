@@ -1,0 +1,6 @@
+﻿polars.Series.str.encode
+========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.str.encode

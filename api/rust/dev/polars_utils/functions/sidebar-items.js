@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["arc_map","range_portion","try_arc_map"]};

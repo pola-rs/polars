@@ -1,0 +1,6 @@
+﻿polars.Series.list.drop_nulls
+=============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.list.drop_nulls

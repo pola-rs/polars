@@ -1,0 +1,6 @@
+﻿polars.min\_horizontal
+======================
+
+.. currentmodule:: polars
+
+.. autofunction:: min_horizontal

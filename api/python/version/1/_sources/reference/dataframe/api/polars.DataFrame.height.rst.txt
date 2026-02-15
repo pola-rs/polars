@@ -1,0 +1,6 @@
+﻿polars.DataFrame.height
+=======================
+
+.. currentmodule:: polars
+
+.. autoproperty:: DataFrame.height

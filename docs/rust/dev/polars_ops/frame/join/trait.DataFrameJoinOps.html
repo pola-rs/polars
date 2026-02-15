@@ -1,0 +1,124 @@
+<meta http-equiv="refresh" content="0; url=https://docs.pola.rs/api/rust/dev/polars_ops/frame/join/trait.DataFrameJoinOps.html">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="API documentation for the Rust `DataFrameJoinOps` trait in crate `polars_ops`."><title>DataFrameJoinOps in polars_ops::frame::join - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="polars_ops" data-themes="" data-resource-suffix="" data-rustdoc-version="1.80.0-nightly (032af18af 2024-06-02)" data-channel="nightly" data-search-js="search-d52510db62a78183.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc trait"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../polars_ops/index.html">polars_ops</a><span class="version">0.40.0</span></h2></div><h2 class="location"><a href="#">DataFrameJoinOps</a></h2><div class="sidebar-elems"><section><h3><a href="#provided-methods">Provided Methods</a></h3><ul class="block"><li><a href="#method.full_join">full_join</a></li><li><a href="#method.inner_join">inner_join</a></li><li><a href="#method.join">join</a></li><li><a href="#method.left_join">left_join</a></li></ul><h3><a href="#foreign-impls">Implementations on Foreign Types</a></h3><ul class="block"><li><a href="#impl-DataFrameJoinOps-for-DataFrame">DataFrame</a></li></ul><h3><a href="#object-safety">Object Safety</a></h3><h3><a href="#implementors">Implementors</a></h3></section><h2><a href="index.html">In polars_ops::frame::join</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Trait <a href="../../index.html">polars_ops</a>::<wbr><a href="../index.html">frame</a>::<wbr><a href="index.html">join</a>::<wbr><a class="trait" href="#">DataFrameJoinOps</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../src/polars_ops/frame/join/mod.rs.html#49-404">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><pre class="rust item-decl"><code>pub trait DataFrameJoinOps: <a class="trait" href="../trait.IntoDf.html" title="trait polars_ops::frame::IntoDf">IntoDf</a> {
+    // Provided methods
+    fn <a href="#method.join" class="fn">join</a>&lt;I, S&gt;(
+        &amp;self,
+        other: &amp;<a class="struct" href="../../../polars_core/frame/struct.DataFrame.html" title="struct polars_core::frame::DataFrame">DataFrame</a>,
+        left_on: I,
+        right_on: I,
+        args: <a class="struct" href="struct.JoinArgs.html" title="struct polars_ops::frame::join::JoinArgs">JoinArgs</a>
+    ) -&gt; PolarsResult&lt;<a class="struct" href="../../../polars_core/frame/struct.DataFrame.html" title="struct polars_core::frame::DataFrame">DataFrame</a>&gt;
+       <span class="where">where I: <a class="trait" href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html" title="trait core::iter::traits::collect::IntoIterator">IntoIterator</a>&lt;Item = S&gt;,
+             S: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.AsRef.html" title="trait core::convert::AsRef">AsRef</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>&gt;</span> { ... }
+<span class="item-spacer"></span>    fn <a href="#method.inner_join" class="fn">inner_join</a>&lt;I, S&gt;(
+        &amp;self,
+        other: &amp;<a class="struct" href="../../../polars_core/frame/struct.DataFrame.html" title="struct polars_core::frame::DataFrame">DataFrame</a>,
+        left_on: I,
+        right_on: I
+    ) -&gt; PolarsResult&lt;<a class="struct" href="../../../polars_core/frame/struct.DataFrame.html" title="struct polars_core::frame::DataFrame">DataFrame</a>&gt;
+       <span class="where">where I: <a class="trait" href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html" title="trait core::iter::traits::collect::IntoIterator">IntoIterator</a>&lt;Item = S&gt;,
+             S: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.AsRef.html" title="trait core::convert::AsRef">AsRef</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>&gt;</span> { ... }
+<span class="item-spacer"></span>    fn <a href="#method.left_join" class="fn">left_join</a>&lt;I, S&gt;(
+        &amp;self,
+        other: &amp;<a class="struct" href="../../../polars_core/frame/struct.DataFrame.html" title="struct polars_core::frame::DataFrame">DataFrame</a>,
+        left_on: I,
+        right_on: I
+    ) -&gt; PolarsResult&lt;<a class="struct" href="../../../polars_core/frame/struct.DataFrame.html" title="struct polars_core::frame::DataFrame">DataFrame</a>&gt;
+       <span class="where">where I: <a class="trait" href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html" title="trait core::iter::traits::collect::IntoIterator">IntoIterator</a>&lt;Item = S&gt;,
+             S: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.AsRef.html" title="trait core::convert::AsRef">AsRef</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>&gt;</span> { ... }
+<span class="item-spacer"></span>    fn <a href="#method.full_join" class="fn">full_join</a>&lt;I, S&gt;(
+        &amp;self,
+        other: &amp;<a class="struct" href="../../../polars_core/frame/struct.DataFrame.html" title="struct polars_core::frame::DataFrame">DataFrame</a>,
+        left_on: I,
+        right_on: I
+    ) -&gt; PolarsResult&lt;<a class="struct" href="../../../polars_core/frame/struct.DataFrame.html" title="struct polars_core::frame::DataFrame">DataFrame</a>&gt;
+       <span class="where">where I: <a class="trait" href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html" title="trait core::iter::traits::collect::IntoIterator">IntoIterator</a>&lt;Item = S&gt;,
+             S: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.AsRef.html" title="trait core::convert::AsRef">AsRef</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>&gt;</span> { ... }
+}</code></pre><h2 id="provided-methods" class="section-header">Provided Methods<a href="#provided-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="method.join" class="method"><a class="src rightside" href="../../../src/polars_ops/frame/join/mod.rs.html#84-103">source</a><h4 class="code-header">fn <a href="#method.join" class="fn">join</a>&lt;I, S&gt;(
+    &amp;self,
+    other: &amp;<a class="struct" href="../../../polars_core/frame/struct.DataFrame.html" title="struct polars_core::frame::DataFrame">DataFrame</a>,
+    left_on: I,
+    right_on: I,
+    args: <a class="struct" href="struct.JoinArgs.html" title="struct polars_ops::frame::join::JoinArgs">JoinArgs</a>
+) -&gt; PolarsResult&lt;<a class="struct" href="../../../polars_core/frame/struct.DataFrame.html" title="struct polars_core::frame::DataFrame">DataFrame</a>&gt;<div class="where">where
+    I: <a class="trait" href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html" title="trait core::iter::traits::collect::IntoIterator">IntoIterator</a>&lt;Item = S&gt;,
+    S: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.AsRef.html" title="trait core::convert::AsRef">AsRef</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>&gt;,</div></h4></section></summary><div class="docblock"><p>Generic join method. Can be used to join on multiple columns.</p>
+<h5 id="example"><a class="doc-anchor" href="#example">§</a>Example</h5>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>df1: DataFrame = <span class="macro">df!</span>(<span class="string">"Fruit" </span>=&gt; <span class="kw-2">&amp;</span>[<span class="string">"Apple"</span>, <span class="string">"Banana"</span>, <span class="string">"Pear"</span>],
+                         <span class="string">"Phosphorus (mg/100g)" </span>=&gt; <span class="kw-2">&amp;</span>[<span class="number">11</span>, <span class="number">22</span>, <span class="number">12</span>])<span class="question-mark">?</span>;
+<span class="kw">let </span>df2: DataFrame = <span class="macro">df!</span>(<span class="string">"Name" </span>=&gt; <span class="kw-2">&amp;</span>[<span class="string">"Apple"</span>, <span class="string">"Banana"</span>, <span class="string">"Pear"</span>],
+                         <span class="string">"Potassium (mg/100g)" </span>=&gt; <span class="kw-2">&amp;</span>[<span class="number">107</span>, <span class="number">358</span>, <span class="number">115</span>])<span class="question-mark">?</span>;
+
+<span class="kw">let </span>df3: DataFrame = df1.join(<span class="kw-2">&amp;</span>df2, [<span class="string">"Fruit"</span>], [<span class="string">"Name"</span>], JoinArgs::new(JoinType::Inner))<span class="question-mark">?</span>;
+<span class="macro">assert_eq!</span>(df3.shape(), (<span class="number">3</span>, <span class="number">3</span>));
+<span class="macro">println!</span>(<span class="string">"{}"</span>, df3);</code></pre></div>
+<p>Output:</p>
+<div class="example-wrap"><pre class="language-text"><code>shape: (3, 3)
++--------+----------------------+---------------------+
+| Fruit  | Phosphorus (mg/100g) | Potassium (mg/100g) |
+| ---    | ---                  | ---                 |
+| str    | i32                  | i32                 |
++========+======================+=====================+
+| Apple  | 11                   | 107                 |
++--------+----------------------+---------------------+
+| Banana | 22                   | 358                 |
++--------+----------------------+---------------------+
+| Pear   | 12                   | 115                 |
++--------+----------------------+---------------------+
+</code></pre></div></div></details><details class="toggle method-toggle" open><summary><section id="method.inner_join" class="method"><a class="src rightside" href="../../../src/polars_ops/frame/join/mod.rs.html#331-342">source</a><h4 class="code-header">fn <a href="#method.inner_join" class="fn">inner_join</a>&lt;I, S&gt;(
+    &amp;self,
+    other: &amp;<a class="struct" href="../../../polars_core/frame/struct.DataFrame.html" title="struct polars_core::frame::DataFrame">DataFrame</a>,
+    left_on: I,
+    right_on: I
+) -&gt; PolarsResult&lt;<a class="struct" href="../../../polars_core/frame/struct.DataFrame.html" title="struct polars_core::frame::DataFrame">DataFrame</a>&gt;<div class="where">where
+    I: <a class="trait" href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html" title="trait core::iter::traits::collect::IntoIterator">IntoIterator</a>&lt;Item = S&gt;,
+    S: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.AsRef.html" title="trait core::convert::AsRef">AsRef</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>&gt;,</div></h4></section></summary><div class="docblock"><p>Perform an inner join on two DataFrames.</p>
+<h5 id="example-1"><a class="doc-anchor" href="#example-1">§</a>Example</h5>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">fn </span>join_dfs(left: <span class="kw-2">&amp;</span>DataFrame, right: <span class="kw-2">&amp;</span>DataFrame) -&gt; PolarsResult&lt;DataFrame&gt; {
+    left.inner_join(right, [<span class="string">"join_column_left"</span>], [<span class="string">"join_column_right"</span>])
+}</code></pre></div>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.left_join" class="method"><a class="src rightside" href="../../../src/polars_ops/frame/join/mod.rs.html#379-385">source</a><h4 class="code-header">fn <a href="#method.left_join" class="fn">left_join</a>&lt;I, S&gt;(
+    &amp;self,
+    other: &amp;<a class="struct" href="../../../polars_core/frame/struct.DataFrame.html" title="struct polars_core::frame::DataFrame">DataFrame</a>,
+    left_on: I,
+    right_on: I
+) -&gt; PolarsResult&lt;<a class="struct" href="../../../polars_core/frame/struct.DataFrame.html" title="struct polars_core::frame::DataFrame">DataFrame</a>&gt;<div class="where">where
+    I: <a class="trait" href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html" title="trait core::iter::traits::collect::IntoIterator">IntoIterator</a>&lt;Item = S&gt;,
+    S: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.AsRef.html" title="trait core::convert::AsRef">AsRef</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>&gt;,</div></h4></section></summary><div class="docblock"><p>Perform a left outer join on two DataFrames</p>
+<h5 id="example-2"><a class="doc-anchor" href="#example-2">§</a>Example</h5>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>df1: DataFrame = <span class="macro">df!</span>(<span class="string">"Wavelength (nm)" </span>=&gt; <span class="kw-2">&amp;</span>[<span class="number">480.0</span>, <span class="number">650.0</span>, <span class="number">577.0</span>, <span class="number">1201.0</span>, <span class="number">100.0</span>])<span class="question-mark">?</span>;
+<span class="kw">let </span>df2: DataFrame = <span class="macro">df!</span>(<span class="string">"Color" </span>=&gt; <span class="kw-2">&amp;</span>[<span class="string">"Blue"</span>, <span class="string">"Yellow"</span>, <span class="string">"Red"</span>],
+                         <span class="string">"Wavelength nm" </span>=&gt; <span class="kw-2">&amp;</span>[<span class="number">480.0</span>, <span class="number">577.0</span>, <span class="number">650.0</span>])<span class="question-mark">?</span>;
+
+<span class="kw">let </span>df3: DataFrame = df1.left_join(<span class="kw-2">&amp;</span>df2, [<span class="string">"Wavelength (nm)"</span>], [<span class="string">"Wavelength nm"</span>])<span class="question-mark">?</span>;
+<span class="macro">println!</span>(<span class="string">"{:?}"</span>, df3);</code></pre></div>
+<p>Output:</p>
+<div class="example-wrap"><pre class="language-text"><code>shape: (5, 2)
++-----------------+--------+
+| Wavelength (nm) | Color  |
+| ---             | ---    |
+| f64             | str    |
++=================+========+
+| 480             | Blue   |
++-----------------+--------+
+| 650             | Red    |
++-----------------+--------+
+| 577             | Yellow |
++-----------------+--------+
+| 1201            | null   |
++-----------------+--------+
+| 100             | null   |
++-----------------+--------+
+</code></pre></div></div></details><details class="toggle method-toggle" open><summary><section id="method.full_join" class="method"><a class="src rightside" href="../../../src/polars_ops/frame/join/mod.rs.html#397-403">source</a><h4 class="code-header">fn <a href="#method.full_join" class="fn">full_join</a>&lt;I, S&gt;(
+    &amp;self,
+    other: &amp;<a class="struct" href="../../../polars_core/frame/struct.DataFrame.html" title="struct polars_core::frame::DataFrame">DataFrame</a>,
+    left_on: I,
+    right_on: I
+) -&gt; PolarsResult&lt;<a class="struct" href="../../../polars_core/frame/struct.DataFrame.html" title="struct polars_core::frame::DataFrame">DataFrame</a>&gt;<div class="where">where
+    I: <a class="trait" href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html" title="trait core::iter::traits::collect::IntoIterator">IntoIterator</a>&lt;Item = S&gt;,
+    S: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.AsRef.html" title="trait core::convert::AsRef">AsRef</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>&gt;,</div></h4></section></summary><div class="docblock"><p>Perform a full outer join on two DataFrames</p>
+<h5 id="example-3"><a class="doc-anchor" href="#example-3">§</a>Example</h5>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">fn </span>join_dfs(left: <span class="kw-2">&amp;</span>DataFrame, right: <span class="kw-2">&amp;</span>DataFrame) -&gt; PolarsResult&lt;DataFrame&gt; {
+    left.full_join(right, [<span class="string">"join_column_left"</span>], [<span class="string">"join_column_right"</span>])
+}</code></pre></div>
+</div></details></div><h2 id="object-safety" class="section-header">Object Safety<a href="#object-safety" class="anchor">§</a></h2><div class="object-safety-info">This trait is <b>not</b> <a href="https://doc.rust-lang.org/nightly/reference/items/traits.html#object-safety">object safe</a>.</div><h2 id="foreign-impls" class="section-header">Implementations on Foreign Types<a href="#foreign-impls" class="anchor">§</a></h2><section id="impl-DataFrameJoinOps-for-DataFrame" class="impl"><a class="src rightside" href="../../../src/polars_ops/frame/join/mod.rs.html#446">source</a><a href="#impl-DataFrameJoinOps-for-DataFrame" class="anchor">§</a><h3 class="code-header">impl <a class="trait" href="trait.DataFrameJoinOps.html" title="trait polars_ops::frame::join::DataFrameJoinOps">DataFrameJoinOps</a> for <a class="struct" href="../../../polars_core/frame/struct.DataFrame.html" title="struct polars_core::frame::DataFrame">DataFrame</a></h3></section><h2 id="implementors" class="section-header">Implementors<a href="#implementors" class="anchor">§</a></h2><div id="implementors-list"></div><script src="../../../trait.impl/polars_ops/frame/join/trait.DataFrameJoinOps.js" data-ignore-extern-crates="polars_core" async></script></section></div></main></body></html>

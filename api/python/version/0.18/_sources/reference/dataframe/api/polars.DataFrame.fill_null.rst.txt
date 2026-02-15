@@ -1,0 +1,6 @@
+﻿polars.DataFrame.fill\_null
+===========================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.fill_null

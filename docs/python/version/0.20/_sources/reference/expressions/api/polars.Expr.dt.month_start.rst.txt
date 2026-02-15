@@ -1,0 +1,6 @@
+﻿polars.Expr.dt.month_start
+==========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.dt.month_start

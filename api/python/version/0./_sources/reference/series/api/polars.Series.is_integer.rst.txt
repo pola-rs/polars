@@ -1,0 +1,6 @@
+﻿polars.Series.is\_integer
+=========================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.is_integer

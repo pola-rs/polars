@@ -1,0 +1,6 @@
+﻿polars.Config.set\_engine\_affinity
+===================================
+
+.. currentmodule:: polars
+
+.. automethod:: Config.set_engine_affinity

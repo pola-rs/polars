@@ -1,0 +1,6 @@
+﻿polars.DataFrame.with\_columns\_seq
+===================================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.with_columns_seq

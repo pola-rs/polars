@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CompressedReader","CompressedWriter","SupportedCompression"],"fn":["maybe_decompress_bytes"]};

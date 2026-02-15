@@ -1,0 +1,6 @@
+﻿polars.DataFrame.write\_parquet
+===============================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.write_parquet

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_ideal_morsel_size"]};

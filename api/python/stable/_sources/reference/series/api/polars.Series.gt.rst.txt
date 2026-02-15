@@ -1,0 +1,6 @@
+﻿polars.Series.gt
+================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.gt

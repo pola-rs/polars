@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["BitRepr","IsSorted"],"mod":["amortized_iter","arithmetic","builder","categorical_to_arrow","implementations","ops"],"struct":["Series","SeriesIter","ToArrowConverter"],"trait":["ChunkCompareEq","IntoSeries","SeriesTrait"],"type":["SeriesPhysIter"]};

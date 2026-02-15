@@ -1,0 +1,6 @@
+﻿polars.arg\_where
+=================
+
+.. currentmodule:: polars
+
+.. autofunction:: arg_where

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["check_projected_arrow_schema","check_projected_schema","check_projected_schema_impl","get_reader_bytes","get_sequential_row_statistics","is_cloud_url","materialize_projection","resolve_homedir"],"static":["BOOLEAN_RE","FLOAT_RE","FLOAT_RE_DECIMAL","INTEGER_RE","POLARS_TEMP_DIR_BASE_PATH"]};

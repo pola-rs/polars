@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.sink\_csv
+==========================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.sink_csv

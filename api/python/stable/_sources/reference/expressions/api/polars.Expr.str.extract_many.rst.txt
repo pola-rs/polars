@@ -1,0 +1,6 @@
+﻿polars.Expr.str.extract_many
+============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.str.extract_many

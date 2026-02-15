@@ -1,0 +1,6 @@
+﻿polars.Series.str.rstrip
+========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.str.rstrip

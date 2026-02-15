@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["par"],"struct":["BoolIterNoNull","FixedSizeListIterNoNull","SomeIterator"],"trait":["PolarsIterator"]};

@@ -1,0 +1,6 @@
+﻿polars.api.register\_lazyframe\_namespace
+=========================================
+
+.. currentmodule:: polars.api
+
+.. autofunction:: register_lazyframe_namespace

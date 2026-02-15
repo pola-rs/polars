@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["FileProviderReturn","FileProviderType"],"struct":["FileProviderArgs","HivePathProvider"],"type":["FileProviderFunction"]};

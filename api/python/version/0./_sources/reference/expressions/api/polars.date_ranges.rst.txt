@@ -1,0 +1,6 @@
+﻿polars.date\_ranges
+===================
+
+.. currentmodule:: polars
+
+.. autofunction:: date_ranges

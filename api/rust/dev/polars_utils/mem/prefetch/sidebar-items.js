@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["force_populate_read","get_memory_prefetch_func","madvise_populate_read","madvise_sequential","madvise_willneed","no_prefetch","prefetch_l2"]};

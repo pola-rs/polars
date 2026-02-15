@@ -1,0 +1,33 @@
+﻿polars.datatypes.UInt8
+======================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: UInt8
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~UInt8.__init__
+      ~UInt8.base_type
+      ~UInt8.is_
+      ~UInt8.is_decimal
+      ~UInt8.is_float
+      ~UInt8.is_integer
+      ~UInt8.is_nested
+      ~UInt8.is_not
+      ~UInt8.is_numeric
+      ~UInt8.is_signed_integer
+      ~UInt8.is_temporal
+      ~UInt8.is_unsigned_integer
+   
+   
+
+   
+   
+   

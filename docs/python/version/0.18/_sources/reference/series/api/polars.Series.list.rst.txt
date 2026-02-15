@@ -1,0 +1,6 @@
+﻿polars.Series.list
+==================
+
+.. currentmodule:: polars
+
+.. autoattribute:: Series.list

@@ -1,0 +1,6 @@
+﻿polars.show\_versions
+=====================
+
+.. currentmodule:: polars
+
+.. autofunction:: show_versions

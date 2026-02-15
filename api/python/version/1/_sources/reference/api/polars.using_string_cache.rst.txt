@@ -1,0 +1,6 @@
+﻿polars.using\_string\_cache
+===========================
+
+.. currentmodule:: polars
+
+.. autofunction:: using_string_cache

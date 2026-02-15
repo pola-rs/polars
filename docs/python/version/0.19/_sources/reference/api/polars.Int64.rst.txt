@@ -1,0 +1,37 @@
+﻿polars.Int64
+============
+
+.. currentmodule:: polars
+
+.. autoclass:: Int64
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Int64.__init__
+      ~Int64.base_type
+      ~Int64.is_
+      ~Int64.is_float
+      ~Int64.is_integer
+      ~Int64.is_not
+      ~Int64.is_numeric
+      ~Int64.is_signed_integer
+      ~Int64.is_temporal
+      ~Int64.is_unsigned_integer
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Int64.is_nested
+   
+   

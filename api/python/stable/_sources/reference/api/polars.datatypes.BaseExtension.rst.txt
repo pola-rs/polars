@@ -1,0 +1,40 @@
+﻿polars.datatypes.BaseExtension
+==============================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: BaseExtension
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~BaseExtension.__init__
+      ~BaseExtension.base_type
+      ~BaseExtension.ext_from_params
+      ~BaseExtension.ext_metadata
+      ~BaseExtension.ext_name
+      ~BaseExtension.ext_storage
+      ~BaseExtension.from_python
+      ~BaseExtension.is_
+      ~BaseExtension.is_decimal
+      ~BaseExtension.is_float
+      ~BaseExtension.is_integer
+      ~BaseExtension.is_nested
+      ~BaseExtension.is_numeric
+      ~BaseExtension.is_object
+      ~BaseExtension.is_signed_integer
+      ~BaseExtension.is_temporal
+      ~BaseExtension.is_unsigned_integer
+      ~BaseExtension.to_dtype_expr
+      ~BaseExtension.to_python
+   
+   
+
+   
+   
+   
