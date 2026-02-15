@@ -439,14 +439,14 @@ pub fn lower_ir(
             slice,
             sort_options,
         } => {
-            let slice = *slice;
+            let slice = slice.clone();
             let mut by_column = by_column.clone();
             let mut sort_options = sort_options.clone();
             let phys_input = lower_ir!(*input)?;
 
             // See if we can insert a top k.
             let mut limit = u64::MAX;
-            if let Some((0, l)) = slice {
+            if let Some((0, l, _)) = slice {
                 limit = limit.min(l as u64);
             }
             #[allow(clippy::unnecessary_cast)]
@@ -503,6 +503,7 @@ pub fn lower_ir(
                         by_column: trans_by_column,
                         reverse: sort_options.descending.iter().map(|x| !x).collect(),
                         nulls_last: sort_options.nulls_last.clone(),
+                        dyn_pred: slice.as_ref().and_then(|t| t.2.clone()),
                     },
                 }));
             }
@@ -512,7 +513,7 @@ pub fn lower_ir(
                 kind: PhysNodeKind::Sort {
                     input: stream,
                     by_column,
-                    slice,
+                    slice: slice.as_ref().map(|t| (t.0, t.1)),
                     sort_options,
                 },
             }));

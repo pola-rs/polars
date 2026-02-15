@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::mem::MaybeUninit;
+use std::ops::Deref;
 
 use num_traits::FromPrimitive;
 
@@ -56,6 +57,18 @@ where
 #[derive(PartialEq, Eq, Clone, Hash)]
 #[repr(transparent)]
 pub struct ReorderWithNulls<T, const DESCENDING: bool, const NULLS_LAST: bool>(pub Option<T>);
+
+impl<T, const DESCENDING: bool, const NULLS_LAST: bool>
+    ReorderWithNulls<T, DESCENDING, NULLS_LAST>
+{
+    pub fn as_deref(&self) -> ReorderWithNulls<&<T as Deref>::Target, DESCENDING, NULLS_LAST>
+    where
+        T: Deref,
+    {
+        let x = self.0.as_deref();
+        ReorderWithNulls(x)
+    }
+}
 
 impl<T: PartialOrd, const DESCENDING: bool, const NULLS_LAST: bool> PartialOrd
     for ReorderWithNulls<T, DESCENDING, NULLS_LAST>
