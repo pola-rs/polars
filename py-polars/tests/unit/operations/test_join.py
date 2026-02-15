@@ -4026,3 +4026,21 @@ def test_full_join_rewrite_to_right_with_cast() -> None:
         },
     )
     assert_frame_equal(out, ret, check_column_order=True, check_row_order=False)
+
+
+def test_join_two_empty_dfs() -> None:
+    left_df = pl.DataFrame()
+    right_df = pl.DataFrame()
+
+    out = left_df.join(right_df, on=pl.lit(1))
+
+    assert_frame_equal(out, left_df)
+
+
+def test_join_left_empty_df() -> None:
+    left_df = pl.DataFrame()
+    right_df = pl.DataFrame({"a": [1, 2, 3]})
+
+    out = left_df.join(right_df, on=pl.lit(1))
+
+    assert_frame_equal(out, right_df)
