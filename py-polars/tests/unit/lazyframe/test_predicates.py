@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from datetime import date, datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
@@ -1273,3 +1273,355 @@ def test_replace_strict_predicate_merging() -> None:
         df.filter(pl.col("x")).filter(pl.col("x").replace_strict(True, True)).collect()
     )
     assert out.height == 3
+
+
+def test_temporal_literal_narrowing_predicate_pushdown() -> None:
+    """Temporal type mismatches should be resolved by casting the literal, not column.
+
+    This avoids Cast nodes that block predicate pushdown to I/O.
+    """
+    # Date column vs Datetime literal (midnight = lossless)
+    df = pl.LazyFrame(
+        {
+            "d": [date(2024, 1, 10), date(2024, 1, 15), date(2024, 1, 20)],
+        }
+    )
+
+    lf = df.filter(pl.col("d") < datetime(2024, 1, 16))
+    plan = lf.explain()
+    # The plan should NOT contain a cast on the date column.
+    assert "cast" not in plan.lower(), f"Unexpected cast in plan:\n{plan}"
+    result = lf.collect()
+    assert result["d"].to_list() == [date(2024, 1, 10), date(2024, 1, 15)]
+
+    # Date column vs Datetime literal (non-midnight = lossy, operator adjusted)
+    lf_lossy = df.filter(pl.col("d") < datetime(2024, 1, 15, 12, 30))
+    result_lossy = lf_lossy.collect()
+    # date(2024,1,15) < datetime(2024,1,15,12:30) is true
+    assert result_lossy["d"].to_list() == [date(2024, 1, 10), date(2024, 1, 15)]
+
+    lf_lossy_gt = df.filter(pl.col("d") >= datetime(2024, 1, 15, 12, 30))
+    result_lossy_gt = lf_lossy_gt.collect()
+    # date(2024,1,15) >= datetime(2024,1,15,12:30) is false (date is midnight)
+    assert result_lossy_gt["d"].to_list() == [date(2024, 1, 20)]
+
+    # Datetime column vs Date literal (upcast path should not abort optimization).
+    lf_upcast = pl.LazyFrame(
+        {
+            "dt": [datetime(2024, 1, 10), datetime(2024, 1, 15), datetime(2024, 1, 20)],
+        }
+    ).filter(pl.col("dt") > date(2024, 1, 15))
+    plan_upcast = lf_upcast.explain()
+    assert "cast" not in plan_upcast.lower(), f"Unexpected cast in plan:\n{plan_upcast}"
+    assert lf_upcast.collect()["dt"].to_list() == [datetime(2024, 1, 20)]
+
+    # Datetime(us) column vs Datetime(ns) literal
+    df_dt = pl.LazyFrame(
+        {
+            "dt": pl.Series(
+                [
+                    datetime(2024, 1, 10),
+                    datetime(2024, 1, 15),
+                    datetime(2024, 1, 20),
+                ]
+            ).cast(pl.Datetime("us")),
+        }
+    )
+    ns_lit = pl.lit(datetime(2024, 1, 16)).cast(pl.Datetime("ns"))
+    lf_dt = df_dt.filter(pl.col("dt") < ns_lit)
+    plan_dt = lf_dt.explain()
+    assert "cast" not in plan_dt.lower(), f"Unexpected cast in plan:\n{plan_dt}"
+    result_dt = lf_dt.collect()
+    assert result_dt.height == 2
+
+    # Duration(us) column vs Duration(ns) literal
+    df_dur = pl.LazyFrame(
+        {
+            "dur": pl.Series(
+                [timedelta(days=1), timedelta(days=2), timedelta(days=3)],
+                dtype=pl.Duration("us"),
+            ),
+        }
+    )
+    ns_dur_lit = pl.lit(timedelta(days=2, hours=12)).cast(pl.Duration("ns"))
+    lf_dur = df_dur.filter(pl.col("dur") < ns_dur_lit)
+    plan_dur = lf_dur.explain()
+    assert "cast" not in plan_dur.lower(), f"Unexpected cast in plan:\n{plan_dur}"
+    result_dur = lf_dur.collect()
+    assert result_dur.height == 2  # 1 day and 2 days are < 2.5 days
+
+
+def test_temporal_literal_lossy_comparison_correctness() -> None:
+    """Lossy temporal comparisons should produce results identical to eager.
+
+    Non-midnight datetime vs date triggers operator adjustment.
+    """
+    dates = [date(2024, 1, d) for d in range(1, 32)]
+    df = pl.DataFrame({"d": dates})
+    lf = df.lazy()
+
+    # Non-midnight datetime literal (lossy)
+    dt_lit = datetime(2024, 1, 15, 12, 30)
+
+    for _, op_fn in [
+        ("lt", _op_lt),
+        ("le", _op_le),
+        ("gt", _op_gt),
+        ("ge", _op_ge),
+    ]:
+        lazy_result = lf.filter(op_fn(pl.col("d"), dt_lit)).collect()
+        eager_result = df.filter(op_fn(pl.col("d"), dt_lit))
+        assert_frame_equal(
+            lazy_result,
+            eager_result,
+            check_exact=True,
+        )
+
+
+def test_temporal_literal_narrowing_no_timezone() -> None:
+    """Temporal literal narrowing should NOT apply with timezone-aware types.
+
+    This avoids incorrect results from DST offsets in Date<->Datetime conversion.
+    """
+    df = pl.LazyFrame(
+        {
+            "d": [date(2024, 1, 10), date(2024, 1, 15), date(2024, 1, 20)],
+        }
+    )
+    tz_lit = pl.lit(datetime(2024, 1, 16)).cast(pl.Datetime("us", "UTC"))
+    lf = df.filter(pl.col("d") < tz_lit)
+    # Should still produce correct results (via normal cast path)
+    result = lf.collect()
+    assert result["d"].to_list() == [date(2024, 1, 10), date(2024, 1, 15)]
+
+
+def test_temporal_literal_narrowing_equal_timezone_datetime() -> None:
+    """Narrowing should apply for Datetime<->Datetime with equal timezone."""
+    dt_df = pl.DataFrame(
+        {
+            "dt": [
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                datetime(2024, 1, 2, tzinfo=timezone.utc),
+                datetime(2024, 1, 3, tzinfo=timezone.utc),
+                None,
+            ]
+        }
+    ).with_columns(pl.col("dt").cast(pl.Datetime("ns", "UTC")))
+    dt_lf = dt_df.lazy()
+
+    low = datetime(1500, 1, 1, tzinfo=timezone.utc)
+    high = datetime(3000, 1, 1, tzinfo=timezone.utc)
+
+    # Out-of-range for ns, representable in us: should be rewritten, not null-cast.
+    plan_hi = dt_lf.filter(pl.col("dt") < high).explain().lower()
+    plan_lo = dt_lf.filter(pl.col("dt") > low).explain().lower()
+    assert "(null)" not in plan_hi
+    assert "(null)" not in plan_lo
+    assert "cast" not in plan_hi
+    assert "cast" not in plan_lo
+
+    op_fns = [_op_lt, _op_le, _op_gt, _op_ge, _op_eq, _op_ne]
+    for lit in [low, high]:
+        for op_fn in op_fns:
+            _assert_filter_matches_baseline(
+                dt_df,
+                op_fn(pl.col("dt"), lit),
+                op_fn(pl.col("dt").cast(pl.Datetime("us", "UTC")), lit),
+            )
+            _assert_filter_matches_baseline(
+                dt_df,
+                op_fn(pl.lit(lit), pl.col("dt")),
+                op_fn(pl.lit(lit), pl.col("dt").cast(pl.Datetime("us", "UTC"))),
+            )
+
+
+def _assert_filter_matches_baseline(
+    df: pl.DataFrame, predicate: pl.Expr, baseline_predicate: pl.Expr
+) -> None:
+    assert_frame_equal(
+        df.lazy().filter(predicate).collect(),
+        df.filter(baseline_predicate),
+        check_exact=True,
+    )
+
+
+def _assert_select_matches_baseline(
+    df: pl.DataFrame, expr: pl.Expr, baseline_expr: pl.Expr
+) -> None:
+    assert_frame_equal(
+        df.lazy().select(expr.alias("out")).collect(),
+        df.select(baseline_expr.alias("out")),
+        check_exact=True,
+    )
+
+
+def _op_lt(lhs: pl.Expr, rhs: Any) -> pl.Expr:
+    return cast("pl.Expr", lhs < rhs)
+
+
+def _op_le(lhs: pl.Expr, rhs: Any) -> pl.Expr:
+    return cast("pl.Expr", lhs <= rhs)
+
+
+def _op_gt(lhs: pl.Expr, rhs: Any) -> pl.Expr:
+    return cast("pl.Expr", lhs > rhs)
+
+
+def _op_ge(lhs: pl.Expr, rhs: Any) -> pl.Expr:
+    return cast("pl.Expr", lhs >= rhs)
+
+
+def _op_eq(lhs: pl.Expr, rhs: Any) -> pl.Expr:
+    return cast("pl.Expr", lhs == rhs)
+
+
+def _op_ne(lhs: pl.Expr, rhs: Any) -> pl.Expr:
+    return cast("pl.Expr", lhs != rhs)
+
+
+def test_temporal_literal_narrowing_out_of_range_correctness() -> None:
+    """Out-of-range temporal literal narrowing must preserve comparison semantics."""
+    op_fns = [_op_lt, _op_le, _op_gt, _op_ge, _op_eq, _op_ne]
+
+    # Datetime(ns) column: Python datetime literals are Datetime(us).
+    # 1500/3000 are out of Datetime(ns) range but representable in Datetime(us).
+    dt_df = pl.DataFrame(
+        {"dt": [datetime(2024, 1, 1), datetime(2024, 1, 2), datetime(2024, 1, 3)]}
+    ).with_columns(pl.col("dt").cast(pl.Datetime("ns")))
+    dt_lf = dt_df.lazy()
+    assert "(null)" not in dt_lf.filter(pl.col("dt") < datetime(3000, 1, 1)).explain()
+    assert "(null)" not in dt_lf.filter(pl.col("dt") > datetime(1500, 1, 1)).explain()
+    plan_ne_hi = dt_lf.filter(pl.col("dt") != datetime(3000, 1, 1)).explain().lower()
+    plan_eq_lo = dt_lf.filter(pl.col("dt") == datetime(1500, 1, 1)).explain().lower()
+    assert "(null)" not in plan_ne_hi
+    assert "(null)" not in plan_eq_lo
+    assert "cast" not in plan_ne_hi
+    assert "cast" not in plan_eq_lo
+
+    for dt_lit in [datetime(1500, 1, 1), datetime(3000, 1, 1)]:
+        for op_fn in op_fns:
+            _assert_filter_matches_baseline(
+                dt_df,
+                op_fn(pl.col("dt"), dt_lit),
+                op_fn(pl.col("dt").cast(pl.Datetime("us")), dt_lit),
+            )
+            _assert_filter_matches_baseline(
+                dt_df,
+                op_fn(pl.lit(dt_lit), pl.col("dt")),
+                op_fn(pl.lit(dt_lit), pl.col("dt").cast(pl.Datetime("us"))),
+            )
+
+    # Duration(ns) column with Duration(us) literal out of Duration(ns) range.
+    dur_df = pl.DataFrame(
+        {
+            "dur": pl.Series(
+                [timedelta(days=1), timedelta(days=2), timedelta(days=3)],
+                dtype=pl.Duration("ns"),
+            )
+        }
+    )
+    dur_lf = dur_df.lazy()
+    dur_literals = [
+        pl.lit(-(10**18)).cast(pl.Duration("us")),
+        pl.lit(10**18).cast(pl.Duration("us")),
+    ]
+    assert "(null)" not in dur_lf.filter(pl.col("dur") < dur_literals[1]).explain()
+    assert "(null)" not in dur_lf.filter(pl.col("dur") > dur_literals[0]).explain()
+
+    for dur_lit in dur_literals:
+        for op_fn in op_fns:
+            _assert_filter_matches_baseline(
+                dur_df,
+                op_fn(pl.col("dur"), dur_lit),
+                op_fn(pl.col("dur").cast(pl.Duration("us")), dur_lit),
+            )
+            _assert_filter_matches_baseline(
+                dur_df,
+                op_fn(dur_lit, pl.col("dur")),
+                op_fn(dur_lit, pl.col("dur").cast(pl.Duration("us"))),
+            )
+
+
+def test_temporal_literal_narrowing_out_of_range_null_semantics() -> None:
+    """Out-of-range rewrites must preserve null-comparison semantics."""
+    df = pl.DataFrame({"dt": [datetime(2024, 1, 1), None]}).with_columns(
+        pl.col("dt").cast(pl.Datetime("ns"))
+    )
+    lf = df.lazy()
+
+    high = datetime(3000, 1, 1)
+    low = datetime(1500, 1, 1)
+
+    exprs = [
+        (pl.col("dt") < high, pl.col("dt").cast(pl.Datetime("us")) < high),
+        (pl.col("dt") != high, pl.col("dt").cast(pl.Datetime("us")) != high),
+        (pl.col("dt") > low, pl.col("dt").cast(pl.Datetime("us")) > low),
+        (
+            pl.lit(high) >= pl.col("dt"),
+            pl.lit(high) >= pl.col("dt").cast(pl.Datetime("us")),
+        ),
+        (
+            pl.lit(low) == pl.col("dt"),
+            pl.lit(low) == pl.col("dt").cast(pl.Datetime("us")),
+        ),
+    ]
+
+    for lazy_expr, eager_expr in exprs:
+        _assert_select_matches_baseline(df, lazy_expr, eager_expr)
+
+
+def test_temporal_literal_narrowing_negative_lossy_floor_duration() -> None:
+    """Lossy ns->us narrowing must floor correctly for negative values."""
+    df = pl.DataFrame(
+        {
+            "dur": pl.Series(
+                [-2, -1, 0, 1, 2],
+                dtype=pl.Int64,
+            ).cast(pl.Duration("us"))
+        }
+    )
+    lf = df.lazy()
+
+    lit = pl.lit(-1).cast(
+        pl.Duration("ns")
+    )  # -1ns would truncate to 0us without floor fix.
+    assert "(null)" not in lf.filter(pl.col("dur") < lit).explain()
+
+    op_fns = [_op_lt, _op_le, _op_gt, _op_ge]
+    for op_fn in op_fns:
+        _assert_filter_matches_baseline(
+            df,
+            op_fn(pl.col("dur"), lit),
+            op_fn(pl.col("dur").cast(pl.Duration("ns")), lit),
+        )
+        _assert_filter_matches_baseline(
+            df,
+            op_fn(lit, pl.col("dur")),
+            op_fn(lit, pl.col("dur").cast(pl.Duration("ns"))),
+        )
+
+
+def test_temporal_literal_narrowing_pre_1970_datetime() -> None:
+    """Pre-1970 datetime comparisons should preserve semantics under narrowing."""
+    df = pl.DataFrame(
+        {
+            "dt": [
+                datetime(1969, 12, 31, 23, 59, 59, 999999),
+                datetime(1970, 1, 1, 0, 0, 0),
+                datetime(1970, 1, 1, 0, 0, 0, 1),
+            ]
+        }
+    ).with_columns(pl.col("dt").cast(pl.Datetime("ns")))
+
+    lit = datetime(1970, 1, 1, 0, 0, 0, 1)
+    for op_fn in (_op_lt, _op_le, _op_gt, _op_ge):
+        _assert_filter_matches_baseline(
+            df,
+            op_fn(pl.col("dt"), lit),
+            op_fn(pl.col("dt").cast(pl.Datetime("us")), lit),
+        )
+        _assert_filter_matches_baseline(
+            df,
+            op_fn(pl.lit(lit), pl.col("dt")),
+            op_fn(pl.lit(lit), pl.col("dt").cast(pl.Datetime("us"))),
+        )

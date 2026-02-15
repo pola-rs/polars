@@ -178,11 +178,20 @@ def test_datetime_io_predicate_pushdown_21790() -> None:
     assert_series_equal(filtered_df.to_series(), df.filter(expr).to_series())
 
     # check the expression directly
-    dt_val, column_cast = pushed_predicate.meta.pop()
+    children = pushed_predicate.meta.pop()
+    assert len(children) == 2
+
+    dt_val = next(expr for expr in children if expr.meta.is_literal())
     # Extract the datetime value from the expression
     assert pl.DataFrame({}).select(dt_val).item() == cutoff
 
-    column = column_cast.meta.pop()[0]
+    column = next(expr for expr in children if not expr.meta.is_literal())
+    # Optimization may pass either col("timestamp") directly or wrap it in a unary node.
+    while not column.meta.is_column():
+        pop_children = column.meta.pop()
+        assert len(pop_children) == 1
+        column = pop_children[0]
+
     assert column.meta == pl.col("timestamp")
 
 

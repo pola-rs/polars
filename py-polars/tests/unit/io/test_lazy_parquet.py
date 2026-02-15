@@ -5,7 +5,7 @@ import io
 import subprocess
 import sys
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Thread
 from typing import TYPE_CHECKING, Any
@@ -1618,4 +1618,93 @@ def test_sink_parquet_pyarrow_filter_string_type_26435() -> None:
     assert_frame_equal(
         pl.DataFrame(pq.read_table(f, filters=[("string", "=", "A")])),
         pl.DataFrame({"string": "A", "int": 0}),
+    )
+
+
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("storage_dtype", "col_name"),
+    [
+        pytest.param(pl.Date, "d", id="date-column"),
+        pytest.param(pl.Datetime("ns"), "dt", id="datetime-ns-column"),
+    ],
+)
+def test_temporal_literal_parquet_row_group_pruning(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: Any,
+    tmp_path: Path,
+    storage_dtype: pl.DataType,
+    col_name: str,
+) -> None:
+    """Temporal literal narrowing should enable Parquet row group pruning.
+
+    When a temporal column is filtered with a temporal literal of a different
+    type/timeunit, the literal should be narrowed at plan time.
+    """
+    tmp_path.mkdir(exist_ok=True)
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    vals1 = [datetime(2024, 1, d) for d in range(1, 16)]
+    vals2 = [datetime(2024, 1, d) for d in range(16, 32)]
+    df = pl.DataFrame({col_name: vals1 + vals2}).with_columns(
+        pl.col(col_name).cast(storage_dtype)
+    )
+
+    file_path = tmp_path / "temporal_rg.parquet"
+    df.write_parquet(file_path, statistics=True, use_pyarrow=False, row_group_size=15)
+
+    # Filter with a Datetime literal that should only match row group 1.
+    result = (
+        pl.scan_parquet(file_path)
+        .filter(pl.col(col_name) < datetime(2024, 1, 10))
+        .collect()
+    )
+    assert result.height == 9  # dates 1..9
+    assert_frame_equal(result, df.filter(pl.col(col_name) < datetime(2024, 1, 10)))
+
+    captured = capfd.readouterr().err
+    # With row_group_size=15 and 31 rows, we get 3 row groups.
+    # Only row group 1 (dates 1-15) can contain values < 2024-01-10.
+    assert "reading 1 / 3 row groups" in captured, (
+        f"Expected row group pruning but got:\n{captured}"
+    )
+
+
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+@pytest.mark.write_disk
+def test_duration_literal_parquet_row_group_pruning_24095(
+    plmonkeypatch: PlMonkeyPatch, capfd: Any, tmp_path: Path
+) -> None:
+    """Duration literal narrowing should enable Parquet row group pruning.
+
+    Regression coverage for #24095.
+    """
+    tmp_path.mkdir(exist_ok=True)
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    vals1 = [timedelta(seconds=i) for i in range(1, 16)]
+    vals2 = [timedelta(seconds=i) for i in range(16, 32)]
+    df = pl.DataFrame({"a": vals1 + vals2}).with_columns(
+        pl.col("a").cast(pl.Duration("ns"))
+    )
+
+    file_path = tmp_path / "duration_rg.parquet"
+    df.write_parquet(file_path, statistics=True, use_pyarrow=False, row_group_size=15)
+
+    q = pl.scan_parquet(file_path).filter(
+        pl.col("a") >= timedelta(seconds=2), pl.col("a") <= timedelta(seconds=3)
+    )
+    plan = q.explain().lower()
+    assert "cast" not in plan, f"Unexpected cast in plan:\n{plan}"
+
+    result = q.collect()
+    expected = df.filter(
+        pl.col("a") >= timedelta(seconds=2), pl.col("a") <= timedelta(seconds=3)
+    )
+    assert_frame_equal(result, expected)
+
+    captured = capfd.readouterr().err
+    assert "reading 1 / 3 row groups" in captured, (
+        f"Expected row group pruning but got:\n{captured}"
     )
