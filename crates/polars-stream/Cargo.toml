@@ -126,7 +126,7 @@ is_in = ["polars-ops/is_in", "polars-plan/is_in", "semi_anti_join"]
 replace = ["polars-ops/replace", "polars-plan/replace"]
 range = ["polars-plan/range"]
 top_k = ["polars-plan/top_k"]
-cum_agg = ["polars-plan/cum_agg", "polars-ops/cum_agg"]
+cum_agg = ["polars-plan/cum_agg", "polars-ops/cum_agg", "polars-expr/cum_agg"]
 
 # We need to specify default features here to match workspace defaults.
 # Otherwise we get warnings with cargo check/clippy.

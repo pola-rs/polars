@@ -48,6 +48,7 @@ def test_cum_agg() -> None:
     assert_series_equal(s.cum_min(), pl.Series("a", [1, 1, 1, 1]))
     assert_series_equal(s.cum_max(), pl.Series("a", [1, 2, 3, 3]))
     assert_series_equal(s.cum_prod(), pl.Series("a", [1, 2, 6, 12]))
+    assert_series_equal(s.cum_mean(), pl.Series("a", [1.0, 1.5, 2.0, 2.0]))
 
 
 def test_cum_agg_with_nulls() -> None:
@@ -57,6 +58,9 @@ def test_cum_agg_with_nulls() -> None:
     assert_series_equal(s.cum_min(), pl.Series("a", [None, 2, None, 2, 2, None]))
     assert_series_equal(s.cum_max(), pl.Series("a", [None, 2, None, 7, 8, None]))
     assert_series_equal(s.cum_prod(), pl.Series("a", [None, 2, None, 14, 112, None]))
+    assert_series_equal(
+        s.cum_mean(), pl.Series("a", [None, 2.0, None, 4.5, 5.66666667, None])
+    )
 
 
 def test_cum_agg_with_infs() -> None:

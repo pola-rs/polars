@@ -714,6 +714,9 @@ impl PyExpr {
     fn cum_count(&self, reverse: bool) -> Self {
         self.inner.clone().cum_count(reverse).into()
     }
+    fn cum_mean(&self, reverse: bool) -> Self {
+        self.inner.clone().cum_mean(reverse).into()
+    }
 
     fn cumulative_eval(&self, expr: Self, min_samples: usize) -> Self {
         self.inner
