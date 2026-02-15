@@ -1265,7 +1265,7 @@ pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> Pola
             let value = value.to_ascii_lowercase();
             match value.as_str() {
                 "millennium" | "millennia" => &DateTimeField::Millennium,
-                "century" | "centuries" => &DateTimeField::Century,
+                "century" | "centuries" | "c" => &DateTimeField::Century,
                 "decade" | "decades" => &DateTimeField::Decade,
                 "isoyear" => &DateTimeField::Isoyear,
                 "year" | "years" | "y" => &DateTimeField::Year,
@@ -1275,7 +1275,7 @@ pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> Pola
                 "dayofweek" | "dow" => &DateTimeField::DayOfWeek,
                 "isoweek" | "week" | "weeks" => &DateTimeField::IsoWeek,
                 "isodow" => &DateTimeField::Isodow,
-                "day" | "days" | "d" => &DateTimeField::Day,
+                "day" | "days" | "dayofmonth" | "d" => &DateTimeField::Day,
                 "hour" | "hours" | "h" => &DateTimeField::Hour,
                 "minute" | "minutes" | "mins" | "min" | "m" => &DateTimeField::Minute,
                 "second" | "seconds" | "sec" | "secs" | "s" => &DateTimeField::Second,
