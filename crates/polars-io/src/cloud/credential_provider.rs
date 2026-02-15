@@ -666,6 +666,8 @@ mod python_impl {
         #[cfg(feature = "azure")]
         fn into_azure_provider(self) -> object_store::azure::AzureCredentialProvider {
             use object_store::azure::AzureAccessKey;
+            use percent_encoding::percent_decode_str;
+            use polars_core::config::verbose_print_sensitive;
             use polars_error::PolarsResult;
 
             use crate::cloud::credential_provider::{
@@ -674,13 +676,13 @@ mod python_impl {
 
             let func = self.unwrap_as_provider();
 
-            CredentialProviderFunction(Arc::new(move || {
+            return CredentialProviderFunction(Arc::new(move || {
                 let func = func.clone();
                 Box::pin(async move {
                     let mut credentials = None;
 
                     static VALID_KEYS_MSG: &str =
-                        "valid configuration keys are: account_key, bearer_token";
+                        "valid configuration keys are: ('account_key', 'bearer_token', 'sas_token')";
 
                     let expiry = Python::attach(|py| {
                         let v = func.0.call0(py)?.into_bound(py);
@@ -703,6 +705,21 @@ mod python_impl {
                                 "bearer_token" => {
                                     credentials =
                                         Some(object_store::azure::AzureCredential::BearerToken(v))
+                                },
+                                "sas_token" => {
+                                    credentials =
+                                        Some(object_store::azure::AzureCredential::SASToken(
+                                            split_sas(&v).map_err(|err_msg| {
+                                                verbose_print_sensitive(|| {
+                                                    format!("error decoding SAS token: {err_msg} (token: {v})")
+                                                });
+
+                                                PyValueError::new_err(format!(
+                                                    "error decoding SAS token: {err_msg}. \
+                                                    Set POLARS_VERBOSE_SENSITIVE=1 to print the value"
+                                                ))
+                                            })?,
+                                        ))
                                 },
                                 v => {
                                     return pyo3::PyResult::Err(PyValueError::new_err(format!(
@@ -727,7 +744,33 @@ mod python_impl {
                     PolarsResult::Ok((ObjectStoreCredential::Azure(Arc::new(credentials)), expiry))
                 })
             }))
-            .into_azure_provider()
+            .into_azure_provider();
+
+            /// Copied and adjusted from object-store.
+            ///
+            /// https://github.com/apache/arrow-rs-object-store/blob/7a0504b4924fcecee17d768fd7190b8f71b0877f/src/azure/builder.rs#L1072-L1089
+            fn split_sas(sas: &str) -> Result<Vec<(String, String)>, &'static str> {
+                let sas = percent_decode_str(sas)
+                    .decode_utf8()
+                    .map_err(|_| "UTF-8 decode error")?;
+
+                let kv_str_pairs = sas
+                    .trim_start_matches('?')
+                    .split('&')
+                    .filter(|s| !s.chars().all(char::is_whitespace));
+
+                let mut pairs = Vec::new();
+
+                for kv_pair_str in kv_str_pairs {
+                    let (k, v) = kv_pair_str
+                        .trim()
+                        .split_once('=')
+                        .ok_or("missing SAS component")?;
+                    pairs.push((k.into(), v.into()))
+                }
+
+                Ok(pairs)
+            }
         }
 
         #[cfg(feature = "gcp")]
