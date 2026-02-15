@@ -1,0 +1,17 @@
+[package]
+name = "polars-ooc"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Out-of-core processing support for Polars"
+
+[dependencies]
+parking_lot = { workspace = true }
+polars-core = { workspace = true, features = ["algorithm_group_by"] }
+slotmap = { workspace = true }
+
+[lints]
+workspace = true

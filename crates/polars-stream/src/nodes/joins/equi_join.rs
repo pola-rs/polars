@@ -11,6 +11,7 @@ use polars_core::{POOL, config};
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_io::pl_async::get_runtime;
+use polars_ooc::mm;
 use polars_ops::frame::{JoinArgs, JoinBuildSide, JoinType, MaintainOrderJoin};
 use polars_ops::series::coalesce_columns;
 use polars_utils::cardinality_sketch::CardinalitySketch;
@@ -362,9 +363,9 @@ impl SampleState {
         // Transition to building state.
         params.left_is_build = Some(left_is_build);
         let mut sampled_build_morsels =
-            BufferedStream::new(core::mem::take(&mut self.left), MorselSeq::default());
+            BufferedStream::new(core::mem::take(&mut self.left), MorselSeq::default())?;
         let mut sampled_probe_morsels =
-            BufferedStream::new(core::mem::take(&mut self.right), MorselSeq::default());
+            BufferedStream::new(core::mem::take(&mut self.right), MorselSeq::default())?;
         if !left_is_build {
             core::mem::swap(&mut sampled_build_morsels, &mut sampled_probe_morsels);
         }
@@ -412,8 +413,8 @@ impl SampleState {
 
 #[derive(Default)]
 struct LocalBuilder {
-    // The complete list of morsels and their computed hashes seen by this builder.
-    morsels: Vec<(MorselSeq, DataFrame, HashKeys)>,
+    // The complete list of tokens to morsels and their computed hashes seen by this builder.
+    morsels: Vec<(MorselSeq, Token, HashKeys)>,
 
     // A cardinality sketch per partition for the keys seen by this builder.
     sketch_per_p: Vec<CardinalitySketch>,
@@ -491,12 +492,17 @@ impl BuildState {
             local
                 .morsel_idxs_offsets_per_p
                 .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
-            local.morsels.push((morsel.seq(), payload, hash_keys));
+            let token = mm().store(payload).await?;
+            local.morsels.push((morsel.seq(), token, hash_keys));
         }
         Ok(())
     }
 
-    fn finalize_ordered(&mut self, params: &EquiJoinParams, table: &dyn IdxTable) -> ProbeState {
+    fn finalize_ordered(
+        &mut self,
+        params: &EquiJoinParams,
+        table: &dyn IdxTable,
+    ) -> PolarsResult<ProbeState> {
         let track_unmatchable = params.emit_unmatched_build();
         let payload_schema = if params.left_is_build.unwrap() {
             &params.left_payload_schema
@@ -554,7 +560,8 @@ impl BuildState {
                                 kmerge.push(Priority(Reverse(next_seq), l_idx));
                             }
 
-                            let (_mseq, payload, keys) = l.morsels.get_unchecked(idx_in_l);
+                            let (_mseq, token, keys) = l.morsels.get_unchecked(idx_in_l);
+                            let payload = get_runtime().block_on(mm().df(token)).unwrap();
                             let p_morsel_idxs_start =
                                 l.morsel_idxs_offsets_per_p[idx_in_l * num_partitions + p];
                             let p_morsel_idxs_stop =
@@ -562,7 +569,7 @@ impl BuildState {
                             let p_morsel_idxs = &l.morsel_idxs_values_per_p[p]
                                 [p_morsel_idxs_start..p_morsel_idxs_stop];
                             p_table.insert_keys_subset(keys, p_morsel_idxs, track_unmatchable);
-                            p_payload.gather_extend(payload, p_morsel_idxs, ShareStrategy::Never);
+                            p_payload.gather_extend(&payload, p_morsel_idxs, ShareStrategy::Never);
 
                             if track_unmatchable {
                                 p_seq_ids.resize(p_payload.len(), norm_seq_id);
@@ -586,12 +593,16 @@ impl BuildState {
             }
         });
 
-        ProbeState {
+        for l in &mut self.local_builders {
+            mm().drop_all_sync(l.morsels.drain(..).map(|(_, token, _)| token))?;
+        }
+
+        Ok(ProbeState {
             table_per_partition: probe_tables.try_assume_init().ok().unwrap(),
             max_seq_sent: MorselSeq::default(),
             sampled_probe_morsels: core::mem::take(&mut self.sampled_probe_morsels),
             unordered_morsel_seq: AtomicU64::new(0),
-        }
+        })
     }
 
     fn finalize_unordered(&mut self, params: &EquiJoinParams, table: &dyn IdxTable) -> ProbeState {
@@ -658,7 +669,8 @@ impl BuildState {
                         }
 
                         for (i, morsel) in l_morsels.iter().enumerate() {
-                            let (_mseq, payload, keys) = morsel;
+                            let (_mseq, token, keys) = morsel;
+                            let payload = get_runtime().block_on(mm().df(token)).unwrap();
                             unsafe {
                                 let p_morsel_idxs_start =
                                     l.morsel_idxs_offsets_per_p[i * num_partitions + p];
@@ -668,7 +680,7 @@ impl BuildState {
                                     [p_morsel_idxs_start..p_morsel_idxs_stop];
                                 p_table.insert_keys_subset(keys, p_morsel_idxs, track_unmatchable);
                                 p_payload.gather_extend(
-                                    payload,
+                                    &payload,
                                     p_morsel_idxs,
                                     ShareStrategy::Never,
                                 );
@@ -689,6 +701,9 @@ impl BuildState {
                     // We're done, help others out by doing drops.
                     drop(morsel_drop_q_send); // So we don't deadlock trying to receive from ourselves.
                     while let Ok(l_morsels) = morsel_drop_q_recv.recv().await {
+                        for (_, token, _) in l_morsels.iter() {
+                            let _ = mm().take(*token).await;
+                        }
                         drop(l_morsels);
                     }
 
@@ -1307,7 +1322,7 @@ impl ComputeNode for EquiJoinNode {
         if let EquiJoinState::Build(build_state) = &mut self.state {
             if recv[build_idx] == PortState::Done {
                 let probe_state = if self.params.preserve_order_build {
-                    build_state.finalize_ordered(&self.params, &*self.table)
+                    build_state.finalize_ordered(&self.params, &*self.table)?
                 } else {
                     build_state.finalize_unordered(&self.params, &*self.table)
                 };

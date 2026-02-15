@@ -8,6 +8,7 @@ try:
         MapWithoutReturnDtypeWarning,
         NoDataError,
         OutOfBoundsError,
+        OutOfCoreError,
         PanicException,
         PerformanceWarning,
         PolarsError,
@@ -67,6 +68,9 @@ except ImportError:
 
     class OutOfBoundsError(PolarsError):  # type: ignore[no-redef]
         """Exception raised when the given index is out of bounds."""
+
+    class OutOfCoreError(PolarsError):  # type: ignore[no-redef]
+        """Exception raised when an out-of-core storage operation fails (e.g. spill-to-disk I/O, memory budget exceeded)."""  # noqa: W505
 
     class PanicException(PolarsError):  # type: ignore[no-redef]
         """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: W505
@@ -204,6 +208,7 @@ __all__ = [
     "NoDataError",
     "NoRowsReturnedError",
     "OutOfBoundsError",
+    "OutOfCoreError",
     "ParameterCollisionError",
     "RowsError",
     "SQLInterfaceError",

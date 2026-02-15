@@ -15,8 +15,8 @@ use crate::Wrap;
 use crate::exceptions::{
     CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
     InvalidOperationError, MapWithoutReturnDtypeWarning, NoDataError, OutOfBoundsError,
-    SQLInterfaceError, SQLSyntaxError, SchemaError, SchemaFieldNotFoundError, ShapeError,
-    StringCacheMismatchError, StructFieldNotFoundError,
+    OutOfCoreError, SQLInterfaceError, SQLSyntaxError, SchemaError, SchemaFieldNotFoundError,
+    ShapeError, StringCacheMismatchError, StructFieldNotFoundError,
 };
 
 pub enum PyPolarsErr {
@@ -94,6 +94,7 @@ impl From<PyPolarsErr> for PyErr {
                     }
                 },
                 PolarsError::NoData(err) => NoDataError::new_err(err.to_string()),
+                PolarsError::OutOfCore(err) => OutOfCoreError::new_err(err.to_string()),
                 PolarsError::OutOfBounds(err) => OutOfBoundsError::new_err(err.to_string()),
                 PolarsError::SQLInterface(name) => SQLInterfaceError::new_err(name.to_string()),
                 PolarsError::SQLSyntax(name) => SQLSyntaxError::new_err(name.to_string()),

@@ -8,6 +8,7 @@ use polars_expr::groups::Grouper;
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::hot_groups::{HotGrouper, new_hash_hot_grouper};
 use polars_expr::reduce::GroupedReduction;
+use polars_ooc::mm;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
@@ -45,7 +46,7 @@ struct LocalGroupBySinkState {
     // for partition p, where start, stop are:
     // let start = morsel_idxs_offsets[i * num_partitions + p];
     // let stop = morsel_idxs_offsets[(i + 1) * num_partitions + p];
-    cold_morsels: Vec<(usize, u64, HashKeys, DataFrame)>,
+    cold_morsels: Vec<(usize, u64, HashKeys, Token)>,
     morsel_idxs_values_per_p: Vec<Vec<IdxSize>>,
     morsel_idxs_offsets_per_p: Vec<usize>,
 
@@ -227,9 +228,8 @@ impl GroupBySinkState {
                             local
                                 .morsel_idxs_offsets_per_p
                                 .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
-                            local
-                                .cold_morsels
-                                .push((input_idx, seq, cold_keys, cold_df));
+                            let token = mm().store(cold_df).await?;
+                            local.cold_morsels.push((input_idx, seq, cold_keys, token));
                         }
                     }
 
@@ -351,7 +351,8 @@ impl GroupBySinkState {
                         }
 
                         for (i, morsel) in l_morsels.iter().enumerate() {
-                            let (input_idx, seq_id, keys, morsel_df) = morsel;
+                            let (input_idx, seq_id, keys, token) = morsel;
+                            let morsel_df = mm().df(token).await?;
                             unsafe {
                                 let p_morsel_idxs_start =
                                     l.morsel_idxs_offsets_per_p[i * num_partitions + p];
@@ -383,8 +384,9 @@ impl GroupBySinkState {
                                     in_cols.clear();
                                 }
                             }
+                            // TODO
+                            in_cols = in_cols.into_iter().map(|_| unreachable!()).collect();
                         }
-                        in_cols = in_cols.into_iter().map(|_| unreachable!()).collect(); // Clear lifetimes.
 
                         if let Some(l) = Arc::into_inner(l_morsels) {
                             // If we're the last thread to process this set of morsels we're probably
@@ -446,6 +448,11 @@ impl GroupBySinkState {
                     // We're done, help others out by doing drops.
                     drop(drop_q_send); // So we don't deadlock trying to receive from ourselves.
                     while let Ok(to_drop) = drop_q_recv.recv().await {
+                        if let ToDrop::A(ref l) = to_drop {
+                            for (_, _, _, token) in l.iter() {
+                                mm().take(*token).await?;
+                            }
+                        }
                         drop(to_drop);
                     }
 

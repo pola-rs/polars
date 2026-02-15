@@ -125,6 +125,7 @@ polars-io = { version = "0.53.0", path = "crates/polars-io", default-features = 
 polars-json = { version = "0.53.0", path = "crates/polars-json", default-features = false }
 polars-lazy = { version = "0.53.0", path = "crates/polars-lazy", default-features = false }
 polars-mem-engine = { version = "0.53.0", path = "crates/polars-mem-engine", default-features = false }
+polars-ooc = { version = "0.53.0", path = "crates/polars-ooc", default-features = false }
 polars-ops = { version = "0.53.0", path = "crates/polars-ops", default-features = false }
 polars-parquet = { version = "0.53.0", path = "crates/polars-parquet", default-features = false }
 polars-plan = { version = "0.53.0", path = "crates/polars-plan", default-features = false }

@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use polars_ooc::mm;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use super::compute_node_prelude::*;
@@ -8,7 +9,7 @@ use crate::morsel::SourceToken;
 
 // TODO: replace this with an out-of-core buffering solution.
 enum BufferedStream {
-    Open(VecDeque<Morsel>),
+    Open(VecDeque<(Token, MorselSeq)>),
     Closed,
 }
 
@@ -108,7 +109,7 @@ impl ComputeNode for MultiplexerNode {
 
         enum Listener<'a> {
             Active(UnboundedSender<Morsel>),
-            Buffering(&'a mut VecDeque<Morsel>),
+            Buffering(&'a mut VecDeque<(Token, MorselSeq)>),
             Inactive,
         }
 
@@ -156,7 +157,8 @@ impl ComputeNode for MultiplexerNode {
                                 Err(_) => *buf_sender = Listener::Inactive,
                             },
                             Listener::Buffering(b) => {
-                                b.push_front(morsel.clone());
+                                let token = mm().store(morsel.df().clone()).await?;
+                                b.push_front((token, morsel.seq()));
                                 anyone_interested = true;
                             },
                             Listener::Inactive => {},
@@ -187,8 +189,9 @@ impl ComputeNode for MultiplexerNode {
                 let buffered_source_token = buffered_source_token.clone();
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     // First we try to flush all the old buffered data.
-                    while let Some(mut morsel) = buf.pop_back() {
-                        morsel.replace_source_token(buffered_source_token.clone());
+                    while let Some((token, seq)) = buf.pop_back() {
+                        let df = mm().take(token).await?;
+                        let mut morsel = Morsel::new(df, seq, buffered_source_token.clone());
                         morsel.set_consume_token(wait_group.token());
                         if sender.send(morsel).await.is_err() {
                             return Ok(());
