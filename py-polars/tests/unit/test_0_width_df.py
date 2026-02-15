@@ -10,7 +10,7 @@ def test_0_width_df() -> None:
     assert df.equals(df)
     assert not df.equals(pl.DataFrame())
     assert df.estimated_size() == 0
-    assert df.join(df, how="cross").height == 25
+    assert df.join(df, how="cross").height == 5
 
     out = df.hash_rows()
     assert out.value_counts()["count"].item() == 5

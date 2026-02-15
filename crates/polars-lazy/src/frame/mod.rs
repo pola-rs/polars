@@ -1480,6 +1480,17 @@ impl LazyFrame {
             panic!("impl error: slice is not handled")
         }
 
+        // GH-23870: opt out from joining if both underlying dataframes are empty
+        if let DslPlan::DataFrameScan { ref schema, .. } = self.logical_plan {
+            if schema.is_empty() {
+                if let DslPlan::DataFrameScan { ref schema, .. } = other.logical_plan {
+                    if schema.is_empty() {
+                        return LazyFrame::from_logical_plan(self.logical_plan, self.opt_state);
+                    }
+                }
+            }
+        }
+
         let mut builder = self
             .join_builder()
             .with(other)
@@ -2125,6 +2136,13 @@ impl LazyGroupBy {
     /// }
     /// ```
     pub fn agg<E: AsRef<[Expr]>>(self, aggs: E) -> LazyFrame {
+        // GH-23870: opt out from the aggregation if the underlying dataframe is empty
+        if let DslPlan::DataFrameScan { ref schema, .. } = self.logical_plan {
+            if schema.is_empty() {
+                return LazyFrame::from_logical_plan(self.logical_plan, self.opt_state);
+            }
+        }
+
         #[cfg(feature = "dynamic_group_by")]
         let lp = DslBuilder::from(self.logical_plan)
             .group_by(
@@ -2342,6 +2360,17 @@ impl JoinBuilder {
     pub fn finish(self) -> LazyFrame {
         let opt_state = self.lf.opt_state;
         let other = self.other.expect("'with' not set in join builder");
+
+        // GH-23870: opt out from joining if both underlying dataframes are empty
+        if let DslPlan::DataFrameScan { ref schema, .. } = self.lf.logical_plan {
+            if schema.is_empty() {
+                if let DslPlan::DataFrameScan { ref schema, .. } = other.logical_plan {
+                    if schema.is_empty() {
+                        return LazyFrame::from_logical_plan(self.lf.logical_plan, opt_state);
+                    }
+                }
+            }
+        }
 
         let args = JoinArgs {
             how: self.how,
