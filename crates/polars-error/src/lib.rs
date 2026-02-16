@@ -362,9 +362,11 @@ macro_rules! polars_err {
                 $crate::PolarsError::$variant(format!($fmt).into())
             )
         } else {
-            $crate::__private::must_use(
-                $crate::PolarsError::$variant(const { $crate::ErrString::new_static($fmt) })
-            )
+            const {
+                $crate::__private::must_use(
+                    $crate::PolarsError::$variant($crate::ErrString::new_static($fmt))
+                )
+            }
         }
     }};
     ($variant:ident: $fmt:literal $(, $arg:expr)* $(,)?) => {
@@ -619,7 +621,7 @@ pub mod __private {
     #[inline]
     #[cold]
     #[must_use]
-    pub fn must_use(error: crate::PolarsError) -> crate::PolarsError {
+    pub const fn must_use(error: crate::PolarsError) -> crate::PolarsError {
         error
     }
 
