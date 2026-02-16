@@ -248,12 +248,17 @@ impl<T> Buffer<T> {
     }
 
     /// Splits the buffer into two at the given index.
-    /// Afterwards self contains elements [at, len), and the returned Buffer contains elements [0, at).
-    /// This is an O(1) operation that just increases the reference count and sets a few indices.
+    ///
+    /// Returns a buffer containing the elements in the range
+    /// `[at, len)`. After the call, the buffer will be left containing
+    /// the elements `[0, at)` with its previous capacity unchanged.
+    ///
+    /// # Panics
+    /// Panics if `at > len`.
     #[must_use]
     pub fn split_off(&mut self, at: usize) -> Self {
-        let out = self.clone().sliced(..at);
-        self.slice_in_place(at..);
+        let out = self.clone().sliced(at..);
+        self.slice_in_place(..at);
         out
     }
 
