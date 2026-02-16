@@ -141,11 +141,7 @@ impl DataFrame {
             // wasting time transposing
             polars_ensure!(names_out.iter().all(|a| a.as_str() != cn), Duplicate: "{} is already in output column names", cn)
         }
-        polars_ensure!(
-            df.height() != 0 && df.width() != 0,
-            NoData: "unable to transpose an empty DataFrame"
-        );
-        let dtype = df.get_supertype().unwrap()?;
+        let dtype = df.get_supertype().unwrap_or(Ok(DataType::Null))?;
         df.transpose_from_dtype(&dtype, keep_names_as.map(PlSmallStr::from_str), &names_out)
     }
 }
