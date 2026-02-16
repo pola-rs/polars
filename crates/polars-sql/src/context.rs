@@ -756,6 +756,7 @@ impl SQLContext {
             delete_token: _,
         }) = stmt
         {
+            #[expect(clippy::never_loop)]
             loop {
                 let error_message = match () {
                     _ if !tables.is_empty() => "DELETE expects exactly one table name",
