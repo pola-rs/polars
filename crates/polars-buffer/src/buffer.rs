@@ -234,6 +234,16 @@ impl<T> Buffer<T> {
         }
     }
 
+    /// Splits the buffer into two at the given index.
+    /// Afterwards self contains elements [at, len), and the returned Buffer contains elements [0, at).
+    /// This is an O(1) operation that just increases the reference count and sets a few indices.
+    #[must_use]
+    pub fn split_to(&mut self, at: usize) -> Self {
+        let out = self.clone().sliced(..at);
+        self.slice_in_place(at..);
+        out
+    }
+
     /// Returns a pointer to the start of the storage underlying this buffer.
     #[inline]
     pub fn storage_ptr(&self) -> *const T {
