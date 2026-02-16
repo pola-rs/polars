@@ -756,18 +756,24 @@ impl SQLContext {
             delete_token: _,
         }) = stmt
         {
-            #[expect(clippy::never_loop)]
-            loop {
-                let error_message = match () {
-                    _ if !tables.is_empty() => "DELETE expects exactly one table name",
-                    _ if using.is_some() => "DELETE does not support the USING clause",
-                    _ if returning.is_some() => "DELETE does not support the RETURNING clause",
-                    _ if limit.is_some() => "DELETE does not support the LIMIT clause",
-                    _ if !order_by.is_empty() => "DELETE does not support the ORDER BY clause",
-                    _ => break,
-                };
-                polars_bail!(SQLInterface: "{}", error_message);
+            let error_message = if !tables.is_empty() {
+                Some("DELETE expects exactly one table name")
+            } else if using.is_some() {
+                Some("DELETE does not support the USING clause")
+            } else if returning.is_some() {
+                Some("DELETE does not support the RETURNING clause")
+            } else if limit.is_some() {
+                Some("DELETE does not support the LIMIT clause")
+            } else if !order_by.is_empty() {
+                Some("DELETE does not support the ORDER BY clause")
+            } else {
+                None
+            };
+
+            if let Some(msg) = error_message {
+                polars_bail!(SQLInterface: "{msg}");
             }
+
             let from_tables = match &from {
                 FromTable::WithFromKeyword(from) => from,
                 FromTable::WithoutKeyword(from) => from,

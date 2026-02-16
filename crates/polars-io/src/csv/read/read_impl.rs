@@ -452,8 +452,7 @@ impl<'a> CoreReader<'a> {
                                         && slf.parse_options.comment_prefix.is_none())
                                 {
                                     // Note: in case data is malformed, df.height() is more likely to be correct than count.
-                                    let err = polars_err!(
-                                        ComputeError:
+                                    let msg = format!(
                                         "CSV malformed: expected {} rows, \
                                         actual {} rows, in chunk starting at \
                                         byte offset {}, length {}",
@@ -463,9 +462,9 @@ impl<'a> CoreReader<'a> {
                                         b.len()
                                     );
                                     if slf.ignore_errors {
-                                        polars_warn!("{}", err);
+                                        polars_warn!("{}", msg);
                                     } else {
-                                        return Err(err);
+                                        polars_bail!(ComputeError: "{}", msg)
                                     }
                                 }
 

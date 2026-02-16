@@ -182,8 +182,7 @@ impl Inner {
 
             file.lock_exclusive().unwrap();
             if let Err(e) = file.allocate(remote_metadata.size) {
-                let err = polars_err!(
-                    ComputeError:
+                let msg = format!(
                     "failed to reserve {} bytes on disk to download uri = {}: {:?}",
                     remote_metadata.size, &self.uri, e
                 );
@@ -191,9 +190,9 @@ impl Inner {
                 if raise_alloc_err == Some(true)
                     || (raise_alloc_err.is_none() && file.allocate(1).is_ok())
                 {
-                    return Err(err);
+                    polars_bail!(ComputeError: "{}", msg)
                 } else if config::verbose() {
-                    eprintln!("[file_cache]: warning: {err}")
+                    eprintln!("[file_cache]: warning: {msg}")
                 }
             }
         }
