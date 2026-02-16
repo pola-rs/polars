@@ -251,7 +251,7 @@ impl<T> Buffer<T> {
     ///
     /// Returns a buffer containing the elements in the range
     /// `[at, len)`. After the call, the buffer will be left containing
-    /// the elements `[0, at)` with its previous capacity unchanged.
+    /// the elements `[0, at)`.
     ///
     /// # Panics
     /// Panics if `at > len`.
