@@ -5,7 +5,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 use fs4::fs_std::FileExt;
 use polars_core::config;
-use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err, to_compute_err};
+use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 use polars_utils::pl_path::PlRefPath;
 
 use super::cache_lock::{self, GLOBAL_FILE_CACHE_LOCK};
