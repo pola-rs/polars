@@ -35,7 +35,7 @@ impl std::fmt::Debug for NdjsonReaderBuilder {
 pub fn ndjson_reader_capabilities() -> ReaderCapabilities {
     use ReaderCapabilities as RC;
 
-    RC::NEEDS_FILE_CACHE_INIT | RC::ROW_INDEX | RC::PRE_SLICE | RC::NEGATIVE_PRE_SLICE
+    RC::ROW_INDEX | RC::PRE_SLICE | RC::NEGATIVE_PRE_SLICE
 }
 
 #[cfg(feature = "json")]
