@@ -541,7 +541,7 @@ impl ChunkReader {
 
         if height != n_lines {
             // Note: in case data is malformed, height is more likely to be correct than n_lines.
-            let err = format!(
+            let msg = format!(
                 "CSV malformed: expected {} rows, actual {} rows, in chunk starting at row_offset {}, length {}",
                 n_lines,
                 height,
@@ -549,9 +549,9 @@ impl ChunkReader {
                 chunk.len()
             );
             if self.ignore_errors {
-                polars_warn!("{}", err);
+                polars_warn!("{}", msg);
             } else {
-                polars_bail!(ComputeError: "{}", err)
+                polars_bail!(ComputeError: "{}", msg)
             }
         }
 
