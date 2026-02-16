@@ -14,6 +14,7 @@ use super::utils::{
 };
 use crate::conversion::ObjectValue;
 use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
+use crate::error::PyPolarsErr;
 use crate::series::PySeries;
 
 #[pymethods]
@@ -48,7 +49,7 @@ pub(super) fn series_to_numpy(
     if s.is_empty() {
         // Take this path to ensure a writable array.
         // This does not actually copy data for an empty Series.
-        return Ok(series_to_numpy_with_copy(py, s, true));
+        return series_to_numpy_with_copy(py, s, true);
     }
     if let Some((mut arr, writable_flag)) = try_series_to_numpy_view(py, s, false, allow_copy) {
         if writable && !writable_flag {
@@ -68,7 +69,7 @@ pub(super) fn series_to_numpy(
         ));
     }
 
-    Ok(series_to_numpy_with_copy(py, s, writable))
+    series_to_numpy_with_copy(py, s, writable)
 }
 
 /// Create a NumPy view of the given Series.
@@ -184,7 +185,7 @@ fn array_series_to_numpy_view(py: Python<'_>, s: &Series, writable: bool) -> Py<
 /// Convert a Series to a NumPy ndarray, copying data in the process.
 ///
 /// This method will cast integers to floats so that `null = np.nan`.
-fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> Py<PyAny> {
+fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> PyResult<Py<PyAny>> {
     use DataType::*;
     match s.dtype() {
         Int8 => numeric_series_to_numpy::<Int8Type, f32>(py, s),
@@ -192,16 +193,16 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> Py<P
         Int32 => numeric_series_to_numpy::<Int32Type, f64>(py, s),
         Int64 => numeric_series_to_numpy::<Int64Type, f64>(py, s),
         Int128 => {
-            let s = s.cast(&DataType::Float64).unwrap();
-            series_to_numpy(py, &s, writable, true).unwrap()
+            let s = s.cast(&DataType::Float64).map_err(PyPolarsErr::from)?;
+            series_to_numpy(py, &s, writable, true)
         },
         UInt8 => numeric_series_to_numpy::<UInt8Type, f32>(py, s),
         UInt16 => numeric_series_to_numpy::<UInt16Type, f32>(py, s),
         UInt32 => numeric_series_to_numpy::<UInt32Type, f64>(py, s),
         UInt64 => numeric_series_to_numpy::<UInt64Type, f64>(py, s),
         UInt128 => {
-            let s = s.cast(&DataType::Float64).unwrap();
-            series_to_numpy(py, &s, writable, true).unwrap()
+            let s = s.cast(&DataType::Float64).map_err(PyPolarsErr::from)?;
+            series_to_numpy(py, &s, writable, true)
         },
         Float16 => numeric_series_to_numpy::<Float16Type, pf16>(py, s),
         Float32 => numeric_series_to_numpy::<Float32Type, f32>(py, s),
@@ -237,62 +238,79 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> Py<P
             }
         },
         Time => {
-            let ca = s.time().unwrap();
-            let values = time_to_pyobject_iter(ca).map(|v| v.into_py_any(py).unwrap());
-            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+            let ca = s.time().map_err(PyPolarsErr::from)?;
+            let values = time_to_pyobject_iter(ca)
+                .map(|v| v.into_py_any(py))
+                .collect::<PyResult<Vec<_>>>()?;
+            PyArray1::from_iter(py, values).into_py_any(py)
         },
         String => {
-            let ca = s.str().unwrap();
-            let values = ca.iter().map(|s| s.into_py_any(py).unwrap());
-            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+            let ca = s.str().map_err(PyPolarsErr::from)?;
+            let values = ca
+                .iter()
+                .map(|s| s.into_py_any(py))
+                .collect::<PyResult<Vec<_>>>()?;
+            PyArray1::from_iter(py, values).into_py_any(py)
         },
         Binary => {
-            let ca = s.binary().unwrap();
-            let values = ca.iter().map(|s| s.into_py_any(py).unwrap());
-            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+            let ca = s.binary().map_err(PyPolarsErr::from)?;
+            let values = ca
+                .iter()
+                .map(|s| s.into_py_any(py))
+                .collect::<PyResult<Vec<_>>>()?;
+            PyArray1::from_iter(py, values).into_py_any(py)
         },
         Categorical(_, _) | Enum(_, _) => {
-            with_match_categorical_physical_type!(s.dtype().cat_physical().unwrap(), |$C| {
-                let ca = s.cat::<$C>().unwrap();
-                let values = ca.iter_str().map(|s| s.into_py_any(py).unwrap());
-                PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+            with_match_categorical_physical_type!(s.dtype().cat_physical().map_err(PyPolarsErr::from)?, |$C| {
+                let ca = s.cat::<$C>().map_err(PyPolarsErr::from)?;
+                let values = ca
+                    .iter_str()
+                    .map(|s| s.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                PyArray1::from_iter(py, values).into_py_any(py)
             })
         },
         Decimal(_, _) => {
-            let ca = s.decimal().unwrap();
-            let values = decimal_to_pyobject_iter(py, ca)
-                .unwrap()
-                .map(|v| v.into_py_any(py).unwrap());
-            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+            let ca = s.decimal().map_err(PyPolarsErr::from)?;
+            let values = decimal_to_pyobject_iter(py, ca)?
+                .map(|v| v.into_py_any(py))
+                .collect::<PyResult<Vec<_>>>()?;
+            PyArray1::from_iter(py, values).into_py_any(py)
         },
         List(_) => list_series_to_numpy(py, s, writable),
         Array(_, _) => array_series_to_numpy(py, s, writable),
         Struct(_) => {
-            let ca = s.struct_().unwrap();
+            let ca = s.struct_().map_err(PyPolarsErr::from)?;
             let df = ca.clone().unnest();
-            df_to_numpy(py, &df, IndexOrder::Fortran, writable, true).unwrap()
+            df_to_numpy(py, &df, IndexOrder::Fortran, writable, true)
         },
         #[cfg(feature = "object")]
         Object(_) => {
             let ca = s
                 .as_any()
                 .downcast_ref::<ObjectChunked<ObjectValue>>()
-                .unwrap();
-            let values = ca.iter().map(|v| v.into_py_any(py).unwrap());
-            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+                .ok_or_else(|| PyRuntimeError::new_err("failed to downcast to ObjectChunked"))?;
+            let values = ca
+                .iter()
+                .map(|v| v.into_py_any(py))
+                .collect::<PyResult<Vec<_>>>()?;
+            PyArray1::from_iter(py, values).into_py_any(py)
         },
         Null => {
             let n = s.len();
             let values = std::iter::repeat_n(f32::NAN, n);
-            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+            PyArray1::from_iter(py, values).into_py_any(py)
         },
-        Extension(_, _) => series_to_numpy_with_copy(py, s.ext().unwrap().storage(), writable),
+        Extension(_, _) => {
+            let ext = s.ext().map_err(PyPolarsErr::from)?;
+            series_to_numpy_with_copy(py, ext.storage(), writable)
+        },
         Unknown(_) | BinaryOffset => unreachable!(),
     }
 }
 
 /// Convert numeric types to f32 or f64 with NaN representing a null value.
-fn numeric_series_to_numpy<T, U>(py: Python<'_>, s: &Series) -> Py<PyAny>
+fn numeric_series_to_numpy<T, U>(py: Python<'_>, s: &Series) -> PyResult<Py<PyAny>>
 where
     T: PolarsNumericType,
     T::Native: numpy::Element,
@@ -303,44 +321,44 @@ where
         let values = ca.into_no_null_iter();
         PyArray1::<T::Native>::from_iter(py, values)
             .into_py_any(py)
-            .unwrap()
     } else {
         let mapper = |opt_v: Option<T::Native>| match opt_v {
             Some(v) => NumCast::from(v).unwrap(),
             None => U::nan(),
         };
         let values = ca.iter().map(mapper);
-        PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+        PyArray1::from_iter(py, values).into_py_any(py)
     }
 }
 
 /// Convert booleans to u8 if no nulls are present, otherwise convert to objects.
-fn boolean_series_to_numpy(py: Python<'_>, s: &Series) -> Py<PyAny> {
-    let ca = s.bool().unwrap();
+fn boolean_series_to_numpy(py: Python<'_>, s: &Series) -> PyResult<Py<PyAny>> {
+    let ca = s.bool().map_err(PyPolarsErr::from)?;
     if s.null_count() == 0 {
         let values = ca.into_no_null_iter();
         PyArray1::<bool>::from_iter(py, values)
             .into_py_any(py)
-            .unwrap()
     } else {
-        let values = ca.iter().map(|opt_v| opt_v.into_py_any(py).unwrap());
-        PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+        let values = ca
+            .iter()
+            .map(|opt_v| opt_v.into_py_any(py))
+            .collect::<PyResult<Vec<_>>>()?;
+        PyArray1::from_iter(py, values).into_py_any(py)
     }
 }
 
 /// Convert dates directly to i64 with i64::MIN representing a null value.
-fn date_series_to_numpy(py: Python<'_>, s: &Series) -> Py<PyAny> {
+fn date_series_to_numpy(py: Python<'_>, s: &Series) -> PyResult<Py<PyAny>> {
     use numpy::datetime::{Datetime, units};
 
     let s_phys = s.to_physical_repr();
-    let ca = s_phys.i32().unwrap();
+    let ca = s_phys.i32().map_err(PyPolarsErr::from)?;
 
     if s.null_count() == 0 {
         let mapper = |v: i32| (v as i64).into();
         let values = ca.into_no_null_iter().map(mapper);
         PyArray1::<Datetime<units::Days>>::from_iter(py, values)
             .into_py_any(py)
-            .unwrap()
     } else {
         let mapper = |opt_v: Option<i32>| {
             match opt_v {
@@ -352,41 +370,42 @@ fn date_series_to_numpy(py: Python<'_>, s: &Series) -> Py<PyAny> {
         let values = ca.iter().map(mapper);
         PyArray1::<Datetime<units::Days>>::from_iter(py, values)
             .into_py_any(py)
-            .unwrap()
     }
 }
 
 /// Convert datetimes and durations with i64::MIN representing a null value.
-fn temporal_series_to_numpy<T>(py: Python<'_>, s: &Series) -> Py<PyAny>
+fn temporal_series_to_numpy<T>(py: Python<'_>, s: &Series) -> PyResult<Py<PyAny>>
 where
     T: From<i64> + numpy::Element,
 {
     let s_phys = s.to_physical_repr();
-    let ca = s_phys.i64().unwrap();
+    let ca = s_phys.i64().map_err(PyPolarsErr::from)?;
     let values = ca.iter().map(|v| v.unwrap_or(i64::MIN).into());
     PyArray1::<T>::from_iter(py, values)
         .into_py_any(py)
-        .unwrap()
 }
-fn list_series_to_numpy(py: Python<'_>, s: &Series, writable: bool) -> Py<PyAny> {
-    let ca = s.list().unwrap();
+fn list_series_to_numpy(py: Python<'_>, s: &Series, writable: bool) -> PyResult<Py<PyAny>> {
+    let ca = s.list().map_err(PyPolarsErr::from)?;
 
-    let iter = ca.amortized_iter().map(|opt_s| match opt_s {
-        None => py.None(),
-        Some(s) => series_to_numpy(py, s.as_ref(), writable, true).unwrap(),
-    });
-    PyArray1::from_iter(py, iter).into_py_any(py).unwrap()
+    let values = ca
+        .amortized_iter()
+        .map(|opt_s| match opt_s {
+            None => Ok(py.None()),
+            Some(s) => series_to_numpy(py, s.as_ref(), writable, true),
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    PyArray1::from_iter(py, values).into_py_any(py)
 }
 
 /// Convert arrays by flattening first, converting the flat Series, and then reshaping.
-fn array_series_to_numpy(py: Python<'_>, s: &Series, writable: bool) -> Py<PyAny> {
-    let ca = s.array().unwrap();
+fn array_series_to_numpy(py: Python<'_>, s: &Series, writable: bool) -> PyResult<Py<PyAny>> {
+    let ca = s.array().map_err(PyPolarsErr::from)?;
     let s_inner = ca.get_inner();
-    let np_array_flat = series_to_numpy_with_copy(py, &s_inner, writable);
+    let np_array_flat = series_to_numpy_with_copy(py, &s_inner, writable)?;
 
     // Reshape to the original shape.
     let DataType::Array(_, width) = s.dtype() else {
         unreachable!()
     };
-    reshape_numpy_array(py, np_array_flat, ca.len(), *width).unwrap()
+    reshape_numpy_array(py, np_array_flat, ca.len(), *width)
 }
