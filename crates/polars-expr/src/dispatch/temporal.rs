@@ -210,7 +210,7 @@ pub(super) fn combine(s: &[Column], tu: TimeUnit) -> PolarsResult<Column> {
         DataType::Date => None,
         DataType::Datetime(_, tz) => tz.as_ref(),
         _dtype => {
-            polars_bail!(ComputeError: format!("expected Date or Datetime, got {}", _dtype))
+            polars_bail!(ComputeError: "expected Date or Datetime, got {}", _dtype)
         },
     };
 

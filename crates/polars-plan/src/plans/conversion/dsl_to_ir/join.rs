@@ -99,11 +99,9 @@ pub fn resolve_join(
         polars_ensure!(
             left_on.len() == right_on.len(),
             InvalidOperation:
-                format!(
-                    "the number of columns given as join key (left: {}, right:{}) should be equal",
-                    left_on.len(),
-                    right_on.len()
-                )
+                "the number of columns given as join key (left: {}, right:{}) should be equal",
+                left_on.len(),
+                right_on.len()
         );
     }
 

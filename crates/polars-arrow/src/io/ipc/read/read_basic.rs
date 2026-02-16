@@ -113,7 +113,7 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
 
     if is_little_endian != is_native_little_endian() {
         polars_bail!(ComputeError:
-            "Reading compressed and big endian IPC".to_string(),
+            "Reading compressed and big endian IPC",
         )
     }
 

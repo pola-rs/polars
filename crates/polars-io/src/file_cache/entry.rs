@@ -5,7 +5,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 use fs4::fs_std::FileExt;
 use polars_core::config;
-use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
+use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err, to_compute_err};
 use polars_utils::pl_path::PlRefPath;
 
 use super::cache_lock::{self, GLOBAL_FILE_CACHE_LOCK};
@@ -182,7 +182,8 @@ impl Inner {
 
             file.lock_exclusive().unwrap();
             if let Err(e) = file.allocate(remote_metadata.size) {
-                let msg = format!(
+                let err = polars_err!(
+                    ComputeError:
                     "failed to reserve {} bytes on disk to download uri = {}: {:?}",
                     remote_metadata.size, &self.uri, e
                 );
@@ -190,9 +191,9 @@ impl Inner {
                 if raise_alloc_err == Some(true)
                     || (raise_alloc_err.is_none() && file.allocate(1).is_ok())
                 {
-                    polars_bail!(ComputeError: msg)
+                    return Err(err);
                 } else if config::verbose() {
-                    eprintln!("[file_cache]: warning: {msg}")
+                    eprintln!("[file_cache]: warning: {err}")
                 }
             }
         }

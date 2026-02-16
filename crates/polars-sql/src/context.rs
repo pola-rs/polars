@@ -756,22 +756,25 @@ impl SQLContext {
             delete_token: _,
         }) = stmt
         {
-            if !tables.is_empty()
-                || using.is_some()
-                || returning.is_some()
-                || limit.is_some()
-                || !order_by.is_empty()
-            {
-                let error_message = match () {
-                    _ if !tables.is_empty() => "DELETE expects exactly one table name",
-                    _ if using.is_some() => "DELETE does not support the USING clause",
-                    _ if returning.is_some() => "DELETE does not support the RETURNING clause",
-                    _ if limit.is_some() => "DELETE does not support the LIMIT clause",
-                    _ if !order_by.is_empty() => "DELETE does not support the ORDER BY clause",
-                    _ => unreachable!(),
-                };
-                polars_bail!(SQLInterface: error_message);
+            match () {
+                _ if !tables.is_empty() => {
+                    polars_bail!(SQLInterface: "DELETE expects exactly one table name")
+                },
+                _ if using.is_some() => {
+                    polars_bail!(SQLInterface: "DELETE does not support the USING clause")
+                },
+                _ if returning.is_some() => {
+                    polars_bail!(SQLInterface: "DELETE does not support the RETURNING clause")
+                },
+                _ if limit.is_some() => {
+                    polars_bail!(SQLInterface: "DELETE does not support the LIMIT clause")
+                },
+                _ if !order_by.is_empty() => {
+                    polars_bail!(SQLInterface: "DELETE does not support the ORDER BY clause")
+                },
+                _ => {},
             }
+
             let from_tables = match &from {
                 FromTable::WithFromKeyword(from) => from,
                 FromTable::WithoutKeyword(from) => from,
