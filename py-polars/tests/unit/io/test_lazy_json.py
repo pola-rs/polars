@@ -296,7 +296,7 @@ def test_scan_ndjson_raises_on_parse_error_nested() -> None:
 
 def test_scan_ndjson_nested_as_string() -> None:
     buf = b"""\
-{"a": {"x": 1}, "b": [1,2,3], "c": {"y": null}, "d": [{"k": "abc"}, {"j": "123"}, {"l": 7}]}
+{"a": {"x": 1}, "b": [1,2,3], "c": {"y": null}, "d": [{"k": "abc"}, {"j": "123"}, {"l": 7, "m": 8}]}
 """
 
     df = pl.scan_ndjson(
@@ -311,7 +311,7 @@ def test_scan_ndjson_nested_as_string() -> None:
                 "a": '{"x": 1}',
                 "b": "[1, 2, 3]",
                 "c": '{"y": null}',
-                "d": '[{"k": "abc"}, {"j": "123"}, {"l": 7}]',
+                "d": '[{"k": "abc"}, {"j": "123"}, {"l": 7, "m": 8}]',
             }
         ),
     )

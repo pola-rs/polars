@@ -420,7 +420,7 @@ impl std::fmt::Display for ValueDisplay<'_> {
                 }
 
                 for (k, v) in iter {
-                    f.write_str(r#"", ""#)?;
+                    f.write_str(r#", ""#)?;
 
                     f.write_str(k)?;
                     f.write_str(r#"": "#)?;
