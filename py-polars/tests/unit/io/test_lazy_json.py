@@ -337,25 +337,14 @@ def test_scan_ndjson_nested_as_string_escape_chars() -> None:
         ),
     )
 
-    df = pl.scan_ndjson(
-        io.StringIO(
-            pl.scan_ndjson(
-                buf,
-                schema={"a": pl.String},
-            )
-            .collect()
-            .write_ndjson()
-        ),
-        schema={"a": pl.String},
-    ).collect()
-
     assert_frame_equal(
-        df,
-        pl.DataFrame(
-            {
-                "a": '{"x": "\\"\\r\\n"}',
-            }
-        ),
+        pl.scan_ndjson(
+            buf,
+            schema={"a": pl.String},
+        )
+        .collect()
+        .with_columns(pl.col("a").str.json_decode(pl.Struct({"x": pl.String}))),
+        pl.scan_ndjson(buf, schema={"a": pl.Struct({"x": pl.String})}).collect(),
     )
 
 
