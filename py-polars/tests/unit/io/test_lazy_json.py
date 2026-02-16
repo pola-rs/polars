@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import re
 from typing import TYPE_CHECKING
 
@@ -312,6 +313,47 @@ def test_scan_ndjson_nested_as_string() -> None:
                 "b": "[1, 2, 3]",
                 "c": '{"y": null}',
                 "d": '[{"k": "abc"}, {"j": "123"}, {"l": 7}]',
+            }
+        ),
+    )
+
+
+def test_scan_ndjson_nested_as_string_escape_chars() -> None:
+    buf = b"""\
+{"a": {"x": "\\"\\r\\n"}}
+"""
+
+    df = pl.scan_ndjson(
+        buf,
+        schema={"a": pl.String},
+    ).collect()
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "a": '{"x": "\\"\\r\\n"}',
+            }
+        ),
+    )
+
+    df = pl.scan_ndjson(
+        io.StringIO(
+            pl.scan_ndjson(
+                buf,
+                schema={"a": pl.String},
+            )
+            .collect()
+            .write_ndjson()
+        ),
+        schema={"a": pl.String},
+    ).collect()
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "a": '{"x": "\\"\\r\\n"}',
             }
         ),
     )
