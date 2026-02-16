@@ -367,13 +367,11 @@ impl std::fmt::Display for ValueDisplay<'_> {
                 let s: &mut &[u8] = &mut s.as_bytes();
 
                 while !s.is_empty() {
-                    f.write_str(unsafe {
-                        str::from_utf8_unchecked(
-                            s.split_off(
-                                ..memchr::memchr3(b'"', b'\n', b'\r', s).unwrap_or(s.len()),
-                            )
-                            .unwrap(),
-                        )
+                    f.write_str({
+                        let i = memchr::memchr3(b'"', b'\n', b'\r', s).unwrap_or(s.len());
+
+                        // Safety: `i` either points to ASCII, or is equal to `str.len()`.
+                        unsafe { str::from_utf8_unchecked(s.split_off(..i).unwrap()) }
                     })?;
 
                     if let Some(&[c]) = s.split_off(..1) {
