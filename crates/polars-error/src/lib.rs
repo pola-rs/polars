@@ -356,6 +356,9 @@ pub fn map_err<E: Error>(error: E) -> PolarsError {
 
 #[macro_export]
 macro_rules! polars_err {
+    ($variant:ident: format!($_:tt) $(, _:tt)* $(,)?) => {
+        const { panic!("remove unnecessary format! from polars_(bail|err)! macro") }
+    };
     ($variant:ident: $fmt:literal $(,)?) => {{
         if const { $crate::__private::has_brace($fmt) } {
             $crate::__private::must_use(
