@@ -391,9 +391,9 @@ multistage_pipeline()
 ```
 
 The first stage executes a query without `.sink_parquet()`, instead using
-`.execute().await_result()` to retrieve the `query_result.location`. This contains a list of temporary S3 paths
-where Polars Cloud stores intermediate results. These locations are serialized and passed to the
-next stage, which scans them with `pl.scan_parquet()` to continue processing.
+`.execute().await_result()` to retrieve the `query_result.location`. This contains a list of
+temporary S3 paths where Polars Cloud stores intermediate results. These locations are serialized
+and passed to the next stage, which scans them with `pl.scan_parquet()` to continue processing.
 
 <!-- dprint-ignore-start -->
 
