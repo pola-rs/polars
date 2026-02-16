@@ -464,7 +464,7 @@ impl<'a> CoreReader<'a> {
                                     if slf.ignore_errors {
                                         polars_warn!("{msg}");
                                     } else {
-                                        polars_bail!(ComputeError: "{msg}")
+                                        polars_bail!(ComputeError: msg)
                                     }
                                 }
 

@@ -756,7 +756,7 @@ impl SQLContext {
             delete_token: _,
         }) = stmt
         {
-            let error_message = if !tables.is_empty() {
+            let error_message: Option<&'static str> = if !tables.is_empty() {
                 Some("DELETE expects exactly one table name")
             } else if using.is_some() {
                 Some("DELETE does not support the USING clause")
@@ -771,7 +771,7 @@ impl SQLContext {
             };
 
             if let Some(msg) = error_message {
-                polars_bail!(SQLInterface: "{msg}");
+                polars_bail!(SQLInterface: msg);
             }
 
             let from_tables = match &from {
