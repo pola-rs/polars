@@ -190,7 +190,7 @@ impl Inner {
                 if raise_alloc_err == Some(true)
                     || (raise_alloc_err.is_none() && file.allocate(1).is_ok())
                 {
-                    polars_bail!(ComputeError: "{}", msg)
+                    polars_bail!(ComputeError: "{msg}")
                 } else if config::verbose() {
                     eprintln!("[file_cache]: warning: {msg}")
                 }
