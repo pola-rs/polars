@@ -250,7 +250,7 @@ impl<T> Buffer<T> {
     /// Splits the buffer into two at the given index.
     ///
     /// Returns a buffer containing the elements in the range
-    /// `[at, len)`. After the call, the buffer will be left containing
+    /// `[at, len)`. After the call, self will be left containing
     /// the elements `[0, at)`.
     ///
     /// # Panics
