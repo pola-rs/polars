@@ -278,6 +278,16 @@ def test_to_datetime_dates_datetimes() -> None:
                 2019, 4, 18, 22, 45, 55, 555123, tzinfo=timezone(timedelta(hours=1))
             ),
         ),
+        (
+            "20190418T224555.555123+01:00",
+            datetime(
+                2019, 4, 18, 22, 45, 55, 555123, tzinfo=timezone(timedelta(hours=1))
+            ),
+        ),
+        (
+            "20190418T224555.555123Z",
+            datetime(2019, 4, 18, 22, 45, 55, 555123, tzinfo=timezone.utc),
+        ),
     ],
 )
 def test_to_datetime_patterns_single(time_string: str, expected: str) -> None:
