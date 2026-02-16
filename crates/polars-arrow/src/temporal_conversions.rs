@@ -281,7 +281,7 @@ pub fn parse_offset(offset: &str) -> PolarsResult<FixedOffset> {
     if offset == "UTC" {
         return Ok(FixedOffset::east_opt(0).expect("FixedOffset::east out of bounds"));
     }
-    const ERR_MSG: &str = "timezone offset must be of the form [-]00:00";
+    static ERR_MSG: &str = "timezone offset must be of the form [-]00:00";
 
     let mut a = offset.split(':');
     let first: &str = a
