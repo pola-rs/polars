@@ -5,7 +5,7 @@ use polars_buffer::Buffer;
 use polars_core::config;
 use polars_error::PolarsResult;
 use polars_io::utils::chunk_buf_reader::ReaderSource;
-use polars_io::utils::compression::{ByteSourceReader, CompressedReader};
+use polars_io::utils::compression::ByteSourceReader;
 use polars_utils::mem::prefetch::prefetch_l2;
 
 use super::line_batch_processor::LineBatch;
@@ -72,7 +72,7 @@ impl LineBatchDistributor {
 
         let mut read_size = fixed_read_size
             .map(NonZeroUsize::get)
-            .unwrap_or_else(CompressedReader::initial_read_size);
+            .unwrap_or_else(ByteSourceReader::<ReaderSource>::initial_read_size);
         let mut prev_leftover = Buffer::new();
         let mut chunk_idx = 0;
 
@@ -130,7 +130,9 @@ impl LineBatchDistributor {
                 continue;
             }
 
-            if read_size < CompressedReader::ideal_read_size() && fixed_read_size.is_none() {
+            if read_size < ByteSourceReader::<ReaderSource>::ideal_read_size()
+                && fixed_read_size.is_none()
+            {
                 read_size *= 4;
             }
         }

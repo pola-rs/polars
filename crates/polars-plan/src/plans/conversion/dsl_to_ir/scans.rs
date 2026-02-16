@@ -533,19 +533,21 @@ pub async fn ndjson_file_info(
         let mut truncated_bytes: Vec<u8> = Vec::with_capacity(INITIAL_FETCH);
         let mut reached_eof = false;
 
-        loop {
+        // Collect enough rows to satisfy infer_schema_length
+        let memslice = loop {
             let range = offset..std::cmp::min(file_size, offset + fetch_size);
 
-            let byte_source = byte_source.clone();
-            let fetch_bytes = pl_async::get_runtime()
-                .spawn(async move { byte_source.get_range(range).await })
-                .await
-                .unwrap()?;
-            if fetch_bytes.is_empty() {
+            if range.is_empty() {
                 reached_eof = true
-            };
-            offset += fetch_bytes.len();
-            truncated_bytes.extend_from_slice(fetch_bytes.as_ref());
+            } else {
+                let byte_source = byte_source.clone();
+                let fetch_bytes = pl_async::get_runtime()
+                    .spawn(async move { byte_source.get_range(range).await })
+                    .await
+                    .unwrap()?;
+                offset += fetch_bytes.len();
+                truncated_bytes.extend_from_slice(fetch_bytes.as_ref());
+            }
 
             let compression = SupportedCompression::check(&truncated_bytes);
             let mut reader = ByteSourceReader::<ReaderSource>::from_memory(
@@ -592,12 +594,14 @@ pub async fn ndjson_file_info(
                 continue;
             }
 
-            let mut buf_reader = BufReader::new(Cursor::new(slice));
-            break Arc::new(polars_io::ndjson::infer_schema(
-                &mut buf_reader,
-                ndjson_options.infer_schema_length,
-            )?);
-        }
+            break slice;
+        };
+
+        let mut buf_reader = BufReader::new(Cursor::new(memslice));
+        Arc::new(polars_io::ndjson::infer_schema(
+            &mut buf_reader,
+            ndjson_options.infer_schema_length,
+        )?)
     } else {
         // Download the entire object.
         // Warning - this is potentially memory-expensive in the case of a cloud source, and goes

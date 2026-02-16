@@ -11,6 +11,9 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from polars._typing import NdjsonCompression
+    from tests.conftest import PlMonkeyPatch
+
 
 @pytest.fixture
 def foods_ndjson_path(io_files_path: Path) -> Path:
@@ -331,3 +334,28 @@ def test_scan_ndjson_schema_overwrite_22514() -> None:
     q = pl.scan_ndjson(buf, schema_overrides={"a": pl.String})
     assert q.collect_schema() == {"a": pl.String}
     assert_frame_equal(q.collect(), pl.DataFrame({"a": "1"}))
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize("compression", ["uncompressed", "zstd", "gzip"])
+def test_scan_ndjson_progressive_infer_schema_length(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, compression: NdjsonCompression
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.ndjson"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    n_rows = 60_000
+    df = (
+        pl.DataFrame()
+        .with_columns(pl.int_range(n_rows).alias("a"))
+        .with_columns(pl.col.a.cast(pl.String).alias("b"))
+    )
+
+    df.lazy().sink_ndjson(file_path, compression=compression, check_extension=False)
+
+    for infer_len in [1, 2, 100, n_rows - 1, n_rows, n_rows + 1, None]:
+        out = pl.scan_ndjson(file_path, infer_schema_length=infer_len).collect()
+        assert df.schema == out.schema
