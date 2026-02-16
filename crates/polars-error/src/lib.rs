@@ -624,8 +624,8 @@ pub mod __private {
     }
 
     pub const fn has_brace(s: &str) -> bool {
-        let mut i: usize = 0;
         let bytes = s.as_bytes();
+        let mut i: usize = 0;
 
         while i < bytes.len() {
             if bytes[i] == b'{' || bytes[i] == b'}' {
