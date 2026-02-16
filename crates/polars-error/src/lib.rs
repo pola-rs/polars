@@ -670,6 +670,11 @@ mod tests {
             e => panic!("{e}"),
         }
 
+        match polars_err!(ComputeError: a) {
+            ComputeError(out) if &*out == a => {},
+            e => panic!("{e}"),
+        }
+
         match polars_err!(ComputeError: "{{") {
             ComputeError(out) if &*out == "{" => {},
             e => panic!("{e}"),
