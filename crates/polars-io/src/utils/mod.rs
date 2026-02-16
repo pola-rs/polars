@@ -4,10 +4,10 @@ mod other;
 pub use other::*;
 #[cfg(any(feature = "async", feature = "cloud"))]
 pub mod byte_source;
-pub mod chunk_buf_reader;
 pub mod file;
 pub mod mkdir;
 pub mod slice;
+pub mod stream_buf_reader;
 pub mod sync_on_close;
 
 /// Excludes only the unreserved URI characters in RFC-3986:

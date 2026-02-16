@@ -9,18 +9,13 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use crate::async_primitives::wait_group::WaitToken;
 use crate::utils::tokio_handle_ext;
 
-/// Represents (unaligned) byte-data that will be assembled into newline-aligned LineBatches.
-pub(super) struct ChunkData {
-    pub(super) fetched_bytes: Buffer<u8>,
-}
-
 pub(super) struct ChunkDataFetcher {
     pub(super) memory_prefetch_func: fn(&[u8]) -> (),
     pub(super) byte_source: Arc<DynByteSource>,
     pub(super) file_size: usize,
     pub(super) chunk_size: usize,
     pub(super) prefetch_send: Sender<(
-        tokio_handle_ext::AbortOnDropHandle<PolarsResult<ChunkData>>,
+        tokio_handle_ext::AbortOnDropHandle<PolarsResult<Buffer<u8>>>,
         OwnedSemaphorePermit,
     )>,
     pub(super) prefetch_semaphore: Arc<Semaphore>,
@@ -68,7 +63,7 @@ impl ChunkDataFetcher {
                         current_byte_source.get_range(range.clone()).await?
                     };
 
-                PolarsResult::Ok(ChunkData { fetched_bytes })
+                PolarsResult::Ok(fetched_bytes)
             });
 
             let handle = tokio_handle_ext::AbortOnDropHandle(handle);

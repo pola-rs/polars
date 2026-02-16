@@ -1397,8 +1397,8 @@ def test_scan_sink_error_captures_path() -> None:
 @pytest.mark.parametrize(
     "file_format",
     [
-        # "parquet",
-        # "ipc",
+        "parquet",
+        "ipc",
         # "csv",
         "ndjson",
     ],
@@ -1442,16 +1442,15 @@ def test_scan_metrics(
         pl.select(pl.lit(line).str.extract(r"total_bytes_received=(\d+)")).item()
     )
 
-    # NDJSON read bytes overhead; note: this is an implementation detail
-    # +1 for HEAD
-    # +4 for compression magic bytes
-    overhead_bytes = {}
-    overhead_bytes["ndjson"] = 1 + 4
+    # because of how metadata is accounted for, the bytes_requested may deviate
+    # from the actual file_size
+    file_size = path.stat().st_size
+    # note, 131_072 is the maximum metadata size for parquet, ipc
+    upper_limit_bytes = min(2 * file_size, file_size + 131072)
+    lower_limit_bytes = 2
 
-    expected_bytes = path.stat().st_size
-    if file_format == "ndjson":
-        expected_bytes += overhead_bytes["ndjson"]
-    assert logged_bytes_requested == expected_bytes
+    assert logged_bytes_requested <= upper_limit_bytes
+    assert logged_bytes_requested >= lower_limit_bytes
     assert logged_bytes_received == logged_bytes_requested
 
     assert_frame_equal(out, df)

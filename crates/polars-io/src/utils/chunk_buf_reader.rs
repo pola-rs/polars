@@ -2,6 +2,8 @@ use std::io::{BufRead, Cursor};
 
 use polars_buffer::Buffer;
 
+use polars_utils::async_utils::tokio_handle_ext;
+
 // Encapsulated MPSC receiver with buffer.
 pub struct ChunkBufReader {
     receiver: std::sync::mpsc::Receiver<Buffer<u8>>,
@@ -60,12 +62,12 @@ impl std::io::BufRead for ChunkBufReader {
 }
 
 // Supported reader sources for respectively from_memory and streaming.
-pub enum ReaderSource {
+pub enum ReaderSourceOLD {
     Memory(Cursor<Buffer<u8>>),
     Streaming(ChunkBufReader),
 }
 
-impl std::io::Read for ReaderSource {
+impl std::io::Read for ReaderSourceOLD {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
             Self::Memory(r) => r.read(buf),
@@ -74,7 +76,7 @@ impl std::io::Read for ReaderSource {
     }
 }
 
-impl std::io::BufRead for ReaderSource {
+impl std::io::BufRead for ReaderSourceOLD {
     fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
         match self {
             Self::Memory(r) => r.fill_buf(),

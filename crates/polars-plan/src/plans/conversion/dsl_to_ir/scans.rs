@@ -495,8 +495,8 @@ pub async fn ndjson_file_info(
         // until we either have enough rows, or reached EOF. In every iteration, we either
         // increase fetch_size (download progressively more), or try_read_size (try and
         // decompress more of what we have, in the case of compressed).
-        use polars_io::utils::chunk_buf_reader::ReaderSource;
         use polars_io::utils::compression::{ByteSourceReader, SupportedCompression};
+        use polars_io::utils::stream_buf_reader::ReaderSource;
 
         const INITIAL_FETCH: usize = 64 * 1024;
         const ASSUMED_COMPRESSION_RATIO: usize = 4;

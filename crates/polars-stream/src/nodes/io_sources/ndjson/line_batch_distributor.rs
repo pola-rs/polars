@@ -4,8 +4,8 @@ use std::num::NonZeroUsize;
 use polars_buffer::Buffer;
 use polars_core::config;
 use polars_error::PolarsResult;
-use polars_io::utils::chunk_buf_reader::ReaderSource;
 use polars_io::utils::compression::ByteSourceReader;
+use polars_io::utils::stream_buf_reader::ReaderSource;
 use polars_utils::mem::prefetch::prefetch_l2;
 
 use super::line_batch_processor::LineBatch;

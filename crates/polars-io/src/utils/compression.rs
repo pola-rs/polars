@@ -5,8 +5,8 @@ use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_error::{feature_gated, to_compute_err};
 
-use crate::utils::chunk_buf_reader::ReaderSource;
 use crate::utils::file::{Writeable, WriteableTrait};
+use crate::utils::stream_buf_reader::ReaderSource;
 use crate::utils::sync_on_close::SyncOnCloseType;
 
 /// Represents the compression algorithms that we have decoders for
@@ -332,47 +332,36 @@ impl<R: BufRead> ByteSourceReader<R> {
         // sized rows.
         let prev_len = prev_leftover.len();
 
-        let mut buf = Vec::new();
-        if !matches!(self, ByteSourceReader::UncompressedMemory { .. }) {
-            // Cap the reserve_size, for the scenario where read_size == usize::MAX
-            let max_reserve_size = uncompressed_size_hint.unwrap_or(4 * 1024 * 1024);
-            let reserve_size = cmp::min(prev_len.saturating_add(read_size), max_reserve_size);
-            buf.reserve_exact(reserve_size);
-            buf.extend_from_slice(prev_leftover);
-        }
-
-        let new_slice_from_read =
-            |bytes_read: usize, mut buf: Vec<u8>| -> std::io::Result<(Buffer<u8>, usize)> {
-                buf.truncate(prev_len + bytes_read);
-                Ok((Buffer::from_vec(buf), bytes_read))
-            };
-
-        match self {
+        let reader: &mut dyn Read = match self {
+            // Zero-copy fast-path — no allocation required
             Self::UncompressedMemory { slice, offset } => {
-                // Zero-copy path — no allocation required
                 let bytes_read = cmp::min(read_size, slice.len() - *offset);
                 let new_slice = slice
                     .clone()
                     .sliced(*offset - prev_len..*offset + bytes_read);
                 *offset += bytes_read;
-                Ok((new_slice, bytes_read))
+                return Ok((new_slice, bytes_read));
             },
-            Self::UncompressedStream(reader) => {
-                new_slice_from_read(reader.take(read_size as u64).read_to_end(&mut buf)?, buf)
-            },
+            Self::UncompressedStream(reader) => reader,
             #[cfg(feature = "decompress")]
-            Self::Gzip(decoder) => {
-                new_slice_from_read(decoder.take(read_size as u64).read_to_end(&mut buf)?, buf)
-            },
+            Self::Gzip(reader) => reader,
             #[cfg(feature = "decompress")]
-            Self::Zlib(decoder) => {
-                new_slice_from_read(decoder.take(read_size as u64).read_to_end(&mut buf)?, buf)
-            },
+            Self::Zlib(reader) => reader,
             #[cfg(feature = "decompress")]
-            Self::Zstd(decoder) => {
-                new_slice_from_read(decoder.take(read_size as u64).read_to_end(&mut buf)?, buf)
-            },
-        }
+            Self::Zstd(reader) => reader,
+        };
+
+        let mut buf = Vec::new();
+
+        // Cap the reserve_size, for the scenario where read_size == usize::MAX
+        let max_reserve_size = uncompressed_size_hint.unwrap_or(4 * 1024 * 1024);
+        let reserve_size = cmp::min(prev_len.saturating_add(read_size), max_reserve_size);
+        buf.reserve_exact(reserve_size);
+        buf.extend_from_slice(prev_leftover);
+
+        let bytes_read = reader.take(read_size as u64).read_to_end(&mut buf)?;
+        buf.truncate(prev_len + bytes_read);
+        Ok((Buffer::from_vec(buf), bytes_read))
     }
 }
 
