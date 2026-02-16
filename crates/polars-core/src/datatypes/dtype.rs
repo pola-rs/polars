@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use arrow::datatypes::{
-    DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, MAINTAIN_PL_TYPE,
-    Metadata, PL_KEY,
+    Metadata, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW,
+    MAINTAIN_PL_TYPE, PL_KEY,
 };
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
