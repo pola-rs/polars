@@ -212,6 +212,24 @@ def test_predicate_pushdown_group_by_keys() -> None:
     ).startswith("FILTER")
 
 
+def test_predicate_pushdown_group_by_aliased_keys() -> None:
+    df = pl.LazyFrame(
+        {"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]}
+    ).lazy()
+    # When a group_by key is a simple column reference with an alias,
+    # the predicate on the aliased name should still be pushed down
+    # (rewritten to reference the original column).
+    q = (
+        df.group_by(pl.col("group").alias("grp"))
+        .agg([pl.len().alias("str_list")])
+        .filter(pl.col("grp") == 1)
+    )
+    assert not q.explain().startswith("FILTER")
+    assert q.explain(
+        optimizations=pl.QueryOptFlags(predicate_pushdown=False)
+    ).startswith("FILTER")
+
+
 def test_no_predicate_push_down_with_cast_and_alias_11883() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     out = (
