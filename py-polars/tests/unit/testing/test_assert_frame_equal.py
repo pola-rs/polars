@@ -434,7 +434,8 @@ def test_assert_schema_equal_column_mismatch_order() -> None:
     df1_schema = df1.schema
     df2_schema = df2.schema
     with pytest.raises(
-        AssertionError, match="Schemas are different.*columns are not in the same order"
+        AssertionError,
+        match=r"Schemas are different.*columns are not in the same order",
     ):
         assert_schema_equal(df1_schema, df2_schema)
 
@@ -450,7 +451,7 @@ def test_assert_schema_equal_dtypes_mismatch() -> None:
     df2_schema = df2.schema
 
     with pytest.raises(
-        AssertionError, match="Schemas are different.*dtypes do not match"
+        AssertionError, match=r"Schemas are different.*dtypes do not match"
     ):
         assert_schema_equal(df1_schema, df2_schema, check_column_order=False)
 
