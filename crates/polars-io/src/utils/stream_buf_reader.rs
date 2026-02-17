@@ -51,7 +51,7 @@ impl StreamBufReader {
 
         drop(state.receiver);
 
-        pl_async::get_runtime().block_on(state.producer_task_handle)?
+        pl_async::get_runtime().block_in_place_on(state.producer_task_handle)?
     }
 }
 
@@ -77,7 +77,8 @@ impl std::io::BufRead for StreamBufReader {
         if state.current.is_empty() {
             match state.receiver.blocking_recv() {
                 Some((handle, _permit)) => {
-                    let fetched_bytes = pl_async::get_runtime().block_on(handle).unwrap()?;
+                    let fetched_bytes =
+                        pl_async::get_runtime().block_in_place_on(handle).unwrap()?;
                     state.current = fetched_bytes;
                 },
                 None => {

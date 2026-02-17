@@ -14,7 +14,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderB
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 use crate::nodes::io_sources::ndjson::chunk_reader::ChunkReaderBuilder;
 
-pub struct NdjsonReaderBuilder {
+pub struct NDJsonReaderBuilder {
     pub options: Arc<NDJsonReadOptions>,
     pub prefetch_limit: RelaxedCell<usize>,
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
@@ -22,9 +22,9 @@ pub struct NdjsonReaderBuilder {
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
 }
 
-impl std::fmt::Debug for NdjsonReaderBuilder {
+impl std::fmt::Debug for NDJsonReaderBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NdjsonReaderBuilder")
+        f.debug_struct("NDJsonReaderBuilder")
             .field("ignore_errors", &self.options.ignore_errors)
             .field("prefetch_limit", &self.prefetch_limit)
             .field("prefetch_semaphore", &self.prefetch_semaphore)
@@ -39,7 +39,7 @@ pub fn ndjson_reader_capabilities() -> ReaderCapabilities {
 }
 
 #[cfg(feature = "json")]
-impl FileReaderBuilder for NdjsonReaderBuilder {
+impl FileReaderBuilder for NDJsonReaderBuilder {
     fn reader_name(&self) -> &str {
         "ndjson"
     }

@@ -668,7 +668,7 @@ pub fn lower_ir(
 
                     #[cfg(feature = "json")]
                     FileScanIR::NDJson { options } => Arc::new(
-                        crate::nodes::io_sources::ndjson::builder::NdjsonReaderBuilder {
+                        crate::nodes::io_sources::ndjson::builder::NDJsonReaderBuilder {
                             options: Arc::new(options.clone()),
                             prefetch_limit: RelaxedCell::new_usize(0),
                             prefetch_semaphore: std::sync::OnceLock::new(),

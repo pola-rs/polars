@@ -1445,7 +1445,7 @@ def test_scan_metrics(
     # because of how metadata is accounted for, the bytes_requested may deviate
     # from the actual file_size
     file_size = path.stat().st_size
-    # note, 131_072 is the maximum metadata size for parquet, ipc
+    # note, 131_072 is the maximum metadata size estimate for parquet, ipc
     upper_limit_bytes = min(2 * file_size, file_size + 131072)
     lower_limit_bytes = 2
 
