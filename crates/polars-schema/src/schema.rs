@@ -69,6 +69,14 @@ impl<Field, Metadata: Default> Schema<Field, Metadata> {
 }
 
 impl<Field, Metadata> Schema<Field, Metadata> {
+    pub fn names(&self) -> indexmap::map::Keys<'_, PlSmallStr, Field> {
+        self.fields.keys()
+    }
+
+    pub fn fields(&self) -> indexmap::map::Values<'_, PlSmallStr, Field> {
+        self.fields.values()
+    }
+
     /// Reserve `additional` memory spaces in the schema.
     pub fn reserve(&mut self, additional: usize) {
         self.fields.reserve(additional);
