@@ -768,14 +768,16 @@ fn assert_dataframe_schema_equal(
                 ));
             }
         } else {
-            let left_dtypes: PlHashSet<DataType> = left.dtypes().into_iter().collect();
-            let right_dtypes: PlHashSet<DataType> = right.dtypes().into_iter().collect();
-            if left_dtypes != right_dtypes {
+            let left_dtypes_unordered: PlHashMap<&PlSmallStr, &DataType> =
+                left_schema.iter().collect();
+            let right_dtypes_unordered: PlHashMap<&PlSmallStr, &DataType> =
+                right_schema.iter().collect();
+            if left_dtypes_unordered != right_dtypes_unordered {
                 return Err(polars_err!(
                     assertion_error = "DataFrames",
                     "dtypes do not match",
-                    format!("{:?}", left_dtypes),
-                    format!("{:?}", right_dtypes)
+                    format!("{:?}", left_dtypes_unordered),
+                    format!("{:?}", right_dtypes_unordered)
                 ));
             }
         }
