@@ -911,7 +911,7 @@ impl Display for IRFunctionExpr {
             RowEncode(..) => "row_encode",
             #[cfg(feature = "dtype-struct")]
             RowDecode(..) => "row_decode",
-            DynamicPred { pred } => "dynamic_predicate",
+            DynamicPred { .. } => "dynamic_predicate",
         };
         write!(f, "{s}")
     }

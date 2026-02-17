@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use polars_core::frame::column::ScalarColumn;
 use polars_utils::unique_id::UniqueId;
-#[cfg(feature = "serde")]
+#[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 
 use super::*;
@@ -21,7 +21,7 @@ pub trait PredicateExpr: Send + Sync + Any {
 pub struct TrivialPredicateExpr;
 
 impl PredicateExpr for TrivialPredicateExpr {
-    fn evaluate(&self, columns: &[Column]) -> PolarsResult<Option<Column>> {
+    fn evaluate(&self, _columns: &[Column]) -> PolarsResult<Option<Column>> {
         Ok(None)
     }
 }
@@ -83,7 +83,6 @@ impl DynamicPred {
     }
 
     pub fn evaluate(&self, columns: &[Column]) -> PolarsResult<Column> {
-        let h = columns[0].len();
         if self.inner.is_set.load(Ordering::Acquire) {
             let guard = self.inner.pred.read().unwrap();
             let dyn_func = guard.as_ref().unwrap();
@@ -96,7 +95,7 @@ impl DynamicPred {
         Ok(Column::Scalar(ScalarColumn::new(
             columns[0].name().clone(),
             s,
-            1,
+            columns[0].len(),
         )))
     }
 }

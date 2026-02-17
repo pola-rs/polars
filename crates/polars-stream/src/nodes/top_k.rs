@@ -111,7 +111,7 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
         }
         self.prune();
 
-        if new_optimum {
+        if new_optimum && self.heap.len() == self.k {
             let new_shared_opt = if let Some(v) = self.shared_optimum.read().clone() {
                 is_less_owned(self.peek_optimum().unwrap(), &v)
             } else {
@@ -284,6 +284,7 @@ impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> DfByKeyR
 
 struct PrimitiveBottomKPredicate<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool>
 {
+    #[allow(clippy::type_complexity)]
     shared_optimum: Arc<
         RwLock<Option<ReorderWithNulls<TotalOrdWrap<T::Physical<'static>>, REVERSE, NULLS_LAST>>>,
     >,
