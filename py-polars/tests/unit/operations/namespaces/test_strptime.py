@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext as does_not_raise
 from datetime import date, datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -18,6 +18,8 @@ from polars.exceptions import ChronoFormatWarning, ComputeError, InvalidOperatio
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from contextlib import AbstractContextManager
+
     from polars._typing import PolarsTemporalType, TimeUnit
 
 
@@ -57,7 +59,7 @@ def test_to_datetime_precision() -> None:
 
     time_units: list[TimeUnit] = ["ms", "us", "ns"]
     suffixes = ["%.3f", "%.6f", "%.9f"]
-    contexts = [
+    contexts: list[AbstractContextManager[Any]] = [
         pytest.raises(InvalidOperationError),
         pytest.raises(InvalidOperationError),
         does_not_raise(),
