@@ -6,6 +6,7 @@ use polars_core::prelude::*;
 use polars_error::{feature_gated, to_compute_err};
 
 use crate::utils::file::{Writeable, WriteableTrait};
+#[cfg(feature = "async")]
 use crate::utils::stream_buf_reader::ReaderSource;
 use crate::utils::sync_on_close::SyncOnCloseType;
 
@@ -250,6 +251,7 @@ impl Read for CompressedReader {
 ///
 /// This is the generic successor to [`CompressedReader`], which only
 /// supports in-memory (`Buffer<u8>`) sources.
+#[cfg(feature = "async")]
 pub enum ByteSourceReader<R: BufRead> {
     UncompressedMemory {
         slice: Buffer<u8>,
@@ -264,6 +266,7 @@ pub enum ByteSourceReader<R: BufRead> {
     Zstd(zstd::Decoder<'static, R>),
 }
 
+#[cfg(feature = "async")]
 impl<R: BufRead> ByteSourceReader<R> {
     pub fn try_new(reader: R, compression: Option<SupportedCompression>) -> PolarsResult<Self> {
         Ok(match compression {
@@ -365,6 +368,7 @@ impl<R: BufRead> ByteSourceReader<R> {
     }
 }
 
+#[cfg(feature = "async")]
 impl ByteSourceReader<ReaderSource> {
     pub fn from_memory(
         slice: Buffer<u8>,
