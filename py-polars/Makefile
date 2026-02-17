@@ -62,7 +62,7 @@ fmt: .venv  ## Run autoformatting (python and rust)
 
 .PHONY: clippy
 clippy:  ## Run clippy
-	cargo clippy --locked -- -D warnings -D clippy::dbg_macro
+	python3 ../tools/cargo-fail-warning.py clippy --locked -- -W clippy::dbg_macro
 
 .PHONY: pre-commit
 pre-commit: fmt lint clippy  ## Run all code formatting, lint, and clippy quality checks

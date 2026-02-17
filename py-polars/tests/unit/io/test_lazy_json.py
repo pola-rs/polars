@@ -296,7 +296,7 @@ def test_scan_ndjson_raises_on_parse_error_nested() -> None:
 
 def test_scan_ndjson_nested_as_string() -> None:
     buf = b"""\
-{"a": {"x": 1}, "b": [1,2,3], "c": {"y": null}, "d": [{"k": "abc"}, {"j": "123"}, {"l": 7}]}
+{"a": {"x": 1}, "b": [1,2,3], "c": {"y": null}, "d": [{"k": "abc"}, {"j": "123"}, {"l": 7, "m": 8}]}
 """
 
     df = pl.scan_ndjson(
@@ -311,9 +311,39 @@ def test_scan_ndjson_nested_as_string() -> None:
                 "a": '{"x": 1}',
                 "b": "[1, 2, 3]",
                 "c": '{"y": null}',
-                "d": '[{"k": "abc"}, {"j": "123"}, {"l": 7}]',
+                "d": '[{"k": "abc"}, {"j": "123"}, {"l": 7, "m": 8}]',
             }
         ),
+    )
+
+
+def test_scan_ndjson_nested_as_string_escape_chars() -> None:
+    buf = b"""\
+{"a": {"x": "\\"\\r\\n"}}
+"""
+
+    df = pl.scan_ndjson(
+        buf,
+        schema={"a": pl.String},
+    ).collect()
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "a": '{"x": "\\"\\r\\n"}',
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        pl.scan_ndjson(
+            buf,
+            schema={"a": pl.String},
+        )
+        .collect()
+        .with_columns(pl.col("a").str.json_decode(pl.Struct({"x": pl.String}))),
+        pl.scan_ndjson(buf, schema={"a": pl.Struct({"x": pl.String})}).collect(),
     )
 
 

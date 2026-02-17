@@ -174,6 +174,9 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             let arr = arr.as_any().downcast_ref::<ObjectArray<ObjectValue>>().unwrap();
             arr.get(idx).map(|v| AnyValue::Object(v))
         }
+        fn with_gil(f: &mut dyn FnMut()) {
+            Python::attach(|_| f())
+        }
 
         polars_utils::python_convert_registry::register_converters(PythonConvertRegistry {
             from_py: FromPythonConvertRegistry {
@@ -253,7 +256,8 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             object_converter,
             pyobject_converter,
             physical_dtype,
-            Arc::new(object_array_getter)
+            Arc::new(object_array_getter),
+            Arc::new(with_gil)
         );
 
         use crate::dataset::dataset_provider_funcs;
