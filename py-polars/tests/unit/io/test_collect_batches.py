@@ -68,6 +68,7 @@ def test_chunk_size() -> None:
         assert_frame_equal(f, expected)
 
 
+@pytest.mark.slow
 def test_collect_batches_releases_gil_26031() -> None:
     out = subprocess.check_output(
         [

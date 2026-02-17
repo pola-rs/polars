@@ -303,6 +303,34 @@ impl PyExpr {
         self.inner.clone().str().splitn(by.inner, n).into()
     }
 
+    #[cfg(feature = "regex")]
+    fn str_split_regex(&self, by: Self, strict: bool) -> Self {
+        self.str_split_regex_with_strict(by, strict)
+    }
+
+    #[cfg(feature = "regex")]
+    fn str_split_regex_inclusive(&self, by: Self, strict: bool) -> Self {
+        self.str_split_regex_inclusive_with_strict(by, strict)
+    }
+
+    #[cfg(feature = "regex")]
+    fn str_split_regex_with_strict(&self, by: Self, strict: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .split_regex(by.inner, strict)
+            .into()
+    }
+
+    #[cfg(feature = "regex")]
+    fn str_split_regex_inclusive_with_strict(&self, by: Self, strict: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .split_regex_inclusive(by.inner, strict)
+            .into()
+    }
+
     fn str_to_decimal(&self, scale: usize) -> Self {
         self.inner.clone().str().to_decimal(scale).into()
     }

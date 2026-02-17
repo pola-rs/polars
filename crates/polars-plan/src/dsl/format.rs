@@ -149,12 +149,6 @@ impl fmt::Debug for Expr {
                             write!(f, "{input:?}.max()")
                         }
                     },
-                    MinBy { input, by } => {
-                        write!(f, "{input:?}.min_by({by:?})")
-                    },
-                    MaxBy { input, by } => {
-                        write!(f, "{input:?}.max_by({by:?})")
-                    },
                     Median(expr) => write!(f, "{expr:?}.median()"),
                     Mean(expr) => write!(f, "{expr:?}.mean()"),
                     First(expr) => write!(f, "{expr:?}.first()"),
@@ -215,6 +209,13 @@ impl fmt::Debug for Expr {
                     1 => write!(f, "{:?}.{function}()", input[0]),
                     _ => write!(f, "{:?}.{function}({:?})", input[0], &input[1..]),
                 }
+            },
+            Display {
+                inputs, fmt_str, ..
+            } => match inputs.len() {
+                0 => write!(f, "{fmt_str}()"),
+                1 => write!(f, "{:?}.{fmt_str}()", inputs[0]),
+                _ => write!(f, "{:?}.{fmt_str}({:?})", inputs[0], &inputs[1..]),
             },
             AnonymousFunction {
                 input,

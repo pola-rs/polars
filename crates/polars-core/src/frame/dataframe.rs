@@ -118,8 +118,6 @@ impl DataFrame {
     }
 
     pub fn new(height: usize, columns: Vec<Column>) -> PolarsResult<Self> {
-        let columns: Vec<Column> = columns.into_iter().collect();
-
         validate_columns_slice(height, &columns)
             .map_err(|e| e.wrap_msg(|e| format!("could not create a new DataFrame: {e}")))?;
 

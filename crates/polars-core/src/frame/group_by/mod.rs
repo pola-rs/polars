@@ -782,7 +782,6 @@ impl<'a> GroupBy<'a> {
     }
 
     fn prepare_apply(&self) -> PolarsResult<DataFrame> {
-        polars_ensure!(self.df.height() > 0, ComputeError: "cannot group_by + apply on empty 'DataFrame'");
         if let Some(agg) = &self.selected_agg {
             if agg.is_empty() {
                 Ok(self.df.clone())
@@ -804,6 +803,7 @@ impl<'a> GroupBy<'a> {
     where
         F: Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
+        polars_ensure!(self.df.height() > 0, ComputeError: "cannot group_by + apply on empty 'DataFrame'");
         let df = self.prepare_apply()?;
         let dfs = self
             .get_groups()
@@ -826,13 +826,27 @@ impl<'a> GroupBy<'a> {
     where
         F: FnMut(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
-        self.apply_sliced(None, f)
+        self.apply_sliced(None, f, None)
     }
 
-    pub fn apply_sliced<F>(&self, slice: Option<(i64, usize)>, mut f: F) -> PolarsResult<DataFrame>
+    pub fn apply_sliced<F>(
+        &self,
+        slice: Option<(i64, usize)>,
+        mut f: F,
+        schema: Option<&SchemaRef>,
+    ) -> PolarsResult<DataFrame>
     where
         F: FnMut(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
+        if self.df.height() == 0 {
+            // return empty dataframe with correct schema
+            if let Some(schema) = schema {
+                return Ok(DataFrame::empty_with_arc_schema(schema.clone()));
+            }
+
+            polars_bail!(ComputeError: "cannot group_by + apply on empty 'DataFrame'");
+        }
+
         let df = self.prepare_apply()?;
         let max_height = if let Some((offset, len)) = slice {
             offset.try_into().unwrap_or(usize::MAX).saturating_add(len)
@@ -902,6 +916,8 @@ pub enum GroupByMethod {
     Implode,
     Std(u8),
     Var(u8),
+    ArgMin,
+    ArgMax,
 }
 
 impl Display for GroupByMethod {
@@ -927,6 +943,8 @@ impl Display for GroupByMethod {
             Implode => "list",
             Std(_) => "std",
             Var(_) => "var",
+            ArgMin => "arg_min",
+            ArgMax => "arg_max",
         };
         write!(f, "{s}")
     }
@@ -955,6 +973,8 @@ pub fn fmt_group_by_column(name: &str, method: GroupByMethod) -> PlSmallStr {
         Quantile(quantile, _interpol) => format_pl_smallstr!("{name}_quantile_{quantile:.2}"),
         Std(_) => format_pl_smallstr!("{name}_agg_std"),
         Var(_) => format_pl_smallstr!("{name}_agg_var"),
+        ArgMin => format_pl_smallstr!("{name}_arg_min"),
+        ArgMax => format_pl_smallstr!("{name}_arg_max"),
     }
 }
 

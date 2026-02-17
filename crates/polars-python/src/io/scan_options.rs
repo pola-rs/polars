@@ -14,7 +14,7 @@ use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 
 use crate::PyDataFrame;
-use crate::functions::parse_cloud_options;
+use crate::io::cloud_options::OptPyCloudOptions;
 use crate::prelude::Wrap;
 
 /// Interface to `class ScanOptions` on the Python side
@@ -46,7 +46,7 @@ impl PyScanOptions<'_> {
         cloud_scheme: Option<CloudScheme>,
     ) -> PyResult<UnifiedScanArgs> {
         #[derive(FromPyObject)]
-        struct Extract {
+        struct Extract<'a> {
             row_index: Option<(Wrap<PlSmallStr>, IdxSize)>,
             pre_slice: Option<(i64, usize)>,
             cast_options: Wrap<CastColumnsPolicy>,
@@ -62,9 +62,8 @@ impl PyScanOptions<'_> {
             try_parse_hive_dates: bool,
             rechunk: bool,
             cache: bool,
-            storage_options: Option<Vec<(String, String)>>,
+            storage_options: OptPyCloudOptions<'a>,
             credential_provider: Option<Py<PyAny>>,
-            retries: usize,
             deletion_files: Option<Wrap<DeletionFilesList>>,
             table_statistics: Option<Wrap<TableStatistics>>,
             row_count: Option<(u64, u64)>,
@@ -88,14 +87,13 @@ impl PyScanOptions<'_> {
             cache,
             storage_options,
             credential_provider,
-            retries,
             deletion_files,
             table_statistics,
             row_count,
         } = self.0.extract()?;
 
         let cloud_options =
-            parse_cloud_options(cloud_scheme, storage_options, credential_provider, retries)?;
+            storage_options.extract_opt_cloud_options(cloud_scheme, credential_provider)?;
 
         let hive_schema = hive_schema.map(|s| Arc::new(s.0));
 

@@ -1,5 +1,5 @@
 pub mod chunked_array;
-mod df;
+pub mod df;
 pub mod series;
 
 #[cfg(test)]

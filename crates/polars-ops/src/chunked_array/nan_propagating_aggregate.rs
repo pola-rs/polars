@@ -106,13 +106,14 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                 let values = arr.values().as_slice();
                 let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                 let arr = match arr.validity() {
-                    None => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _>(
+                    None => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _, _>(
                         values,
                         offset_iter,
                         None,
                     ),
                     Some(validity) => _rolling_apply_agg_window_nulls::<
                         rolling::nulls::MaxWindow<_>,
+                        _,
                         _,
                         _,
                     >(values, validity, offset_iter, None),
@@ -172,13 +173,14 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                 let values = arr.values().as_slice();
                 let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                 let arr = match arr.validity() {
-                    None => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _>(
+                    None => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _, _>(
                         values,
                         offset_iter,
                         None,
                     ),
                     Some(validity) => _rolling_apply_agg_window_nulls::<
                         rolling::nulls::MinWindow<_>,
+                        _,
                         _,
                         _,
                     >(values, validity, offset_iter, None),

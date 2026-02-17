@@ -11,11 +11,15 @@ use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::pipe::{PortReceiver, RecvPort, port_channel};
 
+#[cfg(feature = "asof_join")]
+pub mod asof_join;
 pub mod cross_join;
 pub mod equi_join;
 pub mod in_memory;
+pub mod merge_join;
 #[cfg(feature = "semi_anti_join")]
 pub mod semi_anti_join;
+mod utils;
 
 static JOIN_SAMPLE_LIMIT: LazyLock<usize> = LazyLock::new(|| {
     std::env::var("POLARS_JOIN_SAMPLE_LIMIT")

@@ -283,7 +283,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                     O::Plus
                     | O::Minus
                     | O::Multiply
-                    | O::Divide
+                    | O::RustDivide
                     | O::TrueDivide
                     | O::FloorDivide
                     | O::Modulus
@@ -295,7 +295,7 @@ fn aexpr_to_skip_batch_predicate_rec(
             AExpr::Gather { .. } => None,
             AExpr::SortBy { .. } => None,
             AExpr::Filter { .. } => None,
-            AExpr::Agg(..) | AExpr::AnonymousStreamingAgg { .. } => None,
+            AExpr::Agg(..) | AExpr::AnonymousAgg { .. } => None,
             AExpr::Ternary { .. } => None,
             AExpr::AnonymousFunction { .. } => None,
             AExpr::Eval { .. } => None,

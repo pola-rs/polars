@@ -17,7 +17,7 @@ fn to_py_datetime(v: i64, tu: &TimeUnit, tz: Option<&TimeZone>) -> String {
     // dtype have to be in-scope on the python side
     match tz {
         None => format!("to_py_datetime({},'{}')", v, tu.to_ascii()),
-        Some(tz) => format!("to_py_datetime({},'{}',{})", v, tu.to_ascii(), tz),
+        Some(tz) => format!("to_py_datetime({},'{}','{}')", v, tu.to_ascii(), tz),
     }
 }
 

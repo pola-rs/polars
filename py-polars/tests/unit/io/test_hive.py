@@ -15,17 +15,20 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, SchemaFieldNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from tests.conftest import PlMonkeyPatch
 
 
 def impl_test_hive_partitioned_predicate_pushdown(
     io_files_path: Path,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.read_ipc(io_files_path / "*.ipc")
 
     root = tmp_path / "partitioned_data"
@@ -79,12 +82,12 @@ def impl_test_hive_partitioned_predicate_pushdown(
 def test_hive_partitioned_predicate_pushdown(
     io_files_path: Path,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     impl_test_hive_partitioned_predicate_pushdown(
         io_files_path,
         tmp_path,
-        monkeypatch,
+        plmonkeypatch,
     )
 
 
@@ -93,15 +96,15 @@ def test_hive_partitioned_predicate_pushdown(
 def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
     io_files_path: Path,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
-    monkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
 
     impl_test_hive_partitioned_predicate_pushdown(
         io_files_path,
         tmp_path,
-        monkeypatch,
+        plmonkeypatch,
     )
 
 
@@ -109,9 +112,9 @@ def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
 @pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
-    tmp_path: Path, monkeypatch: Any, capfd: Any
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.DataFrame({"d": pl.arange(0, 5, eager=True)}).with_columns(
         a=pl.col("d") % 5
     )
@@ -317,12 +320,14 @@ def test_read_parquet_invalid_hive_schema(dataset_path: Path) -> None:
         )
 
 
-def test_read_parquet_hive_schema_with_pyarrow() -> None:
+def test_read_parquet_hive_schema_with_pyarrow(tmp_path: Path) -> None:
     with pytest.raises(
         TypeError,
         match="cannot use `hive_partitions` with `use_pyarrow=True`",
     ):
-        pl.read_parquet("test.parquet", hive_schema={"c": pl.Int32}, use_pyarrow=True)
+        pl.read_parquet(
+            tmp_path / "test.parquet", hive_schema={"c": pl.Int32}, use_pyarrow=True
+        )
 
 
 @pytest.mark.parametrize(
@@ -498,15 +503,17 @@ def test_hive_partition_schema_inference(tmp_path: Path) -> None:
     for i in range(3):
         paths[i].parent.mkdir(exist_ok=True, parents=True)
         dfs[i].write_parquet(paths[i])
-        out = pl.scan_parquet(tmp_path).collect()
+        out = pl.scan_parquet(tmp_path).sort("x").collect()
 
         assert_series_equal(out["a"], expected[i])
 
 
 @pytest.mark.write_disk
-def test_hive_partition_force_async_17155(tmp_path: Path, monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
-    monkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
+def test_hive_partition_force_async_17155(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
 
     dfs = [
         pl.DataFrame({"x": 1}),
@@ -899,9 +906,9 @@ def test_hive_write_dates(tmp_path: Path) -> None:
 @pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_hive_predicate_dates_14712(
-    tmp_path: Path, monkeypatch: Any, capfd: Any
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     pl.DataFrame({"a": [datetime(2024, 1, 1)]}).write_parquet(
         tmp_path, partition_by="a"
     )
@@ -911,9 +918,16 @@ def test_hive_predicate_dates_14712(
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Test is only for Windows paths")
 @pytest.mark.write_disk
-def test_hive_windows_splits_on_forward_slashes(tmp_path: Path) -> None:
+@pytest.mark.parametrize("prefix", ["", "file:/", "file:///"])
+def test_hive_windows_splits_on_forward_slashes(tmp_path: Path, prefix: str) -> None:
     # Note: This needs to be an absolute path.
     tmp_path = tmp_path.resolve()
+
+    d = str(tmp_path)[:2]
+
+    assert d[0].isalpha()
+    assert d[1] == ":"
+
     path = f"{tmp_path}/a=1/b=1/c=1/d=1/e=1"
     Path(path).mkdir(exist_ok=True, parents=True)
 
@@ -939,16 +953,23 @@ def test_hive_windows_splits_on_forward_slashes(tmp_path: Path) -> None:
     assert_frame_equal(
         pl.scan_parquet(
             [
-                f"{tmp_path}/a=1/b=1/c=1/d=1/e=1/data.parquet",
-                f"{tmp_path}\\a=1\\b=1\\c=1\\d=1\\e=1\\data.parquet",
-                f"{tmp_path}\\a=1/b=1/c=1/d=1/**/*",
-                f"{tmp_path}/a=1/b=1\\c=1/d=1/**/*",
-                f"{tmp_path}/a=1/b=1/c=1/d=1\\e=1/*",
+                f"{prefix}{tmp_path}/a=1/b=1/c=1/d=1/e=1/data.parquet",
+                f"{prefix}{tmp_path}\\a=1\\b=1\\c=1\\d=1\\e=1\\data.parquet",
+                f"{prefix}{tmp_path}\\a=1/b=1/c=1/d=1/**/*",
+                f"{prefix}{tmp_path}/a=1/b=1\\c=1/d=1/**/*",
+                f"{prefix}{tmp_path}/a=1/b=1/c=1/d=1\\e=1/*",
             ],
             hive_partitioning=True,
         ).collect(),
         expect,
     )
+
+    q = pl.scan_parquet("file://C:/")
+
+    with pytest.raises(
+        ComputeError, match="unsupported: non-empty hostname for 'file:' URI: 'C:'"
+    ):
+        q.collect()
 
 
 @pytest.mark.write_disk
@@ -1000,7 +1021,7 @@ def test_hive_file_as_uri_with_hive_start_idx_23830(
     # ensure we have a trailing "/"
     uri = tmp_path.resolve().as_posix().rstrip("/") + "/"
 
-    lf = pl.scan_parquet(f"file://{uri}", hive_schema={"a": pl.UInt8})
+    lf = pl.scan_parquet(format_file_uri(uri), hive_schema={"a": pl.UInt8})
 
     assert_frame_equal(
         lf.collect(),
@@ -1010,18 +1031,17 @@ def test_hive_file_as_uri_with_hive_start_idx_23830(
         ),
     )
 
-    if sys.platform != "win32":
-        # https://github.com/pola-rs/polars/issues/24506
-        # `file:` URI with `//hostname` component omitted
-        lf = pl.scan_parquet(f"file:{uri}", hive_schema={"a": pl.UInt8})
+    # https://github.com/pola-rs/polars/issues/24506
+    # `file:` URI with `//hostname` component omitted
+    lf = pl.scan_parquet(f"file:{uri}", hive_schema={"a": pl.UInt8})
 
-        assert_frame_equal(
-            lf.collect(),
-            pl.select(
-                pl.Series("x", [1]),
-                pl.Series("a", [1], dtype=pl.UInt8),
-            ),
-        )
+    assert_frame_equal(
+        lf.collect(),
+        pl.select(
+            pl.Series("x", [1]),
+            pl.Series("a", [1], dtype=pl.UInt8),
+        ),
+    )
 
 
 @pytest.mark.write_disk
@@ -1147,14 +1167,14 @@ def test_hive_filter_lit_true_24235(tmp_path: Path) -> None:
 
 
 def test_hive_filter_in_ir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     (tmp_path / "a=1").mkdir()
     pl.DataFrame({"x": [0, 1, 2, 3, 4]}).write_parquet(tmp_path / "a=1/data.parquet")
     (tmp_path / "a=2").mkdir()
     pl.DataFrame({"x": [5, 6, 7, 8, 9]}).write_parquet(tmp_path / "a=2/data.parquet")
 
-    with monkeypatch.context() as cx:
+    with plmonkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
 
         capfd.readouterr()

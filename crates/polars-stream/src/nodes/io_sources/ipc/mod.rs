@@ -9,17 +9,18 @@ use polars_core::schema::{Schema, SchemaExt};
 use polars_core::utils::arrow::io::ipc::read::{
     BlockReader, FileMetadata, ProjectionInfo, prepare_projection, read_file_metadata,
 };
-use polars_error::{ErrString, PolarsError, PolarsResult, feature_gated};
+use polars_error::{ErrString, PolarsError, PolarsResult};
 use polars_io::cloud::CloudOptions;
+use polars_io::ipc::IpcScanOptions;
 use polars_io::pl_async;
-#[cfg(feature = "cloud")]
-use polars_io::pl_async::get_runtime;
-use polars_io::utils::byte_source::{ByteSource, DynByteSource, DynByteSourceBuilder};
+use polars_io::utils::byte_source::{
+    BufferByteSource, ByteSource, DynByteSource, DynByteSourceBuilder,
+};
 use polars_io::utils::slice::SplitSlicePosition;
-use polars_plan::dsl::{ScanSource, ScanSourceRef};
+use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
+use polars_utils::bool::UnsafeBool;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
-use polars_utils::plpath::PlPathRef;
 use polars_utils::slice_enum::Slice;
 use record_batch_data_fetch::RecordBatchDataFetcher;
 use record_batch_decode::RecordBatchDecoder;
@@ -28,7 +29,9 @@ use super::multi_scan::reader_interface::BeginReadArgs;
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
 use crate::async_executor::{self, JoinHandle, TaskPriority};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use crate::metrics::OptIOMetrics;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
+use crate::nodes::io_sources::ipc::metadata::read_ipc_metadata_bytes;
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::multi_scan::reader_interface::{
     FileReader, FileReaderCallbacks, Projection,
@@ -37,6 +40,7 @@ use crate::nodes::io_sources::parquet::init::split_to_morsels;
 use crate::utils::tokio_handle_ext::AbortOnDropHandle;
 
 pub mod builder;
+mod metadata;
 mod record_batch_data_fetch;
 mod record_batch_decode;
 
@@ -49,11 +53,14 @@ consider compiling with polars-bigidx feature (pip install polars[rt64])",
 struct IpcFileReader {
     scan_source: ScanSource,
     cloud_options: Option<Arc<CloudOptions>>,
+    config: Arc<IpcScanOptions>,
     metadata: Option<Arc<FileMetadata>>,
     byte_source_builder: DynByteSourceBuilder,
     record_batch_prefetch_sync: RecordBatchPrefetchSync,
+    io_metrics: OptIOMetrics,
     verbose: bool,
     init_data: Option<InitializedState>,
+    checked: UnsafeBool,
 }
 
 struct RecordBatchPrefetchSync {
@@ -85,31 +92,52 @@ impl FileReader for IpcFileReader {
         let scan_source = self.scan_source.clone();
         let byte_source_builder = self.byte_source_builder.clone();
         let cloud_options = self.cloud_options.clone();
+        let io_metrics = self.io_metrics.clone();
 
         let byte_source = pl_async::get_runtime()
             .spawn(async move {
                 scan_source
                     .as_scan_source_ref()
-                    .to_dyn_byte_source(&byte_source_builder, cloud_options.as_deref())
+                    .to_dyn_byte_source(
+                        &byte_source_builder,
+                        cloud_options.as_deref(),
+                        io_metrics.0,
+                    )
                     .await
             })
             .await
             .unwrap()?;
 
-        let byte_source = Arc::new(byte_source);
+        let mut byte_source = Arc::new(byte_source);
 
         let file_metadata = if let Some(v) = self.metadata.clone() {
             v
         } else {
-            self.fetch_file_metadata().await?
+            let (metadata_bytes, opt_full_bytes) = {
+                let byte_source = byte_source.clone();
+
+                pl_async::get_runtime()
+                    .spawn(async move { read_ipc_metadata_bytes(&byte_source, verbose).await })
+                    .await
+                    .unwrap()?
+            };
+
+            if let Some(full_bytes) = opt_full_bytes {
+                byte_source = Arc::new(DynByteSource::Buffer(BufferByteSource(full_bytes)));
+            }
+
+            Arc::new(read_file_metadata(&mut std::io::Cursor::new(
+                metadata_bytes,
+            ))?)
         };
 
         let dictionaries = {
             let byte_source_async = byte_source.clone();
             let metadata_async = file_metadata.clone();
+            let checked = self.checked;
             let dictionaries = pl_async::get_runtime()
                 .spawn(async move {
-                    read_dictionaries(&byte_source_async, metadata_async, verbose).await
+                    read_dictionaries(&byte_source_async, metadata_async, verbose, checked).await
                 })
                 .await
                 .unwrap()?;
@@ -162,6 +190,7 @@ impl FileReader for IpcFileReader {
             predicate: None,
             cast_columns_policy: _,
             num_pipelines,
+            disable_morsel_split,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx,
@@ -227,17 +256,22 @@ impl FileReader for IpcFileReader {
             None
         };
 
+        // Unstable.
+        let read_statistics_flags = self.config.record_batch_statistics;
+
         if verbose {
             eprintln!(
                 "[IpcFileReader]: \
                 project: {} / {}, \
-                pre_slice: {:?} \
+                pre_slice: {:?}, \
+                read_record_batch_statistics_flags: {}\
                 ",
                 projection_indices
                     .as_ref()
                     .map_or(file_metadata.schema.len(), |x| x.len()),
                 file_metadata.schema.len(),
                 pre_slice_arg,
+                read_statistics_flags
             )
         }
 
@@ -284,6 +318,8 @@ impl FileReader for IpcFileReader {
             projection_info,
             dictionaries: dictionaries.clone(),
             row_index,
+            read_statistics_flags,
+            checked: self.checked,
         });
 
         // Set up channels.
@@ -388,6 +424,20 @@ impl FileReader for IpcFileReader {
                 if df.height() == 0 {
                     continue;
                 }
+
+                if disable_morsel_split {
+                    if morsel_send
+                        .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
+                        .await
+                        .is_err()
+                    {
+                        return Ok(());
+                    }
+                    drop(permit);
+                    morsel_seq = morsel_seq.successor();
+                    continue;
+                }
+
                 next = Some((df, permit));
                 break;
             }
@@ -447,55 +497,11 @@ impl FileReader for IpcFileReader {
     }
 }
 
-impl IpcFileReader {
-    /// Retrieve file metadata from the source.
-    async fn fetch_file_metadata(&self) -> PolarsResult<Arc<FileMetadata>> {
-        if self.verbose {
-            eprintln!("[IpcFileReader]: fetching file metadata");
-        }
-
-        let metadata = match self.scan_source.as_scan_source_ref() {
-            ScanSourceRef::Path(path) => match path {
-                PlPathRef::Cloud(_) => {
-                    feature_gated!("cloud", {
-                        get_runtime().block_in_place_on(async {
-                            let metadata: PolarsResult<_> = {
-                                let reader = polars_io::ipc::IpcReaderAsync::from_uri(
-                                    path,
-                                    self.cloud_options.as_deref(),
-                                )
-                                .await?;
-
-                                Ok(reader.metadata().await?)
-                            };
-                            metadata
-                        })?
-                    })
-                },
-                PlPathRef::Local(path) => {
-                    // Local file I/O is typically synchronous in Arrow-rs
-                    let mut reader = std::io::BufReader::new(polars_utils::open_file(path)?);
-                    read_file_metadata(&mut reader)?
-                },
-            },
-            ScanSourceRef::File(file) => {
-                let mut reader = std::io::BufReader::new(file);
-                read_file_metadata(&mut reader)?
-            },
-            ScanSourceRef::Buffer(buff) => {
-                let mut reader = std::io::Cursor::new(buff);
-                read_file_metadata(&mut reader)?
-            },
-        };
-
-        Ok(Arc::new(metadata))
-    }
-}
-
 async fn read_dictionaries(
     byte_source: &DynByteSource,
     file_metadata: Arc<FileMetadata>,
     verbose: bool,
+    checked: UnsafeBool,
 ) -> PolarsResult<Dictionaries> {
     let blocks = if let Some(blocks) = &file_metadata.dictionaries {
         blocks
@@ -527,6 +533,7 @@ async fn read_dictionaries(
             &mut dictionaries,
             &mut message_scratch,
             &mut dictionary_scratch,
+            checked,
         )?;
     }
 

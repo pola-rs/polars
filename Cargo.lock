@@ -58,6 +58,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "android-tzdata"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e999941b234f3131b00bc13c22d06e8c5ff726d1b6318ac7eb276997bbb4fef0"
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -199,9 +205,9 @@ dependencies = [
 
 [[package]]
 name = "atoi_simd"
-version = "0.16.1"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2a49e05797ca52e312a0c658938b7d00693ef037799ef7187678f212d7684cf"
+checksum = "8ad17c7c205c2c28b527b9845eeb91cf1b4d008b438f98ce0e628227a822758e"
 dependencies = [
  "debug_unsafe",
 ]
@@ -827,6 +833,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "btparse"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "387e80962b798815a2b5c4bcfdb6bf626fa922ffe9f74e373103b858738e9f31"
+
+[[package]]
 name = "bumpalo"
 version = "3.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -860,9 +872,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "bytes"
-version = "1.11.0"
+version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b35204fbdc0b3f4446b89fc1ac2cf84a8a68971995d0bf2e925ec7cd960f9cb3"
+checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 dependencies = [
  "serde",
 ]
@@ -912,14 +924,15 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chrono"
-version = "0.4.42"
+version = "0.4.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "145052bdd345b87320e369255277e3fb5152762ad123a901ef5c262dd38fe8d2"
+checksum = "c469d952047f47f91b68d1cba3f10d63c11d73e4636f24f08daf0278abf01c4d"
 dependencies = [
+ "android-tzdata",
  "iana-time-zone",
  "num-traits",
  "serde",
- "windows-link",
+ "windows-link 0.1.3",
 ]
 
 [[package]]
@@ -948,6 +961,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75443c44cd6b379beb8c5b45d85d0773baf31cce901fe7bb252f4eff3008ef7d"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "color-backtrace"
+version = "0.7.2"
+source = "git+https://github.com/orlp/color-backtrace?rev=bb62ccf1e9eb1f6b7af5f16acff1fd7151a876dd#bb62ccf1e9eb1f6b7af5f16acff1fd7151a876dd"
+dependencies = [
+ "btparse",
+ "termcolor",
 ]
 
 [[package]]
@@ -1630,7 +1652,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1bd49230192a3797a9a4d6abe9b3eed6f7fa4c8a8a4947977c6f80025f92cbd8"
 dependencies = [
  "rustix",
- "windows-link",
+ "windows-link 0.2.1",
 ]
 
 [[package]]
@@ -2282,12 +2304,12 @@ dependencies = [
 
 [[package]]
 name = "libloading"
-version = "0.8.9"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
+checksum = "754ca22de805bb5744484a5b151a9e1a8e837d5dc232c2d7d8c2e3492edc8b60"
 dependencies = [
  "cfg-if",
- "windows-link",
+ "windows-link 0.2.1",
 ]
 
 [[package]]
@@ -2384,9 +2406,9 @@ dependencies = [
 
 [[package]]
 name = "lz4_flex"
-version = "0.11.5"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08ab2867e3eeeca90e844d1940eab391c9dc5228783db2ed999acbc0a9ed375a"
+checksum = "ab6473172471198271ff72e9379150e9dfd70d8e533e0752a27e515b48dd375e"
 dependencies = [
  "twox-hash",
 ]
@@ -2551,9 +2573,9 @@ dependencies = [
 
 [[package]]
 name = "num-conv"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
+checksum = "cf97ec579c3c42f953ef76dbf8d55ac91fb219dde70e49aa4a6b7d74e9919050"
 
 [[package]]
 name = "num-derive"
@@ -2687,6 +2709,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-io-kit"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33fafba39597d6dc1fb709123dfa8289d39406734be322956a69f0931c73bb15"
+dependencies = [
+ "libc",
+ "objc2-core-foundation",
+]
+
+[[package]]
 name = "objc2-io-surface"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2708,14 +2740,14 @@ dependencies = [
 
 [[package]]
 name = "object_store"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7781f96d79ed0f961a7021424ab01840efbda64ae7a505aaea195efc91eaaec4"
+version = "0.13.1"
+source = "git+https://github.com/kdn36/arrow-rs-object-store?branch=feat_checksum_crc64#b5883a9b6e7d4dcc842054c2f626debfb3434e45"
 dependencies = [
  "async-trait",
  "base64",
  "bytes",
  "chrono",
+ "crc-fast",
  "form_urlencoded",
  "futures",
  "http 1.4.0",
@@ -2731,7 +2763,7 @@ dependencies = [
  "rand 0.9.2",
  "reqwest",
  "ring",
- "rustls-pemfile",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -2843,7 +2875,7 @@ dependencies = [
  "libc",
  "redox_syscall",
  "smallvec",
- "windows-link",
+ "windows-link 0.2.1",
 ]
 
 [[package]]
@@ -2910,7 +2942,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "apache-avro",
  "avro-schema",
@@ -2921,6 +2953,7 @@ dependencies = [
  "getrandom 0.2.16",
  "getrandom 0.3.4",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-core",
  "polars-error",
@@ -2941,13 +2974,14 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "async-stream",
  "atoi_simd",
  "avro-schema",
  "bitflags",
  "bytemuck",
+ "bytes",
  "chrono",
  "chrono-tz",
  "dyn-clone",
@@ -2963,6 +2997,7 @@ dependencies = [
  "num-traits",
  "polars-arrow",
  "polars-arrow-format",
+ "polars-buffer",
  "polars-error",
  "polars-schema",
  "polars-utils",
@@ -2991,8 +3026,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-buffer"
+version = "0.53.0"
+dependencies = [
+ "bytemuck",
+ "either",
+ "serde",
+ "version_check",
+]
+
+[[package]]
 name = "polars-compute"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "atoi_simd",
  "bigdecimal",
@@ -3006,6 +3051,7 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "polars-arrow",
+ "polars-buffer",
  "polars-error",
  "polars-utils",
  "proptest",
@@ -3019,8 +3065,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-config"
+version = "0.53.0"
+dependencies = [
+ "polars-error",
+ "serde",
+]
+
+[[package]]
 name = "polars-core"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "bincode",
  "bitflags",
@@ -3038,7 +3092,9 @@ dependencies = [
  "ndarray",
  "num-traits",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
+ "polars-config",
  "polars-core",
  "polars-dtype",
  "polars-error",
@@ -3061,7 +3117,7 @@ dependencies = [
 
 [[package]]
 name = "polars-doc-examples"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "aws-config",
  "aws-sdk-s3",
@@ -3075,7 +3131,7 @@ dependencies = [
 
 [[package]]
 name = "polars-dtype"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "boxcar",
  "hashbrown 0.16.1",
@@ -3089,7 +3145,7 @@ dependencies = [
 
 [[package]]
 name = "polars-dylib"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "polars",
  "polars-arrow",
@@ -3103,7 +3159,7 @@ dependencies = [
 
 [[package]]
 name = "polars-error"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "avro-schema",
  "object_store",
@@ -3117,7 +3173,7 @@ dependencies = [
 
 [[package]]
 name = "polars-expr"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "bitflags",
  "chrono-tz",
@@ -3125,6 +3181,7 @@ dependencies = [
  "libloading",
  "num-traits",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-core",
  "polars-io",
@@ -3143,7 +3200,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ffi"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -3151,7 +3208,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "async-trait",
  "atoi_simd",
@@ -3173,7 +3230,9 @@ dependencies = [
  "object_store",
  "percent-encoding",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
+ "polars-config",
  "polars-core",
  "polars-error",
  "polars-json",
@@ -3200,7 +3259,7 @@ dependencies = [
 
 [[package]]
 name = "polars-json"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -3220,7 +3279,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "bitflags",
  "bytes",
@@ -3229,6 +3288,7 @@ dependencies = [
  "futures",
  "memchr",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-core",
  "polars-expr",
@@ -3249,7 +3309,7 @@ dependencies = [
 
 [[package]]
 name = "polars-mem-engine"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "futures",
  "memmap2",
@@ -3271,7 +3331,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "aho-corasick",
  "argminmax",
@@ -3288,6 +3348,7 @@ dependencies = [
  "memchr",
  "num-traits",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-core",
  "polars-error",
@@ -3310,7 +3371,7 @@ dependencies = [
 
 [[package]]
 name = "polars-parquet"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "async-stream",
  "base64",
@@ -3325,6 +3386,7 @@ dependencies = [
  "lz4_flex",
  "num-traits",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-error",
  "polars-parquet",
@@ -3354,7 +3416,7 @@ dependencies = [
 
 [[package]]
 name = "polars-plan"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "bitflags",
  "blake3",
@@ -3370,7 +3432,9 @@ dependencies = [
  "num-traits",
  "percent-encoding",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
+ "polars-config",
  "polars-core",
  "polars-error",
  "polars-ffi",
@@ -3390,12 +3454,13 @@ dependencies = [
  "sha2",
  "slotmap",
  "strum_macros 0.27.2",
+ "tokio",
  "version_check",
 ]
 
 [[package]]
 name = "polars-python"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "arboard",
  "bincode",
@@ -3403,6 +3468,7 @@ dependencies = [
  "bytes",
  "chrono",
  "chrono-tz",
+ "color-backtrace",
  "either",
  "flate2",
  "hashbrown 0.16.1",
@@ -3415,7 +3481,9 @@ dependencies = [
  "parking_lot",
  "polars",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
+ "polars-config",
  "polars-core",
  "polars-dtype",
  "polars-error",
@@ -3441,11 +3509,12 @@ dependencies = [
 
 [[package]]
 name = "polars-row"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "bitflags",
  "bytemuck",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-dtype",
  "polars-error",
@@ -3455,7 +3524,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-32"
-version = "1.37.0"
+version = "1.38.1"
 dependencies = [
  "either",
  "libc",
@@ -3466,7 +3535,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-64"
-version = "1.37.0"
+version = "1.38.1"
 dependencies = [
  "either",
  "libc",
@@ -3477,7 +3546,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-compat"
-version = "1.37.0"
+version = "1.38.1"
 dependencies = [
  "either",
  "libc",
@@ -3488,7 +3557,7 @@ dependencies = [
 
 [[package]]
 name = "polars-schema"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "indexmap",
  "polars-error",
@@ -3500,7 +3569,7 @@ dependencies = [
 
 [[package]]
 name = "polars-sql"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "bitflags",
  "hex",
@@ -3511,7 +3580,6 @@ dependencies = [
  "polars-plan",
  "polars-time",
  "polars-utils",
- "rand 0.9.2",
  "regex",
  "serde",
  "sqlparser",
@@ -3519,12 +3587,13 @@ dependencies = [
 
 [[package]]
 name = "polars-stream"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "async-channel",
  "async-trait",
  "atomic-waker",
  "bitflags",
+ "bytes",
  "chrono-tz",
  "crossbeam-channel",
  "crossbeam-deque",
@@ -3538,7 +3607,9 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
+ "polars-config",
  "polars-core",
  "polars-error",
  "polars-expr",
@@ -3558,14 +3629,13 @@ dependencies = [
  "serde",
  "serde_json",
  "slotmap",
- "strum_macros 0.27.2",
  "tokio",
  "version_check",
 ]
 
 [[package]]
 name = "polars-testing"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "polars-core",
  "polars-ops",
@@ -3573,7 +3643,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "atoi_simd",
  "bytemuck",
@@ -3596,7 +3666,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "argminmax",
  "bincode",
@@ -3606,6 +3676,7 @@ dependencies = [
  "either",
  "flate2",
  "foldhash 0.2.0",
+ "futures",
  "half",
  "hashbrown 0.16.1",
  "indexmap",
@@ -3614,6 +3685,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "numpy",
+ "polars-config",
  "polars-error",
  "proptest",
  "pyo3",
@@ -3629,6 +3701,7 @@ dependencies = [
  "slotmap",
  "stacker",
  "sysinfo",
+ "tokio",
  "uuid",
  "version_check",
 ]
@@ -3795,7 +3868,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3-polars"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "libc",
  "once_cell",
@@ -3816,7 +3889,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3-polars-derive"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -3838,9 +3911,9 @@ checksum = "5a651516ddc9168ebd67b24afd085a718be02f8858fe406591b013d101ce2f40"
 
 [[package]]
 name = "quick-xml"
-version = "0.37.5"
+version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "331e97a1af0bf59823e6eadffe373d7b27f485be8748f71471c662c1f269b7fb"
+checksum = "f2e3bf4aa9d243beeb01a7b3bc30b77cfe2c44e24ec02d751a7104a53c2c49a1"
 dependencies = [
  "memchr",
  "serde",
@@ -4283,15 +4356,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustls-pemfile"
-version = "2.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dce314e5fee3f39953d46bb63bb8a46d40c2f8fb7cc5a3b6cab2bde9721d6e50"
-dependencies = [
- "rustls-pki-types",
-]
-
-[[package]]
 name = "rustls-pki-types"
 version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4593,9 +4657,9 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "signal-hook"
-version = "0.3.18"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d881a16cf4426aa584979d30bd82cb33429027e42122b169753d6ef1085ed6e2"
+checksum = "2a37d01603c37b5466f808de79f845c7116049b0579adb70a6b7d47c1fa3a952"
 dependencies = [
  "libc",
  "signal-hook-registry",
@@ -4868,14 +4932,15 @@ dependencies = [
 
 [[package]]
 name = "sysinfo"
-version = "0.33.1"
+version = "0.37.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fc858248ea01b66f19d8e8a6d55f41deaf91e9d495246fd01368d99935c6c01"
+checksum = "16607d5caffd1c07ce073528f9ed972d88db15dd44023fa57142963be3feb11f"
 dependencies = [
- "core-foundation-sys",
  "libc",
  "memchr",
  "ntapi",
+ "objc2-core-foundation",
+ "objc2-io-kit",
  "windows",
 ]
 
@@ -4973,29 +5038,29 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.44"
+version = "0.3.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91e7d9e3bb61134e77bde20dd4825b97c010155709965fedf0f49bb138e52a9d"
+checksum = "743bd48c283afc0388f9b8827b976905fb217ad9e647fae3a379a9283c4def2c"
 dependencies = [
  "deranged",
  "num-conv",
  "powerfmt",
- "serde",
+ "serde_core",
  "time-core",
  "time-macros",
 ]
 
 [[package]]
 name = "time-core"
-version = "0.1.6"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40868e7c1d2f0b8d73e4a8c7f0ff63af4f6d19be117e90bd73eb1d62cf831c6b"
+checksum = "7694e1cfe791f8d31026952abf09c69ca6f6fa4e1a1229e18988f06a04a12dca"
 
 [[package]]
 name = "time-macros"
-version = "0.2.24"
+version = "0.2.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30cfb0125f12d9c277f35663a0a33f8c30190f4e4574868a330595412d34ebf3"
+checksum = "2e70e4c5a0e0a8a4823ad65dfe1a6930e4f4d756dcd9dd7939022b5e8c501215"
 dependencies = [
  "num-conv",
  "time-core",
@@ -5555,24 +5620,37 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "windows"
-version = "0.57.0"
+version = "0.61.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12342cb4d8e3b046f3d80effd474a7a02447231330ef77d71daa6fbc40681143"
+checksum = "9babd3a767a4c1aef6900409f85f5d53ce2544ccdfaa86dad48c91782c6d6893"
 dependencies = [
- "windows-core 0.57.0",
- "windows-targets 0.52.6",
+ "windows-collections",
+ "windows-core 0.61.2",
+ "windows-future",
+ "windows-link 0.1.3",
+ "windows-numerics",
+]
+
+[[package]]
+name = "windows-collections"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3beeceb5e5cfd9eb1d76b381630e82c4241ccd0d27f1a39ed41b2760b255c5e8"
+dependencies = [
+ "windows-core 0.61.2",
 ]
 
 [[package]]
 name = "windows-core"
-version = "0.57.0"
+version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2ed2439a290666cd67ecce2b0ffaad89c2a56b976b736e6ece670297897832d"
+checksum = "c0fdd3ddb90610c7638aa2b3a3ab2904fb9e5cdbecc643ddb3647212781c4ae3"
 dependencies = [
- "windows-implement 0.57.0",
- "windows-interface 0.57.0",
- "windows-result 0.1.2",
- "windows-targets 0.52.6",
+ "windows-implement",
+ "windows-interface",
+ "windows-link 0.1.3",
+ "windows-result 0.3.4",
+ "windows-strings 0.4.2",
 ]
 
 [[package]]
@@ -5581,22 +5659,22 @@ version = "0.62.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8e83a14d34d0623b51dce9581199302a221863196a1dde71a7663a4c2be9deb"
 dependencies = [
- "windows-implement 0.60.2",
- "windows-interface 0.59.3",
- "windows-link",
+ "windows-implement",
+ "windows-interface",
+ "windows-link 0.2.1",
  "windows-result 0.4.1",
- "windows-strings",
+ "windows-strings 0.5.1",
 ]
 
 [[package]]
-name = "windows-implement"
-version = "0.57.0"
+name = "windows-future"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9107ddc059d5b6fbfbffdfa7a7fe3e22a226def0b2608f72e9d552763d3e1ad7"
+checksum = "fc6a41e98427b19fe4b73c550f060b59fa592d7d686537eebf9385621bfbad8e"
 dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.114",
+ "windows-core 0.61.2",
+ "windows-link 0.1.3",
+ "windows-threading",
 ]
 
 [[package]]
@@ -5604,17 +5682,6 @@ name = "windows-implement"
 version = "0.60.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "053e2e040ab57b9dc951b72c264860db7eb3b0200ba345b4e4c3b14f67855ddf"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.114",
-]
-
-[[package]]
-name = "windows-interface"
-version = "0.57.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29bee4b38ea3cde66011baa44dba677c432a78593e202392d1e9070cf2a7fca7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5634,17 +5701,33 @@ dependencies = [
 
 [[package]]
 name = "windows-link"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e6ad25900d524eaabdbbb96d20b4311e1e7ae1699af4fb28c17ae66c80d798a"
+
+[[package]]
+name = "windows-link"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
 
 [[package]]
-name = "windows-result"
-version = "0.1.2"
+name = "windows-numerics"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e383302e8ec8515204254685643de10811af0ed97ea37210dc26fb0032647f8"
+checksum = "9150af68066c4c5c07ddc0ce30421554771e528bde427614c61038bc2c92c2b1"
 dependencies = [
- "windows-targets 0.52.6",
+ "windows-core 0.61.2",
+ "windows-link 0.1.3",
+]
+
+[[package]]
+name = "windows-result"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56f42bd332cc6c8eac5af113fc0c1fd6a8fd2aa08a0119358686e5160d0586c6"
+dependencies = [
+ "windows-link 0.1.3",
 ]
 
 [[package]]
@@ -5653,7 +5736,16 @@ version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7781fa89eaf60850ac3d2da7af8e5242a5ea78d1a11c49bf2910bb5a73853eb5"
 dependencies = [
- "windows-link",
+ "windows-link 0.2.1",
+]
+
+[[package]]
+name = "windows-strings"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56e6c93f3a0c3b36176cb1327a4958a0353d5d166c2a35cb268ace15e91d3b57"
+dependencies = [
+ "windows-link 0.1.3",
 ]
 
 [[package]]
@@ -5662,7 +5754,7 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7837d08f69c77cf6b07689544538e017c1bfcf57e34b4c0ff58e6c2cd3b37091"
 dependencies = [
- "windows-link",
+ "windows-link 0.2.1",
 ]
 
 [[package]]
@@ -5698,7 +5790,7 @@ version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
- "windows-link",
+ "windows-link 0.2.1",
 ]
 
 [[package]]
@@ -5723,7 +5815,7 @@ version = "0.53.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4945f9f551b88e0d65f3db0bc25c33b8acea4d9e41163edf90dcd0b19f9069f3"
 dependencies = [
- "windows-link",
+ "windows-link 0.2.1",
  "windows_aarch64_gnullvm 0.53.1",
  "windows_aarch64_msvc 0.53.1",
  "windows_i686_gnu 0.53.1",
@@ -5732,6 +5824,15 @@ dependencies = [
  "windows_x86_64_gnu 0.53.1",
  "windows_x86_64_gnullvm 0.53.1",
  "windows_x86_64_msvc 0.53.1",
+]
+
+[[package]]
+name = "windows-threading"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b66463ad2e0ea3bbf808b7f1d371311c80e115c0b71d60efc142cafbcfb057a6"
+dependencies = [
+ "windows-link 0.1.3",
 ]
 
 [[package]]

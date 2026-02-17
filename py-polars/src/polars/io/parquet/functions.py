@@ -44,6 +44,7 @@ if TYPE_CHECKING:
         FileSource,
         ParallelStrategy,
         SchemaDict,
+        StorageOptionsDict,
     )
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.scan_options import ScanCastOptions
@@ -67,9 +68,9 @@ def read_parquet(
     try_parse_hive_dates: bool = True,
     rechunk: bool = False,
     low_memory: bool = False,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    retries: int = 2,
+    retries: int | None = None,
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
     memory_map: bool = True,
@@ -166,6 +167,9 @@ def read_parquet(
             at any point without it being considered a breaking change.
     retries
         Number of retries if accessing a cloud instance fails.
+
+        .. deprecated:: 1.37.1
+            Pass {"max_retries": n} via `storage_options` instead.
     use_pyarrow
         Use PyArrow instead of the Rust-native Parquet reader. The PyArrow reader is
         more stable.
@@ -300,7 +304,7 @@ def _read_parquet_with_pyarrow(
     | list[bytes],
     *,
     columns: list[int] | list[str] | None = None,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     pyarrow_options: dict[str, Any] | None = None,
     memory_map: bool = True,
     rechunk: bool = True,
@@ -373,9 +377,9 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
 
 def read_parquet_metadata(
     source: str | Path | IO[bytes] | bytes,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    retries: int = 2,
+    retries: int | None = None,
 ) -> dict[str, str]:
     """
     Get file-level custom metadata of a Parquet file without reading data.
@@ -416,6 +420,9 @@ def read_parquet_metadata(
     retries
         Number of retries if accessing a cloud instance fails.
 
+        .. deprecated:: 1.37.1
+            Pass {"max_retries": n} via `storage_options` instead.
+
     Returns
     -------
     dict
@@ -424,6 +431,12 @@ def read_parquet_metadata(
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
 
+    if retries is not None:
+        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
+        issue_deprecation_warning(msg)
+        storage_options = storage_options or {}
+        storage_options["max_retries"] = retries
+
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "scan_parquet"
     )
@@ -431,11 +444,8 @@ def read_parquet_metadata(
 
     return _read_parquet_metadata(
         source,
-        storage_options=(
-            list(storage_options.items()) if storage_options is not None else None
-        ),
+        storage_options=storage_options,
         credential_provider=credential_provider_builder,
-        retries=retries,
     )
 
 
@@ -458,9 +468,9 @@ def scan_parquet(
     rechunk: bool = False,
     low_memory: bool = False,
     cache: bool = True,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    retries: int = 2,
+    retries: int | None = None,
     include_file_paths: str | None = None,
     missing_columns: Literal["insert", "raise"] = "raise",
     allow_missing_columns: bool | None = None,
@@ -579,6 +589,9 @@ def scan_parquet(
             at any point without it being considered a breaking change.
     retries
         Number of retries if accessing a cloud instance fails.
+
+        .. deprecated:: 1.37.1
+            Pass {"max_retries": n} via `storage_options` instead.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     missing_columns
@@ -661,6 +674,12 @@ def scan_parquet(
 
         missing_columns = "insert" if allow_missing_columns else "raise"
 
+    if retries is not None:
+        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
+        issue_deprecation_warning(msg)
+        storage_options = storage_options or {}
+        storage_options["max_retries"] = retries
+
     sources = get_sources(source)
 
     credential_provider_builder = _init_credential_provider_builder(
@@ -697,11 +716,8 @@ def scan_parquet(
             try_parse_hive_dates=try_parse_hive_dates,
             rechunk=rechunk,
             cache=cache,
-            storage_options=(
-                list(storage_options.items()) if storage_options is not None else None
-            ),
+            storage_options=storage_options,
             credential_provider=credential_provider_builder,
-            retries=retries,
             column_mapping=_column_mapping,
             default_values=_default_values,
             deletion_files=_deletion_files,

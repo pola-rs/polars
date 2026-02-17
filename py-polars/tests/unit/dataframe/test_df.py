@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 
     from polars import Expr
     from polars._typing import JoinStrategy, UniqueKeepStrategy
+    from tests.conftest import PlMonkeyPatch
 
 
 class MappingObject(Mapping[str, Any]):  # noqa: D101
@@ -174,7 +175,7 @@ def test_mixed_sequence_selection() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_from_arrow(monkeypatch: Any) -> None:
+def test_from_arrow(plmonkeypatch: PlMonkeyPatch) -> None:
     tbl = pa.table(
         {
             "a": pa.array([1, 2], pa.timestamp("s")),
@@ -2928,15 +2929,19 @@ def test_init_vs_strptime_consistency(
 def test_init_vs_strptime_consistency_converts() -> None:
     result = pl.Series(
         [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=-8)))],
-        dtype=pl.Datetime("us", "US/Pacific"),
+        dtype=pl.Datetime("us", "America/Los_Angeles"),
     ).item()
-    assert result == datetime(2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="US/Pacific"))
+    assert result == datetime(
+        2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="America/Los_Angeles")
+    )
     result = (
         pl.Series(["2020-01-01 00:00-08:00"])
-        .str.strptime(pl.Datetime("us", "US/Pacific"))
+        .str.strptime(pl.Datetime("us", "America/Los_Angeles"))
         .item()
     )
-    assert result == datetime(2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="US/Pacific"))
+    assert result == datetime(
+        2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="America/Los_Angeles")
+    )
 
 
 def test_init_physical_with_timezone() -> None:

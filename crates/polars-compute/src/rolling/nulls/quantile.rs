@@ -9,7 +9,6 @@ pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
 }
 
 impl<
-    'a,
     T: NativeType
         + IsFloat
         + Float
@@ -23,30 +22,37 @@ impl<
         + SealedRolling
         + PartialOrd
         + Sub<Output = T>,
-> RollingAggWindowNulls<'a, T> for QuantileWindow<'a, T>
+> RollingAggWindowNulls<T> for QuantileWindow<'_, T>
 {
-    fn new(
+    type This<'a> = QuantileWindow<'a, T>;
+
+    fn new<'a>(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
-    ) -> Self {
+    ) -> Self::This<'a> {
         let params = params.unwrap();
         let RollingFnParams::Quantile(params) = params else {
             unreachable!("expected Quantile params");
         };
-        Self {
+        QuantileWindow {
             sorted: SortedBufNulls::new(slice, validity, start, end, window_size),
             prob: params.prob,
             method: params.method,
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        let null_count = self.sorted.update(start, end);
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        self.sorted.update(new_start, new_end);
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<T> {
         let mut length = self.sorted.len();
+        let null_count = self.sorted.null_count;
+
         // The min periods_issue will be taken care of when actually rolling
         if null_count == length {
             return None;
@@ -101,6 +107,10 @@ impl<
 
     fn is_valid(&self, min_periods: usize) -> bool {
         self.sorted.is_valid(min_periods)
+    }
+
+    fn slice_len(&self) -> usize {
+        self.sorted.slice_len()
     }
 }
 
@@ -166,8 +176,8 @@ where
 
 #[cfg(test)]
 mod test {
-    use arrow::buffer::Buffer;
     use arrow::datatypes::ArrowDataType;
+    use polars_buffer::Buffer;
 
     use super::*;
 

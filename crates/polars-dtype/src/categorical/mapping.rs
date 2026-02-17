@@ -6,28 +6,28 @@ use arrow::array::builder::StaticArrayBuilder;
 use arrow::array::{Array, MutableUtf8Array, Utf8Array, Utf8ViewArrayBuilder};
 use arrow::datatypes::ArrowDataType;
 use polars_error::{PolarsResult, polars_bail};
-use polars_utils::aliases::PlSeedableRandomStateQuality;
+use polars_utils::aliases::{PlFixedStateQuality, PlSeedableRandomStateQuality};
 use polars_utils::parma::raw::RawTable;
 
 use super::CatSize;
 
 pub struct CategoricalMapping {
     str_to_cat: RawTable<str, CatSize>,
-    cat_to_str: boxcar::Vec<&'static str>,
+    cat_to_str_and_hash: boxcar::Vec<(&'static str, u64)>,
     max_categories: usize,
     upper_bound: AtomicUsize,
     hasher: PlSeedableRandomStateQuality,
 }
 
 impl CategoricalMapping {
-    pub fn new(max_categories: usize) -> Self {
+    pub(crate) fn new(max_categories: usize) -> Self {
         Self::with_hasher(max_categories, PlSeedableRandomStateQuality::default())
     }
 
     pub fn with_hasher(max_categories: usize, hasher: PlSeedableRandomStateQuality) -> Self {
         Self {
             str_to_cat: RawTable::default(),
-            cat_to_str: boxcar::Vec::default(),
+            cat_to_str_and_hash: boxcar::Vec::default(),
             max_categories,
             upper_bound: AtomicUsize::new(0),
             hasher,
@@ -82,9 +82,10 @@ impl CategoricalMapping {
                         self.upper_bound.fetch_sub(1, Ordering::Relaxed);
                         polars_bail!(ComputeError: "attempted to insert more categories than the maximum allowed");
                     }
+                    let hash = PlFixedStateQuality::default().hash_one(k);
                     let idx = self
-                        .cat_to_str
-                        .push(unsafe { core::mem::transmute::<&str, &'static str>(k) });
+                        .cat_to_str_and_hash
+                        .push((unsafe { core::mem::transmute::<&str, &'static str>(k) }, hash));
                     Ok(idx as CatSize)
                 },
             )
@@ -95,7 +96,7 @@ impl CategoricalMapping {
     /// None if the string is not in the data structure.
     #[inline(always)]
     pub fn cat_to_str(&self, cat: CatSize) -> Option<&str> {
-        self.cat_to_str.get(cat as usize).copied()
+        self.cat_to_str_and_hash.get(cat as usize).map(|o| o.0)
     }
 
     /// Get the string corresponding to a categorical id.
@@ -105,7 +106,24 @@ impl CategoricalMapping {
     /// have synchronized with the call which inserted it.
     #[inline(always)]
     pub unsafe fn cat_to_str_unchecked(&self, cat: CatSize) -> &str {
-        unsafe { self.cat_to_str.get_unchecked(cat as usize) }
+        unsafe { self.cat_to_str_and_hash.get_unchecked(cat as usize).0 }
+    }
+
+    /// Try to convert a categorical id to the hash of its corresponding string,
+    /// returning None if the string is not in the data structure.
+    #[inline(always)]
+    pub fn cat_to_hash(&self, cat: CatSize) -> Option<u64> {
+        self.cat_to_str_and_hash.get(cat as usize).map(|o| o.1)
+    }
+
+    /// Get the hash of the string corresponding to a categorical id.
+    ///
+    /// # Safety
+    /// The categorical id must have been returned from `to_cat`, and you must
+    /// have synchronized with the call which inserted it.
+    #[inline(always)]
+    pub unsafe fn cat_to_hash_unchecked(&self, cat: CatSize) -> u64 {
+        unsafe { self.cat_to_str_and_hash.get_unchecked(cat as usize).1 }
     }
 
     /// Returns an upper bound such that all strings inserted into the CategoricalMapping

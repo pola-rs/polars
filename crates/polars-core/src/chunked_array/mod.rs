@@ -22,6 +22,7 @@ pub mod iterator;
 #[cfg(feature = "ndarray")]
 pub(crate) mod ndarray;
 
+pub mod arg_min_max;
 #[cfg(feature = "dtype-array")]
 pub(crate) mod array;
 mod binary;
@@ -48,7 +49,7 @@ mod struct_;
 pub mod temporal;
 mod to_vec;
 mod trusted_len;
-
+pub(crate) use arg_min_max::*;
 use arrow::legacy::prelude::*;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::StructChunked;
@@ -56,9 +57,6 @@ pub use struct_::StructChunked;
 use self::flags::{StatisticsFlags, StatisticsFlagsIM};
 use crate::series::IsSorted;
 use crate::utils::{first_non_null, first_null, last_non_null};
-
-#[cfg(not(feature = "dtype-categorical"))]
-pub struct RevMapping {}
 
 pub type ChunkLenIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&ArrayRef) -> usize>;
 

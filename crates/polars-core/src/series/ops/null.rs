@@ -1,6 +1,6 @@
 use arrow::bitmap::Bitmap;
-use arrow::buffer::Buffer;
 use arrow::offset::OffsetsBuffer;
+use polars_buffer::Buffer;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_builder;

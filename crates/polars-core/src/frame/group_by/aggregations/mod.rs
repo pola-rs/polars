@@ -18,9 +18,10 @@ use polars_compute::rolling::no_nulls::{
 use polars_compute::rolling::nulls::{RollingAggWindowNulls, VarianceMoment};
 use polars_compute::rolling::quantile_filter::SealedRolling;
 use polars_compute::rolling::{
-    self, MeanWindow, QuantileMethod, RollingFnParams, RollingQuantileParams, RollingVarParams,
-    SumWindow, quantile_filter,
+    self, ArgMaxWindow, ArgMinWindow, MeanWindow, QuantileMethod, RollingFnParams,
+    RollingQuantileParams, RollingVarParams, SumWindow, quantile_filter,
 };
+use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::float::IsFloat;
 #[cfg(feature = "dtype-f16")]
 use polars_utils::float16::pf16;
@@ -33,7 +34,7 @@ use crate::POOL;
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
-use crate::frame::group_by::GroupsIdx;
+use crate::chunked_array::{arg_max_numeric, arg_min_numeric};
 #[cfg(feature = "object")]
 use crate::frame::group_by::GroupsIndicator;
 use crate::prelude::*;
@@ -64,20 +65,21 @@ pub fn _use_rolling_kernels(
 }
 
 // Use an aggregation window that maintains the state
-pub fn _rolling_apply_agg_window_nulls<'a, Agg, T, O>(
-    values: &'a [T],
-    validity: &'a Bitmap,
+pub fn _rolling_apply_agg_window_nulls<Agg, T, O, Out>(
+    values: &[T],
+    validity: &Bitmap,
     offsets: O,
     params: Option<RollingFnParams>,
-) -> PrimitiveArray<T>
+) -> PrimitiveArray<Out>
 where
     O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
-    Agg: RollingAggWindowNulls<'a, T>,
+    Agg: RollingAggWindowNulls<T, Out>,
     T: IsFloat + NativeType,
+    Out: NativeType,
 {
     if values.is_empty() {
-        let out: Vec<T> = vec![];
-        return PrimitiveArray::new(T::PRIMITIVE.into(), out.into(), None);
+        let out: Vec<Out> = vec![];
+        return PrimitiveArray::new(Out::PRIMITIVE.into(), out.into(), None);
     }
 
     // This iterators length can be trusted
@@ -96,49 +98,51 @@ where
 
             // SAFETY:
             // we are in bounds
-            let agg = unsafe { agg_window.update(start as usize, end as usize) };
-
-            match agg {
+            unsafe { agg_window.update(start as usize, end as usize) };
+            match agg_window.get_agg(idx) {
                 Some(val) => val,
                 None => {
                     // SAFETY: we are in bounds
                     unsafe { validity.set_unchecked(idx, false) };
-                    T::default()
+                    Out::default()
                 },
             }
         })
         .collect_trusted::<Vec<_>>();
 
-    PrimitiveArray::new(T::PRIMITIVE.into(), out.into(), Some(validity.into()))
+    PrimitiveArray::new(Out::PRIMITIVE.into(), out.into(), Some(validity.into()))
 }
 
 // Use an aggregation window that maintains the state.
-pub fn _rolling_apply_agg_window_no_nulls<'a, Agg, T, O>(
-    values: &'a [T],
+pub fn _rolling_apply_agg_window_no_nulls<Agg, T, O, Out>(
+    values: &[T],
     offsets: O,
     params: Option<RollingFnParams>,
-) -> PrimitiveArray<T>
+) -> PrimitiveArray<Out>
 where
     // items (offset, len) -> so offsets are offset, offset + len
-    Agg: RollingAggWindowNoNulls<'a, T>,
+    Agg: RollingAggWindowNoNulls<T, Out>,
     O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
     T: IsFloat + NativeType,
+    Out: NativeType,
 {
     if values.is_empty() {
-        let out: Vec<T> = vec![];
-        return PrimitiveArray::new(T::PRIMITIVE.into(), out.into(), None);
+        let out: Vec<Out> = vec![];
+        return PrimitiveArray::new(Out::PRIMITIVE.into(), out.into(), None);
     }
     // start with a dummy index, will be overwritten on first iteration.
     let mut agg_window = Agg::new(values, 0, 0, params, None);
 
     offsets
-        .map(|(start, len)| {
+        .enumerate()
+        .map(|(idx, (start, len))| {
             let end = start + len;
 
             // SAFETY: we are in bounds.
-            unsafe { agg_window.update(start as usize, end as usize) }
+            unsafe { agg_window.update(start as usize, end as usize) };
+            agg_window.get_agg(idx)
         })
-        .collect::<PrimitiveArray<T>>()
+        .collect::<PrimitiveArray<Out>>()
 }
 
 pub fn _slice_from_offsets<T>(ca: &ChunkedArray<T>, first: IdxSize, len: IdxSize) -> ChunkedArray<T>
@@ -290,7 +294,7 @@ where
                 let values = arr.values().as_slice();
                 let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                 let arr = match arr.validity() {
-                    None => _rolling_apply_agg_window_no_nulls::<QuantileWindow<_>, _, _>(
+                    None => _rolling_apply_agg_window_no_nulls::<QuantileWindow<_>, _, _, _>(
                         values,
                         offset_iter,
                         Some(RollingFnParams::Quantile(RollingQuantileParams {
@@ -299,7 +303,7 @@ where
                         })),
                     ),
                     Some(validity) => {
-                        _rolling_apply_agg_window_nulls::<rolling::nulls::QuantileWindow<_>, _, _>(
+                        _rolling_apply_agg_window_nulls::<rolling::nulls::QuantileWindow<_>, _, _, _>(
                             values,
                             validity,
                             offset_iter,
@@ -437,11 +441,18 @@ where
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
-        match self.is_sorted_flag() {
-            IsSorted::Ascending => return self.clone().into_series().agg_first_non_null(groups),
-            IsSorted::Descending => return self.clone().into_series().agg_last_non_null(groups),
-            _ => {},
+        if groups.is_sorted_flag() {
+            match self.is_sorted_flag() {
+                IsSorted::Ascending => {
+                    return self.clone().into_series().agg_first_non_null(groups);
+                },
+                IsSorted::Descending => {
+                    return self.clone().into_series().agg_last_non_null(groups);
+                },
+                _ => {},
+            }
         }
+
         match groups {
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
@@ -472,18 +483,19 @@ where
                     let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _>(
+                        None => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _, _>(
                             values,
                             offset_iter,
                             None,
                         ),
-                        Some(validity) => _rolling_apply_agg_window_nulls::<
-                            rolling::nulls::MinWindow<_>,
-                            _,
-                            _,
-                        >(
-                            values, validity, offset_iter, None
-                        ),
+                        Some(validity) => {
+                            _rolling_apply_agg_window_nulls::<rolling::nulls::MinWindow<_>, _, _, _>(
+                                values,
+                                validity,
+                                offset_iter,
+                                None,
+                            )
+                        },
                     };
                     Self::from(arr).into_series()
                 } else {
@@ -503,16 +515,123 @@ where
         }
     }
 
+    pub(crate) unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series
+    where
+        for<'b> &'b [T::Native]: ArgMinMax,
+    {
+        if groups.is_sorted_flag() {
+            match self.is_sorted_flag() {
+                IsSorted::Ascending => {
+                    return self.clone().into_series().agg_arg_first_non_null(groups);
+                },
+                IsSorted::Descending => {
+                    return self.clone().into_series().agg_arg_last_non_null(groups);
+                },
+                _ => {},
+            }
+        }
+
+        match groups {
+            GroupsType::Idx(groups) => {
+                let ca = self.rechunk();
+                let arr = ca.downcast_iter().next().unwrap();
+                let no_nulls = !arr.has_nulls();
+
+                agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
+                    if idx.is_empty() {
+                        return None;
+                    }
+
+                    if no_nulls {
+                        let first_i = idx[0] as usize;
+                        let mut best_pos: IdxSize = 0;
+                        let mut best_val: T::Native = unsafe { arr.value_unchecked(first_i) };
+
+                        for (pos, &i) in idx.iter().enumerate().skip(1) {
+                            let v = unsafe { arr.value_unchecked(i as usize) };
+                            if v.nan_max_lt(&best_val) {
+                                best_val = v;
+                                best_pos = pos as IdxSize;
+                            }
+                        }
+                        Some(best_pos)
+                    } else {
+                        let (start_pos, mut best_val) = idx
+                            .iter()
+                            .enumerate()
+                            .find_map(|(pos, &i)| arr.get(i as usize).map(|v| (pos, v)))?;
+
+                        let mut best_pos: IdxSize = start_pos as IdxSize;
+
+                        for (pos, &i) in idx.iter().enumerate().skip(start_pos + 1) {
+                            if let Some(v) = arr.get(i as usize) {
+                                if v.nan_max_lt(&best_val) {
+                                    best_val = v;
+                                    best_pos = pos as IdxSize;
+                                }
+                            }
+                        }
+
+                        Some(best_pos)
+                    }
+                })
+            },
+            GroupsType::Slice {
+                groups: groups_slice,
+                overlapping,
+                monotonic,
+            } => {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
+                    let arr = self.downcast_as_array();
+                    let values = arr.values().as_slice();
+                    let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
+                    let idx_arr = match arr.validity() {
+                        None => {
+                            _rolling_apply_agg_window_no_nulls::<ArgMinWindow<_>, _, _, IdxSize>(
+                                values,
+                                offset_iter,
+                                None,
+                            )
+                        },
+                        Some(validity) => {
+                            _rolling_apply_agg_window_nulls::<ArgMinWindow<_>, _, _, IdxSize>(
+                                values,
+                                validity,
+                                offset_iter,
+                                None,
+                            )
+                        },
+                    };
+
+                    IdxCa::from(idx_arr).into_series()
+                } else {
+                    _agg_helper_slice::<IdxType, _>(groups_slice, |[first, len]| {
+                        debug_assert!(len <= self.len() as IdxSize);
+                        match len {
+                            0 => None,
+                            1 => Some(0 as IdxSize),
+                            _ => {
+                                let group_ca = _slice_from_offsets(self, first, len);
+                                let pos_in_group: Option<usize> = arg_min_numeric(&group_ca);
+                                pos_in_group.map(|p| p as IdxSize)
+                            },
+                        }
+                    })
+                }
+            },
+        }
+    }
+
     pub(crate) unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         // faster paths
-        match (self.is_sorted_flag(), self.null_count()) {
-            (IsSorted::Ascending, 0) => {
-                return self.clone().into_series().agg_last(groups);
-            },
-            (IsSorted::Descending, 0) => {
-                return self.clone().into_series().agg_first(groups);
-            },
-            _ => {},
+        if groups.is_sorted_flag() {
+            match self.is_sorted_flag() {
+                IsSorted::Ascending => return self.clone().into_series().agg_last_non_null(groups),
+                IsSorted::Descending => {
+                    return self.clone().into_series().agg_first_non_null(groups);
+                },
+                _ => {},
+            }
         }
 
         match groups {
@@ -545,18 +664,19 @@ where
                     let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _>(
+                        None => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _, _>(
                             values,
                             offset_iter,
                             None,
                         ),
-                        Some(validity) => _rolling_apply_agg_window_nulls::<
-                            rolling::nulls::MaxWindow<_>,
-                            _,
-                            _,
-                        >(
-                            values, validity, offset_iter, None
-                        ),
+                        Some(validity) => {
+                            _rolling_apply_agg_window_nulls::<rolling::nulls::MaxWindow<_>, _, _, _>(
+                                values,
+                                validity,
+                                offset_iter,
+                                None,
+                            )
+                        },
                     };
                     Self::from(arr).into_series()
                 } else {
@@ -576,6 +696,113 @@ where
         }
     }
 
+    pub(crate) unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series
+    where
+        for<'b> &'b [T::Native]: ArgMinMax,
+    {
+        if groups.is_sorted_flag() {
+            match self.is_sorted_flag() {
+                IsSorted::Ascending => {
+                    return self.clone().into_series().agg_arg_last_non_null(groups);
+                },
+                IsSorted::Descending => {
+                    return self.clone().into_series().agg_arg_first_non_null(groups);
+                },
+                _ => {},
+            }
+        }
+        match groups {
+            GroupsType::Idx(groups) => {
+                let ca = self.rechunk();
+                let arr = ca.downcast_as_array();
+                let no_nulls = arr.null_count() == 0;
+
+                agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
+                    if idx.is_empty() {
+                        return None;
+                    }
+
+                    if no_nulls {
+                        let first_i = idx[0] as usize;
+                        let mut best_pos: IdxSize = 0;
+                        let mut best_val: T::Native = unsafe { arr.value_unchecked(first_i) };
+
+                        for (pos, &i) in idx.iter().enumerate().skip(1) {
+                            let v = unsafe { arr.value_unchecked(i as usize) };
+
+                            if v.nan_min_gt(&best_val) {
+                                best_val = v;
+                                best_pos = pos as IdxSize;
+                            }
+                        }
+
+                        Some(best_pos)
+                    } else {
+                        let (start_pos, mut best_val) = idx
+                            .iter()
+                            .enumerate()
+                            .find_map(|(pos, &i)| arr.get(i as usize).map(|v| (pos, v)))?;
+
+                        let mut best_pos: IdxSize = start_pos as IdxSize;
+
+                        for (pos, &i) in idx.iter().enumerate().skip(start_pos + 1) {
+                            if let Some(v) = arr.get(i as usize) {
+                                if v.nan_min_gt(&best_val) {
+                                    best_val = v;
+                                    best_pos = pos as IdxSize;
+                                }
+                            }
+                        }
+
+                        Some(best_pos)
+                    }
+                })
+            },
+
+            GroupsType::Slice {
+                groups: groups_slice,
+                overlapping,
+                monotonic,
+            } => {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
+                    let arr = self.downcast_iter().next().unwrap();
+                    let values = arr.values().as_slice();
+                    let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
+                    let idx_arr = match arr.validity() {
+                        None => {
+                            _rolling_apply_agg_window_no_nulls::<ArgMaxWindow<_>, _, _, IdxSize>(
+                                values,
+                                offset_iter,
+                                None,
+                            )
+                        },
+                        Some(validity) => {
+                            _rolling_apply_agg_window_nulls::<ArgMaxWindow<_>, _, _, IdxSize>(
+                                values,
+                                validity,
+                                offset_iter,
+                                None,
+                            )
+                        },
+                    };
+                    IdxCa::from(idx_arr).into_series()
+                } else {
+                    _agg_helper_slice::<IdxType, _>(groups_slice, |[first, len]| {
+                        debug_assert!(len <= self.len() as IdxSize);
+                        match len {
+                            0 => None,
+                            1 => Some(0 as IdxSize),
+                            _ => {
+                                let group_ca = _slice_from_offsets(self, first, len);
+                                let pos_in_group: Option<usize> = arg_max_numeric(&group_ca);
+                                pos_in_group.map(|p| p as IdxSize)
+                            },
+                        }
+                    })
+                }
+            },
+        }
+    }
     pub(crate) unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
         match groups {
             GroupsType::Idx(groups) => {
@@ -621,14 +848,16 @@ where
                             SumWindow<T::Native, T::Native>,
                             _,
                             _,
+                            _,
                         >(values, offset_iter, None),
-                        Some(validity) => _rolling_apply_agg_window_nulls::<
-                            SumWindow<T::Native, T::Native>,
-                            _,
-                            _,
-                        >(
-                            values, validity, offset_iter, None
-                        ),
+                        Some(validity) => {
+                            _rolling_apply_agg_window_nulls::<
+                                SumWindow<T::Native, T::Native>,
+                                _,
+                                _,
+                                _,
+                            >(values, validity, offset_iter, None)
+                        },
                     };
                     Self::from(arr).into_series()
                 } else {
@@ -708,17 +937,19 @@ where
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<MeanWindow<_>, _, _>(
+                        None => _rolling_apply_agg_window_no_nulls::<MeanWindow<_>, _, _, _>(
                             values,
                             offset_iter,
                             None,
                         ),
-                        Some(validity) => _rolling_apply_agg_window_nulls::<MeanWindow<_>, _, _>(
-                            values,
-                            validity,
-                            offset_iter,
-                            None,
-                        ),
+                        Some(validity) => {
+                            _rolling_apply_agg_window_nulls::<MeanWindow<_>, _, _, _>(
+                                values,
+                                validity,
+                                offset_iter,
+                                None,
+                            )
+                        },
                     };
                     ChunkedArray::<T>::from(arr).into_series()
                 } else {
@@ -775,6 +1006,7 @@ where
                             MomentWindow<_, VarianceMoment>,
                             _,
                             _,
+                            _,
                         >(
                             values,
                             offset_iter,
@@ -782,6 +1014,7 @@ where
                         ),
                         Some(validity) => _rolling_apply_agg_window_nulls::<
                             rolling::nulls::MomentWindow<_, VarianceMoment>,
+                            _,
                             _,
                             _,
                         >(
@@ -850,6 +1083,7 @@ where
                             MomentWindow<_, VarianceMoment>,
                             _,
                             _,
+                            _,
                         >(
                             values,
                             offset_iter,
@@ -857,6 +1091,7 @@ where
                         ),
                         Some(validity) => _rolling_apply_agg_window_nulls::<
                             rolling::nulls::MomentWindow<_, rolling::nulls::VarianceMoment>,
+                            _,
                             _,
                             _,
                         >(

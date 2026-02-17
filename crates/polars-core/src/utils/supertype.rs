@@ -33,6 +33,7 @@ pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Opti
     } else if l.is_float() && r.is_float() {
         match (l, r) {
             (Float64, _) | (_, Float64) => Some(Float64),
+            (Float32, _) | (_, Float32) => Some(Float32),
             v => {
                 // Did we add a new float type?
                 if cfg!(debug_assertions) {

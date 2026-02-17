@@ -443,32 +443,6 @@ fn expand_expression_rec(
                         })
                     },
                 )?,
-                AggExpr::MinBy { input, by } => expand_expression_by_combination(
-                    &[input.as_ref().clone(), by.as_ref().clone()],
-                    ignored_selector_columns,
-                    schema,
-                    out,
-                    opt_flags,
-                    |e| {
-                        Expr::Agg(AggExpr::MinBy {
-                            input: Arc::new(e[0].clone()),
-                            by: Arc::new(e[1].clone()),
-                        })
-                    },
-                )?,
-                AggExpr::MaxBy { input, by } => expand_expression_by_combination(
-                    &[input.as_ref().clone(), by.as_ref().clone()],
-                    ignored_selector_columns,
-                    schema,
-                    out,
-                    opt_flags,
-                    |e| {
-                        Expr::Agg(AggExpr::MaxBy {
-                            input: Arc::new(e[0].clone()),
-                            by: Arc::new(e[1].clone()),
-                        })
-                    },
-                )?,
                 AggExpr::Median(expr) => expand_single(
                     expr.as_ref(),
                     ignored_selector_columns,
@@ -983,6 +957,13 @@ fn expand_expression_rec(
 
         // SQL only
         Expr::SubPlan(_, _) => unreachable!(),
+        // Should never go from IR -> DSL -> IR
+        Expr::Display {
+            inputs: _,
+            fmt_str: _,
+        } => {
+            unreachable!()
+        },
     };
     Ok(out.len() - start_len)
 }

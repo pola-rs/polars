@@ -7,9 +7,12 @@ import pytest
 
 import polars as pl
 from polars.testing.asserts.frame import assert_frame_equal
+from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from tests.conftest import PlMonkeyPatch
 
 READ_WRITE_FUNC_PARAM = [
     (pl.read_parquet, pl.DataFrame.write_parquet),
@@ -44,7 +47,7 @@ def test_write_async(
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     path = (tmp_path / "1").absolute()
-    path = f"file://{path}"  # type: ignore[assignment]
+    path = format_file_uri(path)  # type: ignore[assignment]
 
     df = pl.DataFrame({"x": 1})
 
@@ -64,16 +67,15 @@ def test_write_async_force_async(
     write_func: Callable[[pl.DataFrame, Path], None],
     opt_absolute_fn: Callable[[Path], Path],
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     tmp_path.mkdir(exist_ok=True)
     path = opt_absolute_fn(tmp_path / "1")
 
     df = pl.DataFrame({"x": 1})
 
     write_func(df, path)
-
     assert_frame_equal(read_func(path), df)
 
 

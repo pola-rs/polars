@@ -4,6 +4,7 @@ use std::sync::Arc;
 use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
 use polars_parquet::read;
+use polars_utils::pl_str::PlRefStr;
 
 use super::read_impl::read_parquet;
 use super::utils::{ensure_matching_dtypes_if_found, projected_arrow_schema_to_projection_indices};
@@ -26,7 +27,7 @@ pub struct ParquetReader<R: Read + Seek> {
     low_memory: bool,
     metadata: Option<FileMetadataRef>,
     hive_partition_columns: Option<Vec<Series>>,
-    include_file_path: Option<(PlSmallStr, Arc<str>)>,
+    include_file_path: Option<(PlSmallStr, PlRefStr)>,
 }
 
 impl<R: MmapBytesReader> ParquetReader<R> {
@@ -157,7 +158,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
 
     pub fn with_include_file_path(
         mut self,
-        include_file_path: Option<(PlSmallStr, Arc<str>)>,
+        include_file_path: Option<(PlSmallStr, PlRefStr)>,
     ) -> Self {
         self.include_file_path = include_file_path;
         self
@@ -229,7 +230,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
                     col.clone(),
                     Scalar::new(
                         DataType::String,
-                        AnyValue::StringOwned(value.as_ref().into()),
+                        AnyValue::StringOwned(value.as_str().into()),
                     ),
                     if df.width() > 0 { df.height() } else { n_rows },
                 ))

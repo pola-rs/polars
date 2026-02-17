@@ -15,36 +15,44 @@ pub use sum::*;
 
 use super::*;
 
-pub trait RollingAggWindowNulls<'a, T: NativeType, Out: NativeType = T> {
+pub trait RollingAggWindowNulls<T: NativeType, Out: NativeType = T> {
+    type This<'a>: RollingAggWindowNulls<T, Out>;
+
     /// # Safety
     /// `start` and `end` must be in bounds for `slice` and `validity`
-    fn new(
+    fn new<'a>(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
-    ) -> Self;
+    ) -> Self::This<'a>;
 
     /// # Safety
     /// `start` and `end` must be in bounds of `slice` and `bitmap`
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<Out>;
+    unsafe fn update(&mut self, new_start: usize, new_end: usize);
+
+    /// Get the aggregate of the current window relative to the value at `idx`.
+    fn get_agg(&self, idx: usize) -> Option<Out>;
+
+    /// Returns the length of the underlying input.
+    fn slice_len(&self) -> usize;
 
     fn is_valid(&self, min_periods: usize) -> bool;
 }
 
 // Use an aggregation window that maintains the state
-pub(super) fn rolling_apply_agg_window<'a, Agg, T, Out, Fo>(
-    values: &'a [T],
-    validity: &'a Bitmap,
+pub(super) fn rolling_apply_agg_window<Agg, T, Out, Fo>(
+    values: &[T],
+    validity: &Bitmap,
     window_size: usize,
     min_periods: usize,
     det_offsets_fn: Fo,
     params: Option<RollingFnParams>,
 ) -> ArrayRef
 where
-    Agg: RollingAggWindowNulls<'a, T, Out>,
+    Agg: RollingAggWindowNulls<T, Out>,
     T: NativeType,
     Out: NativeType,
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End) + Copy,
@@ -65,8 +73,8 @@ where
             let (start, end) = det_offsets_fn(idx, window_size, len);
             // SAFETY:
             // we are in bounds
-            let agg = unsafe { agg_window.update(start, end) };
-            match agg {
+            unsafe { agg_window.update(start, end) };
+            match agg_window.get_agg(idx) {
                 Some(val) => {
                     if agg_window.is_valid(min_periods) {
                         val
@@ -95,8 +103,8 @@ where
 #[cfg(test)]
 mod test {
     use arrow::array::{Array, Int32Array};
-    use arrow::buffer::Buffer;
     use arrow::datatypes::ArrowDataType;
+    use polars_buffer::Buffer;
     use polars_utils::min_max::MaxIgnoreNan;
 
     use super::*;

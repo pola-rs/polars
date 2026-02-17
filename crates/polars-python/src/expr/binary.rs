@@ -81,4 +81,12 @@ impl PyExpr {
     fn bin_tail(&self, n: PyExpr) -> Self {
         self.inner.clone().binary().tail(n.inner).into()
     }
+
+    fn bin_get(&self, index: PyExpr, null_on_oob: bool) -> Self {
+        self.inner
+            .clone()
+            .binary()
+            .get(index.inner, null_on_oob)
+            .into()
+    }
 }

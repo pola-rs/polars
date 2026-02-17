@@ -63,7 +63,7 @@ impl<'a> AnonymousListBuilder<'a> {
             (DataType::Null, _) => {},
             (dt, None) => self.inner_dtype = Some(dt.clone()),
             (dt, Some(set_dt)) => {
-                polars_bail!(ComputeError: "dtypes don't match, got {dt}, expected: {set_dt}")
+                polars_bail!(ComputeError: "dtypes don't match, got {}, expected: {}", dt.pretty_format(), set_dt.pretty_format());
             },
         }
         if s.is_empty() {
@@ -125,7 +125,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
             (DataType::Null, _) => {},
             (dt, None) => self.inner_dtype = Some(dt.clone()),
             (dt, Some(set_dt)) => {
-                polars_ensure!(dt == set_dt, ComputeError: "dtypes don't match, got {dt}, expected: {set_dt}")
+                polars_ensure!(dt == set_dt, ComputeError: "dtypes don't match, got {}, expected: {}", dt.pretty_format(), set_dt.pretty_format());
             },
         }
         if s.is_empty() {

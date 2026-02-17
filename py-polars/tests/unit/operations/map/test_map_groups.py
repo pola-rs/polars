@@ -72,6 +72,17 @@ def test_map_groups_empty() -> None:
     ):
         df.group_by("x").map_groups(lambda x: x)
 
+    schema = {"x": pl.Int64, "y": pl.Int64}
+    result = (
+        df.lazy()
+        .group_by("x")
+        .map_groups(lambda df: df.with_columns(pl.col("x").alias("y")), schema=schema)
+    )
+
+    expected = pl.LazyFrame(schema=schema)
+    assert_frame_equal(result, expected)
+    assert result.collect_schema() == expected.collect_schema()
+
 
 def test_map_groups_none() -> None:
     df = pl.DataFrame(

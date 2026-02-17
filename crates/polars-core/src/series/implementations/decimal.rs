@@ -165,6 +165,16 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_max(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         self.agg_helper(|ca| ca.agg_list(groups))
     }
@@ -505,6 +515,25 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .physical()
             .quantile_reduce(quantile, method)
             .map(|v| self.apply_scale(v))
+    }
+
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let result = self.0.physical().quantiles_reduce(quantiles, method)?;
+        if let AnyValue::List(float_s) = result.value() {
+            let scale_factor = self.scale_factor() as f64;
+            let float_ca = float_s.f64().unwrap();
+            let scaled_s = float_ca
+                .iter()
+                .map(|v: Option<f64>| v.map(|f| f / scale_factor))
+                .collect::<Float64Chunked>()
+                .into_series();
+            Ok(Scalar::new(
+                DataType::List(Box::new(self.dtype().clone())),
+                AnyValue::List(scaled_s),
+            ))
+        } else {
+            polars_bail!(ComputeError: "expected list scalar from quantiles_reduce")
+        }
     }
 
     fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {

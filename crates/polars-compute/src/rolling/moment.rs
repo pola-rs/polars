@@ -141,8 +141,8 @@ pub struct MomentWindow<'a, T, M: StateUpdate> {
     moment: M,
     non_finite_count: usize, // NaN or infinity.
     null_count: usize,
-    last_start: usize,
-    last_end: usize,
+    start: usize,
+    end: usize,
 }
 
 impl<'a, T, M> MomentWindow<'a, T, M>
@@ -161,8 +161,8 @@ where
             moment: M::new(params),
             non_finite_count: 0,
             null_count: 0,
-            last_start: 0,
-            last_end: 0,
+            start: 0,
+            end: 0,
         }
     }
 
@@ -194,7 +194,7 @@ where
     }
 
     #[inline(always)]
-    fn finalize(&self) -> Option<T> {
+    fn get_moment(&self) -> Option<T> {
         if self.non_finite_count > 0 {
             self.moment
                 .finalize()
@@ -205,19 +205,21 @@ where
     }
 }
 
-impl<'a, T, M> RollingAggWindowNoNulls<'a, T> for MomentWindow<'a, T, M>
+impl<T, M> RollingAggWindowNoNulls<T> for MomentWindow<'_, T, M>
 where
     T: NativeType + ToPrimitive + IsFloat + FromPrimitive,
     M: StateUpdate,
 {
-    fn new(
+    type This<'a> = MomentWindow<'a, T, M>;
+
+    fn new<'a>(
         slice: &'a [T],
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         _window_size: Option<usize>,
-    ) -> Self {
-        let mut out = Self::new_impl(slice, None, params);
+    ) -> Self::This<'a> {
+        let mut out = MomentWindow::new_impl(slice, None, params);
         unsafe { RollingAggWindowNoNulls::update(&mut out, start, end) };
         out
     }
@@ -225,42 +227,51 @@ where
     // # Safety
     // The start, end range must be in-bounds.
     #[inline]
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        if start >= self.last_end {
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        if new_start >= self.end {
             self.reset();
-            self.last_start = start;
-            self.last_end = start;
+            self.start = new_start;
+            self.end = new_start;
         }
 
-        for val in &self.slice[self.last_start..start] {
+        for val in &self.slice[self.start..new_start] {
             self.remove(*val);
         }
 
-        for val in &self.slice[self.last_end..end] {
+        for val in &self.slice[self.end..new_end] {
             self.insert(*val);
         }
 
-        self.last_start = start;
-        self.last_end = end;
-        self.finalize()
+        self.start = new_start;
+        self.end = new_end;
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<T> {
+        self.get_moment()
+    }
+
+    fn slice_len(&self) -> usize {
+        self.slice.len()
     }
 }
 
-impl<'a, T, M> RollingAggWindowNulls<'a, T> for MomentWindow<'a, T, M>
+impl<T, M> RollingAggWindowNulls<T> for MomentWindow<'_, T, M>
 where
     T: NativeType + ToPrimitive + IsFloat + FromPrimitive,
     M: StateUpdate,
 {
-    fn new(
+    type This<'a> = MomentWindow<'a, T, M>;
+
+    fn new<'a>(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         _window_size: Option<usize>,
-    ) -> Self {
+    ) -> Self::This<'a> {
         assert!(start <= slice.len() && end <= slice.len() && start <= end);
-        let mut out = Self::new_impl(slice, Some(validity), params);
+        let mut out = MomentWindow::new_impl(slice, Some(validity), params);
         // SAFETY: We bounds checked `start` and `end`.
         unsafe { RollingAggWindowNulls::update(&mut out, start, end) };
         out
@@ -269,16 +280,16 @@ where
     // # Safety
     // The start, end range must be in-bounds.
     #[inline]
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
         let validity = unsafe { self.validity.unwrap_unchecked() };
 
-        if start >= self.last_end {
+        if new_start >= self.end {
             self.reset();
-            self.last_start = start;
-            self.last_end = start;
+            self.start = new_start;
+            self.end = new_start;
         }
 
-        for idx in self.last_start..start {
+        for idx in self.start..new_start {
             let valid = unsafe { validity.get_bit_unchecked(idx) };
             if valid {
                 self.remove(unsafe { *self.slice.get_unchecked(idx) });
@@ -287,7 +298,7 @@ where
             }
         }
 
-        for idx in self.last_end..end {
+        for idx in self.end..new_end {
             let valid = unsafe { validity.get_bit_unchecked(idx) };
             if valid {
                 self.insert(unsafe { *self.slice.get_unchecked(idx) });
@@ -296,13 +307,20 @@ where
             }
         }
 
-        self.last_start = start;
-        self.last_end = end;
-        self.finalize()
+        self.start = new_start;
+        self.end = new_end;
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<T> {
+        self.get_moment()
     }
 
     #[inline(always)]
     fn is_valid(&self, min_periods: usize) -> bool {
-        ((self.last_end - self.last_start) - self.null_count) >= min_periods
+        ((self.end - self.start) - self.null_count) >= min_periods
+    }
+
+    fn slice_len(&self) -> usize {
+        self.slice.len()
     }
 }

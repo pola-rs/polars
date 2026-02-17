@@ -75,10 +75,16 @@ impl BooleanChunked {
 impl BooleanChunked {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
-        match self.is_sorted_flag() {
-            IsSorted::Ascending => return self.clone().into_series().agg_first_non_null(groups),
-            IsSorted::Descending => return self.clone().into_series().agg_last_non_null(groups),
-            _ => {},
+        if groups.is_sorted_flag() {
+            match self.is_sorted_flag() {
+                IsSorted::Ascending => {
+                    return self.clone().into_series().agg_first_non_null(groups);
+                },
+                IsSorted::Descending => {
+                    return self.clone().into_series().agg_last_non_null(groups);
+                },
+                _ => {},
+            }
         }
         let ca_self = self.rechunk();
         let arr = ca_self.downcast_iter().next().unwrap();
@@ -114,14 +120,14 @@ impl BooleanChunked {
     }
     pub(crate) unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         // faster paths
-        match (self.is_sorted_flag(), self.null_count()) {
-            (IsSorted::Ascending, 0) => {
-                return self.clone().into_series().agg_last(groups);
-            },
-            (IsSorted::Descending, 0) => {
-                return self.clone().into_series().agg_first(groups);
-            },
-            _ => {},
+        if groups.is_sorted_flag() {
+            match self.is_sorted_flag() {
+                IsSorted::Ascending => return self.clone().into_series().agg_last_non_null(groups),
+                IsSorted::Descending => {
+                    return self.clone().into_series().agg_first_non_null(groups);
+                },
+                _ => {},
+            }
         }
 
         let ca_self = self.rechunk();

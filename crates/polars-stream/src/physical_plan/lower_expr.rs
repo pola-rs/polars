@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap,
+    DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, PlIndexSet,
 };
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaExt};
@@ -205,7 +205,7 @@ pub fn is_input_independent_rec(
             options: _,
             fmt_str: _,
         }
-        | AExpr::AnonymousStreamingAgg {
+        | AExpr::AnonymousAgg {
             input,
             function: _,
             fmt_str: _,
@@ -354,7 +354,7 @@ pub fn is_length_preserving_rec(
                 || is_length_preserving_rec(*truthy, arena, cache)
                 || is_length_preserving_rec(*falsy, arena, cache)
         },
-        AExpr::AnonymousStreamingAgg { .. } => false,
+        AExpr::AnonymousAgg { .. } => false,
         AExpr::AnonymousFunction {
             input,
             function: _,
@@ -366,7 +366,7 @@ pub fn is_length_preserving_rec(
             function: _,
             options,
         } => {
-            // FIXME: actually inspect the functions? This is overly conservative.
+            // TODO: actually inspect the functions? This is overly conservative.
             options.is_length_preserving()
                 && input
                     .iter()
@@ -501,12 +501,12 @@ fn build_fallback_node_with_ctx(
 
 fn simplify_input_streams(
     orig_input: PhysStream,
-    mut input_streams: PlHashSet<PhysStream>,
+    mut input_streams: PlIndexSet<PhysStream>,
     ctx: &mut LowerExprContext,
-) -> PolarsResult<PlHashSet<PhysStream>> {
+) -> PolarsResult<PlIndexSet<PhysStream>> {
     // Flatten nested zips (ensures the original input columns only occur once).
     if input_streams.len() > 1 {
-        let mut flattened_input_streams = PlHashSet::with_capacity(input_streams.len());
+        let mut flattened_input_streams = PlIndexSet::with_capacity(input_streams.len());
         for input_stream in input_streams {
             if let PhysNodeKind::Zip {
                 inputs,
@@ -514,7 +514,6 @@ fn simplify_input_streams(
             } = &ctx.phys_sm[input_stream.node].kind
             {
                 flattened_input_streams.extend(inputs);
-                ctx.phys_sm.remove(input_stream.node);
             } else {
                 flattened_input_streams.insert(input_stream);
             }
@@ -611,7 +610,7 @@ fn lower_exprs_with_ctx(
     let mut fallback_subset = Vec::new();
 
     // Streams containing the columns used for executing transformed expressions.
-    let mut input_streams = PlHashSet::new();
+    let mut input_streams = PlIndexSet::new();
 
     // The final transformed expressions that will be selected from the zipped
     // together transformed nodes.
@@ -1126,6 +1125,7 @@ fn lower_exprs_with_ctx(
                         nulls_equal,
                         coalesce: Default::default(),
                         maintain_order: Default::default(),
+                        build_side: None,
                     },
                     output_bool: true,
                 };
@@ -1877,7 +1877,7 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
-            AExpr::AnonymousStreamingAgg {
+            AExpr::AnonymousAgg {
                 input: _,
                 fmt_str: _,
                 function: _,
@@ -1891,8 +1891,6 @@ fn lower_exprs_with_ctx(
                 // Change agg mutably so we can share the codepath for all of these.
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }
-                | IRAggExpr::MinBy { .. }
-                | IRAggExpr::MaxBy { .. }
                 | IRAggExpr::First(_)
                 | IRAggExpr::FirstNonNull(_)
                 | IRAggExpr::Last(_)
@@ -1988,6 +1986,8 @@ fn lower_exprs_with_ctx(
                     IRFunctionExpr::Boolean(
                         IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. },
                     )
+                    | IRFunctionExpr::MinBy
+                    | IRFunctionExpr::MaxBy
                     | IRFunctionExpr::NullCount,
                 ..
             } => {

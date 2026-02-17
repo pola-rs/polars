@@ -3,9 +3,7 @@ use std::sync::Arc;
 
 use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
-use polars_utils::plpath::PlPathRef;
 
-use crate::cloud::CloudOptions;
 use crate::options::RowIndex;
 #[cfg(any(feature = "ipc", feature = "avro", feature = "ipc_streaming",))]
 use crate::predicates::PhysicalIoExpr;
@@ -39,15 +37,6 @@ where
     where
         Self: Sized;
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()>;
-}
-
-pub trait WriteDataFrameToFile {
-    fn write_df_to_file(
-        &self,
-        df: &mut DataFrame,
-        addr: PlPathRef<'_>,
-        cloud_options: Option<&CloudOptions>,
-    ) -> PolarsResult<()>;
 }
 
 pub trait ArrowReader {

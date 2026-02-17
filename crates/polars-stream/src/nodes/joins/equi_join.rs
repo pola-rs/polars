@@ -11,7 +11,7 @@ use polars_core::{POOL, config};
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_io::pl_async::get_runtime;
-use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
+use polars_ops::frame::{JoinArgs, JoinBuildSide, JoinType, MaintainOrderJoin};
 use polars_ops::series::coalesce_columns;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
@@ -338,10 +338,17 @@ impl SampleState {
             (false, true) => true,
             (true, false) => false,
 
-            // Estimate cardinality and choose smaller.
             (true, true) => {
-                let (lc, rc) = estimate_cardinalities()?;
-                lc < rc
+                match params.args.build_side {
+                    Some(JoinBuildSide::PreferLeft) => true,
+                    Some(JoinBuildSide::PreferRight) => false,
+                    Some(JoinBuildSide::ForceLeft | JoinBuildSide::ForceRight) => unreachable!(),
+                    None => {
+                        // Estimate cardinality and choose smaller.
+                        let (lc, rc) = estimate_cardinalities()?;
+                        lc < rc
+                    },
+                }
             },
         };
 
@@ -1179,15 +1186,29 @@ impl EquiJoinNode {
         num_pipelines: usize,
     ) -> PolarsResult<Self> {
         let left_is_build = match args.maintain_order {
-            MaintainOrderJoin::None => {
-                if *JOIN_SAMPLE_LIMIT == 0 {
-                    Some(true)
-                } else {
-                    None
-                }
+            MaintainOrderJoin::None => match args.build_side {
+                Some(JoinBuildSide::ForceLeft) => Some(true),
+                Some(JoinBuildSide::ForceRight) => Some(false),
+                Some(JoinBuildSide::PreferLeft) | Some(JoinBuildSide::PreferRight) | None => {
+                    if *JOIN_SAMPLE_LIMIT == 0 {
+                        Some(args.build_side != Some(JoinBuildSide::PreferRight))
+                    } else {
+                        None
+                    }
+                },
             },
-            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => Some(false),
-            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => Some(true),
+            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => {
+                if args.build_side == Some(JoinBuildSide::ForceLeft) {
+                    polars_warn!("can't force left build-side with left-maintaining cross-join");
+                }
+                Some(false)
+            },
+            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => {
+                if args.build_side == Some(JoinBuildSide::ForceRight) {
+                    polars_warn!("can't force right build-side with right-maintaining cross-join");
+                }
+                Some(true)
+            },
         };
 
         let preserve_order_probe = args.maintain_order != MaintainOrderJoin::None;

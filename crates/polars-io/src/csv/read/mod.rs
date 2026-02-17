@@ -16,7 +16,7 @@
 //! }
 //! ```
 
-pub mod buffer;
+pub mod builder;
 mod options;
 mod parser;
 mod read_impl;
@@ -32,7 +32,7 @@ pub use reader::CsvReader;
 pub use streaming::read_until_start_and_infer_schema;
 
 pub mod _csv_read_internal {
-    pub use super::buffer::validate_utf8;
+    pub use super::builder::validate_utf8;
     pub use super::options::{CommentPrefix, NullValuesCompiled};
     pub use super::parser::{CountLines, SplitLines, is_comment_line};
     pub use super::read_impl::{cast_columns, read_chunk};

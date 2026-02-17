@@ -6,8 +6,8 @@ use std::mem;
 
 use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::BitmapBuilder;
-use arrow::buffer::Buffer;
 use arrow::datatypes::ExtensionType;
+use polars_buffer::Buffer;
 use polars_extension::PolarsExtension;
 use polars_utils::format_pl_smallstr;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -100,17 +100,13 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
         }
     }
 
-    // we slice the buffer because we want to ignore the padding bytes from here
-    // they can be forgotten
-    let buf: Buffer<u8> = buf.into();
-    let len = buf.len() - n_padding;
-    let buf = buf.sliced(n_padding, len);
-
+    // We slice the buffer because we want to ignore the padding bytes from here
+    // they can be forgotten.
+    let buf: Buffer<u8> = Buffer::from_vec(buf).sliced(n_padding..);
     // ptr to start of T, not to start of padding
     let ptr = buf.as_slice().as_ptr();
 
-    // SAFETY:
-    // ptr and t are correct
+    // SAFETY: ptr and t are correct.
     let drop_fn = unsafe { create_drop::<T>(ptr, n_t_vals) };
     let et = Box::new(ExtensionSentinel {
         drop_fn: Some(drop_fn),

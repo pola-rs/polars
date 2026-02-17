@@ -8,7 +8,7 @@ use arrow::offset::{Offset, Offsets};
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
 #[cfg(feature = "dtype-decimal")]
-use num_traits::Float;
+use num_traits::{Float, ToPrimitive};
 use polars_error::PolarsResult;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
@@ -240,7 +240,7 @@ where
 
 /// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow
 #[cfg(feature = "dtype-decimal")]
-pub fn integer_to_decimal<T: NativeType + AsPrimitive<i128>>(
+pub fn integer_to_decimal<T: NativeType + ToPrimitive>(
     from: &PrimitiveArray<T>,
     to_precision: usize,
     to_scale: usize,
@@ -248,7 +248,7 @@ pub fn integer_to_decimal<T: NativeType + AsPrimitive<i128>>(
     assert!(dec128_verify_prec_scale(to_precision, to_scale).is_ok());
     let values = from
         .iter()
-        .map(|x| i128_to_dec128(x?.as_(), to_precision, to_scale));
+        .map(|x| i128_to_dec128(x?.to_i128()?, to_precision, to_scale));
     PrimitiveArray::<i128>::from_trusted_len_iter(values)
         .to(ArrowDataType::Decimal(to_precision, to_scale))
 }
@@ -260,7 +260,7 @@ pub(super) fn integer_to_decimal_dyn<T>(
     scale: usize,
 ) -> PolarsResult<Box<dyn Array>>
 where
-    T: NativeType + AsPrimitive<i128>,
+    T: NativeType + ToPrimitive,
 {
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(integer_to_decimal::<T>(from, precision, scale)))

@@ -702,8 +702,27 @@ fn try_rewrite_join_type(
                 let mut join_output_key_selectors = PlHashMap::with_capacity(right_on.len());
 
                 for (l, r) in left_on.iter().zip(right_on) {
+                    // Unwrap any Cast expressions that may have been inserted for type coercion.
+                    // For non full-joins coalesce can still insert casts into the key exprs.
+                    let l_node = match expr_arena.get(l.node()) {
+                        AExpr::Cast {
+                            expr,
+                            dtype: _,
+                            options: _,
+                        } if should_coalesce => *expr,
+                        _ => l.node(),
+                    };
+                    let r_node = match expr_arena.get(r.node()) {
+                        AExpr::Cast {
+                            expr,
+                            dtype: _,
+                            options: _,
+                        } if should_coalesce => *expr,
+                        _ => r.node(),
+                    };
+
                     let (AExpr::Column(lhs_input_key), AExpr::Column(rhs_input_key)) =
-                        (expr_arena.get(l.node()), expr_arena.get(r.node()))
+                        (expr_arena.get(l_node), expr_arena.get(r_node))
                     else {
                         // `should_coalesce() == true` should guarantee all are columns.
                         unreachable!()
@@ -816,8 +835,27 @@ fn try_rewrite_join_type(
                     PlHashSet::with_capacity(right_on.len());
 
                 for (l, r) in left_on.iter().zip(right_on) {
+                    // Unwrap any Cast expressions that may have been inserted for type coercion.
+                    // For non full-joins coalesce can still insert casts into the key exprs.
+                    let l_node = match expr_arena.get(l.node()) {
+                        AExpr::Cast {
+                            expr,
+                            dtype: _,
+                            options: _,
+                        } if should_coalesce => *expr,
+                        _ => l.node(),
+                    };
+                    let r_node = match expr_arena.get(r.node()) {
+                        AExpr::Cast {
+                            expr,
+                            dtype: _,
+                            options: _,
+                        } if should_coalesce => *expr,
+                        _ => r.node(),
+                    };
+
                     let (AExpr::Column(lhs_input_key), AExpr::Column(rhs_input_key)) =
-                        (expr_arena.get(l.node()), expr_arena.get(r.node()))
+                        (expr_arena.get(l_node), expr_arena.get(r_node))
                     else {
                         // `should_coalesce() == true` should guarantee all columns.
                         unreachable!()

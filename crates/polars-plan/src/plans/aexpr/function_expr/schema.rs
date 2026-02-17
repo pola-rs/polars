@@ -142,6 +142,15 @@ impl IRFunctionExpr {
             #[cfg(feature = "moment")]
             Kurtosis(..) => mapper.with_dtype(DataType::Float64),
             ArgUnique | ArgMin | ArgMax | ArgSort { .. } => mapper.with_dtype(IDX_DTYPE),
+            MinBy | MaxBy => {
+                if fields[1].dtype.is_nested() {
+                    polars_bail!(
+                        InvalidOperation: "cannot use a nested type as `by` argument in `min_by`/`max_by`, got dtype `{}`", fields[1].dtype
+                    )
+                }
+
+                mapper.with_same_dtype()
+            },
             Product => mapper.map_dtype(|dtype| {
                 use DataType as T;
                 match dtype {
@@ -252,6 +261,10 @@ impl IRFunctionExpr {
                 DataType::UInt64 | DataType::UInt32 => DataType::Int64,
                 DataType::UInt16 => DataType::Int32,
                 DataType::UInt8 => DataType::Int16,
+                #[cfg(feature = "dtype-decimal")]
+                DataType::Decimal(_, scale) => {
+                    DataType::Decimal(polars_compute::decimal::DEC128_MAX_PREC, *scale)
+                },
                 dt => dt.clone(),
             }),
             #[cfg(feature = "pct_change")]

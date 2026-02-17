@@ -1277,9 +1277,9 @@ def map_groups(
     ...     df.group_by("group").agg(
     ...         pl.map_groups(
     ...             exprs=["a", "b"],
-    ...             function=lambda list_of_series: list_of_series[0]
-    ...             / list_of_series[0].sum()
-    ...             + list_of_series[1],
+    ...             function=lambda list_of_series: (
+    ...                 list_of_series[0] / list_of_series[0].sum() + list_of_series[1]
+    ...             ),
     ...             return_dtype=pl.Float64,
     ...         ).alias("my_custom_aggregation")
     ...     )
@@ -2173,6 +2173,9 @@ def collect_all(
         lf = LazyFrame._from_pyldf(ldf)
         return lf
 
+    from polars.lazyframe.frame import _select_engine
+
+    engine = _select_engine(engine)
     out = plr.collect_all(lfs, engine, optimizations._pyoptflags)
 
     # wrap the pydataframes into dataframe

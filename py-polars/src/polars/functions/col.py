@@ -53,7 +53,9 @@ def _create_col(
         if isinstance(name, str):
             names_str = [name]
             names_str.extend(more_names)  # type: ignore[arg-type]
-            return pl.Selector._by_name(names_str, strict=True).as_expr()
+            return pl.Selector._by_name(
+                names_str, strict=True, expand_patterns=True
+            ).as_expr()
         elif is_polars_dtype(name):
             dtypes = [name]
             dtypes.extend(more_names)  # type: ignore[arg-type]
@@ -76,11 +78,19 @@ def _create_col(
     elif isinstance(name, Iterable):
         names = list(name)
         if not names:
-            return pl.Selector._by_name(names, strict=True).as_expr()  # type: ignore[arg-type]
+            return pl.Selector._by_name(
+                names=names,  # type: ignore[arg-type]
+                strict=True,
+                expand_patterns=True,
+            ).as_expr()
 
         item = names[0]
         if isinstance(item, str):
-            return pl.Selector._by_name(names, strict=True).as_expr()  # type: ignore[arg-type]
+            return pl.Selector._by_name(
+                names=names,  # type: ignore[arg-type]
+                strict=True,
+                expand_patterns=True,
+            ).as_expr()
         elif is_polars_dtype(item):
             dtypes = []
             for nm in names:

@@ -79,14 +79,18 @@ impl<'a, T: NativeType + PartialOrd + Copy> SortedBuf<'a, T> {
     pub(super) fn len(&self) -> usize {
         self.buf.len()
     }
+
+    pub(super) fn slice_len(&self) -> usize {
+        self.slice.len()
+    }
 }
 
 pub(super) struct SortedBufNulls<'a, T: NativeType> {
     // slice over which the window slides
     slice: &'a [T],
     validity: &'a Bitmap,
-    last_start: usize,
-    last_end: usize,
+    start: usize,
+    end: usize,
     // non-null values within the window that we keep sorted
     buf: OrderStatisticTree<T>,
     pub null_count: usize,
@@ -127,8 +131,8 @@ impl<'a, T: NativeType + PartialOrd> SortedBufNulls<'a, T> {
         let mut out = Self {
             slice,
             validity,
-            last_start: start,
-            last_end: end,
+            start,
+            end,
             buf,
             null_count: 0,
         };
@@ -141,13 +145,13 @@ impl<'a, T: NativeType + PartialOrd> SortedBufNulls<'a, T> {
     ///
     /// # Safety
     /// The caller must ensure that `start` and `end` are within bounds of `self.slice`
-    pub unsafe fn update(&mut self, start: usize, end: usize) -> usize {
+    pub unsafe fn update(&mut self, new_start: usize, new_end: usize) -> usize {
         // Swap the whole buffer.
-        if start >= self.last_end {
-            unsafe { self.fill_and_sort_buf(start, end) };
+        if new_start >= self.end {
+            unsafe { self.fill_and_sort_buf(new_start, new_end) };
         } else {
             // Remove elements that should leave the window.
-            for idx in self.last_start..start {
+            for idx in self.start..new_start {
                 // SAFETY: we are in bounds.
                 if unsafe { self.validity.get_bit_unchecked(idx) } {
                     self.buf.remove(unsafe { self.slice.get_unchecked(idx) });
@@ -157,7 +161,7 @@ impl<'a, T: NativeType + PartialOrd> SortedBufNulls<'a, T> {
             }
 
             // Insert elements that enter the window, but insert them sorted.
-            for idx in self.last_end..end {
+            for idx in self.end..new_end {
                 // SAFETY: we are in bounds.
                 if unsafe { self.validity.get_bit_unchecked(idx) } {
                     self.buf.insert(unsafe { *self.slice.get_unchecked(idx) });
@@ -167,17 +171,21 @@ impl<'a, T: NativeType + PartialOrd> SortedBufNulls<'a, T> {
             }
         }
 
-        self.last_start = start;
-        self.last_end = end;
+        self.start = new_start;
+        self.end = new_end;
         self.null_count
     }
 
     pub fn is_valid(&self, min_periods: usize) -> bool {
-        ((self.last_end - self.last_start) - self.null_count) >= min_periods
+        ((self.end - self.start) - self.null_count) >= min_periods
     }
 
     pub fn len(&self) -> usize {
         self.null_count + self.buf.len()
+    }
+
+    pub fn slice_len(&self) -> usize {
+        self.slice.len()
     }
 
     pub fn get(&self, idx: usize) -> Option<T> {

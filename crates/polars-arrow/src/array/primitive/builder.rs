@@ -1,10 +1,10 @@
+use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 use polars_utils::vec::PushUnchecked;
 
 use super::PrimitiveArray;
 use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
 use crate::bitmap::OptBitmapBuilder;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::types::NativeType;
 

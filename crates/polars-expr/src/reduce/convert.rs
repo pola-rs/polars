@@ -25,6 +25,7 @@ pub fn into_reduction(
     node: Node,
     expr_arena: &mut Arena<AExpr>,
     schema: &Schema,
+    is_aggregation_context: bool,
 ) -> PolarsResult<(Box<dyn GroupedReduction>, Vec<Node>)> {
     let get_dt = |node| {
         expr_arena
@@ -67,14 +68,6 @@ pub fn into_reduction(
                 let count = Box::new(CountReduce::new(*include_nulls)) as Box<_>;
                 (count, *input)
             },
-            IRAggExpr::MinBy { input, by } => {
-                let gr = new_min_by_reduction(get_dt(*input)?, get_dt(*by)?)?;
-                return Ok((gr, vec![*input, *by]));
-            },
-            IRAggExpr::MaxBy { input, by } => {
-                let gr = new_max_by_reduction(get_dt(*input)?, get_dt(*by)?)?;
-                return Ok((gr, vec![*input, *by]));
-            },
             IRAggExpr::Quantile { .. } => todo!(),
             IRAggExpr::Median(_) => todo!(),
             IRAggExpr::NUnique(_) => todo!(),
@@ -94,6 +87,12 @@ pub fn into_reduction(
                 //   project to the height of the DataFrame (in the PhysicalExpr impl).
                 // * This approach is not sound for `update_groups()`, but currently that case is
                 //   not hit (it would need group-by -> len on empty morsels).
+                polars_ensure!(
+                    !is_aggregation_context,
+                    ComputeError:
+                    "not implemented: len() of groups with no columns"
+                );
+
                 let out: Box<dyn GroupedReduction> = new_sum_reduction(DataType::IDX_DTYPE)?;
                 let expr = expr_arena.add(AExpr::Len);
 
@@ -157,7 +156,32 @@ pub fn into_reduction(
                 _ => unreachable!(),
             }
         },
-        AExpr::AnonymousStreamingAgg {
+
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::MinBy,
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 2);
+            let input = inner_exprs[0].node();
+            let by = inner_exprs[1].node();
+            let gr = new_min_by_reduction(get_dt(input)?, get_dt(by)?)?;
+            return Ok((gr, vec![input, by]));
+        },
+
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::MaxBy,
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 2);
+            let input = inner_exprs[0].node();
+            let by = inner_exprs[1].node();
+            let gr = new_max_by_reduction(get_dt(input)?, get_dt(by)?)?;
+            return Ok((gr, vec![input, by]));
+        },
+
+        AExpr::AnonymousAgg {
             input: inner_exprs,
             fmt_str: _,
             function,

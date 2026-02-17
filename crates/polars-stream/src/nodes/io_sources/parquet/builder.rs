@@ -10,6 +10,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::{FileReader, ParquetFileReader};
 use crate::async_primitives::wait_group::WaitGroup;
+use crate::metrics::{IOMetrics, OptIOMetrics};
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 
@@ -20,6 +21,7 @@ pub struct ParquetReaderBuilder {
     pub prefetch_limit: RelaxedCell<usize>,
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
+    pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
 }
 
 impl std::fmt::Debug for ParquetReaderBuilder {
@@ -59,8 +61,7 @@ impl FileReaderBuilder for ParquetReaderBuilder {
         let prefetch_limit = std::env::var("POLARS_ROW_GROUP_PREFETCH_SIZE")
             .map(|x| {
                 x.parse::<NonZeroUsize>()
-                    .ok()
-                    .unwrap_or_else(|| {
+                    .unwrap_or_else(|_| {
                         panic!("invalid value for POLARS_ROW_GROUP_PREFETCH_SIZE: {x}")
                     })
                     .get()
@@ -82,6 +83,10 @@ impl FileReaderBuilder for ParquetReaderBuilder {
             .unwrap()
     }
 
+    fn set_io_metrics(&self, io_metrics: Arc<IOMetrics>) {
+        let _ = self.io_metrics.set(io_metrics);
+    }
+
     fn build_file_reader(
         &self,
         source: ScanSource,
@@ -94,11 +99,12 @@ impl FileReaderBuilder for ParquetReaderBuilder {
         let config = self.options.clone();
         let verbose = config::verbose();
 
-        let byte_source_builder = if scan_source.is_cloud_url() || config::force_async() {
-            DynByteSourceBuilder::ObjectStore
-        } else {
-            DynByteSourceBuilder::Mmap
-        };
+        let byte_source_builder =
+            if scan_source.is_cloud_url() || polars_config::config().force_async() {
+                DynByteSourceBuilder::ObjectStore
+            } else {
+                DynByteSourceBuilder::Mmap
+            };
 
         assert!(self.prefetch_limit.load() > 0);
 
@@ -119,6 +125,7 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                 prev_all_spawned: None,
                 current_all_spawned: None,
             },
+            io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
             verbose,
 
             init_data: None,

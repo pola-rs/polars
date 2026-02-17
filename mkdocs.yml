@@ -160,7 +160,16 @@ nav:
         - polars-on-premises/kubernetes/getting-started.md
       - Bare-metal:
         - polars-on-premises/bare-metal/getting-started.md
-        - polars-on-premises/bare-metal/config-reference.md
+        - Configuration:
+          - polars-on-premises/bare-metal/configuration/reference.md
+          - polars-on-premises/bare-metal/configuration/license.md
+          - polars-on-premises/bare-metal/configuration/monitoring.md
+          - polars-on-premises/bare-metal/configuration/resource-limits.md
+          - polars-on-premises/bare-metal/configuration/shuffle-data.md
+          - polars-on-premises/bare-metal/configuration/anonymous-results.md
+          - polars-on-premises/bare-metal/configuration/network-addresses.md
+          - polars-on-premises/bare-metal/configuration/static-leader.md
+          - polars-on-premises/bare-metal/configuration/example-configurations.md
         - polars-on-premises/bare-metal/environment-variables.md
         - polars-on-premises/bare-metal/python-environment.md
 not_in_nav: |
@@ -258,7 +267,8 @@ plugins:
               "polars-on-premise/index.md": "polars-on-premises/index.md"
               "polars-on-premise/bare-metal/getting-started.md": "polars-on-premises/bare-metal/getting-started.md"
               "polars-on-premise/kubernetes/getting-started.md": "polars-on-premises/kubernetes/getting-started.md"
-              "polars-on-premise/bare-metal/config-reference.md": "polars-on-premises/bare-metal/config-reference.md"
+              "polars-on-premise/bare-metal/config-reference.md": "polars-on-premises/bare-metal/configuration/reference.md"
               "polars-on-premise/bare-metal/environment-variables.md": "polars-on-premises/bare-metal/environment-variables.md"
               "polars-on-premise/bare-metal/python-environment.md": "polars-on-premises/bare-metal/python-environment.md"
+              "polars-on-premises/bare-metal/config-reference.md": "polars-on-premises/bare-metal/configuration/reference.md"
 

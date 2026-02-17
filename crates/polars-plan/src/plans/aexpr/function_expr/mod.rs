@@ -182,6 +182,8 @@ pub enum IRFunctionExpr {
         descending: bool,
         nulls_last: bool,
     },
+    MinBy,
+    MaxBy,
     Product,
     #[cfg(feature = "rank")]
     Rank {
@@ -256,7 +258,7 @@ pub enum IRFunctionExpr {
     Log1p,
     #[cfg(feature = "log")]
     Exp,
-    Unique(bool),
+    Unique(/* maintain_order */ bool),
     #[cfg(feature = "round_series")]
     Round {
         decimals: u32,
@@ -491,7 +493,7 @@ impl Hash for IRFunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill | Rechunk => {},
+            | ArgMax | Product | Shift | ShiftAndFill | Rechunk | MinBy | MaxBy => {},
             Append { upcast } => {
                 upcast.hash(state);
             },
@@ -765,6 +767,8 @@ impl Display for IRFunctionExpr {
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             ArgSort { .. } => "arg_sort",
+            MinBy => "min_by",
+            MaxBy => "max_by",
             Product => "product",
             Repeat => "repeat",
             #[cfg(feature = "rank")]
@@ -1084,6 +1088,7 @@ impl IRFunctionExpr {
             F::ArgUnique => FunctionOptions::groupwise(),
             F::ArgMin | F::ArgMax => FunctionOptions::aggregation(),
             F::ArgSort { .. } => FunctionOptions::length_preserving(),
+            F::MinBy | F::MaxBy => FunctionOptions::aggregation(),
             F::Product => FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING),
             #[cfg(feature = "rank")]
             F::Rank { .. } => FunctionOptions::length_preserving(),

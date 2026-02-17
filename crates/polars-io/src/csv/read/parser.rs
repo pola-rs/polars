@@ -1,16 +1,17 @@
 use std::cmp;
 
 use memchr::memchr2_iter;
+use polars_buffer::Buffer;
+use polars_core::POOL;
 use polars_core::prelude::*;
-use polars_core::{POOL, config};
 use polars_error::feature_gated;
-use polars_utils::mmap::{MMapSemaphore, MemSlice};
-use polars_utils::plpath::PlPathRef;
+use polars_utils::mmap::MMapSemaphore;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::select::select_unpredictable;
 use rayon::prelude::*;
 
 use super::CsvParseOptions;
-use super::buffer::Buffer;
+use super::builder::Builder;
 use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use crate::csv::read::read_until_start_and_infer_schema;
@@ -21,7 +22,7 @@ use crate::utils::compression::CompressedReader;
 /// useful for count(*) queries
 #[allow(clippy::too_many_arguments)]
 pub fn count_rows(
-    addr: PlPathRef<'_>,
+    path: PlRefPath,
     quote_char: Option<u8>,
     comment_prefix: Option<&CommentPrefix>,
     eol_char: u8,
@@ -30,24 +31,22 @@ pub fn count_rows(
     skip_rows_before_header: usize,
     skip_rows_after_header: usize,
 ) -> PolarsResult<usize> {
-    let file = match addr
-        .as_local_path()
-        .and_then(|v| (!config::force_async()).then_some(v))
-    {
-        None => feature_gated!("cloud", {
+    let file = if path.has_scheme() || polars_config::config().force_async() {
+        feature_gated!("cloud", {
             crate::file_cache::FILE_CACHE
-                .get_entry(addr)
+                .get_entry(path)
                 // Safety: This was initialized by schema inference.
                 .unwrap()
                 .try_open_assume_latest()?
-        }),
-        Some(path) => polars_utils::open_file(path)?,
+        })
+    } else {
+        polars_utils::open_file(path.as_std_path())?
     };
 
     let mmap = MMapSemaphore::new_from_file(&file).unwrap();
 
     count_rows_from_slice_par(
-        MemSlice::from_mmap(Arc::new(mmap)),
+        Buffer::from_owner(mmap),
         quote_char,
         comment_prefix,
         eol_char,
@@ -62,7 +61,7 @@ pub fn count_rows(
 /// useful for count(*) queries
 #[allow(clippy::too_many_arguments)]
 pub fn count_rows_from_slice_par(
-    mem_slice: MemSlice,
+    buffer: Buffer<u8>,
     quote_char: Option<u8>,
     comment_prefix: Option<&CommentPrefix>,
     eol_char: u8,
@@ -71,7 +70,7 @@ pub fn count_rows_from_slice_par(
     skip_rows_before_header: usize,
     skip_rows_after_header: usize,
 ) -> PolarsResult<usize> {
-    let mut reader = CompressedReader::try_new(mem_slice)?;
+    let mut reader = CompressedReader::try_new(buffer)?;
 
     let reader_options = CsvReadOptions {
         parse_options: Arc::new(CsvParseOptions {
@@ -102,7 +101,7 @@ pub fn count_rows_from_slice_par(
         let eof_unterminated_row;
 
         if comment_prefix.is_none() {
-            let mut last_slice = MemSlice::EMPTY;
+            let mut last_slice = Buffer::new();
             let mut err = None;
 
             let streaming_iter = std::iter::from_fn(|| {
@@ -114,15 +113,13 @@ pub fn count_rows_from_slice_par(
                     },
                 };
 
-                leftover = MemSlice::EMPTY;
-
+                leftover = Buffer::new();
                 if slice.is_empty() && read_n == 0 {
                     return None;
                 }
 
                 last_slice = slice.clone();
-
-                Some(slice.clone())
+                Some(slice)
             });
 
             states = streaming_iter
@@ -1016,7 +1013,7 @@ pub(super) fn parse_lines(
     ignore_errors: bool,
     null_values: Option<&NullValuesCompiled>,
     projection: &[usize],
-    buffers: &mut [Buffer],
+    buffers: &mut [Builder],
     n_lines: usize,
     // length of original schema
     schema_len: usize,

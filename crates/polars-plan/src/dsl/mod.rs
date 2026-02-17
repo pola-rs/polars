@@ -50,6 +50,7 @@ pub mod udf;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+mod iter;
 mod plan;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
@@ -197,7 +198,7 @@ impl Expr {
         .into()
     }
 
-    /// GroupBy the group to a Series.
+    /// Implode into a list scalar.
     pub fn implode(self) -> Self {
         AggExpr::Implode(Arc::new(self)).into()
     }
@@ -218,6 +219,10 @@ impl Expr {
     }
 
     /// Alias for `explode`.
+    #[deprecated(
+        since = "0.53.0",
+        note = "Use `explode()` with `ExplodeOptions { empty_as_null: false, keep_nulls: false }` instead. Will be removed in version 2.0."
+    )]
     pub fn flatten(self) -> Self {
         self.explode(ExplodeOptions {
             empty_as_null: true,
@@ -289,7 +294,6 @@ impl Expr {
     pub fn arg_max(self) -> Self {
         self.map_unary(FunctionExpr::ArgMax)
     }
-
     /// Get the index values that would sort this expression.
     pub fn arg_sort(self, descending: bool, nulls_last: bool) -> Self {
         self.map_unary(FunctionExpr::ArgSort {

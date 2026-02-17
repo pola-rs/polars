@@ -83,6 +83,7 @@ pub(super) struct StartReaderArgsConstant {
     pub(super) missing_columns_policy: MissingColumnsPolicy,
     pub(super) forbid_extra_columns: Option<ForbidExtraColumns>,
     pub(super) num_pipelines: usize,
+    pub(super) disable_morsel_split: bool,
     pub(super) verbose: bool,
 }
 

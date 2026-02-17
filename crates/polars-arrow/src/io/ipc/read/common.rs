@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::aliases::PlHashMap;
+use polars_utils::bool::UnsafeBool;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::Dictionaries;
@@ -87,6 +88,7 @@ pub fn read_record_batch<R: Read + Seek>(
     reader: &mut R,
     block_offset: u64,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
     assert_eq!(fields.len(), ipc_schema.fields.len());
     let buffers = batch
@@ -130,6 +132,7 @@ pub fn read_record_batch<R: Read + Seek>(
                     limit,
                     version,
                     scratch,
+                    checked,
                 )?)),
                 ProjectionResult::NotSelected((field, _)) => {
                     skip(
@@ -164,6 +167,7 @@ pub fn read_record_batch<R: Read + Seek>(
                     limit,
                     version,
                     scratch,
+                    checked,
                 )
             })
             .collect::<PolarsResult<Vec<_>>>()?
@@ -255,6 +259,7 @@ pub fn read_dictionary<R: Read + Seek>(
     reader: &mut R,
     block_offset: u64,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<()> {
     if batch
         .is_delta()
@@ -301,6 +306,7 @@ pub fn read_dictionary<R: Read + Seek>(
         reader,
         block_offset,
         scratch,
+        checked,
     )?;
 
     dictionaries.insert(id, chunk.into_arrays().pop().unwrap());

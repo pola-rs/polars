@@ -13,6 +13,7 @@ from polars.testing.asserts.series import assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_index_not_silently_excluded() -> None:
@@ -145,9 +146,9 @@ def test_from_pandas_datetime() -> None:
         (
             pd.TimedeltaIndex,
             ["24 hours", "2 days 8 hours", "3 days 42 seconds"],
-            {},
+            {"dtype": "timedelta64[us]"},
             [timedelta(1), timedelta(days=2, hours=8), timedelta(days=3, seconds=42)],
-            pl.Duration("ns"),
+            pl.Duration("us"),
         ),
     ],
 )
@@ -335,18 +336,18 @@ def test_untrusted_categorical_input() -> None:
 
 
 @pytest.fixture
-def _set_pyarrow_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
+def _set_pyarrow_unavailable(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setattr(
         "polars._utils.construction.dataframe._PYARROW_AVAILABLE", False
     )
-    monkeypatch.setattr("polars._utils.construction.series._PYARROW_AVAILABLE", False)
+    plmonkeypatch.setattr("polars._utils.construction.series._PYARROW_AVAILABLE", False)
 
 
 @pytest.mark.usefixtures("_set_pyarrow_unavailable")
 def test_from_pandas_pyarrow_not_available_succeeds() -> None:
     data: dict[str, Any] = {
         "a": [1, 2],
-        "b": ["one", "two"],
+        "b": [3, 4],
         "c": np.array(["2020-01-01", "2020-01-02"], dtype="datetime64[ns]"),
         "d": np.array(["2020-01-01", "2020-01-02"], dtype="datetime64[us]"),
         "e": np.array(["2020-01-01", "2020-01-02"], dtype="datetime64[ms]"),
@@ -383,8 +384,8 @@ def test_from_pandas_pyarrow_not_available_fails() -> None:
         pl.from_pandas(pd.DataFrame({"a": [None, "foo"]}))
 
 
-def test_from_pandas_nan_to_null_16453(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
+def test_from_pandas_nan_to_null_16453(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setattr(
         "polars._utils.construction.dataframe._MIN_NUMPY_SIZE_FOR_MULTITHREADING", 2
     )
     df = pd.DataFrame(

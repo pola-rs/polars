@@ -1,7 +1,7 @@
 use crate::float16::pf16;
 
 /// # Safety
-/// unsafe code downstream relies on the correct is_float call
+/// Unsafe code downstream relies on the correct is_float call.
 pub unsafe trait IsFloat: private::Sealed + Sized {
     #[inline]
     fn is_float() -> bool {

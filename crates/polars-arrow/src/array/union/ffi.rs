@@ -53,7 +53,7 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for UnionArray {
             .collect::<PolarsResult<Vec<Box<dyn Array>>>>()?;
 
         if offset > 0 {
-            types.slice(offset, length);
+            types.slice_in_place(offset..offset + length);
         };
 
         Self::try_new(dtype, types, fields, offsets)

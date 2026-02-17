@@ -10,7 +10,8 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::unique_id::UniqueId;
 
 use super::expr_pushdown::{adjust_for_with_columns_context, resolve_observable_orders, zip};
-use crate::dsl::{PartitionStrategyIR, SinkTypeIR, UnionOptions};
+use crate::dsl::sink::PartitionStrategyIR;
+use crate::dsl::{SinkTypeIR, UnionOptions};
 use crate::plans::set_order::expr_pushdown::ColumnOrderObserved;
 use crate::plans::{AExpr, IR, is_scalar_ae};
 
@@ -67,8 +68,6 @@ pub(super) fn pushdown_orders(
                 //
                 // Remove sort.
                 let input = *input;
-
-                _ = ir_arena.take(node);
 
                 let node_outputs = outputs.remove(&node).unwrap();
                 for (to_node, to_input_idx) in node_outputs {
@@ -304,7 +303,6 @@ pub(super) fn pushdown_orders(
                                     keys: _,
                                     include_keys: _,
                                     keys_pre_grouped: true,
-                                    per_partition_sort_by: _
                                 }
                             ) || adjust_for_with_columns_context(zip(options.expr_irs_iter().map(
                                 |e| resolve_observable_orders(expr_arena.get(e.node()), expr_arena),

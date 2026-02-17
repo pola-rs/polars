@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use arrow::array::Array;
 use polars::chunked_array::object::ObjectArray;
-use polars::prelude::sink2::FileProviderReturn;
+use polars::prelude::file_provider::FileProviderReturn;
 use polars::prelude::*;
 use polars_core::chunked_array::object::builder::ObjectChunkedBuilder;
 use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
@@ -115,6 +115,45 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             recursive::set_stack_allocation_size(1024 * 1024 * 16);
         }
 
+        #[cfg(feature = "backtrace_filter")]
+        {
+            use std::path::Path;
+            use color_backtrace::{BacktracePrinter, default_output_stream, default_is_dependency_frame, Frame, ColorScheme};
+            use color_backtrace::termcolor::{ColorSpec, Color};
+
+            let polars_base_path = || {
+                let on_startup = Path::new(file!()).canonicalize().ok()?;
+                let src = on_startup.parent()?;
+                let polars_python = src.parent()?;
+                let crates = polars_python.parent()?;
+                let root = crates.parent()?;
+                Some(root.to_path_buf())
+            };
+
+            let mut btp = BacktracePrinter::default();
+            if let Some(bp) = polars_base_path() {
+                btp = btp.dependency_predicate(Box::new(move |frame: &Frame| -> bool {
+                    if let Some(file) = frame.filename.as_ref().and_then(|f| f.canonicalize().ok()) {
+                        !file.starts_with(&bp)
+                    } else {
+                        default_is_dependency_frame(frame)
+                    }
+                }));
+            }
+
+            let mut color_scheme = ColorScheme::classic();
+            color_scheme.dependency_code = ColorSpec::new();
+            color_scheme.dependency_code.set_dimmed(true);
+            color_scheme.dependency_code = color_scheme.dependency_code_hash.clone();
+            color_scheme.crate_code = ColorSpec::new();
+            color_scheme.crate_code.set_fg(Some(Color::Blue));
+            color_scheme.crate_code_hash = color_scheme.crate_code.clone();
+
+            btp
+                .color_scheme(color_scheme)
+                .install(default_output_stream());
+        }
+
         // Register object type builder.
         let object_builder = Box::new(|name: PlSmallStr, capacity: usize| {
             Box::new(ObjectChunkedBuilder::<ObjectValue>::new(name, capacity))
@@ -135,19 +174,12 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             let arr = arr.as_any().downcast_ref::<ObjectArray<ObjectValue>>().unwrap();
             arr.get(idx).map(|v| AnyValue::Object(v))
         }
+        fn with_gil(f: &mut dyn FnMut()) {
+            Python::attach(|_| f())
+        }
 
         polars_utils::python_convert_registry::register_converters(PythonConvertRegistry {
             from_py: FromPythonConvertRegistry {
-                partition_target_cb_result: Arc::new(|py_f| {
-                    Python::attach(|py| {
-                        Ok(Box::new(
-                            py_f.extract::<Wrap<polars_plan::dsl::PartitionTargetCallbackResult>>(
-                                py,
-                            )?
-                            .0,
-                        ) as _)
-                    })
-                }),
                 file_provider_result: Arc::new(|py_f| {
                     Python::attach(|py| {
                         Ok(Box::new(py_f.extract::<Wrap<FileProviderReturn>>(py)?.0) as _)
@@ -224,7 +256,8 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             object_converter,
             pyobject_converter,
             physical_dtype,
-            Arc::new(object_array_getter)
+            Arc::new(object_array_getter),
+            Arc::new(with_gil)
         );
 
         use crate::dataset::dataset_provider_funcs;

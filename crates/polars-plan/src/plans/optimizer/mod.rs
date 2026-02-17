@@ -38,7 +38,7 @@ pub use predicate_pushdown::PredicatePushDown;
 pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
-pub use sortedness::{IRSorted, are_keys_sorted_any, is_sorted};
+pub use sortedness::{AExprSorted, IRSorted, are_keys_sorted_any, is_sorted};
 pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
 
 use self::flatten_union::FlattenUnionRule;
@@ -206,17 +206,6 @@ pub fn optimize(
         )?;
     }
 
-    // Make sure its before slice pushdown.
-    if opt_flags.fast_projection() {
-        rules.push(Box::new(SimpleProjectionAndCollapse::new(
-            opt_flags.eager(),
-        )));
-    }
-
-    if !opt_flags.eager() {
-        rules.push(Box::new(DelayRechunk::new()));
-    }
-
     if opt_flags.slice_pushdown() {
         let mut slice_pushdown_opt = SlicePushDown::new(
             // We don't maintain errors on slice as the behavior is much more predictable that way.
@@ -224,7 +213,6 @@ pub fn optimize(
             // Even if we enable maintain_errors (thereby preventing the slice from being pushed),
             // the new-streaming engine still may not error due to early-stopping.
             false, // maintain_errors
-            opt_flags.new_streaming(),
         );
         let ir = ir_arena.take(root);
         let ir = slice_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
@@ -233,6 +221,16 @@ pub fn optimize(
 
         // Expressions use the stack optimizer.
         rules.push(Box::new(slice_pushdown_opt));
+    }
+
+    if opt_flags.fast_projection() {
+        rules.push(Box::new(SimpleProjectionAndCollapse::new(
+            opt_flags.eager(),
+        )));
+    }
+
+    if !opt_flags.eager() {
+        rules.push(Box::new(DelayRechunk::new()));
     }
 
     // This optimization removes branches, so we must do it when type coercion
@@ -254,7 +252,8 @@ pub fn optimize(
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
     if comm_subexpr_elim && !get_or_init_members!().has_ext_context {
-        let mut optimizer = CommonSubExprOptimizer::new();
+        let mut optimizer =
+            CommonSubExprOptimizer::new(opt_flags.contains(OptFlags::NEW_STREAMING));
         let ir_node = IRNode::new_mutate(root);
 
         root = try_with_ir_arena(ir_arena, expr_arena, |arena| {

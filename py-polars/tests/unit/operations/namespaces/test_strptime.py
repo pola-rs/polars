@@ -287,6 +287,16 @@ def test_to_datetime_dates_datetimes() -> None:
                 2019, 4, 18, 22, 45, 55, 555123, tzinfo=timezone(timedelta(hours=1))
             ),
         ),
+        (
+            "20190418T224555.555123+01:00",
+            datetime(
+                2019, 4, 18, 22, 45, 55, 555123, tzinfo=timezone(timedelta(hours=1))
+            ),
+        ),
+        (
+            "20190418T224555.555123Z",
+            datetime(2019, 4, 18, 22, 45, 55, 555123, tzinfo=timezone.utc),
+        ),
     ],
 )
 def test_to_datetime_patterns_single(time_string: str, expected: str) -> None:
@@ -493,10 +503,10 @@ def test_strptime_invalid_timezone() -> None:
 def test_to_datetime_ambiguous_or_non_existent() -> None:
     with pytest.raises(
         ComputeError,
-        match="datetime '2021-11-07 01:00:00' is ambiguous in time zone 'US/Central'",
+        match="datetime '2021-11-07 01:00:00' is ambiguous in time zone 'America/Chicago'",
     ):
         pl.Series(["2021-11-07 01:00"]).str.to_datetime(
-            time_unit="us", time_zone="US/Central"
+            time_unit="us", time_zone="America/Chicago"
         )
     with pytest.raises(
         ComputeError,

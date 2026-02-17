@@ -154,13 +154,13 @@ fn test_unnest_pushdown() -> PolarsResult<()> {
     let out = df
         .lazy()
         .explode(
-            by_name(["users"], true),
+            by_name(["users"], true, false),
             ExplodeOptions {
                 empty_as_null: true,
                 keep_nulls: true,
             },
         )
-        .unnest(by_name(["users"], true), None)
+        .unnest(by_name(["users"], true, false), None)
         .select([col("email")])
         .collect()?;
 

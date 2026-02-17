@@ -136,6 +136,7 @@ impl OptimizationRule for TypeCoercionRule {
 
                         let v = CastColumnsPolicy {
                             integer_upcast: true,
+                            integer_to_float_cast: false,
                             float_upcast: true,
                             float_downcast: true,
                             datetime_nanoseconds_downcast: true,
@@ -476,7 +477,7 @@ impl OptimizationRule for TypeCoercionRule {
                     expr_arena.add(AExpr::Cast {
                         expr: input_expr.node(),
                         dtype: DataType::Float64,
-                        // FIXME: Non-strict to match legacy execution behavior, but should be strict.
+                        // TODO: Non-strict to match legacy execution behavior, but should be strict.
                         options: CastOptions::NonStrict,
                     }),
                     expr_arena,

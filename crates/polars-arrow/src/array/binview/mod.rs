@@ -15,12 +15,12 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
+use polars_buffer::Buffer;
 use polars_error::*;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::array::Array;
 use crate::bitmap::Bitmap;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 
 mod private {
@@ -175,7 +175,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         views: Buffer<View>,
         buffers: Buffer<Buffer<u8>>,
         validity: Option<Bitmap>,
-        total_bytes_len: usize,
+        total_bytes_len: Option<usize>,
         total_buffer_len: usize,
     ) -> Self {
         // Verify the invariants
@@ -185,10 +185,10 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
                 assert_eq!(validity.len(), views.len());
             }
 
-            // @TODO: Enable this. This is currently bugged with concatenate.
+            // @TODO: Enable this. There are still some bugs but disabled temporarily to get some fixes in.
             // let mut actual_total_buffer_len = 0;
             // let mut actual_total_bytes_len = 0;
-            //
+
             // for buffer in buffers.iter() {
             //     actual_total_buffer_len += buffer.len();
             // }
@@ -211,8 +211,8 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             }
 
             // assert_eq!(actual_total_buffer_len, total_buffer_len);
-            // if (total_bytes_len as u64) != UNKNOWN_LEN {
-            //     assert_eq!(actual_total_bytes_len, total_bytes_len);
+            // if let Some(len) = total_bytes_len {
+            //     assert_eq!(actual_total_bytes_len, len);
             // }
         }
 
@@ -222,7 +222,9 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             buffers,
             validity,
             phantom: Default::default(),
-            total_bytes_len: RelaxedCell::from(total_bytes_len as u64),
+            total_bytes_len: RelaxedCell::from(
+                total_bytes_len.map(|l| l as u64).unwrap_or(UNKNOWN_LEN),
+            ),
             total_buffer_len,
         }
     }
@@ -238,7 +240,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         validity: Option<Bitmap>,
         total_buffer_len: Option<usize>,
     ) -> Self {
-        let total_bytes_len = UNKNOWN_LEN as usize;
+        let total_bytes_len = None;
         let total_buffer_len =
             total_buffer_len.unwrap_or_else(|| buffers.iter().map(|b| b.len()).sum());
         Self::new_unchecked(
@@ -268,7 +270,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     pub fn into_views(self) -> Vec<View> {
-        self.views.make_mut()
+        self.views.to_vec()
     }
 
     pub fn into_inner(
@@ -277,9 +279,10 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         Buffer<View>,
         Buffer<Buffer<u8>>,
         Option<Bitmap>,
-        usize,
+        Option<usize>,
         usize,
     ) {
+        let total_bytes_len = self.try_total_bytes_len();
         let views = self.views;
         let buffers = self.buffers;
         let validity = self.validity;
@@ -288,7 +291,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             views,
             buffers,
             validity,
-            self.total_bytes_len.load() as usize,
+            total_bytes_len,
             self.total_buffer_len,
         )
     }
@@ -296,22 +299,26 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// Apply a function over the views. This can be used to update views in operations like slicing.
     ///
     /// # Safety
-    /// Update the views. All invariants of the views apply.
+    /// All invariants of the views must be maintained.
     pub unsafe fn apply_views<F: FnMut(View, &T) -> View>(&self, mut update_view: F) -> Self {
         let arr = self.clone();
-        let (views, buffers, validity, total_bytes_len, total_buffer_len) = arr.into_inner();
+        let (views, buffers, validity, _total_bytes_len, total_buffer_len) = arr.into_inner();
 
-        let mut views = views.make_mut();
+        let mut total_bytes_len = 0;
+        let mut views = views.to_vec();
         for v in views.iter_mut() {
             let str_slice = T::from_bytes_unchecked(v.get_slice_unchecked(&buffers));
             *v = update_view(*v, str_slice);
+            total_bytes_len += v.length as usize;
         }
+
+        let len_valid = validity.is_none();
         Self::new_unchecked(
             self.dtype.clone(),
             views.into(),
             buffers,
             validity,
-            total_bytes_len,
+            len_valid.then_some(total_bytes_len),
             total_buffer_len,
         )
     }
@@ -321,10 +328,11 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// # Safety
     /// All invariants of the views must be maintained.
     pub unsafe fn with_views_mut<F: FnOnce(&mut [View])>(&mut self, f: F) {
+        self.total_bytes_len.store(UNKNOWN_LEN);
         if let Some(views) = self.views.get_mut_slice() {
             f(views)
         } else {
-            let mut views = self.views.to_vec();
+            let mut views = self.views.as_slice().to_vec();
             f(&mut views);
             self.views = Buffer::from(views);
         }
@@ -356,14 +364,23 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// Creates an empty [`BinaryViewArrayGeneric`], i.e. whose `.len` is zero.
     #[inline]
     pub fn new_empty(dtype: ArrowDataType) -> Self {
-        unsafe { Self::new_unchecked(dtype, Buffer::new(), Buffer::new(), None, 0, 0) }
+        unsafe { Self::new_unchecked(dtype, Buffer::new(), Buffer::new(), None, Some(0), 0) }
     }
 
     /// Returns a new null [`BinaryViewArrayGeneric`] of `length`.
     #[inline]
     pub fn new_null(dtype: ArrowDataType, length: usize) -> Self {
         let validity = Some(Bitmap::new_zeroed(length));
-        unsafe { Self::new_unchecked(dtype, Buffer::zeroed(length), Buffer::new(), validity, 0, 0) }
+        unsafe {
+            Self::new_unchecked(
+                dtype,
+                Buffer::zeroed(length),
+                Buffer::new(),
+                validity,
+                Some(0),
+                0,
+            )
+        }
     }
 
     /// Returns the element at index `i`
@@ -439,8 +456,36 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     impl_sliced!();
-    impl_mut_validity!();
     impl_into_array!();
+
+    /// Returns this array with a new validity.
+    /// # Panic
+    /// Panics iff `validity.len() != self.len()`.
+    #[must_use]
+    #[inline]
+    pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
+        self.set_validity(validity);
+        self
+    }
+
+    /// Sets the validity of this array.
+    /// # Panics
+    /// This function panics iff `values.len() != self.len()`.
+    #[inline]
+    pub fn set_validity(&mut self, validity: Option<Bitmap>) {
+        if matches!(&validity, Some(bitmap) if bitmap.len() != self.len()) {
+            panic!("validity must be equal to the array's length")
+        }
+        self.total_bytes_len.store(UNKNOWN_LEN);
+        self.validity = validity;
+    }
+
+    /// Takes the validity of this array, leaving it without a validity mask.
+    #[inline]
+    pub fn take_validity(&mut self) -> Option<Bitmap> {
+        self.total_bytes_len.store(UNKNOWN_LEN);
+        self.validity.take()
+    }
 
     pub fn from_slice<S: AsRef<T>, P: AsRef<[Option<S>]>>(slice: P) -> Self {
         let mutable = MutableBinaryViewArray::from_iterator(
@@ -459,12 +504,20 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     pub fn total_bytes_len(&self) -> usize {
         let total = self.total_bytes_len.load();
         if total == UNKNOWN_LEN {
-            let total = self.len_iter().map(|v| v as usize).sum::<usize>();
+            let total = ZipValidity::new_with_validity(self.len_iter(), self.validity.as_ref())
+                .map(|v| v.unwrap_or(0) as usize)
+                .sum::<usize>();
             self.total_bytes_len.store(total as u64);
             total
         } else {
             total as usize
         }
+    }
+
+    /// Like total_bytes_len() but if unavailable will not force a computation.
+    pub fn try_total_bytes_len(&self) -> Option<usize> {
+        let b = self.total_bytes_len.load();
+        (b != UNKNOWN_LEN).then_some(b as usize)
     }
 
     /// Get the length of bytes that are stored in the variadic buffers.
@@ -554,7 +607,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     pub fn make_mut(self) -> MutableBinaryViewArray<T> {
-        let views = self.views.make_mut();
+        let views = self.views.to_vec();
         let completed_buffers = self.buffers.to_vec();
         let validity = self.validity.map(|bitmap| bitmap.make_mut());
 
@@ -601,7 +654,7 @@ impl BinaryViewArray {
             self.views.clone(),
             self.buffers.clone(),
             self.validity.clone(),
-            self.total_bytes_len.load() as usize,
+            self.try_total_bytes_len(),
             self.total_buffer_len,
         )
     }
@@ -616,7 +669,7 @@ impl Utf8ViewArray {
                 self.views.clone(),
                 self.buffers.clone(),
                 self.validity.clone(),
-                self.total_bytes_len.load() as usize,
+                self.try_total_bytes_len(),
                 self.total_buffer_len,
             )
         }
@@ -676,7 +729,7 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
             .take()
             .map(|bitmap| bitmap.sliced_unchecked(offset, length))
             .filter(|bitmap| bitmap.unset_bits() > 0);
-        self.views.slice_unchecked(offset, length);
+        self.views.slice_in_place_unchecked(offset..offset + length);
         self.total_bytes_len.store(UNKNOWN_LEN)
     }
 
@@ -714,7 +767,7 @@ impl<T: ViewType + ?Sized> Splitable for BinaryViewArrayGeneric<T> {
                     lhs_views,
                     self.buffers.clone(),
                     lhs_validity,
-                    if offset == 0 { 0 } else { UNKNOWN_LEN as _ },
+                    (offset == 0).then_some(0),
                     self.total_buffer_len(),
                 ),
                 Self::new_unchecked(
@@ -722,11 +775,7 @@ impl<T: ViewType + ?Sized> Splitable for BinaryViewArrayGeneric<T> {
                     rhs_views,
                     self.buffers.clone(),
                     rhs_validity,
-                    if offset == self.len() {
-                        0
-                    } else {
-                        UNKNOWN_LEN as _
-                    },
+                    (offset == self.len()).then_some(0),
                     self.total_buffer_len(),
                 ),
             )

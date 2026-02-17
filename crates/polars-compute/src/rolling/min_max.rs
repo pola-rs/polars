@@ -1,149 +1,100 @@
-use std::collections::VecDeque;
-use std::marker::PhantomData;
-
 use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
+use polars_utils::IdxSize;
 use polars_utils::min_max::MinMaxPolicy;
 
 use super::RollingFnParams;
+use super::arg_min_max::ArgMinMaxWindow;
 use super::no_nulls::RollingAggWindowNoNulls;
 use super::nulls::RollingAggWindowNulls;
 
-// Algorithm: https://cs.stackexchange.com/questions/120915/interview-question-with-arrays-and-consecutive-subintervals/120936#120936
+/// Min/max window implemented on top of ArgMinMaxWindow (arg-based).
 pub struct MinMaxWindow<'a, T, P> {
-    values: &'a [T],
-    validity: Option<&'a Bitmap>,
-    // values[monotonic_idxs[i]] is better than values[monotonic_idxs[i+1]] for
-    // all i, as per the policy.
-    monotonic_idxs: VecDeque<usize>,
-    nonnulls_in_window: usize,
-    last_start: usize,
-    last_end: usize,
-    policy: PhantomData<P>,
+    inner: ArgMinMaxWindow<'a, T, P>,
 }
 
-impl<T: NativeType, P: MinMaxPolicy> MinMaxWindow<'_, T, P> {
-    /// # Safety
-    /// The index must be in-bounds.
-    unsafe fn insert_nonnull_value(&mut self, idx: usize) {
-        unsafe {
-            let value = self.values.get_unchecked(idx);
+impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<T> for MinMaxWindow<'a, T, P> {
+    type This<'b> = MinMaxWindow<'b, T, P>;
 
-            // Remove values which are older and worse.
-            while let Some(tail_idx) = self.monotonic_idxs.back() {
-                let tail_value = self.values.get_unchecked(*tail_idx);
-                if !P::is_better(value, tail_value) {
-                    break;
-                }
-                self.monotonic_idxs.pop_back();
-            }
-
-            self.monotonic_idxs.push_back(idx);
-            self.nonnulls_in_window += 1;
-        }
-    }
-
-    fn remove_old_values(&mut self, window_start: usize) {
-        // Remove values which have fallen outside the window start.
-        while let Some(head_idx) = self.monotonic_idxs.front() {
-            if *head_idx >= window_start {
-                break;
-            }
-            self.monotonic_idxs.pop_front();
-        }
-    }
-}
-
-impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<'a, T> for MinMaxWindow<'a, T, P> {
-    fn new(
-        slice: &'a [T],
-        validity: &'a Bitmap,
+    fn new<'b>(
+        slice: &'b [T],
+        validity: &'b Bitmap,
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
-        _window_size: Option<usize>,
-    ) -> Self {
+        window_size: Option<usize>,
+    ) -> Self::This<'b> {
         assert!(params.is_none());
         assert!(start <= slice.len() && end <= slice.len() && start <= end);
 
-        let mut slf = Self {
-            values: slice,
-            validity: Some(validity),
-            monotonic_idxs: VecDeque::new(),
-            nonnulls_in_window: 0,
-            last_start: 0,
-            last_end: 0,
-            policy: PhantomData,
-        };
-        // SAFETY: We bounds checked `start` and `end`.
-        unsafe {
-            RollingAggWindowNulls::update(&mut slf, start, end);
-        }
-        slf
+        let inner = <ArgMinMaxWindow<'b, T, P> as RollingAggWindowNulls<T, IdxSize>>::new(
+            slice,
+            validity,
+            start,
+            end,
+            None,
+            window_size,
+        );
+
+        MinMaxWindow { inner }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        unsafe {
-            let v = self.validity.unwrap_unchecked();
-            self.remove_old_values(start);
-            for i in self.last_start..start.min(self.last_end) {
-                self.nonnulls_in_window -= v.get_bit_unchecked(i) as usize;
-            }
-            for i in start.max(self.last_end)..end {
-                if v.get_bit_unchecked(i) {
-                    self.insert_nonnull_value(i);
-                }
-            }
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        unsafe { RollingAggWindowNulls::<T, IdxSize>::update(&mut self.inner, new_start, new_end) };
+    }
 
-            self.last_start = start;
-            self.last_end = end;
-            self.monotonic_idxs
-                .front()
-                .map(|idx| *self.values.get_unchecked(*idx))
-        }
+    fn get_agg(&self, idx: usize) -> Option<T> {
+        let rel = RollingAggWindowNulls::<T, IdxSize>::get_agg(&self.inner, idx)?;
+        let abs = self.inner.start + rel as usize;
+        unsafe { Some(*self.inner.values.get_unchecked(abs)) }
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {
-        self.nonnulls_in_window >= min_periods
+        RollingAggWindowNulls::<T, IdxSize>::is_valid(&self.inner, min_periods)
+    }
+
+    fn slice_len(&self) -> usize {
+        RollingAggWindowNulls::<T, IdxSize>::slice_len(&self.inner)
     }
 }
 
-impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<'a, T> for MinMaxWindow<'a, T, P> {
-    fn new(
-        slice: &'a [T],
+impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<T> for MinMaxWindow<'a, T, P> {
+    type This<'b> = MinMaxWindow<'b, T, P>;
+
+    fn new<'b>(
+        slice: &'b [T],
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
-        _window_size: Option<usize>,
-    ) -> Self {
+        window_size: Option<usize>,
+    ) -> Self::This<'b> {
         assert!(params.is_none());
-        let mut slf = Self {
-            values: slice,
-            validity: None,
-            monotonic_idxs: VecDeque::new(),
-            nonnulls_in_window: 0,
-            last_start: 0,
-            last_end: 0,
-            policy: PhantomData,
-        };
-        unsafe {
-            RollingAggWindowNoNulls::update(&mut slf, start, end);
-        }
-        slf
+        assert!(start <= slice.len() && end <= slice.len() && start <= end);
+
+        let inner = <ArgMinMaxWindow<'b, T, P> as RollingAggWindowNoNulls<T, IdxSize>>::new(
+            slice,
+            start,
+            end,
+            None,
+            window_size,
+        );
+
+        MinMaxWindow { inner }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
         unsafe {
-            self.remove_old_values(start);
-            for i in start.max(self.last_end)..end {
-                self.insert_nonnull_value(i);
-            }
+            RollingAggWindowNoNulls::<T, IdxSize>::update(&mut self.inner, new_start, new_end);
+        };
+    }
 
-            self.last_start = start;
-            self.last_end = end;
-            self.monotonic_idxs
-                .front()
-                .map(|idx| *self.values.get_unchecked(*idx))
-        }
+    fn get_agg(&self, idx: usize) -> Option<T> {
+        let rel = RollingAggWindowNoNulls::<T, IdxSize>::get_agg(&self.inner, idx)?;
+        let abs = self.inner.start + rel as usize;
+        unsafe { Some(*self.inner.values.get_unchecked(abs)) }
+    }
+
+    fn slice_len(&self) -> usize {
+        RollingAggWindowNoNulls::<T, IdxSize>::slice_len(&self.inner)
     }
 }
