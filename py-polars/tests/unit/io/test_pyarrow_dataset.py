@@ -238,7 +238,10 @@ def test_pyarrow_dataset_partial_predicate_pushdown(
 
     # Verify: partial predicate was pushed to pyarrow
     assert "(pa.compute.field('a') > 1)" in capture
-    assert "is_full_predicate: false" in capture
+    assert (
+        'residual predicate: Some([([(col("a").cast(Float64)) * (col("b"))]) > (25.0)])'
+        in capture
+    )
     # Verify: correctness
     expected = (
         df.lazy().filter((pl.col("a") > 1) & (pl.col("a") * pl.col("b") > 25)).collect()
@@ -292,8 +295,8 @@ def test_pyarrow_dataset_predicate_verbose_log(
     assert (
         "[SENSITIVE]: python_scan_predicate: "
         'predicate node: [(col("a")) < (3)], '
-        "converted pyarrow predicate: (pa.compute.field('a') < 3)"
-        " (is_full_predicate: true)"
+        "converted pyarrow predicate: (pa.compute.field('a') < 3), "
+        "residual predicate: None"
     ) in capture
 
     q = pl.scan_pyarrow_dataset(dset).filter(pl.col("a").cast(pl.String) < "3")
@@ -305,8 +308,8 @@ def test_pyarrow_dataset_predicate_verbose_log(
     assert (
         "[SENSITIVE]: python_scan_predicate: "
         'predicate node: [(col("a").strict_cast(String)) < ("3")], '
-        "converted pyarrow predicate: <conversion failed>"
-        " (is_full_predicate: false)\n"
+        "converted pyarrow predicate: <conversion failed>, "
+        'residual predicate: Some([(col("a").strict_cast(String)) < ("3")])'
     ) in capture
 
 

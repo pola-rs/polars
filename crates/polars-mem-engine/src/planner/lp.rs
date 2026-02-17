@@ -210,17 +210,16 @@ pub fn python_scan_predicate(
             verbose_print_sensitive(|| {
                 let predicate_pa_verbose_msg = match &options.predicate {
                     PythonPredicate::PyArrow(p) => p,
-                    _ => "conversion failed",
+                    _ => "<conversion failed>",
                 };
 
                 format!(
                     "python_scan_predicate: \
                     predicate node: {}, \
-                    converted pyarrow predicate: {} (is_full_predicate: {}), \
+                    converted pyarrow predicate: {}, \
                     residual predicate: {:?}",
                     ExprIRDisplay::display_node(e.node(), expr_arena),
                     predicate_pa_verbose_msg,
-                    residual_predicate_expr_ir.is_none(),
                     residual_predicate_expr_ir
                         .as_ref()
                         .map(|e| ExprIRDisplay::display_node(e.node(), expr_arena)),
