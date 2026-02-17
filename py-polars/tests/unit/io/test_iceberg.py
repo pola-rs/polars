@@ -2307,3 +2307,46 @@ def test_iceberg_filter_bool_26474(tmp_path: Path) -> None:
             dfs_concat.filter(predicate),
             check_row_order=False,
         )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_partial_and_pushdown(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("namespace")
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(1, "a", LongType()),
+            NestedField(2, "b", DoubleType()),
+        ),
+    )
+    tbl = catalog.load_table("namespace.table")
+    pl.DataFrame(
+        {"a": [1, 2, 3], "b": [10.0, 20.0, 30.0]},
+    ).write_iceberg(tbl, mode="append")
+
+    # a > 1 is convertible; cast is not
+    q = pl.scan_iceberg(tbl).filter(
+        (pl.col("a") > 1) & (pl.col("b").cast(pl.Int64) > 0)
+    )
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    # Verify: partial predicate was pushed
+    assert "pyarrow_predicate = " in capture
+    assert "pa.compute.field('a') > 1" in capture
+    # Verify: correctness
+    assert len(result) == 2
+    assert result["a"].to_list() == [2, 3]
