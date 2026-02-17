@@ -407,7 +407,7 @@ impl std::fmt::Display for ValueDisplay<'_> {
                 f.write_char(']')
             },
             Object(o) => {
-                f.write_str("{")?;
+                f.write_char('{')?;
 
                 let mut iter = o.iter();
 
@@ -427,7 +427,7 @@ impl std::fmt::Display for ValueDisplay<'_> {
                     ValueDisplay(v).fmt(f)?;
                 }
 
-                f.write_str("}")
+                f.write_char('}')
             },
         }
     }
