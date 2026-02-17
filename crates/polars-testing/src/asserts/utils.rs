@@ -812,7 +812,7 @@ pub fn assert_schema_equal(
 ///
 /// # Order of Checks
 ///
-/// 1. Schema validation (column names, order, and data types via `assert_dataframe_schema_equal`)
+/// 1. Schema validation (column names, order, and data types via `assert_schema_equal`)
 /// 2. DataFrame height (row count)
 /// 3. Row ordering (sorts both DataFrames if `check_row_order` is false)
 /// 4. Column-by-column value comparison (delegated to `assert_series_values_equal`)
