@@ -78,7 +78,6 @@ pub(super) fn process_group_by(
         }
     }
 
-    // Rewrite aliased column references in predicates to original column names.
     if !alias_rename_map.is_empty() {
         for (_, predicate) in new_acc_predicates.iter_mut() {
             map_column_references(predicate, expr_arena, &alias_rename_map);
