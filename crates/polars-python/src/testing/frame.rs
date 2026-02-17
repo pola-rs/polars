@@ -1,6 +1,3 @@
-use std::sync::Arc;
-
-use polars_core::schema::SchemaRef;
 use polars_testing::asserts::{DataFrameEqualOptions, assert_dataframe_equal, assert_schema_equal};
 use pyo3::prelude::*;
 
@@ -44,12 +41,9 @@ pub fn assert_schema_equal_py(
     check_dtypes: bool,
     check_column_order: bool,
 ) -> PyResult<()> {
-    let left_schema_ref: SchemaRef = Arc::new(left_schema.0);
-    let right_schema_ref: SchemaRef = Arc::new(right_schema.0);
-
     assert_schema_equal(
-        &left_schema_ref,
-        &right_schema_ref,
+        &left_schema.0,
+        &right_schema.0,
         check_dtypes,
         check_column_order,
     )

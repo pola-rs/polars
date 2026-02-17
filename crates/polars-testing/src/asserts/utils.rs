@@ -2,7 +2,6 @@ use std::ops::Not;
 
 use polars_core::datatypes::unpack_dtypes;
 use polars_core::prelude::*;
-use polars_core::schema::SchemaRef;
 use polars_ops::series::is_close;
 
 /// Configuration options for comparing Series equality.
