@@ -749,6 +749,7 @@ fn assert_schema_equal_impl(
     debug_assert!(right_schema.len() >= left_schema.len());
 
     if right_schema.len() > left_schema.len() {
+        one_sided_names.reserve_exact(right_schema.len() - left_schema.len());
         one_sided_names.extend(
             right_schema
                 .iter_names()
