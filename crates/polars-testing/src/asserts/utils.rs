@@ -671,7 +671,7 @@ impl DataFrameEqualOptions {
 /// # Arguments
 ///
 /// * `left` - The first schema to compare
-/// * `right` - The second DataFrschemaame to compare
+/// * `right` - The second schema to compare
 /// * `check_dtypes` - If true, requires data types to match for corresponding columns
 /// * `check_column_order` - If true, requires columns to appear in the same order
 ///
