@@ -1,3 +1,5 @@
+pub mod builder;
+
 use std::iter::Iterator;
 use std::ops::Range;
 use std::sync::Arc;
@@ -8,13 +10,15 @@ use polars_core::prelude::Field;
 use polars_core::schema::{SchemaExt, SchemaRef};
 use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
 use polars_io::cloud::CloudOptions;
+use polars_io::metrics::OptIOMetrics;
 use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
 use polars_io::prelude::_csv_read_internal::{
     CountLines, NullValuesCompiled, cast_columns, prepare_csv_schema, read_chunk,
 };
 use polars_io::prelude::builder::validate_utf8;
 use polars_io::prelude::{CsvEncoding, CsvParseOptions, CsvReadOptions};
-use polars_io::utils::compression::CompressedReader;
+use polars_io::utils::byte_source::{ByteSource, DynByteSource, DynByteSourceBuilder}; //kdn TODO cleanup
+use polars_io::utils::compression::{CompressedReader, SupportedCompression};
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
@@ -26,63 +30,12 @@ use super::multi_scan::reader_interface::{BeginReadArgs, FileReader, FileReaderC
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::distributor_channel::{self, distributor_channel};
+use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::multi_scan::reader_interface::Projection;
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::{MorselSeq, TaskPriority};
-
-pub mod builder {
-    use std::sync::Arc;
-
-    use polars_core::config;
-    use polars_io::cloud::CloudOptions;
-    use polars_io::prelude::CsvReadOptions;
-    use polars_plan::dsl::ScanSource;
-
-    use super::CsvFileReader;
-    use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
-    use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
-    use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
-
-    impl FileReaderBuilder for Arc<CsvReadOptions> {
-        fn reader_name(&self) -> &str {
-            "csv"
-        }
-
-        fn reader_capabilities(&self) -> ReaderCapabilities {
-            use ReaderCapabilities as RC;
-
-            RC::NEEDS_FILE_CACHE_INIT
-                | if self.parse_options.comment_prefix.is_some() {
-                    RC::empty()
-                } else {
-                    RC::PRE_SLICE
-                }
-        }
-
-        fn build_file_reader(
-            &self,
-            source: ScanSource,
-            cloud_options: Option<Arc<CloudOptions>>,
-            _scan_source_idx: usize,
-        ) -> Box<dyn FileReader> {
-            let scan_source = source;
-            let verbose = config::verbose();
-            let options = self.clone();
-
-            let reader = CsvFileReader {
-                scan_source,
-                cloud_options,
-                options,
-                verbose,
-                cached_bytes: None,
-            };
-
-            Box::new(reader) as Box<dyn FileReader>
-        }
-    }
-}
 
 /// Read all rows in the chunk
 const NO_SLICE: (usize, usize) = (0, usize::MAX);
@@ -105,14 +58,37 @@ struct CsvFileReader {
     #[expect(unused)] // Will be used when implementing cloud streaming.
     cloud_options: Option<Arc<CloudOptions>>,
     options: Arc<CsvReadOptions>,
-    // Cached on first access - we may be called multiple times e.g. on negative slice.
+    // Cached on first access - we may be called multiple times e.g. on negative slice. //kdn TODO CHECK
     cached_bytes: Option<Buffer<u8>>,
     verbose: bool,
+    pub byte_source_builder: DynByteSourceBuilder,
+    pub chunk_prefetch_sync: ChunkPrefetchSync,
+    pub init_data: Option<InitializedState>,
+    pub io_metrics: OptIOMetrics,
+}
+
+pub(crate) struct ChunkPrefetchSync {
+    pub(crate) prefetch_limit: usize,
+    pub(crate) prefetch_semaphore: Arc<tokio::sync::Semaphore>,
+    pub(crate) shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
+
+    /// Waits for the previous reader to finish spawning prefetches.
+    pub(crate) prev_all_spawned: Option<WaitGroup>,
+    /// Dropped once the current reader has finished spawning prefetches.
+    pub(crate) current_all_spawned: Option<WaitToken>,
+}
+
+#[derive(Clone)]
+pub struct InitializedState {
+    file_size: usize,
+    compression: Option<SupportedCompression>,
+    byte_source: Arc<DynByteSource>,
 }
 
 #[async_trait]
 impl FileReader for CsvFileReader {
     async fn initialize(&mut self) -> PolarsResult<()> {
+        dbg!("start CsvFileReader::initialize"); //kdn
         let buffer = self
             .scan_source
             .as_scan_source_ref()
@@ -128,6 +104,7 @@ impl FileReader for CsvFileReader {
         &mut self,
         args: BeginReadArgs,
     ) -> PolarsResult<(FileReaderOutputRecv, JoinHandle<PolarsResult<()>>)> {
+        dbg!("start CsvFileReader::begin_read"); //kdn
         let verbose = self.verbose;
 
         let BeginReadArgs {
@@ -167,6 +144,8 @@ impl FileReader for CsvFileReader {
             _ => {},
         }
 
+        // kdn MARK
+        dbg!("create CompressedReader::try_new"); //kdn
         let mut reader = CompressedReader::try_new(self.cached_bytes.clone().unwrap())?;
 
         let (inferred_schema, base_leftover) = read_until_start_and_infer_schema(

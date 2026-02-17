@@ -31,6 +31,7 @@ pub fn count_rows(
     skip_rows_before_header: usize,
     skip_rows_after_header: usize,
 ) -> PolarsResult<usize> {
+    dbg!("start count_rows"); //kdn
     let file = if path.has_scheme() || polars_config::config().force_async() {
         feature_gated!("cloud", {
             crate::file_cache::FILE_CACHE
@@ -70,6 +71,7 @@ pub fn count_rows_from_slice_par(
     skip_rows_before_header: usize,
     skip_rows_after_header: usize,
 ) -> PolarsResult<usize> {
+    dbg!("start count_rows_from_slice_par"); //kdn
     let mut reader = CompressedReader::try_new(buffer)?;
 
     let reader_options = CsvReadOptions {

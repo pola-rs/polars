@@ -187,6 +187,7 @@ impl PyLazyFrame {
         credential_provider: Option<Py<PyAny>>,
         include_file_paths: Option<String>,
     ) -> PyResult<Self> {
+        dbg!("start PyLazyFrame::new_from_csv");
         let null_values = null_values.map(|w| w.0);
         let quote_char = quote_char.and_then(|s| s.as_bytes().first()).copied();
         let separator = separator

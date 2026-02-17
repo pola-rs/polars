@@ -253,6 +253,7 @@ impl LazyCsvReader {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
+        dbg!("start LazyCsvReader::with_schema_modify"); //kdn
         let n_threads = self.read_options.n_threads;
 
         let infer_schema = |bytes: Buffer<u8>| {

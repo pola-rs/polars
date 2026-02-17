@@ -665,8 +665,16 @@ pub fn lower_ir(
                     }) as _,
 
                     #[cfg(feature = "csv")]
-                    FileScanIR::Csv { options } => Arc::new(Arc::clone(options)) as _,
-
+                    FileScanIR::Csv { options } => Arc::new(
+                        crate::nodes::io_sources::csv::builder::CsvReaderBuilder {
+                            options: options.clone(),
+                            prefetch_limit: RelaxedCell::new_usize(0),
+                            prefetch_semaphore: std::sync::OnceLock::new(),
+                            shared_prefetch_wait_group_slot: Default::default(),
+                            io_metrics: std::sync::OnceLock::new(),
+                        },
+                    ) as _,
+                    //kdn TODO cleanup json stray comment line
                     #[cfg(feature = "json")]
                     FileScanIR::NDJson { options } => Arc::new(
                         crate::nodes::io_sources::ndjson::builder::NDJsonReaderBuilder {

@@ -34,6 +34,8 @@ pub fn read_until_start_and_infer_schema(
     mut inspect_first_content_row_fn: Option<InspectContentFn<'_>>,
     reader: &mut CompressedReader,
 ) -> PolarsResult<(Schema, Buffer<u8>)> {
+    dbg!("start read_until_start_and_infer_schema"); //kdn
+    dbg!(&projected_schema);
     // It's better to be above than below here.
     const ESTIMATED_BYTES_PER_ROW: usize = 200;
 
@@ -75,6 +77,7 @@ pub fn read_until_start_and_infer_schema(
 
     let comment_prefix = options.parse_options.comment_prefix.as_ref();
     let infer_schema_length = options.infer_schema_length.unwrap_or(usize::MAX);
+    dbg!(&infer_schema_length); //kdn
 
     let mut header_line = None;
     let mut content_lines = Vec::with_capacity(options.infer_schema_length.unwrap_or_else(|| {
@@ -186,6 +189,8 @@ pub fn read_until_start_and_infer_schema(
         projected_schema,
     )?;
 
+    dbg!("done read_until_start_and_infer_schema"); //kdn
+    dbg!(&inferred_schema);
     Ok((inferred_schema, leftover))
 }
 
@@ -223,6 +228,8 @@ fn for_each_line_from_reader(
     let mut retain_offset = None;
 
     loop {
+        dbg!("iterate loop in for_each_line_from_reader"); //kdn
+        dbg!(&read_size);
         let (mut slice, bytes_read) = reader.read_next_slice(&prev_leftover, read_size)?;
         if slice.is_empty() {
             return Ok(Buffer::new());
@@ -386,6 +393,8 @@ fn infer_schema(
     options: &CsvReadOptions,
     projected_schema: Option<SchemaRef>,
 ) -> PolarsResult<Schema> {
+    dbg!("start infer_schema"); //kdn
+    dbg!(&content_lines.len()); //kdn
     let has_no_inference_data = if options.has_header {
         header_line.is_none()
     } else {

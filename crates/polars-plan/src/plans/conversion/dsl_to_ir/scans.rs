@@ -346,6 +346,7 @@ pub async fn csv_file_info(
     csv_options: &mut CsvReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
+    dbg!("start csv_file_info"); //kdn
     use polars_core::POOL;
     use polars_core::error::feature_gated;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -444,6 +445,8 @@ pub async fn csv_file_info(
     } else {
         (inferred_schema_ref.clone(), inferred_schema_ref)
     };
+
+    dbg!(&schema);
 
     Ok(FileInfo::new(
         schema,
@@ -660,6 +663,7 @@ impl SourcesToFileInfo {
         sources_before_expansion: &ScanSources,
         unified_scan_args: &mut UnifiedScanArgs,
     ) -> PolarsResult<(FileInfo, FileScanIR)> {
+        dbg!("start async SourcesToFileInfo::infer_or_parse"); //kdn
         let require_first_source = |failed_operation_name: &'static str, hint: &'static str| {
             sources.first_or_empty_expand_err(
                 failed_operation_name,
@@ -760,6 +764,7 @@ this scan to succeed with an empty DataFrame.",
             .map_err(|e| e.context(failed_here!(ipc scan)))?,
             #[cfg(feature = "csv")]
             FileScanDsl::Csv { mut options } => {
+                dbg!("match arm FileScanDsl::Csv"); //kdn
                 {
                     // TODO: This is a hack. We conditionally set `allow_missing_columns` to
                     // mimic existing behavior, but this should be taken from a user provided
@@ -888,6 +893,7 @@ this scan to succeed with an empty DataFrame.",
         unified_scan_args: &mut UnifiedScanArgs,
         verbose: bool,
     ) -> PolarsResult<(FileInfo, FileScanIR)> {
+        dbg!("start async SourcesToFileInfo::get_or_insert"); //kdn
         // Only cache non-empty paths. Others are directly parsed.
         let paths = match sources {
             ScanSources::Paths(paths) if !paths.is_empty() => paths.clone(),

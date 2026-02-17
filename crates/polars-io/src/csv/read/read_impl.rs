@@ -154,6 +154,7 @@ impl<'a> CoreReader<'a> {
         row_index: Option<RowIndex>,
         raise_if_empty: bool,
     ) -> PolarsResult<CoreReader<'a>> {
+        dbg!("start CoreReader::new"); //kdn
         let separator = parse_options.separator;
 
         #[cfg(feature = "decompress")]

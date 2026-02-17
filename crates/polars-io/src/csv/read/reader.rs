@@ -98,6 +98,7 @@ impl CsvReadOptions {
 
 impl<R: MmapBytesReader> CsvReader<R> {
     fn core_reader(&mut self) -> PolarsResult<CoreReader<'_>> {
+        dbg!("start CsvReader::core_reader"); //kdn
         let reader_bytes = get_reader_bytes(&mut self.reader)?;
 
         let parse_options = self.options.get_parse_options();
