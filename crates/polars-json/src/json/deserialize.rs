@@ -8,6 +8,9 @@ use arrow::offset::{Offset, Offsets};
 use arrow::temporal_conversions;
 use arrow::types::NativeType;
 use num_traits::NumCast;
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::{f64_to_dec128, i128_to_dec128, str_to_dec128};
+use polars_utils::float16::pf16;
 use simd_json::{BorrowedValue, StaticNode};
 
 use super::*;
@@ -39,6 +42,8 @@ fn deserialize_primitive_into<'a, T: NativeType + NumCast, A: Borrow<BorrowedVal
     let iter = rows.iter().enumerate().map(|(i, row)| match row.borrow() {
         BorrowedValue::Static(StaticNode::I64(v)) => T::from(*v),
         BorrowedValue::Static(StaticNode::U64(v)) => T::from(*v),
+        BorrowedValue::Static(StaticNode::I128(v)) => T::from(*v),
+        BorrowedValue::Static(StaticNode::U128(v)) => T::from(*v),
         BorrowedValue::Static(StaticNode::F64(v)) => T::from(*v),
         BorrowedValue::Static(StaticNode::Bool(v)) => T::from(*v as u8),
         BorrowedValue::Static(StaticNode::Null) => None,
@@ -49,6 +54,47 @@ fn deserialize_primitive_into<'a, T: NativeType + NumCast, A: Borrow<BorrowedVal
     });
     target.extend_trusted_len(iter);
     check_err_idx(rows, err_idx, "numeric")
+}
+
+#[cfg(feature = "dtype-decimal")]
+fn deserialize_decimal<'a, A: Borrow<BorrowedValue<'a>>>(
+    rows: &[A],
+    dtype: ArrowDataType,
+) -> PolarsResult<Int128Array> {
+    let ArrowDataType::Decimal(prec, scale) = dtype else {
+        unreachable!()
+    };
+    let mut err_idx = rows.len();
+    let iter = rows.iter().enumerate().map(|(i, row)| {
+        let decode = match row.borrow() {
+            BorrowedValue::Static(StaticNode::I64(v)) => i128_to_dec128(*v as i128, prec, scale),
+            BorrowedValue::Static(StaticNode::U64(v)) => i128_to_dec128(*v as i128, prec, scale),
+            BorrowedValue::Static(StaticNode::I128(v)) => i128_to_dec128(*v, prec, scale),
+            BorrowedValue::Static(StaticNode::U128(v)) => i128::try_from(*v)
+                .ok()
+                .and_then(|v| i128_to_dec128(v, prec, scale)),
+            BorrowedValue::Static(StaticNode::F64(v)) => f64_to_dec128(*v, prec, scale),
+            BorrowedValue::String(s) => str_to_dec128(s.as_bytes(), prec, scale, false),
+            BorrowedValue::Static(StaticNode::Null) => return None,
+            _ => None,
+        };
+        if decode.is_none() && err_idx == rows.len() {
+            err_idx = i;
+        }
+        decode
+    });
+
+    let arr = Int128Array::from_trusted_len_iter(iter);
+    if err_idx != rows.len() {
+        polars_bail!(
+            ComputeError:
+            r#"error deserializing value "{:?}" as Decimal({prec}, {scale}).
+
+Try increasing `infer_schema_length` or specifying a schema."#,
+            rows[err_idx].borrow()
+        )
+    }
+    Ok(arr.to(dtype))
 }
 
 fn deserialize_binary<'a, A: Borrow<BorrowedValue<'a>>>(
@@ -369,6 +415,9 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         | ArrowDataType::Duration(_) => {
             fill_array_from::<_, _, PrimitiveArray<i64>>(deserialize_primitive_into, dtype, rows)
         },
+        ArrowDataType::Int128 => {
+            fill_array_from::<_, _, PrimitiveArray<i128>>(deserialize_primitive_into, dtype, rows)
+        },
         ArrowDataType::Timestamp(tu, tz) => {
             let mut err_idx = rows.len();
             let iter = rows.iter().enumerate().map(|(i, row)| match row.borrow() {
@@ -404,13 +453,20 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         ArrowDataType::UInt64 => {
             fill_array_from::<_, _, PrimitiveArray<u64>>(deserialize_primitive_into, dtype, rows)
         },
-        ArrowDataType::Float16 => unreachable!(),
+        ArrowDataType::UInt128 => {
+            fill_array_from::<_, _, PrimitiveArray<u128>>(deserialize_primitive_into, dtype, rows)
+        },
+        ArrowDataType::Float16 => {
+            fill_array_from::<_, _, PrimitiveArray<pf16>>(deserialize_primitive_into, dtype, rows)
+        },
         ArrowDataType::Float32 => {
             fill_array_from::<_, _, PrimitiveArray<f32>>(deserialize_primitive_into, dtype, rows)
         },
         ArrowDataType::Float64 => {
             fill_array_from::<_, _, PrimitiveArray<f64>>(deserialize_primitive_into, dtype, rows)
         },
+        #[cfg(feature = "dtype-decimal")]
+        ArrowDataType::Decimal(_, _) => Ok(Box::new(deserialize_decimal(rows, dtype)?)),
         ArrowDataType::LargeUtf8 => {
             fill_generic_array_from::<_, _, Utf8Array<i64>>(deserialize_utf8_into, rows)
         },
@@ -428,7 +484,7 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
             dtype,
             allow_extra_fields_in_struct,
         )?)),
-        _ => todo!(),
+        adt => unimplemented!("Deserialization from JSON not implemented for {adt:?}"),
     }
 }
 
@@ -456,9 +512,9 @@ fn check_err_idx<'a>(
     if err_idx != rows.len() {
         polars_bail!(
             ComputeError:
-            r#"error deserializing value "{:?}" as {}. \
-            Try increasing `infer_schema_length` or specifying a schema.
-            "#,
+            r#"error deserializing value "{:?}" as {}.
+
+Try increasing `infer_schema_length` or specifying a schema."#,
             rows[err_idx].borrow(), type_name,
         )
     }

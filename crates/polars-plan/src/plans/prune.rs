@@ -5,7 +5,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
-use crate::plans::{AExpr, IR, IRPlan, IRPlanRef};
+use crate::plans::{AExpr, ExprIR, IR, IRPlan, IRPlanRef};
 
 /// Returns a pruned copy of this plan with new arenas (without unreachable nodes).
 ///
@@ -145,6 +145,15 @@ impl<'a> CopyContext<'a> {
         if let AExpr::Eval { evaluation, .. } = &mut dst_expr {
             *evaluation = self.copy_expr(*evaluation);
         }
+        #[cfg(feature = "dtype-struct")]
+        if let AExpr::StructEval { evaluation, .. } = &mut dst_expr {
+            for e in evaluation.iter_mut() {
+                *e = ExprIR::new(
+                    self.copy_expr(e.node()),
+                    crate::plans::OutputName::Alias(e.output_name().clone()),
+                );
+            }
+        }
 
         self.dst_expr.add(dst_expr)
     }
@@ -155,7 +164,8 @@ mod tests {
     use polars_core::prelude::*;
 
     use super::*;
-    use crate::dsl::{SinkTypeIR, col, lit};
+    use crate::dsl::SinkTypeIR;
+    use crate::dsl::functions::{col, lit};
     use crate::plans::{ArenaLpIter as _, ExprToIRContext, to_expr_ir};
 
     //           SINK[right]

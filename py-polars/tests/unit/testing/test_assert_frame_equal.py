@@ -273,7 +273,7 @@ def test_compare_frame_equal_nested_nans() -> None:
 
     assert_frame_not_equal(df3, df4)
     for check_dtype in (True, False):
-        with pytest.raises(AssertionError, match="mismatch|different"):
+        with pytest.raises(AssertionError, match=r"mismatch|different"):
             assert_frame_equal(df3, df4, check_dtypes=check_dtype)
 
 
@@ -312,7 +312,7 @@ def test_assert_frame_equal_column_mismatch() -> None:
     df2 = pl.DataFrame({"b": [1, 2]})
     with pytest.raises(
         AssertionError,
-        match='DataFrames are different \\(columns mismatch: \\["a"\\] in left, but not in right\\)',
+        match=r'DataFrames are different \(columns mismatch: \["a"\] in left, but not in right\)',
     ):
         assert_frame_equal(df1, df2)
     assert_frame_not_equal(df1, df2)
@@ -323,7 +323,7 @@ def test_assert_frame_equal_column_mismatch2() -> None:
     df2 = pl.LazyFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
     with pytest.raises(
         AssertionError,
-        match="columns mismatch.*in right.*but not in left",
+        match=r"columns mismatch.*in right.*but not in left",
     ):
         assert_frame_equal(df1, df2)
     assert_frame_not_equal(df1, df2)
@@ -506,3 +506,37 @@ def test_frame_schema_fail():
     assert "AssertionError: DataFrames are equal" in stdout
     assert "AssertionError: inputs are different (unexpected input types)" in stdout
     assert "AssertionError: DataFrames are different (dtypes do not match)" in stdout
+
+
+def test_dtype_check_for_assert_frame_26507() -> None:
+    schema_a = {
+        "int_a": pl.Int16,
+        "int_b": pl.Int16,
+        "int_c": pl.Int64,
+    }
+
+    schema_b = {
+        "int_a": pl.Int64,
+        "int_b": pl.Int16,
+        "int_c": pl.Int64,
+    }
+
+    a = pl.DataFrame({}, schema=schema_a)
+    b = pl.DataFrame({}, schema=schema_b)
+
+    # SHOULD NOT raise an error since frames have different dtypes
+    assert_frame_not_equal(
+        left=a,
+        right=b,
+        check_column_order=False,
+        check_dtypes=True,
+    )
+
+    # SHOULD raise an error since frames have different dtypes
+    with pytest.raises(AssertionError):
+        assert_frame_equal(
+            left=a,
+            right=b,
+            check_column_order=False,
+            check_dtypes=True,
+        )

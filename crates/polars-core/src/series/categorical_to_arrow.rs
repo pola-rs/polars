@@ -99,6 +99,8 @@ impl CategoricalToArrowConverter {
                     self.initialize(field.dtype())
                 }
             },
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, inner) => self.initialize(inner),
             _ => assert!(!dtype.is_nested()),
         }
     }

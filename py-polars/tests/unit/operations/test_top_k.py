@@ -1,4 +1,4 @@
-from typing import Callable
+from collections.abc import Callable
 
 import pytest
 from hypothesis import given
@@ -601,3 +601,18 @@ def test_top_k_by_non_uniq_name_25072() -> None:
     result = df.sort(by=[pl.col.a, pl.col.a]).head(2)
     expected = pl.DataFrame({"a": [1, 2], "b": [4, 5]})
     assert_frame_equal(result, expected)
+
+
+def test_top_k_union_null() -> None:
+    df1 = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.Int64})
+    df2 = pl.DataFrame({"a": [None, None, None]}, schema={"a": pl.Null})
+    out = (
+        pl.concat([df1.lazy().join(df1.lazy(), on="a"), df2.lazy()])
+        .bottom_k(5, by="a")
+        .collect(engine="streaming")
+    )
+    assert_frame_equal(
+        out,
+        pl.DataFrame({"a": [1, 2, 3, None, None]}, schema={"a": pl.Int64}),
+        check_row_order=False,
+    )

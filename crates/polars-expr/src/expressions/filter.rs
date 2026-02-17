@@ -81,6 +81,7 @@ impl PhysicalExpr for FilterExpr {
                     GroupsType::Slice {
                         groups,
                         overlapping: _,
+                        monotonic: _,
                     } => groups
                         .iter()
                         .zip(other_lengths)

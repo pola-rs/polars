@@ -22,7 +22,7 @@ def test_date_func() -> None:
         }
     )
     with pl.SQLContext(df=df, eager=True) as ctx:
-        result = ctx.execute("SELECT date < DATE('2021-03-20') from df")
+        result = ctx.execute("SELECT date < DATE('2021-03-20') FROM df")
 
     expected = pl.DataFrame({"date": [True, False, False]})
     assert_frame_equal(result, expected)
@@ -43,25 +43,34 @@ def test_date_func() -> None:
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_datetime_to_time(time_unit: Literal["ns", "us", "ms"]) -> None:
-    df = pl.DataFrame(  # noqa: F841
-        {
-            "dtm": [
-                datetime(2099, 12, 31, 23, 59, 59),
-                datetime(1999, 12, 31, 12, 30, 30),
-                datetime(1969, 12, 31, 1, 1, 1),
-                datetime(1899, 12, 31, 0, 0, 0),
-            ],
-        },
-        schema={"dtm": pl.Datetime(time_unit)},
+    s = pl.Series(
+        name="dtm",
+        values=[
+            datetime(2099, 12, 31, 23, 59, 59),
+            datetime(1999, 12, 31, 12, 30, 30),
+            datetime(1969, 12, 31, 1, 1, 1),
+            datetime(1899, 12, 31, 0, 0, 0),
+        ],
+        dtype=pl.Datetime(time_unit),
     )
+    df = s.to_frame()
+    lf = df.lazy()
 
-    res = pl.sql("SELECT dtm::time AS tm from df").collect()
-    assert res["tm"].to_list() == [
-        time(23, 59, 59),
-        time(12, 30, 30),
-        time(1, 1, 1),
-        time(0, 0, 0),
-    ]
+    select = "SELECT dtm::time AS tm"
+    for res in (
+        pl.sql(f"{select} FROM df").collect(),
+        pl.sql(f"{select} FROM s").collect(),
+        lf.sql(f"{select} FROM self").collect(),
+        df.sql(f"{select} FROM self"),
+        s.sql(f"{select} FROM self"),
+    ):
+        assert isinstance(res, pl.DataFrame)
+        assert res["tm"].to_list() == [
+            time(23, 59, 59),
+            time(12, 30, 30),
+            time(1, 1, 1),
+            time(0, 0, 0),
+        ]
 
 
 @pytest.mark.parametrize(
@@ -255,7 +264,7 @@ def test_implicit_temporal_string_errors(dtval: str) -> None:
 
     with pytest.raises(
         InvalidOperationError,
-        match="(conversion.*failed)|(cannot compare.*string.*temporal)",
+        match=r"(conversion.*failed)|(cannot compare.*string.*temporal)",
     ):
         df.sql(f"SELECT * FROM self WHERE dt = '{dtval}'")
 

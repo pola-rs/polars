@@ -328,15 +328,15 @@ impl From<ScalarColumn> for Column {
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for ScalarColumn {
-    fn schema_name() -> String {
-        "ScalarColumn".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ScalarColumn".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "ScalarColumn"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         serde_impl::SerializeWrap::json_schema(generator)
     }
 }

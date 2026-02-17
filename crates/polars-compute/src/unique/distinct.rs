@@ -3,8 +3,9 @@ use arrow::array::{Array, BinaryViewArray, BooleanArray, PrimitiveArray, StaticA
 use arrow::bitmap::bitmask::BitMask;
 use arrow::datatypes::ArrowDataType;
 use arrow::legacy::prelude::LargeBinaryArray;
-use arrow::types::{NativeType, PrimitiveType, f16};
+use arrow::types::{NativeType, PrimitiveType};
 use polars_utils::aliases::PlHashSet;
+use polars_utils::float16::pf16;
 use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 use polars_utils::{IdxSize, UnitVec};
 
@@ -58,7 +59,7 @@ pub fn amortized_unique_from_dtype(dtype: &ArrowDataType) -> Box<dyn AmortizedUn
             PrimitiveType::UInt32 => Box::new(PrimitiveArgUnique::<u32>::default()) as _,
             PrimitiveType::UInt64 => Box::new(PrimitiveArgUnique::<u64>::default()) as _,
             PrimitiveType::UInt128 => Box::new(PrimitiveArgUnique::<u128>::default()) as _,
-            PrimitiveType::Float16 => Box::new(PrimitiveArgUnique::<f16>::default()) as _,
+            PrimitiveType::Float16 => Box::new(PrimitiveArgUnique::<pf16>::default()) as _,
             PrimitiveType::Float32 => Box::new(PrimitiveArgUnique::<f32>::default()) as _,
             PrimitiveType::Float64 => Box::new(PrimitiveArgUnique::<f64>::default()) as _,
             PrimitiveType::Int256 => unreachable!(),
@@ -176,10 +177,10 @@ impl AmortizedUnique for BooleanUnique {
             *idxs = match idxs[1..]
                 .iter()
                 // SAFETY: function invariant.
-                .position(|&i| fst == unsafe { values.get_bit_unchecked(i as usize) })
+                .position(|&i| fst != unsafe { values.get_bit_unchecked(i as usize) })
             {
                 None => UnitVec::from_slice(&[idxs[0]]),
-                Some(i) => UnitVec::from_slice(&[idxs[0], idxs[i]]),
+                Some(i) => UnitVec::from_slice(&[idxs[0], idxs[1 + i]]),
             };
         }
     }
@@ -296,16 +297,20 @@ impl AmortizedUnique for BooleanUnique {
             let validity = BitMask::from_bitmap(values.validity().unwrap());
             let values = BitMask::from_bitmap(values.values());
 
+            let validity = validity.sliced(start as usize, length as usize);
+            let values = values.sliced(start as usize, length as usize);
+
             let num_valid = validity.set_bits();
             if num_valid == 0 {
                 return 1;
             }
 
-            let num_intersections = values.num_intersections_with(validity);
-            if num_intersections == num_valid || num_intersections == 0 {
-                2
+            if num_valid as IdxSize == length {
+                let num_trues = values.set_bits() as IdxSize;
+                1 + IdxSize::from(num_trues != length && num_trues != 0)
             } else {
-                3
+                let num_trues = values.num_intersections_with(validity);
+                2 + IdxSize::from(num_trues != num_valid && num_trues != 0)
             }
         } else {
             let values = values.values();
@@ -314,12 +319,9 @@ impl AmortizedUnique for BooleanUnique {
             }
 
             let values = BitMask::from_bitmap(values);
+            let values = values.sliced(start as usize, length as usize);
             let num_trues = values.set_bits();
-            if num_trues == 0 || num_trues == values.len() {
-                1
-            } else {
-                2
-            }
+            1 + IdxSize::from(num_trues != 0 && num_trues != values.len())
         }
     }
 }

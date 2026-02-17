@@ -155,10 +155,21 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     // @TAG: 2.0
                     // @HACK: `is_in` does supertype casting between primitive numerics, which
                     // honestly makes very little sense. To stay backwards compatible we keep this,
-                    // but please in 2.0 remove this.
+                    // but please in 2.0 remove this. FirstArgLossless might be a good alternative,
+                    // as used by index_of(), or build on index_of().
+                    //
+                    // Try lossless supertype first to avoid precision loss (e.g.,
+                    // UInt64 + Int64 would otherwise become Float64), then fall back
+                    // to the existing supertype behavior.
+                    let super_type = polars_core::utils::get_numeric_upcast_supertype_lossless(
+                        &type_left,
+                        type_other_inner,
+                    )
+                    .map_or_else(
+                        || polars_core::utils::try_get_supertype(&type_left, type_other_inner),
+                        Ok,
+                    )?;
 
-                    let super_type =
-                        polars_core::utils::try_get_supertype(&type_left, type_other_inner)?;
                     let other_type = match &type_other {
                         DataType::List(_) => DataType::List(Box::new(super_type.clone())),
                         #[cfg(feature = "dtype-array")]

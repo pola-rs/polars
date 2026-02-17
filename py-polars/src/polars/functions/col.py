@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import re
 import sys
 from collections.abc import Iterable
 from datetime import datetime, timedelta
@@ -25,6 +26,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars._plr as plr
 
 if TYPE_CHECKING:
+    from types import FrameType
+
     from polars._typing import PolarsDataType, PythonDataType
     from polars.expr.expr import Expr
 
@@ -50,7 +53,9 @@ def _create_col(
         if isinstance(name, str):
             names_str = [name]
             names_str.extend(more_names)  # type: ignore[arg-type]
-            return pl.Selector._by_name(names_str, strict=True).as_expr()
+            return pl.Selector._by_name(
+                names_str, strict=True, expand_patterns=True
+            ).as_expr()
         elif is_polars_dtype(name):
             dtypes = [name]
             dtypes.extend(more_names)  # type: ignore[arg-type]
@@ -73,11 +78,19 @@ def _create_col(
     elif isinstance(name, Iterable):
         names = list(name)
         if not names:
-            return pl.Selector._by_name(names, strict=True).as_expr()  # type: ignore[arg-type]
+            return pl.Selector._by_name(
+                names=names,  # type: ignore[arg-type]
+                strict=True,
+                expand_patterns=True,
+            ).as_expr()
 
         item = names[0]
         if isinstance(item, str):
-            return pl.Selector._by_name(names, strict=True).as_expr()  # type: ignore[arg-type]
+            return pl.Selector._by_name(
+                names=names,  # type: ignore[arg-type]
+                strict=True,
+                expand_patterns=True,
+            ).as_expr()
         elif is_polars_dtype(item):
             dtypes = []
             for nm in names:
@@ -101,6 +114,21 @@ def _create_col(
             f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}."
         )
         raise TypeError(msg)
+
+
+if sys.version_info >= (3, 11):
+    # note: using `co_qualname` is more robust; can additionally
+    # detect class scope from inside classmethods and staticmethods...
+    def _get_class_objname(f: FrameType) -> str:
+        return f.f_code.co_qualname.split(".")[-2:][0]
+
+    _have_qualname = True
+else:
+    # ... but it's not available until 3.11
+    def _get_class_objname(f: FrameType) -> str:
+        return type(f.f_locals.get("self")).__name__
+
+    _have_qualname = False
 
 
 def _python_dtype_match(tp: PythonDataType) -> list[PolarsDataType]:
@@ -366,9 +394,29 @@ class Col:
         │ 6   │
         └─────┘
         """
-        # For autocomplete to work with IPython
-        if name.startswith("__wrapped__"):
-            return getattr(type(self), name)
+        # detect if "name" has been mangled by class scoping
+        # (this can only happen if the colname starts with a double-underscore)
+        if re.match(r"^_\w+__", name):
+            import inspect
+
+            frame = inspect.currentframe()
+            while frame is not None:
+                if (frame := frame.f_back) is not None and (  # type: ignore[union-attr]
+                    _have_qualname or "self" in frame.f_locals
+                ):
+                    # if we are inside class scope confirm the col has been mangled
+                    # with the *specific* class name associated with that scope
+                    if object_name := _get_class_objname(frame):
+                        if name.startswith(
+                            mangled_prefix := f"_{object_name}"
+                        ) and isinstance(frame.f_globals.get(object_name), type):
+                            name = name.removeprefix(mangled_prefix)
+                            break
+
+        # help autocomplete work with IPython
+        with contextlib.suppress(AttributeError):
+            if name.startswith("__wrapped__"):
+                return getattr(type(self), name)
 
         return _create_col(name)
 

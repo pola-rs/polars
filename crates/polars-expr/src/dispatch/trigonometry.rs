@@ -1,10 +1,7 @@
 use num_traits::Float;
 use polars_core::chunked_array::ops::arity::broadcast_binary_elementwise;
 use polars_core::error::{PolarsResult, polars_bail};
-use polars_core::prelude::{
-    ChunkApply, ChunkedArray, Column, DataType, Float32Type, Float64Type, IntoColumn,
-    PolarsFloatType,
-};
+use polars_core::prelude::*;
 use polars_plan::plans::IRTrigonometricFunction;
 
 pub(super) fn apply_trigonometric_function(
@@ -13,6 +10,11 @@ pub(super) fn apply_trigonometric_function(
 ) -> PolarsResult<Column> {
     use DataType::*;
     match s.dtype() {
+        #[cfg(feature = "dtype-f16")]
+        Float16 => {
+            let ca = s.f16().unwrap();
+            apply_trigonometric_function_to_float(ca, trig_function)
+        },
         Float32 => {
             let ca = s.f32().unwrap();
             apply_trigonometric_function_to_float(ca, trig_function)
@@ -50,6 +52,11 @@ pub(super) fn apply_arctan2(s: &mut [Column]) -> PolarsResult<Column> {
 fn arctan2_on_columns(y: &Column, x: &Column) -> PolarsResult<Column> {
     use DataType::*;
     match y.dtype() {
+        #[cfg(feature = "dtype-f16")]
+        Float16 => {
+            let y_ca: &ChunkedArray<Float16Type> = y.f16().unwrap();
+            arctan2_on_floats(y_ca, x)
+        },
         Float32 => {
             let y_ca: &ChunkedArray<Float32Type> = y.f32().unwrap();
             arctan2_on_floats(y_ca, x)

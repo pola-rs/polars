@@ -14,7 +14,7 @@
 //!
 //! let s0 = Column::new("days".into(), &[0, 1, 2, 3, 4]);
 //! let s1 = Column::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
-//! let mut df = DataFrame::new(vec![s0, s1]).unwrap();
+//! let mut df = DataFrame::new_infer_height(vec![s0, s1]).unwrap();
 //!
 //! // Create an in memory file handler.
 //! // Vec<u8>: Read + Write
@@ -39,6 +39,8 @@ use arrow::datatypes::{ArrowSchemaRef, Metadata};
 use arrow::io::ipc::read::{self, get_row_count};
 use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
+use polars_utils::bool::UnsafeBool;
+use polars_utils::pl_str::PlRefStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -52,12 +54,21 @@ use crate::shared::{ArrowReader, finish_reader};
 #[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct IpcScanOptions;
+pub struct IpcScanOptions {
+    /// Read StatisticsFlags from the record batch custom metadata.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub record_batch_statistics: bool,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub checked: UnsafeBool,
+}
 
 #[expect(clippy::derivable_impls)]
 impl Default for IpcScanOptions {
     fn default() -> Self {
-        Self {}
+        Self {
+            record_batch_statistics: false,
+            checked: Default::default(),
+        }
     }
 }
 
@@ -87,7 +98,7 @@ pub struct IpcReader<R: MmapBytesReader> {
     pub(super) projection: Option<Vec<usize>>,
     pub(crate) columns: Option<Vec<String>>,
     hive_partition_columns: Option<Vec<Series>>,
-    include_file_path: Option<(PlSmallStr, Arc<str>)>,
+    include_file_path: Option<(PlSmallStr, PlRefStr)>,
     pub(super) row_index: Option<RowIndex>,
     // Stores the as key semaphore to make sure we don't write to the memory mapped file.
     pub(super) memory_map: Option<PathBuf>,
@@ -152,7 +163,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
 
     pub fn with_include_file_path(
         mut self,
-        include_file_path: Option<(PlSmallStr, Arc<str>)>,
+        include_file_path: Option<(PlSmallStr, PlRefStr)>,
     ) -> Self {
         self.include_file_path = include_file_path;
         self
@@ -311,11 +322,11 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
 
         if let Some((col, value)) = include_file_path {
             unsafe {
-                df.with_column_unchecked(Column::new_scalar(
+                df.push_column_unchecked(Column::new_scalar(
                     col,
                     Scalar::new(
                         DataType::String,
-                        AnyValue::StringOwned(value.as_ref().into()),
+                        AnyValue::StringOwned(value.as_str().into()),
                     ),
                     df.height(),
                 ))

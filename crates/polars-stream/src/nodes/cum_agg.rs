@@ -92,7 +92,7 @@ impl ComputeNode for CumAggNode {
 
                 // Find the last non-null value and set that as the state.
                 let last_non_null_idx = if out.has_nulls() {
-                    last_non_null(out.chunks().iter().map(|c| c.validity()), out.len())
+                    last_non_null(out.chunks().iter().map(|arr| arr.as_ref()), out.len())
                 } else {
                     Some(out.len() - 1)
                 };

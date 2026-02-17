@@ -322,7 +322,7 @@ impl FixedSizeListArray {
 
 impl FixedSizeListArray {
     pub(crate) fn try_child_and_size(dtype: &ArrowDataType) -> PolarsResult<(&Field, usize)> {
-        match dtype.to_logical_type() {
+        match dtype.to_storage() {
             ArrowDataType::FixedSizeList(child, size) => Ok((child.as_ref(), *size)),
             _ => polars_bail!(ComputeError: "FixedSizeListArray expects DataType::FixedSizeList"),
         }

@@ -277,7 +277,7 @@ impl Series {
 
     pub fn into_frame(self) -> DataFrame {
         // SAFETY: A single-column dataframe cannot have length mismatches or duplicate names
-        unsafe { DataFrame::new_no_checks(self.len(), vec![self.into()]) }
+        unsafe { DataFrame::new_unchecked(self.len(), vec![self.into()]) }
     }
 
     /// Rename series.
@@ -397,7 +397,7 @@ impl Series {
             {
                 true
             },
-            dt if dt.is_primitive() && dt == slf.dtype() => true,
+            dt if (dt.is_primitive() || dt.is_extension()) && dt == slf.dtype() => true,
             _ => false,
         };
 
@@ -463,8 +463,9 @@ impl Series {
         }
 
         let new_options = match options {
-            // Strictness is handled on this level to improve error messages.
-            CastOptions::Strict => CastOptions::NonStrict,
+            // Strictness is handled on this level to improve error messages, if not nested.
+            // Nested types could hide cast errors, so have to be done internally.
+            CastOptions::Strict if !dtype.is_nested() => CastOptions::NonStrict,
             opt => opt,
         };
 
@@ -575,8 +576,22 @@ impl Series {
                     .map(|ca| ca.into_series())
             },
 
+            #[cfg(feature = "dtype-extension")]
+            (_, D::Extension(typ, storage)) => {
+                let storage_series = self.from_physical_unchecked(storage.as_ref())?;
+                let ext = ExtensionChunked::from_storage(typ.clone(), storage_series);
+                Ok(ext.into_series())
+            },
+
             _ => panic!("invalid from_physical({dtype:?}) for {:?}", self.dtype()),
         }
+    }
+
+    #[cfg(feature = "dtype-extension")]
+    pub fn into_extension(self, typ: ExtensionTypeInstance) -> Series {
+        assert!(!self.dtype().is_extension());
+        let ext = ExtensionChunked::from_storage(typ, self);
+        ext.into_series()
     }
 
     /// Cast numerical types to f64, and keep floats as is.
@@ -625,11 +640,11 @@ impl Series {
     }
 
     /// Explode a list Series. This expands every item to a new row..
-    pub fn explode(&self, skip_empty: bool) -> PolarsResult<Series> {
+    pub fn explode(&self, options: ExplodeOptions) -> PolarsResult<Series> {
         match self.dtype() {
-            DataType::List(_) => self.list().unwrap().explode(skip_empty),
+            DataType::List(_) => self.list().unwrap().explode(options),
             #[cfg(feature = "dtype-array")]
-            DataType::Array(_, _) => self.array().unwrap().explode(skip_empty),
+            DataType::Array(_, _) => self.array().unwrap().explode(options),
             _ => Ok(self.clone()),
         }
     }
@@ -637,6 +652,8 @@ impl Series {
     /// Check if numeric value is NaN (note this is different than missing/ null)
     pub fn is_nan(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => Ok(self.f16().unwrap().is_nan()),
             DataType::Float32 => Ok(self.f32().unwrap().is_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
             DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
@@ -652,6 +669,8 @@ impl Series {
     /// Check if numeric value is NaN (note this is different than missing/null)
     pub fn is_not_nan(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => Ok(self.f16().unwrap().is_not_nan()),
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
             dt if dt.is_primitive_numeric() => {
@@ -666,6 +685,8 @@ impl Series {
     /// Check if numeric value is finite
     pub fn is_finite(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => Ok(self.f16().unwrap().is_finite()),
             DataType::Float32 => Ok(self.f32().unwrap().is_finite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_finite()),
             DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
@@ -681,6 +702,8 @@ impl Series {
     /// Check if numeric value is infinite
     pub fn is_infinite(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => Ok(self.f16().unwrap().is_infinite()),
             DataType::Float32 => Ok(self.f32().unwrap().is_infinite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
             DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
@@ -714,6 +737,7 @@ impl Series {
     /// * List(inner) -> List(physical of inner)
     /// * Array(inner) -> Array(physical of inner)
     /// * Struct -> Struct with physical repr of each struct column
+    /// * Extension -> physical of storage type
     pub fn to_physical_repr(&self) -> Cow<'_, Series> {
         use DataType::*;
         match self.dtype() {
@@ -750,8 +774,22 @@ impl Series {
                 Cow::Borrowed(_) => Cow::Borrowed(self),
                 Cow::Owned(ca) => Cow::Owned(ca.into_series()),
             },
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, _) => self.ext().unwrap().storage().to_physical_repr(),
             _ => Cow::Borrowed(self),
         }
+    }
+
+    /// If the Series is an Extension type, return its storage Series.
+    /// Otherwise, return itself.
+    pub fn to_storage(&self) -> &Series {
+        #[cfg(feature = "dtype-extension")]
+        {
+            if let DataType::Extension(_, _) = self.dtype() {
+                return self.ext().unwrap().storage();
+            }
+        }
+        self
     }
 
     /// Traverse and collect every nth element in a new array.
@@ -808,6 +846,8 @@ impl Series {
                 Int128 => Ok(self.i128().unwrap().prod_reduce()),
                 #[cfg(feature = "dtype-u128")]
                 UInt128 => Ok(self.u128().unwrap().prod_reduce()),
+                #[cfg(feature = "dtype-f16")]
+                Float16 => Ok(self.f16().unwrap().prod_reduce()),
                 Float32 => Ok(self.f32().unwrap().prod_reduce()),
                 Float64 => Ok(self.f64().unwrap().prod_reduce()),
                 dt => {
@@ -827,7 +867,7 @@ impl Series {
     }
 
     #[cfg(feature = "dtype-decimal")]
-    pub(crate) fn into_decimal(self, precision: usize, scale: usize) -> PolarsResult<Series> {
+    pub fn into_decimal(self, precision: usize, scale: usize) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::Int128 => Ok(self
                 .i128()
@@ -845,7 +885,7 @@ impl Series {
     }
 
     #[cfg(feature = "dtype-time")]
-    pub(crate) fn into_time(self) -> Series {
+    pub fn into_time(self) -> Series {
         match self.dtype() {
             DataType::Int64 => self.i64().unwrap().clone().into_time().into_series(),
             DataType::Time => self
@@ -859,7 +899,7 @@ impl Series {
         }
     }
 
-    pub(crate) fn into_date(self) -> Series {
+    pub fn into_date(self) -> Series {
         #[cfg(not(feature = "dtype-date"))]
         {
             panic!("activate feature dtype-date")
@@ -879,7 +919,7 @@ impl Series {
     }
 
     #[allow(unused_variables)]
-    pub(crate) fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
+    pub fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
         #[cfg(not(feature = "dtype-datetime"))]
         {
             panic!("activate feature dtype-datetime")
@@ -905,7 +945,7 @@ impl Series {
     }
 
     #[allow(unused_variables)]
-    pub(crate) fn into_duration(self, timeunit: TimeUnit) -> Series {
+    pub fn into_duration(self, timeunit: TimeUnit) -> Series {
         #[cfg(not(feature = "dtype-duration"))]
         {
             panic!("activate feature dtype-duration")
@@ -1046,7 +1086,14 @@ impl Series {
             &[self.clone().into_column()],
             &[descending],
             &[nulls_last],
+            false,
         )
+    }
+}
+
+impl Default for Series {
+    fn default() -> Self {
+        NullChunked::new(PlSmallStr::EMPTY, 0).into_series()
     }
 }
 
@@ -1061,12 +1108,6 @@ impl Deref for Series {
 impl<'a> AsRef<dyn SeriesTrait + 'a> for Series {
     fn as_ref(&self) -> &(dyn SeriesTrait + 'a) {
         self.0.as_ref()
-    }
-}
-
-impl Default for Series {
-    fn default() -> Self {
-        Int64Chunked::default().into_series()
     }
 }
 

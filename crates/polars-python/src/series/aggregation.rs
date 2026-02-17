@@ -85,17 +85,31 @@ impl PySeries {
     fn quantile<'py>(
         &self,
         py: Python<'py>,
-        quantile: f64,
+        quantile: Bound<'py, PyAny>,
         interpolation: Wrap<QuantileMethod>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(
-            py.enter_polars(|| {
-                self.series
-                    .read()
-                    .quantile_reduce(quantile, interpolation.0)
-            }),
-            py,
-        )
+        // Accept either a single float or a list of floats
+        if let Ok(q_float) = quantile.extract::<f64>() {
+            // Single quantile: use quantile_reduce
+            scalar_to_py(
+                py.enter_polars(|| self.series.read().quantile_reduce(q_float, interpolation.0)),
+                py,
+            )
+        } else if let Ok(q_list) = quantile.extract::<Vec<f64>>() {
+            // Multiple quantiles: use quantiles_reduce
+            scalar_to_py(
+                py.enter_polars(|| {
+                    self.series
+                        .read()
+                        .quantiles_reduce(&q_list, interpolation.0)
+                }),
+                py,
+            )
+        } else {
+            Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                "quantile must be a float or a list of floats",
+            ))
+        }
     }
 
     fn std<'py>(&self, py: Python<'py>, ddof: u8) -> PyResult<Bound<'py, PyAny>> {
@@ -110,12 +124,22 @@ impl PySeries {
         scalar_to_py(py.enter_polars(|| self.series.read().sum_reduce()), py)
     }
 
-    fn first<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(py.enter_polars_ok(|| self.series.read().first()), py)
+    fn first<'py>(&self, py: Python<'py>, ignore_nulls: bool) -> PyResult<Bound<'py, PyAny>> {
+        let result = if ignore_nulls {
+            py.enter_polars_ok(|| self.series.read().first_non_null())
+        } else {
+            py.enter_polars_ok(|| self.series.read().first())
+        };
+        scalar_to_py(result, py)
     }
 
-    fn last<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(py.enter_polars_ok(|| self.series.read().last()), py)
+    fn last<'py>(&self, py: Python<'py>, ignore_nulls: bool) -> PyResult<Bound<'py, PyAny>> {
+        let result = if ignore_nulls {
+            py.enter_polars_ok(|| self.series.read().last_non_null())
+        } else {
+            py.enter_polars_ok(|| self.series.read().last())
+        };
+        scalar_to_py(result, py)
     }
 
     #[cfg(feature = "approx_unique")]

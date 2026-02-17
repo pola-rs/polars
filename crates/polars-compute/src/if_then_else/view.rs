@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use arrow::array::{Array, BinaryViewArray, MutablePlBinary, Utf8ViewArray, View};
 use arrow::bitmap::Bitmap;
-use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
+use polars_buffer::Buffer;
 use polars_utils::aliases::{InitHashMaps, PlHashSet};
 
 use super::IfThenElseKernel;
@@ -45,10 +45,10 @@ impl IfThenElseKernel for BinaryViewArray {
     type Scalar<'a> = &'a [u8];
 
     fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self {
-        let combined_buffers: Arc<_>;
+        let combined_buffers;
         let false_buffer_idx_offset: u32;
         let mut has_duplicate_bufs = false;
-        if Arc::ptr_eq(if_true.data_buffers(), if_false.data_buffers()) {
+        if Buffer::is_same_buffer(if_true.data_buffers(), if_false.data_buffers()) {
             // Share exact same buffers, no need to combine.
             combined_buffers = if_true.data_buffers().clone();
             false_buffer_idx_offset = 0;

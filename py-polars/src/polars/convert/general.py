@@ -829,11 +829,11 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
     lines = m.group().split("\n")[1:-1]
     rows = [
         [re.sub(r"^[\W+]*│", "", elem).strip() for elem in row]
-        for row in [re.split("[│┆|]", row.lstrip("#. ").rstrip("│ ")) for row in lines]
-        if len(row) > 1 or not re.search("├[╌┼]+┤", row[0])
+        for row in (re.split(r"[│┆|]", row.lstrip("#. ").rstrip("│ ")) for row in lines)
+        if len(row) > 1 or not re.search(r"├[╌┼]+┤", row[0])
     ]
 
-    # determine beginning/end of the header block
+    # determine the beginning /end of the header block
     table_body_start = 2
     found_header_divider = False
     for idx, (elem, *_) in enumerate(rows):
@@ -850,9 +850,9 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
         and len(header_rows) == 2
         and not any("---" in h for h in header_rows)
     ):
-        header_block = list(zip(*header_rows))
+        header_block = list(zip(*header_rows, strict=True))
     else:
-        header_block = ["".join(h).split("---") for h in zip(*header_rows)]
+        header_block = ["".join(h).split("---") for h in zip(*header_rows, strict=True)]
 
     dtypes: list[str | None]
     if all(len(h) == 1 for h in header_block):
@@ -870,7 +870,9 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
     no_dtypes = all(d is None for d in dtypes)
 
     # transpose rows into columns, detect/omit truncated columns
-    coldata = list(zip(*(row for row in body if not all((e == "…") for e in row))))
+    coldata = list(
+        zip(*(row for row in body if not all((e == "…") for e in row)), strict=True)
+    )
     for el in ("…", "..."):
         if el in headers:
             idx = headers.index(el)
@@ -884,7 +886,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
         pl.Series([(None if v in ("null", "NULL") else v) for v in cd], dtype=String)
         for cd in coldata
     ]
-    schema = dict(zip(headers, (_dtype_from_name(d) for d in dtypes)))
+    schema = dict(zip(headers, (_dtype_from_name(d) for d in dtypes), strict=True))
     if schema and data and (n_extend_cols := (len(schema) - len(data))) > 0:
         empty_data = [None] * len(data[0])
         data.extend((pl.Series(empty_data, dtype=String)) for _ in range(n_extend_cols))
@@ -896,8 +898,32 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
             )
             raise NotImplementedError(msg)
 
+    # Deal with line wrapping by detecting columns which may not be empty, but are
+    # anyway, indicating a wrap has occurred.
+    str_schema = [(k, String) for k in schema]
+    tmp_df = pl.DataFrame(data=data, orient="col", schema=str_schema)
+    out_rows: list[Series] = []
+    for row_list in tmp_df.iter_rows():
+        row = pl.Series(row_list, dtype=String)
+        if out_rows and any(
+            col == "" and dtype is not None and dtype != String and dtype != Categorical
+            for col, dtype in zip(row, schema.values(), strict=True)
+        ):
+            pad = pl.Series(
+                [
+                    "" if x == "" or y == "" else " "
+                    for x, y in zip(out_rows[-1], row, strict=True)
+                ],
+                dtype=String,
+            )
+            out_rows[-1] = out_rows[-1] + pad + row
+        else:
+            out_rows.append(row)
+    df = from_records(
+        data=[r.to_list() for r in out_rows], orient="row", schema=str_schema
+    )
+
     # construct DataFrame from string series and cast from repr to native dtype
-    df = pl.DataFrame(data=data, orient="col", schema=list(schema))
     if no_dtypes:
         if df.is_empty():
             # if no dtypes *and* empty, default to string

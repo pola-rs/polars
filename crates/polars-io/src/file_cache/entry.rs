@@ -6,6 +6,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use fs4::fs_std::FileExt;
 use polars_core::config;
 use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
+use polars_utils::pl_path::PlRefPath;
 
 use super::cache_lock::{self, GLOBAL_FILE_CACHE_LOCK};
 use super::file_fetcher::{FileFetcher, RemoteMetadata};
@@ -23,9 +24,9 @@ struct CachedData {
 }
 
 struct Inner {
-    uri: Arc<str>,
+    uri: PlRefPath,
     uri_hash: String,
-    path_prefix: Arc<Path>,
+    path_prefix: PlRefPath,
     metadata: FileLock<PathBuf>,
     cached_data: Option<CachedData>,
     ttl: Arc<AtomicU64>,
@@ -33,7 +34,7 @@ struct Inner {
 }
 
 struct EntryData {
-    uri: Arc<str>,
+    uri: PlRefPath,
     inner: Mutex<Inner>,
     ttl: Arc<AtomicU64>,
 }
@@ -143,7 +144,7 @@ impl Inner {
         }
 
         let data_file_path = &get_data_file_path(
-            self.path_prefix.to_str().unwrap().as_bytes(),
+            self.path_prefix.as_bytes(),
             self.uri_hash.as_bytes(),
             &remote_metadata.version,
         );
@@ -183,9 +184,7 @@ impl Inner {
             if let Err(e) = file.allocate(remote_metadata.size) {
                 let msg = format!(
                     "failed to reserve {} bytes on disk to download uri = {}: {:?}",
-                    remote_metadata.size,
-                    self.uri.as_ref(),
-                    e
+                    remote_metadata.size, &self.uri, e
                 );
 
                 if raise_alloc_err == Some(true)
@@ -292,7 +291,7 @@ impl Inner {
 
             let metadata = Arc::new(metadata);
             let data_file_path = get_data_file_path(
-                self.path_prefix.to_str().unwrap().as_bytes(),
+                self.path_prefix.as_bytes(),
                 self.uri_hash.as_bytes(),
                 &metadata.remote_version,
             );
@@ -315,19 +314,19 @@ impl Inner {
 
 impl FileCacheEntry {
     pub(crate) fn new(
-        uri: Arc<str>,
+        uri: PlRefPath,
         uri_hash: String,
-        path_prefix: Arc<Path>,
+        path_prefix: PlRefPath,
         file_fetcher: Arc<dyn FileFetcher>,
         file_cache_ttl: u64,
     ) -> Self {
         let metadata = FileLock::from(get_metadata_file_path(
-            path_prefix.to_str().unwrap().as_bytes(),
+            path_prefix.as_bytes(),
             uri_hash.as_bytes(),
         ));
 
         debug_assert!(
-            Arc::ptr_eq(&uri, file_fetcher.get_uri()),
+            PlRefPath::ptr_eq(&uri, file_fetcher.get_uri()),
             "impl error: entry uri != file_fetcher uri"
         );
 
@@ -348,7 +347,7 @@ impl FileCacheEntry {
         })
     }
 
-    pub fn uri(&self) -> &Arc<str> {
+    pub fn uri(&self) -> &PlRefPath {
         &self.0.uri
     }
 
@@ -392,8 +391,8 @@ fn finish_open<F: FileLockAnyGuard>(data_file_path: &Path, _metadata_guard: &F) 
     update_last_accessed(&file);
     if FileExt::try_lock_shared(&file).is_err() {
         panic!(
-            "finish_open: could not acquire shared lock on data file at {}",
-            data_file_path.to_str().unwrap()
+            "finish_open: could not acquire shared lock on data file at {:?}",
+            data_file_path
         );
     }
     file

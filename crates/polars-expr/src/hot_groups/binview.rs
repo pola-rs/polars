@@ -1,7 +1,7 @@
 use arrow::array::builder::StaticArrayBuilder;
 use arrow::array::{BinaryViewArrayGenericBuilder, PrimitiveArray, View};
 use arrow::bitmap::MutableBitmap;
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_utils::vec::PushUnchecked;
 
 use super::*;
@@ -34,7 +34,7 @@ impl BinviewHashHotGrouper {
         hash: u64,
         view: View,
         force_hot: bool,
-        buffers: &Arc<[Buffer<u8>]>,
+        buffers: &Buffer<Buffer<u8>>,
     ) -> Option<EvictIdx> {
         unsafe {
             let mut evict = |ev_h: &u64, ev_view: &View, ev_buffer: &Vec<u8>| {

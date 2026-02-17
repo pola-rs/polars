@@ -87,11 +87,10 @@ mod view;
 
 #[cfg(feature = "simd")]
 mod _simd_dtypes {
-    use arrow::types::{days_ms, f16, i256, months_days_ns};
+    use arrow::types::{days_ms, i256, months_days_ns};
 
     use crate::NotSimdPrimitive;
 
-    impl NotSimdPrimitive for f16 {}
     impl NotSimdPrimitive for i256 {}
     impl NotSimdPrimitive for days_ms {}
     impl NotSimdPrimitive for months_days_ns {}

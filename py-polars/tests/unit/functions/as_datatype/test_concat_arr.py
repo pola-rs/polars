@@ -84,7 +84,7 @@ def test_concat_arr_broadcast() -> None:
         pl.Series([[1, 1], [2, 1], [3, 1]], dtype=pl.Array(pl.Int64, 2)),
     )
 
-    with pytest.raises(ShapeError, match="length of column.*did not match"):
+    with pytest.raises(ShapeError, match=r"length of column.*did not match"):
         assert_series_equal(
             pl.select(
                 pl.concat_arr(pl.Series([1, 3, 5]), pl.Series([1, 1]))
@@ -198,3 +198,38 @@ def test_concat_arr_expansion_23267() -> None:
     out = df.select(z=pl.concat_arr(pl.all())).to_series()
 
     assert_series_equal(out, pl.Series("z", [[1, 2]], dtype=pl.Array(pl.Int64, 2)))
+
+
+def test_concat_arr_logical_types_20917() -> None:
+    assert_series_equal(
+        pl.select(
+            pl.concat_arr(
+                pl.Series(["A"], dtype=pl.Categorical("test")),
+                pl.Series(["B"], dtype=pl.Categorical("test")),
+            )
+        ).to_series(),
+        pl.Series([["A", "B"]], dtype=pl.Array(pl.Categorical("test"), 2)),
+    )
+
+    assert_series_equal(
+        pl.select(
+            pl.concat_arr(
+                pl.Series(["A", "B"], dtype=pl.Categorical("test")),
+                pl.Series(["B", "C"], dtype=pl.Categorical("test")),
+            )
+        ).to_series(),
+        pl.Series([["A", "B"], ["B", "C"]], dtype=pl.Array(pl.Categorical("test"), 2)),
+    )
+
+    assert_series_equal(
+        pl.select(
+            pl.concat_arr(
+                pl.Series(["A", "B"], dtype=pl.List(pl.Categorical("test"))),
+                pl.Series(["B", "C"], dtype=pl.List(pl.Categorical("test"))),
+            )
+        ).to_series(),
+        pl.Series(
+            [[["A"], ["B"]], [["B"], ["C"]]],
+            dtype=pl.Array(pl.List(pl.Categorical("test")), 2),
+        ),
+    )

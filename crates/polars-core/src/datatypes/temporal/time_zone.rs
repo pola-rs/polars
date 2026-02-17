@@ -1,4 +1,4 @@
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::config;
@@ -56,10 +56,10 @@ impl TimeZone {
 
         #[cfg(feature = "timezones")]
         if let Some(tz) = canonical_tz.as_mut() {
-            if Self::validate_time_zone(tz).is_err() {
+            if let Err(err) = Self::validate_time_zone(tz) {
                 match parse_fixed_offset(tz) {
                     Ok(v) => *tz = v,
-                    Err(err) => {
+                    Err(_) => {
                         // This can be used if there are externally created arrow buffers / dtypes
                         // with unknown timezones.
                         if std::env::var("POLARS_IGNORE_TIMEZONE_PARSE_ERROR").as_deref() == Ok("1")
@@ -70,9 +70,9 @@ impl TimeZone {
                         } else {
                             return Err(err.wrap_msg(|s| {
                                 format!(
-                                    "{s}. If you would like to forcibly disable \
+                                    "{s}\n\nIf you would like to forcibly disable \
                                     timezone validation, set \
-                                    POLARS_IGNORE_TIMEZONE_PARSE_ERROR=1."
+                                    POLARS_IGNORE_TIMEZONE_PARSE_ERROR=1.",
                                 )
                             }));
                         }
@@ -153,13 +153,87 @@ polars_utils::regex_cache::cached_regex! {
     static FIXED_OFFSET_RE = FIXED_OFFSET_PATTERN;
 }
 
+// Implementation from: https://github.com/wooorm/levenshtein-rs/blob/9c4730b1973d4e61e187f8fe6d5f299ad5c991fc/src/lib.rs
+// (MIT licensed. Copyright (c) 2016 Titus Wormer) <tituswormer@gmail.com>
+fn _levenshtein(a: &str, b: &str) -> usize {
+    let mut result = 0;
+
+    /* Shortcut optimizations / degenerate cases. */
+    if a == b {
+        return result;
+    }
+
+    let length_a = a.chars().count();
+    let length_b = b.chars().count();
+
+    if length_a == 0 {
+        return length_b;
+    }
+
+    if length_b == 0 {
+        return length_a;
+    }
+
+    /* Initialize the vector.
+     *
+     * This is why it’s fast, normally a matrix is used,
+     * here we use a single vector. */
+    let mut cache: Vec<usize> = (1..).take(length_a).collect();
+
+    /* Loop. */
+    for (index_b, code_b) in b.chars().enumerate() {
+        result = index_b;
+        let mut distance_a = index_b;
+
+        for (index_a, code_a) in a.chars().enumerate() {
+            let distance_b = if code_a == code_b {
+                distance_a
+            } else {
+                distance_a + 1
+            };
+
+            distance_a = cache[index_a];
+
+            result = if distance_a > result {
+                if distance_b > result {
+                    result + 1
+                } else {
+                    distance_b
+                }
+            } else if distance_b > distance_a {
+                distance_a + 1
+            } else {
+                distance_b
+            };
+
+            cache[index_a] = result;
+        }
+    }
+
+    result
+}
+
 /// Parse a time zone string to [`chrono_tz::Tz`]
 #[cfg(feature = "timezones")]
 pub fn parse_time_zone(tz: &str) -> PolarsResult<chrono_tz::Tz> {
-    match tz.parse::<chrono_tz::Tz>() {
-        Ok(tz) => Ok(tz),
-        Err(_) => unable_to_parse_err(tz),
+    if let Ok(tz_parsed) = tz.parse::<chrono_tz::Tz>() {
+        return Ok(tz_parsed);
     }
+
+    let mut best: Option<(&str, usize)> = None;
+    for &candidate in chrono_tz::TZ_VARIANTS.iter() {
+        let score = _levenshtein(tz, candidate.name());
+        if best.is_none() || score < best.unwrap().1 {
+            best = Some((candidate.name(), score));
+        }
+    }
+
+    polars_bail!(
+        ComputeError:
+        "unable to parse time zone: '{tz}'. Please check the \
+        Time Zone Database for a list of available time zones.\n\nHint: did you mean '{}' instead?",
+        best.unwrap().0,
+    )
 }
 
 /// Convert fixed offset to Etc/GMT one from time zone database
@@ -192,8 +266,6 @@ pub fn parse_fixed_offset(tz: &str) -> PolarsResult<PlSmallStr> {
 
 #[cfg(feature = "timezones")]
 fn unable_to_parse_err<T>(tz: &str) -> PolarsResult<T> {
-    use polars_error::polars_bail;
-
     polars_bail!(
         ComputeError:
         "unable to parse time zone: '{}'. Please check the \

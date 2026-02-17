@@ -120,10 +120,7 @@ impl PrivateSeries for NullChunked {
         Ok(if self.is_empty() {
             GroupsType::default()
         } else {
-            GroupsType::Slice {
-                groups: vec![[0, self.length]],
-                overlapping: false,
-            }
+            GroupsType::new_slice(vec![[0, self.length]], false, true)
         })
     }
 
@@ -257,6 +254,14 @@ impl SeriesTrait for NullChunked {
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         let idxs: Vec<IdxSize> = (0..self.n_unique().unwrap() as IdxSize).collect();
         Ok(IdxCa::new(self.name().clone(), idxs))
+    }
+
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        if self.is_empty() {
+            Ok((0, Vec::new()))
+        } else {
+            Ok((1, vec![0; self.len()]))
+        }
     }
 
     fn new_from_index(&self, _index: usize, length: usize) -> Series {

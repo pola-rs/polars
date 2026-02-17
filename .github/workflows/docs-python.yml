@@ -57,14 +57,14 @@ jobs:
           fi
 
       # Chooses the manually given commit if manually triggered.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.inputs.git_commit || github.event.client_payload.sha }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
-          python-version: '3.13'
+          python-version: '3.14'
 
       - name: Create virtual environment
         run: |
@@ -72,6 +72,7 @@ jobs:
           uv venv
           echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
           echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
+          uv pip install --no-deps -e py-polars
 
       - name: Install Python dependencies
         working-directory: py-polars/docs
@@ -110,7 +111,7 @@ jobs:
       # Build global docs _after_ this workflow to avoid contention on the gh-pages branch
       - name: Trigger global docs workflow
         if: github.event_name == 'repository_dispatch' 
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@v4
         with:
           event-type: python-release-docs
           client-payload: >

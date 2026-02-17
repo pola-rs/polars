@@ -5,6 +5,7 @@ use polars_error::{PolarsResult, feature_gated};
 
 use super::list_utils::NumericOp;
 use super::{IntoSeries, ListChunked, ListType, NumOpsDispatchInner, Series};
+use crate::prelude::DataType;
 
 impl NumOpsDispatchInner for ListType {
     fn add_to(lhs: &ListChunked, rhs: &Series) -> PolarsResult<Series> {
@@ -55,6 +56,15 @@ impl NumericListOp {
 
     pub fn floor_div() -> Self {
         Self(NumericOp::FloorDiv)
+    }
+
+    pub fn try_get_leaf_supertype(
+        &self,
+        prim_dtype_lhs: &DataType,
+        prim_dtype_rhs: &DataType,
+    ) -> PolarsResult<DataType> {
+        self.0
+            .try_get_leaf_supertype(prim_dtype_lhs, prim_dtype_rhs)
     }
 }
 

@@ -5,8 +5,8 @@ use polars_sql::*;
 fn create_ctx() -> SQLContext {
     let a = Column::new("a".into(), (1..10i64).map(|i| i / 100).collect::<Vec<_>>());
     let b = Column::new("b".into(), 1..10i64);
-    let df = DataFrame::new(vec![a, b]).unwrap().lazy();
-    let mut ctx = SQLContext::new();
+    let df = DataFrame::new_infer_height(vec![a, b]).unwrap().lazy();
+    let ctx = SQLContext::new();
     ctx.register("df", df);
     ctx
 }
@@ -216,7 +216,7 @@ fn prepare_compound_join_context() -> SQLContext {
         "c" => [1, 3, 4, 5, 7]
     }
     .unwrap();
-    let mut ctx = SQLContext::new();
+    let ctx = SQLContext::new();
     ctx.register("df1", df1.lazy());
     ctx.register("df2", df2.lazy());
     ctx.register("df3", df3.lazy());
@@ -518,7 +518,7 @@ fn test_join_multi_consecutive() {
     let sql = r#"
         SELECT tbl_a.a, tbl_a.b, tbl_b.c, tbl_c.d FROM tbl_a
         INNER JOIN tbl_b ON tbl_a.a = tbl_b.a AND tbl_a.b = tbl_b.b
-        INNER JOIN tbl_c ON tbl_a.c = tbl_c.c
+        INNER JOIN tbl_c ON tbl_b.c = tbl_c.c
         ORDER BY a DESC
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
@@ -589,14 +589,6 @@ fn test_compound_invalid_1() {
 #[test]
 #[should_panic]
 fn test_compound_invalid_2() {
-    let mut ctx = prepare_compound_join_context();
-    let sql = "SELECT * FROM df1 LEFT JOIN df2 ON df1.a = df2.a AND b = b";
-    let _ = ctx.execute(sql).unwrap();
-}
-
-#[test]
-#[should_panic]
-fn test_compound_invalid_3() {
     let mut ctx = prepare_compound_join_context();
     let sql = "SELECT * FROM df1 INNER JOIN df2 ON df1.a = df2.a AND b";
     let _ = ctx.execute(sql).unwrap();

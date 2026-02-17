@@ -9,7 +9,7 @@ mod c_interface;
 #[cfg(feature = "pymethods")]
 mod comparison;
 #[cfg(feature = "pymethods")]
-mod construction;
+pub(crate) mod construction;
 #[cfg(feature = "pymethods")]
 mod export;
 #[cfg(feature = "pymethods")]

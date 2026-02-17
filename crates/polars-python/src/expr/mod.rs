@@ -10,6 +10,8 @@ pub mod datatype;
 #[cfg(feature = "pymethods")]
 mod datetime;
 #[cfg(feature = "pymethods")]
+mod extension;
+#[cfg(feature = "pymethods")]
 mod general;
 #[cfg(feature = "pymethods")]
 mod list;

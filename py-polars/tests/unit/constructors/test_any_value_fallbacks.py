@@ -7,6 +7,7 @@ from decimal import Decimal as D
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from numpy import array
 
 import polars as pl
 from polars._plr import PySeries
@@ -408,3 +409,44 @@ def test_categorical_lit_18874() -> None:
             ]
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        # Float64 should have ~17; Float32 ~6 digits of precision preserved
+        ([0.123, 0.123456789], ["0.123", "0.123456789"]),
+        ([[0.123, 0.123456789]], ["[0.123,0.123456789]"]),
+        ([array([0.123, 0.123456789])], ["[0.123,0.123456789]"]),
+        ([{"a": 0.123, "b": 0.123456789}], ["{0.123,0.123456789}"]),
+        ([[{"a": 0.123, "b": 0.123456789}]], ["[{0.123,0.123456789}]"]),
+        ([{"x": [0.1, 0.2]}, [{"y": 0.3}]], ["{[0.1,0.2]}", "[{0.3}]"]),
+        (
+            [None, {"a": None, "b": 1.0}, [None, 2.0]],
+            [None, "{null,1.0}", "[null,2.0]"],
+        ),
+        ([[], {}], ["[]", "{}"]),
+        ([[0.5]], ["[0.5]"]),
+        ([{"a": 0.5}], ["{0.5}"]),
+    ],
+    ids=[
+        "basic_floats",
+        "nested_list",
+        "nested_array",
+        "basic_struct",
+        "list_of_structs",
+        "nested_mixed",
+        "mixed_nulls",
+        "empty_containers",
+        "single_element_list",
+        "single_element_struct",
+    ],
+)
+def test_float_to_string_precision_25257(
+    values: list[Any], expected: list[Any]
+) -> None:
+    # verify the conversion is decoupled from Display formatting
+    with pl.Config(float_precision=1):
+        s = pl.Series(values, strict=False, dtype=pl.String)
+
+    assert (s == pl.Series(expected)).all()

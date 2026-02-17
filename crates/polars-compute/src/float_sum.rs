@@ -7,6 +7,8 @@ use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float};
+#[cfg(feature = "simd")]
+use polars_utils::float16::pf16;
 
 const STRIPE: usize = 16;
 const PAIRWISE_RECURSION_LIMIT: usize = 128;
@@ -124,6 +126,24 @@ where
 impl<F> SumBlock<F> for [u128; PAIRWISE_RECURSION_LIMIT]
 where
     u128: AsPrimitive<F>,
+    F: Float + std::iter::Sum + 'static,
+{
+    fn sum_block_vectorized(&self) -> F {
+        self.iter().map(|x| x.as_()).sum()
+    }
+
+    fn sum_block_vectorized_with_mask(&self, mask: BitMask<'_>) -> F {
+        self.iter()
+            .enumerate()
+            .map(|(idx, x)| if mask.get(idx) { x.as_() } else { F::zero() })
+            .sum()
+    }
+}
+
+#[cfg(feature = "simd")]
+impl<F> SumBlock<F> for [pf16; PAIRWISE_RECURSION_LIMIT]
+where
+    pf16: AsPrimitive<F>,
     F: Float + std::iter::Sum + 'static,
 {
     fn sum_block_vectorized(&self) -> F {

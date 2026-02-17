@@ -18,7 +18,7 @@ pub trait Executor: Send + Sync {
 type SinkFn =
     Box<dyn FnMut(DataFrame, &mut ExecutionState) -> PolarsResult<Option<DataFrame>> + Send + Sync>;
 pub struct SinkExecutor {
-    pub name: String,
+    pub name: PlSmallStr,
     pub input: Box<dyn Executor>,
     pub f: SinkFn,
 }

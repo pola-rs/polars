@@ -16,7 +16,7 @@ use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::JoinHandle;
-use crate::async_primitives::connector;
+use crate::async_primitives::oneshot_channel;
 pub use crate::nodes::io_sources::multi_scan::components::projection::Projection;
 
 /// Interface to read a single file
@@ -26,6 +26,16 @@ pub trait FileReader: Send + Sync {
     ///
     /// This must be called before calling any other functions of the FileReader.
     async fn initialize(&mut self) -> PolarsResult<()>;
+
+    /// When reading a files list, `prepare_read()` will be called sequentially for each reader in
+    /// the order in which the files are read.
+    ///
+    /// This can be used e.g. to synchronize data fetches such that they happen in order.
+    ///
+    /// This is not guaranteed to always to be called.
+    fn prepare_read(&mut self) -> PolarsResult<()> {
+        Ok(())
+    }
 
     /// Begin reading the file into morsels.
     fn begin_read(
@@ -49,7 +59,7 @@ pub trait FileReader: Send + Sync {
     /// Note: The default implementation of this dispatches to `begin_read`, so should not be
     /// called from there.
     async fn n_rows_in_file(&mut self) -> PolarsResult<IdxSize> {
-        let (tx, mut rx) = connector::connector();
+        let (tx, rx) = oneshot_channel::channel();
 
         let (morsel_receivers, handle) = self.begin_read(BeginReadArgs {
             // Passing 0-0 slice indicates to the reader that we want the full row count, but it can
@@ -87,7 +97,7 @@ pub trait FileReader: Send + Sync {
             return self.n_rows_in_file().await;
         };
 
-        let (tx, mut rx) = connector::connector();
+        let (tx, rx) = oneshot_channel::channel();
 
         let (mut morsel_receivers, handle) = self.begin_read(BeginReadArgs {
             pre_slice: Some(match pre_slice {
@@ -139,6 +149,7 @@ pub struct BeginReadArgs {
     pub cast_columns_policy: CastColumnsPolicy,
 
     pub num_pipelines: usize,
+    pub disable_morsel_split: bool,
     pub callbacks: FileReaderCallbacks,
     // TODO
     // We could introduce dynamic `Option<Box<dyn Any>>` for the reader to use. That would help
@@ -156,6 +167,7 @@ impl Default for BeginReadArgs {
             // TODO: Use less restrictive default
             cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
             num_pipelines: 1,
+            disable_morsel_split: false,
             callbacks: FileReaderCallbacks::default(),
         }
     }
@@ -167,7 +179,7 @@ impl Default for BeginReadArgs {
 #[derive(Default)]
 pub struct FileReaderCallbacks {
     /// Full file schema
-    pub file_schema_tx: Option<connector::Sender<SchemaRef>>,
+    pub file_schema_tx: Option<oneshot_channel::Sender<SchemaRef>>,
 
     /// Callback for full physical row count. Avoid using this as it can trigger a full row count
     /// on the source. Prefer instead to use `row_position_on_end_tx`, which can be much faster.
@@ -177,7 +189,7 @@ pub struct FileReaderCallbacks {
     ///   closes prematurely, or a slice is sent. This is unless the reader encounters an error.
     /// * Some readers will only send this after their output morsels to be fully consumed (or if
     ///   their output port is dropped), so you should not block morsel consumption on waiting for this.
-    pub n_rows_in_file_tx: Option<connector::Sender<IdxSize>>,
+    pub n_rows_in_file_tx: Option<oneshot_channel::Sender<IdxSize>>,
 
     /// Callback for the physical (i.e. without accounting for deleted rows) row position this
     /// reader will have reached upon finishing.
@@ -193,7 +205,7 @@ pub struct FileReaderCallbacks {
     /// The returned value is useful for determining how much of a requested slice is consumed by a reader.
     /// It is more efficient than `n_rows_in_file_tx`, as it does not unnecessarily require the reader to
     /// fully consume the file.
-    pub row_position_on_end_tx: Option<connector::Sender<IdxSize>>,
+    pub row_position_on_end_tx: Option<oneshot_channel::Sender<IdxSize>>,
 }
 
 impl std::fmt::Debug for FileReaderCallbacks {

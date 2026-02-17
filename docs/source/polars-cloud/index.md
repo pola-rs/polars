@@ -44,5 +44,5 @@ Polars Cloud is available to try with a 30 day free trial. You can sign up on
 
 ![AWS logo](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/aws-logo.svg)
 
-Polars Cloud is available on AWS. Other cloud providers and on-premise solutions are on the roadmap
+Polars Cloud is available on AWS. Other cloud providers and on-premises solutions are on the roadmap
 and will become available in the upcoming months.

@@ -43,9 +43,6 @@ impl<'py> IntoPyObject<'py> for &Wrap<&StructChunked> {
     type Error = PyErr;
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let s = self.0.clone().into_series();
-        // todo! iterate its chunks and flatten.
-        // make series::iter() accept a chunk index.
-        let s = s.rechunk();
         let iter = s.iter().map(|av| match av {
             AnyValue::Struct(_, _, flds) => struct_dict(py, av._iter_struct_av(), flds)
                 .unwrap()

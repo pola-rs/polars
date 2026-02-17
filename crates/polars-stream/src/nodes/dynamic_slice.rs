@@ -46,8 +46,8 @@ impl ComputeNode for DynamicSliceNode {
             if let Self::GatheringParams { offset, length } = self {
                 let offset = offset.get_output()?.unwrap();
                 let length = length.get_output()?.unwrap();
-                let offset_item = offset.get_columns()[0].get(0)?;
-                let length_item = length.get_columns()[0].get(0)?;
+                let offset_item = offset.columns()[0].get(0)?;
+                let length_item = length.columns()[0].get(0)?;
                 let offset = offset_item.extract::<i64>().unwrap_or(0);
                 let length = length_item.extract::<usize>().unwrap_or(usize::MAX);
                 if let Ok(non_neg_offset) = offset.try_into() {

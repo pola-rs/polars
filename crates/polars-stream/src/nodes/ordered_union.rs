@@ -1,3 +1,7 @@
+use std::sync::Arc;
+
+use polars_core::schema::Schema;
+
 use super::compute_node_prelude::*;
 
 /// A node that first passes through all data from the first input, then the
@@ -6,14 +10,16 @@ pub struct OrderedUnionNode {
     cur_input_idx: usize,
     max_morsel_seq_sent: MorselSeq,
     morsel_offset: MorselSeq,
+    output_schema: Arc<Schema>,
 }
 
 impl OrderedUnionNode {
-    pub fn new() -> Self {
+    pub fn new(output_schema: Arc<Schema>) -> Self {
         Self {
             cur_input_idx: 0,
             max_morsel_seq_sent: MorselSeq::new(0),
             morsel_offset: MorselSeq::new(0),
+            output_schema,
         }
     }
 }
@@ -69,10 +75,15 @@ impl ComputeNode for OrderedUnionNode {
 
         let mut inner_handles = Vec::new();
         for (mut recv, mut send) in receivers.into_iter().zip(senders) {
+            let output_schema = self.output_schema.clone();
             let morsel_offset = self.morsel_offset;
             inner_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let mut max_seq = MorselSeq::new(0);
                 while let Ok(mut morsel) = recv.recv().await {
+                    // Ensure the morsel matches the expected output schema,
+                    // casting nulls to the appropriate output type.
+                    morsel.df_mut().ensure_matches_schema(&output_schema)?;
+
                     // Ensure the morsel sequence id stream is monotonic.
                     let seq = morsel.seq().offset_by(morsel_offset);
                     max_seq = max_seq.max(seq);
@@ -82,14 +93,14 @@ impl ComputeNode for OrderedUnionNode {
                         break;
                     }
                 }
-                max_seq
+                PolarsResult::Ok(max_seq)
             }));
         }
 
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             // Update our global maximum.
             for handle in inner_handles {
-                self.max_morsel_seq_sent = self.max_morsel_seq_sent.max(handle.await);
+                self.max_morsel_seq_sent = self.max_morsel_seq_sent.max(handle.await?);
             }
             Ok(())
         }));

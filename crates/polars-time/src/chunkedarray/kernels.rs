@@ -1,7 +1,6 @@
 //! macros that define kernels for extracting
 //! `week`, `weekday`, `year`, `hour` etc. from primitive arrays.
 use arrow::array::{BooleanArray, PrimitiveArray};
-use arrow::compute::arity::unary;
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time_opt;
 use arrow::temporal_conversions::{
@@ -42,14 +41,12 @@ macro_rules! to_temporal_unit {
     $primitive_out: ty,
     $dtype_out:expr) => {
         pub(crate) fn $name(arr: &PrimitiveArray<$primitive_in>) -> ArrayRef {
-            Box::new(unary(
-                arr,
-                |value| {
-                    $to_datetime_fn(value)
-                        .map(|dt| dt.$chrono_method() as $primitive_out)
-                        .unwrap_or(value as $primitive_out)
-                },
-                $dtype_out,
+            Box::new(PrimitiveArray::<$primitive_out>::from_trusted_len_iter(
+                arr.iter().map(|opt_value| {
+                    opt_value.and_then(|&value| {
+                        $to_datetime_fn(value).map(|dt| dt.$chrono_method() as $primitive_out)
+                    })
+                }),
             )) as ArrayRef
         }
     };
@@ -58,20 +55,13 @@ macro_rules! to_temporal_unit {
 macro_rules! to_boolean_temporal_unit {
     ($name: ident, $chrono_method: ident, $boolean_method: ident, $to_datetime_fn: expr, $dtype_in: ty) => {
         pub(crate) fn $name(arr: &PrimitiveArray<$dtype_in>) -> ArrayRef {
-            let values = arr
-                .values()
-                .iter()
-                .map(|value| {
-                    $to_datetime_fn(*value)
-                        .map(|dt| $boolean_method(dt.$chrono_method()))
-                        .unwrap_or(false)
-                })
-                .collect::<Vec<_>>();
-            Box::new(BooleanArray::new(
-                ArrowDataType::Boolean,
-                values.into(),
-                arr.validity().cloned(),
-            ))
+            Box::new(BooleanArray::from_trusted_len_iter(arr.iter().map(
+                |opt_value| {
+                    opt_value.and_then(|&value| {
+                        $to_datetime_fn(value).map(|dt| $boolean_method(dt.$chrono_method()))
+                    })
+                },
+            )))
         }
     };
 }
@@ -82,14 +72,12 @@ macro_rules! to_calendar_value {
     $primitive_out: ty,
     $dtype_out:expr) => {
         pub(crate) fn $name(arr: &PrimitiveArray<$primitive_in>) -> ArrayRef {
-            Box::new(unary(
-                arr,
-                |value| {
-                    $to_datetime_fn(value)
-                        .map(|$dt| $expr as $primitive_out)
-                        .unwrap_or(value as $primitive_out)
-                },
-                $dtype_out,
+            Box::new(PrimitiveArray::<$primitive_out>::from_trusted_len_iter(
+                arr.iter().map(|opt_value| {
+                    opt_value.and_then(|&value| {
+                        $to_datetime_fn(value).map(|$dt| $expr as $primitive_out)
+                    })
+                }),
             )) as ArrayRef
         }
     };

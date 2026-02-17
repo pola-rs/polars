@@ -12,6 +12,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import ClosedInterval, PolarsIntegerType
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_rolling() -> None:
@@ -69,8 +70,10 @@ def test_rolling_group_by_overlapping_groups(dtype: PolarsIntegerType) -> None:
 # the thread pool, which implies prior to import. The test is only valid when
 # run in isolation, and invalid otherwise because of xdist import caching.
 # See GH issue #22070
-def test_rolling_group_by_overlapping_groups_21859_a(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
+def test_rolling_group_by_overlapping_groups_21859_a(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "1")
     # assert pl.thread_pool_size() == 1 # pending resolution, see TODO
     df = pl.select(
         pl.date_range(pl.date(2023, 1, 1), pl.date(2023, 1, 5))
@@ -92,8 +95,10 @@ def test_rolling_group_by_overlapping_groups_21859_a(monkeypatch: Any) -> None:
 # the thread pool, which implies prior to import. The test is only valid when
 # run in isolation, and invalid otherwise because of xdist import caching.
 # See GH issue #22070
-def test_rolling_group_by_overlapping_groups_21859_b(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
+def test_rolling_group_by_overlapping_groups_21859_b(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "1")
     # assert pl.thread_pool_size() == 1 # pending resolution, see TODO
     df = pl.DataFrame({"a": [20, 30, 40]})
     out = (
@@ -184,7 +189,7 @@ def test_rolling_negative_offset_3914() -> None:
     assert result["matches"].to_list() == expected
 
 
-@pytest.mark.parametrize("time_zone", [None, "US/Central"])
+@pytest.mark.parametrize("time_zone", [None, "America/Chicago"])
 def test_rolling_negative_offset_crossing_dst(time_zone: str | None) -> None:
     df = pl.DataFrame(
         {
@@ -216,7 +221,7 @@ def test_rolling_negative_offset_crossing_dst(time_zone: str | None) -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.parametrize("time_zone", [None, "US/Central"])
+@pytest.mark.parametrize("time_zone", [None, "America/Chicago"])
 @pytest.mark.parametrize(
     ("offset", "closed", "expected_values"),
     [
@@ -747,3 +752,136 @@ def test_rolling_non_aggregation_24012() -> None:
     q = df.lazy().select(pl.col("value").rolling("idx", period="2i"))
 
     assert q.collect_schema() == q.collect().schema
+
+
+def test_rolling_on_expressions() -> None:
+    df = pl.DataFrame({"a": [None, 1, 2, 3]}).with_row_index()
+
+    df = df.select(
+        df_ri=pl.col.a.mean().rolling("index", period="3i"),
+        in_ri=pl.col.a.mean().rolling(pl.row_index(), period="3i"),
+    )
+
+    assert_series_equal(df["df_ri"], df["in_ri"], check_names=False)
+
+
+def test_rolling_in_group_by() -> None:
+    q = pl.LazyFrame({"b": [1, 1, 2], "a": [1, 2, 3]})
+
+    a_sum = pl.col.a.sum()
+    assert_frame_equal(
+        q.select(a_sum.rolling(pl.row_index(), period="2i")).collect(),
+        pl.Series("a", [1, 3, 5]).to_frame(),
+    )
+    assert_frame_equal(
+        q.group_by("b")
+        .agg(a_sum.rolling(pl.row_index(), period="2i") + pl.col.a.first())
+        .collect(),
+        pl.DataFrame(
+            {
+                "b": [1, 2],
+                "a": [[2, 4], [6]],
+            }
+        ),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        q.select(pl.col.a.implode())
+        .select(
+            pl.col.a.list.eval(pl.element().sum().rolling(pl.row_index(), period="2i"))
+        )
+        .collect(),
+        pl.Series("a", [[1, 3, 5]]).to_frame(),
+    )
+    assert_frame_equal(
+        q.group_by(pl.lit(1))
+        .agg(
+            a_sum.rolling(pl.row_index(), period="2i").rolling(
+                pl.row_index(), period="2i"
+            )
+        )
+        .drop("literal")
+        .collect(),
+        pl.Series("a", [[[1], [1, 3], [2, 5]]]).to_frame(),
+    )
+
+    a_uniq = pl.col.a.unique()
+    assert_frame_equal(
+        q.select(a_uniq.rolling(pl.row_index(), period="2i")).collect(),
+        pl.Series("a", [[1], [1, 2], [2, 3]]).to_frame(),
+    )
+    assert_frame_equal(
+        q.group_by("b")
+        .agg(a_uniq.rolling(pl.row_index(), period="2i") + pl.col.a.first())
+        .collect(),
+        pl.DataFrame(
+            {
+                "b": [1, 2],
+                "a": [[[2], [2, 3]], [[6]]],
+            }
+        ),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        q.select(pl.col.a.implode())
+        .select(
+            pl.col.a.list.eval(
+                pl.element().unique().rolling(pl.row_index(), period="2i")
+            )
+        )
+        .collect(),
+        pl.Series("a", [[[1], [1, 2], [2, 3]]]).to_frame(),
+    )
+    assert_frame_equal(
+        q.group_by(pl.lit(1))
+        .agg(
+            a_uniq.rolling(pl.row_index(), period="2i").rolling(
+                pl.row_index(), period="2i"
+            )
+        )
+        .drop("literal")
+        .collect(),
+        pl.Series("a", [[[[1]], [[1], [1, 2]], [[2], [2, 3]]]]).to_frame(),
+    )
+
+
+def test_rolling_in_over_25280() -> None:
+    dates = [
+        "2020-01-01",
+        "2020-01-02",
+    ]
+
+    df = pl.DataFrame(
+        {"dt": dates, "train_line": ["a", "b"], "num_passengers": [3, 7]}
+    ).with_columns(pl.col("dt").str.to_date())
+
+    result = df.with_columns(
+        pl.col("num_passengers")
+        .sum()
+        .rolling(index_column="dt", period="1d")
+        .over("train_line")
+    )
+    assert_frame_equal(df, result)
+
+
+def test_rolling_with_slice() -> None:
+    lf = (
+        pl.LazyFrame({"a": [0, 5, 2, 1, 3]})
+        .with_row_index()
+        .rolling("index", period="2i")
+        .agg(pl.col.a.sum())
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("index", [0, 1, 2, 3, 4], pl.get_index_type()),
+            pl.Series("a", [0, 5, 7, 3, 4]),
+        ]
+    )
+
+    assert_frame_equal(lf.head(2).collect(), expected.head(2))
+    assert_frame_equal(lf.slice(1, 3).collect(), expected.slice(1, 3))
+    assert_frame_equal(lf.tail(2).collect(), expected.tail(2))
+    assert_frame_equal(lf.slice(5, 1).collect(), expected.slice(5, 1))
+    assert_frame_equal(lf.slice(5, 0).collect(), expected.slice(5, 0))
+    assert_frame_equal(lf.slice(2, 1).collect(), expected.slice(2, 1))

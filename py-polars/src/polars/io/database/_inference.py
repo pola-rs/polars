@@ -278,7 +278,7 @@ def integer_dtype_from_nbits(
         (64, True): UInt64,
         (128, False): Int128,
         (128, True): Int128,  # UInt128 not (yet?) supported
-    }.get((bits, unsigned), None)
+    }.get((bits, unsigned))
 
     if dtype is None and default is not None:
         return default
@@ -308,7 +308,7 @@ def timeunit_from_precision(precision: int | str | None) -> str | None:
         elif (precision := precision.lower()) in ("s", "ms", "us", "ns"):
             return "ms" if precision == "s" else precision
     try:
-        n = min(max(3, int(ceil(precision / 3)) * 3), 9)  # type: ignore[operator]
+        n = min(max(3, ceil(precision / 3) * 3), 9)  # type: ignore[operator]
         return {3: "ms", 6: "us", 9: "ns"}.get(n)
     except TypeError:
         return None

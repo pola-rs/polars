@@ -9,7 +9,7 @@ use crate::prelude::*;
 impl Series {
     pub fn serialize_into_writer(&self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
         let mut df =
-            unsafe { DataFrame::new_no_checks_height_from_first(vec![self.clone().into_column()]) };
+            unsafe { DataFrame::new_unchecked_infer_height(vec![self.clone().into_column()]) };
 
         df.serialize_into_writer(writer)
     }
@@ -32,7 +32,7 @@ impl Series {
             )
         }
 
-        Ok(df.take_columns().swap_remove(0).take_materialized_series())
+        Ok(df.into_columns().swap_remove(0).take_materialized_series())
     }
 }
 
@@ -70,15 +70,15 @@ impl<'de> Deserialize<'de> for Series {
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for Series {
-    fn schema_name() -> String {
-        "Series".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Series".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "Series"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         Vec::<u8>::json_schema(generator)
     }
 }

@@ -102,7 +102,7 @@ macro_rules! as_decoder_impl {
     ($($p:ty => $t:ty,)+) => {
         $(
         impl DecoderFunction<$p, $t> for AsDecoderFunction<$p, $t> {
-            const NEED_TO_DECODE: bool = Self::CAN_TRANSMUTE;
+            const NEED_TO_DECODE: bool = !Self::CAN_TRANSMUTE;
 
             #[inline(always)]
             fn decode(self, x : $p) -> $t {

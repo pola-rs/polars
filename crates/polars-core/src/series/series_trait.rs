@@ -10,6 +10,7 @@ use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
+use crate::utils::{first_non_null, last_non_null};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -114,6 +115,22 @@ pub(crate) mod private {
         unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "algorithm_group_by")]
+        unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), &IDX_DTYPE)
+        }
+
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "algorithm_group_by")]
+        unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), &IDX_DTYPE)
+        }
+
         /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
         /// first cast to `Int64` to prevent overflow issues.
         #[cfg(feature = "algorithm_group_by")]
@@ -453,6 +470,11 @@ pub trait SeriesTrait:
         polars_bail!(opq = arg_unique, self._dtype());
     }
 
+    /// Get dense ids for each unique value.
+    ///
+    /// Returns: (n_unique, unique_ids)
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)>;
+
     /// Get a mask of the null values.
     fn is_null(&self) -> BooleanChunked;
 
@@ -527,9 +549,17 @@ pub trait SeriesTrait:
     fn std_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {
         polars_bail!(opq = std, self._dtype());
     }
-    /// Get the quantile of the ChunkedArray as a new Series of length 1.
+    /// Get the quantile of the Series as a new Series of length 1.
     fn quantile_reduce(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Scalar> {
         polars_bail!(opq = quantile, self._dtype());
+    }
+    /// Get multiple quantiles of the ChunkedArray as a new `List` Scalar
+    fn quantiles_reduce(
+        &self,
+        _quantiles: &[f64],
+        _method: QuantileMethod,
+    ) -> PolarsResult<Scalar> {
+        polars_bail!(opq = quantiles, self._dtype());
     }
     /// Get the bitwise AND of the Series as a new Series of length 1,
     fn and_reduce(&self) -> PolarsResult<Scalar> {
@@ -554,6 +584,23 @@ pub trait SeriesTrait:
         Scalar::new(dt.clone(), av)
     }
 
+    /// Get the first non-null element of the [`Series`] as a [`Scalar`]
+    ///
+    /// If the [`Series`] is empty, a [`Scalar`] with a [`AnyValue::Null`] is returned.
+    fn first_non_null(&self) -> Scalar {
+        let av = if self.len() == 0 {
+            AnyValue::Null
+        } else {
+            let idx = if self.has_nulls() {
+                first_non_null(self.chunks().iter().map(|c| c.as_ref())).unwrap_or(0)
+            } else {
+                0
+            };
+            self.get(idx).map_or(AnyValue::Null, AnyValue::into_static)
+        };
+        Scalar::new(self.dtype().clone(), av)
+    }
+
     /// Get the last element of the [`Series`] as a [`Scalar`]
     ///
     /// If the [`Series`] is empty, a [`Scalar`] with a [`AnyValue::Null`] is returned.
@@ -567,6 +614,25 @@ pub trait SeriesTrait:
         };
 
         Scalar::new(dt.clone(), av)
+    }
+
+    /// Get the last non-null element of the [`Series`] as a [`Scalar`]
+    ///
+    /// If the [`Series`] is empty, a [`Scalar`] with a [`AnyValue::Null`] is returned.
+    fn last_non_null(&self) -> Scalar {
+        let n = self.len();
+        let av = if n == 0 {
+            AnyValue::Null
+        } else {
+            let idx = if self.has_nulls() {
+                last_non_null(self.chunks().iter().map(|c| c.as_ref()), n).unwrap_or(n - 1)
+            } else {
+                n - 1
+            };
+            // SAFETY: len-1 < len if len != 0
+            unsafe { self.get_unchecked(idx) }.into_static()
+        };
+        Scalar::new(self.dtype().clone(), av)
     }
 
     #[cfg(feature = "approx_unique")]

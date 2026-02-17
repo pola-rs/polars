@@ -7,11 +7,13 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
 
     match expr {
         AExpr::Element => Expr::Element,
-        AExpr::Explode { expr, skip_empty } => Expr::Explode {
+        AExpr::Explode { expr, options } => Expr::Explode {
             input: Arc::new(node_to_expr(expr, expr_arena)),
-            skip_empty,
+            options,
         },
         AExpr::Column(a) => Expr::Column(a),
+        #[cfg(feature = "dtype-struct")]
+        AExpr::StructField(a) => Expr::Field(Arc::new([a])),
         AExpr::Literal(s) => Expr::Literal(s),
         AExpr::BinaryExpr { left, op, right } => {
             let l = node_to_expr(left, expr_arena);
@@ -45,6 +47,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             expr,
             idx,
             returns_scalar,
+            null_on_oob,
         } => {
             let expr = node_to_expr(expr, expr_arena);
             let idx = node_to_expr(idx, expr_arena);
@@ -52,6 +55,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 expr: Arc::new(expr),
                 idx: Arc::new(idx),
                 returns_scalar,
+                null_on_oob,
             }
         },
         AExpr::SortBy {
@@ -118,9 +122,17 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::First(Arc::new(exp)).into()
             },
+            IRAggExpr::FirstNonNull(expr) => {
+                let exp = node_to_expr(expr, expr_arena);
+                AggExpr::FirstNonNull(Arc::new(exp)).into()
+            },
             IRAggExpr::Last(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Last(Arc::new(exp)).into()
+            },
+            IRAggExpr::LastNonNull(expr) => {
+                let exp = node_to_expr(expr, expr_arena);
+                AggExpr::LastNonNull(Arc::new(exp)).into()
             },
             IRAggExpr::Item { input, allow_empty } => {
                 let exp = node_to_expr(input, expr_arena);
@@ -191,6 +203,17 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 falsy: Arc::new(f),
             }
         },
+        AExpr::AnonymousAgg {
+            input,
+            fmt_str,
+            function: _,
+        } => {
+            let inputs = expr_irs_to_exprs(input.clone(), expr_arena);
+            Expr::Display {
+                inputs,
+                fmt_str: fmt_str.clone(),
+            }
+        },
         AExpr::AnonymousFunction {
             input,
             function,
@@ -211,6 +234,11 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             evaluation: Arc::new(node_to_expr(evaluation, expr_arena)),
             variant,
         },
+        #[cfg(feature = "dtype-struct")]
+        AExpr::StructEval { expr, evaluation } => Expr::StructEval {
+            expr: Arc::new(node_to_expr(expr, expr_arena)),
+            evaluation: expr_irs_to_exprs(evaluation, expr_arena),
+        },
         AExpr::Function {
             input,
             function,
@@ -219,21 +247,39 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             let input = expr_irs_to_exprs(input, expr_arena);
             ir_function_to_dsl(input, function)
         },
-        AExpr::Window {
+        #[cfg(feature = "dynamic_group_by")]
+        AExpr::Rolling {
+            function,
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } => {
+            let function = Arc::new(node_to_expr(function, expr_arena));
+            let index_column = Arc::new(node_to_expr(index_column, expr_arena));
+            Expr::Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window,
+            }
+        },
+        AExpr::Over {
             function,
             partition_by,
             order_by,
-            options,
+            mapping,
         } => {
             let function = Arc::new(node_to_expr(function, expr_arena));
             let partition_by = nodes_to_exprs(&partition_by, expr_arena);
             let order_by =
                 order_by.map(|(n, options)| (Arc::new(node_to_expr(n, expr_arena)), options));
-            Expr::Window {
+            Expr::Over {
                 function,
                 partition_by,
                 order_by,
-                options,
+                mapping,
             }
         },
         AExpr::Slice {
@@ -289,7 +335,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::CountMatches => A::CountMatches,
                 IA::Shift => A::Shift,
                 IA::Slice(offset, length) => A::Slice(offset, length),
-                IA::Explode { skip_empty } => A::Explode { skip_empty },
+                IA::Explode(options) => A::Explode(options),
                 #[cfg(feature = "array_to_struct")]
                 IA::ToStruct(ng) => A::ToStruct(ng),
             })
@@ -311,6 +357,10 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::Size => B::Size,
                 #[cfg(feature = "binary_encoding")]
                 IB::Reinterpret(data_type, v) => B::Reinterpret(data_type.into(), v),
+                IB::Slice => B::Slice,
+                IB::Head => B::Head,
+                IB::Tail => B::Tail,
+                IB::Get(null_on_oob) => B::Get(null_on_oob),
             })
         },
         #[cfg(feature = "dtype-categorical")]
@@ -328,6 +378,14 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IC::EndsWith(v) => C::EndsWith(v),
                 #[cfg(feature = "strings")]
                 IC::Slice(s, l) => C::Slice(s, l),
+            })
+        },
+        #[cfg(feature = "dtype-extension")]
+        IF::Extension(f) => {
+            use {ExtensionFunction as E, IRExtensionFunction as IE};
+            F::Extension(match f {
+                IE::To(dtype) => E::To(dtype.into()),
+                IE::Storage => E::Storage,
             })
         },
         IF::ListExpr(f) => {
@@ -464,6 +522,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     B::Strptime(dtype.into(), strptime_options)
                 },
                 IB::Split(v) => B::Split(v),
+                #[cfg(feature = "regex")]
+                IB::SplitRegex { inclusive, strict } => B::SplitRegex { inclusive, strict },
                 #[cfg(feature = "dtype-decimal")]
                 IB::ToDecimal { scale } => B::ToDecimal { scale },
                 #[cfg(feature = "nightly")]
@@ -480,24 +540,30 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "find_many")]
                 IB::ReplaceMany {
                     ascii_case_insensitive,
+                    leftmost,
                 } => B::ReplaceMany {
                     ascii_case_insensitive,
+                    leftmost,
                 },
                 #[cfg(feature = "find_many")]
                 IB::ExtractMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 } => B::ExtractMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 },
                 #[cfg(feature = "find_many")]
                 IB::FindMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 } => B::FindMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 },
                 #[cfg(feature = "regex")]
                 IB::EscapeRegex => B::EscapeRegex,
@@ -513,7 +579,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::SuffixFields(pl_small_str) => B::SuffixFields(pl_small_str),
                 #[cfg(feature = "json")]
                 IB::JsonEncode => B::JsonEncode,
-                IB::WithFields => B::WithFields,
                 IB::MapFieldNames(f) => B::MapFieldNames(f),
             })
         },
@@ -722,33 +787,53 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     closed,
                     array_width,
                 },
-                #[cfg(feature = "dtype-date")]
-                IR::DateRange { interval, closed } => R::DateRange { interval, closed },
-                #[cfg(feature = "dtype-date")]
-                IR::DateRanges { interval, closed } => R::DateRanges { interval, closed },
-                #[cfg(feature = "dtype-datetime")]
+                #[cfg(all(feature = "range", feature = "dtype-date"))]
+                IR::DateRange {
+                    interval,
+                    closed,
+                    arg_type,
+                } => R::DateRange {
+                    interval,
+                    closed,
+                    arg_type,
+                },
+                #[cfg(all(feature = "range", feature = "dtype-date"))]
+                IR::DateRanges {
+                    interval,
+                    closed,
+                    arg_type,
+                } => R::DateRanges {
+                    interval,
+                    closed,
+                    arg_type,
+                },
+                #[cfg(all(feature = "range", feature = "dtype-datetime"))]
                 IR::DatetimeRange {
                     interval,
                     closed,
                     time_unit,
                     time_zone,
+                    arg_type,
                 } => R::DatetimeRange {
                     interval,
                     closed,
                     time_unit,
                     time_zone,
+                    arg_type,
                 },
-                #[cfg(feature = "dtype-datetime")]
+                #[cfg(all(feature = "range", feature = "dtype-datetime"))]
                 IR::DatetimeRanges {
                     interval,
                     closed,
                     time_unit,
                     time_zone,
+                    arg_type,
                 } => R::DatetimeRanges {
                     interval,
                     closed,
                     time_unit,
                     time_zone,
+                    arg_type,
                 },
                 #[cfg(feature = "dtype-time")]
                 IR::TimeRange { interval, closed } => R::TimeRange { interval, closed },
@@ -840,7 +925,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::DropNans => F::DropNans,
         IF::DropNulls => F::DropNulls,
         #[cfg(feature = "mode")]
-        IF::Mode => F::Mode,
+        IF::Mode { maintain_order } => F::Mode { maintain_order },
         #[cfg(feature = "moment")]
         IF::Skew(v) => F::Skew(v),
         #[cfg(feature = "moment")]
@@ -859,6 +944,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             descending,
             nulls_last,
         },
+        IF::MinBy => F::MinBy,
+        IF::MaxBy => F::MaxBy,
         IF::Product => F::Product,
         #[cfg(feature = "rank")]
         IF::Rank { options, seed } => F::Rank { options, seed },

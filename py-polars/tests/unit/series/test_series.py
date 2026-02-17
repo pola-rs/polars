@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
 
@@ -37,6 +38,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from polars._typing import EpochTimeUnit, PolarsDataType, TimeUnit
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_cum_agg() -> None:
@@ -78,7 +80,7 @@ def test_cum_min_max_bool() -> None:
     )
 
 
-def test_init_inputs(monkeypatch: Any) -> None:
+def test_init_inputs(plmonkeypatch: PlMonkeyPatch) -> None:
     nan = float("nan")
     # Good inputs
     pl.Series("a", [1, 2])
@@ -167,7 +169,9 @@ def test_init_inputs(monkeypatch: Any) -> None:
     assert s.dtype.time_zone == tz  # type: ignore[attr-defined]
 
     # datetime64: check timeunit (auto-detect, implicit/explicit) and NaT
-    d64 = pd.date_range(date(2021, 8, 1), date(2021, 8, 3)).values
+    d64 = pd.date_range(date(2021, 8, 1), date(2021, 8, 3)).values.astype(
+        "datetime64[ns]"
+    )
     d64[1] = None
 
     expected = [datetime(2021, 8, 1, 0), None, datetime(2021, 8, 3, 0)]
@@ -193,7 +197,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
         pl.Series("bigint", [2**128])
 
     # numpy not available
-    monkeypatch.setattr(pl.series.series, "_check_for_numpy", lambda x: False)
+    plmonkeypatch.setattr(pl.series.series, "_check_for_numpy", lambda x: False)
     with pytest.raises(TypeError):
         pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
 
@@ -356,9 +360,9 @@ def test_date_agg() -> None:
 @pytest.mark.parametrize(
     ("s", "min", "max"),
     [
-        (pl.Series(["c", "b", "a"], dtype=pl.Categorical("lexical")), "a", "c"),
-        (pl.Series([None, "a", "c", "b"], dtype=pl.Categorical("lexical")), "a", "c"),
-        (pl.Series([], dtype=pl.Categorical("lexical")), None, None),
+        (pl.Series(["c", "b", "a"], dtype=pl.Categorical()), "a", "c"),
+        (pl.Series([None, "a", "c", "b"], dtype=pl.Categorical()), "a", "c"),
+        (pl.Series([], dtype=pl.Categorical()), None, None),
         (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a"])), "c", "a"),
         (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a", "d"])), "c", "a"),
     ],
@@ -526,8 +530,7 @@ def test_to_pandas(test_data: list[Any]) -> None:
     if a.dtype == pl.List:
         vals_b = [(None if x is None else x.tolist()) for x in b]
     else:
-        v = b.replace({np.nan: None}).values.tolist()
-        vals_b = cast("list[Any]", v)
+        vals_b = b.replace({np.nan: None}).values.tolist()  # type: ignore[dict-item]
 
     assert vals_b == test_data
 
@@ -878,15 +881,15 @@ def test_fill_nan() -> None:
 
 
 def test_map_elements() -> None:
+    a = pl.Series("a", [1, 2, None])
     with pytest.warns(PolarsInefficientMapWarning):
-        a = pl.Series("a", [1, 2, None])
         b = a.map_elements(lambda x: x**2, return_dtype=pl.Int64)
-        assert list(b) == [1, 4, None]
+    assert list(b) == [1, 4, None]
 
+    a = pl.Series("a", ["foo", "bar", None])
     with pytest.warns(PolarsInefficientMapWarning):
-        a = pl.Series("a", ["foo", "bar", None])
         b = a.map_elements(lambda x: x + "py", return_dtype=pl.String)
-        assert list(b) == ["foopy", "barpy", None]
+    assert list(b) == ["foopy", "barpy", None]
 
     b = a.map_elements(lambda x: len(x), return_dtype=pl.Int32)
     assert list(b) == [3, 3, None]
@@ -907,8 +910,10 @@ def test_shape() -> None:
 
 
 @pytest.mark.parametrize("arrow_available", [True, False])
-def test_create_list_series(arrow_available: bool, monkeypatch: Any) -> None:
-    monkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", arrow_available)
+def test_create_list_series(
+    arrow_available: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", arrow_available)
     a = [[1, 2], None, [None, 3]]
     s = pl.Series("", a)
     assert s.to_list() == a
@@ -1222,7 +1227,7 @@ def test_from_generator_or_iterable() -> None:
     assert_series_equal(pl.Series("s", []), pl.Series("s", values=gen(0)))
 
 
-def test_from_sequences(monkeypatch: Any) -> None:
+def test_from_sequences(plmonkeypatch: PlMonkeyPatch) -> None:
     # test int, str, bool, flt
     values = [
         [[1], [None, 3]],
@@ -1232,9 +1237,9 @@ def test_from_sequences(monkeypatch: Any) -> None:
     ]
 
     for vals in values:
-        monkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", False)
+        plmonkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", False)
         a = pl.Series("a", vals)
-        monkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", True)
+        plmonkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", True)
         b = pl.Series("a", vals)
         assert_series_equal(a, b)
         assert a.to_list() == vals
@@ -1360,33 +1365,58 @@ def test_temporal_comparison(
     )
 
 
-def test_to_dummies() -> None:
-    s = pl.Series("a", [1, 2, 3])
-    result = s.to_dummies()
+@pytest.mark.parametrize(
+    ("drop_nulls", "drop_first"),
+    [
+        (False, False),
+        (False, True),
+        (True, False),
+        (True, True),
+    ],
+)
+def test_to_dummies_with_nulls(drop_nulls: bool, drop_first: bool) -> None:
+    s = pl.Series("s", [None, "a", "a", None, "b", "c"])
     expected = pl.DataFrame(
-        {"a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_3": [0, 0, 1]},
-        schema={"a_1": pl.UInt8, "a_2": pl.UInt8, "a_3": pl.UInt8},
-    )
+        {
+            "s_a": [0, 1, 1, 0, 0, 0],
+            "s_b": [0, 0, 0, 0, 1, 0],
+            "s_c": [0, 0, 0, 0, 0, 1],
+            "s_null": [1, 0, 0, 1, 0, 0],
+        }
+    ).cast(pl.UInt8)
+
+    if drop_nulls:
+        expected = expected.drop("s_null")
+    if drop_first:
+        expected = expected.drop("s_a")
+
+    result = s.to_dummies(drop_nulls=drop_nulls, drop_first=drop_first)
     assert_frame_equal(result, expected)
 
 
-def test_to_dummies_drop_first() -> None:
-    s = pl.Series("a", [1, 2, 3])
-    result = s.to_dummies(drop_first=True)
+@pytest.mark.parametrize(
+    ("drop_nulls", "drop_first"),
+    [
+        (False, False),
+        (False, True),
+        (True, False),
+        (True, True),
+    ],
+)
+def test_to_dummies_no_nulls(drop_nulls: bool, drop_first: bool) -> None:
+    s = pl.Series("s", ["a", "a", "b", "c"])
     expected = pl.DataFrame(
-        {"a_2": [0, 1, 0], "a_3": [0, 0, 1]},
-        schema={"a_2": pl.UInt8, "a_3": pl.UInt8},
-    )
-    assert_frame_equal(result, expected)
+        {
+            "s_a": [1, 1, 0, 0],
+            "s_b": [0, 0, 1, 0],
+            "s_c": [0, 0, 0, 1],
+        }
+    ).cast(pl.UInt8)
 
+    if drop_first:
+        expected = expected.drop("s_a")
 
-def test_to_dummies_drop_nulls() -> None:
-    s = pl.Series("a", [1, 2, None])
-    result = s.to_dummies(drop_nulls=True)
-    expected = pl.DataFrame(
-        {"a_1": [1, 0, 0], "a_2": [0, 1, 0]},
-        schema={"a_1": pl.UInt8, "a_2": pl.UInt8},
-    )
+    result = s.to_dummies(drop_nulls=drop_nulls, drop_first=drop_first)
     assert_frame_equal(result, expected)
 
 
@@ -1443,6 +1473,8 @@ def test_arg_sort() -> None:
         # Numeric
         (pl.Series([5, 3, 4, 1, 2]), 3, 0),
         (pl.Series([None, 5, 1]), 2, 1),
+        (pl.Series([float("nan"), 3.0, 5.0]), 1, 2),
+        (pl.Series([None, float("nan"), 3.0, 5.0]), 2, 3),
         # Boolean
         (pl.Series([True, False]), 1, 0),
         (pl.Series([True, True]), 0, 0),
@@ -1453,9 +1485,15 @@ def test_arg_sort() -> None:
         # String
         (pl.Series(["a", "c", "b"]), 0, 1),
         (pl.Series([None, "a", None, "b"]), 1, 3),
+        # Binary
+        (pl.Series([b"a", b"c", b"b"]), 0, 1),
+        (pl.Series([None, b"a", None, b"b"]), 1, 3),
+        # Decimal
+        (pl.Series([Decimal("1.1"), Decimal("2.2"), Decimal("0.5")]), 2, 1),
+        (pl.Series([None, Decimal("1.1"), None, Decimal("2.2")]), 1, 3),
         # Categorical
-        (pl.Series(["c", "b", "a"], dtype=pl.Categorical(ordering="lexical")), 2, 0),
-        (pl.Series("s", [None, "c", "b", None, "a"], pl.Categorical("lexical")), 4, 1),
+        (pl.Series(["c", "b", "a"], dtype=pl.Categorical()), 2, 0),
+        (pl.Series("s", [None, "c", "b", None, "a"], pl.Categorical()), 4, 1),
     ],
 )
 def test_arg_min_arg_max(series: pl.Series, argmin: int, argmax: int) -> None:
@@ -1475,7 +1513,7 @@ def test_arg_min_arg_max(series: pl.Series, argmin: int, argmax: int) -> None:
         pl.Series([None, None], dtype=pl.Boolean),
         pl.Series([None, None], dtype=pl.String),
         pl.Series([None, None], dtype=pl.Categorical),
-        pl.Series([None, None], dtype=pl.Categorical(ordering="lexical")),
+        pl.Series([None, None], dtype=pl.Categorical()),
         # Empty Series
         pl.Series([], dtype=pl.Int32),
         pl.Series([], dtype=pl.Boolean),
@@ -1885,6 +1923,18 @@ def test_cumulative_eval() -> None:
     expr3 = expr1 - expr2
     expected3 = pl.Series("values", [0, -3, -8, -15, -24])
     assert_series_equal(s.cumulative_eval(expr3), expected3)
+
+
+def test_first_last() -> None:
+    # Ensure multiple chunks
+    s1 = pl.Series("a", [None, None], dtype=pl.Int32)
+    s2 = pl.Series("a", [None, 3, 4, None], dtype=pl.Int32)
+    s3 = pl.Series("a", [None, None], dtype=pl.Int32)
+    s = s1.append(s2).append(s3)
+    assert s.first() is None
+    assert s.first(ignore_nulls=True) == 3
+    assert s.last() is None
+    assert s.last(ignore_nulls=True) == 4
 
 
 def test_clip() -> None:

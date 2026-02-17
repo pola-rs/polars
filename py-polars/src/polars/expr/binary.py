@@ -344,3 +344,177 @@ class ExprBinaryNameSpace:
         return wrap_expr(
             self._pyexpr.bin_reinterpret(dtype._pydatatype_expr, endianness)
         )
+
+    def slice(
+        self, offset: int | IntoExpr, length: int | IntoExpr | None = None
+    ) -> Expr:
+        r"""
+        Slice the binary values.
+
+        Parameters
+        ----------
+        offset
+            Start index. Negative indexing is supported.
+        length
+            Length of the slice. If set to ``None`` (default), the slice is taken to the
+            end of the value.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Binary`.
+
+        Examples
+        --------
+        >>> colors = pl.DataFrame(
+        ...     {
+        ...         "name": ["black", "yellow", "blue"],
+        ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
+        ...     }
+        ... )
+        >>> colors.with_columns(
+        ...     pl.col("code").bin.slice(1, 2).alias("sliced"),
+        ... )
+        shape: (3, 3)
+        ┌────────┬─────────────────┬─────────────┐
+        │ name   ┆ code            ┆ sliced      │
+        │ ---    ┆ ---             ┆ ---         │
+        │ str    ┆ binary          ┆ binary      │
+        ╞════════╪═════════════════╪═════════════╡
+        │ black  ┆ b"\x00\x00\x00" ┆ b"\x00\x00" │
+        │ yellow ┆ b"\xff\xff\x00" ┆ b"\xff\x00" │
+        │ blue   ┆ b"\x00\x00\xff" ┆ b"\x00\xff" │
+        └────────┴─────────────────┴─────────────┘
+        """
+        offset_pyexpr = parse_into_expression(offset)
+        length_pyexpr = parse_into_expression(length)
+        return wrap_expr(self._pyexpr.bin_slice(offset_pyexpr, length_pyexpr))
+
+    def head(self, n: int | IntoExpr = 5) -> Expr:
+        r"""
+        Take the first `n` bytes of the binary values.
+
+        Parameters
+        ----------
+        n
+            Length of the slice (integer or expression). Negative indexing is supported;
+            see note (2) below.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Binary`.
+
+        Notes
+        -----
+        (1) A similar method exists for taking the last `n` bytes: :func:`tail`.
+        (2) If `n` is negative, it is interpreted as "until the nth byte from the end",
+            e.g., ``head(-3)`` returns all but the last three bytes.
+
+        Examples
+        --------
+        >>> colors = pl.DataFrame(
+        ...     {
+        ...         "name": ["black", "yellow", "blue"],
+        ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
+        ...     }
+        ... )
+        >>> colors.with_columns(
+        ...     pl.col("code").bin.head(2).alias("head"),
+        ... )
+        shape: (3, 3)
+        ┌────────┬─────────────────┬─────────────┐
+        │ name   ┆ code            ┆ head        │
+        │ ---    ┆ ---             ┆ ---         │
+        │ str    ┆ binary          ┆ binary      │
+        ╞════════╪═════════════════╪═════════════╡
+        │ black  ┆ b"\x00\x00\x00" ┆ b"\x00\x00" │
+        │ yellow ┆ b"\xff\xff\x00" ┆ b"\xff\xff" │
+        │ blue   ┆ b"\x00\x00\xff" ┆ b"\x00\x00" │
+        └────────┴─────────────────┴─────────────┘
+        """
+        n_pyexpr = parse_into_expression(n, str_as_lit=False)
+        return wrap_expr(self._pyexpr.bin_head(n_pyexpr))
+
+    def tail(self, n: int | IntoExpr = 5) -> Expr:
+        r"""
+        Take the last `n` bytes of the binary values.
+
+        Parameters
+        ----------
+        n
+            Length of the slice (integer or expression). Negative indexing is supported;
+            see note (2) below.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Binary`.
+
+        Notes
+        -----
+        (1) A similar method exists for taking the first `n` bytes: :func:`head`.
+        (2) If `n` is negative, it is interpreted as "starting at the nth byte",
+            e.g., ``tail(-3)`` returns all but the first three bytes.
+
+        Examples
+        --------
+        >>> colors = pl.DataFrame(
+        ...     {
+        ...         "name": ["black", "yellow", "blue"],
+        ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
+        ...     }
+        ... )
+        >>> colors.with_columns(
+        ...     pl.col("code").bin.tail(2).alias("tail"),
+        ... )
+        shape: (3, 3)
+        ┌────────┬─────────────────┬─────────────┐
+        │ name   ┆ code            ┆ tail        │
+        │ ---    ┆ ---             ┆ ---         │
+        │ str    ┆ binary          ┆ binary      │
+        ╞════════╪═════════════════╪═════════════╡
+        │ black  ┆ b"\x00\x00\x00" ┆ b"\x00\x00" │
+        │ yellow ┆ b"\xff\xff\x00" ┆ b"\xff\x00" │
+        │ blue   ┆ b"\x00\x00\xff" ┆ b"\x00\xff" │
+        └────────┴─────────────────┴─────────────┘
+        """
+        n_pyexpr = parse_into_expression(n, str_as_lit=False)
+        return wrap_expr(self._pyexpr.bin_tail(n_pyexpr))
+
+    def get(self, index: int | IntoExpr, *, null_on_oob: bool = False) -> Expr:
+        r"""
+        Get the byte value at the given index.
+
+        For example, index `0` would return the first byte of every binary value
+        and index `-1` would return the last byte of every binary value.
+        The behavior if an index is out of bounds is determined by the argument
+        `null_on_oob`.
+
+        Parameters
+        ----------
+        index
+            Index to return per binary value
+        null_on_oob
+            Behavior if an index is out of bounds:
+
+            * True -> set as null
+            * False -> raise an error
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [b"\x01\x02\x03", b"", b"\x04\x05"]})
+        >>> df.with_columns(get=pl.col("a").bin.get(0, null_on_oob=True))
+        shape: (3, 2)
+        ┌─────────────────┬──────┐
+        │ a               ┆ get  │
+        │ ---             ┆ ---  │
+        │ binary          ┆ u8   │
+        ╞═════════════════╪══════╡
+        │ b"\x01\x02\x03" ┆ 1    │
+        │ b""             ┆ null │
+        │ b"\x04\x05"     ┆ 4    │
+        └─────────────────┴──────┘
+        """
+        index_pyexpr = parse_into_expression(index)
+        return wrap_expr(self._pyexpr.bin_get(index_pyexpr, null_on_oob))

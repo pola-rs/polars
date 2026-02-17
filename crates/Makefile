@@ -110,6 +110,7 @@ doctest:  ## Check that documentation builds
 .PHONY: publish
 publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-error
+	cargo publish --allow-dirty -p polars-buffer
 	cargo publish --allow-dirty -p polars-utils
 	cargo publish --allow-dirty -p polars-schema
 	cargo publish --allow-dirty -p polars-arrow

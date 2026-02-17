@@ -1,9 +1,11 @@
 pub mod callback_sink;
 #[cfg(feature = "cum_agg")]
 pub mod cum_agg;
+#[cfg(feature = "dynamic_group_by")]
+pub mod dynamic_group_by;
 pub mod dynamic_slice;
 #[cfg(feature = "ewma")]
-pub mod ewm_mean;
+pub mod ewm;
 pub mod filter;
 pub mod gather_every;
 pub mod group_by;
@@ -30,8 +32,10 @@ pub mod rolling_group_by;
 pub mod select;
 pub mod shift;
 pub mod simple_projection;
+pub mod sorted_group_by;
 pub mod streaming_slice;
 pub mod top_k;
+pub mod unordered_union;
 pub mod with_row_index;
 pub mod zip;
 
@@ -52,6 +56,7 @@ mod compute_node_prelude {
 use compute_node_prelude::*;
 
 use crate::execute::StreamingExecutionState;
+use crate::metrics::MetricsBuilder;
 
 pub trait ComputeNode: Send {
     /// The name of this node.
@@ -91,6 +96,8 @@ pub trait ComputeNode: Send {
         state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
+
+    fn set_metrics_builder(&mut self, _metrics_builder: MetricsBuilder) {}
 
     /// Called once after the last execution phase to extract output from
     /// in-memory nodes.

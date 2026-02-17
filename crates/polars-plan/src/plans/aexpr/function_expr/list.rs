@@ -60,6 +60,18 @@ pub enum IRListFunction {
     ToStruct(Arc<[PlSmallStr]>),
 }
 
+impl<'a> FieldsMapper<'a> {
+    /// Validate that the dtype is a List.
+    pub fn ensure_is_list(self) -> PolarsResult<Self> {
+        let dt = self.args()[0].dtype();
+        polars_ensure!(
+            dt.is_list(),
+            InvalidOperation: format!("expected List data type for list operation, got: {:?}", dt)
+        );
+        Ok(self)
+    }
+}
+
 impl IRListFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRListFunction::*;

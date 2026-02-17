@@ -1,6 +1,6 @@
 use arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
 
 use super::*;
@@ -23,7 +23,12 @@ impl BinviewHashGrouper {
     /// # Safety
     /// The view must be valid for the given buffer set.
     #[inline(always)]
-    unsafe fn insert_key(&mut self, hash: u64, view: View, buffers: &Arc<[Buffer<u8>]>) -> IdxSize {
+    unsafe fn insert_key(
+        &mut self,
+        hash: u64,
+        view: View,
+        buffers: &Buffer<Buffer<u8>>,
+    ) -> IdxSize {
         unsafe {
             match self.idx_map.entry_view(hash, view, buffers) {
                 Entry::Occupied(o) => o.index(),
@@ -47,7 +52,7 @@ impl BinviewHashGrouper {
     /// # Safety
     /// The view must be valid for the given buffer set.
     #[inline(always)]
-    unsafe fn contains_key(&self, hash: u64, view: &View, buffers: &Arc<[Buffer<u8>]>) -> bool {
+    unsafe fn contains_key(&self, hash: u64, view: &View, buffers: &Buffer<Buffer<u8>>) -> bool {
         unsafe { self.idx_map.get_view(hash, view, buffers).is_some() }
     }
 
@@ -62,7 +67,7 @@ impl BinviewHashGrouper {
         &self,
         schema: &Schema,
         views: Buffer<View>,
-        buffers: Arc<[Buffer<u8>]>,
+        buffers: Buffer<Buffer<u8>>,
         validity: Option<Bitmap>,
     ) -> DataFrame {
         let (name, dtype) = schema.get_at_index(0).unwrap();
@@ -77,7 +82,7 @@ impl BinviewHashGrouper {
             );
             let s =
                 Series::from_chunks_and_dtype_unchecked(name.clone(), vec![Box::new(keys)], dtype);
-            DataFrame::new(vec![Column::from(s)]).unwrap()
+            DataFrame::new_unchecked(s.len(), vec![Column::from(s)])
         }
     }
 }
@@ -159,7 +164,7 @@ impl Grouper for BinviewHashGrouper {
     }
 
     fn get_keys_in_group_order(&self, schema: &Schema) -> DataFrame {
-        let buffers: Arc<[_]> = self
+        let buffers = self
             .idx_map
             .buffers()
             .iter()

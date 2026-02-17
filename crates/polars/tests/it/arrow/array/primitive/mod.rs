@@ -1,8 +1,8 @@
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
-use arrow::buffer::Buffer;
 use arrow::datatypes::*;
 use arrow::types::months_days_ns;
+use polars_buffer::Buffer;
 
 mod fmt;
 mod mutable;

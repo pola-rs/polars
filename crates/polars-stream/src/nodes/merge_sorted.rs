@@ -68,8 +68,8 @@ fn find_mergeable(
             (None, None) => return Ok(None),
         };
 
-        let left_key = left.get_columns().last().unwrap();
-        let right_key = right.get_columns().last().unwrap();
+        let left_key = left.columns().last().unwrap();
+        let right_key = right.columns().last().unwrap();
 
         let left_null_count = left_key.null_count();
         let right_null_count = right_key.null_count();
@@ -147,10 +147,10 @@ fn find_mergeable(
         (left_mergeable, left) = left.split_at(left_cutoff as i64);
         (right_mergeable, right) = right.split_at(right_cutoff as i64);
 
-        if !left.is_empty() {
+        if left.height() > 0 {
             left_unmerged.push_front(left);
         }
-        if !right.is_empty() {
+        if right.height() > 0 {
             right_unmerged.push_front(right);
         }
 
@@ -163,8 +163,7 @@ fn remove_key_column(df: &mut DataFrame) {
     // - We only pop so height stays same.
     // - We only pop so no new name collisions.
     // - We clear schema afterwards.
-    unsafe { df.get_columns_mut().pop().unwrap() };
-    df.clear_schema();
+    unsafe { df.columns_mut().pop().unwrap() };
 }
 
 impl ComputeNode for MergeSortedNode {
@@ -290,16 +289,11 @@ impl ComputeNode for MergeSortedNode {
                 ) {
                     // If a stop was requested, we need to buffer the remaining
                     // morsels and trigger a phase transition.
-                    let Ok(morsel) = port.recv().await else {
-                        return;
-                    };
 
-                    // Request the port stop producing morsels.
-                    morsel.source_token().stop();
-
-                    // Buffer all the morsels that were already produced.
-                    unmerged.push_back(morsel.into_df());
                     while let Ok(morsel) = port.recv().await {
+                        // Request the port stop producing morsels.
+                        morsel.source_token().stop();
+                        // Buffer all the morsels that were already produced.
                         unmerged.push_back(morsel.into_df());
                     }
                 }
@@ -418,7 +412,7 @@ impl ComputeNode for MergeSortedNode {
                             }
                         }
 
-                        // Start passing on the port that is port that is still open.
+                        // Start passing on the port that is still open.
                         if let Some(pass_port) = pass_port {
                             let Ok(mut m) = pass_port.recv().await else {
                                 return Ok(());
@@ -454,7 +448,7 @@ impl ComputeNode for MergeSortedNode {
                             // When we are flushing the buffer, we will just send one morsel from
                             // the input. We don't want to mess with the source token or wait group
                             // and just pass it on.
-                            if right.is_empty() {
+                            if right.shape_has_zero() {
                                 remove_key_column(left.df_mut());
 
                                 if send.send(left).await.is_err() {
@@ -467,13 +461,13 @@ impl ComputeNode for MergeSortedNode {
                             assert!(wg.is_none());
 
                             let left_s = left
-                                .get_columns()
+                                .columns()
                                 .last()
                                 .unwrap()
                                 .as_materialized_series()
                                 .clone();
                             let right_s = right
-                                .get_columns()
+                                .columns()
                                 .last()
                                 .unwrap()
                                 .as_materialized_series()

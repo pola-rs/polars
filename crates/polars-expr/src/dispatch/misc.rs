@@ -123,7 +123,7 @@ pub(super) fn reshape(c: &Column, dimensions: &[ReshapeDimension]) -> PolarsResu
 pub(super) fn repeat_by(s: &[Column]) -> PolarsResult<Column> {
     let by = &s[1];
     let s = &s[0];
-    let by = by.cast(&IDX_DTYPE)?;
+    let by = by.strict_cast(&IDX_DTYPE)?;
     polars_ops::chunked_array::repeat_by(s.as_materialized_series(), by.idx()?)
         .map(|ok| ok.into_column())
 }
@@ -181,8 +181,8 @@ pub fn append(s: &[Column], upcast: bool) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "mode")]
-pub(super) fn mode(s: &Column) -> PolarsResult<Column> {
-    polars_ops::prelude::mode::mode(s.as_materialized_series()).map(Column::from)
+pub(super) fn mode(s: &Column, maintain_order: bool) -> PolarsResult<Column> {
+    polars_ops::prelude::mode::mode(s.as_materialized_series(), maintain_order).map(Column::from)
 }
 
 #[cfg(feature = "moment")]
@@ -243,6 +243,32 @@ pub(super) fn arg_sort(s: &Column, descending: bool, nulls_last: bool) -> Polars
             limit: None,
         })
         .into_column())
+}
+
+pub(super) fn min_by(s: &[Column]) -> PolarsResult<Column> {
+    assert!(s.len() == 2);
+    let input = &s[0];
+    let by = &s[1];
+    if input.len() != by.len() {
+        polars_bail!(ShapeMismatch: "'by' column in `min_by` operation has incorrect length (got {}, expected {})", by.len(), input.len());
+    }
+    match by.as_materialized_series().arg_min() {
+        Some(idx) => Ok(input.new_from_index(idx, 1)),
+        None => Ok(Series::new_null(input.name().clone(), 1).into_column()),
+    }
+}
+
+pub(super) fn max_by(s: &[Column]) -> PolarsResult<Column> {
+    assert!(s.len() == 2);
+    let input = &s[0];
+    let by = &s[1];
+    if input.len() != by.len() {
+        polars_bail!(ShapeMismatch: "'by' column in `max_by` operation has incorrect length (got {}, expected {})", by.len(), input.len());
+    }
+    match by.as_materialized_series().arg_max() {
+        Some(idx) => Ok(input.new_from_index(idx, 1)),
+        None => Ok(Series::new_null(input.name().clone(), 1).into_column()),
+    }
 }
 
 pub(super) fn product(s: &Column) -> PolarsResult<Column> {
@@ -425,11 +451,7 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
     let result = match is_sorted_flag {
         // If the Series is sorted, we can use an optimized binary search to
         // find the value.
-        IsSorted::Ascending | IsSorted::Descending
-            if !needle.is_null() &&
-            // search_sorted() doesn't support decimals at the moment.
-            !series.dtype().is_decimal() =>
-        {
+        IsSorted::Ascending | IsSorted::Descending if !needle.is_null() => {
             use polars_ops::series::SearchSortedSide;
 
             polars_ops::series::search_sorted(
@@ -569,6 +591,12 @@ pub(super) fn coalesce(s: &mut [Column]) -> PolarsResult<Column> {
 
 pub(super) fn drop_nans(s: Column) -> PolarsResult<Column> {
     match s.dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca = s.f16()?;
+            let mask = ca.is_not_nan() | ca.is_null();
+            ca.filter(&mask).map(|ca| ca.into_column())
+        },
         DataType::Float32 => {
             let ca = s.f32()?;
             let mask = ca.is_not_nan() | ca.is_null();
@@ -708,6 +736,15 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
 
         use polars_ops::chunked_array::cov::cov;
         let ret = match a.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                use num_traits::AsPrimitive;
+                use polars_utils::float16::pf16;
+
+                let ret =
+                    cov(a.f16().unwrap(), b.f16().unwrap(), ddof).map(AsPrimitive::<pf16>::as_);
+                return Ok(Column::new(name, &[ret]));
+            },
             DataType::Float32 => {
                 let ret = cov(a.f32().unwrap(), b.f32().unwrap(), ddof).map(|v| v as f32);
                 return Ok(Column::new(name, &[ret]));
@@ -733,6 +770,15 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
 
         use polars_ops::chunked_array::cov::pearson_corr;
         let ret = match a.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                use num_traits::AsPrimitive;
+                use polars_utils::float16::pf16;
+
+                let ret =
+                    pearson_corr(a.f16().unwrap(), b.f16().unwrap()).map(AsPrimitive::<pf16>::as_);
+                return Ok(Column::new(name, &[ret]));
+            },
             DataType::Float32 => {
                 let ret = pearson_corr(a.f32().unwrap(), b.f32().unwrap()).map(|v| v as f32);
                 return Ok(Column::new(name, &[ret]));
@@ -763,13 +809,8 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
         let name = PlSmallStr::from_static("spearman_rank_correlation");
         if propagate_nans && a.dtype().is_float() {
             for s in [&a, &b] {
-                if nan_max_s(s.as_materialized_series(), PlSmallStr::EMPTY)
-                    .get(0)
-                    .unwrap()
-                    .extract::<f64>()
-                    .unwrap()
-                    .is_nan()
-                {
+                let max = nan_max_s(s.as_materialized_series(), PlSmallStr::EMPTY);
+                if max.get(0).is_ok_and(|m| m.is_nan()) {
                     return Ok(Column::new(name, &[f64::NAN]));
                 }
             }
@@ -779,26 +820,32 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
         let a = a.drop_nulls();
         let b = b.drop_nulls();
 
-        let a_rank = a
-            .as_materialized_series()
-            .rank(
-                RankOptions {
-                    method: RankMethod::Average,
-                    ..Default::default()
-                },
-                None,
-            )
-            .into();
-        let b_rank = b
-            .as_materialized_series()
-            .rank(
-                RankOptions {
-                    method: RankMethod::Average,
-                    ..Default::default()
-                },
-                None,
-            )
-            .into();
+        let a_rank = a.as_materialized_series().rank(
+            RankOptions {
+                method: RankMethod::Average,
+                ..Default::default()
+            },
+            None,
+        );
+        let b_rank = b.as_materialized_series().rank(
+            RankOptions {
+                method: RankMethod::Average,
+                ..Default::default()
+            },
+            None,
+        );
+
+        // Because rank results in f64, we may need to restore the dtype
+        let a_rank = if a.dtype().is_float() {
+            a_rank.cast(a.dtype())?.into()
+        } else {
+            a_rank.into()
+        };
+        let b_rank = if b.dtype().is_float() {
+            b_rank.cast(b.dtype())?.into()
+        } else {
+            b_rank.into()
+        };
 
         pearson_corr(&[a_rank, b_rank])
     }
@@ -933,14 +980,16 @@ pub fn row_encode(
         RowEncodingVariant::Ordered {
             descending,
             nulls_last,
+            broadcast_nulls,
         } => {
             let descending = descending.unwrap_or_else(|| vec![false; c.len()]);
             let nulls_last = nulls_last.unwrap_or_else(|| vec![false; c.len()]);
+            let broadcast_nulls = broadcast_nulls.unwrap_or(false);
 
             assert_eq!(c.len(), descending.len());
             assert_eq!(c.len(), nulls_last.len());
 
-            _get_rows_encoded_ca(name, c, &descending, &nulls_last)
+            _get_rows_encoded_ca(name, c, &descending, &nulls_last, broadcast_nulls)
         },
     }
     .map(IntoColumn::into_column)
@@ -966,9 +1015,13 @@ pub fn row_decode(
         RowEncodingVariant::Ordered {
             descending,
             nulls_last,
+            broadcast_nulls,
         } => {
             let descending = descending.unwrap_or_else(|| vec![false; fields.len()]);
             let nulls_last = nulls_last.unwrap_or_else(|| vec![false; fields.len()]);
+            if broadcast_nulls.is_some() {
+                polars_bail!(InvalidOperation: "broadcast_nulls is not supported for row_decode.");
+            }
 
             assert_eq!(fields.len(), descending.len());
             assert_eq!(fields.len(), nulls_last.len());

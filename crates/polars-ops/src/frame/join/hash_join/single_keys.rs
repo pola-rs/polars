@@ -7,7 +7,7 @@ use polars_utils::unitvec;
 
 use super::*;
 
-// FIXME: we should compute the number of threads / partition size we'll use.
+// TODO: we should compute the number of threads / partition size we'll use.
 // let avail_threads = POOL.current_num_threads();
 // let n_threads = (num_keys / MIN_ELEMS_PER_THREAD).clamp(1, avail_threads);
 // Use a small element per thread threshold for debugging/testing purposes.
@@ -22,7 +22,7 @@ where
     <T as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
     I: IntoIterator<Item = T> + Send + Sync + Clone,
 {
-    // FIXME: change interface to split the input here, instead of taking
+    // TODO: change interface to split the input here, instead of taking
     // pre-split input iterators.
     let n_partitions = keys.len();
     let n_threads = n_partitions;
@@ -80,7 +80,7 @@ where
         per_thread_partition_offsets[n_threads * n_partitions] = num_keys;
         partition_offsets[n_partitions] = num_keys;
 
-        // FIXME: we wouldn't need this if we changed our interface to split the
+        // TODO: we wouldn't need this if we changed our interface to split the
         // input in this function, instead of taking a vec of iterators.
         let mut per_thread_input_offsets = vec![0; n_partitions];
         cum_offset = 0;

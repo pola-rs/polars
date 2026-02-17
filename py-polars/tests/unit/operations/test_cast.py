@@ -3,7 +3,7 @@ from __future__ import annotations
 import operator
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -15,6 +15,8 @@ from polars.testing.asserts.series import assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType, PythonDataType
 
 
@@ -632,7 +634,7 @@ def test_err_on_time_datetime_cast() -> None:
     s = pl.Series([time(10, 0, 0), time(11, 30, 59)])
     with pytest.raises(
         InvalidOperationError,
-        match="casting from Time to Datetime\\('μs'\\) not supported; consider using `dt.combine`",
+        match=r"casting from Time to Datetime\('μs'\) not supported; consider using `dt\.combine`",
     ):
         s.cast(pl.Datetime)
 
@@ -1058,3 +1060,15 @@ def test_lit_cast_arithmetic_matrix_schema(
         else df.lazy().select(op(pl.col("a"), pl.lit(1, lit_dtype)))
     )
     assert q.collect_schema() == q.collect().schema
+
+
+def test_strict_cast_nested() -> None:
+    df = pl.DataFrame({"a": ["42", "10a"]})
+    struct = pl.Struct({"x": pl.Int32})
+    with pytest.raises(InvalidOperationError):
+        df.cast(struct, strict=True)
+
+    assert_frame_equal(
+        df.cast(struct, strict=False),
+        pl.DataFrame({"a": [{"x": 42}, {"x": None}]}, schema={"a": struct}),
+    )

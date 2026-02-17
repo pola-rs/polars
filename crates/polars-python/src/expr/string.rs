@@ -303,6 +303,34 @@ impl PyExpr {
         self.inner.clone().str().splitn(by.inner, n).into()
     }
 
+    #[cfg(feature = "regex")]
+    fn str_split_regex(&self, by: Self, strict: bool) -> Self {
+        self.str_split_regex_with_strict(by, strict)
+    }
+
+    #[cfg(feature = "regex")]
+    fn str_split_regex_inclusive(&self, by: Self, strict: bool) -> Self {
+        self.str_split_regex_inclusive_with_strict(by, strict)
+    }
+
+    #[cfg(feature = "regex")]
+    fn str_split_regex_with_strict(&self, by: Self, strict: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .split_regex(by.inner, strict)
+            .into()
+    }
+
+    #[cfg(feature = "regex")]
+    fn str_split_regex_inclusive_with_strict(&self, by: Self, strict: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .split_regex_inclusive(by.inner, strict)
+            .into()
+    }
+
     fn str_to_decimal(&self, scale: usize) -> Self {
         self.inner.clone().str().to_decimal(scale).into()
     }
@@ -321,11 +349,17 @@ impl PyExpr {
         patterns: PyExpr,
         replace_with: PyExpr,
         ascii_case_insensitive: bool,
+        leftmost: bool,
     ) -> Self {
         self.inner
             .clone()
             .str()
-            .replace_many(patterns.inner, replace_with.inner, ascii_case_insensitive)
+            .replace_many(
+                patterns.inner,
+                replace_with.inner,
+                ascii_case_insensitive,
+                leftmost,
+            )
             .into()
     }
 
@@ -335,11 +369,17 @@ impl PyExpr {
         patterns: PyExpr,
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     ) -> Self {
         self.inner
             .clone()
             .str()
-            .extract_many(patterns.inner, ascii_case_insensitive, overlapping)
+            .extract_many(
+                patterns.inner,
+                ascii_case_insensitive,
+                overlapping,
+                leftmost,
+            )
             .into()
     }
 
@@ -349,11 +389,17 @@ impl PyExpr {
         patterns: PyExpr,
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     ) -> Self {
         self.inner
             .clone()
             .str()
-            .find_many(patterns.inner, ascii_case_insensitive, overlapping)
+            .find_many(
+                patterns.inner,
+                ascii_case_insensitive,
+                overlapping,
+                leftmost,
+            )
             .into()
     }
 

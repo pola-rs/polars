@@ -21,6 +21,7 @@ pub fn is_output_ordered(
             O::None
         },
         arena,
+        None,
     )
     .resolve_observable_orders(aexpr)
     {

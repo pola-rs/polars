@@ -14,7 +14,6 @@ pub struct QuantileWindow<'a, T: NativeType> {
 }
 
 impl<
-    'a,
     T: NativeType
         + Float
         + std::iter::Sum
@@ -26,31 +25,38 @@ impl<
         + Zero
         + SealedRolling
         + Sub<Output = T>,
-> RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
+> RollingAggWindowNoNulls<T> for QuantileWindow<'_, T>
 {
-    fn new(
+    type This<'a> = QuantileWindow<'a, T>;
+
+    fn new<'a>(
         slice: &'a [T],
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
-    ) -> Self {
+    ) -> Self::This<'a> {
         let params = params.unwrap();
         let RollingFnParams::Quantile(params) = params else {
             unreachable!("expected Quantile params");
         };
 
-        Self {
+        QuantileWindow {
             sorted: SortedBuf::new(slice, start, end, window_size),
             prob: params.prob,
             method: params.method,
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
+    unsafe fn update(&mut self, start: usize, end: usize) {
         self.sorted.update(start, end);
-        let length = self.sorted.len();
+    }
 
+    fn get_agg(&self, _idx: usize) -> Option<T> {
+        let length = self.sorted.len();
+        if length == 0 {
+            return None;
+        }
         let idx = match self.method {
             Linear => {
                 // Maybe add a fast path for median case? They could branch depending on odd/even.
@@ -70,10 +76,11 @@ impl<
             },
             Midpoint => {
                 let length_f = length as f64;
-                let idx = (length_f * self.prob) as usize;
-                let idx = std::cmp::min(idx, length - 1);
 
+                let idx = ((length_f - 1.0) * self.prob).floor() as usize;
+                let idx = std::cmp::min(idx, length - 1);
                 let top_idx = ((length_f - 1.0) * self.prob).ceil() as usize;
+
                 return if top_idx == idx {
                     Some(self.sorted.get(idx))
                 } else {
@@ -95,6 +102,10 @@ impl<
         };
 
         Some(self.sorted.get(idx))
+    }
+
+    fn slice_len(&self) -> usize {
+        self.sorted.slice_len()
     }
 }
 

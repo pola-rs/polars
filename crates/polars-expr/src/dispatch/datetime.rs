@@ -1,9 +1,11 @@
 #[cfg(feature = "timezones")]
 use arrow::legacy::time_zone::Tz;
 use polars_core::error::{PolarsResult, polars_bail};
-use polars_core::prelude::{ArithmeticChunked, Column, IntoColumn, LogicalType, TimeUnit};
+use polars_core::prelude::{
+    ArithmeticChunked, Column, DataType, IntoColumn, LogicalType, TimeUnit,
+};
 #[cfg(feature = "timezones")]
-use polars_core::prelude::{DataType, NonExistent, StringChunked, TimeZone};
+use polars_core::prelude::{NonExistent, StringChunked, TimeZone};
 use polars_time::prelude::*;
 use polars_time::replace_datetime;
 use polars_time::series::TemporalMethods;

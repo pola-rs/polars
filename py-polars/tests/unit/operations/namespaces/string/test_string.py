@@ -1178,7 +1178,7 @@ def test_replace_all() -> None:
     )
 
 
-def test_replace_all_literal_no_caputures() -> None:
+def test_replace_all_literal_no_captures() -> None:
     # When using literal = True, capture groups should be disabled
 
     # Single row code path in Rust
@@ -1206,7 +1206,7 @@ def test_replace_all_literal_no_caputures() -> None:
     assert df2.get_column("text2")[1] == "I lost $2 yesterday."
 
 
-def test_replace_literal_no_caputures() -> None:
+def test_replace_literal_no_captures() -> None:
     # When using literal = True, capture groups should be disabled
 
     # Single row code path in Rust
@@ -1255,47 +1255,72 @@ def test_replace_expressions() -> None:
 
 
 @pytest.mark.parametrize(
-    ("pattern", "replacement", "case_insensitive", "expected"),
+    ("pattern", "replacement", "case_insensitive", "leftmost", "expected"),
     [
-        (["say"], "", False, "Tell me what you want"),
-        (["me"], ["them"], False, "Tell them what you want"),
-        (["who"], ["them"], False, "Tell me what you want"),
-        (["me", "you"], "it", False, "Tell it what it want"),
-        (["Me", "you"], "it", False, "Tell me what it want"),
-        (["me", "you"], ["it"], False, "Tell it what it want"),
-        (["me", "you"], ["you", "me"], False, "Tell you what me want"),
-        (["me", "You", "them"], "it", False, "Tell it what you want"),
-        (["Me", "you"], "it", True, "Tell it what it want"),
-        (["me", "YOU"], ["you", "me"], True, "Tell you what me want"),
-        (pl.Series(["me", "YOU"]), ["you", "me"], False, "Tell you what you want"),
-        (pl.Series(["me", "YOU"]), ["you", "me"], True, "Tell you what me want"),
+        (["say"], "", False, False, "Tell me what you want"),
+        (["me"], ["them"], False, False, "Tell them what you want"),
+        (["who"], ["them"], False, False, "Tell me what you want"),
+        (["me", "you"], "it", False, False, "Tell it what it want"),
+        (["Me", "you"], "it", False, False, "Tell me what it want"),
+        (["me", "you"], ["it"], False, False, "Tell it what it want"),
+        (["me", "you"], ["you", "me"], False, False, "Tell you what me want"),
+        (["me", "You", "them"], "it", False, False, "Tell it what you want"),
+        (["Me", "you"], "it", True, False, "Tell it what it want"),
+        (["me", "YOU"], ["you", "me"], True, False, "Tell you what me want"),
+        (
+            pl.Series(["me", "YOU"]),
+            ["you", "me"],
+            False,
+            False,
+            "Tell you what you want",
+        ),
+        (pl.Series(["me", "YOU"]), ["you", "me"], True, False, "Tell you what me want"),
+        (
+            ["Tell me", "Tell"],
+            ["Don't tell", "Text"],
+            False,
+            False,
+            "Text me what you want",
+        ),
+        (
+            ["Tell me", "Tell"],
+            ["Don't tell me", "Text"],
+            False,
+            True,
+            "Don't tell me what you want",
+        ),
     ],
 )
 def test_replace_many(
     pattern: pl.Series | list[str],
     replacement: pl.Series | list[str] | str,
     case_insensitive: bool,
+    leftmost: bool,
     expected: str,
 ) -> None:
     df = pl.DataFrame({"text": ["Tell me what you want"]})
     # series
-    assert (
-        expected
-        == df["text"]
-        .str.replace_many(pattern, replacement, ascii_case_insensitive=case_insensitive)
+    val = (
+        df["text"]
+        .str.replace_many(
+            pattern,
+            replacement,
+            ascii_case_insensitive=case_insensitive,
+            leftmost=leftmost,
+        )
         .item()
     )
+    assert expected == val, val
     # expr
-    assert (
-        expected
-        == df.select(
-            pl.col("text").str.replace_many(
-                pattern,
-                replacement,
-                ascii_case_insensitive=case_insensitive,
-            )
-        ).item()
-    )
+    val = df.select(
+        pl.col("text").str.replace_many(
+            pattern,
+            replacement,
+            ascii_case_insensitive=case_insensitive,
+            leftmost=leftmost,
+        )
+    ).item()
+    assert expected == val, val
 
 
 def test_replace_many_groupby() -> None:
@@ -1924,6 +1949,28 @@ def test_replace_lit_n_char_13385(
     assert_series_equal(res, expected_s)
 
 
+def test_find_many_raises() -> None:
+    df = pl.DataFrame({"values": ["discontent", "foobar"]})
+    patterns = ["winter", "disco", "onte", "discontent"]
+    with pytest.raises(
+        ValueError, match="can not match overlapping patterns when leftmost == True"
+    ):
+        df.select(
+            pl.col("values").str.find_many(patterns, leftmost=True, overlapping=True)
+        )
+
+
+def test_extract_many_raises() -> None:
+    df = pl.DataFrame({"values": ["discontent", "foobar"]})
+    patterns = ["winter", "disco", "onte", "discontent"]
+    with pytest.raises(
+        ValueError, match="can not match overlapping patterns when leftmost == True"
+    ):
+        df.select(
+            pl.col("values").str.extract_many(patterns, leftmost=True, overlapping=True)
+        )
+
+
 def test_extract_many() -> None:
     df = pl.DataFrame({"values": ["discontent", "foobar"]})
     patterns = ["winter", "disco", "onte", "discontent"]
@@ -2103,3 +2150,168 @@ def test_str_replace_null_19601() -> None:
         df.select(result=pl.col("key").str.replace("1", pl.col("1"))),
         pl.DataFrame({"result": ["---", "2"]}),
     )
+
+
+def test_str_json_decode_25237() -> None:
+    s = pl.Series(['[{"a": 0, "b": 1}, {"b": 2}]'])
+
+    dtypes = {s.str.json_decode().dtype for _ in range(20)}
+
+    assert len(dtypes) == 1
+
+
+def test_json_decode_decimal_25789() -> None:
+    s = pl.Series(
+        ['{"a": 1.23}', '{"a": 4.56}', '{"a": null}', '{"a": "30.1271239481230948"}']
+    )
+    result = s.str.json_decode(dtype=pl.Struct({"a": pl.Decimal(4, 2)}))
+    expected = pl.Series(
+        [{"a": 1.23}, {"a": 4.56}, {"a": None}, {"a": 30.13}],
+        dtype=pl.Struct({"a": pl.Decimal(4, 2)}),
+    )
+    assert_series_equal(result, expected)
+
+    with pytest.raises(
+        ComputeError, match=r"error deserializing value.*30.127.* as Decimal\(3, 2\)"
+    ):
+        s.str.json_decode(dtype=pl.Struct({"a": pl.Decimal(3, 2)}))
+
+
+def test_json_decode_i128() -> None:
+    s = pl.Series(
+        [
+            '{"a":170141183460469231731687303715884105723}',
+            '{"a":null}',
+            '{"a":-170141183460469231731687303715759193239}',
+        ]
+    )
+    result = s.str.json_decode(dtype=pl.Struct({"a": pl.Int128}))
+    expected = pl.Series(
+        [{"a": 2**127 - 5}, {"a": None}, {"a": -(2**127) + 124912489}],
+        dtype=pl.Struct({"a": pl.Int128}),
+    )
+    assert_series_equal(result, expected)
+
+
+def test_json_decode_u128() -> None:
+    s = pl.Series(['{"a":340282366920938463463374607431768211451}', '{"a":null}'])
+    result = s.str.json_decode(dtype=pl.Struct({"a": pl.UInt128}))
+    expected = pl.Series(
+        [{"a": 2**128 - 5}, {"a": None}],
+        dtype=pl.Struct({"a": pl.UInt128}),
+    )
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("dtype", [pl.Enum(["bar", "foo"]), pl.Categorical])
+def test_json_decode_categorical_enum(dtype: pl.DataType) -> None:
+    s = pl.Series(['{"a":"foo"}', '{"a":"bar"}', '{"a":null}', '{"a":"foo"}'])
+    result = s.str.json_decode(dtype=pl.Struct({"a": dtype}))
+    expected = pl.Series(
+        [{"a": "foo"}, {"a": "bar"}, {"a": None}, {"a": "foo"}],
+        dtype=pl.Struct({"a": dtype}),
+    )
+    assert_series_equal(result, expected)
+
+
+def test_str_split_regex() -> None:
+    df = pl.DataFrame({"s": ["foo1bar", "foo99bar", "foo1bar2baz"]})
+
+    out = df.select(split=pl.col("s").str.split(by=r"\d+", literal=False))
+    expected = pl.DataFrame(
+        {"split": [["foo", "bar"], ["foo", "bar"], ["foo", "bar", "baz"]]}
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_str_split_regex_inclusive() -> None:
+    df = pl.DataFrame({"s": ["foo1bar", "foo99bar", "foo1bar2baz"]})
+
+    out = df.select(
+        split=pl.col("s").str.split(by=r"\d+", literal=False, inclusive=True)
+    )
+    expected = pl.DataFrame(
+        {"split": [["foo1", "bar"], ["foo99", "bar"], ["foo1", "bar2", "baz"]]}
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_str_split_regex_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["foo1bar", "foo bar", "foo-bar baz"],
+            "by": [r"\d", r"\s", r"-"],
+        }
+    )
+
+    out = df.select(split=pl.col("s").str.split(by=pl.col("by"), literal=False))
+    expected = pl.DataFrame(
+        {"split": [["foo", "bar"], ["foo", "bar"], ["foo", "bar baz"]]}
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_str_split_regex_expr_inclusive() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["foo1bar", "foo bar", "foo-bar baz"],
+            "by": [r"\d", r"\s", r"-"],
+        }
+    )
+
+    out = df.select(
+        split=pl.col("s").str.split(by=pl.col("by"), literal=False, inclusive=True)
+    )
+    expected = pl.DataFrame(
+        {"split": [["foo1", "bar"], ["foo ", "bar"], ["foo-", "bar baz"]]}
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_str_split_regex_invalid_pattern_strict_true() -> None:
+    df = pl.DataFrame({"s": ["foo1bar", "abc", "123xyz"]})
+
+    with pytest.raises(ComputeError):
+        df.select(split=pl.col("s").str.split(by="(", literal=False, strict=True))
+
+
+def test_str_split_regex_invalid_pattern_strict_false() -> None:
+    df = pl.DataFrame({"s": ["foo1bar", "abc", "123xyz"]})
+
+    out = df.select(split=pl.col("s").str.split(by="(", literal=False, strict=False))
+
+    expected = pl.DataFrame(
+        {
+            "split": pl.Series(
+                "split",
+                [None, None, None],
+                dtype=pl.List(pl.String),
+            )
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_str_split_regex_scalar_string_expr() -> None:
+    df = pl.DataFrame({"by": [r"\d", r"\d+", r"bar"]})
+
+    out = df.select(
+        split=pl.lit("foo1bar2baz").str.split(by=pl.col("by"), literal=False)
+    )
+
+    expected = pl.DataFrame(
+        {
+            "split": [
+                ["foo", "bar", "baz"],  # split by \d
+                ["foo", "bar", "baz"],  # split by \d+
+                ["foo1", "2baz"],  # split by "bar"
+            ]
+        }
+    )
+
+    assert_frame_equal(out, expected)

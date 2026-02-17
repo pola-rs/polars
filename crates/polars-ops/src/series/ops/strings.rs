@@ -31,8 +31,25 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
         }
     }
 
+    let mut validity = None;
     let mut num_scalar_inputs = 0;
     for c in cs.iter_mut() {
+        if let Some(c_validity) = c.rechunk_validity() {
+            // Column with only nulls means output is only nulls.
+            if c.null_count() == c.len() {
+                return Ok(Column::full_null(
+                    output_name,
+                    output_length,
+                    &DataType::String,
+                ));
+            }
+
+            match &mut validity {
+                v @ None => *v = Some(c_validity),
+                Some(v) => *v = arrow::bitmap::and(v, &c_validity),
+            }
+        }
+
         *c = c.cast(&DataType::String)?;
         num_scalar_inputs += usize::from(c.len() == 1);
     }
@@ -98,6 +115,23 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
     // Amortize the format string allocation.
     let mut s = String::new();
     for i in 0..output_length {
+        if validity
+            .as_ref()
+            .is_some_and(|v| !unsafe { v.get_bit_unchecked(i) })
+        {
+            unsafe { builder.push_inline_view_ignore_validity(Default::default()) };
+
+            for (iter, arr, elem_idx) in arrays.iter_mut() {
+                *elem_idx += 1;
+                if i + 1 != output_length && *elem_idx == arr.len() {
+                    *arr = iter.next().unwrap();
+                    *elem_idx = 0;
+                }
+            }
+
+            continue;
+        }
+
         s.clear();
         s.push_str(&format[..insertions[0]]);
 
@@ -110,12 +144,13 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
             *elem_idx += 1;
             if i + 1 != output_length && *elem_idx == arr.len() {
                 *arr = iter.next().unwrap();
+                *elem_idx = 0;
             }
         }
 
         builder.push_value_ignore_validity(&s);
     }
 
-    let array = builder.freeze().to_boxed();
+    let array = builder.freeze().with_validity(validity).to_boxed();
     Ok(unsafe { StringChunked::from_chunks(output_name, vec![array]) }.into_column())
 }

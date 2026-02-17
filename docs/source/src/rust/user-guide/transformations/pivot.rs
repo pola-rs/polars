@@ -1,5 +1,4 @@
 // --8<-- [start:setup]
-use polars::prelude::pivot::pivot;
 use polars::prelude::*;
 // --8<-- [end:setup]
 
@@ -14,22 +13,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:df]
 
     // --8<-- [start:eager]
-    let out = pivot(&df, ["foo"], Some(["bar"]), Some(["N"]), false, None, None)?;
+    let out = df
+        .clone()
+        .lazy()
+        .pivot(
+            Selector::ByName {
+                names: [PlSmallStr::from("foo")].into(),
+                strict: true,
+            },
+            Arc::new(df!("" => ["A", "B", "C"])?),
+            Selector::ByName {
+                names: [PlSmallStr::from("bar")].into(),
+                strict: true,
+            },
+            Selector::ByName {
+                names: [PlSmallStr::from("N")].into(),
+                strict: true,
+            },
+            Expr::Agg(AggExpr::Item {
+                input: Arc::new(Expr::Element),
+                allow_empty: true,
+            }),
+            false,
+            "_".into(),
+        )
+        .collect()?;
     println!("{}", &out);
     // --8<-- [end:eager]
 
     // --8<-- [start:lazy]
-    let q = df.lazy();
-    let q2 = pivot(
-        &q.collect()?,
-        ["foo"],
-        Some(["bar"]),
-        Some(["N"]),
+    let q = df.clone().lazy();
+    let q2 = q.pivot(
+        Selector::ByName {
+            names: [PlSmallStr::from("foo")].into(),
+            strict: true,
+        },
+        Arc::new(df!("" => ["A", "B", "C"])?),
+        Selector::ByName {
+            names: [PlSmallStr::from("bar")].into(),
+            strict: true,
+        },
+        Selector::ByName {
+            names: [PlSmallStr::from("N")].into(),
+            strict: true,
+        },
+        Expr::Agg(AggExpr::Item {
+            input: Arc::new(Expr::Element),
+            allow_empty: true,
+        }),
         false,
-        None,
-        None,
-    )?
-    .lazy();
+        "_".into(),
+    );
     let out = q2.collect()?;
     println!("{}", &out);
     // --8<-- [end:lazy]

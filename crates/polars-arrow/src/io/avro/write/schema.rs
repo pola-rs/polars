@@ -48,7 +48,7 @@ fn _get_field_name(name_counter: &mut i32) -> String {
 }
 
 fn _type_to_schema(dtype: &ArrowDataType, name_counter: &mut i32) -> PolarsResult<AvroSchema> {
-    Ok(match dtype.to_logical_type() {
+    Ok(match dtype.to_storage() {
         ArrowDataType::Null => AvroSchema::Null,
         ArrowDataType::Boolean => AvroSchema::Boolean,
         ArrowDataType::Int32 => AvroSchema::Int(None),

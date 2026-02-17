@@ -10,6 +10,7 @@ from polars.datatypes import (
     Datetime,
     Duration,
     Enum,
+    Float16,
     Float32,
     Float64,
     Int8,
@@ -41,6 +42,7 @@ polars_dtype_to_dtype_map: dict[DataTypeClass, Dtype] = {
     UInt16: (DtypeKind.UINT, 16, "S", NE),
     UInt32: (DtypeKind.UINT, 32, "I", NE),
     UInt64: (DtypeKind.UINT, 64, "L", NE),
+    Float16: (DtypeKind.FLOAT, 16, "e", NE),
     Float32: (DtypeKind.FLOAT, 32, "f", NE),
     Float64: (DtypeKind.FLOAT, 64, "g", NE),
     Boolean: (DtypeKind.BOOL, 1, "b", NE),
@@ -98,6 +100,7 @@ dtype_to_polars_dtype_map: dict[DtypeKind, dict[int, PolarsDataType]] = {
         64: UInt64,
     },
     DtypeKind.FLOAT: {
+        16: Float16,
         32: Float32,
         64: Float64,
     },

@@ -8,6 +8,10 @@
     },
     {
       "pattern": "^https://marketplace.visualstudio.com/"
+    },
+    {
+      "pattern": "^https://codspeed.io/pola-rs/polars$"
     }
-  ]
+  ],
+  "retryOn429": true
 }

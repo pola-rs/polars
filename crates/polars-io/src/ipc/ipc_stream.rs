@@ -15,7 +15,7 @@
 //!
 //! let c0 = Column::new("days".into(), &[0, 1, 2, 3, 4]);
 //! let c1 = Column::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
-//! let mut df = DataFrame::new(vec![c0, c1]).unwrap();
+//! let mut df = DataFrame::new_infer_height(vec![c0, c1]).unwrap();
 //!
 //! // Create an in memory file handler.
 //! // Vec<u8>: Read + Write

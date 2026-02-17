@@ -313,8 +313,8 @@ pub fn resolve_join(
             polars_ensure!(
                 ltype == rtype,
                 SchemaMismatch: "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right (and no other type was available to cast to)",
-                lnode.output_name(), ltype, rnode.output_name(), rtype
-            )
+                lnode.output_name(), ltype.pretty_format(), rnode.output_name(), rtype.pretty_format()
+            );
         }
     }
 

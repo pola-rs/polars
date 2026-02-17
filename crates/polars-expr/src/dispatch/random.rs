@@ -43,7 +43,7 @@ pub(super) fn sample_n(
         ComputeError: "Sample size must be a single value."
     );
 
-    let n_s = n_s.cast(&IDX_DTYPE)?;
+    let n_s = n_s.strict_cast(&IDX_DTYPE)?;
     let n = n_s.idx()?;
 
     match n.get(0) {

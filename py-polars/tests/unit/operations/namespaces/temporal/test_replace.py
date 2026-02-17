@@ -245,8 +245,8 @@ def test_replace_ambiguous() -> None:
     with pytest.raises(
         ComputeError,
         match=(
-            "datetime '2020-10-25 01:00:00' is ambiguous in time zone 'Europe/London'. "
-            "Please use `ambiguous` to tell how it should be localized."
+            r"datetime '2020-10-25 01:00:00' is ambiguous in time zone 'Europe/London'\. "
+            r"Please use `ambiguous` to tell how it should be localized"
         ),
     ):
         value.dt.replace(hour=1, ambiguous="raise")

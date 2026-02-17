@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars._typing import PolarsDataType
 from polars.exceptions import ComputeError, InvalidOperationError, OutOfBoundsError
 from polars.testing import assert_series_equal
 
@@ -122,3 +123,21 @@ def test_scatter_enum() -> None:
 
     with pytest.raises(InvalidOperationError):
         s.scatter(1, 2)
+
+
+@pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b"])])
+def test_scatter_null(dtype: PolarsDataType) -> None:
+    s = pl.Series("a", ["a", "b"], dtype=dtype)
+    result = s.scatter(0, None)
+    expected = pl.Series("a", [None, "b"], dtype=dtype)
+    assert_series_equal(result, expected)
+
+
+def test_scatter_decimal_25869() -> None:
+    s = pl.Series([1, 2, 3], dtype=pl.Decimal(scale=10))
+    assert_series_equal(
+        s.scatter(0, 15), pl.Series([15, 2, 3], dtype=pl.Decimal(scale=10))
+    )
+
+    with pytest.raises(InvalidOperationError):
+        s.scatter(1, "test")

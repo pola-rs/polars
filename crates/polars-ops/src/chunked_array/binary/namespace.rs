@@ -15,6 +15,39 @@ use polars_core::prelude::arity::{broadcast_binary_elementwise_values, unary_ele
 use super::*;
 
 pub trait BinaryNameSpaceImpl: AsBinary {
+    /// Slice the binary values.
+    ///
+    /// Determines a slice starting from `offset` and with length `length` of each of the elements.
+    /// `offset` can be negative, in which case the start counts from the end of the bytes.
+    fn bin_slice(&self, offset: &Column, length: &Column) -> PolarsResult<BinaryChunked> {
+        let ca = self.as_binary();
+        let offset = offset.cast(&DataType::Int64)?;
+        let length = length.strict_cast(&DataType::UInt64)?;
+
+        Ok(super::slice::slice(ca, offset.i64()?, length.u64()?))
+    }
+    /// Slice the first `n` bytes of the binary value.
+    ///
+    /// Determines a slice starting at the beginning of the binary data up to offset `n` of each
+    /// element. `n` can be negative, in which case the slice ends `n` bytes from the end.
+    fn bin_head(&self, n: &Column) -> PolarsResult<BinaryChunked> {
+        let ca = self.as_binary();
+        let n = n.strict_cast(&DataType::Int64)?;
+
+        super::slice::head(ca, n.i64()?)
+    }
+
+    /// Slice the last `n` bytes of the binary value.
+    ///
+    /// Determines a slice starting at offset `n` of each element. `n` can be
+    /// negative, in which case the slice begins `n` bytes from the start.
+    fn bin_tail(&self, n: &Column) -> PolarsResult<BinaryChunked> {
+        let ca = self.as_binary();
+        let n = n.strict_cast(&DataType::Int64)?;
+
+        super::slice::tail(ca, n.i64()?)
+    }
+
     /// Check if binary contains given literal
     fn contains(&self, lit: &[u8]) -> BooleanChunked {
         let ca = self.as_binary();

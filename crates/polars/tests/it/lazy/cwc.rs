@@ -80,7 +80,9 @@ fn fuzz_cluster_with_columns() {
             used_cols.push(column);
         }
 
-        let mut lf = DataFrame::new(std::mem::take(&mut columns)).unwrap().lazy();
+        let mut lf = DataFrame::new_infer_height(std::mem::take(&mut columns))
+            .unwrap()
+            .lazy();
 
         for _ in 0..num_with_columns {
             let num_exprs = rng.random_range(0..8);

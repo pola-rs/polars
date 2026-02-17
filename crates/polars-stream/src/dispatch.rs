@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex};
 
-use polars_core::POOL;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_expr::state::ExecutionState;
@@ -49,16 +48,13 @@ struct StreamingQueryExecutor {
 
 impl Executor for StreamingQueryExecutor {
     fn execute(&mut self, _cache: &mut ExecutionState) -> PolarsResult<DataFrame> {
-        // Must not block rayon thread on pending new-streaming future.
-        assert!(POOL.current_thread_index().is_none());
-
         let mut df = { self.executor.try_lock().unwrap().take() }
             .expect("unhandled: execute() more than once")
             .execute()
             .map(|x| x.unwrap_single())?;
 
         if self.rechunk {
-            df.as_single_chunk_par();
+            df.rechunk_mut_par();
         }
 
         Ok(df)

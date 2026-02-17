@@ -312,7 +312,7 @@ def test_to_torch_labelled_dataset(label: Any, features: Any, df: pl.DataFrame) 
         torch.tensor([1, 2], dtype=torch.int8),
     ]
     assert len(ts) == len(expected)
-    for actual, exp in zip(ts, expected):
+    for actual, exp in zip(ts, expected, strict=True):
         assert_tensor_equal(exp, actual)
 
 
@@ -329,7 +329,7 @@ def test_to_torch_labelled_dataset_expr(df: pl.DataFrame) -> None:
             torch.tensor([8, 16], dtype=torch.int16),
         )
         assert len(data) == len(expected)
-        for actual, exp in zip(data, expected):
+        for actual, exp in zip(data, expected, strict=True):
             assert_tensor_equal(exp, actual)
 
 
@@ -350,9 +350,9 @@ def test_to_torch_labelled_dataset_multi(df: pl.DataFrame) -> None:
     ]
     assert len(ts) == len(expected)
 
-    for actual, exp in zip(ts, expected):
+    for actual, exp in zip(ts, expected, strict=True):
         assert len(actual) == len(exp)
-        for a, e in zip(actual, exp):
+        for a, e in zip(actual, exp, strict=True):
             assert_tensor_equal(e, a)
 
 

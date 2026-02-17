@@ -106,6 +106,8 @@ mod cat;
 mod cum;
 #[cfg(feature = "temporal")]
 mod datetime;
+#[cfg(feature = "dtype-extension")]
+mod extension;
 mod groups_dispatch;
 mod horizontal;
 mod list;
@@ -125,7 +127,7 @@ mod shift_and_fill;
 #[cfg(feature = "strings")]
 mod strings;
 #[cfg(feature = "dtype-struct")]
-mod struct_;
+pub(crate) mod struct_;
 #[cfg(feature = "temporal")]
 mod temporal;
 #[cfg(feature = "trigonometry")]
@@ -142,6 +144,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::BinaryExpr(func) => binary::function_expr_to_udf(func),
         #[cfg(feature = "dtype-categorical")]
         F::Categorical(func) => cat::function_expr_to_udf(func),
+        #[cfg(feature = "dtype-extension")]
+        F::Extension(func) => extension::function_expr_to_udf(func),
         F::ListExpr(func) => list::function_expr_to_udf(func),
         #[cfg(feature = "strings")]
         F::StringExpr(func) => strings::function_expr_to_udf(func),
@@ -280,7 +284,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             map_as_slice!(misc::clip, has_min, has_max)
         },
         #[cfg(feature = "mode")]
-        F::Mode => map!(misc::mode),
+        F::Mode { maintain_order } => map!(misc::mode, maintain_order),
         #[cfg(feature = "moment")]
         F::Skew(bias) => map!(misc::skew, bias),
         #[cfg(feature = "moment")]
@@ -292,6 +296,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             descending,
             nulls_last,
         } => map!(misc::arg_sort, descending, nulls_last),
+        F::MinBy => map_as_slice!(misc::min_by),
+        F::MaxBy => map_as_slice!(misc::max_by),
         F::Product => map!(misc::product),
         F::Repeat => map_as_slice!(misc::repeat),
         #[cfg(feature = "rank")]

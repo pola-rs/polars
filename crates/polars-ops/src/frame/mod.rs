@@ -1,6 +1,6 @@
 pub mod join;
 #[cfg(feature = "pivot")]
-pub mod pivot;
+pub mod unpivot;
 
 pub use join::*;
 #[cfg(feature = "to_dummies")]
@@ -105,11 +105,11 @@ pub trait DataFrameOps: IntoDf {
         let set: PlHashSet<&str> = if let Some(columns) = columns {
             PlHashSet::from_iter(columns)
         } else {
-            PlHashSet::from_iter(df.iter().map(|s| s.name().as_str()))
+            PlHashSet::from_iter(df.columns().iter().map(|s| s.name().as_str()))
         };
 
         let cols = POOL.install(|| {
-            df.get_columns()
+            df.columns()
                 .par_iter()
                 .map(|s| match set.contains(s.name().as_str()) {
                     true => s

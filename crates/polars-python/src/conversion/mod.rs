@@ -14,24 +14,23 @@ use polars::chunked_array::object::PolarsObjectSafe;
 use polars::frame::row::Row;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-#[cfg(feature = "cloud")]
-use polars::io::cloud::CloudOptions;
 use polars::prelude::ColumnMapping;
 use polars::prelude::default_values::{
     DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
 };
 use polars::prelude::deletion::DeletionFilesList;
 use polars::series::ops::NullBehavior;
+use polars_buffer::Buffer;
 use polars_compute::decimal::dec128_verify_prec_scale;
+use polars_core::datatypes::extension::get_extension_type_or_generic;
 use polars_core::schema::iceberg::IcebergSchema;
 use polars_core::utils::arrow::array::Array;
-use polars_core::utils::arrow::types::NativeType;
 use polars_core::utils::materialize_dyn_int;
 use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
-use polars_utils::mmap::MemSlice;
+use polars_utils::compression::{BrotliLevel, GzipLevel, ZstdLevel};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
@@ -45,12 +44,11 @@ use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
 use crate::error::PyPolarsErr;
 use crate::expr::PyExpr;
 use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
-use crate::interop::arrow::to_rust::field_to_rust_arrow;
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
 use crate::py_modules::{pl_series, polars};
-use crate::series::PySeries;
+use crate::series::{PySeries, import_schema_pycapsule};
 use crate::utils::to_py_err;
 use crate::{PyDataFrame, PyLazyFrame};
 
@@ -127,15 +125,19 @@ pub(crate) fn to_series(py: Python<'_>, s: PySeries) -> PyResult<Bound<'_, PyAny
     constructor.call1((s,))
 }
 
-impl<'py> FromPyObject<'py> for Wrap<PlSmallStr> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PlSmallStr> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         Ok(Wrap((&*ob.extract::<PyBackedStr>()?).into()))
     }
 }
 
 #[cfg(feature = "csv")]
-impl<'py> FromPyObject<'py> for Wrap<NullValues> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<NullValues> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         if let Ok(s) = ob.extract::<PyBackedStr>() {
             Ok(Wrap(NullValues::AllColumnsSingle((&*s).into())))
         } else if let Ok(s) = ob.extract::<Vec<PyBackedStr>>() {
@@ -167,6 +169,16 @@ fn struct_dict<'a, 'py>(
         dict.set_item(fld.name().as_str(), Wrap(val).into_pyobject(py)?)
     })?;
     Ok(dict)
+}
+
+impl<'py> IntoPyObject<'py> for Wrap<Series> {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        to_series(py, PySeries::new(self.0))
+    }
 }
 
 impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
@@ -216,6 +228,10 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
             },
             DataType::Int128 => {
                 let class = pl.getattr(intern!(py, "Int128"))?;
+                class.call0()
+            },
+            DataType::Float16 => {
+                let class = pl.getattr(intern!(py, "Float16"))?;
                 class.call0()
             },
             DataType::Float32 => {
@@ -306,6 +322,21 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Null"))?;
                 class.call0()
             },
+            DataType::Extension(typ, storage) => {
+                let py_storage = Wrap((**storage).clone()).into_pyobject(py)?;
+                let py_typ = pl
+                    .getattr(intern!(py, "get_extension_type"))?
+                    .call1((typ.name(),))?;
+                let class = if py_typ.is_none()
+                    || py_typ.str().map(|s| s == "storage").ok() == Some(true)
+                {
+                    pl.getattr(intern!(py, "Extension"))?
+                } else {
+                    py_typ
+                };
+                let from_params = class.getattr(intern!(py, "ext_from_params"))?;
+                from_params.call1((typ.name(), py_storage, typ.serialize_metadata()))
+            },
             DataType::Unknown(UnknownKind::Int(v)) => {
                 Wrap(materialize_dyn_int(*v).dtype()).into_pyobject(py)
             },
@@ -320,8 +351,10 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<Field> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Field> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let py = ob.py();
         let name = ob
             .getattr(intern!(py, "name"))?
@@ -334,8 +367,10 @@ impl<'py> FromPyObject<'py> for Wrap<Field> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<DataType> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let py = ob.py();
         let type_name = ob.get_type().qualname()?.to_string();
 
@@ -357,6 +392,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     "UInt32" => DataType::UInt32,
                     "UInt64" => DataType::UInt64,
                     "UInt128" => DataType::UInt128,
+                    "Float16" => DataType::Float16,
                     "Float32" => DataType::Float32,
                     "Float64" => DataType::Float64,
                     "Boolean" => DataType::Boolean,
@@ -397,6 +433,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             "UInt32" => DataType::UInt32,
             "UInt64" => DataType::UInt64,
             "UInt128" => DataType::UInt128,
+            "Float16" => DataType::Float16,
             "Float32" => DataType::Float32,
             "Float64" => DataType::Float64,
             "Boolean" => DataType::Boolean,
@@ -467,26 +504,27 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             "Object" => DataType::Object(OBJECT_NAME),
             "Unknown" => DataType::Unknown(Default::default()),
             dt => {
+                let base_ext = polars(py)
+                    .getattr(py, intern!(py, "BaseExtension"))
+                    .unwrap();
+                if ob.is_instance(base_ext.bind(py))? {
+                    let ext_name_f = ob.getattr(intern!(py, "ext_name"))?;
+                    let ext_metadata_f = ob.getattr(intern!(py, "ext_metadata"))?;
+                    let ext_storage_f = ob.getattr(intern!(py, "ext_storage"))?;
+                    let name: String = ext_name_f.call0()?.extract()?;
+                    let metadata: Option<String> = ext_metadata_f.call0()?.extract()?;
+                    let storage: Wrap<DataType> = ext_storage_f.call0()?.extract()?;
+                    let ext_typ =
+                        get_extension_type_or_generic(&name, &storage.0, metadata.as_deref());
+                    return Ok(Wrap(DataType::Extension(ext_typ, Box::new(storage.0))));
+                }
+
                 return Err(PyTypeError::new_err(format!(
                     "'{dt}' is not a Polars data type",
                 )));
             },
         };
         Ok(Wrap(dtype))
-    }
-}
-
-enum CategoricalOrdering {
-    Lexical,
-}
-
-impl<'py> IntoPyObject<'py> for Wrap<CategoricalOrdering> {
-    type Target = PyString;
-    type Output = Bound<'py, Self::Target>;
-    type Error = Infallible;
-
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        "lexical".into_pyobject(py)
     }
 }
 
@@ -501,12 +539,14 @@ impl<'py> IntoPyObject<'py> for Wrap<TimeUnit> {
 }
 
 #[cfg(feature = "parquet")]
-impl<'py> FromPyObject<'py> for Wrap<StatisticsOptions> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<StatisticsOptions> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let mut statistics = StatisticsOptions::empty();
 
-        let dict = ob.downcast::<PyDict>()?;
-        for (key, val) in dict {
+        let dict = ob.cast::<PyDict>()?;
+        for (key, val) in dict.iter() {
             let key = key.extract::<PyBackedStr>()?;
             let val = val.extract::<bool>()?;
 
@@ -527,17 +567,21 @@ impl<'py> FromPyObject<'py> for Wrap<StatisticsOptions> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<Row<'static>> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Row<'static>> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let vals = ob.extract::<Vec<Wrap<AnyValue<'static>>>>()?;
         let vals = reinterpret_vec(vals);
         Ok(Wrap(Row(vals)))
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<Schema> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let dict = ob.downcast::<PyDict>()?;
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Schema> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let dict = ob.cast::<PyDict>()?;
 
         Ok(Wrap(
             dict.iter()
@@ -552,61 +596,50 @@ impl<'py> FromPyObject<'py> for Wrap<Schema> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<ArrowSchema> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let py = ob.py();
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ArrowSchema> {
+    type Error = PyErr;
 
-        let pyarrow_schema_cls = py
-            .import(intern!(py, "pyarrow"))?
-            .getattr(intern!(py, "Schema"))?;
+    fn extract(schema_object: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let py = schema_object.py();
 
-        if ob.is_none() {
-            return Err(PyValueError::new_err("arrow_schema() returned None").into());
-        }
+        let schema_capsule = schema_object
+            .getattr(intern!(py, "__arrow_c_schema__"))?
+            .call0()?;
 
-        let schema_cls = ob.getattr(intern!(py, "__class__"))?;
+        let field = import_schema_pycapsule(&schema_capsule.extract()?)?;
 
-        if !schema_cls.is(&pyarrow_schema_cls) {
-            return Err(PyTypeError::new_err(format!(
-                "expected pyarrow.Schema, got: {schema_cls}"
+        let ArrowDataType::Struct(fields) = field.dtype else {
+            return Err(PyValueError::new_err(format!(
+                "__arrow_c_schema__ of object did not return struct dtype: \
+                object: {:?}, dtype: {:?}",
+                schema_object, &field.dtype
             )));
-        }
+        };
 
-        let mut iter = ob.try_iter()?.map(|x| x.and_then(field_to_rust_arrow));
+        let mut schema = ArrowSchema::from_iter_check_duplicates(fields).map_err(to_py_err)?;
 
-        let mut last_err = None;
-
-        let schema =
-            ArrowSchema::from_iter_check_duplicates(std::iter::from_fn(|| match iter.next() {
-                Some(Ok(v)) => Some(v),
-                Some(Err(e)) => {
-                    last_err = Some(e);
-                    None
-                },
-                None => None,
-            }))
-            .map_err(to_py_err)?;
-
-        if let Some(last_err) = last_err {
-            return Err(last_err.into());
+        if let Some(md) = field.metadata {
+            *schema.metadata_mut() = Arc::unwrap_or_clone(md);
         }
 
         Ok(Wrap(schema))
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let list = ob.downcast::<PyList>()?.to_owned();
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ScanSources> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let list = ob.cast::<PyList>()?.to_owned();
 
         if list.is_empty() {
             return Ok(Wrap(ScanSources::default()));
         }
 
         enum MutableSources {
-            Paths(Vec<PlPath>),
+            Paths(Vec<PlRefPath>),
             Files(Vec<File>),
-            Buffers(Vec<MemSlice>),
+            Buffers(Vec<Buffer<u8>>),
         }
 
         let num_items = list.len();
@@ -743,8 +776,10 @@ impl From<Py<PyAny>> for ObjectValue {
     }
 }
 
-impl<'py> FromPyObject<'py> for ObjectValue {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for ObjectValue {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         Ok(ObjectValue {
             inner: ob.to_owned().unbind(),
         })
@@ -777,20 +812,29 @@ impl Default for ObjectValue {
     }
 }
 
-impl<'py, T: NativeType + FromPyObject<'py>> FromPyObject<'py> for Wrap<Vec<T>> {
-    fn extract_bound(obj: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let seq = obj.downcast::<PySequence>()?;
+impl<'a, 'py, T> FromPyObject<'a, 'py> for Wrap<Vec<T>>
+where
+    T: FromPyObjectOwned<'py>,
+{
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let seq = ob
+            .cast::<PySequence>()
+            .map_err(<PyErr as From<pyo3::CastError>>::from)?;
         let mut v = Vec::with_capacity(seq.len().unwrap_or(0));
         for item in seq.try_iter()? {
-            v.push(item?.extract::<T>()?);
+            v.push(item?.extract::<T>().map_err(Into::into)?);
         }
         Ok(Wrap(v))
     }
 }
 
 #[cfg(feature = "asof_join")]
-impl<'py> FromPyObject<'py> for Wrap<AsofStrategy> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<AsofStrategy> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*(ob.extract::<PyBackedStr>()?) {
             "backward" => AsofStrategy::Backward,
             "forward" => AsofStrategy::Forward,
@@ -805,8 +849,10 @@ impl<'py> FromPyObject<'py> for Wrap<AsofStrategy> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<InterpolationMethod> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<InterpolationMethod> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*(ob.extract::<PyBackedStr>()?) {
             "linear" => InterpolationMethod::Linear,
             "nearest" => InterpolationMethod::Nearest,
@@ -821,8 +867,10 @@ impl<'py> FromPyObject<'py> for Wrap<InterpolationMethod> {
 }
 
 #[cfg(feature = "avro")]
-impl<'py> FromPyObject<'py> for Wrap<Option<AvroCompression>> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Option<AvroCompression>> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "uncompressed" => None,
             "snappy" => Some(AvroCompression::Snappy),
@@ -837,29 +885,10 @@ impl<'py> FromPyObject<'py> for Wrap<Option<AvroCompression>> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<CategoricalOrdering> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "lexical" => CategoricalOrdering::Lexical,
-            "physical" => {
-                polars_warn!(
-                    Deprecation,
-                    "physical ordering is deprecated, will use lexical ordering instead"
-                );
-                CategoricalOrdering::Lexical
-            },
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "categorical `ordering` must be one of {{'physical', 'lexical'}}, got {v}",
-                )));
-            },
-        };
-        Ok(Wrap(parsed))
-    }
-}
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<StartBy> {
+    type Error = PyErr;
 
-impl<'py> FromPyObject<'py> for Wrap<StartBy> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "window" => StartBy::WindowBound,
             "datapoint" => StartBy::DataPoint,
@@ -880,8 +909,10 @@ impl<'py> FromPyObject<'py> for Wrap<StartBy> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<ClosedWindow> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ClosedWindow> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "left" => ClosedWindow::Left,
             "right" => ClosedWindow::Right,
@@ -897,8 +928,10 @@ impl<'py> FromPyObject<'py> for Wrap<ClosedWindow> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<RoundMode> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<RoundMode> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "half_to_even" => RoundMode::HalfToEven,
             "half_away_from_zero" => RoundMode::HalfAwayFromZero,
@@ -913,8 +946,10 @@ impl<'py> FromPyObject<'py> for Wrap<RoundMode> {
 }
 
 #[cfg(feature = "csv")]
-impl<'py> FromPyObject<'py> for Wrap<CsvEncoding> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CsvEncoding> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "utf8" => CsvEncoding::Utf8,
             "utf8-lossy" => CsvEncoding::LossyUtf8,
@@ -929,8 +964,10 @@ impl<'py> FromPyObject<'py> for Wrap<CsvEncoding> {
 }
 
 #[cfg(feature = "ipc")]
-impl<'py> FromPyObject<'py> for Wrap<Option<IpcCompression>> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Option<IpcCompression>> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "uncompressed" => None,
             "lz4" => Some(IpcCompression::LZ4),
@@ -945,8 +982,10 @@ impl<'py> FromPyObject<'py> for Wrap<Option<IpcCompression>> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<JoinType> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<JoinType> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "inner" => JoinType::Inner,
             "left" => JoinType::Left,
@@ -966,8 +1005,10 @@ impl<'py> FromPyObject<'py> for Wrap<JoinType> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<Label> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Label> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "left" => Label::Left,
             "right" => Label::Right,
@@ -982,8 +1023,10 @@ impl<'py> FromPyObject<'py> for Wrap<Label> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<ListToStructWidthStrategy> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ListToStructWidthStrategy> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "first_non_null" => ListToStructWidthStrategy::FirstNonNull,
             "max_width" => ListToStructWidthStrategy::MaxWidth,
@@ -997,8 +1040,10 @@ impl<'py> FromPyObject<'py> for Wrap<ListToStructWidthStrategy> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<NonExistent> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<NonExistent> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "null" => NonExistent::Null,
             "raise" => NonExistent::Raise,
@@ -1012,8 +1057,10 @@ impl<'py> FromPyObject<'py> for Wrap<NonExistent> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<NullBehavior> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<NullBehavior> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "drop" => NullBehavior::Drop,
             "ignore" => NullBehavior::Ignore,
@@ -1027,8 +1074,10 @@ impl<'py> FromPyObject<'py> for Wrap<NullBehavior> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<NullStrategy> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<NullStrategy> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "ignore" => NullStrategy::Ignore,
             "propagate" => NullStrategy::Propagate,
@@ -1043,8 +1092,10 @@ impl<'py> FromPyObject<'py> for Wrap<NullStrategy> {
 }
 
 #[cfg(feature = "parquet")]
-impl<'py> FromPyObject<'py> for Wrap<ParallelStrategy> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ParallelStrategy> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "auto" => ParallelStrategy::Auto,
             "columns" => ParallelStrategy::Columns,
@@ -1061,8 +1112,10 @@ impl<'py> FromPyObject<'py> for Wrap<ParallelStrategy> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<IndexOrder> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<IndexOrder> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "fortran" => IndexOrder::Fortran,
             "c" => IndexOrder::C,
@@ -1076,8 +1129,10 @@ impl<'py> FromPyObject<'py> for Wrap<IndexOrder> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<QuantileMethod> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<QuantileMethod> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "lower" => QuantileMethod::Lower,
             "higher" => QuantileMethod::Higher,
@@ -1095,8 +1150,10 @@ impl<'py> FromPyObject<'py> for Wrap<QuantileMethod> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<RankMethod> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<RankMethod> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "min" => RankMethod::Min,
             "max" => RankMethod::Max,
@@ -1114,8 +1171,10 @@ impl<'py> FromPyObject<'py> for Wrap<RankMethod> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<RollingRankMethod> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<RollingRankMethod> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "min" => RollingRankMethod::Min,
             "max" => RollingRankMethod::Max,
@@ -1132,8 +1191,10 @@ impl<'py> FromPyObject<'py> for Wrap<RollingRankMethod> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<Roll> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Roll> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "raise" => Roll::Raise,
             "forward" => Roll::Forward,
@@ -1148,8 +1209,10 @@ impl<'py> FromPyObject<'py> for Wrap<Roll> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<TimeUnit> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<TimeUnit> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "ns" => TimeUnit::Nanoseconds,
             "us" => TimeUnit::Microseconds,
@@ -1164,8 +1227,10 @@ impl<'py> FromPyObject<'py> for Wrap<TimeUnit> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<UniqueKeepStrategy> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<UniqueKeepStrategy> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "first" => UniqueKeepStrategy::First,
             "last" => UniqueKeepStrategy::Last,
@@ -1182,8 +1247,10 @@ impl<'py> FromPyObject<'py> for Wrap<UniqueKeepStrategy> {
 }
 
 #[cfg(feature = "search_sorted")]
-impl<'py> FromPyObject<'py> for Wrap<SearchSortedSide> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<SearchSortedSide> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "any" => SearchSortedSide::Any,
             "left" => SearchSortedSide::Left,
@@ -1198,8 +1265,10 @@ impl<'py> FromPyObject<'py> for Wrap<SearchSortedSide> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<ClosedInterval> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ClosedInterval> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "both" => ClosedInterval::Both,
             "left" => ClosedInterval::Left,
@@ -1215,8 +1284,10 @@ impl<'py> FromPyObject<'py> for Wrap<ClosedInterval> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<WindowMapping> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<WindowMapping> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "group_to_rows" => WindowMapping::GroupsToRows,
             "join" => WindowMapping::Join,
@@ -1231,8 +1302,10 @@ impl<'py> FromPyObject<'py> for Wrap<WindowMapping> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<JoinValidation> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<JoinValidation> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "1:1" => JoinValidation::OneToOne,
             "1:m" => JoinValidation::OneToMany,
@@ -1248,8 +1321,10 @@ impl<'py> FromPyObject<'py> for Wrap<JoinValidation> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<MaintainOrderJoin> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<MaintainOrderJoin> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "none" => MaintainOrderJoin::None,
             "left" => MaintainOrderJoin::Left,
@@ -1267,8 +1342,10 @@ impl<'py> FromPyObject<'py> for Wrap<MaintainOrderJoin> {
 }
 
 #[cfg(feature = "csv")]
-impl<'py> FromPyObject<'py> for Wrap<QuoteStyle> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<QuoteStyle> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "always" => QuoteStyle::Always,
             "necessary" => QuoteStyle::Necessary,
@@ -1284,20 +1361,11 @@ impl<'py> FromPyObject<'py> for Wrap<QuoteStyle> {
     }
 }
 
-#[cfg(feature = "cloud")]
-pub(crate) fn parse_cloud_options(
-    uri: &str,
-    kv: impl IntoIterator<Item = (String, String)>,
-) -> PyResult<CloudOptions> {
-    let iter: &mut dyn Iterator<Item = _> = &mut kv.into_iter();
-    let out = CloudOptions::from_untyped_config(CloudScheme::from_uri(uri).as_ref(), iter)
-        .map_err(PyPolarsErr::from)?;
-    Ok(out)
-}
-
 #[cfg(feature = "list_sets")]
-impl<'py> FromPyObject<'py> for Wrap<SetOperation> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<SetOperation> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "union" => SetOperation::Union,
             "difference" => SetOperation::Difference,
@@ -1314,8 +1382,10 @@ impl<'py> FromPyObject<'py> for Wrap<SetOperation> {
 }
 
 // Conversion from ScanCastOptions class from the Python side.
-impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         if ob.is_none() {
             // Initialize the default ScanCastOptions from Python.
             static DEFAULT: PyOnceLock<Wrap<CastColumnsPolicy>> = PyOnceLock::new();
@@ -1328,7 +1398,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
                     .call_method0("_default")
                     .unwrap();
 
-                let out = Self::extract_bound(&ob)?;
+                let out = Self::extract(ob.as_borrowed())?;
 
                 // The default policy should match ERROR_ON_MISMATCH (but this can change).
                 debug_assert_eq!(&out.0, &CastColumnsPolicy::ERROR_ON_MISMATCH);
@@ -1341,18 +1411,25 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
 
         let py = ob.py();
 
-        let integer_upcast = match &*ob
-            .getattr(intern!(py, "integer_cast"))?
-            .extract::<PyBackedStr>()?
-        {
-            "upcast" => true,
-            "forbid" => false,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "unknown option for integer_cast: {v}"
-                )));
-            },
-        };
+        let mut integer_upcast = false;
+        let mut integer_to_float_cast = false;
+
+        let integer_cast_object = ob.getattr(intern!(py, "integer_cast"))?;
+
+        parse_multiple_options("integer_cast", integer_cast_object, |v| {
+            match v {
+                "upcast" => integer_upcast = true,
+                "allow-float" => integer_to_float_cast = true,
+                "forbid" => {},
+                v => {
+                    return Err(PyValueError::new_err(format!(
+                        "unknown option for integer_cast: {v}"
+                    )));
+                },
+            }
+
+            Ok(())
+        })?;
 
         let mut float_upcast = false;
         let mut float_downcast = false;
@@ -1361,9 +1438,9 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
 
         parse_multiple_options("float_cast", float_cast_object, |v| {
             match v {
-                "forbid" => {},
                 "upcast" => float_upcast = true,
                 "downcast" => float_downcast = true,
+                "forbid" => {},
                 v => {
                     return Err(PyValueError::new_err(format!(
                         "unknown option for float_cast: {v}"
@@ -1435,6 +1512,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
 
         return Ok(Wrap(CastColumnsPolicy {
             integer_upcast,
+            integer_to_float_cast,
             float_upcast,
             float_downcast,
             datetime_nanoseconds_downcast,
@@ -1505,7 +1583,6 @@ pub(crate) fn parse_parquet_compression(
                 })
                 .transpose()?,
         ),
-        "lzo" => ParquetCompression::Lzo,
         "brotli" => ParquetCompression::Brotli(
             compression_level
                 .map(|lvl| {
@@ -1524,7 +1601,7 @@ pub(crate) fn parse_parquet_compression(
         ),
         e => {
             return Err(PyValueError::new_err(format!(
-                "parquet `compression` must be one of {{'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'lz4', 'zstd'}}, got {e}",
+                "parquet `compression` must be one of {{'uncompressed', 'snappy', 'gzip', 'brotli', 'lz4', 'zstd'}}, got {e}",
             )));
         },
     };
@@ -1545,8 +1622,10 @@ where
 #[derive(Debug, Copy, Clone)]
 pub struct PyCompatLevel(pub CompatLevel);
 
-impl<'py> FromPyObject<'py> for PyCompatLevel {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PyCompatLevel {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         Ok(PyCompatLevel(if let Ok(level) = ob.extract::<u16>() {
             if let Ok(compat_level) = CompatLevel::with_level(level) {
                 compat_level
@@ -1568,8 +1647,10 @@ impl<'py> FromPyObject<'py> for PyCompatLevel {
 }
 
 #[cfg(feature = "string_normalize")]
-impl<'py> FromPyObject<'py> for Wrap<UnicodeForm> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<UnicodeForm> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "NFC" => UnicodeForm::NFC,
             "NFKC" => UnicodeForm::NFKC,
@@ -1586,15 +1667,17 @@ impl<'py> FromPyObject<'py> for Wrap<UnicodeForm> {
 }
 
 #[cfg(feature = "parquet")]
-impl<'py> FromPyObject<'py> for Wrap<Option<KeyValueMetadata>> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Option<KeyValueMetadata>> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         #[derive(FromPyObject)]
         enum Metadata {
             Static(Vec<(String, String)>),
             Dynamic(Py<PyAny>),
         }
 
-        let metadata = Option::<Metadata>::extract_bound(ob)?;
+        let metadata = Option::<Metadata>::extract(ob)?;
         let key_value_metadata = metadata.map(|x| match x {
             Metadata::Static(kv) => KeyValueMetadata::from_static(kv),
             Metadata::Dynamic(func) => KeyValueMetadata::from_py_function(func),
@@ -1603,9 +1686,11 @@ impl<'py> FromPyObject<'py> for Wrap<Option<KeyValueMetadata>> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<Option<TimeZone>> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let tz = Option::<Wrap<PlSmallStr>>::extract_bound(ob)?;
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Option<TimeZone>> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let tz = Option::<Wrap<PlSmallStr>>::extract(ob)?;
 
         let tz = tz.map(|x| x.0);
 
@@ -1613,8 +1698,10 @@ impl<'py> FromPyObject<'py> for Wrap<Option<TimeZone>> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<UpcastOrForbid> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<UpcastOrForbid> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "upcast" => UpcastOrForbid::Upcast,
             "forbid" => UpcastOrForbid::Forbid,
@@ -1628,8 +1715,10 @@ impl<'py> FromPyObject<'py> for Wrap<UpcastOrForbid> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<ExtraColumnsPolicy> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ExtraColumnsPolicy> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "ignore" => ExtraColumnsPolicy::Ignore,
             "raise" => ExtraColumnsPolicy::Raise,
@@ -1643,8 +1732,10 @@ impl<'py> FromPyObject<'py> for Wrap<ExtraColumnsPolicy> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<MissingColumnsPolicy> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<MissingColumnsPolicy> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "insert" => MissingColumnsPolicy::Insert,
             "raise" => MissingColumnsPolicy::Raise,
@@ -1658,8 +1749,10 @@ impl<'py> FromPyObject<'py> for Wrap<MissingColumnsPolicy> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<MissingColumnsPolicyOrExpr> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<MissingColumnsPolicyOrExpr> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         if let Ok(pyexpr) = ob.extract::<PyExpr>() {
             return Ok(Wrap(MissingColumnsPolicyOrExpr::InsertWith(pyexpr.inner)));
         }
@@ -1677,8 +1770,10 @@ impl<'py> FromPyObject<'py> for Wrap<MissingColumnsPolicyOrExpr> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<ColumnMapping> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ColumnMapping> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let (column_mapping_type, ob): (PyBackedStr, Bound<'_, PyAny>) = ob.extract()?;
 
         Ok(Wrap(match &*column_mapping_type {
@@ -1698,8 +1793,10 @@ impl<'py> FromPyObject<'py> for Wrap<ColumnMapping> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<DeletionFilesList> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DeletionFilesList> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let (deletion_file_type, ob): (PyBackedStr, Bound<'_, PyAny>) = ob.extract()?;
 
         Ok(Wrap(match &*deletion_file_type {
@@ -1742,8 +1839,10 @@ impl<'py> FromPyObject<'py> for Wrap<DeletionFilesList> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<DefaultFieldValues> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DefaultFieldValues> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let (default_values_type, ob): (PyBackedStr, Bound<'_, PyAny>) = ob.extract()?;
 
         Ok(Wrap(match &*default_values_type {
@@ -1783,27 +1882,30 @@ impl<'py> FromPyObject<'py> for Wrap<DefaultFieldValues> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<PlPath> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PlRefPath> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         if let Ok(path) = ob.extract::<PyBackedStr>() {
-            Ok(Wrap(PlPath::new(&path)))
+            Ok(Wrap(PlRefPath::new(&*path)))
         } else if let Ok(path) = ob.extract::<std::path::PathBuf>() {
-            Ok(Wrap(PlPath::Local(path.into())))
+            Ok(Wrap(PlRefPath::try_from_path(&path).map_err(to_py_err)?))
         } else {
-            Err(
-                PyTypeError::new_err(format!("PlPath cannot be formed from '{}'", ob.get_type()))
-                    .into(),
-            )
+            Err(PyTypeError::new_err(format!(
+                "PlRefPath cannot be formed from '{}'",
+                ob.get_type()
+            ))
+            .into())
         }
     }
 }
 
-impl<'py> IntoPyObject<'py> for Wrap<PlPath> {
+impl<'py> IntoPyObject<'py> for Wrap<PlRefPath> {
     type Target = PyString;
     type Output = Bound<'py, Self::Target>;
     type Error = Infallible;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        self.0.to_str().into_pyobject(py)
+        self.0.as_str().into_pyobject(py)
     }
 }

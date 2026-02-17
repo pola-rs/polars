@@ -13,6 +13,7 @@ from polars._utils.convert import parse_as_duration_string
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
+    from polars._typing import RoundMode
     from polars.type_aliases import TimeUnit
 
 
@@ -246,16 +247,17 @@ def test_round_unequal_length_22018(as_date: bool) -> None:
         s.dt.round(pl.Series(["30m", "20m"]))
 
 
-def test_round_small() -> None:
+@pytest.mark.parametrize("mode", ["half_to_even", "half_away_from_zero"])
+def test_round_small(mode: RoundMode) -> None:
     small = 1.234e-320
     small_s = pl.Series([small])
-    assert small_s.round().item() == 0.0
-    assert small_s.round(320).item() == 1e-320
-    assert small_s.round(321).item() == 1.2e-320
-    assert small_s.round(322).item() == 1.23e-320
-    assert small_s.round(323).item() == 1.234e-320
-    assert small_s.round(324).item() == small
-    assert small_s.round(1000).item() == small
+    assert small_s.round(mode=mode).item() == 0.0
+    assert small_s.round(320, mode=mode).item() == 1e-320
+    assert small_s.round(321, mode=mode).item() == 1.2e-320
+    assert small_s.round(322, mode=mode).item() == 1.23e-320
+    assert small_s.round(323, mode=mode).item() == 1.234e-320
+    assert small_s.round(324, mode=mode).item() == small
+    assert small_s.round(1000, mode=mode).item() == small
 
     assert small_s.round_sig_figs(1).item() == 1e-320
     assert small_s.round_sig_figs(2).item() == 1.2e-320
@@ -265,13 +267,14 @@ def test_round_small() -> None:
     assert small_s.round_sig_figs(1000).item() == small
 
 
-def test_round_big() -> None:
+@pytest.mark.parametrize("mode", ["half_to_even", "half_away_from_zero"])
+def test_round_big(mode: RoundMode) -> None:
     big = 1.234e308
     max_err = big / 10**10
     big_s = pl.Series([big])
-    assert big_s.round().item() == big
-    assert big_s.round(1).item() == big
-    assert big_s.round(100).item() == big
+    assert big_s.round(mode=mode).item() == big
+    assert big_s.round(1, mode=mode).item() == big
+    assert big_s.round(100, mode=mode).item() == big
 
     assert abs(big_s.round_sig_figs(1).item() - 1e308) <= max_err
     assert abs(big_s.round_sig_figs(2).item() - 1.2e308) <= max_err

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from polars import functions as F
 from polars._utils.deprecation import deprecated
@@ -9,7 +9,7 @@ from polars._utils.wrap import wrap_df, wrap_ldf
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
     from polars import DataFrame, LazyFrame
     from polars._plr import PyLazyGroupBy
@@ -30,6 +30,48 @@ class LazyGroupBy:
 
     def __init__(self, lgb: PyLazyGroupBy) -> None:
         self.lgb = lgb
+
+    def having(self, *predicates: IntoExpr | Iterable[IntoExpr]) -> LazyGroupBy:
+        """
+        Filter groups with a list of predicates after aggregation.
+
+        Using this method is equivalent to adding the predicates to the aggregation and
+        filtering afterwards.
+
+        This method can be chained and all conditions will be combined using `&`.
+
+        Parameters
+        ----------
+        *predicates
+            Expressions that evaluate to a boolean value for each group. Typically, this
+            requires the use of an aggregation function. Multiple predicates are
+            combined using `&`.
+
+        Examples
+        --------
+        Only keep groups that contain more than one element.
+
+        >>> ldf = pl.DataFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "c"],
+        ...     }
+        ... ).lazy()
+        >>> ldf.group_by("a").having(
+        ...     pl.len() > 1
+        ... ).agg().collect()  # doctest: +IGNORE_RESULT
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ b   │
+        │ a   │
+        └─────┘
+        """
+        pyexprs = parse_into_list_of_expressions(*predicates)
+        self.lgb = self.lgb.having(pyexprs)
+        return self
 
     def agg(
         self,
@@ -70,9 +112,7 @@ class LazyGroupBy:
         │ str ┆ list[i64] ┆ list[i64] │
         ╞═════╪═══════════╪═══════════╡
         │ a   ┆ [1, 1]    ┆ [5, 3]    │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ b   ┆ [2, 3]    ┆ [4, 2]    │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ c   ┆ [3]       ┆ [1]       │
         └─────┴───────────┴───────────┘
 
@@ -412,9 +452,16 @@ class LazyGroupBy:
         """
         return self.agg(F.len().alias("count"))
 
-    def first(self) -> LazyFrame:
+    def first(self, *, ignore_nulls: bool = False) -> LazyFrame:
         """
         Aggregate the first values in the group.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the first non-null value for each aggregation is returned,
+            otherwise `None` is returned if no non-null value exists.
 
         Examples
         --------
@@ -422,11 +469,22 @@ class LazyGroupBy:
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
         ...         "b": [0.5, 0.5, 4, 10, 13, 14],
-        ...         "c": [True, True, True, False, False, True],
+        ...         "c": [None, True, True, False, False, True],
         ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
         ...     }
         ... ).lazy()
         >>> ldf.group_by("d", maintain_order=True).first().collect()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬───────┐
+        │ d      ┆ a   ┆ b    ┆ c     │
+        │ ---    ┆ --- ┆ ---  ┆ ---   │
+        │ str    ┆ i64 ┆ f64  ┆ bool  │
+        ╞════════╪═════╪══════╪═══════╡
+        │ Apple  ┆ 1   ┆ 0.5  ┆ null  │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
+        │ Banana ┆ 4   ┆ 13.0 ┆ false │
+        └────────┴─────┴──────┴───────┘
+        >>> ldf.group_by("d", maintain_order=True).first(ignore_nulls=True).collect()
         shape: (3, 4)
         ┌────────┬─────┬──────┬───────┐
         │ d      ┆ a   ┆ b    ┆ c     │
@@ -438,11 +496,18 @@ class LazyGroupBy:
         │ Banana ┆ 4   ┆ 13.0 ┆ false │
         └────────┴─────┴──────┴───────┘
         """
-        return self.agg(F.all().first())
+        return self.agg(F.all().first(ignore_nulls=ignore_nulls))
 
-    def last(self) -> LazyFrame:
+    def last(self, *, ignore_nulls: bool = False) -> LazyFrame:
         """
         Aggregate the last values in the group.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the last non-null value for each aggregation is returned,
+            otherwise `None` is returned if no non-null value exists.
 
         Examples
         --------
@@ -450,11 +515,22 @@ class LazyGroupBy:
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
         ...         "b": [0.5, 0.5, 4, 10, 14, 13],
-        ...         "c": [True, True, True, False, False, True],
+        ...         "c": [True, True, False, None, False, True],
         ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
         ...     }
         ... ).lazy()
         >>> ldf.group_by("d", maintain_order=True).last().collect()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬──────┐
+        │ d      ┆ a   ┆ b    ┆ c    │
+        │ ---    ┆ --- ┆ ---  ┆ ---  │
+        │ str    ┆ i64 ┆ f64  ┆ bool │
+        ╞════════╪═════╪══════╪══════╡
+        │ Apple  ┆ 3   ┆ 10.0 ┆ null │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true │
+        │ Banana ┆ 5   ┆ 13.0 ┆ true │
+        └────────┴─────┴──────┴──────┘
+        >>> ldf.group_by("d", maintain_order=True).last(ignore_nulls=True).collect()
         shape: (3, 4)
         ┌────────┬─────┬──────┬───────┐
         │ d      ┆ a   ┆ b    ┆ c     │
@@ -466,7 +542,7 @@ class LazyGroupBy:
         │ Banana ┆ 5   ┆ 13.0 ┆ true  │
         └────────┴─────┴──────┴───────┘
         """
-        return self.agg(F.all().last())
+        return self.agg(F.all().last(ignore_nulls=ignore_nulls))
 
     def max(self) -> LazyFrame:
         """

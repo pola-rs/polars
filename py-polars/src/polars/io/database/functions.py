@@ -214,13 +214,6 @@ def read_database(
     ...     execute_options={"max_text_size": 512, "max_binary_size": 1024},
     ... )  # doctest: +SKIP
 
-    Load graph database results from a `KùzuDB` connection and a Cypher query:
-
-    >>> df = pl.read_database(
-    ...     query="MATCH (a:User)-[f:Follows]->(b:User) RETURN a.name, f.since, b.name",
-    ...     connection=kuzu_db_conn,
-    ... )  # doctest: +SKIP
-
     Load data from an asynchronous SQLAlchemy driver/engine; note that asynchronous
     connections and sessions are also supported here:
 

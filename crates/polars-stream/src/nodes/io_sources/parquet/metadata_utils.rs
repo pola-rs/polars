@@ -1,13 +1,13 @@
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
-use polars_utils::mmap::MemSlice;
 
 /// Read the metadata bytes of a parquet file, does not decode the bytes. If during metadata fetch
 /// the bytes of the entire file are loaded, it is returned in the second return value.
 pub async fn read_parquet_metadata_bytes(
     byte_source: &DynByteSource,
     verbose: bool,
-) -> PolarsResult<(MemSlice, Option<MemSlice>)> {
+) -> PolarsResult<(Buffer<u8>, Option<Buffer<u8>>)> {
     use polars_parquet::parquet::PARQUET_MAGIC;
     use polars_parquet::parquet::error::ParquetError;
 
@@ -22,7 +22,7 @@ pub async fn read_parquet_metadata_bytes(
         .into());
     }
 
-    let estimated_metadata_size = if let DynByteSource::MemSlice(_) = byte_source {
+    let estimated_metadata_size = if let DynByteSource::Buffer(_) = byte_source {
         // Mmapped or in-memory, reads are free.
         file_size
     } else {
@@ -33,9 +33,9 @@ pub async fn read_parquet_metadata_bytes(
         .get_range((file_size - estimated_metadata_size)..file_size)
         .await?;
 
-    let footer_header_bytes = bytes.slice((bytes.len() - FOOTER_HEADER_SIZE)..bytes.len());
+    let footer_header_bytes = bytes.clone().sliced((bytes.len() - FOOTER_HEADER_SIZE)..);
 
-    let (v, remaining) = footer_header_bytes.split_at(4);
+    let (v, remaining) = footer_header_bytes.as_slice().split_at(4);
     let footer_size = u32::from_le_bytes(v.try_into().unwrap());
 
     if remaining != PARQUET_MAGIC {
@@ -57,7 +57,7 @@ pub async fn read_parquet_metadata_bytes(
     }
 
     if bytes.len() < footer_size {
-        debug_assert!(!matches!(byte_source, DynByteSource::MemSlice(_)));
+        debug_assert!(!matches!(byte_source, DynByteSource::Buffer(_)));
         if verbose {
             eprintln!(
                 "[ParquetFileReader]: Extra {} bytes need to be fetched for metadata \
@@ -78,9 +78,9 @@ pub async fn read_parquet_metadata_bytes(
         out.extend_from_slice(&delta_bytes);
         out.extend_from_slice(&bytes);
 
-        Ok((MemSlice::from_vec(out), None))
+        Ok((Buffer::from_vec(out), None))
     } else {
-        if verbose && !matches!(byte_source, DynByteSource::MemSlice(_)) {
+        if verbose && !matches!(byte_source, DynByteSource::Buffer(_)) {
             eprintln!(
                 "[ParquetFileReader]: Fetched all bytes for metadata on first try \
                 (initial estimate = {}, actual size = {}, excess = {}, total file size = {})",
@@ -91,15 +91,15 @@ pub async fn read_parquet_metadata_bytes(
             );
         }
 
-        let metadata_bytes = bytes.slice((bytes.len() - footer_size)..bytes.len());
+        let metadata_bytes = bytes.clone().sliced((bytes.len() - footer_size)..);
 
         if bytes.len() == file_size {
             Ok((metadata_bytes, Some(bytes)))
         } else {
-            debug_assert!(!matches!(byte_source, DynByteSource::MemSlice(_)));
+            debug_assert!(!matches!(byte_source, DynByteSource::Buffer(_)));
             let metadata_bytes = if bytes.len() - footer_size >= bytes.len() {
                 // Re-allocate to drop the excess bytes
-                MemSlice::from_vec(metadata_bytes.to_vec())
+                Buffer::from_vec(metadata_bytes.to_vec())
             } else {
                 metadata_bytes
             };

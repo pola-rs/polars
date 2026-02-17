@@ -1,15 +1,22 @@
 use std::fmt;
 use std::sync::Arc;
 
+use polars_core::prelude::PlHashSet;
 use polars_utils::pl_str::PlSmallStr;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Hash)]
+#[derive(Debug, Clone, Hash)]
 pub struct Sorted {
     pub column: PlSmallStr,
-    pub descending: bool,
-    pub nulls_last: bool,
+    /// None -> either way / unsure
+    /// Some(false) -> ascending
+    /// Some(true) -> descending
+    pub descending: Option<bool>,
+    /// None -> either way / unsure
+    /// Some(false) -> nulls (if any) at start
+    /// Some(true) -> nulls (if any) at end
+    pub nulls_last: Option<bool>,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -20,12 +27,50 @@ pub enum HintIR {
     Sorted(Arc<[Sorted]>),
 }
 
+impl HintIR {
+    pub fn project(&self, projected_names: &PlHashSet<PlSmallStr>) -> Option<HintIR> {
+        match self {
+            Self::Sorted(s) => {
+                let num_matches = s
+                    .iter()
+                    .filter(|i| projected_names.contains(&i.column))
+                    .count();
+
+                if num_matches == s.len() {
+                    return Some(Self::Sorted(s.clone()));
+                } else if num_matches == 0 {
+                    return None;
+                }
+
+                let mut sorted = Vec::with_capacity(num_matches);
+                sorted.extend(
+                    s.iter()
+                        .filter(|i| projected_names.contains(&i.column))
+                        .cloned(),
+                );
+                Some(Self::Sorted(sorted.into()))
+            },
+        }
+    }
+}
+
 impl fmt::Display for Sorted {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let descending = match self.descending {
+            None => "?",
+            Some(false) => "false",
+            Some(true) => "true",
+        };
+        let nulls_last = match self.nulls_last {
+            None => "?",
+            Some(false) => "false",
+            Some(true) => "true",
+        };
+
         write!(
             f,
-            "'{}': {{ descending: {}, nulls_last: {} }}",
-            self.column, self.descending, self.nulls_last
+            "'{}': {{ descending: {descending}, nulls_last: {nulls_last} }}",
+            self.column,
         )
     }
 }

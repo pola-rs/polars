@@ -18,7 +18,7 @@ from polars.testing import assert_series_equal
         ("uint16", [1, 3, 2], pl.UInt16, np.uint16),
         ("uint32", [1, 3, 2], pl.UInt32, np.uint32),
         ("uint64", [1, 3, 2], pl.UInt64, np.uint64),
-        ("float16", [-123.0, 0.0, 456.0], pl.Float32, np.float16),
+        ("float16", [-123.0, 0.0, 456.0], pl.Float16, np.float16),
         ("float32", [21.7, 21.8, 21], pl.Float32, np.float32),
         ("float64", [21.7, 21.8, 21], pl.Float64, np.float64),
         ("bool", [True, False, False], pl.Boolean, np.bool_),
@@ -92,7 +92,7 @@ def test_respect_dtype_with_series_from_numpy() -> None:
         (np.uint16, pl.UInt16),
         (np.uint32, pl.UInt32),
         (np.uint64, pl.UInt64),
-        (np.float16, pl.Float32),  # << note: we don't currently have a native f16
+        (np.float16, pl.Float16),
         (np.float32, pl.Float32),
         (np.float64, pl.Float64),
     ],

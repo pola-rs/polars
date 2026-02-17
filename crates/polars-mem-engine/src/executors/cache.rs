@@ -22,24 +22,6 @@ impl CachePrefill {
         }
     }
 
-    pub fn new_scan(input: Box<dyn Executor>) -> Self {
-        Self {
-            input,
-            id: UniqueId::new(),
-            hit_count: 0,
-            is_new_streaming_scan: true,
-        }
-    }
-
-    pub fn new_sink(input: Box<dyn Executor>) -> Self {
-        Self {
-            input,
-            id: UniqueId::new(),
-            hit_count: 0,
-            is_new_streaming_scan: false,
-        }
-    }
-
     pub fn id(&self) -> UniqueId {
         self.id
     }

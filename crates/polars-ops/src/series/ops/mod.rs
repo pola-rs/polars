@@ -1,6 +1,6 @@
 #[cfg(feature = "abs")]
 mod abs;
-mod arg_min_max;
+pub mod arg_min_max;
 mod bitwise;
 #[cfg(feature = "business")]
 mod business;

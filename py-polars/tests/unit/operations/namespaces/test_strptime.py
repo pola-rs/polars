@@ -64,6 +64,7 @@ def test_to_datetime_precision() -> None:
             [789321000, 987456000],
             [789321456, 987456321],
         ),
+        strict=False,
     )
     for time_unit, suffix, expected_values in test_data:
         ds = s.str.to_datetime(f"%Y-%m-%d %H:%M:%S{suffix}", time_unit=time_unit)
@@ -483,10 +484,10 @@ def test_strptime_invalid_timezone() -> None:
 def test_to_datetime_ambiguous_or_non_existent() -> None:
     with pytest.raises(
         ComputeError,
-        match="datetime '2021-11-07 01:00:00' is ambiguous in time zone 'US/Central'",
+        match="datetime '2021-11-07 01:00:00' is ambiguous in time zone 'America/Chicago'",
     ):
         pl.Series(["2021-11-07 01:00"]).str.to_datetime(
-            time_unit="us", time_zone="US/Central"
+            time_unit="us", time_zone="America/Chicago"
         )
     with pytest.raises(
         ComputeError,
@@ -684,7 +685,7 @@ def test_to_time_subseconds(data: str, format: str, expected: time) -> None:
 
 def test_to_time_format_warning() -> None:
     s = pl.Series(["05:10:10.074000"])
-    with pytest.warns(ChronoFormatWarning, match=".%f"):
+    with pytest.warns(ChronoFormatWarning, match=r".%f"):
         result = s.str.to_time("%H:%M:%S.%f").item()
     assert result == time(5, 10, 10, 74)
 
@@ -754,7 +755,7 @@ def test_strptime_ambiguous_earliest(exact: bool) -> None:
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_to_datetime_out_of_range_13401(time_unit: TimeUnit) -> None:
     s = pl.Series(["2020-January-01 12:34:66"])
-    with pytest.raises(InvalidOperationError, match="conversion .* failed"):
+    with pytest.raises(InvalidOperationError, match=r"conversion .* failed"):
         s.str.to_datetime("%Y-%B-%d %H:%M:%S", time_unit=time_unit)
     assert (
         s.str.to_datetime("%Y-%B-%d %H:%M:%S", strict=False, time_unit=time_unit).item()

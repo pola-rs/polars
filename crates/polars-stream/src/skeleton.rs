@@ -6,7 +6,7 @@ use parking_lot::Mutex;
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_expr_depth_limit};
-use polars_plan::plans::{Context, IR, IRPlan};
+use polars_plan::plans::{IR, IRPlan};
 use polars_plan::prelude::AExpr;
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_utils::arena::{Arena, Node};
@@ -14,6 +14,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use slotmap::{SecondaryMap, SlotMap};
 
 use crate::graph::{Graph, GraphNodeKey};
+use crate::metrics::GraphMetrics;
 use crate::physical_plan::{PhysNode, PhysNodeKey, PhysNodeKind, StreamingLowerIRContext};
 
 /// Executes the IR with the streaming engine.
@@ -56,10 +57,11 @@ pub fn visualize_physical_plan(
 
 pub struct StreamingQuery {
     top_ir: IR,
-    graph: Graph,
-    root_phys_node: PhysNodeKey,
-    phys_sm: SlotMap<PhysNodeKey, PhysNode>,
-    phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
+    pub graph: Graph,
+    pub root_phys_node: PhysNodeKey,
+    pub phys_sm: SlotMap<PhysNodeKey, PhysNode>,
+    pub phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
+    pub metrics: Option<Arc<Mutex<GraphMetrics>>>,
 }
 
 /// Configures if IR lowering creates the `format_str` for `InMemoryMap`.
@@ -117,12 +119,22 @@ impl StreamingQuery {
 
         let top_ir = ir_arena.get(node).clone();
 
+        let metrics = if std::env::var("POLARS_TRACK_METRICS").as_deref() == Ok("1")
+            || std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
+        {
+            crate::async_executor::track_task_metrics(true);
+            Some(Arc::default())
+        } else {
+            None
+        };
+
         let out = StreamingQuery {
             top_ir,
             graph,
             root_phys_node,
             phys_sm,
             phys_to_graph,
+            metrics,
         };
 
         Ok(out)
@@ -135,21 +147,17 @@ impl StreamingQuery {
             root_phys_node,
             phys_sm,
             phys_to_graph,
+            metrics,
         } = self;
-
-        let metrics = if std::env::var("POLARS_TRACK_METRICS").as_deref() == Ok("1") {
-            crate::async_executor::track_task_metrics(true);
-            Some(Arc::default())
-        } else {
-            None
-        };
 
         let query_start = Instant::now();
         let mut results = crate::execute::execute_graph(&mut graph, metrics.clone())?;
         let query_elapsed = query_start.elapsed();
 
         // Print metrics.
-        if let Some(lock) = metrics {
+        if let Some(lock) = metrics
+            && std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
+        {
             let mut total_query_ns = 0;
             let mut lines = Vec::new();
             let m = lock.lock();
@@ -181,13 +189,23 @@ impl StreamingQuery {
                 let morsels_sent = node_metrics.morsels_sent;
                 let max_sent = node_metrics.largest_morsel_sent;
 
+                let io_total_active_time = Duration::from_nanos(node_metrics.io_total_active_ns);
+                let io_total_bytes_requested = node_metrics.io_total_bytes_requested;
+                let io_total_bytes_received = node_metrics.io_total_bytes_received;
+                let io_total_bytes_sent = node_metrics.io_total_bytes_sent;
+
                 lines.push(
                     (total_time, format!(
                         "{name}: tot({total_time:.2?}), \
                                  poll({poll_time:.2?}, n={total_polls}, max={max_poll_time:.2?}, stolen={perc_stolen:.1}%), \
                                  update({update_time:.2?}, n={total_updates}, max={max_update_time:.2?}), \
                                  recv(row={rows_received}, morsel={morsels_received}, max={max_received}), \
-                                 sent(row={rows_sent}, morsel={morsels_sent}, max={max_sent})"))
+                                 sent(row={rows_sent}, morsel={morsels_sent}, max={max_sent}), \
+                                 io(\
+                                    total_active_time={io_total_active_time:.2?}, \
+                                    total_bytes_requested={io_total_bytes_requested}, \
+                                    total_bytes_received={io_total_bytes_received}, \
+                                    total_bytes_sent={io_total_bytes_sent})"))
                 );
 
                 total_query_ns += total_ns;

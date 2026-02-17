@@ -30,11 +30,11 @@ impl LiteralExpr {
                     }
                 }
 
-                sc.clone().into_column(get_literal_name().clone())
+                sc.clone().into_column(get_literal_name())
             },
             L::Series(s) => s.deref().clone().into_column(),
             lv @ L::Dyn(_) => polars_core::prelude::Series::from_any_values(
-                get_literal_name().clone(),
+                get_literal_name(),
                 &[lv.to_any_value().unwrap()],
                 false,
             )
@@ -117,12 +117,11 @@ impl PhysicalExpr for LiteralExpr {
                 ctx = "group_by",
                 size = groups.len() as u64 * lit_length as u64
             );
-            let groups = GroupsType::Slice {
-                groups: (0..groups.len() as IdxSize)
-                    .map(|i| [i * lit_length, lit_length])
-                    .collect(),
-                overlapping: false,
-            };
+            let groups = (0..groups.len() as IdxSize)
+                .map(|i| [i * lit_length, lit_length])
+                .collect();
+            let groups = GroupsType::new_slice(groups, false, true);
+
             let agg_state = AggState::AggregatedList(Column::new_scalar(
                 s.name().clone(),
                 Scalar::new_list(s.take_materialized_series()),
@@ -139,7 +138,7 @@ impl PhysicalExpr for LiteralExpr {
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
         let dtype = self.0.get_datatype();
-        Ok(Field::new(PlSmallStr::from_static("literal"), dtype))
+        Ok(Field::new(get_literal_name(), dtype))
     }
     fn is_literal(&self) -> bool {
         true

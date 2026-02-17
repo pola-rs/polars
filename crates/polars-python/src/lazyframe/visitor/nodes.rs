@@ -1,12 +1,12 @@
-use polars::prelude::ColumnMapping;
 #[cfg(feature = "iejoin")]
 use polars::prelude::JoinTypeOptionsIR;
 use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::python_dsl::PythonScanSource;
+use polars::prelude::{ColumnMapping, PredicateFileSkip};
 use polars_core::prelude::IdxSize;
 use polars_io::cloud::CloudOptions;
 use polars_ops::prelude::JoinType;
-use polars_plan::plans::IR;
+use polars_plan::plans::{HintIR, IR};
 use polars_plan::prelude::{FileScanIR, FunctionIR, PythonPredicate, UnifiedScanArgs};
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
@@ -326,7 +326,7 @@ pub struct HConcat {
     #[pyo3(get)]
     inputs: Vec<usize>,
     #[pyo3(get)]
-    options: (),
+    options: Py<PyAny>,
 }
 #[pyclass(frozen)]
 /// This allows expressions to access other tables
@@ -421,7 +421,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     // Manual conversion to preserve `uri://...` - converting Rust `Path` to `PosixPath`
                     // will corrupt to `uri:/...`
                     for path in paths.iter() {
-                        out.append(path.to_str())?;
+                        out.append(path.as_str())?;
                     }
 
                     out.into_py_any(py)?
@@ -430,7 +430,15 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 file_info: py.None(),
                 predicate: predicate
                     .as_ref()
-                    .filter(|_| *predicate_file_skip_applied != Some(true))
+                    .filter(|_| {
+                        !matches!(
+                            predicate_file_skip_applied,
+                            Some(PredicateFileSkip {
+                                no_residual_predicate: true,
+                                original_len: _,
+                            })
+                        )
+                    })
                     .map(|e| e.into()),
                 file_options: PyFileOptions {
                     inner: (**unified_scan_args).clone(),
@@ -618,9 +626,15 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 )
                     .into_py_any(py)?,
                 FunctionIR::Rechunk => ("rechunk",).into_py_any(py)?,
-                FunctionIR::Explode { columns, schema: _ } => (
+                FunctionIR::Explode {
+                    columns,
+                    options,
+                    schema: _,
+                } => (
                     "explode",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                    options.empty_as_null,
+                    options.keep_nulls,
                 )
                     .into_py_any(py)?,
                 #[cfg(feature = "pivot")]
@@ -628,12 +642,8 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     "unpivot",
                     args.index.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                     args.on.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                    args.variable_name
-                        .as_ref()
-                        .map_or_else(|| Ok(py.None()), |s| s.as_str().into_py_any(py))?,
-                    args.value_name
-                        .as_ref()
-                        .map_or_else(|| Ok(py.None()), |s| s.as_str().into_py_any(py))?,
+                    args.variable_name.as_str().into_py_any(py)?,
+                    args.value_name.as_str().into_py_any(py)?,
                 )
                     .into_py_any(py)?,
                 FunctionIR::RowIndex {
@@ -644,7 +654,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 FunctionIR::FastCount {
                     sources,
                     scan_type,
-                    cloud_options,
                     alias,
                 } => {
                     let sources = sources
@@ -653,11 +662,14 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                             PyNotImplementedError::new_err("FastCount with BytesIO sources")
                         })?
                         .iter()
-                        .map(|p| p.to_str())
+                        .map(|p| p.as_str())
                         .collect::<Vec<_>>()
                         .into_py_any(py)?;
 
-                    let scan_type = scan_type_to_pyobject(py, scan_type, cloud_options)?;
+                    // FastCount does not support cloud options.
+                    let cloud_options = None;
+
+                    let scan_type = scan_type_to_pyobject(py, scan_type, &cloud_options)?;
 
                     let alias = alias
                         .as_ref()
@@ -666,7 +678,15 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
 
                     ("fast_count", sources, scan_type, alias).into_py_any(py)?
                 },
-                FunctionIR::Hint(_) => return Err(PyNotImplementedError::new_err("hint ir")),
+                FunctionIR::Hint(hint) => match hint {
+                    HintIR::Sorted(sorted_vec) => {
+                        let sorted_info: Vec<_> = sorted_vec
+                            .iter()
+                            .map(|s| (s.column.as_str(), s.descending, s.nulls_last))
+                            .collect();
+                        ("hint_sorted", sorted_info).into_py_any(py)?
+                    },
+                },
             },
         }
         .into_py_any(py),
@@ -679,10 +699,15 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         IR::HConcat {
             inputs,
             schema: _,
-            options: _,
+            options,
         } => HConcat {
             inputs: inputs.iter().map(|n| n.0).collect(),
-            options: (),
+            options: (
+                options.parallel,
+                options.strict,
+                options.broadcast_unit_length,
+            )
+                .into_py_any(py)?,
         }
         .into_py_any(py),
         IR::ExtContext {

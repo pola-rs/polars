@@ -1,7 +1,8 @@
 use std::marker::PhantomData;
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 use hashbrown::hash_map::Entry;
+use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
@@ -9,7 +10,6 @@ use crate::array::binview::{DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE};
 use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
 use crate::array::{Array, BinaryViewArrayGeneric, View, ViewType};
 use crate::bitmap::OptBitmapBuilder;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::pushable::Pushable;
 
@@ -25,7 +25,7 @@ pub struct BinaryViewArrayGenericBuilder<V: ViewType + ?Sized> {
 
     // With these we can amortize buffer set translation costs if repeatedly
     // stealing from the same set of buffers.
-    last_buffer_set_stolen_from: Option<Arc<[Buffer<u8>]>>,
+    last_buffer_set_stolen_from: Option<Buffer<Buffer<u8>>>,
     buffer_set_translation_idxs: Vec<(u32, u32)>, // (idx, generation)
     buffer_set_translation_generation: u32,
 
@@ -38,6 +38,8 @@ pub struct BinaryViewArrayGenericBuilder<V: ViewType + ?Sized> {
 }
 
 impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
+    pub const MAX_ROW_BYTE_LEN: usize = (u32::MAX - 1) as _;
+
     pub fn new(dtype: ArrowDataType) -> Self {
         Self {
             dtype,
@@ -60,7 +62,7 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
     fn reserve_active_buffer(&mut self, additional: usize) {
         let len = self.active_buffer.len();
         let cap = self.active_buffer.capacity();
-        if additional > cap - len || len + additional >= (u32::MAX - 1) as usize {
+        if additional > cap - len || len + additional >= Self::MAX_ROW_BYTE_LEN {
             self.reserve_active_buffer_slow(additional);
         }
     }
@@ -68,7 +70,7 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
     #[cold]
     fn reserve_active_buffer_slow(&mut self, additional: usize) {
         assert!(
-            additional <= (u32::MAX - 1) as usize,
+            additional <= Self::MAX_ROW_BYTE_LEN,
             "strings longer than 2^32 - 2 are not supported"
         );
 
@@ -113,12 +115,13 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
         self.views.push(view);
     }
 
-    fn switch_active_stealing_bufferset_to(&mut self, buffer_set: &Arc<[Buffer<u8>]>) {
-        // Fat pointer equality, checks both start and length.
+    fn switch_active_stealing_bufferset_to(&mut self, buffer_set: &Buffer<Buffer<u8>>) {
         if self
             .last_buffer_set_stolen_from
             .as_ref()
-            .is_some_and(|stolen_bs| std::ptr::eq(Arc::as_ptr(stolen_bs), Arc::as_ptr(buffer_set)))
+            .is_some_and(|stolen_bs| {
+                stolen_bs.as_ptr() == buffer_set.as_ptr() && stolen_bs.len() >= buffer_set.len()
+            })
         {
             return; // Already active.
         }
@@ -136,7 +139,7 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
     unsafe fn translate_view(
         &mut self,
         mut view: View,
-        other_bufferset: &Arc<[Buffer<u8>]>,
+        other_bufferset: &Buffer<Buffer<u8>>,
     ) -> View {
         // Translate from old array-local buffer idx to global stolen buffer idx.
         let (mut new_buffer_idx, gen_) = *self
@@ -176,7 +179,7 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
     unsafe fn extend_views_dedup_ignore_validity(
         &mut self,
         views: impl IntoIterator<Item = View>,
-        other_bufferset: &Arc<[Buffer<u8>]>,
+        other_bufferset: &Buffer<Buffer<u8>>,
     ) {
         // TODO: if there are way more buffers than length translate per-view
         // rather than all at once.
@@ -195,7 +198,7 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
         &mut self,
         views: impl IntoIterator<Item = View>,
         repeats: usize,
-        other_bufferset: &Arc<[Buffer<u8>]>,
+        other_bufferset: &Buffer<Buffer<u8>>,
     ) {
         // TODO: if there are way more buffers than length translate per-view
         // rather than all at once.
@@ -237,9 +240,9 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
             BinaryViewArrayGeneric::new_unchecked(
                 self.dtype,
                 Buffer::from(self.views),
-                Arc::from(self.buffer_set),
+                Buffer::from(self.buffer_set),
                 self.validity.into_opt_validity(),
-                self.total_bytes_len,
+                Some(self.total_bytes_len),
                 self.total_buffer_len,
             )
         }
@@ -258,9 +261,9 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
             BinaryViewArrayGeneric::new_unchecked(
                 self.dtype.clone(),
                 Buffer::from(core::mem::take(&mut self.views)),
-                Arc::from(core::mem::take(&mut self.buffer_set)),
+                Buffer::from(core::mem::take(&mut self.buffer_set)),
                 core::mem::take(&mut self.validity).into_opt_validity(),
-                self.total_bytes_len,
+                Some(self.total_bytes_len),
                 self.total_buffer_len,
             )
         };

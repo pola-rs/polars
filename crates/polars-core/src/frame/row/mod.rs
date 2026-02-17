@@ -63,24 +63,12 @@ impl DataFrame {
     #[allow(clippy::wrong_self_convention)]
     // Create indexable rows in a single allocation.
     pub(crate) fn to_av_rows(&mut self) -> AnyValueRows<'_> {
-        self.as_single_chunk_par();
         let width = self.width();
         let size = width * self.height();
         let mut buf = vec![AnyValue::Null; size];
         for (col_i, s) in self.materialized_column_iter().enumerate() {
-            match s.dtype() {
-                #[cfg(feature = "object")]
-                DataType::Object(_) => {
-                    for row_i in 0..s.len() {
-                        let av = s.get(row_i).unwrap();
-                        buf[row_i * width + col_i] = av
-                    }
-                },
-                _ => {
-                    for (row_i, av) in s.iter().enumerate() {
-                        buf[row_i * width + col_i] = av
-                    }
-                },
+            for (row_i, av) in s.iter().enumerate() {
+                buf[row_i * width + col_i] = av
             }
         }
         AnyValueRows { vals: buf, width }

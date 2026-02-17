@@ -304,6 +304,14 @@ fn assert_series_values_equal(
     abs_tol: f64,
     categorical_as_str: bool,
 ) -> PolarsResult<()> {
+    // When `check_dtypes` is `false` and both series are entirely null,
+    // consider them equal regardless of their underlying data types
+    if !check_dtypes && left.dtype() != right.dtype() {
+        if left.null_count() == left.len() && right.null_count() == right.len() {
+            return Ok(());
+        }
+    }
+
     let (left, right) = if categorical_as_str {
         (
             categorical_series_to_string(left)?,
@@ -321,14 +329,6 @@ fn assert_series_values_equal(
     } else {
         (left, right)
     };
-
-    // When `check_dtypes` is `false` and both series are entirely null,
-    // consider them equal regardless of their underlying data types
-    if !check_dtypes && left.dtype() != right.dtype() {
-        if left.null_count() == left.len() && right.null_count() == right.len() {
-            return Ok(());
-        }
-    }
 
     let unequal = match left.not_equal_missing(&right) {
         Ok(result) => result,
@@ -429,10 +429,7 @@ fn assert_series_nested_values_equal(
     categorical_as_str: bool,
 ) -> PolarsResult<()> {
     if are_both_lists(left.dtype(), right.dtype()) {
-        let left_rechunked = left.rechunk();
-        let right_rechunked = right.rechunk();
-
-        let zipped = left_rechunked.iter().zip(right_rechunked.iter());
+        let zipped = left.iter().zip(right.iter());
 
         for (s1, s2) in zipped {
             if s1.is_null() || s2.is_null() {
@@ -446,19 +443,22 @@ fn assert_series_nested_values_equal(
                 let s1_series = Series::new("".into(), std::slice::from_ref(&s1));
                 let s2_series = Series::new("".into(), std::slice::from_ref(&s2));
 
-                match assert_series_values_equal(
-                    &s1_series.explode(false)?,
-                    &s2_series.explode(false)?,
+                assert_series_values_equal(
+                    &s1_series.explode(ExplodeOptions {
+                        empty_as_null: true,
+                        keep_nulls: true,
+                    })?,
+                    &s2_series.explode(ExplodeOptions {
+                        empty_as_null: true,
+                        keep_nulls: true,
+                    })?,
                     true,
                     check_exact,
                     check_dtypes,
                     rel_tol,
                     abs_tol,
                     categorical_as_str,
-                ) {
-                    Ok(_) => continue,
-                    Err(e) => return Err(e),
-                }
+                )?
             }
         }
     } else {
@@ -472,7 +472,7 @@ fn assert_series_nested_values_equal(
             let s1_series = s1_column.as_materialized_series();
             let s2_series = s2_column.as_materialized_series();
 
-            match assert_series_values_equal(
+            assert_series_values_equal(
                 s1_series,
                 s2_series,
                 true,
@@ -481,10 +481,7 @@ fn assert_series_nested_values_equal(
                 rel_tol,
                 abs_tol,
                 categorical_as_str,
-            ) {
-                Ok(_) => continue,
-                Err(e) => return Err(e),
-            }
+            )?
         }
     }
 
@@ -770,17 +767,17 @@ pub fn assert_schema_equal(
                     format!("{:?}", right_dtypes_ordered)
                 ));
             }
-        } else {
-            let left_dtypes: PlHashSet<&DataType> = left_schema.iter_values().collect();
-            let right_dtypes: PlHashSet<&DataType> = right_schema.iter_values().collect();
-            if left_dtypes != right_dtypes {
-                return Err(polars_err!(
-                    assertion_error = "DataFrames",
-                    "dtypes do not match",
-                    format!("{:?}", left_dtypes),
-                    format!("{:?}", right_dtypes)
-                ));
-            }
+        } else if left_schema.len() != right_schema.len()
+            || left_schema
+                .iter()
+                .any(|(name, dtype)| right_schema.get(name) != Some(dtype))
+        {
+            return Err(polars_err!(
+                assertion_error = "DataFrames",
+                "dtypes do not match",
+                format!("{:?}", left_schema),
+                format!("{:?}", right_schema)
+            ));
         }
     }
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import typing
 import warnings
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -21,6 +21,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import time_func
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import JoinStrategy, PolarsDataType
 
 
@@ -648,13 +650,13 @@ def test_join_frame_consistency() -> None:
     df = pl.DataFrame({"A": [1, 2, 3]})
     ldf = pl.DataFrame({"A": [1, 2, 5]}).lazy()
 
-    with pytest.raises(TypeError, match="expected `other`.*LazyFrame"):
+    with pytest.raises(TypeError, match=r"expected `other`.*LazyFrame"):
         _ = ldf.join(df, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="expected `other`.*DataFrame"):
+    with pytest.raises(TypeError, match=r"expected `other`.*DataFrame"):
         _ = df.join(ldf, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="expected `other`.*LazyFrame"):
+    with pytest.raises(TypeError, match=r"expected `other`.*LazyFrame"):
         _ = ldf.join_asof(df, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="expected `other`.*DataFrame"):
+    with pytest.raises(TypeError, match=r"expected `other`.*DataFrame"):
         _ = df.join_asof(ldf, on="A")  # type: ignore[arg-type]
 
 
@@ -1004,7 +1006,9 @@ def test_cross_join() -> None:
     df2 = pl.DataFrame({"frame2": pl.arange(0, 100, eager=True)})
     out = df2.join(df1, how="cross")
     df2 = pl.DataFrame({"frame2": pl.arange(0, 101, eager=True)})
-    assert_frame_equal(df2.join(df1, how="cross").slice(0, 100), out)
+    assert_frame_equal(
+        df2.join(df1, how="cross", maintain_order="left_right").slice(0, 100), out
+    )
 
 
 @pytest.mark.release
@@ -1014,7 +1018,12 @@ def test_cross_join_slice_pushdown() -> None:
         pl.Series("x", pl.arange(0, 2**16 - 1, eager=True, dtype=pl.UInt16) % 2**15)
     ).to_frame()
 
-    result = df.lazy().join(df.lazy(), how="cross", suffix="_").slice(-5, 10).collect()
+    result = (
+        df.lazy()
+        .join(df.lazy(), how="cross", maintain_order="left_right", suffix="_")
+        .slice(-5, 10)
+        .collect()
+    )
     expected = pl.DataFrame(
         {
             "x": [32766, 32766, 32766, 32766, 32766],
@@ -1024,7 +1033,12 @@ def test_cross_join_slice_pushdown() -> None:
     )
     assert_frame_equal(result, expected)
 
-    result = df.lazy().join(df.lazy(), how="cross", suffix="_").slice(2, 10).collect()
+    result = (
+        df.lazy()
+        .join(df.lazy(), how="cross", maintain_order="left_right", suffix="_")
+        .slice(2, 10)
+        .collect()
+    )
     expected = pl.DataFrame(
         {
             "x": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -1133,6 +1147,7 @@ def test_join_empty_literal_17027() -> None:
     zip(
         [pl.col("a"), pl.col("a").sort(), [pl.col("a"), pl.col("b")]],
         [pl.col("a").slice(0, 2) * 2, pl.col("b"), [pl.col("a"), pl.col("b").head()]],
+        strict=False,
     ),
 )
 def test_join_non_elementwise_keys_raises(left_on: pl.Expr, right_on: pl.Expr) -> None:
@@ -1465,6 +1480,7 @@ def test_join_preserve_order_full() -> None:
         ["UInt16", "UInt16", "UInt8"],
 
         ["Float64", "Float64", "Float32"],
+        ["Float32", "Float32", "Float16"],
     ],
 )  # fmt: skip
 @pytest.mark.parametrize("swap", [True, False])
@@ -3163,7 +3179,11 @@ def test_join_filter_pushdown_asof_join() -> None:
         {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
     )
     rhs = pl.LazyFrame(
-        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, None, 5], "c": ["A", "B", "C", "D", "E"]}
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": [1, 2, 3, None, None],
+            "c": ["A", "B", "C", "D", "E"],
+        }
     )
 
     q = lhs.join_asof(
@@ -3952,3 +3972,57 @@ def test_join_asof_by_i128() -> None:
             schema={"a": pl.Int128, "i": pl.Int32, "b": pl.Int128},
         ),
     )
+
+
+def test_join_lazyframe_with_itself_after_sort_25395() -> None:
+    lf = pl.LazyFrame({"a": [1]})
+    result = lf.sort("a").join(lf, on="a").collect()
+
+    assert_frame_equal(result, pl.DataFrame({"a": [1]}))
+
+
+def test_join_right_with_cast_predicate_pushdown() -> None:
+    lhs = pl.LazyFrame({"x": [0, 1], "z": [4, 5]})
+    rhs = pl.LazyFrame({"y": [2, 3]}).cast(pl.Int32)
+
+    out = (
+        lhs.join(rhs, left_on="x", right_on="y", how="right")
+        .filter(pl.col("z") >= 6)
+        .collect()
+    )
+
+    ret = pl.DataFrame(
+        {
+            "z": [],
+            "y": [],
+        },
+        schema={"z": pl.Int64, "y": pl.Int64},
+    )
+    assert_frame_equal(out, ret, check_column_order=True, check_row_order=False)
+
+
+def test_full_join_rewrite_to_right_with_cast() -> None:
+    lhs = pl.LazyFrame({"x": [0, 1], "a": [10, 20]})
+    rhs = pl.LazyFrame({"y": [2, 3], "b": [30, 40]}).cast(pl.Int32)
+
+    out = (
+        lhs.join(rhs, left_on="x", right_on="y", how="full")
+        .filter(pl.col("b") >= 0)
+        .collect()
+    )
+
+    ret = pl.DataFrame(
+        {
+            "x": [None, None],
+            "a": [None, None],
+            "y": [2, 3],
+            "b": [30, 40],
+        },
+        schema={
+            "x": pl.Int64,
+            "a": pl.Int64,
+            "y": pl.Int32,
+            "b": pl.Int32,
+        },
+    )
+    assert_frame_equal(out, ret, check_column_order=True, check_row_order=False)

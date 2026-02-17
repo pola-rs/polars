@@ -40,12 +40,3 @@ pub use iterator::*;
 pub use lit::*;
 pub use optimizer::*;
 pub use schema::*;
-
-#[derive(Clone, Copy, Debug, Default)]
-pub enum Context {
-    /// Any operation that is done on groups
-    Aggregation,
-    /// Any operation that is done while projection/ selection of data
-    #[default]
-    Default,
-}

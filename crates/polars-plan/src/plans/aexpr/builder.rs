@@ -1,5 +1,5 @@
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::prelude::{DataType, SortMultipleOptions, SortOptions};
+use polars_core::prelude::{DataType, ExplodeOptions, SortMultipleOptions, SortOptions};
 use polars_core::scalar::Scalar;
 use polars_utils::IdxSize;
 use polars_utils::arena::{Arena, Node};
@@ -55,17 +55,25 @@ impl AExprBuilder {
         )
     }
 
-    pub fn row_encode_unary(
+    pub fn map_as_expr_ir<F: Fn(ExprIR, &mut Arena<AExpr>) -> AExpr>(
         self,
-        variant: RowEncodingVariant,
-        dtype: DataType,
+        mapper: F,
         arena: &mut Arena<AExpr>,
     ) -> Self {
-        Self::function(
-            vec![ExprIR::from_node(self.node(), arena)],
-            IRFunctionExpr::RowEncode(vec![dtype], variant),
-            arena,
-        )
+        let eir = ExprIR::from_node(self.node, arena);
+
+        let ae = mapper(eir, arena);
+        let node = arena.add(ae);
+        Self { node }
+    }
+
+    pub fn row_encode(
+        exprs: Vec<ExprIR>,
+        dtypes: Vec<DataType>,
+        variant: RowEncodingVariant,
+        arena: &mut Arena<AExpr>,
+    ) -> Self {
+        Self::function(exprs, IRFunctionExpr::RowEncode(dtypes, variant), arena)
     }
 
     pub fn cast(self, dtype: DataType, arena: &mut Arena<AExpr>) -> Self {
@@ -101,8 +109,16 @@ impl AExprBuilder {
         Self::agg(IRAggExpr::First(self.node()), arena)
     }
 
+    pub fn first_non_null(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(IRAggExpr::FirstNonNull(self.node()), arena)
+    }
+
     pub fn last(self, arena: &mut Arena<AExpr>) -> Self {
         Self::agg(IRAggExpr::Last(self.node()), arena)
+    }
+
+    pub fn last_non_null(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(IRAggExpr::LastNonNull(self.node()), arena)
     }
 
     pub fn min(self, arena: &mut Arena<AExpr>) -> Self {
@@ -145,6 +161,24 @@ impl AExprBuilder {
         )
     }
 
+    pub fn min_by(self, by: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
+        let by = by.into_aexpr_builder().expr_ir_retain_name(arena);
+        Self::function(
+            vec![self.expr_ir_retain_name(arena), by],
+            IRFunctionExpr::MinBy,
+            arena,
+        )
+    }
+
+    pub fn max_by(self, by: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
+        let by = by.into_aexpr_builder().expr_ir_retain_name(arena);
+        Self::function(
+            vec![self.expr_ir_retain_name(arena), by],
+            IRFunctionExpr::MaxBy,
+            arena,
+        )
+    }
+
     pub fn sum(self, arena: &mut Arena<AExpr>) -> Self {
         Self::agg(IRAggExpr::Sum(self.node()), arena)
     }
@@ -155,6 +189,22 @@ impl AExprBuilder {
                 input: self.node(),
                 include_nulls: true,
             },
+            arena,
+        )
+    }
+
+    pub fn any_horizontal(exprs: Vec<ExprIR>, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            exprs,
+            IRFunctionExpr::Boolean(IRBooleanFunction::AnyHorizontal),
+            arena,
+        )
+    }
+
+    pub fn all_horizontal(exprs: Vec<ExprIR>, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            exprs,
+            IRFunctionExpr::Boolean(IRBooleanFunction::AllHorizontal),
             arena,
         )
     }
@@ -179,21 +229,11 @@ impl AExprBuilder {
         )
     }
 
-    pub fn explode_skip_empty(self, arena: &mut Arena<AExpr>) -> Self {
+    pub fn explode(self, arena: &mut Arena<AExpr>, options: ExplodeOptions) -> Self {
         Self::new_from_aexpr(
             AExpr::Explode {
                 expr: self.node(),
-                skip_empty: true,
-            },
-            arena,
-        )
-    }
-
-    pub fn explode_null_empty(self, arena: &mut Arena<AExpr>) -> Self {
-        Self::new_from_aexpr(
-            AExpr::Explode {
-                expr: self.node(),
-                skip_empty: false,
+                options,
             },
             arena,
         )
@@ -442,7 +482,7 @@ impl AExprBuilder {
     }
 
     pub fn divide(self, other: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
-        self.binary_op(other, Operator::Divide, arena)
+        self.binary_op(other, Operator::RustDivide, arena)
     }
 
     pub fn true_divide(self, other: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {

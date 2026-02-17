@@ -150,6 +150,7 @@ def test_datetimes() -> None:
     s=series(
         name="x",
         min_size=1,
+        excluded_dtypes=pl.Extension,  # literals with structs containing extensions are not supported yet
     ),
 )
 @settings(

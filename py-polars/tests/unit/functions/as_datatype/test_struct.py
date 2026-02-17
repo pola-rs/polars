@@ -329,7 +329,9 @@ def test_struct_aggstates_in_apply_expr_24168(
         data = df.to_dict(as_series=False)
 
         result: dict[int, Any] = {}
-        for gg, ll, rr in zip(data["g"][:n_rows], lhs[2][:n_rows], rhs[2][:n_rows]):
+        for gg, ll, rr in zip(
+            data["g"][:n_rows], lhs[2][:n_rows], rhs[2][:n_rows], strict=True
+        ):
             result.setdefault(gg, []).append({"lhs": ll, "rhs": rr})
 
         if lhs[1] and rhs[1]:
@@ -387,7 +389,7 @@ def test_struct_aggstates_partial_sort_in_apply_expr_24499(
     # check output against ground truth
     data = df.to_dict(as_series=False)
     result: dict[int, list[dict[str, int]]] = {}
-    for gg, ll, rr in zip(data["g"], lhs[1], rhs[1]):
+    for gg, ll, rr in zip(data["g"], lhs[1], rhs[1], strict=True):
         result.setdefault(gg, []).append({"lhs": ll, "rhs": rr})
 
     expected = pl.DataFrame({"g": list(result.keys()), "expr": list(result.values())})

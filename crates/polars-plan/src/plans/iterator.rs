@@ -47,10 +47,13 @@ macro_rules! push_expr {
                     Median(e) => $push($c, e),
                     NUnique(e) => $push($c, e),
                     First(e) => $push($c, e),
+                    FirstNonNull(e) => $push($c, e),
                     Last(e) => $push($c, e),
+                    LastNonNull(e) => $push($c, e),
                     Item { input, .. } => $push($c, input),
                     Implode(e) => $push($c, e),
                     Count { input, .. } => $push($c, input),
+                    // TODO: shouldn't quantile push the quantile expr as well?
                     Quantile { expr, .. } => $push($c, expr),
                     Sum(e) => $push($c, e),
                     AggGroups(e) => $push($c, e),
@@ -70,6 +73,7 @@ macro_rules! push_expr {
             },
             // we iterate in reverse order, so that the lhs is popped first and will be found
             // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
+            Display { inputs, .. } => inputs.$iter().rev().for_each(|e| $push_owned($c, e)),
             AnonymousFunction { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
             Eval {
                 expr, evaluation, ..
@@ -77,13 +81,24 @@ macro_rules! push_expr {
                 $push($c, evaluation);
                 $push($c, expr);
             },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, evaluation } => {
+                evaluation.$iter().rev().for_each(|e| $push_owned($c, e));
+                $push($c, expr);
+            },
             Function { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
             Explode { input, .. } => $push($c, input),
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling { function, .. } => $push($c, function),
+            Over {
                 function,
                 partition_by,
+                order_by,
                 ..
             } => {
+                if let Some((order_by, _)) = order_by {
+                    $push($c, order_by);
+                }
                 for e in partition_by.into_iter().rev() {
                     $push_owned($c, e)
                 }
@@ -181,7 +196,8 @@ impl<'a> Iterator for AExprIter<'a> {
             // take the arena because the bchk doesn't allow a mutable borrow to the field.
             let arena = self.arena.unwrap();
             let current_expr = arena.get(node);
-            current_expr.inputs_rev(&mut self.stack);
+            // Expressions such as StructEval may reference columns that are not input.
+            current_expr.children_rev(&mut self.stack);
 
             self.arena = Some(arena);
             (node, current_expr)

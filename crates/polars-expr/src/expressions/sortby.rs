@@ -49,7 +49,7 @@ static ERR_MSG: &str = "expressions in 'sort_by' must have matching group length
 fn check_groups(a: &GroupsType, b: &GroupsType) -> PolarsResult<()> {
     polars_ensure!(a.iter().zip(b.iter()).all(|(a, b)| {
         a.len() == b.len()
-    }), ComputeError: ERR_MSG);
+    }), ShapeMismatch: ERR_MSG);
     Ok(())
 }
 
@@ -96,10 +96,8 @@ fn sort_by_groups_single_by(
             map_sorted_indices_to_group_slice(&sorted_idx, first)
         },
     };
-    let first = new_idx
-        .first()
-        .ok_or_else(|| polars_err!(ComputeError: "{}", ERR_MSG))?;
 
+    let first = new_idx.first().unwrap_or(&0);
     Ok((*first, new_idx))
 }
 
@@ -312,6 +310,12 @@ impl PhysicalExpr for SortByExpr {
                 .all(|ac_sort_by| ac_sort_by.groups.len() == ac_in.groups.len())
         );
 
+        // Enable reliable length checks downstream
+        ac_in.set_groups_for_undefined_agg_states();
+        ac_sort_by
+            .iter_mut()
+            .for_each(|ac| ac.set_groups_for_undefined_agg_states());
+
         // If every input is a LiteralScalar, we return a LiteralScalar.
         // Otherwise, we convert any LiteralScalar to AggregatedList.
         let all_literal = matches!(ac_in.state, AggState::LiteralScalar(_))
@@ -412,7 +416,15 @@ impl PhysicalExpr for SortByExpr {
         // group_by operation - we must ensure that we are as well.
         if ordered_by_group_operation {
             let s = ac_in.aggregated();
-            ac_in.with_values(s.explode(false).unwrap(), false, None)?;
+            ac_in.with_values(
+                s.explode(ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                })
+                .unwrap(),
+                false,
+                None,
+            )?;
         }
 
         ac_in.with_groups(groups.into_sliceable());

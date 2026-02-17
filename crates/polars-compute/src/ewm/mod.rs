@@ -1,4 +1,14 @@
+pub mod cov;
 pub mod mean;
+pub mod options;
+use arrow::array::Array;
+pub use cov::{EwmCovState, EwmStdState, EwmVarState, ewm_std, ewm_var};
+pub use mean::{EwmMeanState, ewm_mean};
+pub use options::EWMOptions;
+
+pub trait EwmStateUpdate {
+    fn ewm_state_update(&mut self, values: &dyn Array) -> Box<dyn Array>;
+}
 
 #[cfg(test)]
 macro_rules! assert_allclose {

@@ -3,7 +3,7 @@ use super::*;
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_hconcat(
     proj_pd: &mut ProjectionPushDown,
-    inputs: Vec<Node>,
+    mut inputs: Vec<Node>,
     schema: SchemaRef,
     options: HConcatOptions,
     ctx: ProjectionContext,
@@ -19,13 +19,26 @@ pub(super) fn process_hconcat(
     } else {
         let mut remaining_projections: PlHashSet<_> = ctx.acc_projections.into_iter().collect();
 
-        for input in inputs.iter() {
+        let mut result = Ok(());
+        inputs.retain(|input| {
             let mut input_pushdown = Vec::new();
             let input_schema = lp_arena.get(*input).schema(lp_arena);
 
             for proj in remaining_projections.iter() {
                 if check_input_column_node(*proj, input_schema.as_ref(), expr_arena) {
                     input_pushdown.push(*proj);
+                }
+            }
+
+            if input_pushdown.is_empty() {
+                // we can ignore this input since no columns are needed
+                if options.strict {
+                    return false;
+                }
+                // we read a single column (needed to compute the correct height)
+                if let Some((name, _)) = input_schema.get_at_index(0) {
+                    let node = expr_arena.add(AExpr::Column(name.clone()));
+                    input_pushdown.push(ColumnNode(node));
                 }
             }
 
@@ -37,8 +50,12 @@ pub(super) fn process_hconcat(
                 }
             }
             let ctx = ProjectionContext::new(input_pushdown, input_names, ctx.inner);
-            proj_pd.pushdown_and_assign(*input, ctx, lp_arena, expr_arena)?;
-        }
+            if let Err(e) = proj_pd.pushdown_and_assign(*input, ctx, lp_arena, expr_arena) {
+                result = Err(e);
+            }
+            true
+        });
+        result?;
 
         let mut schemas = Vec::with_capacity(inputs.len());
         for input in inputs.iter() {

@@ -1,0 +1,417 @@
+use std::hash::{Hash, Hasher};
+
+use hashbrown::hash_map::RawEntryMut;
+use polars_utils::unique_id::UniqueId;
+
+use super::*;
+use crate::prelude::visitor::IRNode;
+
+struct Blake3Hasher {
+    hasher: blake3::Hasher,
+}
+
+impl Blake3Hasher {
+    fn new() -> Self {
+        Self {
+            hasher: blake3::Hasher::new(),
+        }
+    }
+
+    fn finalize(self) -> [u8; 32] {
+        self.hasher.finalize().into()
+    }
+}
+
+impl Hasher for Blake3Hasher {
+    fn finish(&self) -> u64 {
+        // Not used - we'll call finalize() instead
+        0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.hasher.update(bytes);
+    }
+}
+
+mod identifier_impl {
+    use super::*;
+    #[derive(Clone)]
+    pub(super) struct Identifier {
+        inner: Option<[u8; 32]>,
+    }
+
+    impl Identifier {
+        pub fn hash(&self) -> u64 {
+            self.inner
+                .map(|inner| u64::from_le_bytes(inner[0..8].try_into().unwrap()))
+                .unwrap_or(0)
+        }
+
+        pub fn is_equal(&self, other: &Self) -> bool {
+            self.inner.map(blake3::Hash::from_bytes) == other.inner.map(blake3::Hash::from_bytes)
+        }
+
+        pub fn new() -> Self {
+            Self { inner: None }
+        }
+
+        pub fn is_valid(&self) -> bool {
+            self.inner.is_some()
+        }
+
+        pub fn combine(&mut self, other: &Identifier) {
+            let inner = match (self.inner, other.inner) {
+                (Some(l), Some(r)) => {
+                    let mut h = blake3::Hasher::new();
+                    h.update(&l);
+                    h.update(&r);
+                    *h.finalize().as_bytes()
+                },
+                (None, Some(r)) => r,
+                (Some(l), None) => l,
+                _ => return,
+            };
+            self.inner = Some(inner);
+        }
+
+        pub fn add_alp_node(
+            &self,
+            alp: &IRNode,
+            lp_arena: &Arena<IR>,
+            expr_arena: &Arena<AExpr>,
+        ) -> Self {
+            let mut h = Blake3Hasher::new();
+            alp.hashable_and_cmp(lp_arena, expr_arena)
+                .hash_as_equality()
+                .hash(&mut h);
+            let hashed = h.finalize();
+
+            let inner = Some(self.inner.map_or(hashed, |l| {
+                let mut h = blake3::Hasher::new();
+                h.update(&l);
+                h.update(&hashed);
+                *h.finalize().as_bytes()
+            }));
+            Self { inner }
+        }
+    }
+}
+use identifier_impl::*;
+
+struct IdentifierMap<V> {
+    inner: PlHashMap<Identifier, V>,
+}
+
+impl<V> IdentifierMap<V> {
+    fn new() -> Self {
+        Self {
+            inner: Default::default(),
+        }
+    }
+
+    fn get(&self, id: &Identifier) -> Option<&V> {
+        self.inner
+            .raw_entry()
+            .from_hash(id.hash(), |k| k.is_equal(id))
+            .map(|(_k, v)| v)
+    }
+
+    fn entry<F: FnOnce() -> V>(&mut self, id: Identifier, v: F) -> &mut V {
+        let h = id.hash();
+        match self.inner.raw_entry_mut().from_hash(h, |k| k.is_equal(&id)) {
+            RawEntryMut::Occupied(entry) => entry.into_mut(),
+            RawEntryMut::Vacant(entry) => {
+                let (_, v) = entry.insert_with_hasher(h, id, v(), |id| id.hash());
+                v
+            },
+        }
+    }
+}
+
+impl<V> Default for IdentifierMap<V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+/// Identifier maps to Expr Node and count.
+type SubPlanCount = IdentifierMap<(Node, u32)>;
+/// (post_visit_idx, identifier);
+type IdentifierArray = Vec<(usize, Identifier)>;
+
+/// See Expr based CSE for explanations.
+enum VisitRecord {
+    /// Entered a new plan node
+    Entered(usize),
+    SubPlanId(Identifier),
+}
+
+struct LpIdentifierVisitor<'a> {
+    sp_count: &'a mut SubPlanCount,
+    identifier_array: &'a mut IdentifierArray,
+    // Index in pre-visit traversal order.
+    pre_visit_idx: usize,
+    post_visit_idx: usize,
+    visit_stack: Vec<VisitRecord>,
+    has_subplan: bool,
+}
+
+impl LpIdentifierVisitor<'_> {
+    fn new<'a>(
+        sp_count: &'a mut SubPlanCount,
+        identifier_array: &'a mut IdentifierArray,
+    ) -> LpIdentifierVisitor<'a> {
+        LpIdentifierVisitor {
+            sp_count,
+            identifier_array,
+            pre_visit_idx: 0,
+            post_visit_idx: 0,
+            visit_stack: vec![],
+            has_subplan: false,
+        }
+    }
+
+    fn pop_until_entered(&mut self) -> (usize, Identifier) {
+        let mut id = Identifier::new();
+
+        while let Some(item) = self.visit_stack.pop() {
+            match item {
+                VisitRecord::Entered(idx) => return (idx, id),
+                VisitRecord::SubPlanId(s) => {
+                    id.combine(&s);
+                },
+            }
+        }
+        unreachable!()
+    }
+}
+
+fn skip_children(lp: &IR) -> bool {
+    match lp {
+        // Don't visit all the files in a `scan *` operation.
+        // Put an arbitrary limit to 20 files now.
+        IR::Union {
+            options, inputs, ..
+        } => options.from_partitioned_ds && inputs.len() > 20,
+        _ => false,
+    }
+}
+
+impl Visitor for LpIdentifierVisitor<'_> {
+    type Node = IRNode;
+    type Arena = IRNodeArena;
+
+    fn pre_visit(
+        &mut self,
+        node: &Self::Node,
+        arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
+        self.visit_stack
+            .push(VisitRecord::Entered(self.pre_visit_idx));
+        self.pre_visit_idx += 1;
+
+        self.identifier_array.push((0, Identifier::new()));
+
+        if skip_children(node.to_alp(&arena.0)) {
+            Ok(VisitRecursion::Skip)
+        } else {
+            Ok(VisitRecursion::Continue)
+        }
+    }
+
+    fn post_visit(
+        &mut self,
+        node: &Self::Node,
+        arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
+        self.post_visit_idx += 1;
+
+        let (pre_visit_idx, sub_plan_id) = self.pop_until_entered();
+
+        // Create the Id of this node.
+        let id = sub_plan_id.add_alp_node(node, &arena.0, &arena.1);
+
+        // Store the created id.
+        self.identifier_array[pre_visit_idx] = (self.post_visit_idx, id.clone());
+
+        // We popped until entered, push this Id on the stack so the trail
+        // is available for the parent plan.
+        self.visit_stack.push(VisitRecord::SubPlanId(id.clone()));
+
+        let (_, sp_count) = self.sp_count.entry(id, || (node.node(), 0));
+        *sp_count += 1;
+        self.has_subplan |= *sp_count > 1;
+        Ok(VisitRecursion::Continue)
+    }
+}
+
+pub(super) type CacheId2Caches = PlHashMap<UniqueId, (u32, Vec<Node>)>;
+
+struct CommonSubPlanRewriter<'a> {
+    sp_count: &'a SubPlanCount,
+    identifier_array: &'a IdentifierArray,
+
+    max_post_visit_idx: usize,
+    /// index in traversal order in which `identifier_array`
+    /// was written. This is the index in `identifier_array`.
+    visited_idx: usize,
+    /// Indicates if this expression is rewritten.
+    rewritten: bool,
+    cache_id: IdentifierMap<UniqueId>,
+    // Maps cache_id : (cache_count and cache_nodes)
+    cache_id_to_caches: CacheId2Caches,
+}
+
+impl<'a> CommonSubPlanRewriter<'a> {
+    fn new(sp_count: &'a SubPlanCount, identifier_array: &'a IdentifierArray) -> Self {
+        Self {
+            sp_count,
+            identifier_array,
+            max_post_visit_idx: 0,
+            visited_idx: 0,
+            rewritten: false,
+            cache_id: Default::default(),
+            cache_id_to_caches: Default::default(),
+        }
+    }
+}
+
+impl RewritingVisitor for CommonSubPlanRewriter<'_> {
+    type Node = IRNode;
+    type Arena = IRNodeArena;
+
+    fn pre_visit(
+        &mut self,
+        lp_node: &Self::Node,
+        arena: &mut Self::Arena,
+    ) -> PolarsResult<RewriteRecursion> {
+        if self.visited_idx >= self.identifier_array.len()
+            || self.max_post_visit_idx > self.identifier_array[self.visited_idx].0
+        {
+            return Ok(RewriteRecursion::Stop);
+        }
+
+        let id = &self.identifier_array[self.visited_idx].1;
+
+        // Id placeholder not overwritten, so we can skip this sub-expression.
+        if !id.is_valid() {
+            self.visited_idx += 1;
+            return Ok(RewriteRecursion::NoMutateAndContinue);
+        }
+
+        let Some((_, count)) = self.sp_count.get(id) else {
+            self.visited_idx += 1;
+            return Ok(RewriteRecursion::NoMutateAndContinue);
+        };
+
+        if *count > 1 {
+            // Rewrite this sub-plan, don't visit its children
+            Ok(RewriteRecursion::MutateAndStop)
+        }
+        // Never mutate if count <= 1. The post-visit will search for the node, and not be able to find it
+        else {
+            // Don't traverse the children.
+            if skip_children(lp_node.to_alp(&arena.0)) {
+                return Ok(RewriteRecursion::Stop);
+            }
+            // This is a unique plan
+            // visit its children to see if they are cse
+            self.visited_idx += 1;
+            Ok(RewriteRecursion::NoMutateAndContinue)
+        }
+    }
+
+    fn mutate(
+        &mut self,
+        mut node: Self::Node,
+        arena: &mut Self::Arena,
+    ) -> PolarsResult<Self::Node> {
+        let (post_visit_count, id) = &self.identifier_array[self.visited_idx];
+        self.visited_idx += 1;
+
+        if *post_visit_count < self.max_post_visit_idx {
+            return Ok(node);
+        }
+        self.max_post_visit_idx = *post_visit_count;
+        while self.visited_idx < self.identifier_array.len()
+            && *post_visit_count > self.identifier_array[self.visited_idx].0
+        {
+            self.visited_idx += 1;
+        }
+
+        let cache_id = *self.cache_id.entry(id.clone(), UniqueId::new);
+        let cache_count = self.sp_count.get(id).unwrap().1;
+
+        let cache_node = IR::Cache {
+            input: node.node(),
+            id: cache_id,
+        };
+        node.assign(cache_node, &mut arena.0);
+        let (_count, nodes) = self
+            .cache_id_to_caches
+            .entry(cache_id)
+            .or_insert_with(|| (cache_count, vec![]));
+        nodes.push(node.node());
+        self.rewritten = true;
+        Ok(node)
+    }
+}
+
+fn insert_caches(
+    root: Node,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> (Node, bool, CacheId2Caches) {
+    let mut sp_count = Default::default();
+    let mut id_array = Default::default();
+
+    with_ir_arena(lp_arena, expr_arena, |arena| {
+        let lp_node = IRNode::new_mutate(root);
+        let mut visitor = LpIdentifierVisitor::new(&mut sp_count, &mut id_array);
+
+        lp_node.visit(&mut visitor, arena).map(|_| ()).unwrap();
+
+        if visitor.has_subplan {
+            let lp_node = IRNode::new_mutate(root);
+            let mut rewriter = CommonSubPlanRewriter::new(&sp_count, &id_array);
+            lp_node.rewrite(&mut rewriter, arena).unwrap();
+
+            (root, rewriter.rewritten, rewriter.cache_id_to_caches)
+        } else {
+            (root, false, Default::default())
+        }
+    })
+}
+
+/// Prune unused caches.
+/// In the query below the query will be insert cache 0 with a count of 2 on `lf.select`
+/// and cache 1 with a count of 3 on `lf`. But because cache 0 is higher in the chain cache 1
+/// will never be used. So we prune caches that don't fit their count.
+///
+/// `conctat([lf.select(), lf.select(), lf])`
+fn prune_unused_caches(lp_arena: &mut Arena<IR>, cid2c: &CacheId2Caches) {
+    for (count, nodes) in cid2c.values() {
+        if *count == nodes.len() as u32 {
+            continue;
+        }
+
+        for node in nodes {
+            let IR::Cache { input, .. } = lp_arena.get(*node) else {
+                unreachable!()
+            };
+            lp_arena.swap(*input, *node)
+        }
+    }
+}
+
+pub(super) fn elim_cmn_subplans(
+    root: Node,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> (Node, bool, CacheId2Caches) {
+    let (lp, changed, cid2c) = insert_caches(root, lp_arena, expr_arena);
+    if changed {
+        prune_unused_caches(lp_arena, &cid2c);
+    }
+
+    (lp, changed, cid2c)
+}

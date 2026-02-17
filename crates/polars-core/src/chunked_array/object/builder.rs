@@ -3,6 +3,7 @@ use arrow::bitmap::BitmapBuilder;
 use polars_utils::vec::PushUnchecked;
 
 use super::*;
+use crate::chunked_array::object::registry::run_with_gil;
 use crate::utils::get_iter_capacity;
 
 pub struct ObjectChunkedBuilder<T> {
@@ -67,6 +68,7 @@ where
             .unwrap_or(0);
 
         let arr = Box::new(ObjectArray {
+            dtype: ArrowDataType::FixedSizeBinary(size_of::<T>()),
             values: self.values.into(),
             validity: null_bitmap,
         });
@@ -134,6 +136,7 @@ where
         let field = Arc::new(Field::new(name, DataType::Object(T::type_name())));
         let len = v.len();
         let arr = Box::new(ObjectArray {
+            dtype: ArrowDataType::FixedSizeBinary(size_of::<T>()),
             values: v.into(),
             validity: None,
         });
@@ -150,6 +153,7 @@ where
         let len = v.len();
         let null_count = validity.as_ref().map(|v| v.unset_bits()).unwrap_or(0);
         let arr = Box::new(ObjectArray {
+            dtype: ArrowDataType::FixedSizeBinary(size_of::<T>()),
             values: v.into(),
             validity,
         });
@@ -169,10 +173,8 @@ pub(crate) fn object_series_to_arrow_array(s: &Series) -> ArrayRef {
 
     // SAFETY: 0..len is in bounds
     let list_s = unsafe {
-        s.agg_list(&GroupsType::Slice {
-            groups: vec![[0, s.len() as IdxSize]],
-            overlapping: false,
-        })
+        let groups = vec![[0, s.len() as IdxSize]];
+        s.agg_list(&GroupsType::new_slice(groups, false, true))
     };
     let arr = &list_s.chunks()[0];
     let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
@@ -191,6 +193,7 @@ impl<T: PolarsObject> ArrayBuilder for ObjectChunkedBuilder<T> {
 
     fn freeze(self) -> Box<dyn Array> {
         Box::new(ObjectArray {
+            dtype: ArrowDataType::FixedSizeBinary(size_of::<T>()),
             values: self.values.into(),
             validity: self.bitmask_builder.into_opt_validity(),
         })
@@ -198,6 +201,7 @@ impl<T: PolarsObject> ArrayBuilder for ObjectChunkedBuilder<T> {
 
     fn freeze_reset(&mut self) -> Box<dyn Array> {
         Box::new(ObjectArray {
+            dtype: ArrowDataType::FixedSizeBinary(size_of::<T>()),
             values: core::mem::take(&mut self.values).into(),
             validity: core::mem::take(&mut self.bitmask_builder).into_opt_validity(),
         })
@@ -208,7 +212,9 @@ impl<T: PolarsObject> ArrayBuilder for ObjectChunkedBuilder<T> {
     }
 
     fn extend_nulls(&mut self, length: usize) {
-        self.values.resize(self.values.len() + length, T::default());
+        run_with_gil(|| {
+            self.values.resize(self.values.len() + length, T::default());
+        });
         self.bitmask_builder.extend_constant(length, false);
     }
 
@@ -219,11 +225,13 @@ impl<T: PolarsObject> ArrayBuilder for ObjectChunkedBuilder<T> {
         length: usize,
         _share: ShareStrategy,
     ) {
-        let other: &ObjectArray<T> = other.as_any().downcast_ref().unwrap();
-        self.values
-            .extend_from_slice(&other.values[start..start + length]);
-        self.bitmask_builder
-            .subslice_extend_from_opt_validity(other.validity(), start, length);
+        run_with_gil(|| {
+            let other: &ObjectArray<T> = other.as_any().downcast_ref().unwrap();
+            self.values
+                .extend_from_slice(&other.values[start..start + length]);
+            self.bitmask_builder
+                .subslice_extend_from_opt_validity(other.validity(), start, length);
+        })
     }
 
     fn subslice_extend_repeated(
@@ -232,11 +240,20 @@ impl<T: PolarsObject> ArrayBuilder for ObjectChunkedBuilder<T> {
         start: usize,
         length: usize,
         repeats: usize,
-        share: ShareStrategy,
+        _share: ShareStrategy,
     ) {
-        for _ in 0..repeats {
-            self.subslice_extend(other, start, length, share)
-        }
+        run_with_gil(|| {
+            for _ in 0..repeats {
+                let other: &ObjectArray<T> = other.as_any().downcast_ref().unwrap();
+                self.values
+                    .extend_from_slice(&other.values[start..start + length]);
+                self.bitmask_builder.subslice_extend_from_opt_validity(
+                    other.validity(),
+                    start,
+                    length,
+                );
+            }
+        })
     }
 
     fn subslice_extend_each_repeated(
@@ -247,16 +264,19 @@ impl<T: PolarsObject> ArrayBuilder for ObjectChunkedBuilder<T> {
         repeats: usize,
         _share: ShareStrategy,
     ) {
-        let other: &ObjectArray<T> = other.as_any().downcast_ref().unwrap();
+        run_with_gil(|| {
+            let other: &ObjectArray<T> = other.as_any().downcast_ref().unwrap();
 
-        self.values.reserve(length * repeats);
-        for value in other.values[start..start + length].iter() {
-            unsafe {
-                for _ in 0..repeats {
-                    self.values.push_unchecked(value.clone());
+            self.values.reserve(length * repeats);
+            for value in other.values[start..start + length].iter() {
+                unsafe {
+                    for _ in 0..repeats {
+                        self.values.push_unchecked(value.clone());
+                    }
                 }
             }
-        }
+        });
+
         self.bitmask_builder
             .subslice_extend_each_repeated_from_opt_validity(
                 other.validity(),
@@ -267,30 +287,34 @@ impl<T: PolarsObject> ArrayBuilder for ObjectChunkedBuilder<T> {
     }
 
     unsafe fn gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], _share: ShareStrategy) {
-        let other: &ObjectArray<T> = other.as_any().downcast_ref().unwrap();
-        let other_values_slice = other.values.as_slice();
-        self.values.extend(
-            idxs.iter()
-                .map(|idx| other_values_slice.get_unchecked(*idx as usize).clone()),
-        );
+        run_with_gil(|| {
+            let other: &ObjectArray<T> = other.as_any().downcast_ref().unwrap();
+            let other_values_slice = other.values.as_slice();
+            self.values.extend(
+                idxs.iter()
+                    .map(|idx| other_values_slice.get_unchecked(*idx as usize).clone()),
+            );
+        });
         self.bitmask_builder
             .gather_extend_from_opt_validity(other.validity(), idxs, other.len());
     }
 
     fn opt_gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], _share: ShareStrategy) {
-        let other: &ObjectArray<T> = other.as_any().downcast_ref().unwrap();
-        let other_values_slice = other.values.as_slice();
-        self.values.reserve(idxs.len());
-        unsafe {
-            for idx in idxs {
-                let val = if (*idx as usize) < other.len() {
-                    other_values_slice.get_unchecked(*idx as usize).clone()
-                } else {
-                    T::default()
-                };
-                self.values.push_unchecked(val);
+        run_with_gil(|| {
+            let other: &ObjectArray<T> = other.as_any().downcast_ref().unwrap();
+            let other_values_slice = other.values.as_slice();
+            self.values.reserve(idxs.len());
+            unsafe {
+                for idx in idxs {
+                    let val = if (*idx as usize) < other.len() {
+                        other_values_slice.get_unchecked(*idx as usize).clone()
+                    } else {
+                        T::default()
+                    };
+                    self.values.push_unchecked(val);
+                }
             }
-        }
+        });
         self.bitmask_builder.opt_gather_extend_from_opt_validity(
             other.validity(),
             idxs,

@@ -798,7 +798,7 @@ def test_read_database_uri_parameterised(
     #  no connectorx support for execute_options
     with pytest.raises(
         ValueError,
-        match="connectorx.*does not support.*execute_options",
+        match=r"connectorx.*does not support.*execute_options",
     ):
         pl.read_database_uri(
             query.format(n=":n"),
@@ -856,7 +856,7 @@ def test_read_database_uri_parameterised_multiple(
     #  no connectorx support for execute_options
     with pytest.raises(
         ValueError,
-        match="connectorx.*does not support.*execute_options",
+        match=r"connectorx.*does not support.*execute_options",
     ):
         pl.read_database_uri(
             query.format(param_1="?", param_2="?"),
@@ -938,7 +938,7 @@ def test_read_database_mocked(
         assert isinstance(res, GeneratorType)
         res = pl.concat(res)
 
-    res = cast(pl.DataFrame, res)
+    res = cast("pl.DataFrame", res)
     assert expected_call in mc.cursor().called
     assert res.rows() == [(1, "aa"), (2, "bb"), (3, "cc")]
 
@@ -1131,7 +1131,7 @@ def test_read_database_duplicate_column_error(tmp_sqlite_db: Path, query: str) -
     alchemy_conn = create_engine(f"sqlite:///{tmp_sqlite_db}").connect()
     with pytest.raises(
         DuplicateError,
-        match="column .+ appears more than once in the query/result cursor",
+        match=r"column .+ appears more than once in the query/result cursor",
     ):
         pl.read_database(query, connection=alchemy_conn)
 
@@ -1146,78 +1146,6 @@ def test_read_database_duplicate_column_error(tmp_sqlite_db: Path, query: str) -
 def test_read_database_cx_credentials(uri: str) -> None:
     with pytest.raises(RuntimeError, match=r"Source.*not supported"):
         pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
-
-
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="kuzu segfaults on windows: https://github.com/pola-rs/polars/actions/runs/12502055945/job/34880479875?pr=20462",
-)
-@pytest.mark.write_disk
-def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
-    import kuzu
-
-    tmp_path.mkdir(exist_ok=True)
-    if (kuzu_test_db := (tmp_path / "kuzu_test.db")).exists():
-        kuzu_test_db.unlink()
-
-    test_db = str(kuzu_test_db).replace("\\", "/")
-
-    db = kuzu.Database(test_db)
-    conn = kuzu.Connection(db)
-    conn.execute("CREATE NODE TABLE User(name STRING, age UINT64, PRIMARY KEY (name))")
-    conn.execute("CREATE REL TABLE Follows(FROM User TO User, since INT64)")
-
-    users = str(io_files_path / "graph-data" / "user.csv").replace("\\", "/")
-    follows = str(io_files_path / "graph-data" / "follows.csv").replace("\\", "/")
-
-    conn.execute(f'COPY User FROM "{users}"')
-    conn.execute(f'COPY Follows FROM "{follows}"')
-
-    # basic: single relation
-    df1 = pl.read_database(
-        query="MATCH (u:User) RETURN u.name, u.age",
-        connection=conn,
-    )
-    assert_frame_equal(
-        df1,
-        pl.DataFrame(
-            {
-                "u.name": ["Adam", "Karissa", "Zhang", "Noura"],
-                "u.age": [30, 40, 50, 25],
-            },
-            schema={"u.name": pl.Utf8, "u.age": pl.UInt64},
-        ),
-    )
-
-    # join: connected edges/relations
-    df2 = pl.read_database(
-        query="MATCH (a:User)-[f:Follows]->(b:User) RETURN a.name, f.since, b.name",
-        connection=conn,
-        schema_overrides={"f.since": pl.Int16},
-    )
-    assert_frame_equal(
-        df2,
-        pl.DataFrame(
-            {
-                "a.name": ["Adam", "Adam", "Karissa", "Zhang"],
-                "f.since": [2020, 2020, 2021, 2022],
-                "b.name": ["Karissa", "Zhang", "Zhang", "Noura"],
-            },
-            schema={"a.name": pl.Utf8, "f.since": pl.Int16, "b.name": pl.Utf8},
-        ),
-    )
-
-    # empty: no results for the given query
-    df3 = pl.read_database(
-        query="MATCH (a:User)-[f:Follows]->(b:User) WHERE a.name = '🔎️' RETURN a.name, f.since, b.name",
-        connection=conn,
-    )
-    assert_frame_equal(
-        df3,
-        pl.DataFrame(
-            schema={"a.name": pl.Utf8, "f.since": pl.Int64, "b.name": pl.Utf8}
-        ),
-    )
 
 
 def test_sqlalchemy_row_init(tmp_sqlite_db: Path) -> None:
@@ -1288,7 +1216,7 @@ def test_read_database_uri_pre_execution_not_supported_exception(
     with (
         pytest.raises(
             ValueError,
-            match="'pre_execution_query' is only supported in connectorx version 0.4.2 or later",
+            match=r"'pre_execution_query' is only supported in connectorx version 0\.4\.2 or later",
         ),
     ):
         pl.read_database_uri(

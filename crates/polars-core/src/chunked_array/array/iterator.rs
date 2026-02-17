@@ -121,7 +121,7 @@ impl ArrayChunked {
     /// Apply a closure `F` to each array.
     ///
     /// # Safety
-    /// Return series of `F` must has the same dtype and number of elements as input.
+    /// The closure `F` must return the same dtype and number of elements as the input.
     #[must_use]
     pub unsafe fn apply_amortized_same_type<F>(&self, mut f: F) -> Self
     where
@@ -143,7 +143,7 @@ impl ArrayChunked {
     /// Try apply a closure `F` to each array.
     ///
     /// # Safety
-    /// Return series of `F` must has the same dtype and number of elements as input if it is Ok.
+    /// The closure `F` must return the same dtype and number of elements as the input.
     pub unsafe fn try_apply_amortized_same_type<F>(&self, mut f: F) -> PolarsResult<Self>
     where
         F: FnMut(AmortSeries) -> PolarsResult<Series>,
@@ -166,7 +166,7 @@ impl ArrayChunked {
     /// Zip with a `ChunkedArray` then apply a binary function `F` elementwise.
     ///
     /// # Safety
-    //  Return series of `F` must has the same dtype and number of elements as input series.
+    /// The closure `F` must return the same dtype and number of elements as the input.
     #[must_use]
     pub unsafe fn zip_and_apply_amortized_same_type<'a, T, F>(
         &'a self,

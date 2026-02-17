@@ -31,6 +31,15 @@ class ExprMetaNameSpace:
     def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
+    def __str__(self) -> str:
+        return f"{wrap_expr(self._pyexpr).__str__()}.meta"
+
+    def __repr__(self) -> str:
+        return f"{wrap_expr(self._pyexpr).__repr__()}.meta"
+
+    def __hash__(self) -> int:
+        return self._pyexpr.__hash__()
+
     def __eq__(self, other: ExprMetaNameSpace | Expr) -> bool:  # type: ignore[override]
         return self._pyexpr.meta_eq(other._pyexpr)
 
@@ -272,6 +281,10 @@ class ExprMetaNameSpace:
         """
         return wrap_expr(self._pyexpr.meta_undo_aliases())
 
+    def as_expression(self) -> Expr:
+        """Return the original expression."""
+        return wrap_expr(self._pyexpr)
+
     def as_selector(self) -> pl.Selector:
         """
         Try to turn this expression in a selector.
@@ -380,7 +393,7 @@ class ExprMetaNameSpace:
         self, *, return_as_string: Literal[True], schema: None | SchemaDict = None
     ) -> str: ...
 
-    def tree_format(  # noqa: D417 (TODO: document schema parameter)
+    def tree_format(
         self, *, return_as_string: bool = False, schema: None | SchemaDict = None
     ) -> str | None:
         """
@@ -390,6 +403,10 @@ class ExprMetaNameSpace:
         ----------
         return_as_string:
             If True, return as string rather than printing to stdout.
+        schema
+            Optionally provide a schema for the expression tree formatter.
+            This is a mapping of column names to their data types. If provided,
+            it may be used to enhance the tree formatting with type information.
 
         Examples
         --------
@@ -403,7 +420,7 @@ class ExprMetaNameSpace:
             print(s)
             return None
 
-    def show_graph(  # noqa: D417 (TODO: document schema parameter)
+    def show_graph(
         self,
         *,
         show: bool = True,
@@ -428,6 +445,10 @@ class ExprMetaNameSpace:
             Return dot syntax. This cannot be combined with `show` and/or `output_path`.
         figsize
             Passed to matplotlib if `show == True`.
+        schema
+            Optionally provide a schema for the expression tree formatter.
+            This is a mapping of column names to their data types. If provided,
+            it may be used to enhance the tree formatting with type information.
 
         Examples
         --------
@@ -442,3 +463,6 @@ class ExprMetaNameSpace:
             raw_output=raw_output,
             figsize=figsize,
         )
+
+    def _replace_element(self, expr: Expr) -> Expr:
+        return wrap_expr(self._pyexpr.meta_replace_element(expr._pyexpr))

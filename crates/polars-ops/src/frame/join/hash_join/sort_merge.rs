@@ -78,6 +78,10 @@ pub(super) fn par_sorted_merge_left(
         DataType::Int128 => {
             par_sorted_merge_left_impl(s_left.i128().unwrap(), s_right.i128().unwrap())
         },
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            par_sorted_merge_left_impl(s_left.f16().unwrap(), s_right.f16().unwrap())
+        },
         DataType::Float32 => {
             par_sorted_merge_left_impl(s_left.f32().unwrap(), s_right.f32().unwrap())
         },
@@ -157,6 +161,10 @@ pub(super) fn par_sorted_merge_inner_no_nulls(
         #[cfg(feature = "dtype-i128")]
         DataType::Int128 => {
             par_sorted_merge_inner_impl(s_left.i128().unwrap(), s_right.i128().unwrap())
+        },
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            par_sorted_merge_inner_impl(s_left.f16().unwrap(), s_right.f16().unwrap())
         },
         DataType::Float32 => {
             par_sorted_merge_inner_impl(s_left.f32().unwrap(), s_right.f32().unwrap())

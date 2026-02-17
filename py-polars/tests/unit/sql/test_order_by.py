@@ -6,6 +6,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from tests.unit.sql.asserts import assert_sql_matches
 
 
 @pytest.fixture
@@ -256,3 +257,87 @@ def test_order_by_errors() -> None:
         match="negative ordinal values are invalid for ORDER BY; found -1",
     ):
         df.sql("SELECT * FROM self ORDER BY -1")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # basic aliasing: ORDER BY original column name after aliasing
+        "SELECT a b FROM self GROUP BY a ORDER BY a",
+        "SELECT a AS b FROM self GROUP BY a ORDER BY a",
+        # table-qualified aliasing
+        "SELECT self.a b FROM self GROUP BY self.a ORDER BY self.a",
+        "SELECT self.a AS b FROM self GROUP BY self.a ORDER BY self.a",
+        # mixed qualified/unqualified
+        "SELECT a b FROM self GROUP BY a ORDER BY self.a",
+        "SELECT self.a b FROM self GROUP BY a ORDER BY a",
+        # ORDER BY alias name (should still work)
+        "SELECT a b FROM self GROUP BY a ORDER BY b",
+        "SELECT a AS b FROM self GROUP BY a ORDER BY b",
+    ],
+)
+def test_order_by_aliased_group_key(query: str) -> None:
+    """Test ORDER BY with original column name when aliased in SELECT."""
+    df = pl.DataFrame({"a": [3, 1, 2], "b": [30, 10, 20]})
+    assert_sql_matches(df, query=query, compare_with="sqlite")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # cross-aliasing: columns swap names
+        "SELECT a AS b, b AS a FROM self GROUP BY a, b ORDER BY self.a",
+        "SELECT a AS b, b AS a FROM self GROUP BY a, b ORDER BY self.b",
+        # cross-aliasing with expressions
+        "SELECT a AS b, -b AS a FROM self GROUP BY a, b ORDER BY self.a",
+        "SELECT a AS b, -b AS a FROM self GROUP BY a, b ORDER BY self.b",
+        # cross-aliasing with aggregate
+        "SELECT a AS b, SUM(b) AS a FROM self GROUP BY a ORDER BY self.a",
+        "SELECT a AS b, SUM(b) AS a FROM self GROUP BY a ORDER BY self.b",
+    ],
+)
+def test_order_by_cross_aliased_columns(query: str) -> None:
+    """Test ORDER BY with cross-aliasing where columns swap names."""
+    df = pl.DataFrame({"a": [3, 1, 2], "b": [30, 10, 20]})
+    assert_sql_matches(df, query=query, compare_with="sqlite")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # multiple columns with various aliasing patterns
+        "SELECT a x, b y, a + b z FROM self GROUP BY a, b ORDER BY a",
+        "SELECT a x, b y, a + b z FROM self GROUP BY a, b ORDER BY self.a",
+        "SELECT a x, b y, a + b z FROM self GROUP BY a, b ORDER BY b DESC",
+        "SELECT a x, b y, a + b z FROM self GROUP BY a, b ORDER BY self.b DESC",
+        # ORDER BY referencing original columns
+        "SELECT a x, b y FROM self GROUP BY a, b ORDER BY a + b",
+        "SELECT a x, b y FROM self GROUP BY a, b ORDER BY self.a + self.b",
+        # ORDER BY with ordinal
+        "SELECT a x, b y FROM self GROUP BY a, b ORDER BY 1",
+        "SELECT a x, b y FROM self GROUP BY a, b ORDER BY 2 DESC",
+    ],
+)
+def test_order_by_multi_column_aliasing(query: str) -> None:
+    """Test ORDER BY with multiple aliased columns and expressions."""
+    df = pl.DataFrame({"a": [3, 1, 2, 4], "b": [30, 10, 20, 15]})
+    assert_sql_matches(df, query=query, compare_with="sqlite")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # aggregate with aliased group key
+        "SELECT a grp, SUM(b) total FROM self GROUP BY a ORDER BY a",
+        "SELECT a grp, SUM(b) total FROM self GROUP BY a ORDER BY self.a",
+        "SELECT a grp, SUM(b) total FROM self GROUP BY a ORDER BY grp",
+        "SELECT a grp, SUM(b) total FROM self GROUP BY a ORDER BY total DESC",
+        # multiple aggregates
+        "SELECT a grp, SUM(b) s, AVG(b) avg FROM self GROUP BY a ORDER BY a",
+        "SELECT a grp, SUM(b) s, AVG(b) avg FROM self GROUP BY a ORDER BY self.a DESC",
+    ],
+)
+def test_order_by_aggregate_with_aliased_key(query: str) -> None:
+    """Test ORDER BY with aggregates and aliased group keys."""
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3], "b": [10, 20, 30, 40, 50]})
+    assert_sql_matches(df, query=query, compare_with="sqlite")

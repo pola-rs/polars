@@ -155,3 +155,24 @@ def test_reshape_empty(shape: tuple[int, ...]) -> None:
     s = pl.Series("a", [], dtype=pl.Int64)
     expected_len = max(shape[0], 0)
     assert s.reshape(shape).len() == expected_len
+
+
+def test_reshape_sliced_list_25114() -> None:
+    s = pl.Series(
+        "values",
+        [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]],
+        dtype=pl.List(pl.Int64),
+    )
+
+    assert_series_equal(s.slice(0, 1).reshape((-1,)), pl.Series("values", [0, 1, 2, 3]))
+    assert_series_equal(s.slice(1, 1).reshape((-1,)), pl.Series("values", [4, 5, 6, 7]))
+
+
+@pytest.mark.parametrize("shape", [(12, 3), (2, 3)])
+def test_reshape_list_not_fitting(shape: tuple[int, ...]) -> None:
+    df = pl.DataFrame({"a": list(range(12))})
+    with pytest.raises(
+        InvalidOperationError,
+        match=re.escape(f"cannot reshape array of size 12 into shape {shape}"),
+    ):
+        df.lazy().select(pl.col("a").reshape(shape)).collect()

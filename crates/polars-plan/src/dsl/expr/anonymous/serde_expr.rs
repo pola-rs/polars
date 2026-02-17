@@ -45,6 +45,15 @@ fn deserialize_named_registry(buf: &[u8]) -> PolarsResult<(Arc<dyn ExprRegistry>
     }
 }
 
+impl Serialize for SpecialEq<Arc<dyn AnonymousAgg>> {
+    fn serialize<S>(&self, _serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        unreachable!("should not be hit")
+    }
+}
+
 impl Serialize for SpecialEq<Arc<dyn AnonymousColumnsUdf>> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
@@ -116,6 +125,35 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn AnonymousColumnsUdf>> {
                 .map_err(|e| D::Error::custom(format!("{e}")))
                 .map(SpecialEq::new)
         })?
+    }
+}
+
+impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn AnonymousAgg>> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'a>,
+    {
+        use serde::de::Error;
+        deserialize_map_bytes(deserializer, |buf| {
+            deserialize_anon_agg(&buf)
+                .map_err(|e| D::Error::custom(format!("{e}")))
+                .map(SpecialEq::new)
+        })?
+    }
+}
+
+pub(super) fn deserialize_anon_agg(buf: &[u8]) -> PolarsResult<Arc<dyn AnonymousAgg>> {
+    if buf.starts_with(NAMED_SERDE_MAGIC_BYTE_MARK) {
+        let (reg, name, payload) = deserialize_named_registry(buf)?;
+
+        if let Some(func) = reg.get_agg(name, payload)? {
+            Ok(func)
+        } else {
+            let msg = "name not found in named serde registry";
+            polars_bail!(ComputeError: msg)
+        }
+    } else {
+        polars_bail!(ComputeError: "deserialization not supported for this 'opaque' function")
     }
 }
 

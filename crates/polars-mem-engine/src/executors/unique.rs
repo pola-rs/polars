@@ -24,10 +24,6 @@ impl Executor for UniqueExec {
 
         state.record(
             || {
-                if df.is_empty() {
-                    return Ok(df);
-                }
-
                 df.unique_impl(
                     self.options.maintain_order,
                     subset,
