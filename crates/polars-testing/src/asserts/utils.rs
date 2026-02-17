@@ -721,6 +721,7 @@ fn assert_schema_equal_impl(
 
     for (l_idx, (l_name, l_dtype)) in left_schema.iter().enumerate() {
         let Some((r_idx, _, r_dtype)) = right_schema.get_full(l_name) else {
+            one_sided_names.reserve_exact(left_schema.len() - l_idx);
             one_sided_names.push(l_name);
             continue;
         };
