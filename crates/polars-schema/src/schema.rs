@@ -77,9 +77,12 @@ impl<Field, Metadata> Schema<Field, Metadata> {
         self.fields.values()
     }
 
-    /// Reserve `additional` memory spaces in the schema.
-    pub fn reserve(&mut self, additional: usize) {
-        self.fields.reserve(additional);
+    pub fn metadata(&self) -> &Metadata {
+        &self.metadata
+    }
+
+    pub fn metadata_mut(&mut self) -> &mut Metadata {
+        &mut self.metadata
     }
 
     /// The number of fields in the schema.
@@ -93,12 +96,9 @@ impl<Field, Metadata> Schema<Field, Metadata> {
         self.fields.is_empty()
     }
 
-    pub fn metadata(&self) -> &Metadata {
-        &self.metadata
-    }
-
-    pub fn metadata_mut(&mut self) -> &mut Metadata {
-        &mut self.metadata
+    /// Reserve `additional` memory spaces in the schema.
+    pub fn reserve(&mut self, additional: usize) {
+        self.fields.reserve(additional);
     }
 
     /// Rename field `old` to `new`, and return the (owned) old name.
