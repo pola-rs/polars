@@ -167,7 +167,7 @@ pub fn python_scan_predicate(
             use polars_plan::plans::MintermIter;
 
             // Split into AND-minterms and convert each independently.
-            let mut fully_converted = true;
+            let mut residual_predicate_nodes: Vec<Node> = vec![];
             let parts: Vec<String> = MintermIter::new(e.node(), expr_arena)
                 .filter_map(|node| {
                     let result = polars_plan::plans::python::pyarrow::predicate_to_pa(
@@ -176,7 +176,7 @@ pub fn python_scan_predicate(
                         Default::default(),
                     );
                     if result.is_none() {
-                        fully_converted = false;
+                        residual_predicate_nodes.push(node);
                     }
                     result
                 })
@@ -188,40 +188,48 @@ pub fn python_scan_predicate(
                 _ => Some(format!("({})", parts.join(" & "))),
             };
 
+            let residual_predicate_expr_ir = if let Some(eval_str) = predicate_pa {
+                options.predicate = PythonPredicate::PyArrow(eval_str);
+
+                residual_predicate_nodes
+                    .into_iter()
+                    .fold(None, |acc, node| {
+                        Some(acc.map_or(node, |acc_node| {
+                            expr_arena.add(AExpr::BinaryExpr {
+                                left: acc_node,
+                                op: Operator::And,
+                                right: node,
+                            })
+                        }))
+                    })
+                    .map(|node| ExprIR::from_node(node, expr_arena))
+            } else {
+                Some(e.clone())
+            };
+
             verbose_print_sensitive(|| {
+                let predicate_pa_verbose_msg = match &options.predicate {
+                    PythonPredicate::PyArrow(p) => p,
+                    _ => "conversion failed",
+                };
+
                 format!(
                     "python_scan_predicate: \
                     predicate node: {}, \
-                    converted pyarrow predicate: {} (is_full_predicate: {fully_converted})",
+                    converted pyarrow predicate: {} (is_full_predicate: {}), \
+                    residual predicate: {:?}",
                     ExprIRDisplay::display_node(e.node(), expr_arena),
-                    predicate_pa.as_deref().unwrap_or("<conversion failed>")
+                    predicate_pa_verbose_msg,
+                    residual_predicate_expr_ir.is_none(),
+                    residual_predicate_expr_ir
+                        .as_ref()
+                        .map(|e| ExprIRDisplay::display_node(e.node(), expr_arena)),
                 )
             });
 
-            if let Some(eval_str) = predicate_pa {
-                options.predicate = PythonPredicate::PyArrow(eval_str);
-                if fully_converted {
-                    // All minterms converted; pyarrow handles the full filter.
-                    None
-                } else {
-                    // Partial conversion: keep the full predicate as a
-                    // physical post-filter for correctness.
-                    Some(create_physical_expr(
-                        &e,
-                        expr_arena,
-                        &options.schema,
-                        state,
-                    )?)
-                }
-            } else {
-                // Nothing converted; fall through to physical predicate.
-                Some(create_physical_expr(
-                    &e,
-                    expr_arena,
-                    &options.schema,
-                    state,
-                )?)
-            }
+            residual_predicate_expr_ir
+                .map(|expr_ir| create_physical_expr(&expr_ir, expr_arena, &options.schema, state))
+                .transpose()?
         }
         // Convert to physical expression for the case the reader cannot consume the predicate.
         else {
