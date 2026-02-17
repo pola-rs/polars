@@ -220,10 +220,8 @@ pub trait DataFrameJoinOps: IntoDf {
         {
             polars_bail!(
                 ComputeError:
-                    format!(
-                        "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
-                        l.name(), l.dtype().pretty_format(), r.name(), r.dtype().pretty_format()
-                    )
+                    "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
+                    l.name(), l.dtype().pretty_format(), r.name(), r.dtype().pretty_format()
             );
         };
 

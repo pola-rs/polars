@@ -1391,3 +1391,66 @@ def test_scan_sink_error_captures_path() -> None:
             storage_options=storage_options,
             credential_provider=None,
         )
+
+
+# TODO: Uncomment file_format once properly instrumented
+@pytest.mark.parametrize(
+    "file_format",
+    [
+        "parquet",
+        "ipc",
+        # "csv",
+        "ndjson",
+    ],
+)
+@pytest.mark.parametrize("partitioned", [True, False])
+@pytest.mark.write_disk
+def test_scan_metrics(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    file_format: str,
+    tmp_path: Path,
+    partitioned: bool,
+) -> None:
+    path = tmp_path / "a"
+
+    df = pl.DataFrame({"a": 1})
+
+    getattr(pl.LazyFrame, f"sink_{file_format}")(
+        df.lazy(),
+        path
+        if not partitioned
+        else pl.PartitionBy("", file_path_provider=(lambda _: path), key="a"),
+    )
+
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_LOG_METRICS", "1")
+        cx.setenv("POLARS_FORCE_ASYNC", "1")
+        capfd.readouterr()
+        out = getattr(pl, f"scan_{file_format}")(
+            path,
+        ).collect()
+        capture = capfd.readouterr().err
+
+    [line] = (x for x in capture.splitlines() if x.startswith("multi-scan"))
+
+    logged_bytes_requested = int(
+        pl.select(pl.lit(line).str.extract(r"total_bytes_requested=(\d+)")).item()
+    )
+
+    logged_bytes_received = int(
+        pl.select(pl.lit(line).str.extract(r"total_bytes_received=(\d+)")).item()
+    )
+
+    # because of how metadata is accounted for, the bytes_requested may deviate
+    # from the actual file_size
+    file_size = path.stat().st_size
+    # note, 131_072 is the maximum metadata size estimate for parquet, ipc
+    upper_limit_bytes = min(2 * file_size, file_size + 131072)
+    lower_limit_bytes = 2
+
+    assert logged_bytes_requested <= upper_limit_bytes
+    assert logged_bytes_requested >= lower_limit_bytes
+    assert logged_bytes_received == logged_bytes_requested
+
+    assert_frame_equal(out, df)

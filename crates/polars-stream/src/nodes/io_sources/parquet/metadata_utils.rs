@@ -35,7 +35,7 @@ pub async fn read_parquet_metadata_bytes(
 
     let footer_header_bytes = bytes.clone().sliced((bytes.len() - FOOTER_HEADER_SIZE)..);
 
-    let (v, remaining) = footer_header_bytes.split_at(4);
+    let (v, remaining) = footer_header_bytes.as_slice().split_at(4);
     let footer_size = u32::from_le_bytes(v.try_into().unwrap());
 
     if remaining != PARQUET_MAGIC {

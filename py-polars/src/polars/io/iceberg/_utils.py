@@ -109,10 +109,18 @@ def _scan_pyarrow_dataset_impl(
     return from_arrow(scan.to_arrow())
 
 
+def _ensure_boolean_expression(result: Any) -> Any:
+    """Wrap bare field references as EqualTo(field, True)."""
+    if isinstance(result, list) and len(result) == 1:
+        return pyiceberg.expressions.EqualTo(result[0], True)  # type: ignore[misc, call-arg, arg-type]
+    return result
+
+
 def try_convert_pyarrow_predicate(pyarrow_predicate: str) -> Any | None:
     with contextlib.suppress(Exception):
         expr_ast = _to_ast(pyarrow_predicate)
-        return _convert_predicate(expr_ast)
+        result = _convert_predicate(expr_ast)
+        return _ensure_boolean_expression(result)
 
     return None
 
@@ -161,7 +169,8 @@ def _(a: Name) -> Any:
 @_convert_predicate.register(UnaryOp)
 def _(a: UnaryOp) -> Any:
     if isinstance(a.op, Invert):
-        return pyiceberg.expressions.Not(_convert_predicate(a.operand))
+        operand = _ensure_boolean_expression(_convert_predicate(a.operand))
+        return pyiceberg.expressions.Not(operand)
     else:
         msg = f"Unexpected UnaryOp: {a}"
         raise TypeError(msg)
@@ -198,8 +207,8 @@ def _(a: Attribute) -> Any:
 
 @_convert_predicate.register(BinOp)
 def _(a: BinOp) -> Any:
-    lhs = _convert_predicate(a.left)
-    rhs = _convert_predicate(a.right)
+    lhs = _ensure_boolean_expression(_convert_predicate(a.left))
+    rhs = _ensure_boolean_expression(_convert_predicate(a.right))
 
     op = a.op
     if isinstance(op, BitAnd):

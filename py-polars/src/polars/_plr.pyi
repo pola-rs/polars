@@ -2483,6 +2483,13 @@ def assert_dataframe_equal_py(
     abs_tol: float,
     categorical_as_str: bool,
 ) -> None: ...
+def assert_schema_equal_py(
+    left: Schema,
+    right: Schema,
+    *,
+    check_column_order: bool,
+    check_dtypes: bool,
+) -> None: ...
 
 # datatypes
 def _get_dtype_max(dt: DataType) -> PyExpr: ...

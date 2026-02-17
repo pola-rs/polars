@@ -32,14 +32,6 @@ use crate::sql_visitors::{
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
 
-fn clear_lf(lf: LazyFrame) -> LazyFrame {
-    let cb = PlanCallback::new(move |(_, schemas): (Vec<DslPlan>, Vec<SchemaRef>)| {
-        let schema = &schemas[0];
-        Ok(DataFrame::empty_with_schema(schema).lazy().logical_plan)
-    });
-    lf.pipe_with_schema(cb)
-}
-
 #[derive(Clone)]
 pub struct TableInfo {
     pub(crate) frame: LazyFrame,
@@ -498,7 +490,7 @@ impl SQLContext {
                 set_quantifier,
                 left,
                 right,
-            } => self.process_except_intersect(left, right, *set_quantifier, query),
+            } => self.process_except_intersect(left, right, set_quantifier, query),
 
             SetExpr::Values(Values {
                 explicit_row: _,
@@ -530,7 +522,7 @@ impl SQLContext {
         &mut self,
         left: &SetExpr,
         right: &SetExpr,
-        quantifier: SetQuantifier,
+        quantifier: &SetQuantifier,
         query: &Query,
     ) -> PolarsResult<LazyFrame> {
         let (join_type, op_name) = match *query.body {
@@ -543,37 +535,31 @@ impl SQLContext {
 
         // Note: each side of the EXCEPT/INTERSECT operation should execute
         // in isolation to prevent context state leakage between them
-        let lf = self.execute_isolated(|ctx| ctx.process_query(left, query))?;
-        let rf = self.execute_isolated(|ctx| ctx.process_query(right, query))?;
+        let mut lf = self.execute_isolated(|ctx| ctx.process_query(left, query))?;
+        let mut rf = self.execute_isolated(|ctx| ctx.process_query(right, query))?;
+        let lf_schema = self.get_frame_schema(&mut lf)?;
 
-        let cb = PlanCallback::new(
-            move |(mut plans, schemas): (Vec<DslPlan>, Vec<SchemaRef>)| {
-                let rf = LazyFrame::from_logical_plan(plans.pop().unwrap(), Default::default());
-                let lf = LazyFrame::from_logical_plan(plans.pop().unwrap(), Default::default());
-
-                let lf_cols: Vec<_> = schemas[0].iter_names_cloned().map(col).collect();
-                let rf_cols: Vec<_> = schemas[1].iter_names_cloned().map(col).collect();
-                let join = lf
-                    .join_builder()
-                    .with(rf)
-                    .how(join_type.clone())
-                    .join_nulls(true);
-                let joined_tbl = match quantifier {
-                    SetQuantifier::ByName => join.on(lf_cols).finish(),
-                    SetQuantifier::Distinct | SetQuantifier::None => {
-                        polars_ensure!(schemas[0].len() == schemas[1].len(), SQLInterface: "{} requires equal number of columns in each table (use '{} BY NAME' to combine mismatched tables", op_name, op_name);
-                        join.left_on(lf_cols).right_on(rf_cols).finish()
-                    },
-                    _ => {
-                        polars_bail!(SQLInterface: "'{} {}' is not supported", op_name, quantifier.to_string())
-                    },
-                };
-                Ok(joined_tbl
-                    .unique(None, UniqueKeepStrategy::Any)
-                    .logical_plan)
+        let lf_cols: Vec<_> = lf_schema.iter_names_cloned().map(col).collect();
+        let rf_cols = match quantifier {
+            SetQuantifier::ByName => None,
+            SetQuantifier::Distinct | SetQuantifier::None => {
+                let rf_schema = self.get_frame_schema(&mut rf)?;
+                let rf_cols: Vec<_> = rf_schema.iter_names_cloned().map(col).collect();
+                if lf_cols.len() != rf_cols.len() {
+                    polars_bail!(SQLInterface: "{} requires equal number of columns in each table (use '{} BY NAME' to combine mismatched tables)", op_name, op_name)
+                }
+                Some(rf_cols)
             },
-        );
-        let lf = lf.pipe_with_schemas(vec![rf], cb);
+            _ => {
+                polars_bail!(SQLInterface: "'{} {}' is not supported", op_name, quantifier.to_string())
+            },
+        };
+        let join = lf.join_builder().with(rf).how(join_type).join_nulls(true);
+        let joined_tbl = match rf_cols {
+            Some(rf_cols) => join.left_on(lf_cols).right_on(rf_cols).finish(),
+            None => join.on(lf_cols).finish(),
+        };
+        let lf = joined_tbl.unique(None, UniqueKeepStrategy::Any);
         self.process_order_by(lf, &query.order_by, None)
     }
 
@@ -588,61 +574,51 @@ impl SQLContext {
 
         // Note: each side of the UNION operation should execute
         // in isolation to prevent context state leakage between them
-        let lf = self.execute_isolated(|ctx| ctx.process_query(left, query))?;
-        let rf = self.execute_isolated(|ctx| ctx.process_query(right, query))?;
+        let mut lf = self.execute_isolated(|ctx| ctx.process_query(left, query))?;
+        let mut rf = self.execute_isolated(|ctx| ctx.process_query(right, query))?;
 
-        let cb = PlanCallback::new(
-            move |(mut plans, schemas): (Vec<DslPlan>, Vec<SchemaRef>)| {
-                let mut rf = LazyFrame::from(plans.pop().unwrap());
-                let lf = LazyFrame::from(plans.pop().unwrap());
-
-                let opts = UnionArgs {
-                    parallel: true,
-                    to_supertypes: true,
-                    maintain_order: false,
-                    ..Default::default()
-                };
-                let out = match quantifier {
-                    // UNION [ALL | DISTINCT]
-                    SetQuantifier::All | SetQuantifier::Distinct | SetQuantifier::None => {
-                        let lf_schema = &schemas[0];
-                        let rf_schema = &schemas[1];
-                        if lf_schema.len() != rf_schema.len() {
-                            polars_bail!(SQLInterface: "UNION requires equal number of columns in each table (use 'UNION BY NAME' to combine mismatched tables)")
-                        }
-                        // rename `rf` columns to match `lf` if they differ; SQL behaves
-                        // positionally on UNION ops (unless using the "BY NAME" qualifier)
-                        if lf_schema.iter_names().ne(rf_schema.iter_names()) {
-                            rf = rf.rename(rf_schema.iter_names(), lf_schema.iter_names(), true);
-                        }
-                        let concatenated = concat(vec![lf, rf], opts);
-                        match quantifier {
-                            SetQuantifier::Distinct | SetQuantifier::None => {
-                                concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
-                            },
-                            _ => concatenated,
-                        }
-                    },
-                    // UNION ALL BY NAME
-                    #[cfg(feature = "diagonal_concat")]
-                    SetQuantifier::AllByName => concat_lf_diagonal(vec![lf, rf], opts),
-                    // UNION [DISTINCT] BY NAME
-                    #[cfg(feature = "diagonal_concat")]
-                    SetQuantifier::ByName | SetQuantifier::DistinctByName => {
-                        let concatenated = concat_lf_diagonal(vec![lf, rf], opts);
+        let opts = UnionArgs {
+            parallel: true,
+            to_supertypes: true,
+            maintain_order: false,
+            ..Default::default()
+        };
+        let lf = match quantifier {
+            // UNION [ALL | DISTINCT]
+            SetQuantifier::All | SetQuantifier::Distinct | SetQuantifier::None => {
+                let lf_schema = self.get_frame_schema(&mut lf)?;
+                let rf_schema = self.get_frame_schema(&mut rf)?;
+                if lf_schema.len() != rf_schema.len() {
+                    polars_bail!(SQLInterface: "UNION requires equal number of columns in each table (use 'UNION BY NAME' to combine mismatched tables)")
+                }
+                // rename `rf` columns to match `lf` if they differ; SQL behaves
+                // positionally on UNION ops (unless using the "BY NAME" qualifier)
+                if lf_schema.iter_names().ne(rf_schema.iter_names()) {
+                    rf = rf.rename(rf_schema.iter_names(), lf_schema.iter_names(), true);
+                }
+                let concatenated = concat(vec![lf, rf], opts);
+                match quantifier {
+                    SetQuantifier::Distinct | SetQuantifier::None => {
                         concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
                     },
-                    #[allow(unreachable_patterns)]
-                    _ => {
-                        polars_bail!(SQLInterface: "'UNION {}' is not currently supported", quantifier)
-                    },
-                };
-
-                out.map(|lf| lf.logical_plan)
+                    _ => concatenated,
+                }
             },
-        );
+            // UNION ALL BY NAME
+            #[cfg(feature = "diagonal_concat")]
+            SetQuantifier::AllByName => concat_lf_diagonal(vec![lf, rf], opts),
+            // UNION [DISTINCT] BY NAME
+            #[cfg(feature = "diagonal_concat")]
+            SetQuantifier::ByName | SetQuantifier::DistinctByName => {
+                let concatenated = concat_lf_diagonal(vec![lf, rf], opts);
+                concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
+            },
+            #[allow(unreachable_patterns)]
+            _ => {
+                polars_bail!(SQLInterface: "'UNION {}' is not currently supported", quantifier)
+            },
+        }?;
 
-        let lf = lf.pipe_with_schemas(vec![rf], cb);
         self.process_order_by(lf, &query.order_by, None)
     }
 
@@ -780,22 +756,24 @@ impl SQLContext {
             delete_token: _,
         }) = stmt
         {
-            if !tables.is_empty()
-                || using.is_some()
-                || returning.is_some()
-                || limit.is_some()
-                || !order_by.is_empty()
-            {
-                let error_message = match () {
-                    _ if !tables.is_empty() => "DELETE expects exactly one table name",
-                    _ if using.is_some() => "DELETE does not support the USING clause",
-                    _ if returning.is_some() => "DELETE does not support the RETURNING clause",
-                    _ if limit.is_some() => "DELETE does not support the LIMIT clause",
-                    _ if !order_by.is_empty() => "DELETE does not support the ORDER BY clause",
-                    _ => unreachable!(),
-                };
-                polars_bail!(SQLInterface: error_message);
+            let error_message: Option<&'static str> = if !tables.is_empty() {
+                Some("DELETE expects exactly one table name")
+            } else if using.is_some() {
+                Some("DELETE does not support the USING clause")
+            } else if returning.is_some() {
+                Some("DELETE does not support the RETURNING clause")
+            } else if limit.is_some() {
+                Some("DELETE does not support the LIMIT clause")
+            } else if !order_by.is_empty() {
+                Some("DELETE does not support the ORDER BY clause")
+            } else {
+                None
+            };
+
+            if let Some(msg) = error_message {
+                polars_bail!(SQLInterface: msg);
             }
+
             let from_tables = match &from {
                 FromTable::WithFromKeyword(from) => from,
                 FromTable::WithoutKeyword(from) => from,
@@ -810,7 +788,7 @@ impl SQLContext {
             let (_, lf) = self.get_table(&tbl_expr.relation)?;
             if selection.is_none() {
                 // no WHERE clause; equivalent to TRUNCATE (drop all rows)
-                Ok(clear_lf(lf))
+                Ok(lf.clear())
             } else {
                 // apply constraint as inverted filter (drops rows matching the selection)
                 Ok(self.process_where(lf.clone(), selection, true, None)?)
@@ -835,7 +813,7 @@ impl SQLContext {
                     }
                     let tbl = table_names[0].name.to_string();
                     if let Some(lf) = self.table_map.write().unwrap().get_mut(&tbl) {
-                        *lf = clear_lf(lf.clone());
+                        *lf = lf.clone().clear();
                         Ok(lf.clone())
                     } else {
                         polars_bail!(SQLInterface: "table '{}' does not exist", tbl);
@@ -1598,7 +1576,7 @@ impl SQLContext {
             if (all_true && !invert_filter) || (all_false && invert_filter) {
                 return Ok(lf);
             } else if (all_false && !invert_filter) || (all_true && invert_filter) {
-                return Ok(clear_lf(lf));
+                return Ok(lf.clear());
             }
 
             // ...otherwise parse and apply the filter as normal
@@ -1764,7 +1742,7 @@ impl SQLContext {
                         .value
                         .as_str();
                     if let Some(table) = self.table_map.read().unwrap().get(like_table).cloned() {
-                        clear_lf(table)
+                        table.clear()
                     } else {
                         polars_bail!(SQLInterface: "table given in LIKE does not exist: {}", like_table)
                     }

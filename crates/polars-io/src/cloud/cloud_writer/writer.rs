@@ -44,7 +44,7 @@ impl CloudWriter {
         while !bytes.is_empty() {
             self.bufferer.push_owned(&mut bytes);
 
-            if let Some(payload) = self.bufferer.flush_complete_chunk() {
+            if let Some(payload) = self.bufferer.flush_full_chunk() {
                 self.writer.put(payload).await?;
             }
         }
@@ -54,11 +54,11 @@ impl CloudWriter {
 
     pub(super) fn fill_buffer_from_slice(&mut self, bytes: &mut &[u8]) -> bool {
         self.bufferer.push_slice(bytes);
-        self.bufferer.has_complete_chunk()
+        self.bufferer.is_full()
     }
 
-    pub(super) async fn flush_complete_chunk(&mut self) -> PolarsResult<()> {
-        if let Some(payload) = self.bufferer.flush_complete_chunk() {
+    pub(super) async fn flush_full_chunk(&mut self) -> PolarsResult<()> {
+        if let Some(payload) = self.bufferer.flush_full_chunk() {
             self.writer.put(payload).await?;
         }
 

@@ -35,6 +35,7 @@ bytemuck = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
+color-backtrace = { workspace = true, optional = true }
 either = { workspace = true }
 flate2 = { workspace = true }
 hashbrown = { workspace = true }
@@ -137,6 +138,7 @@ version_check = { workspace = true }
 
 [features]
 allocator = []
+backtrace_filter = ["dep:color-backtrace"]
 c_api = []
 
 # Features below are only there to enable building a slim binary during development.

@@ -356,6 +356,22 @@ pub fn map_err<E: Error>(error: E) -> PolarsError {
 
 #[macro_export]
 macro_rules! polars_err {
+    ($variant:ident: format!($_:tt) $(, _:tt)* $(,)?) => {
+        const { panic!("remove unnecessary format! from polars_(bail|err)! macro") }
+    };
+    ($variant:ident: $fmt:literal $(,)?) => {{
+        if const { $crate::__private::has_brace($fmt) } {
+            $crate::__private::must_use(
+                $crate::PolarsError::$variant(format!($fmt).into())
+            )
+        } else {
+            const {
+                $crate::__private::must_use(
+                    $crate::PolarsError::$variant($crate::ErrString::new_static($fmt))
+                )
+            }
+        }
+    }};
     ($variant:ident: $fmt:literal $(, $arg:expr)* $(,)?) => {
         $crate::__private::must_use(
             $crate::PolarsError::$variant(format!($fmt, $($arg),*).into())
@@ -608,8 +624,23 @@ pub mod __private {
     #[inline]
     #[cold]
     #[must_use]
-    pub fn must_use(error: crate::PolarsError) -> crate::PolarsError {
+    pub const fn must_use(error: crate::PolarsError) -> crate::PolarsError {
         error
+    }
+
+    pub const fn has_brace(s: &str) -> bool {
+        let bytes = s.as_bytes();
+        let mut i: usize = 0;
+
+        while i < bytes.len() {
+            if bytes[i] == b'{' || bytes[i] == b'}' {
+                return true;
+            }
+
+            i += 1;
+        }
+
+        false
     }
 }
 
@@ -631,5 +662,32 @@ mod tests {
             ComputeError(s) if &*s == error_magic => {},
             e => panic!("error type mismatch: {e}"),
         };
+    }
+
+    #[test]
+    fn test_polars_error_format_str() {
+        use PolarsError::ComputeError;
+
+        let a = "A";
+
+        match polars_err!(ComputeError: "{a}") {
+            ComputeError(out) if &*out == a => {},
+            e => panic!("{e}"),
+        }
+
+        match polars_err!(ComputeError: a) {
+            ComputeError(out) if &*out == a => {},
+            e => panic!("{e}"),
+        }
+
+        match polars_err!(ComputeError: "{{") {
+            ComputeError(out) if &*out == "{" => {},
+            e => panic!("{e}"),
+        }
+
+        match polars_err!(ComputeError: "}}") {
+            ComputeError(out) if &*out == "}" => {},
+            e => panic!("{e}"),
+        }
     }
 }

@@ -2,6 +2,7 @@ use std::ops::Not;
 
 use polars_core::datatypes::unpack_dtypes;
 use polars_core::prelude::*;
+use polars_core::schema::SchemaRef;
 use polars_ops::series::is_close;
 
 /// Configuration options for comparing Series equality.
@@ -692,17 +693,14 @@ impl DataFrameEqualOptions {
 ///    - When `check_column_order` is false, compares data type sets for equality
 ///    - When `check_column_order` is true, performs more precise type checking
 ///
-fn assert_dataframe_schema_equal(
-    left: &DataFrame,
-    right: &DataFrame,
+pub fn assert_schema_equal(
+    left_schema: &SchemaRef,
+    right_schema: &SchemaRef,
     check_dtypes: bool,
     check_column_order: bool,
 ) -> PolarsResult<()> {
-    let left_schema = left.schema();
-    let right_schema = right.schema();
-
-    let ordered_left_cols = left.get_column_names();
-    let ordered_right_cols = right.get_column_names();
+    let ordered_left_cols: Vec<&PlSmallStr> = left_schema.iter_names().collect();
+    let ordered_right_cols: Vec<&PlSmallStr> = right_schema.iter_names().collect();
 
     let left_set: PlHashSet<&PlSmallStr> = ordered_left_cols.iter().copied().collect();
     let right_set: PlHashSet<&PlSmallStr> = ordered_right_cols.iter().copied().collect();
@@ -715,7 +713,8 @@ fn assert_dataframe_schema_equal(
     if left_set != right_set {
         let left_not_right: Vec<_> = left_set
             .iter()
-            .filter(|col| !right_set.contains(*col))
+            .copied()
+            .filter(|col| !right_set.contains(col))
             .collect();
 
         if !left_not_right.is_empty() {
@@ -731,7 +730,8 @@ fn assert_dataframe_schema_equal(
         } else {
             let right_not_left: Vec<_> = right_set
                 .iter()
-                .filter(|col| !left_set.contains(*col))
+                .copied()
+                .filter(|col| !left_set.contains(col))
                 .collect();
 
             return Err(polars_err!(
@@ -757,8 +757,8 @@ fn assert_dataframe_schema_equal(
 
     if check_dtypes {
         if check_column_order {
-            let left_dtypes_ordered = left.dtypes();
-            let right_dtypes_ordered = right.dtypes();
+            let left_dtypes_ordered: Vec<&DataType> = left_schema.iter_values().collect();
+            let right_dtypes_ordered: Vec<&DataType> = right_schema.iter_values().collect();
             if left_dtypes_ordered != right_dtypes_ordered {
                 return Err(polars_err!(
                     assertion_error = "DataFrames",
@@ -767,17 +767,17 @@ fn assert_dataframe_schema_equal(
                     format!("{:?}", right_dtypes_ordered)
                 ));
             }
-        } else {
-            let left_dtypes: PlHashSet<DataType> = left.dtypes().into_iter().collect();
-            let right_dtypes: PlHashSet<DataType> = right.dtypes().into_iter().collect();
-            if left_dtypes != right_dtypes {
-                return Err(polars_err!(
-                    assertion_error = "DataFrames",
-                    "dtypes do not match",
-                    format!("{:?}", left_dtypes),
-                    format!("{:?}", right_dtypes)
-                ));
-            }
+        } else if left_schema.len() != right_schema.len()
+            || left_schema
+                .iter()
+                .any(|(name, dtype)| right_schema.get(name) != Some(dtype))
+        {
+            return Err(polars_err!(
+                assertion_error = "DataFrames",
+                "dtypes do not match",
+                format!("{:?}", left_schema),
+                format!("{:?}", right_schema)
+            ));
         }
     }
 
@@ -812,7 +812,7 @@ fn assert_dataframe_schema_equal(
 ///
 /// # Order of Checks
 ///
-/// 1. Schema validation (column names, order, and data types via `assert_dataframe_schema_equal`)
+/// 1. Schema validation (column names, order, and data types via `assert_schema_equal`)
 /// 2. DataFrame height (row count)
 /// 3. Row ordering (sorts both DataFrames if `check_row_order` is false)
 /// 4. Column-by-column value comparison (delegated to `assert_series_values_equal`)
@@ -833,9 +833,12 @@ pub fn assert_dataframe_equal(
         return Ok(());
     }
 
-    assert_dataframe_schema_equal(
-        left,
-        right,
+    let left_schema = left.schema();
+    let right_schema = right.schema();
+
+    assert_schema_equal(
+        left_schema,
+        right_schema,
         options.check_dtypes,
         options.check_column_order,
     )?;

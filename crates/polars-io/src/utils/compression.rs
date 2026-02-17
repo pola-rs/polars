@@ -1,11 +1,13 @@
 use std::cmp;
-use std::io::{Cursor, Read, Write};
+use std::io::{BufRead, Cursor, Read, Write};
 
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_error::{feature_gated, to_compute_err};
 
 use crate::utils::file::{Writeable, WriteableTrait};
+#[cfg(feature = "async")]
+use crate::utils::stream_buf_reader::ReaderSource;
 use crate::utils::sync_on_close::SyncOnCloseType;
 
 /// Represents the compression algorithms that we have decoders for
@@ -236,6 +238,145 @@ impl Read for CompressedReader {
             CompressedReader::Zlib(decoder) => decoder.read(buf),
             #[cfg(feature = "decompress")]
             CompressedReader::Zstd(decoder) => decoder.read(buf),
+        }
+    }
+}
+
+/// A byte source that abstracts over in-memory buffers and streaming
+/// readers, with optional transparent decompression and buffering.
+///
+/// Implements `BufRead`, allowing uniform access regardless of whether
+/// the underlying data is an in-memory slice, a raw stream, or a
+/// compressed stream (gzip/zlib/zstd).
+///
+/// This is the generic successor to [`CompressedReader`], which only
+/// supports in-memory (`Buffer<u8>`) sources.
+#[cfg(feature = "async")]
+pub enum ByteSourceReader<R: BufRead> {
+    UncompressedMemory {
+        slice: Buffer<u8>,
+        offset: usize,
+    },
+    UncompressedStream(R),
+    #[cfg(feature = "decompress")]
+    Gzip(flate2::bufread::MultiGzDecoder<R>),
+    #[cfg(feature = "decompress")]
+    Zlib(flate2::bufread::ZlibDecoder<R>),
+    #[cfg(feature = "decompress")]
+    Zstd(zstd::Decoder<'static, R>),
+}
+
+#[cfg(feature = "async")]
+impl<R: BufRead> ByteSourceReader<R> {
+    pub fn try_new(reader: R, compression: Option<SupportedCompression>) -> PolarsResult<Self> {
+        Ok(match compression {
+            None => Self::UncompressedStream(reader),
+            #[cfg(feature = "decompress")]
+            Some(SupportedCompression::GZIP) => {
+                Self::Gzip(flate2::bufread::MultiGzDecoder::new(reader))
+            },
+            #[cfg(feature = "decompress")]
+            Some(SupportedCompression::ZLIB) => {
+                Self::Zlib(flate2::bufread::ZlibDecoder::new(reader))
+            },
+            #[cfg(feature = "decompress")]
+            Some(SupportedCompression::ZSTD) => Self::Zstd(zstd::Decoder::with_buffer(reader)?),
+            #[cfg(not(feature = "decompress"))]
+            _ => panic!("activate 'decompress' feature"),
+        })
+    }
+
+    pub fn is_compressed(&self) -> bool {
+        !matches!(
+            &self,
+            Self::UncompressedMemory { .. } | Self::UncompressedStream(_)
+        )
+    }
+
+    pub const fn initial_read_size() -> usize {
+        // We don't want to read too much at the beginning to keep decompression to a minimum if for
+        // example only the schema is needed or a slice op is used. Keep in sync with
+        // `ideal_read_size` so that `initial_read_size * N * 4 == ideal_read_size`.
+        32 * 1024
+    }
+
+    pub const fn ideal_read_size() -> usize {
+        // Somewhat conservative guess for L2 size, which performs the best on most machines and is
+        // nearly always core exclusive. The loss of going larger and accidentally hitting L3 is not
+        // recouped by amortizing the block processing cost even further.
+        //
+        // It's possible that callers use or need a larger `read_size` if for example a single row
+        // doesn't fit in the 512KB.
+        512 * 1024
+    }
+
+    /// Reads exactly `read_size` bytes if possible from the internal readers and creates a new
+    /// [`Buffer`] with the content `concat(prev_leftover, new_bytes)`.
+    ///
+    /// Returns the new slice and the number of bytes read, which will be 0 when eof is reached and
+    /// this function is called again.
+    ///
+    /// If the underlying reader is uncompressed the operation is a cheap zero-copy
+    /// [`Buffer::sliced`] operation.
+    ///
+    /// By handling slice concatenation at this level we can implement zero-copy reading *and* make
+    /// the interface easier to use.
+    ///
+    /// It's a logic bug if `prev_leftover` is neither empty nor the last slice returned by this
+    /// function.
+    pub fn read_next_slice(
+        &mut self,
+        prev_leftover: &Buffer<u8>,
+        read_size: usize,
+        uncompressed_size_hint: Option<usize>,
+    ) -> std::io::Result<(Buffer<u8>, usize)> {
+        // Assuming that callers of this function correctly handle re-trying, by continuously growing
+        // prev_leftover if it doesn't contain a single row, this abstraction supports arbitrarily
+        // sized rows.
+        let prev_len = prev_leftover.len();
+
+        let reader: &mut dyn Read = match self {
+            // Zero-copy fast-path — no allocation required
+            Self::UncompressedMemory { slice, offset } => {
+                let bytes_read = cmp::min(read_size, slice.len() - *offset);
+                let new_slice = slice
+                    .clone()
+                    .sliced(*offset - prev_len..*offset + bytes_read);
+                *offset += bytes_read;
+                return Ok((new_slice, bytes_read));
+            },
+            Self::UncompressedStream(reader) => reader,
+            #[cfg(feature = "decompress")]
+            Self::Gzip(reader) => reader,
+            #[cfg(feature = "decompress")]
+            Self::Zlib(reader) => reader,
+            #[cfg(feature = "decompress")]
+            Self::Zstd(reader) => reader,
+        };
+
+        let mut buf = Vec::new();
+
+        // Cap the reserve_size, for the scenario where read_size == usize::MAX
+        let max_reserve_size = uncompressed_size_hint.unwrap_or(4 * 1024 * 1024);
+        let reserve_size = cmp::min(prev_len.saturating_add(read_size), max_reserve_size);
+        buf.reserve_exact(reserve_size);
+        buf.extend_from_slice(prev_leftover);
+
+        let bytes_read = reader.take(read_size as u64).read_to_end(&mut buf)?;
+        buf.truncate(prev_len + bytes_read);
+        Ok((Buffer::from_vec(buf), bytes_read))
+    }
+}
+
+#[cfg(feature = "async")]
+impl ByteSourceReader<ReaderSource> {
+    pub fn from_memory(
+        slice: Buffer<u8>,
+        compression: Option<SupportedCompression>,
+    ) -> PolarsResult<Self> {
+        match compression {
+            None => Ok(Self::UncompressedMemory { slice, offset: 0 }),
+            _ => Self::try_new(ReaderSource::Memory(Cursor::new(slice)), compression),
         }
     }
 }

@@ -157,40 +157,90 @@ pub fn python_scan_predicate(
 )> {
     let mut predicate_serialized = None;
     let predicate = if let PythonPredicate::Polars(e) = &options.predicate {
+        // Clone the expression so we can release the borrow on `options`
+        // before mutating `options.predicate` below.
+        let e = e.clone();
+
         // Convert to a pyarrow eval string.
         if matches!(options.python_source, PythonScanSource::Pyarrow) {
             use polars_core::config::verbose_print_sensitive;
+            use polars_plan::plans::MintermIter;
 
-            let predicate_pa = polars_plan::plans::python::pyarrow::predicate_to_pa(
-                e.node(),
-                expr_arena,
-                Default::default(),
-            );
+            // Split into AND-minterms and convert each independently.
+            let mut residual_predicate_nodes: Vec<Node> = vec![];
+            let parts: Vec<String> = MintermIter::new(e.node(), expr_arena)
+                .filter_map(|node| {
+                    let result = polars_plan::plans::python::pyarrow::predicate_to_pa(
+                        node,
+                        expr_arena,
+                        Default::default(),
+                    );
+                    if result.is_none() {
+                        residual_predicate_nodes.push(node);
+                    }
+                    result
+                })
+                .collect();
+
+            let predicate_pa = match parts.len() {
+                0 => None,
+                1 => Some(parts.into_iter().next().unwrap()),
+                _ => Some(format!("({})", parts.join(" & "))),
+            };
+
+            let residual_predicate_expr_ir = if let Some(eval_str) = predicate_pa {
+                options.predicate = PythonPredicate::PyArrow(eval_str);
+
+                residual_predicate_nodes
+                    .into_iter()
+                    .fold(None, |acc, node| {
+                        Some(acc.map_or(node, |acc_node| {
+                            expr_arena.add(AExpr::BinaryExpr {
+                                left: acc_node,
+                                op: Operator::And,
+                                right: node,
+                            })
+                        }))
+                    })
+                    .map(|node| ExprIR::from_node(node, expr_arena))
+            } else {
+                Some(e.clone())
+            };
 
             verbose_print_sensitive(|| {
+                let predicate_pa_verbose_msg = match &options.predicate {
+                    PythonPredicate::PyArrow(p) => p,
+                    _ => "<conversion failed>",
+                };
+
                 format!(
                     "python_scan_predicate: \
                     predicate node: {}, \
-                    converted pyarrow predicate: {}",
+                    converted pyarrow predicate: {}, \
+                    residual predicate: {:?}",
                     ExprIRDisplay::display_node(e.node(), expr_arena),
-                    &predicate_pa.as_deref().unwrap_or("<conversion failed>")
+                    predicate_pa_verbose_msg,
+                    residual_predicate_expr_ir
+                        .as_ref()
+                        .map(|e| ExprIRDisplay::display_node(e.node(), expr_arena)),
                 )
             });
 
-            if let Some(eval_str) = predicate_pa {
-                options.predicate = PythonPredicate::PyArrow(eval_str);
-                // We don't have to use a physical expression as pyarrow deals with the filter.
-                None
-            } else {
-                Some(create_physical_expr(e, expr_arena, &options.schema, state)?)
-            }
+            residual_predicate_expr_ir
+                .map(|expr_ir| create_physical_expr(&expr_ir, expr_arena, &options.schema, state))
+                .transpose()?
         }
         // Convert to physical expression for the case the reader cannot consume the predicate.
         else {
             let dsl_expr = e.to_expr(expr_arena);
             predicate_serialized = polars_plan::plans::python::predicate::serialize(&dsl_expr)?;
 
-            Some(create_physical_expr(e, expr_arena, &options.schema, state)?)
+            Some(create_physical_expr(
+                &e,
+                expr_arena,
+                &options.schema,
+                state,
+            )?)
         }
     } else {
         None

@@ -99,11 +99,9 @@ pub fn resolve_join(
         polars_ensure!(
             left_on.len() == right_on.len(),
             InvalidOperation:
-                format!(
-                    "the number of columns given as join key (left: {}, right:{}) should be equal",
-                    left_on.len(),
-                    right_on.len()
-                )
+                "the number of columns given as join key (left: {}, right:{}) should be equal",
+                left_on.len(),
+                right_on.len()
         );
     }
 
@@ -583,7 +581,7 @@ fn build_upcast_node_list(
             } else if schema_merged.contains(name) {
                 ExprOrigin::Right
             } else {
-                polars_bail!(ColumnNotFound: "{}", name);
+                polars_bail!(ColumnNotFound: "{name}");
             }
         },
         AExpr::Literal(..) => ExprOrigin::None,

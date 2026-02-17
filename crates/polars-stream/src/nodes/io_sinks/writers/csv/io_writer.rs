@@ -62,9 +62,11 @@ impl IOWriter {
         }
 
         while let Some((handle, permit)) = filled_serializer_rx.recv().await {
-            let serializer = handle.await?;
+            let mut serializer = handle.await?;
 
-            writer.write_all(&serializer.serialized_data).await?;
+            writer
+                .write_all_owned(&mut serializer.serialized_data)
+                .await?;
 
             drop(permit);
 

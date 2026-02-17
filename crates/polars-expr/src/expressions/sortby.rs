@@ -190,7 +190,7 @@ fn sort_by_groups_multiple_by(
     };
     let first = new_idx
         .first()
-        .ok_or_else(|| polars_err!(ComputeError: "{}", ERR_MSG))?;
+        .ok_or_else(|| polars_err!(ComputeError: "{ERR_MSG}"))?;
 
     Ok((*first, new_idx))
 }

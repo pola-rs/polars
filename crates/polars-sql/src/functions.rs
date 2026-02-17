@@ -1,6 +1,6 @@
 use std::ops::{Add, Sub};
 
-use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
+use polars_core::chunked_array::ops::{FillNullStrategy, SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
     DataType, ExplodeOptions, PolarsResult, QuantileMethod, Schema, TimeUnit, polars_bail,
     polars_err,
@@ -1903,8 +1903,9 @@ impl SQLFunctionVisitor<'_> {
                 )
             };
 
-            // Apply cumulative function and wrap with window spec
-            let cumulative_expr = cumulative_fn(base_expr, false);
+            // Apply cumulative function; the forward-fill ensures we match SQL semantics
+            let cumulative_expr = cumulative_fn(base_expr, false)
+                .fill_null_with_strategy(FillNullStrategy::Forward(None));
             let sort_opts = SortOptions::default().with_order_descending(all_desc);
             cumulative_expr.over_with_options(
                 partition_by_exprs,
