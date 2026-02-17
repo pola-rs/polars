@@ -746,6 +746,8 @@ fn assert_schema_equal_impl(
         )
     }
 
+    debug_assert!(right_schema.len() >= left_schema.len());
+
     if right_schema.len() > left_schema.len() {
         one_sided_names.extend(
             right_schema
@@ -763,6 +765,8 @@ fn assert_schema_equal_impl(
             DisplayUsingDebug(right_schema.names())
         )
     }
+
+    debug_assert_eq!(left_schema.len(), right_schema.len());
 
     if check_column_order && column_name_order_mismatch {
         polars_bail!(
