@@ -4,6 +4,7 @@ import contextlib
 import importlib
 import os
 import sys
+from importlib.util import find_spec
 from typing import TYPE_CHECKING, Any, Literal
 
 from polars._utils.deprecation import issue_deprecation_warning
@@ -698,7 +699,7 @@ class Catalog:
 
     @classmethod
     def _get_databricks_token(cls) -> str:
-        if importlib.util.find_spec("databricks.sdk") is None:
+        if find_spec("databricks.sdk") is None:
             msg = "could not get Databricks token: databricks-sdk is not installed"
             raise ImportError(msg)
 

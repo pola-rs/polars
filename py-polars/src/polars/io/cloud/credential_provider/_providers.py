@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import abc
-import importlib.util
 import json
 import os
 import subprocess
@@ -10,6 +9,7 @@ import zoneinfo
 from collections.abc import Callable
 from datetime import datetime
 from functools import partial
+from importlib.util import find_spec
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -294,7 +294,7 @@ class CredentialProviderAWS(CachingCredentialProvider):
 
     @classmethod
     def _ensure_module_availability(cls) -> None:
-        if importlib.util.find_spec("boto3") is None:
+        if find_spec("boto3") is None:
             msg = "boto3 must be installed to use `CredentialProviderAWS`"
             raise ImportError(msg)
 
@@ -436,7 +436,7 @@ class CredentialProviderAzure(CachingCredentialProvider):
 
     @classmethod
     def _ensure_module_availability(cls) -> None:
-        if importlib.util.find_spec("azure.identity") is None:
+        if find_spec("azure.identity") is None:
             msg = "azure-identity must be installed to use `CredentialProviderAzure`"
             raise ImportError(msg)
 
@@ -567,7 +567,7 @@ class CredentialProviderGCP(CachingCredentialProvider):
 
     @classmethod
     def _ensure_module_availability(cls) -> None:
-        if importlib.util.find_spec("google.auth") is None:
+        if find_spec("google.auth") is None:
             msg = "google-auth must be installed to use `CredentialProviderGCP`"
             raise ImportError(msg)
 

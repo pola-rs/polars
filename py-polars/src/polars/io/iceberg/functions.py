@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import importlib
+from importlib.util import find_spec
 from typing import TYPE_CHECKING, Literal
 
 from polars._utils.unstable import issue_unstable_warning
@@ -172,7 +172,7 @@ def scan_iceberg(
 
     table: Table | None = None
 
-    if importlib.util.find_spec("pyiceberg.table") is not None:
+    if find_spec("pyiceberg.table") is not None:
         from pyiceberg.table import Table
 
         if isinstance(source, Table):

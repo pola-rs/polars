@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import importlib
+from importlib.util import find_spec
 from typing import TYPE_CHECKING, Any
 
 from polars._utils.wrap import wrap_ldf
@@ -293,7 +293,7 @@ def scan_delta(
 
     table: DeltaTable | None = None
 
-    if importlib.util.find_spec("deltalake") is not None:
+    if find_spec("deltalake") is not None:
         from deltalake import DeltaTable
 
         if isinstance(source, DeltaTable):
