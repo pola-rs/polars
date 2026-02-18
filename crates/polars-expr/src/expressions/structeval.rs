@@ -228,6 +228,22 @@ impl PhysicalExpr for StructEvalExpr {
 
         let f = |e: &Arc<dyn PhysicalExpr>| {
             let result = e.evaluate(df, &state)?;
+            let result_len = result.len();
+
+            if result_len != input_len && result_len == 1 && !e.is_scalar() {
+                let identifier = match e.as_expression() {
+                    Some(expr) => format!("expression: {expr}"),
+                    None => "this Series".to_string(),
+                };
+
+                polars_bail!(InvalidOperation:
+                    "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
+                    If you want {} to be broadcasted, ensure it is a scalar \
+                    (for instance by adding '.first()').",
+                    result.name(), result_len, input_len, identifier
+                );
+            }
+
             polars_ensure!(
                 result.len() == input_len || result.len() == 1,
                 ShapeMismatch: "struct.with_fields expressions must have matching or unit length"
