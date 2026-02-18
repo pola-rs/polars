@@ -193,7 +193,7 @@ def test_derived_table_without_alias() -> None:
         # set operation without subquery aliases
         res = ctx.execute(
             """
-            SELECT * FROM (
+            FROM (
                 SELECT a, b FROM df WHERE a <= 2
                 UNION ALL
                 SELECT a, b FROM df WHERE a > 2
