@@ -21,9 +21,13 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 import polars.datatypes.classes as pldt
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
-    from typing_extensions import Self
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
 
     from polars import Series
     from polars._typing import (
