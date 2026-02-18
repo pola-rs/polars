@@ -41,7 +41,7 @@ blake3 = { version = "1.8.2" }
 boxcar = "0.2.12"
 bytemuck = { version = "1.22", features = ["derive", "extern_crate_alloc"] }
 bytes = { version = "1.11" }
-chrono = { version = "<=0.4.41", default-features = false, features = ["std"] }
+chrono = { version = "0.4.42", default-features = false, features = ["std"] }
 chrono-tz = "0.10"
 color-backtrace = { version = "0.7.2", default-features = false, features = ["use-btparse-crate"] }
 compact_str = { version = "0.9.0", features = ["serde"] }
