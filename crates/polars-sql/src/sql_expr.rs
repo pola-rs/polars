@@ -107,6 +107,7 @@ impl SQLExprVisitor<'_> {
                 expr,
                 data_type,
                 format,
+                array: _,
             } => self.visit_cast(expr, data_type, format, kind),
             SQLExpr::Ceil { expr, .. } => Ok(self.visit_expr(expr)?.ceil()),
             SQLExpr::CompoundFieldAccess { root, access_chain } => {

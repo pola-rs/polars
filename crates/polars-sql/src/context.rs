@@ -754,6 +754,7 @@ impl SQLContext {
             order_by,
             limit,
             delete_token: _,
+            optimizer_hint: _,
         }) = stmt
         {
             let error_message: Option<&'static str> = if !tables.is_empty() {
@@ -1027,7 +1028,9 @@ impl SQLContext {
             ref exclude,
             ref into,
             ref lateral_views,
+            ref optimizer_hint,
             ref prewhere,
+            ref select_modifiers,
             ref sort_by,
             ref top,
             ref value_table_mode,
@@ -1035,12 +1038,14 @@ impl SQLContext {
 
         // Raise specific error messages for unsupported attributes
         polars_ensure!(cluster_by.is_empty(), SQLInterface: "`CLUSTER BY` clause is not supported");
-        polars_ensure!(connect_by.is_none(), SQLInterface: "`CONNECT BY` clause is not supported");
+        polars_ensure!(connect_by.is_empty(), SQLInterface: "`CONNECT BY` clause is not supported");
         polars_ensure!(distribute_by.is_empty(), SQLInterface: "`DISTRIBUTE BY` clause is not supported");
         polars_ensure!(exclude.is_none(), SQLInterface: "`EXCLUDE` clause is not supported");
         polars_ensure!(into.is_none(), SQLInterface: "`SELECT INTO` clause is not supported");
         polars_ensure!(lateral_views.is_empty(), SQLInterface: "`LATERAL VIEW` clause is not supported");
+        polars_ensure!(optimizer_hint.is_none(), SQLInterface: "optimizer hints are not supported");
         polars_ensure!(prewhere.is_none(), SQLInterface: "`PREWHERE` clause is not supported");
+        polars_ensure!(select_modifiers.is_none(), SQLInterface: "select modifiers are not supported");
         polars_ensure!(sort_by.is_empty(), SQLInterface: "`SORT BY` clause is not supported; use `ORDER BY` instead");
         polars_ensure!(top.is_none(), SQLInterface: "`TOP` clause is not supported; use `LIMIT` instead");
         polars_ensure!(value_table_mode.is_none(), SQLInterface: "`SELECT AS VALUE/STRUCT` is not supported");
@@ -1454,7 +1459,7 @@ impl SQLContext {
                     UniqueKeepStrategy::First,
                 ));
             },
-            None => lf,
+            Some(Distinct::All) | None => lf,
         };
         Ok(lf)
     }
@@ -1796,8 +1801,11 @@ impl SQLContext {
                 lateral,
                 subquery,
                 alias,
+                sample,
             } => {
-                polars_ensure!(!(*lateral), SQLInterface: "LATERAL not supported");
+                polars_ensure!(!(*lateral), SQLInterface: "LATERAL is not supported");
+                polars_ensure!(sample.is_none(), SQLInterface: "SAMPLE is not supported");
+
                 if let Some(alias) = alias {
                     let mut lf = self.execute_query_no_ctes(subquery)?;
                     lf = self.rename_columns_from_table_alias(lf, alias)?;
