@@ -3333,3 +3333,17 @@ def test_with_columns_generator_alias() -> None:
     df = pl.select(a=1).with_columns(expr.alias(name) for name, expr in data.items())
     expected = pl.DataFrame({"a": [2]})
     assert df.equals(expected)
+
+
+def test_sort_errors_with_object_dtype_24677() -> None:
+    lazy_df = pl.LazyFrame(
+        {"a": "1.234", "b": 2}, schema={"a": pl.Decimal(38, 18), "b": pl.Int64}
+    )
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match=r"column '.*' has a dtype of '.*', which does not support sorting",
+    ):
+        pl.DataFrame({"a": lazy_df.collect_schema().dtypes()}).group_by("a").len().sort(
+            "a"
+        )
