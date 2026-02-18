@@ -250,18 +250,23 @@ impl PhysicalExpr for StructEvalExpr {
 
         for (i, col) in cols.iter().enumerate() {
             let col_len = col.len();
-            if col_len != input_len && col_len == 1 && !self.evaluation[i].is_scalar() {
-                let identifier = match self.evaluation[i].as_expression() {
-                    Some(expr) => format!("expression: {expr}"),
-                    None => "this Series".to_string(),
-                };
+            if col_len != input_len && col_len == 1 {
+                #[allow(clippy::collapsible_if)]
+                if !self.evaluation[i].is_scalar()
+                    && std::env::var("POLARS_ALLOW_NON_SCALAR_EXP").as_deref() != Ok("1")
+                {
+                    let identifier = match self.evaluation[i].as_expression() {
+                        Some(expr) => format!("expression: {expr}"),
+                        None => "this Series".to_string(),
+                    };
 
-                polars_bail!(InvalidOperation:
-                    "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
-                    If you want {} to be broadcasted, ensure it is a scalar \
-                    (for instance by adding '.first()').",
-                    col.name(), col_len, input_len, identifier
-                );
+                    polars_bail!(InvalidOperation:
+                        "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
+                        If you want {} to be broadcasted, ensure it is a scalar \
+                        (for instance by adding '.first()').",
+                        col.name(), col_len, input_len, identifier
+                    );
+                }
             }
         }
 
