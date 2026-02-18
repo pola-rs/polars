@@ -69,10 +69,6 @@ impl<Field, Metadata: Default> Schema<Field, Metadata> {
 }
 
 impl<Field, Metadata> Schema<Field, Metadata> {
-    pub fn names_display(&self) -> impl std::fmt::Display + std::fmt::Debug + '_ {
-        NamesDisplay(self)
-    }
-
     /// Reserve `additional` memory spaces in the schema.
     pub fn reserve(&mut self, additional: usize) {
         self.fields.reserve(additional);
@@ -537,12 +533,6 @@ where
     }
 }
 
-impl<Field: std::fmt::Debug, Metadata> Schema<Field, Metadata> {
-    pub fn values_display(&self) -> impl std::fmt::Display + std::fmt::Debug + '_ {
-        ValuesDisplay(self)
-    }
-}
-
 impl<Field: Hash, Metadata: Hash> Hash for Schema<Field, Metadata> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         Hash::hash(&SchemaHashEqWrap::from(self), state)
@@ -622,33 +612,51 @@ impl<Field, Metadata> IntoIterator for Schema<Field, Metadata> {
     }
 }
 
-struct NamesDisplay<'a, Field, Metadata>(&'a Schema<Field, Metadata>);
+pub use display::{NamesDisplay, ValuesDisplay};
 
-impl<'a, Field, Metadata> std::fmt::Display for NamesDisplay<'a, Field, Metadata> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self, f)
+mod display {
+    use std::fmt::{self, Debug, Display, Formatter};
+
+    use super::Schema;
+
+    impl<Field, Metadata> Schema<Field, Metadata> {
+        pub fn names_display(&self) -> impl Display + Debug + '_ {
+            NamesDisplay(self)
+        }
     }
-}
 
-impl<'a, Field, Metadata> std::fmt::Debug for NamesDisplay<'a, Field, Metadata> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self.0.fields.keys(), f)
+    impl<Field: Debug, Metadata> Schema<Field, Metadata> {
+        pub fn values_display(&self) -> impl Display + Debug + '_ {
+            ValuesDisplay(self)
+        }
     }
-}
 
-struct ValuesDisplay<'a, Field, Metadata>(&'a Schema<Field, Metadata>);
+    pub struct NamesDisplay<'a, Field, Metadata>(&'a Schema<Field, Metadata>);
 
-impl<'a, Field: std::fmt::Debug, Metadata> std::fmt::Display
-    for ValuesDisplay<'a, Field, Metadata>
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self, f)
+    impl<'a, Field, Metadata> Display for NamesDisplay<'a, Field, Metadata> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            Debug::fmt(&self, f)
+        }
     }
-}
 
-impl<'a, Field: std::fmt::Debug, Metadata> std::fmt::Debug for ValuesDisplay<'a, Field, Metadata> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self.0.fields.values(), f)
+    impl<'a, Field, Metadata> Debug for NamesDisplay<'a, Field, Metadata> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            Debug::fmt(&self.0.fields.keys(), f)
+        }
+    }
+
+    pub struct ValuesDisplay<'a, Field, Metadata>(&'a Schema<Field, Metadata>);
+
+    impl<'a, Field: Debug, Metadata> Display for ValuesDisplay<'a, Field, Metadata> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            Debug::fmt(&self, f)
+        }
+    }
+
+    impl<'a, Field: Debug, Metadata> Debug for ValuesDisplay<'a, Field, Metadata> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            Debug::fmt(&self.0.fields.values(), f)
+        }
     }
 }
 
