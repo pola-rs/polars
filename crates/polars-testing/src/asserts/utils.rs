@@ -741,8 +741,8 @@ fn assert_schema_equal_impl(
                 "columns mismatch: {:?} in left, but not in right",
                 one_sided_names
             ),
-            DisplayUsingDebug(left_schema.names()),
-            DisplayUsingDebug(right_schema.names())
+            left_schema.names_display(),
+            right_schema.names_display()
         )
     }
 
@@ -762,8 +762,8 @@ fn assert_schema_equal_impl(
                 "columns mismatch: {:?} in right, but not in left",
                 one_sided_names
             ),
-            DisplayUsingDebug(left_schema.names()),
-            DisplayUsingDebug(right_schema.names())
+            left_schema.names_display(),
+            right_schema.names_display()
         )
     }
 
@@ -773,8 +773,8 @@ fn assert_schema_equal_impl(
         polars_bail!(
             assertion_error = context,
             "columns are not in the same order",
-            DisplayUsingDebug(left_schema.names()),
-            DisplayUsingDebug(right_schema.names())
+            left_schema.names_display(),
+            right_schema.names_display()
         )
     }
 
@@ -782,8 +782,8 @@ fn assert_schema_equal_impl(
         polars_bail!(
             assertion_error = context,
             "dtypes do not match",
-            DisplayUsingDebug(left_schema.fields()),
-            DisplayUsingDebug(right_schema.fields())
+            left_schema.values_display(),
+            right_schema.values_display()
         )
     }
 
@@ -900,15 +900,4 @@ pub fn assert_dataframe_equal(
     }
 
     Ok(())
-}
-
-struct DisplayUsingDebug<T>(T);
-
-impl<T> std::fmt::Display for DisplayUsingDebug<T>
-where
-    T: std::fmt::Debug,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self.0, f)
-    }
 }

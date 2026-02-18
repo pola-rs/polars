@@ -69,20 +69,13 @@ impl<Field, Metadata: Default> Schema<Field, Metadata> {
 }
 
 impl<Field, Metadata> Schema<Field, Metadata> {
-    pub fn names(&self) -> indexmap::map::Keys<'_, PlSmallStr, Field> {
-        self.fields.keys()
+    pub fn names_display(&self) -> impl std::fmt::Display + std::fmt::Debug + '_ {
+        DisplayUsingDebug(self.fields.keys())
     }
 
-    pub fn fields(&self) -> indexmap::map::Values<'_, PlSmallStr, Field> {
-        self.fields.values()
-    }
-
-    pub fn metadata(&self) -> &Metadata {
-        &self.metadata
-    }
-
-    pub fn metadata_mut(&mut self) -> &mut Metadata {
-        &mut self.metadata
+    /// Reserve `additional` memory spaces in the schema.
+    pub fn reserve(&mut self, additional: usize) {
+        self.fields.reserve(additional);
     }
 
     /// The number of fields in the schema.
@@ -96,9 +89,12 @@ impl<Field, Metadata> Schema<Field, Metadata> {
         self.fields.is_empty()
     }
 
-    /// Reserve `additional` memory spaces in the schema.
-    pub fn reserve(&mut self, additional: usize) {
-        self.fields.reserve(additional);
+    pub fn metadata(&self) -> &Metadata {
+        &self.metadata
+    }
+
+    pub fn metadata_mut(&mut self) -> &mut Metadata {
+        &mut self.metadata
     }
 
     /// Rename field `old` to `new`, and return the (owned) old name.
@@ -358,7 +354,7 @@ impl<Field, Metadata> Schema<Field, Metadata> {
 
     /// Iterates over references to the names in this schema.
     pub fn iter_names(&self) -> impl '_ + ExactSizeIterator<Item = &PlSmallStr> {
-        self.fields.iter().map(|(name, _dtype)| name)
+        self.fields.keys()
     }
 
     pub fn iter_names_cloned(&self) -> impl '_ + ExactSizeIterator<Item = PlSmallStr> {
@@ -367,7 +363,7 @@ impl<Field, Metadata> Schema<Field, Metadata> {
 
     /// Iterates over references to the dtypes in this schema.
     pub fn iter_values(&self) -> impl '_ + ExactSizeIterator<Item = &Field> {
-        self.fields.iter().map(|(_name, dtype)| dtype)
+        self.fields.values()
     }
 
     pub fn into_iter_values(self) -> impl ExactSizeIterator<Item = Field> {
@@ -541,6 +537,12 @@ where
     }
 }
 
+impl<Field: std::fmt::Debug, Metadata> Schema<Field, Metadata> {
+    pub fn values_display(&self) -> impl std::fmt::Display + std::fmt::Debug + '_ {
+        DisplayUsingDebug(self.fields.values())
+    }
+}
+
 impl<Field: Hash, Metadata: Hash> Hash for Schema<Field, Metadata> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         Hash::hash(&SchemaHashEqWrap::from(self), state)
@@ -620,6 +622,20 @@ impl<Field, Metadata> IntoIterator for Schema<Field, Metadata> {
     }
 }
 
+struct DisplayUsingDebug<T>(T);
+
+impl<T: std::fmt::Debug> std::fmt::Display for DisplayUsingDebug<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for DisplayUsingDebug<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.0, f)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Schema;
@@ -630,5 +646,20 @@ mod tests {
         let rhs: Schema<(), ()> = Schema::from_iter([("b".into(), ()), ("a".into(), ())]);
 
         assert_ne!(lhs, rhs);
+    }
+
+    #[test]
+    fn test_names_values_display() {
+        let schema: Schema<&str, ()> =
+            Schema::from_iter([("name1".into(), "value1"), ("name2".into(), "value2")]);
+
+        assert_eq!(
+            format!("{}", schema.names_display()),
+            r#"["name1", "name2"]"#,
+        );
+        assert_eq!(
+            format!("{}", schema.values_display()),
+            r#"["value1", "value2"]"#,
+        );
     }
 }
