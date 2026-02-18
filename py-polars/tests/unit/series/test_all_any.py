@@ -92,7 +92,7 @@ _N = 200
     ids=["nulls_then_true", "all_nulls", "nulls_and_false"],
 )
 def test_any_with_nulls_large(data: list[bool | None], expected: bool) -> None:
-    """Test any() on arrays larger than 64 elements to exercise bitmap word-level ops."""
+    """Test any() on arrays larger than 64 elements to check bitmap word-level ops."""
     assert pl.Series(data, dtype=pl.Boolean).any() is expected
 
 
@@ -105,7 +105,7 @@ def test_any_with_nulls_large(data: list[bool | None], expected: bool) -> None:
     ids=["nulls_trues_then_false", "trues_nulls_trues"],
 )
 def test_all_with_nulls_large(data: list[bool | None], expected: bool) -> None:
-    """Test all() on arrays larger than 64 elements to exercise bitmap word-level ops."""
+    """Test all() on arrays larger than 64 elements to check bitmap word-level ops."""
     assert pl.Series(data, dtype=pl.Boolean).all() is expected
 
 
