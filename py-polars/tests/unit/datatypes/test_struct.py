@@ -1865,3 +1865,15 @@ def test_join_struct_error_lazy_26276() -> None:
 
     with pytest.raises(pl.exceptions.SchemaError, match=r"struct \{.*\}"):
         lhs.join(rhs, on="x").collect()
+
+
+def test_expr_broadcasting_errors_26022() -> None:
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match=r"Series .*, length 1 doesn't match the DataFrame height of 2",
+    ):
+        pl.DataFrame(
+            {"a": [{"field": 1}, {"field": 2}]},
+        ).lazy().with_columns(
+            pl.col("a").struct.with_fields(pl.field("field").head(1).alias("head_1"))
+        ).collect()
