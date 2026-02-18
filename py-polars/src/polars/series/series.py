@@ -5179,7 +5179,7 @@ class Series:
         if pa.types.is_dictionary(pa_arr.type):
             pa_dtype = pa.dictionary(pa.int64(), pa.large_string())
             # Forcibly have at least 1 row as otherwise cast makes
-            # enum dictionary values disappear otherwise.
+            # enum dictionary values disappear.
             pa_arr = (
                 pa_arr.cast(pa_dtype)
                 if self.len() != 0
