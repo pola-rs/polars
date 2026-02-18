@@ -654,12 +654,12 @@ mod tests {
             Schema::from_iter([("name1".into(), "value1"), ("name2".into(), "value2")]);
 
         assert_eq!(
-            format!("{}", schema.names_display()),
-            r#"["name1", "name2"]"#,
+            format!("{} {:?}", schema.names_display(), schema.names_display()),
+            r#"["name1", "name2"] ["name1", "name2"]"#,
         );
         assert_eq!(
-            format!("{}", schema.values_display()),
-            r#"["value1", "value2"]"#,
+            format!("{} {:?}", schema.values_display(), schema.values_display()),
+            r#"["value1", "value2"] ["value1", "value2"]"#,
         );
     }
 }
