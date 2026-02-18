@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -21,6 +21,9 @@ from polars.exceptions import (
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_arrow_list_roundtrip() -> None:
@@ -863,9 +866,9 @@ def test_from_numpy_different_resolution_invalid() -> None:
         )
 
 
-def test_compat_level(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_compat_level(plmonkeypatch: PlMonkeyPatch) -> None:
     # change these if compat level bumped
-    monkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
+    plmonkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
     oldest = CompatLevel.oldest()
     assert oldest is CompatLevel.oldest()  # test singleton
     assert oldest._version == 0
@@ -1229,7 +1232,7 @@ def pyarrow_table_to_ipc_bytes(tbl: pa.Table) -> bytes:
 
 
 @pytest.mark.write_disk
-def test_month_day_nano_from_ffi_15969(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_month_day_nano_from_ffi_15969(plmonkeypatch: PlMonkeyPatch) -> None:
     import datetime
 
     def new_interval_scalar(months: int, days: int, nanoseconds: int) -> pa.Scalar:
@@ -1280,7 +1283,7 @@ def test_month_day_nano_from_ffi_15969(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ComputeError, match=import_err_msg):
         pl.Series(pa.array([], type=pa.month_day_nano_interval()))
 
-    monkeypatch.setenv("POLARS_IMPORT_INTERVAL_AS_STRUCT", "1")
+    plmonkeypatch.setenv("POLARS_IMPORT_INTERVAL_AS_STRUCT", "1")
 
     expect = pl.DataFrame(
         [

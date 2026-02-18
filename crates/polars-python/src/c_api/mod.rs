@@ -261,6 +261,10 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::py_get_engine_affinity))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::config_reload_env_vars))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::config_reload_env_var))
+        .unwrap();
 
     #[cfg(feature = "sql")]
     m.add_wrapped(wrap_pyfunction!(functions::sql_expr))
@@ -349,6 +353,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(testing::assert_series_equal_py))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(testing::assert_dataframe_equal_py))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(testing::assert_schema_equal_py))
         .unwrap();
 
     // Exceptions - Errors

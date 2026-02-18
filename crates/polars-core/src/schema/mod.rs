@@ -55,7 +55,7 @@ impl SchemaExt for Schema {
     /// [`get`][Self::get] or [`get_full`][Self::get_full].
     fn try_get_field(&self, name: &str) -> PolarsResult<Field> {
         self.get_full(name)
-            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
+            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{name}"))
             .map(|(_, name, dtype)| Field::new(name.clone(), dtype.clone()))
     }
 
@@ -107,7 +107,7 @@ impl SchemaExt for Schema {
 
 pub trait SchemaNamesAndDtypes {
     const IS_ARROW: bool;
-    type DataType: Debug + Clone + Default + PartialEq;
+    type DataType: Debug + Clone + PartialEq;
 
     fn iter_names_and_dtypes(
         &self,

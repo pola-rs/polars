@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing.asserts.frame import assert_frame_equal
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 def lazified_read_lines(*a: Any, **kw: Any) -> pl.LazyFrame:
@@ -21,10 +24,10 @@ def test_scan_lines(
     force_unit_chunk_size: bool,
     carriage_return: bool,
     capfd: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     if patch_scan_lines:
-        monkeypatch.setattr(pl, "scan_lines", lazified_read_lines)
+        plmonkeypatch.setattr(pl, "scan_lines", lazified_read_lines)
         assert pl.scan_lines is lazified_read_lines
 
     if carriage_return:
@@ -36,15 +39,15 @@ def test_scan_lines(
             last_bytes = bytes.replace(data, b"\n", b"\r\n")
             return inner(last_bytes, *a, **kw)
 
-        monkeypatch.setattr(pl, "scan_lines", wrapped)
+        plmonkeypatch.setattr(pl, "scan_lines", wrapped)
 
         pl.scan_lines(b"\n\n")
         assert last_bytes == b"\r\n\r\n"
 
     if force_unit_chunk_size:
-        monkeypatch.setenv("POLARS_FORCE_NDJSON_CHUNK_SIZE", "1")
+        plmonkeypatch.setenv("POLARS_FORCE_NDJSON_READ_SIZE", "1")
 
-        with monkeypatch.context() as cx:
+        with plmonkeypatch.context() as cx:
             capfd.readouterr()
             cx.setenv("POLARS_VERBOSE", "1")
             pl.scan_lines(b"").collect()
@@ -192,9 +195,9 @@ EEE
 
 
 def test_scan_lines_negative_slice_reversed_read(
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_FORCE_NDJSON_CHUNK_SIZE", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_NDJSON_READ_SIZE", "1")
     q = pl.scan_lines(b"\xff" + 5000 * b"abc\n")
 
     with pytest.raises(ComputeError, match="invalid utf8"):

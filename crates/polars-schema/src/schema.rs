@@ -6,12 +6,21 @@ use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure, polars
 use polars_utils::aliases::{InitHashMaps, PlIndexMap};
 use polars_utils::pl_str::PlSmallStr;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct Schema<Field, Metadata> {
     fields: PlIndexMap<PlSmallStr, Field>,
     metadata: Metadata,
+}
+
+impl<Field, Metadata: Default> Default for Schema<Field, Metadata> {
+    fn default() -> Self {
+        Self {
+            fields: PlIndexMap::default(),
+            metadata: Metadata::default(),
+        }
+    }
 }
 
 impl<Field: Eq, Metadata: Eq> Eq for Schema<Field, Metadata> {}
@@ -156,14 +165,14 @@ impl<Field, Metadata> Schema<Field, Metadata> {
     /// Get a reference to the dtype of the field named `name`, or `Err(PolarsErr)` if the field doesn't exist.
     pub fn try_get(&self, name: &str) -> PolarsResult<&Field> {
         self.get(name)
-            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
+            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{name}"))
     }
 
     /// Get a mutable reference to the dtype of the field named `name`, or `Err(PolarsErr)` if the field doesn't exist.
     pub fn try_get_mut(&mut self, name: &str) -> PolarsResult<&mut Field> {
         self.fields
             .get_mut(name)
-            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
+            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{name}"))
     }
 
     /// Return all data about the field named `name`: its index in the schema, its name, and its dtype.
@@ -179,7 +188,7 @@ impl<Field, Metadata> Schema<Field, Metadata> {
     pub fn try_get_full(&self, name: &str) -> PolarsResult<(usize, &PlSmallStr, &Field)> {
         self.fields
             .get_full(name)
-            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
+            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{name}"))
     }
 
     /// Get references to the name and dtype of the field at `index`.
@@ -401,7 +410,7 @@ impl<Field, Metadata> Schema<Field, Metadata> {
 
 impl<Field, Metadata> Schema<Field, Metadata>
 where
-    Field: Clone + Default,
+    Field: Clone,
     Metadata: Clone,
 {
     /// Create a new schema from this one, inserting a field with `name` and `dtype` at the given `index`.

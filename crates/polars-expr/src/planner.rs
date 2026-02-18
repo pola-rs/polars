@@ -438,29 +438,14 @@ fn create_physical_expr_inner(
             options: _,
         } => {
             assert!(inputs.len() == 2);
-            let input = inputs[0].node();
-            let by = inputs[1].node();
-            let arg_fn = match function {
-                IRFunctionExpr::MinBy => IRFunctionExpr::ArgMin,
-                IRFunctionExpr::MaxBy => IRFunctionExpr::ArgMax,
+            let new_minmax_by = match function {
+                IRFunctionExpr::MinBy => AggMinMaxByExpr::new_min_by,
+                IRFunctionExpr::MaxBy => AggMinMaxByExpr::new_max_by,
                 _ => unreachable!(), // guaranteed by pattern
             };
-
-            let arg_min_aexpr = AExpr::Function {
-                input: vec![ExprIR::from_node(by, expr_arena)],
-                function: arg_fn,
-                options: FunctionOptions::aggregation(),
-            };
-            let arg_min = expr_arena.add(arg_min_aexpr);
-            let gather_aexpr = AExpr::Gather {
-                expr: input,
-                idx: arg_min,
-                returns_scalar: true,
-                null_on_oob: false,
-            };
-            let gather = expr_arena.add(gather_aexpr);
-
-            return create_physical_expr_inner(gather, expr_arena, schema, state);
+            let input = create_physical_expr_inner(inputs[0].node(), expr_arena, schema, state)?;
+            let by = create_physical_expr_inner(inputs[1].node(), expr_arena, schema, state)?;
+            return Ok(Arc::new(new_minmax_by(input, by)));
         },
         Cast {
             expr,

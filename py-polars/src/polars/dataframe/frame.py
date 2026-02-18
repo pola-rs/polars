@@ -7894,9 +7894,10 @@ class DataFrame:
                 "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
                 By "calendar day", we mean the corresponding time on the next day
-                (which may not be 24 hours, due to daylight savings). Similarly for
-                "calendar week", "calendar month", "calendar quarter", and
-                "calendar year".
+                (which may not be 24 hours, due to daylight savings - in cases of
+                ambiguity, we follow RFC-5545 and preserve the DST fold of the original
+                datetime). Similarly for "calendar week", "calendar month",
+                "calendar quarter", and "calendar year".
 
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
@@ -12350,21 +12351,24 @@ class DataFrame:
             .collect(optimizations=QueryOptFlags._eager())
         )
 
-    def corr(self, **kwargs: Any) -> DataFrame:
+    def corr(self, *, label: str | None = None, **kwargs: Any) -> DataFrame:
         """
         Return pairwise Pearson product-moment correlation coefficients between columns.
 
         See numpy `corrcoef` for more information:
         https://numpy.org/doc/stable/reference/generated/numpy.corrcoef.html
 
-        Notes
-        -----
-        This functionality requires numpy to be installed.
-
         Parameters
         ----------
+        label
+            If given, a new column that contains the labels (column names)
+            associated with each row is added, with this name.
         **kwargs
-            Keyword arguments are passed to numpy `corrcoef`.
+            Keyword arguments that are passed to `numpy.corrcoef`.
+
+        Notes
+        -----
+        This functionality requires `numpy` to be installed.
 
         Examples
         --------
@@ -12380,11 +12384,27 @@ class DataFrame:
         │ -1.0 ┆ 1.0  ┆ -1.0 │
         │ 1.0  ┆ -1.0 ┆ 1.0  │
         └──────┴──────┴──────┘
+        >>> df.corr(label="cols")
+        shape: (3, 4)
+        ┌──────┬──────┬──────┬──────┐
+        │ cols ┆ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  ┆ ---  │
+        │ str  ┆ f64  ┆ f64  ┆ f64  │
+        ╞══════╪══════╪══════╪══════╡
+        │ foo  ┆ 1.0  ┆ -1.0 ┆ 1.0  │
+        │ bar  ┆ -1.0 ┆ 1.0  ┆ -1.0 │
+        │ ham  ┆ 1.0  ┆ -1.0 ┆ 1.0  │
+        └──────┴──────┴──────┴──────┘
         """
         correlation_matrix = np.corrcoef(self.to_numpy(), rowvar=False, **kwargs)
         if self.width == 1:
             correlation_matrix = np.array([correlation_matrix])
-        return DataFrame(correlation_matrix, schema=self.columns)
+
+        df = DataFrame(correlation_matrix, schema=self.columns)
+        if label is not None:
+            cols = pl.Series(name=label, values=self.columns)
+            df.insert_column(0, cols)
+        return df
 
     def merge_sorted(self, other: DataFrame, key: str) -> DataFrame:
         """

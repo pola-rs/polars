@@ -1398,21 +1398,25 @@ def test_grouped_minmax_after_reverse_on_sorted_column_26141(
 
 
 @pytest.mark.may_fail_auto_streaming
-@pytest.mark.xfail(reason="#26049")
 @pytest.mark.parametrize("agg_by", [pl.Expr.min_by, pl.Expr.max_by])
-def test_min_max_by_series_length_mismatch(
+def test_min_max_by_series_length_mismatch_26049(
     agg_by: Callable[[pl.Expr, pl.Expr], pl.Expr],
 ) -> None:
     lf = pl.LazyFrame(
-        {"value": [1, 2, 3], "group": ["A", "B", "C"], "filter": [False, True, True]}
+        {
+            "a": [0, 10, 20, 30, 40, 50, 60, 70, 80, 90],
+            "b": [18, 5, 8, 8, 4, 5, 6, 8, 1, -10],
+            "group": ["A", "A", "A", "A", "A", "B", "B", "C", "C", "C"],
+        }
     )
+
     q = lf.with_columns(
-        agg_by(pl.col("group").filter(pl.col("filter")), pl.col("value"))
+        agg_by(pl.col("group").filter(pl.col("b") % 2 == 0), pl.col("a"))
     )
 
     with pytest.raises(
         pl.exceptions.ShapeError,
-        match=r"^'by' column in `(min|max)_by` operation has incorrect length",
+        match=r"^'by' column in (min|max)_by expression has incorrect length: expected \d+, got \d+$",
     ):
         q.collect(engine="in-memory")
     with pytest.raises(
@@ -1420,3 +1424,52 @@ def test_min_max_by_series_length_mismatch(
         match=r"^zip node received non-equal length inputs$",
     ):
         q.collect(engine="streaming")
+
+    actual = (
+        lf.group_by("group")
+        .agg(
+            pl.col("a")
+            .max_by(pl.col("b").filter(pl.col("b") < 20).abs())
+            .alias("max_by")
+        )
+        .sort("group")
+    ).collect()
+    expected = pl.DataFrame(
+        {
+            "group": ["A", "B", "C"],
+            "max_by": [0, 60, 90],
+        }
+    )
+    assert_frame_equal(actual, expected)
+
+    q = (
+        lf.group_by("group")
+        .agg(
+            pl.col("a")
+            .max_by(pl.col("b").filter(pl.col("b") < 7).abs())
+            .alias("group_length_mismatch")
+        )
+        .sort("group")
+    )
+    with pytest.raises(
+        pl.exceptions.ShapeError,
+        match=r"^expressions must have matching group lengths$",
+    ):
+        q.collect(engine="in-memory")
+
+
+@pytest.mark.parametrize(
+    "by_expr",
+    [
+        pl.struct("b", "c"),
+        pl.concat_list("b", "c"),
+    ],
+)
+def test_min_by_max_by_nested_type_key_26268(by_expr: pl.Expr) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 6, 5], "c": [7, 5, 2]})
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="cannot use a nested type as `by` argument in `min_by`/`max_by`",
+    ):
+        df.select(pl.col("a").min_by(by_expr))

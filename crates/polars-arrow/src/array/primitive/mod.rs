@@ -425,6 +425,13 @@ impl<T: NativeType> PrimitiveArray<T> {
         )
     }
 
+    /// Calls f with a [`PrimitiveArray`] backed by this slice.
+    ///
+    /// Aborts if any clones of the [`PrimitiveArray`] still live when `f` returns.
+    pub fn with_slice<R, F: FnOnce(PrimitiveArray<T>) -> R>(slice: &[T], f: F) -> R {
+        Buffer::with_slice(slice, |buf| f(Self::new(T::PRIMITIVE.into(), buf, None)))
+    }
+
     /// Creates a (non-null) [`PrimitiveArray`] from a [`TrustedLen`] of values.
     /// # Implementation
     /// This does not assume that the iterator has a known length.

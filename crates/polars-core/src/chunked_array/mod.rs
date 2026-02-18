@@ -58,9 +58,6 @@ use self::flags::{StatisticsFlags, StatisticsFlagsIM};
 use crate::series::IsSorted;
 use crate::utils::{first_non_null, first_null, last_non_null};
 
-#[cfg(not(feature = "dtype-categorical"))]
-pub struct RevMapping {}
-
 pub type ChunkLenIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&ArrayRef) -> usize>;
 
 /// # ChunkedArray

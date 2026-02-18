@@ -679,21 +679,24 @@ def test_config_load_save(tmp_path: Path) -> None:
 
 
 def test_config_load_save_context() -> None:
-    # store the default configuration state
+    # Store the default configuration state.
     default_state = pl.Config.save()
 
-    # establish some non-default settings
+    # Establish some non-default settings.
     pl.Config.set_tbl_formatting("ASCII_MARKDOWN")
     pl.Config.set_verbose(True)
 
-    # load the default config, validate load & context manager behaviour
+    # Load the default config, validate load & context manager behaviour.
     with pl.Config.load(default_state):
         assert os.environ.get("POLARS_FMT_TABLE_FORMATTING") is None
         assert os.environ.get("POLARS_VERBOSE") is None
 
-    # ensure earlier state was restored
+    # Ensure earlier state was restored.
     assert os.environ["POLARS_FMT_TABLE_FORMATTING"] == "ASCII_MARKDOWN"
     assert os.environ["POLARS_VERBOSE"]
+
+    # Restore defaults for other tests.
+    pl.Config.restore_defaults()
 
 
 def test_config_instances() -> None:
@@ -819,14 +822,15 @@ def test_config_raise_error_if_not_exist() -> None:
 
 
 def test_config_state_env_only() -> None:
-    pl.Config.set_verbose(False)
-    pl.Config.set_fmt_float("full")
+    with pl.Config() as cfg:
+        cfg.set_verbose(False)
+        cfg.set_fmt_float("full")
 
-    state_all = pl.Config.state(env_only=False)
-    state_env_only = pl.Config.state(env_only=True)
-    assert len(state_env_only) < len(state_all)
-    assert "set_fmt_float" in state_all
-    assert "set_fmt_float" not in state_env_only
+        state_all = cfg.state(env_only=False)
+        state_env_only = cfg.state(env_only=True)
+        assert len(state_env_only) < len(state_all)
+        assert "set_fmt_float" in state_all
+        assert "set_fmt_float" not in state_env_only
 
 
 def test_set_streaming_chunk_size() -> None:
