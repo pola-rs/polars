@@ -305,6 +305,16 @@ impl ColumnSelectorBuilder {
             return attach_cast(CastOptions::NonStrict);
         }
 
+        if target_dtype.is_float() && incoming_dtype.is_integer() {
+            return if self.cast_columns_policy.integer_to_float_cast {
+                attach_cast(CastOptions::Overflowing)
+            } else {
+                mismatch_err(
+                    "hint: pass cast_options=pl.ScanCastOptions(integer_cast='allow-float')",
+                )
+            };
+        }
+
         if let (
             DataType::Datetime(target_unit, target_zone),
             DataType::Datetime(incoming_unit, incoming_zone),

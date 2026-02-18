@@ -2328,9 +2328,11 @@ def using_string_cache() -> bool: ...
 # functions.strings
 def escape_regex(s: str) -> str: ...
 
-# functions.strings
+# functions: other
 def check_length(check: bool) -> None: ...
 def get_engine_affinity() -> EngineType: ...
+def config_reload_env_vars() -> None: ...
+def config_reload_env_var(var: str) -> None: ...
 
 # functions.when
 class PyWhen:
@@ -2480,6 +2482,13 @@ def assert_dataframe_equal_py(
     rel_tol: float,
     abs_tol: float,
     categorical_as_str: bool,
+) -> None: ...
+def assert_schema_equal_py(
+    left: Schema,
+    right: Schema,
+    *,
+    check_column_order: bool,
+    check_dtypes: bool,
 ) -> None: ...
 
 # datatypes

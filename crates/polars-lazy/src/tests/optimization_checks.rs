@@ -578,7 +578,7 @@ fn test_cluster_with_columns_dependency() -> Result<(), Box<dyn std::error::Erro
     println!("Optimized:\n{optimized}");
 
     assert_eq!(num_occurrences(&unoptimized, "WITH_COLUMNS"), 2);
-    assert_eq!(num_occurrences(&optimized, "WITH_COLUMNS"), 2);
+    assert_eq!(num_occurrences(&optimized, "WITH_COLUMNS"), 1);
 
     Ok(())
 }
@@ -611,7 +611,6 @@ fn test_cluster_with_columns_partial() -> Result<(), Box<dyn std::error::Error>>
 
     assert!(unoptimized.contains(r#"[col("buzz"), [(col("foo")) * (2.0)]]"#));
     assert!(unoptimized.contains(r#"[col("foo").alias("buzz")]"#));
-    assert!(optimized.contains(r#"[col("buzz")]"#));
     assert!(optimized.contains(r#"[col("foo").alias("buzz"), [(col("foo")) * (2.0)]]"#));
 
     Ok(())

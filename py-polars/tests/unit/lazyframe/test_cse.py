@@ -17,6 +17,8 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from tests.conftest import PlMonkeyPatch
+
 
 def num_cse_occurrences(explanation: str) -> int:
     """The number of unique CSE columns in an explain string."""
@@ -734,9 +736,9 @@ def test_cse_and_schema_update_projection_pd() -> None:
 @pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize("use_custom_io_source", [True, False])
 def test_cse_predicate_self_join(
-    capfd: Any, monkeypatch: Any, use_custom_io_source: bool
+    capfd: Any, plmonkeypatch: PlMonkeyPatch, use_custom_io_source: bool
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     y = pl.LazyFrame({"a": [1], "b": [2], "y": [3]})
     if use_custom_io_source:
         y = create_dataframe_source(y.collect(), is_pure=True)

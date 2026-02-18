@@ -11,13 +11,14 @@ description = "IO related logic for the Polars DataFrame library"
 [dependencies]
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
+polars-config = { workspace = true }
 polars-core = { workspace = true }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
 polars-parquet = { workspace = true, optional = true }
 polars-schema = { workspace = true }
 polars-time = { workspace = true, features = [], optional = true }
-polars-utils = { workspace = true, features = ['mmap'] }
+polars-utils = { workspace = true, features = ['mmap', 'sysinfo'] }
 
 arrow = { workspace = true }
 async-trait = { workspace = true, optional = true }
@@ -74,6 +75,7 @@ scan_lines = []
 serde = [
   "dep:serde",
   "polars-buffer/serde",
+  "polars-config/serde",
   "polars-core/serde-lazy",
   "polars-parquet/serde",
   "polars-utils/serde",
@@ -124,6 +126,7 @@ async = [
   "tokio",
   "polars-error/regex",
   "polars-parquet?/async",
+  "polars-utils/async-utils",
 ]
 cloud = [
   "object_store",

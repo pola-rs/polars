@@ -782,7 +782,7 @@ def test_unnamed_nested_join_relation() -> None:
 
     with (
         pl.SQLContext({"left": df, "right": df}) as ctx,
-        pytest.raises(SQLInterfaceError, match="cannot join on unnamed relation"),
+        pytest.raises(SQLInterfaceError, match="cannot JOIN on unnamed relation"),
     ):
         ctx.execute(
             """

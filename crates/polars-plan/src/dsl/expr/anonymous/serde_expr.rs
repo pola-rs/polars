@@ -107,8 +107,7 @@ pub(super) fn deserialize_column_udf(buf: &[u8]) -> PolarsResult<Arc<dyn Anonymo
         if let Some(func) = reg.get_function(name, payload) {
             Ok(func)
         } else {
-            let msg = "name not found in named serde registry";
-            polars_bail!(ComputeError: msg)
+            polars_bail!(ComputeError: "name not found in named serde registry")
         }
     } else {
         polars_bail!(ComputeError: "deserialization not supported for this 'opaque' function")
@@ -149,8 +148,7 @@ pub(super) fn deserialize_anon_agg(buf: &[u8]) -> PolarsResult<Arc<dyn Anonymous
         if let Some(func) = reg.get_agg(name, payload)? {
             Ok(func)
         } else {
-            let msg = "name not found in named serde registry";
-            polars_bail!(ComputeError: msg)
+            polars_bail!(ComputeError: "name not found in named serde registry")
         }
     } else {
         polars_bail!(ComputeError: "deserialization not supported for this 'opaque' function")

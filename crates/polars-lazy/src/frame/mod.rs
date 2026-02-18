@@ -1837,6 +1837,11 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    /// Remove all the rows of the LazyFrame.
+    pub fn clear(self) -> LazyFrame {
+        self.slice(0, 0)
+    }
+
     /// Get the first row.
     ///
     /// Equivalent to `self.slice(0, 1)`.

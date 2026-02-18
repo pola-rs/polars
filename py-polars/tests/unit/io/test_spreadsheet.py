@@ -922,7 +922,7 @@ def test_excel_write_compound_types(
         xls.getbuffer(),
     ):
         xldf = pl.read_excel(
-            binary_data,
+            binary_data,  # type: ignore[arg-type]
             sheet_name="data",
             engine=engine,
             include_file_paths="wbook",

@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 
     from polars import Expr
     from polars._typing import JoinStrategy, UniqueKeepStrategy
+    from tests.conftest import PlMonkeyPatch
 
 
 class MappingObject(Mapping[str, Any]):  # noqa: D101
@@ -174,7 +175,7 @@ def test_mixed_sequence_selection() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_from_arrow(monkeypatch: Any) -> None:
+def test_from_arrow(plmonkeypatch: PlMonkeyPatch) -> None:
     tbl = pa.table(
         {
             "a": pa.array([1, 2], pa.timestamp("s")),

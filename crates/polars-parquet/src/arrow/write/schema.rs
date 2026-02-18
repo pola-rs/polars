@@ -228,8 +228,9 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
                         field_id,
                     )?);
                 } else {
-                    polars_bail!(InvalidOperation:
-                        "Unable to write struct type with no child field to Parquet. Consider adding a dummy child field.".to_string(),
+                    polars_bail!(
+                        InvalidOperation:
+                        "Unable to write struct type with no child field to Parquet. Consider adding a dummy child field.",
                     )
                 }
             }

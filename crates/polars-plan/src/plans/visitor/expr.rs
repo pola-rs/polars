@@ -93,8 +93,8 @@ impl TreeWalker for Expr {
             Element => Element,
             Len => Len,
             RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
-            AnonymousAgg { input, function, fmt_str } => {
-                AnonymousAgg { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, fmt_str }
+            Display { inputs,  fmt_str } => {
+                Display { inputs: inputs.into_iter().map(f).collect::<Result<_, _>>()?, fmt_str }
             },
             AnonymousFunction { input, function, options, fmt_str } => {
                 AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options, fmt_str }

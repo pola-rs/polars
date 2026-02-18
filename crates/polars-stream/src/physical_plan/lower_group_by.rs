@@ -21,7 +21,9 @@ use crate::physical_plan::lower_expr::{
     build_hstack_stream, build_select_stream, compute_output_schema, is_elementwise_rec_cached,
     is_fake_elementwise_function, is_input_independent,
 };
-use crate::physical_plan::lower_ir::{build_row_idx_stream, build_slice_stream};
+use crate::physical_plan::lower_ir::{
+    build_filter_stream, build_row_idx_stream, build_slice_stream,
+};
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 #[allow(clippy::too_many_arguments)]
@@ -581,6 +583,54 @@ fn try_build_streaming_group_by(
                     };
                     other_agg_input_streams.insert(input_id, (input_stream, Vec::new()));
                     all_keys_included_in_other_inputs = true;
+                },
+
+                AExpr::Filter {
+                    input: filter_input,
+                    by: predicate,
+                } => {
+                    if !is_elementwise_rec_cached(*filter_input, expr_arena, expr_cache)
+                        || !is_elementwise_rec_cached(*predicate, expr_arena, expr_cache)
+                    {
+                        return Ok(None);
+                    }
+
+                    // We have to uniquify the keys here to prevent name dupes since we uniquified them elsewhere.
+                    // TODO: use pre-select as input here.
+                    let mut select_exprs = Vec::new();
+                    let predicate_name = unique_column_name();
+                    for key_id in &key_ids {
+                        select_exprs.push(ExprIR::new(
+                            expr_merger.get_node(*key_id).unwrap(),
+                            OutputName::Alias(uniq_input_names[key_id].clone()),
+                        ));
+                    }
+                    select_exprs.push(ExprIR::new(
+                        *filter_input,
+                        OutputName::Alias(input_name.clone()),
+                    ));
+                    select_exprs.push(ExprIR::new(
+                        *predicate,
+                        OutputName::Alias(predicate_name.clone()),
+                    ));
+
+                    let mut stream = build_select_stream(
+                        input,
+                        &select_exprs,
+                        expr_arena,
+                        phys_sm,
+                        expr_cache,
+                        ctx,
+                    )?;
+                    stream = build_filter_stream(
+                        stream,
+                        ExprIR::from_column_name(predicate_name, expr_arena),
+                        expr_arena,
+                        phys_sm,
+                        expr_cache,
+                        ctx,
+                    )?;
+                    other_agg_input_streams.insert(input_id, (stream, Vec::new()));
                 },
                 _ => return Ok(None),
             }
