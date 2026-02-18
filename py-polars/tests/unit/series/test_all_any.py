@@ -18,6 +18,9 @@ from polars.exceptions import SchemaError
         ([False, None], False),
         ([True], True),
         ([True, None], True),
+        ([None] * 199 + [True], True),
+        ([None] * 200, False),
+        ([None] * 200 + [False] * 200, False),
     ],
 )
 def test_any(data: list[bool | None], expected: bool) -> None:
@@ -53,6 +56,8 @@ def test_any_wrong_dtype() -> None:
         ([False, None], False),
         ([True], True),
         ([True, None], True),
+        ([None] * 200 + [True] * 199 + [False], False),
+        ([True] * 200 + [None] * 200 + [True] * 200, True),
     ],
 )
 def test_all(data: list[bool | None], expected: bool) -> None:
@@ -77,36 +82,6 @@ def test_all_kleene(data: list[bool | None], expected: bool | None) -> None:
 def test_all_wrong_dtype() -> None:
     with pytest.raises(SchemaError, match="expected `Boolean`"):
         pl.Series([0, 1, 0]).all()
-
-
-_N = 200
-
-
-@pytest.mark.parametrize(
-    ("data", "expected"),
-    [
-        ([None] * (_N - 1) + [True], True),
-        ([None] * _N, False),
-        ([None] * _N + [False] * _N, False),
-    ],
-    ids=["nulls_then_true", "all_nulls", "nulls_and_false"],
-)
-def test_any_with_nulls_large(data: list[bool | None], expected: bool) -> None:
-    """Test any() on arrays larger than 64 elements to check bitmap word-level ops."""
-    assert pl.Series(data, dtype=pl.Boolean).any() is expected
-
-
-@pytest.mark.parametrize(
-    ("data", "expected"),
-    [
-        ([None] * _N + [True] * (_N - 1) + [False], False),
-        ([True] * _N + [None] * _N + [True] * _N, True),
-    ],
-    ids=["nulls_trues_then_false", "trues_nulls_trues"],
-)
-def test_all_with_nulls_large(data: list[bool | None], expected: bool) -> None:
-    """Test all() on arrays larger than 64 elements to check bitmap word-level ops."""
-    assert pl.Series(data, dtype=pl.Boolean).all() is expected
 
 
 F = False
