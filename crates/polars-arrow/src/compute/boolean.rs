@@ -246,8 +246,10 @@ pub fn or_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray {
 pub fn any(array: &BooleanArray) -> bool {
     if array.is_empty() {
         false
-    } else if array.null_count() > 0 {
-        array.into_iter().any(|v| v == Some(true))
+    } else if let Some(validity) = array.validity()
+        && validity.unset_bits() > 0
+    {
+        array.values().intersects_with(validity)
     } else {
         let vals = array.values();
         vals.unset_bits() != vals.len()
@@ -275,8 +277,12 @@ pub fn any(array: &BooleanArray) -> bool {
 pub fn all(array: &BooleanArray) -> bool {
     if array.is_empty() {
         true
-    } else if array.null_count() > 0 {
-        !array.into_iter().any(|v| v == Some(false))
+    } else if let Some(validity) = array.validity()
+        && validity.unset_bits() > 0
+    {
+        // Every valid position must have value=true, i.e. the number of positions
+        // where (value AND valid) equals the number of valid positions.
+        array.values().num_intersections_with(validity) == validity.set_bits()
     } else {
         let vals = array.values();
         vals.unset_bits() == 0

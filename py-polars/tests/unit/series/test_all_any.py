@@ -79,6 +79,36 @@ def test_all_wrong_dtype() -> None:
         pl.Series([0, 1, 0]).all()
 
 
+_N = 200
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        ([None] * (_N - 1) + [True], True),
+        ([None] * _N, False),
+        ([None] * _N + [False] * _N, False),
+    ],
+    ids=["nulls_then_true", "all_nulls", "nulls_and_false"],
+)
+def test_any_with_nulls_large(data: list[bool | None], expected: bool) -> None:
+    """Test any() on arrays larger than 64 elements to exercise bitmap word-level ops."""
+    assert pl.Series(data, dtype=pl.Boolean).any() is expected
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        ([None] * _N + [True] * (_N - 1) + [False], False),
+        ([True] * _N + [None] * _N + [True] * _N, True),
+    ],
+    ids=["nulls_trues_then_false", "trues_nulls_trues"],
+)
+def test_all_with_nulls_large(data: list[bool | None], expected: bool) -> None:
+    """Test all() on arrays larger than 64 elements to exercise bitmap word-level ops."""
+    assert pl.Series(data, dtype=pl.Boolean).all() is expected
+
+
 F = False
 U = None
 T = True
