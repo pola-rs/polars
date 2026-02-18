@@ -73,7 +73,14 @@ pub(super) fn run_projection_predicate_pushdown(
     pushdown_maintain_errors: bool,
     opt_flags: &OptFlags,
 ) -> PolarsResult<()> {
-    // Should be run before predicate pushdown.
+    if opt_flags.predicate_pushdown() {
+        let mut predicate_pushdown_opt =
+            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
+        let ir = ir_arena.take(root);
+        let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
+        ir_arena.replace(root, ir);
+    }
+
     if opt_flags.projection_pushdown() {
         let mut projection_pushdown_opt = ProjectionPushDown::new();
         let ir = ir_arena.take(root);
@@ -84,14 +91,6 @@ pub(super) fn run_projection_predicate_pushdown(
             let mut count_star_opt = CountStar::new();
             count_star_opt.optimize_plan(ir_arena, expr_arena, root)?;
         }
-    }
-
-    if opt_flags.predicate_pushdown() {
-        let mut predicate_pushdown_opt =
-            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
-        let ir = ir_arena.take(root);
-        let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
-        ir_arena.replace(root, ir);
     }
 
     Ok(())
