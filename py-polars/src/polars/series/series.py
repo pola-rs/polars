@@ -5177,7 +5177,15 @@ class Series:
         pa_arr = self.to_arrow()
         # pandas does not support unsigned dictionary indices
         if pa.types.is_dictionary(pa_arr.type):
-            pa_arr = pa_arr.cast(pa.dictionary(pa.int64(), pa.large_string()))
+            pa_dtype = pa.dictionary(pa.int64(), pa.large_string())
+            pa_arr = (
+                pa_arr.cast(pa_dtype)
+                if self.len() != 0
+                else Series([None], dtype=self.dtype)
+                .to_arrow()
+                .cast(pa_dtype)
+                .slice(0, 0)
+            )
 
         if use_pyarrow_extension_array:
             pd_series = pa_arr.to_pandas(
