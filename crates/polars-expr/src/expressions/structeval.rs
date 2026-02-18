@@ -228,22 +228,6 @@ impl PhysicalExpr for StructEvalExpr {
 
         let f = |e: &Arc<dyn PhysicalExpr>| {
             let result = e.evaluate(df, &state)?;
-            let result_len = result.len();
-
-            if result_len != input_len && result_len == 1 && !e.is_scalar() {
-                let identifier = match e.as_expression() {
-                    Some(expr) => format!("expression: {expr}"),
-                    None => "this Series".to_string(),
-                };
-
-                polars_bail!(InvalidOperation:
-                    "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
-                    If you want {} to be broadcasted, ensure it is a scalar \
-                    (for instance by adding '.first()').",
-                    result.name(), result_len, input_len, identifier
-                );
-            }
-
             polars_ensure!(
                 result.len() == input_len || result.len() == 1,
                 ShapeMismatch: "struct.with_fields expressions must have matching or unit length"
@@ -262,8 +246,26 @@ impl PhysicalExpr for StructEvalExpr {
                 .iter()
                 .map(f)
                 .collect::<PolarsResult<Vec<_>>>()
-        };
-        for col in cols? {
+        }?;
+
+        for (i, col) in cols.iter().enumerate() {
+            let col_len = col.len();
+            if col_len != input_len && col_len == 1 && !self.evaluation[i].is_scalar() {
+                let identifier = match self.evaluation[i].as_expression() {
+                    Some(expr) => format!("expression: {expr}"),
+                    None => "this Series".to_string(),
+                };
+
+                polars_bail!(InvalidOperation:
+                    "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
+                    If you want {} to be broadcasted, ensure it is a scalar \
+                    (for instance by adding '.first()').",
+                    col.name(), col_len, input_len, identifier
+                );
+            }
+        }
+
+        for col in cols {
             eval.push(col);
         }
 
