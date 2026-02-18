@@ -135,7 +135,7 @@ def test_grouped_ufunc() -> None:
 def test_generalized_ufunc_scalar() -> None:
     numba = pytest.importorskip("numba", exc_type=ImportError)
 
-    @numba.guvectorize([(numba.int64[:], numba.int64[:])], "(n)->()")  # type: ignore[misc]
+    @numba.guvectorize([(numba.int64[:], numba.int64[:])], "(n)->()")  # type: ignore[misc, untyped-decorator]
     def my_custom_sum(arr, result) -> None:  # type: ignore[no-untyped-def]  # noqa: ANN001
         total = 0
         for value in arr:
@@ -187,7 +187,7 @@ def test_generalized_ufunc_scalar() -> None:
 def make_gufunc_mean() -> Callable[[pl.Series], pl.Series]:
     numba = pytest.importorskip("numba", exc_type=ImportError)
 
-    @numba.guvectorize([(numba.float64[:], numba.float64[:])], "(n)->(n)")  # type: ignore[misc]
+    @numba.guvectorize([(numba.float64[:], numba.float64[:])], "(n)->(n)")  # type: ignore[misc, untyped-decorator]
     def gufunc_mean(arr: Any, result: Any) -> None:
         mean = arr.mean()
         for i in range(len(arr)):

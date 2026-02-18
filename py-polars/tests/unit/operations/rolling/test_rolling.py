@@ -1290,10 +1290,13 @@ def test_rolling_with_dst() -> None:
     df = pl.DataFrame(
         {"a": [datetime(2020, 10, 26, 1), datetime(2020, 10, 26)], "b": [1, 2]}
     ).with_columns(pl.col("a").dt.replace_time_zone("Europe/London"))
-    with pytest.raises(ComputeError, match="is ambiguous"):
-        df.select(pl.col("b").rolling_sum_by("a", "1d"))
-    with pytest.raises(ComputeError, match="is ambiguous"):
-        df.sort("a").select(pl.col("b").rolling_sum_by("a", "1d"))
+    result = df.select(pl.col("b").rolling_sum_by("a", "1d"))
+    expected = pl.DataFrame({"b": [3, 2]})
+    assert_frame_equal(result, expected)
+
+    result = df.sort("a").select(pl.col("b").rolling_sum_by("a", "1d"))
+    expected = pl.DataFrame({"b": [2, 3]})
+    assert_frame_equal(result, expected)
 
 
 def interval_defs() -> SearchStrategy[ClosedInterval]:

@@ -136,6 +136,7 @@ impl OptimizationRule for TypeCoercionRule {
 
                         let v = CastColumnsPolicy {
                             integer_upcast: true,
+                            integer_to_float_cast: false,
                             float_upcast: true,
                             float_downcast: true,
                             datetime_nanoseconds_downcast: true,

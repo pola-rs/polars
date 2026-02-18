@@ -34,6 +34,7 @@ if TYPE_CHECKING:
         PolarsTemporalType,
         TimeUnit,
     )
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_fill_null() -> None:
@@ -2186,10 +2187,14 @@ def test_truncate_ambiguous2() -> None:
 
 
 def test_truncate_non_existent_14957() -> None:
-    with pytest.raises(ComputeError, match="non-existent"):
-        pl.Series([datetime(2020, 3, 29, 2, 1)]).dt.replace_time_zone(
-            "Europe/London"
-        ).dt.truncate("46m")
+    result = (
+        pl.Series([datetime(2020, 3, 29, 2, 1)])
+        .dt.replace_time_zone("Europe/London")
+        .dt.truncate("46m")
+        .item()
+    )
+    expected = datetime(2020, 3, 29, 2, 42, tzinfo=ZoneInfo(key="Europe/London"))
+    assert result == expected
 
 
 def test_cast_time_to_duration() -> None:
@@ -2478,7 +2483,7 @@ def test_temporal_downcast_construction_19309() -> None:
 
 def test_timezone_ignore_error(
     capfd: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     dtype = pl.Datetime(time_zone="non-existent")
 
@@ -2493,9 +2498,9 @@ def test_timezone_ignore_error(
     ):
         pl.DataFrame({"a": datetime(2025, 1, 1)}, schema={"a": dtype})
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
-    with monkeypatch.context() as cx:
+    with plmonkeypatch.context() as cx:
         cx.setenv("POLARS_IGNORE_TIMEZONE_PARSE_ERROR", "1")
         capfd.readouterr()
 

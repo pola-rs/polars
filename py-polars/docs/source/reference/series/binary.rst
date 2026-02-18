@@ -13,6 +13,7 @@ The following methods are available under the `Series.bin` attribute.
     Series.bin.decode
     Series.bin.encode
     Series.bin.ends_with
+    Series.bin.get
     Series.bin.head
     Series.bin.reinterpret
     Series.bin.size

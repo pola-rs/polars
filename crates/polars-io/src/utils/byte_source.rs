@@ -14,6 +14,7 @@ use crate::cloud::options::CloudOptions;
 use crate::cloud::{
     CloudLocation, ObjectStorePath, PolarsObjectStore, build_object_store, object_path_from_str,
 };
+use crate::metrics::IOMetrics;
 
 #[allow(async_fn_in_trait)]
 pub trait ByteSource: Send + Sync {
@@ -82,10 +83,13 @@ impl ObjectStoreByteSource {
     async fn try_new_from_path(
         path: PlRefPath,
         cloud_options: Option<&CloudOptions>,
+        io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<Self> {
-        let (CloudLocation { prefix, .. }, store) =
+        let (CloudLocation { prefix, .. }, mut store) =
             build_object_store(path, cloud_options, false).await?;
         let path = object_path_from_str(&prefix)?;
+
+        store.set_io_metrics(io_metrics);
 
         Ok(Self { store, path })
     }
@@ -192,6 +196,7 @@ impl DynByteSourceBuilder {
         &self,
         path: PlRefPath,
         cloud_options: Option<&CloudOptions>,
+        io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<DynByteSource> {
         Ok(match self {
             Self::Mmap => {
@@ -199,12 +204,11 @@ impl DynByteSourceBuilder {
                     .await?
                     .into()
             },
-            Self::ObjectStore => feature_gated!(
-                "cloud",
-                ObjectStoreByteSource::try_new_from_path(path, cloud_options)
+            Self::ObjectStore => feature_gated!("cloud", {
+                ObjectStoreByteSource::try_new_from_path(path, cloud_options, io_metrics)
                     .await?
                     .into()
-            ),
+            }),
         })
     }
 }

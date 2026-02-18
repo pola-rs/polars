@@ -21,6 +21,7 @@ from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import ParallelStrategy
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
@@ -39,9 +40,9 @@ def test_scan_parquet(parquet_file_path: Path) -> None:
 
 
 def test_scan_parquet_local_with_async(
-    monkeypatch: Any, foods_parquet_path: Path
+    plmonkeypatch: PlMonkeyPatch, foods_parquet_path: Path
 ) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     pl.scan_parquet(foods_parquet_path.relative_to(Path.cwd())).head(1).collect()
 
 
@@ -217,10 +218,12 @@ def test_row_index_schema_parquet(parquet_file_path: Path) -> None:
 
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 @pytest.mark.write_disk
-def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
+def test_parquet_is_in_statistics(
+    plmonkeypatch: PlMonkeyPatch, capfd: Any, tmp_path: Path
+) -> None:
     tmp_path.mkdir(exist_ok=True)
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     df = pl.DataFrame({"idx": pl.arange(0, 100, eager=True)}).with_columns(
         (pl.col("idx") // 25).alias("part")
@@ -248,10 +251,12 @@ def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) 
 
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 @pytest.mark.write_disk
-def test_parquet_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
+def test_parquet_statistics(
+    plmonkeypatch: PlMonkeyPatch, capfd: Any, tmp_path: Path
+) -> None:
     tmp_path.mkdir(exist_ok=True)
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     df = pl.DataFrame({"idx": pl.arange(0, 100, eager=True)}).with_columns(
         (pl.col("idx") // 25).alias("part")
@@ -417,10 +422,10 @@ def test_nested_slice_12480(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk
 def test_scan_deadlock_rayon_spawn_from_async_15172(
-    monkeypatch: Any, tmp_path: Path
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
-    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "1")
     path = tmp_path / "data.parquet"
 
     df = pl.Series("x", [1]).to_frame()
@@ -1082,7 +1087,7 @@ def test_parquet_prefiltering_inserted_column_23268() -> None:
 
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_scan_parquet_prefilter_with_cast(
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     f = io.BytesIO()
@@ -1107,7 +1112,7 @@ def test_scan_parquet_prefilter_with_cast(
         include_file_paths="file_path",
     ).filter(pl.col("b") - 1 == pl.lit(-1, dtype=pl.Int16))
 
-    with monkeypatch.context() as cx:
+    with plmonkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
         capfd.readouterr()
         out = q.collect()
@@ -1195,8 +1200,8 @@ def test_prefilter_with_n_rows_23790() -> None:
     )
 
 
-def test_scan_parquet_filter_index_panic_23849(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("POLARS_PARQUET_DECODE_TARGET_VALUES_PER_THREAD", "5")
+def test_scan_parquet_filter_index_panic_23849(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_PARQUET_DECODE_TARGET_VALUES_PER_THREAD", "5")
     num_rows = 3
     num_cols = 5
 
@@ -1213,8 +1218,8 @@ def test_scan_parquet_filter_index_panic_23849(monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.write_disk
-def test_sink_large_rows_25834(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_BYTES", "1")
+def test_sink_large_rows_25834(tmp_path: Path, plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_BYTES", "1")
     df = pl.select(idx=pl.repeat(1, 20_000), bytes=pl.lit(b"AAAAA"))
 
     df.write_parquet(tmp_path / "single.parquet")

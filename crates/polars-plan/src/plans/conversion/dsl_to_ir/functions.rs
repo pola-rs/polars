@@ -94,6 +94,7 @@ pub(super) fn convert_functions(
                 B::Slice => IB::Slice,
                 B::Head => IB::Head,
                 B::Tail => IB::Tail,
+                B::Get(null_on_oob) => IB::Get(null_on_oob),
             })
         },
         #[cfg(feature = "dtype-categorical")]

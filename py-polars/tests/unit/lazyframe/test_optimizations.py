@@ -1,6 +1,7 @@
 import datetime as dt
 import io
 import itertools
+import typing
 
 import pytest
 
@@ -563,3 +564,27 @@ def test_flatten_alias() -> None:
         .select(pl.len().alias("foo").alias("bar"))
         .explain()
     )
+
+
+def test_concat_str_sortedness_26466() -> None:
+    df = pl.DataFrame({"x": ["", "a", "b"], "y": [1, 2, 3]})
+    lf = df.lazy().set_sorted("x")
+
+    dot = (
+        lf.with_columns(x=pl.concat_str("x"))
+        .group_by("x")
+        .agg(pl.col.y.sum())
+        .show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    )
+
+    assert "sorted-group-by" in typing.cast("str", dot)
+
+    for e in [pl.concat_str("x", pl.lit("c")), pl.concat_str("x", ignore_nulls=True)]:
+        dot = (
+            lf.with_columns(x=e)
+            .group_by("x")
+            .agg(pl.col.y.sum())
+            .show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+        )
+
+        assert "sorted-group-by" not in typing.cast("str", dot)

@@ -1,12 +1,13 @@
-use std::io::BufReader;
+use std::io::{BufReader, Cursor};
 use std::sync::{LazyLock, RwLock};
 
 use either::Either;
 use polars_buffer::Buffer;
-use polars_io::RowIndex;
 use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
 use polars_io::prelude::*;
+use polars_io::utils::byte_source::{ByteSource, DynByteSourceBuilder};
 use polars_io::utils::compression::CompressedReader;
+use polars_io::{RowIndex, pl_async};
 
 use super::*;
 
@@ -345,8 +346,8 @@ pub async fn csv_file_info(
     csv_options: &mut CsvReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
+    use polars_core::POOL;
     use polars_core::error::feature_gated;
-    use polars_core::{POOL, config};
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
     // Holding _first_scan_source should guarantee sources is not empty.
@@ -357,7 +358,8 @@ pub async fn csv_file_info(
     // * See if we can do this without downloading the entire file
 
     // prints the error message if paths is empty.
-    let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
+    let run_async =
+        sources.is_cloud_url() || (sources.is_paths() && polars_config::config().force_async());
 
     let cache_entries = {
         if run_async {
@@ -458,10 +460,10 @@ pub async fn ndjson_file_info(
     ndjson_options: &NDJsonReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
-    use polars_core::config;
     use polars_core::error::feature_gated;
 
-    let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
+    let run_async =
+        sources.is_cloud_url() || (sources.is_paths() && polars_config::config().force_async());
 
     let cache_entries = {
         if run_async {
@@ -483,9 +485,127 @@ pub async fn ndjson_file_info(
         }
     };
 
+    let infer_schema_length = ndjson_options.infer_schema_length;
+
     let mut schema = if let Some(schema) = ndjson_options.schema.clone() {
         schema
+    } else if run_async && let Some(infer_schema_length) = infer_schema_length {
+        // Only download what we need for schema inference.
+        // To do so, we use an iterative two-way progressive trial-and-error download strategy
+        // until we either have enough rows, or reached EOF. In every iteration, we either
+        // increase fetch_size (download progressively more), or try_read_size (try and
+        // decompress more of what we have, in the case of compressed).
+        use polars_io::utils::compression::{ByteSourceReader, SupportedCompression};
+        use polars_io::utils::stream_buf_reader::ReaderSource;
+
+        const INITIAL_FETCH: usize = 64 * 1024;
+        const ASSUMED_COMPRESSION_RATIO: usize = 4;
+
+        let first_scan_source = first_scan_source.into_owned()?.clone();
+        let cloud_options = cloud_options.cloned();
+        // TODO. Support IOMetrics collection during planning phase.
+        let byte_source = pl_async::get_runtime()
+            .spawn(async move {
+                first_scan_source
+                    .as_scan_source_ref()
+                    .to_dyn_byte_source(
+                        &DynByteSourceBuilder::ObjectStore,
+                        cloud_options.as_ref(),
+                        None,
+                    )
+                    .await
+            })
+            .await
+            .unwrap()?;
+        let byte_source = Arc::new(byte_source);
+
+        let file_size = {
+            let byte_source = byte_source.clone();
+            pl_async::get_runtime()
+                .spawn(async move { byte_source.get_size().await })
+                .await
+                .unwrap()?
+        };
+
+        let mut offset = 0;
+        let mut fetch_size = INITIAL_FETCH;
+        let mut try_read_size = INITIAL_FETCH * ASSUMED_COMPRESSION_RATIO;
+        let mut truncated_bytes: Vec<u8> = Vec::with_capacity(INITIAL_FETCH);
+        let mut reached_eof = false;
+
+        // Collect enough rows to satisfy infer_schema_length
+        let memslice = loop {
+            let range = offset..std::cmp::min(file_size, offset + fetch_size);
+
+            if range.is_empty() {
+                reached_eof = true
+            } else {
+                let byte_source = byte_source.clone();
+                let fetch_bytes = pl_async::get_runtime()
+                    .spawn(async move { byte_source.get_range(range).await })
+                    .await
+                    .unwrap()?;
+                offset += fetch_bytes.len();
+                truncated_bytes.extend_from_slice(fetch_bytes.as_ref());
+            }
+
+            let compression = SupportedCompression::check(&truncated_bytes);
+            let mut reader = ByteSourceReader::<ReaderSource>::from_memory(
+                Buffer::from_owner(truncated_bytes.clone()),
+                compression,
+            )?;
+            let read_size = if compression.is_none() {
+                offset
+            } else if reached_eof {
+                usize::MAX
+            } else {
+                try_read_size
+            };
+
+            let uncompressed_size_hint = Some(
+                offset
+                    * if compression.is_none() {
+                        1
+                    } else {
+                        ASSUMED_COMPRESSION_RATIO
+                    },
+            );
+
+            let (slice, bytes_read) =
+                match reader.read_next_slice(&Buffer::new(), read_size, uncompressed_size_hint) {
+                    Ok(v) => v,
+                    // We assume that unexpected EOF indicates that we lack sufficient data.
+                    Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                        fetch_size *= 2;
+                        continue;
+                    },
+                    Err(e) => Err(e)?,
+                };
+
+            if polars_io::ndjson::count_rows(&slice) < infer_schema_length.into() && !reached_eof {
+                if compression.is_some() && bytes_read == read_size {
+                    // Decompressor had more to give — read_size too small
+                    try_read_size *= 2;
+                } else {
+                    // Decompressor exhausted input — need more compressed bytes
+                    // Or, no compression
+                    fetch_size *= 2;
+                }
+                continue;
+            }
+
+            break slice;
+        };
+
+        let mut buf_reader = BufReader::new(Cursor::new(memslice));
+        Arc::new(polars_io::ndjson::infer_schema(
+            &mut buf_reader,
+            ndjson_options.infer_schema_length,
+        )?)
     } else {
+        // Download the entire object.
+        // Warning - this is potentially memory-expensive in the case of a cloud source, and goes
+        // against the design goal of a streaming reader. This can be optimized.
         let mem_slice =
             first_scan_source.to_buffer_possibly_async(run_async, cache_entries.as_ref(), 0)?;
         let mut reader = BufReader::new(CompressedReader::try_new(mem_slice)?);

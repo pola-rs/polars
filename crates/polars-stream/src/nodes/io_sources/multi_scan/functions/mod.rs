@@ -1,9 +1,9 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use polars_core::config;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
+use polars_io::metrics::IOMetrics;
 use polars_io::utils::byte_source::{ByteSource, DynByteSourceBuilder};
 use polars_io::utils::compression::SupportedCompression;
 use polars_plan::dsl::ScanSource;
@@ -19,8 +19,7 @@ pub fn calc_n_readers_pre_init(
 ) -> usize {
     if let Ok(v) = std::env::var("POLARS_NUM_READERS_PRE_INIT").map(|x| {
         x.parse::<NonZeroUsize>()
-            .ok()
-            .unwrap_or_else(|| panic!("invalid value for POLARS_NUM_READERS_PRE_INIT: {x}"))
+            .unwrap_or_else(|_| panic!("invalid value for POLARS_NUM_READERS_PRE_INIT: {x}"))
             .get()
     }) {
         return v;
@@ -43,8 +42,7 @@ pub fn calc_n_readers_pre_init(
 pub fn calc_max_concurrent_scans(num_pipelines: usize, num_sources: usize) -> usize {
     if let Ok(v) = std::env::var("POLARS_MAX_CONCURRENT_SCANS").map(|x| {
         x.parse::<NonZeroUsize>()
-            .ok()
-            .unwrap_or_else(|| panic!("invalid value for POLARS_MAX_CONCURRENT_SCANS: {x}"))
+            .unwrap_or_else(|_| panic!("invalid value for POLARS_MAX_CONCURRENT_SCANS: {x}"))
             .get()
     }) {
         return v;
@@ -56,8 +54,10 @@ pub fn calc_max_concurrent_scans(num_pipelines: usize, num_sources: usize) -> us
 pub async fn is_compressed_source(
     scan_source: ScanSource,
     cloud_options: Option<Arc<CloudOptions>>,
+    io_metrics: Option<Arc<IOMetrics>>,
 ) -> PolarsResult<bool> {
-    let byte_source_builder = if scan_source.is_cloud_url() || config::force_async() {
+    let byte_source_builder = if scan_source.is_cloud_url() || polars_config::config().force_async()
+    {
         DynByteSourceBuilder::ObjectStore
     } else {
         DynByteSourceBuilder::Mmap
@@ -65,7 +65,7 @@ pub async fn is_compressed_source(
 
     let byte_source = scan_source
         .as_scan_source_ref()
-        .to_dyn_byte_source(&byte_source_builder, cloud_options.as_deref())
+        .to_dyn_byte_source(&byte_source_builder, cloud_options.as_deref(), io_metrics)
         .await?;
 
     let Ok(first_4_bytes) = byte_source.get_range(0..4).await else {

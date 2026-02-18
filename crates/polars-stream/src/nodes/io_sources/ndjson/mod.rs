@@ -1,18 +1,24 @@
 pub mod builder;
 
 use std::cmp::Reverse;
+use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use chunk_data_fetch::ChunkDataFetcher;
 use line_batch_processor::{LineBatchProcessor, LineBatchProcessorOutputPort};
 use negative_slice_pass::MorselStreamReverser;
-use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_io::cloud::CloudOptions;
-use polars_io::utils::compression::CompressedReader;
+use polars_io::metrics::OptIOMetrics;
+use polars_io::pl_async;
+use polars_io::utils::byte_source::{ByteSource, DynByteSource, DynByteSourceBuilder};
+use polars_io::utils::compression::{ByteSourceReader, SupportedCompression};
+use polars_io::utils::stream_buf_reader::{ReaderSource, StreamBufReader};
 use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
+use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::priority::Priority;
 use polars_utils::slice_enum::Slice;
 use row_index_limit_pass::ApplyRowIndexOrLimit;
@@ -23,6 +29,7 @@ use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::oneshot_channel;
+use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::multi_scan::reader_interface::Projection;
@@ -30,34 +37,114 @@ use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOu
 use crate::nodes::io_sources::ndjson::chunk_reader::ChunkReaderBuilder;
 use crate::nodes::io_sources::ndjson::line_batch_distributor::RowSkipper;
 use crate::nodes::{MorselSeq, TaskPriority};
+use crate::utils::tokio_handle_ext;
+pub mod chunk_data_fetch;
 pub(super) mod chunk_reader;
 mod line_batch_distributor;
 mod line_batch_processor;
 mod negative_slice_pass;
 mod row_index_limit_pass;
 
-#[derive(Clone)]
 pub struct NDJsonFileReader {
     pub scan_source: ScanSource,
-    #[expect(unused)] // Will be used when implementing cloud streaming.
     pub cloud_options: Option<Arc<CloudOptions>>,
     pub chunk_reader_builder: ChunkReaderBuilder,
     pub count_rows_fn: fn(&[u8]) -> usize,
-    // Cached on first access - we may be called multiple times e.g. on negative slice.
-    pub cached_bytes: Option<Buffer<u8>>,
     pub verbose: bool,
+    pub byte_source_builder: DynByteSourceBuilder,
+    pub chunk_prefetch_sync: ChunkPrefetchSync,
+    pub init_data: Option<InitializedState>,
+    pub io_metrics: OptIOMetrics,
+}
+
+pub(crate) struct ChunkPrefetchSync {
+    pub(crate) prefetch_limit: usize,
+    pub(crate) prefetch_semaphore: Arc<tokio::sync::Semaphore>,
+    pub(crate) shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
+
+    /// Waits for the previous reader to finish spawning prefetches.
+    pub(crate) prev_all_spawned: Option<WaitGroup>,
+    /// Dropped once the current reader has finished spawning prefetches.
+    pub(crate) current_all_spawned: Option<WaitToken>,
+}
+
+#[derive(Clone)]
+pub struct InitializedState {
+    file_size: usize,
+    compression: Option<SupportedCompression>,
+    byte_source: Arc<DynByteSource>,
 }
 
 #[async_trait]
 impl FileReader for NDJsonFileReader {
     async fn initialize(&mut self) -> PolarsResult<()> {
-        let memslice = self
-            .scan_source
-            .as_scan_source_ref()
-            .to_buffer_async_assume_latest(self.scan_source.run_async())?;
+        if self.init_data.is_some() {
+            return Ok(());
+        }
 
-        // Note: We do not decompress in `initialize()`.
-        self.cached_bytes = Some(memslice);
+        let scan_source = self.scan_source.clone();
+        let byte_source_builder = self.byte_source_builder.clone();
+        let cloud_options = self.cloud_options.clone();
+        let io_metrics = self.io_metrics.clone();
+
+        let byte_source = pl_async::get_runtime()
+            .spawn(async move {
+                scan_source
+                    .as_scan_source_ref()
+                    .to_dyn_byte_source(
+                        &byte_source_builder,
+                        cloud_options.as_deref(),
+                        io_metrics.0,
+                    )
+                    .await
+            })
+            .await
+            .unwrap()?;
+        let byte_source = Arc::new(byte_source);
+
+        // @TODO: Refactor FileInfo so we can re-use the file_size value from the planning stage.
+        let file_size = {
+            let byte_source = byte_source.clone();
+            pl_async::get_runtime()
+                .spawn(async move { byte_source.get_size().await })
+                .await
+                .unwrap()?
+        };
+
+        let compression = if file_size >= 4 {
+            let byte_source = byte_source.clone();
+            let magic_range = 0..4;
+            let magic_bytes = pl_async::get_runtime()
+                .spawn(async move { byte_source.get_range(magic_range).await })
+                .await
+                .unwrap()?;
+            SupportedCompression::check(&magic_bytes)
+        } else {
+            None
+        };
+
+        self.init_data = Some(InitializedState {
+            file_size,
+            compression,
+            byte_source,
+        });
+
+        Ok(())
+    }
+
+    fn prepare_read(&mut self) -> PolarsResult<()> {
+        let wait_group_this_reader = WaitGroup::default();
+        let prefetch_all_spawned_token = wait_group_this_reader.token();
+
+        let prev_wait_group: Option<WaitGroup> = self
+            .chunk_prefetch_sync
+            .shared_prefetch_wait_group_slot
+            .try_lock()
+            .unwrap()
+            .replace(wait_group_this_reader);
+
+        self.chunk_prefetch_sync.prev_all_spawned = prev_wait_group;
+        self.chunk_prefetch_sync.current_all_spawned = Some(prefetch_all_spawned_token);
 
         Ok(())
     }
@@ -67,6 +154,13 @@ impl FileReader for NDJsonFileReader {
         args: BeginReadArgs,
     ) -> PolarsResult<(FileReaderOutputRecv, JoinHandle<PolarsResult<()>>)> {
         let verbose = self.verbose;
+
+        // Initialize.
+        let InitializedState {
+            file_size,
+            compression,
+            byte_source,
+        } = self.init_data.clone().unwrap();
 
         let BeginReadArgs {
             projection: Projection::Plain(projected_schema),
@@ -92,7 +186,12 @@ impl FileReader for NDJsonFileReader {
         let is_empty_slice = pre_slice.as_ref().is_some_and(|x| x.len() == 0);
         let is_negative_slice = matches!(pre_slice, Some(Slice::Negative { .. }));
 
-        let reader = CompressedReader::try_new(self.cached_bytes.clone().unwrap())?;
+        // There are two byte sourcing strategies `ReaderSource`: (a) async parallel prefetch using a
+        // streaming pipeline, or (b) memory-mapped, only to be used for uncompressed local files.
+        // The `compressed_reader` (of type `ByteSourceReader`) abstracts these source types.
+        // The `use_async_prefetch` flag controls the optional pipeline startup behavior.
+        let use_async_prefetch =
+            !(matches!(byte_source.as_ref(), &DynByteSource::Buffer(_)) && compression.is_none());
 
         // NDJSON: We just use the projected schema - the parser will automatically append NULL if
         // the field is not found.
@@ -146,11 +245,13 @@ impl FileReader for NDJsonFileReader {
                 project: {}, \
                 global_slice: {:?}, \
                 row_index: {:?}, \
-                is_negative_slice: {}",
+                is_negative_slice: {}, \
+                use_async_prefetch: {}",
                 schema.len(),
                 &global_slice,
                 &row_index,
                 is_negative_slice,
+                use_async_prefetch
             );
         }
 
@@ -308,20 +409,98 @@ impl FileReader for NDJsonFileReader {
             reverse: is_negative_slice,
         };
 
+        // Unify the two source options (uncompressed local file mmapp'ed, or streaming async with transparent
+        // decompression), into one unified reader object.
+        let byte_source_reader: ByteSourceReader<ReaderSource> = if use_async_prefetch {
+            // Prepare parameters for Prefetch task.
+            const DEFAULT_NDJSON_CHUNK_SIZE: usize = 32 * 1024 * 1024;
+            let memory_prefetch_func = get_memory_prefetch_func(verbose);
+            let chunk_size = std::env::var("POLARS_NDJSON_CHUNK_SIZE")
+                .map(|x| {
+                    x.parse::<NonZeroUsize>()
+                        .unwrap_or_else(|_| {
+                            panic!("invalid value for POLARS_NDJSON_CHUNK_SIZE: {x}")
+                        })
+                        .get()
+                })
+                .unwrap_or(DEFAULT_NDJSON_CHUNK_SIZE);
+
+            let prefetch_limit = self
+                .chunk_prefetch_sync
+                .prefetch_limit
+                .min(file_size.div_ceil(chunk_size))
+                .max(1);
+
+            let (prefetch_send, prefetch_recv) = tokio::sync::mpsc::channel(prefetch_limit);
+
+            // Task: Prefetch.
+            // Initiate parallel downloads of raw data chunks.
+            let byte_source = byte_source.clone();
+            let prefetch_task = {
+                let io_runtime = polars_io::pl_async::get_runtime();
+
+                let prefetch_semaphore = Arc::clone(&self.chunk_prefetch_sync.prefetch_semaphore);
+                let prefetch_prev_all_spawned =
+                    Option::take(&mut self.chunk_prefetch_sync.prev_all_spawned);
+                let prefetch_current_all_spawned =
+                    Option::take(&mut self.chunk_prefetch_sync.current_all_spawned);
+
+                tokio_handle_ext::AbortOnDropHandle(io_runtime.spawn(async move {
+                    let mut chunk_data_fetcher = ChunkDataFetcher {
+                        memory_prefetch_func,
+                        byte_source,
+                        file_size,
+                        chunk_size,
+                        prefetch_send,
+                        prefetch_semaphore,
+                        prefetch_current_all_spawned,
+                    };
+
+                    if let Some(prefetch_prev_all_spawned) = prefetch_prev_all_spawned {
+                        prefetch_prev_all_spawned.wait().await;
+                    }
+
+                    chunk_data_fetcher.run().await?;
+
+                    Ok(())
+                }))
+            };
+
+            // Wrap into ByteSourceReader to enable sync `BufRead` access.
+            let stream_buf_reader = StreamBufReader::new(prefetch_recv, prefetch_task);
+            ByteSourceReader::try_new(ReaderSource::Streaming(stream_buf_reader), compression)?
+        } else {
+            let memslice = self
+                .scan_source
+                .as_scan_source_ref()
+                .to_buffer_async_assume_latest(self.scan_source.run_async())?;
+
+            ByteSourceReader::from_memory(memslice, compression)?
+        };
+
+        const ASSUMED_COMPRESSION_RATIO: usize = 4;
+        let uncompressed_file_size_hint = Some(match compression {
+            Some(_) => file_size * ASSUMED_COMPRESSION_RATIO,
+            None => file_size,
+        });
+
         let line_batch_distributor_task_handle = AbortOnDropHandle::new(spawn(
             TaskPriority::Low,
             line_batch_distributor::LineBatchDistributor {
-                reader,
+                reader: byte_source_reader,
                 reverse: is_negative_slice,
                 row_skipper,
                 line_batch_distribute_tx,
+                uncompressed_file_size_hint,
             }
             .run(),
         ));
 
+        // Task. Finishing handle.
         let finishing_handle = spawn(TaskPriority::Low, async move {
             // Number of rows skipped by the line batch distributor.
             let n_rows_skipped: usize = line_batch_distributor_task_handle.await?;
+
             // Number of rows processed by the line batch processors.
             let mut n_rows_processed: usize = 0;
 

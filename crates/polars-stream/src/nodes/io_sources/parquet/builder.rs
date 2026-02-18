@@ -61,8 +61,7 @@ impl FileReaderBuilder for ParquetReaderBuilder {
         let prefetch_limit = std::env::var("POLARS_ROW_GROUP_PREFETCH_SIZE")
             .map(|x| {
                 x.parse::<NonZeroUsize>()
-                    .ok()
-                    .unwrap_or_else(|| {
+                    .unwrap_or_else(|_| {
                         panic!("invalid value for POLARS_ROW_GROUP_PREFETCH_SIZE: {x}")
                     })
                     .get()
@@ -100,11 +99,12 @@ impl FileReaderBuilder for ParquetReaderBuilder {
         let config = self.options.clone();
         let verbose = config::verbose();
 
-        let byte_source_builder = if scan_source.is_cloud_url() || config::force_async() {
-            DynByteSourceBuilder::ObjectStore
-        } else {
-            DynByteSourceBuilder::Mmap
-        };
+        let byte_source_builder =
+            if scan_source.is_cloud_url() || polars_config::config().force_async() {
+                DynByteSourceBuilder::ObjectStore
+            } else {
+                DynByteSourceBuilder::Mmap
+            };
 
         assert!(self.prefetch_limit.load() > 0);
 

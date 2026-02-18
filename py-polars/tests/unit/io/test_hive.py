@@ -20,13 +20,15 @@ from tests.unit.io.conftest import format_file_uri
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from tests.conftest import PlMonkeyPatch
+
 
 def impl_test_hive_partitioned_predicate_pushdown(
     io_files_path: Path,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.read_ipc(io_files_path / "*.ipc")
 
     root = tmp_path / "partitioned_data"
@@ -80,12 +82,12 @@ def impl_test_hive_partitioned_predicate_pushdown(
 def test_hive_partitioned_predicate_pushdown(
     io_files_path: Path,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     impl_test_hive_partitioned_predicate_pushdown(
         io_files_path,
         tmp_path,
-        monkeypatch,
+        plmonkeypatch,
     )
 
 
@@ -94,15 +96,15 @@ def test_hive_partitioned_predicate_pushdown(
 def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
     io_files_path: Path,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
-    monkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
 
     impl_test_hive_partitioned_predicate_pushdown(
         io_files_path,
         tmp_path,
-        monkeypatch,
+        plmonkeypatch,
     )
 
 
@@ -110,9 +112,9 @@ def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
 @pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
-    tmp_path: Path, monkeypatch: Any, capfd: Any
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.DataFrame({"d": pl.arange(0, 5, eager=True)}).with_columns(
         a=pl.col("d") % 5
     )
@@ -318,12 +320,14 @@ def test_read_parquet_invalid_hive_schema(dataset_path: Path) -> None:
         )
 
 
-def test_read_parquet_hive_schema_with_pyarrow() -> None:
+def test_read_parquet_hive_schema_with_pyarrow(tmp_path: Path) -> None:
     with pytest.raises(
         TypeError,
         match="cannot use `hive_partitions` with `use_pyarrow=True`",
     ):
-        pl.read_parquet("test.parquet", hive_schema={"c": pl.Int32}, use_pyarrow=True)
+        pl.read_parquet(
+            tmp_path / "test.parquet", hive_schema={"c": pl.Int32}, use_pyarrow=True
+        )
 
 
 @pytest.mark.parametrize(
@@ -505,9 +509,11 @@ def test_hive_partition_schema_inference(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_hive_partition_force_async_17155(tmp_path: Path, monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
-    monkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
+def test_hive_partition_force_async_17155(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
 
     dfs = [
         pl.DataFrame({"x": 1}),
@@ -900,9 +906,9 @@ def test_hive_write_dates(tmp_path: Path) -> None:
 @pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_hive_predicate_dates_14712(
-    tmp_path: Path, monkeypatch: Any, capfd: Any
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     pl.DataFrame({"a": [datetime(2024, 1, 1)]}).write_parquet(
         tmp_path, partition_by="a"
     )
@@ -1161,14 +1167,14 @@ def test_hive_filter_lit_true_24235(tmp_path: Path) -> None:
 
 
 def test_hive_filter_in_ir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     (tmp_path / "a=1").mkdir()
     pl.DataFrame({"x": [0, 1, 2, 3, 4]}).write_parquet(tmp_path / "a=1/data.parquet")
     (tmp_path / "a=2").mkdir()
     pl.DataFrame({"x": [5, 6, 7, 8, 9]}).write_parquet(tmp_path / "a=2/data.parquet")
 
-    with monkeypatch.context() as cx:
+    with plmonkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
 
         capfd.readouterr()

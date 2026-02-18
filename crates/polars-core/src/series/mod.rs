@@ -463,8 +463,9 @@ impl Series {
         }
 
         let new_options = match options {
-            // Strictness is handled on this level to improve error messages.
-            CastOptions::Strict => CastOptions::NonStrict,
+            // Strictness is handled on this level to improve error messages, if not nested.
+            // Nested types could hide cast errors, so have to be done internally.
+            CastOptions::Strict if !dtype.is_nested() => CastOptions::NonStrict,
             opt => opt,
         };
 

@@ -11,16 +11,13 @@ mod inner {
     use polars_utils::unitvec;
 
     pub struct SlicePushDown {
-        #[expect(unused)]
-        pub new_streaming: bool,
         scratch: UnitVec<Node>,
         pub(super) maintain_errors: bool,
     }
 
     impl SlicePushDown {
-        pub fn new(maintain_errors: bool, new_streaming: bool) -> Self {
+        pub fn new(maintain_errors: bool) -> Self {
             Self {
-                new_streaming,
                 scratch: unitvec![],
                 maintain_errors,
             }

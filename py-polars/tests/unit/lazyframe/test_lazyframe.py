@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from _pytest.capture import CaptureFixture
 
     from polars._typing import MapElementsStrategy, PolarsDataType
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_init_signature_match() -> None:
@@ -1165,8 +1166,8 @@ def test_lazy_cache_same_key() -> None:
 
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 @pytest.mark.may_fail_auto_streaming
-def test_lazy_cache_hit(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+def test_lazy_cache_hit(plmonkeypatch: PlMonkeyPatch, capfd: Any) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": ["x", "y", "z"]})
     add_node = ldf.select([(pl.col("a") + pl.col("b")).alias("a"), pl.col("c")]).cache()
