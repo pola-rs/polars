@@ -96,7 +96,7 @@ def test_cat_to_pandas(dtype: pl.DataType) -> None:
 
     assert pl.Series(dtype=pl.Enum(["A"])).to_pandas().dtype.categories.tolist() == [
         "A"
-    ]
+    ]  # type: ignore[union-attr]
 
 
 @given(
