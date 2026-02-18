@@ -70,7 +70,7 @@ impl<Field, Metadata: Default> Schema<Field, Metadata> {
 
 impl<Field, Metadata> Schema<Field, Metadata> {
     pub fn names_display(&self) -> impl std::fmt::Display + std::fmt::Debug + '_ {
-        DisplayUsingDebug(self.fields.keys())
+        NamesDisplay(self)
     }
 
     /// Reserve `additional` memory spaces in the schema.
@@ -539,7 +539,7 @@ where
 
 impl<Field: std::fmt::Debug, Metadata> Schema<Field, Metadata> {
     pub fn values_display(&self) -> impl std::fmt::Display + std::fmt::Debug + '_ {
-        DisplayUsingDebug(self.fields.values())
+        ValuesDisplay(self)
     }
 }
 
@@ -622,17 +622,33 @@ impl<Field, Metadata> IntoIterator for Schema<Field, Metadata> {
     }
 }
 
-struct DisplayUsingDebug<T>(T);
+struct NamesDisplay<'a, Field, Metadata>(&'a Schema<Field, Metadata>);
 
-impl<T: std::fmt::Debug> std::fmt::Display for DisplayUsingDebug<T> {
+impl<'a, Field, Metadata> std::fmt::Display for NamesDisplay<'a, Field, Metadata> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self.0, f)
+        std::fmt::Debug::fmt(&self, f)
     }
 }
 
-impl<T: std::fmt::Debug> std::fmt::Debug for DisplayUsingDebug<T> {
+impl<'a, Field, Metadata> std::fmt::Debug for NamesDisplay<'a, Field, Metadata> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self.0, f)
+        std::fmt::Debug::fmt(&self.0.fields.keys(), f)
+    }
+}
+
+struct ValuesDisplay<'a, Field, Metadata>(&'a Schema<Field, Metadata>);
+
+impl<'a, Field: std::fmt::Debug, Metadata> std::fmt::Display
+    for ValuesDisplay<'a, Field, Metadata>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self, f)
+    }
+}
+
+impl<'a, Field: std::fmt::Debug, Metadata> std::fmt::Debug for ValuesDisplay<'a, Field, Metadata> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.0.fields.values(), f)
     }
 }
 
@@ -653,12 +669,15 @@ mod tests {
         let schema: Schema<&str, ()> =
             Schema::from_iter([("name1".into(), "value1"), ("name2".into(), "value2")]);
 
+        let names_display = schema.names_display();
+        let values_display = schema.values_display();
+
         assert_eq!(
-            format!("{} {:?}", schema.names_display(), schema.names_display()),
+            format!("{} {:?}", names_display, names_display),
             r#"["name1", "name2"] ["name1", "name2"]"#,
         );
         assert_eq!(
-            format!("{} {:?}", schema.values_display(), schema.values_display()),
+            format!("{} {:?}", values_display, values_display),
             r#"["value1", "value2"] ["value1", "value2"]"#,
         );
     }
