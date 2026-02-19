@@ -214,7 +214,6 @@ impl PhysicalExpr for StructEvalExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
-        eprintln!("DEBUG: evaluate() called");
         let input = self.input.evaluate(df, state)?;
 
         // Set ExecutionState.
@@ -251,7 +250,11 @@ impl PhysicalExpr for StructEvalExpr {
 
         for (i, col) in cols.iter().enumerate() {
             let col_len = col.len();
-            if col_len != input_len && col_len == 1 && !self.evaluation[i].is_scalar() {
+            if col_len != input_len
+                && col_len == 1
+                && !self.evaluation[i].is_scalar()
+                && std::env::var("POLARS_ALLOW_NON_SCALAR_EXP").as_deref() != Ok("1")
+            {
                 let identifier = match self.evaluation[i].as_expression() {
                     Some(expr) => format!("expression: {expr}"),
                     None => "this Series".to_string(),
@@ -282,7 +285,6 @@ impl PhysicalExpr for StructEvalExpr {
     ) -> PolarsResult<AggregationContext<'a>> {
         // The evaluation is similar to a regular Function, with the modification that the input
         // is evaluated first, and retained for future use in the ExecutionState.
-        eprintln!("DEBUG: evaluate_on_groups() called");
         // Evaluate input.
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
 
@@ -319,7 +321,12 @@ impl PhysicalExpr for StructEvalExpr {
         for (i, ac) in acs.iter().enumerate().skip(1) {
             let col = ac.flat_naive();
             let col_len = col.len();
-            if col_len != input_len && col_len == 1 && !ac.is_literal() && !self.is_scalar() {
+            if col_len != input_len
+                && col_len == 1
+                && !ac.is_literal()
+                && !self.is_scalar()
+                && std::env::var("POLARS_ALLOW_NON_SCALAR_EXP").as_deref() != Ok("1")
+            {
                 let identifier = match self.evaluation.get(i - 1).and_then(|e| e.as_expression()) {
                     Some(expr) => format!("expression: {expr}"),
                     None => "this Series".to_string(),

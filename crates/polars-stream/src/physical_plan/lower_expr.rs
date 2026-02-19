@@ -7,7 +7,7 @@ use polars_core::prelude::{
 };
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaExt};
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_ops::frame::{JoinArgs, JoinType};
@@ -1618,6 +1618,23 @@ fn lower_exprs_with_ctx(
                 // Rewrite any `StructField(x)`` expression into a `Col(prefix_x)`` expression.
                 let separator = PlSmallStr::from_static("_FLD_");
                 let field_prefix = polars_utils::format_pl_smallstr!("{}{}", out_name, separator);
+
+                if std::env::var("POLARS_ALLOW_NON_SCALAR_EXP").as_deref() != Ok("1") {
+                    for e in &evaluation {
+                        if !e.is_scalar(ctx.expr_arena)
+                            && !is_elementwise_rec_cached(e.node(), ctx.expr_arena, ctx.cache)
+                        {
+                            let name = e.output_name();
+                            polars_bail!(InvalidOperation:
+                                "Series {}, length 1 doesn't match the DataFrame height\n\n\
+                                If you want expression: {} to be broadcasted, ensure it is a scalar \
+                                (for instance by adding '.first()').",
+                                name, name
+                            );
+                        }
+                    }
+                }
+
                 evaluation.iter_mut().for_each(|e| {
                     e.set_node(structfield_to_column(
                         e.node(),
