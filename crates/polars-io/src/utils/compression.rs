@@ -359,6 +359,8 @@ impl<R: BufRead> ByteSourceReader<R> {
         // Cap the reserve_size, for the scenario where read_size == usize::MAX
         let max_reserve_size = uncompressed_size_hint.unwrap_or(4 * 1024 * 1024);
         let reserve_size = cmp::min(prev_len.saturating_add(read_size), max_reserve_size);
+
+        //kdn TODO - in case infer_schema_length = None, we should not hit this reserve
         buf.reserve_exact(reserve_size);
         buf.extend_from_slice(prev_leftover);
 

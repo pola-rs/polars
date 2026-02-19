@@ -4,7 +4,7 @@ use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
     CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
-    read_until_start_and_infer_schema,
+    read_until_start_and_infer_schema_from_compressed_reader,
 };
 use polars_io::path_utils::expand_paths;
 use polars_io::utils::compression::CompressedReader;
@@ -254,13 +254,14 @@ impl LazyCsvReader {
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
         dbg!("start LazyCsvReader::with_schema_modify"); //kdn
+        //kdn: TODO TBD
         let n_threads = self.read_options.n_threads;
 
         let infer_schema = |bytes: Buffer<u8>| {
             let mut reader = CompressedReader::try_new(bytes)?;
 
             let (inferred_schema, _) =
-                read_until_start_and_infer_schema(&self.read_options, None, None, &mut reader)?;
+                read_until_start_and_infer_schema_from_compressed_reader(&self.read_options, None, None, &mut reader)?;
 
             PolarsResult::Ok(inferred_schema)
         };

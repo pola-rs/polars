@@ -41,13 +41,11 @@ impl FileReaderBuilder for CsvReaderBuilder {
     fn reader_capabilities(&self) -> ReaderCapabilities {
         use ReaderCapabilities as RC;
 
-        // kdn TODO RM
-        RC::NEEDS_FILE_CACHE_INIT
-            | if self.options.parse_options.comment_prefix.is_some() {
-                RC::empty()
-            } else {
-                RC::PRE_SLICE
-            }
+        if self.options.parse_options.comment_prefix.is_some() {
+            RC::empty()
+        } else {
+            RC::PRE_SLICE
+        }
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
@@ -78,6 +76,10 @@ impl FileReaderBuilder for CsvReaderBuilder {
             .unwrap()
     }
 
+    fn set_io_metrics(&self, io_metrics: Arc<IOMetrics>) {
+        self.io_metrics.set(io_metrics).ok().unwrap()
+    }
+
     fn build_file_reader(
         &self,
         source: ScanSource,
@@ -103,7 +105,6 @@ impl FileReaderBuilder for CsvReaderBuilder {
             cloud_options,
             options,
             verbose,
-            cached_bytes: None,
             byte_source_builder,
             chunk_prefetch_sync: ChunkPrefetchSync {
                 prefetch_limit: self.prefetch_limit.load(),

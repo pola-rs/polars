@@ -21,6 +21,7 @@ pub(super) fn infer_file_schema_impl(
     parse_options: &CsvParseOptions,
     schema_overwrite: Option<&Schema>,
 ) -> Schema {
+    dbg!("start infer_schema_impl");//kdn
     let mut headers = header_line
         .as_ref()
         .map(|line| infer_headers(line, parse_options))

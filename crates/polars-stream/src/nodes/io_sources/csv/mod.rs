@@ -1,6 +1,7 @@
 pub mod builder;
 
 use std::iter::Iterator;
+use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -11,22 +12,25 @@ use polars_core::schema::{SchemaExt, SchemaRef};
 use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
 use polars_io::cloud::CloudOptions;
 use polars_io::metrics::OptIOMetrics;
-use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
+use polars_io::pl_async;
 use polars_io::prelude::_csv_read_internal::{
     CountLines, NullValuesCompiled, cast_columns, prepare_csv_schema, read_chunk,
 };
 use polars_io::prelude::builder::validate_utf8;
+use polars_io::prelude::streaming::read_until_start_and_infer_schema;
 use polars_io::prelude::{CsvEncoding, CsvParseOptions, CsvReadOptions};
-use polars_io::utils::byte_source::{ByteSource, DynByteSource, DynByteSourceBuilder}; //kdn TODO cleanup
-use polars_io::utils::compression::{CompressedReader, SupportedCompression};
+use polars_io::utils::byte_source::{ByteSource, DynByteSource, DynByteSourceBuilder};
+use polars_io::utils::compression::{ByteSourceReader, SupportedCompression};
 use polars_io::utils::slice::SplitSlicePosition;
+use polars_io::utils::stream_buf_reader::{ReaderSource, StreamBufReader};
 use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
-use polars_utils::mem::prefetch::prefetch_l2;
+use polars_utils::mem::prefetch::{get_memory_prefetch_func, prefetch_l2};
 use polars_utils::slice_enum::Slice;
 
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
 use super::multi_scan::reader_interface::{BeginReadArgs, FileReader, FileReaderCallbacks};
+use super::ndjson::chunk_data_fetch::ChunkDataFetcher;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::distributor_channel::{self, distributor_channel};
@@ -36,6 +40,7 @@ use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::multi_scan::reader_interface::Projection;
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::{MorselSeq, TaskPriority};
+use crate::utils::tokio_handle_ext;
 
 /// Read all rows in the chunk
 const NO_SLICE: (usize, usize) = (0, usize::MAX);
@@ -55,11 +60,8 @@ struct LineBatch {
 
 struct CsvFileReader {
     scan_source: ScanSource,
-    #[expect(unused)] // Will be used when implementing cloud streaming.
     cloud_options: Option<Arc<CloudOptions>>,
     options: Arc<CsvReadOptions>,
-    // Cached on first access - we may be called multiple times e.g. on negative slice. //kdn TODO CHECK
-    cached_bytes: Option<Buffer<u8>>,
     verbose: bool,
     pub byte_source_builder: DynByteSourceBuilder,
     pub chunk_prefetch_sync: ChunkPrefetchSync,
@@ -89,13 +91,73 @@ pub struct InitializedState {
 impl FileReader for CsvFileReader {
     async fn initialize(&mut self) -> PolarsResult<()> {
         dbg!("start CsvFileReader::initialize"); //kdn
-        let buffer = self
-            .scan_source
-            .as_scan_source_ref()
-            .to_buffer_async_assume_latest(self.scan_source.run_async())?;
+        if self.init_data.is_some() {
+            return Ok(());
+        }
 
-        // Note: We do not decompress in `initialize()`.
-        self.cached_bytes = Some(buffer);
+        let scan_source = self.scan_source.clone();
+        let byte_source_builder = self.byte_source_builder.clone();
+        let cloud_options = self.cloud_options.clone();
+        let io_metrics = self.io_metrics.clone();
+
+        let byte_source = pl_async::get_runtime()
+            .spawn(async move {
+                scan_source
+                    .as_scan_source_ref()
+                    .to_dyn_byte_source(
+                        &byte_source_builder,
+                        cloud_options.as_deref(),
+                        io_metrics.0,
+                    )
+                    .await
+            })
+            .await
+            .unwrap()?;
+        let byte_source = Arc::new(byte_source);
+
+        // @TODO: Refactor FileInfo so we can re-use the file_size value from the planning stage.
+        let file_size = {
+            let byte_source = byte_source.clone();
+            pl_async::get_runtime()
+                .spawn(async move { byte_source.get_size().await })
+                .await
+                .unwrap()?
+        };
+
+        let compression = if file_size >= 4 {
+            let byte_source = byte_source.clone();
+            let magic_range = 0..4;
+            let magic_bytes = pl_async::get_runtime()
+                .spawn(async move { byte_source.get_range(magic_range).await })
+                .await
+                .unwrap()?;
+            SupportedCompression::check(&magic_bytes)
+        } else {
+            None
+        };
+
+        self.init_data = Some(InitializedState {
+            file_size,
+            compression,
+            byte_source,
+        });
+
+        Ok(())
+    }
+
+    fn prepare_read(&mut self) -> PolarsResult<()> {
+        let wait_group_this_reader = WaitGroup::default();
+        let prefetch_all_spawned_token = wait_group_this_reader.token();
+
+        let prev_wait_group: Option<WaitGroup> = self
+            .chunk_prefetch_sync
+            .shared_prefetch_wait_group_slot
+            .try_lock()
+            .unwrap()
+            .replace(wait_group_this_reader);
+
+        self.chunk_prefetch_sync.prev_all_spawned = prev_wait_group;
+        self.chunk_prefetch_sync.current_all_spawned = Some(prefetch_all_spawned_token);
 
         Ok(())
     }
@@ -106,6 +168,13 @@ impl FileReader for CsvFileReader {
     ) -> PolarsResult<(FileReaderOutputRecv, JoinHandle<PolarsResult<()>>)> {
         dbg!("start CsvFileReader::begin_read"); //kdn
         let verbose = self.verbose;
+
+        // Initialize.
+        let InitializedState {
+            file_size,
+            compression,
+            byte_source,
+        } = self.init_data.clone().unwrap();
 
         let BeginReadArgs {
             projection: Projection::Plain(projected_schema),
@@ -144,16 +213,95 @@ impl FileReader for CsvFileReader {
             _ => {},
         }
 
-        // kdn MARK
-        dbg!("create CompressedReader::try_new"); //kdn
-        let mut reader = CompressedReader::try_new(self.cached_bytes.clone().unwrap())?;
+        // There are two byte sourcing strategies `ReaderSource`: (a) async parallel prefetch using a
+        // streaming pipeline, or (b) memory-mapped, only to be used for uncompressed local files.
+        // The `compressed_reader` (of type `ByteSourceReader`) abstracts these source types.
+        // The `use_async_prefetch` flag controls the optional pipeline startup behavior.
+        let use_async_prefetch =
+            !(matches!(byte_source.as_ref(), &DynByteSource::Buffer(_)) && compression.is_none());
 
-        let (inferred_schema, base_leftover) = read_until_start_and_infer_schema(
-            &self.options,
-            Some(projected_schema.clone()),
-            None,
-            &mut reader,
-        )?;
+        const ASSUMED_COMPRESSION_RATIO: usize = 4;
+        let decompressed_file_size_hint = match compression {
+            None => Some(file_size),
+            Some(_) => Some(file_size * ASSUMED_COMPRESSION_RATIO),
+        };
+
+        // Unify the two source options (uncompressed local file mmapp'ed, or streaming async with transparent
+        // decompression), into one unified reader object.
+        let mut reader: ByteSourceReader<ReaderSource> = if use_async_prefetch {
+            // Prepare parameters for Prefetch task.
+            const DEFAULT_CSV_CHUNK_SIZE: usize = 32 * 1024 * 1024;
+            let memory_prefetch_func = get_memory_prefetch_func(verbose);
+            let chunk_size = std::env::var("POLARS_CSV_CHUNK_SIZE")
+                .map(|x| {
+                    x.parse::<NonZeroUsize>()
+                        .unwrap_or_else(|_| panic!("invalid value for POLARS_CSV_CHUNK_SIZE: {x}"))
+                        .get()
+                })
+                .unwrap_or(DEFAULT_CSV_CHUNK_SIZE);
+
+            let prefetch_limit = self
+                .chunk_prefetch_sync
+                .prefetch_limit
+                .min(file_size.div_ceil(chunk_size))
+                .max(1);
+
+            let (prefetch_send, prefetch_recv) = tokio::sync::mpsc::channel(prefetch_limit);
+
+            // Task: Prefetch.
+            // Initiate parallel downloads of raw data chunks.
+            let byte_source = byte_source.clone();
+            let prefetch_task = {
+                let io_runtime = polars_io::pl_async::get_runtime();
+
+                let prefetch_semaphore = Arc::clone(&self.chunk_prefetch_sync.prefetch_semaphore);
+                let prefetch_prev_all_spawned =
+                    Option::take(&mut self.chunk_prefetch_sync.prev_all_spawned);
+                let prefetch_current_all_spawned =
+                    Option::take(&mut self.chunk_prefetch_sync.current_all_spawned);
+
+                tokio_handle_ext::AbortOnDropHandle(io_runtime.spawn(async move {
+                    // Note. We are re-using the NDJSON ChunkDataFetcher.
+                    let mut chunk_data_fetcher = ChunkDataFetcher {
+                        memory_prefetch_func,
+                        byte_source,
+                        file_size,
+                        chunk_size,
+                        prefetch_send,
+                        prefetch_semaphore,
+                        prefetch_current_all_spawned,
+                    };
+
+                    if let Some(prefetch_prev_all_spawned) = prefetch_prev_all_spawned {
+                        prefetch_prev_all_spawned.wait().await;
+                    }
+
+                    chunk_data_fetcher.run().await?;
+
+                    Ok(())
+                }))
+            };
+
+            // Wrap into ByteSourceReader to enable sync `BufRead` access.
+            let stream_buf_reader = StreamBufReader::new(prefetch_recv, prefetch_task);
+            ByteSourceReader::try_new(ReaderSource::Streaming(stream_buf_reader), compression)?
+        } else {
+            let memslice = self
+                .scan_source
+                .as_scan_source_ref()
+                .to_buffer_async_assume_latest(self.scan_source.run_async())?;
+
+            ByteSourceReader::from_memory(memslice, compression)?
+        };
+
+        let (inferred_schema, base_leftover) =
+            read_until_start_and_infer_schema(
+                &self.options,
+                Some(projected_schema.clone()),
+                decompressed_file_size_hint,
+                None,
+                &mut reader,
+            )?;
 
         let used_schema = Arc::new(inferred_schema);
 
@@ -168,10 +316,13 @@ impl FileReader for CsvFileReader {
 
         if verbose {
             eprintln!(
-                "[CsvFileReader]: project: {} / {}, slice: {:?}",
+                "[CsvFileReader]: project: {} / {}, \
+                slice: {:?}, \
+                use_async_prefetch: {}",
                 projection.len(),
                 used_schema.len(),
                 &pre_slice,
+                use_async_prefetch
             )
         }
 
@@ -319,7 +470,7 @@ impl FileReader for CsvFileReader {
 
 struct LineBatchSource {
     base_leftover: Buffer<u8>,
-    reader: CompressedReader,
+    reader: ByteSourceReader<ReaderSource>,
     line_counter: CountLines,
     line_batch_tx: distributor_channel::Sender<LineBatch>,
     pre_slice: Option<Slice>,
@@ -330,6 +481,7 @@ struct LineBatchSource {
 impl LineBatchSource {
     /// Returns the number of rows skipped from the start of the file according to CountLines.
     async fn run(self) -> PolarsResult<usize> {
+        dbg!("start LineBatchSource::run"); //kdn
         let LineBatchSource {
             base_leftover,
             mut reader,
@@ -359,10 +511,11 @@ impl LineBatchSource {
         let mut row_offset = 0usize;
         let mut morsel_seq = MorselSeq::default();
         let mut n_rows_skipped: usize = 0;
-        let mut read_size = CompressedReader::initial_read_size();
+        let mut read_size = ByteSourceReader::<ReaderSource>::initial_read_size();
 
         loop {
-            let (mem_slice, bytes_read) = reader.read_next_slice(&prev_leftover, read_size)?;
+            let (mem_slice, bytes_read) =
+                reader.read_next_slice(&prev_leftover, read_size, Some(read_size))?;
             if mem_slice.is_empty() {
                 break;
             }
@@ -431,7 +584,7 @@ impl LineBatchSource {
                 break;
             }
 
-            if read_size < CompressedReader::ideal_read_size() {
+            if read_size < ByteSourceReader::<ReaderSource>::ideal_read_size() {
                 read_size *= 4;
             }
         }

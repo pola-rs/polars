@@ -14,7 +14,7 @@ use super::CsvParseOptions;
 use super::builder::Builder;
 use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
-use crate::csv::read::read_until_start_and_infer_schema;
+use crate::csv::read::read_until_start_and_infer_schema_from_compressed_reader;
 use crate::prelude::CsvReadOptions;
 use crate::utils::compression::CompressedReader;
 
@@ -72,6 +72,7 @@ pub fn count_rows_from_slice_par(
     skip_rows_after_header: usize,
 ) -> PolarsResult<usize> {
     dbg!("start count_rows_from_slice_par"); //kdn
+    //kdn TODO: investigate CompressedReader and refactor
     let mut reader = CompressedReader::try_new(buffer)?;
 
     let reader_options = CsvReadOptions {
@@ -89,7 +90,7 @@ pub fn count_rows_from_slice_par(
     };
 
     let (_, mut leftover) =
-        read_until_start_and_infer_schema(&reader_options, None, None, &mut reader)?;
+        read_until_start_and_infer_schema_from_compressed_reader(&reader_options, None, None, &mut reader)?;
 
     const BYTES_PER_CHUNK: usize = if cfg!(debug_assertions) {
         128
