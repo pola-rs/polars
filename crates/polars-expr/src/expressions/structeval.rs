@@ -136,31 +136,6 @@ impl StructEvalExpr {
                     .collect::<Vec<_>>();
 
                 let input_len = cols[base_ac_idx].len();
-
-                for (i, col) in cols.iter().enumerate().skip(1) {
-                    let col_len = col.len();
-                    if col_len != input_len
-                        && col_len == 1
-                        && !acs[i].is_literal()
-                        && !self.is_scalar()
-                    {
-                        let identifier = match self
-                            .evaluation
-                            .get(i.saturating_sub(1))
-                            .and_then(|e| e.as_expression())
-                        {
-                            Some(expr) => format!("expression: {expr}"),
-                            None => "this Series".to_string(),
-                        };
-                        polars_bail!(InvalidOperation:
-                            "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
-                            If you want {} to be broadcasted, ensure it is a scalar \
-                            (for instance by adding '.first()').",
-                            col.name(), col_len, input_len, identifier
-                        );
-                    }
-                }
-
                 let out = with_fields(&cols)?;
                 assert!(input_len == out.len());
 
@@ -182,23 +157,6 @@ impl StructEvalExpr {
         mut acs: Vec<AggregationContext<'a>>,
     ) -> PolarsResult<AggregationContext<'a>> {
         let len = acs[0].groups.len();
-        let input_len = acs[0].flat_naive().len();
-        for (i, ac) in acs.iter().enumerate().skip(1) {
-            let col = ac.flat_naive();
-            let col_len = col.len();
-            if col_len != input_len && col_len == 1 && !ac.is_literal() && !self.is_scalar() {
-                let identifier = match self.evaluation.get(i - 1).and_then(|e| e.as_expression()) {
-                    Some(expr) => format!("expression: {expr}"),
-                    None => "this Series".to_string(),
-                };
-                polars_bail!(InvalidOperation:
-                    "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
-                    If you want {} to be broadcasted, ensure it is a scalar \
-                    (for instance by adding '.first()').",
-                    col.name(), col_len, input_len, identifier
-                );
-            }
-        }
         let mut iters = acs
             .iter_mut()
             .map(|ac| ac.iter_groups(true))
@@ -354,6 +312,24 @@ impl PhysicalExpr for StructEvalExpr {
         };
         for ac in acs_eval? {
             acs.push(ac)
+        }
+
+        let input_len = acs[0].flat_naive().len();
+        for (i, ac) in acs.iter().enumerate().skip(1) {
+            let col = ac.flat_naive();
+            let col_len = col.len();
+            if col_len != input_len && col_len == 1 && !ac.is_literal() && !self.is_scalar() {
+                let identifier = match self.evaluation.get(i - 1).and_then(|e| e.as_expression()) {
+                    Some(expr) => format!("expression: {expr}"),
+                    None => "this Series".to_string(),
+                };
+                polars_bail!(InvalidOperation:
+                    "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
+                    If you want {} to be broadcasted, ensure it is a scalar \
+                    (for instance by adding '.first()').",
+                    col.name(), col_len, input_len, identifier
+                );
+            }
         }
 
         // Revert ExecutionState.
