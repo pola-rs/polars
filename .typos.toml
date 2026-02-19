@@ -14,6 +14,7 @@ ignore-hidden = false
 [default]
 extend-ignore-re = [
   '"Theatre": \[.+\],',
+  'HashiCorp',
 ]
 
 [default.extend-words]

@@ -3,7 +3,6 @@
 use arrow::datatypes::ArrowSchemaRef;
 use polars_row::ArrayRef;
 use polars_utils::UnitVec;
-use polars_utils::ideal_morsel_size::get_ideal_morsel_size;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -2753,7 +2752,7 @@ impl<'a> RecordBatchIterWrap<'a> {
     fn new_zero_width(height: usize) -> Self {
         Self::ZeroWidth {
             remaining_height: height,
-            chunk_size: get_ideal_morsel_size().get(),
+            chunk_size: polars_config::config().ideal_morsel_size() as usize,
         }
     }
 }

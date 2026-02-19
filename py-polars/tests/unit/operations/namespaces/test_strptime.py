@@ -6,8 +6,9 @@ This method gets its own module due to its complexity.
 
 from __future__ import annotations
 
+from contextlib import nullcontext as does_not_raise
 from datetime import date, datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -17,6 +18,8 @@ from polars.exceptions import ChronoFormatWarning, ComputeError, InvalidOperatio
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from contextlib import AbstractContextManager
+
     from polars._typing import PolarsTemporalType, TimeUnit
 
 
@@ -56,6 +59,11 @@ def test_to_datetime_precision() -> None:
 
     time_units: list[TimeUnit] = ["ms", "us", "ns"]
     suffixes = ["%.3f", "%.6f", "%.9f"]
+    contexts: list[AbstractContextManager[Any]] = [
+        pytest.raises(InvalidOperationError),
+        pytest.raises(InvalidOperationError),
+        does_not_raise(),
+    ]
     test_data = zip(
         time_units,
         suffixes,
@@ -64,10 +72,13 @@ def test_to_datetime_precision() -> None:
             [789321000, 987456000],
             [789321456, 987456321],
         ),
+        contexts,
         strict=False,
     )
-    for time_unit, suffix, expected_values in test_data:
-        ds = s.str.to_datetime(f"%Y-%m-%d %H:%M:%S{suffix}", time_unit=time_unit)
+    for time_unit, suffix, expected_values, context in test_data:
+        with context:
+            s.str.to_datetime(f"%Y-%m-%d %H:%M:%S{suffix}", time_unit=time_unit)
+        ds = s.str.to_datetime("%Y-%m-%d %H:%M:%S%.f", time_unit=time_unit)
         assert getattr(ds.dtype, "time_unit", None) == time_unit
         assert ds.dt.nanosecond().to_list() == expected_values
 
@@ -681,7 +692,7 @@ def test_to_time_inferred(data: str, format: str, expected: time) -> None:
     [
         ("05:10:11.740000", "%H:%M:%S%.f", time(5, 10, 11, 740000)),
         ("13:20:12.000074", "%T%.6f", time(13, 20, 12, 74)),
-        ("21:30:13.007400", "%H:%M:%S%.3f", time(21, 30, 13, 7400)),
+        ("21:30:13.007", "%H:%M:%S%.3f", time(21, 30, 13, 7000)),
     ],
 )
 def test_to_time_subseconds(data: str, format: str, expected: time) -> None:

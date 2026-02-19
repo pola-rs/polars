@@ -50,7 +50,7 @@ def assert_schema_equal(
     >>> assert_schema_equal(df1.schema, df2.schema)
     Traceback (most recent call last):
     ...
-    AssertionError: DataFrames are different (columns are not in the same order)
+    AssertionError: Schemas are different (columns are not in the same order)
     [left]: ["b", "a"]
     [right]: ["a", "b"]
     """

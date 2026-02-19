@@ -2,7 +2,6 @@ use std::ops::Not;
 
 use polars_core::datatypes::unpack_dtypes;
 use polars_core::prelude::*;
-use polars_core::schema::SchemaRef;
 use polars_ops::series::is_close;
 
 /// Configuration options for comparing Series equality.
@@ -662,30 +661,30 @@ impl DataFrameEqualOptions {
     }
 }
 
-/// Compares DataFrame schemas for equality based on specified criteria.
+/// Compares schemas for equality based on specified criteria.
 ///
-/// This function validates that two DataFrames have compatible schemas by checking
+/// This function validates that two schemas have compatible schemas by checking
 /// column names, their order, and optionally their data types according to the
 /// provided configuration parameters.
 ///
 /// # Arguments
 ///
-/// * `left` - The first DataFrame to compare
-/// * `right` - The second DataFrame to compare
+/// * `left` - The first schema to compare
+/// * `right` - The second schema to compare
 /// * `check_dtypes` - If true, requires data types to match for corresponding columns
 /// * `check_column_order` - If true, requires columns to appear in the same order
 ///
 /// # Returns
 ///
-/// * `Ok(())` if DataFrame schemas match according to specified criteria
-/// * `Err` with details about schema mismatches if DataFrames differ
+/// * `Ok(())` if schemas match according to specified criteria
+/// * `Err` with details about schema mismatches if schemas differ
 ///
 /// # Behavior
 ///
 /// The function performs schema validation in the following order:
 ///
 /// 1. **Fast path**: Returns immediately if schemas are identical
-/// 2. **Column name validation**: Ensures both DataFrames have the same set of column names
+/// 2. **Column name validation**: Ensures both schemas have the same set of column names
 ///    - Reports columns present in left but missing in right
 ///    - Reports columns present in right but missing in left
 /// 3. **Column order validation**: If `check_column_order` is true, verifies columns appear in the same sequence
@@ -694,91 +693,98 @@ impl DataFrameEqualOptions {
 ///    - When `check_column_order` is true, performs more precise type checking
 ///
 pub fn assert_schema_equal(
-    left_schema: &SchemaRef,
-    right_schema: &SchemaRef,
+    left_schema: &Schema,
+    right_schema: &Schema,
     check_dtypes: bool,
     check_column_order: bool,
 ) -> PolarsResult<()> {
-    let ordered_left_cols: Vec<&PlSmallStr> = left_schema.iter_names().collect();
-    let ordered_right_cols: Vec<&PlSmallStr> = right_schema.iter_names().collect();
+    assert_schema_equal_impl(
+        left_schema,
+        right_schema,
+        check_dtypes,
+        check_column_order,
+        "Schemas",
+    )
+}
 
-    let left_set: PlHashSet<&PlSmallStr> = ordered_left_cols.iter().copied().collect();
-    let right_set: PlHashSet<&PlSmallStr> = ordered_right_cols.iter().copied().collect();
+fn assert_schema_equal_impl(
+    left_schema: &Schema,
+    right_schema: &Schema,
+    check_dtypes: bool,
+    check_column_order: bool,
+    context: &'static str,
+) -> PolarsResult<()> {
+    let mut one_sided_names: Vec<&PlSmallStr> = vec![];
+    let mut column_name_order_mismatch = false;
+    let mut dtype_mismatch = false;
 
-    // Fast path for equal DataFrames
-    if left_schema == right_schema {
-        return Ok(());
-    }
+    for (l_idx, (l_name, l_dtype)) in left_schema.iter().enumerate() {
+        let Some((r_idx, _, r_dtype)) = right_schema.get_full(l_name) else {
+            one_sided_names.reserve_exact(left_schema.len() - l_idx);
+            one_sided_names.push(l_name);
+            continue;
+        };
 
-    if left_set != right_set {
-        let left_not_right: Vec<_> = left_set
-            .iter()
-            .copied()
-            .filter(|col| !right_set.contains(col))
-            .collect();
+        if check_column_order && l_idx != r_idx {
+            column_name_order_mismatch = true;
+        }
 
-        if !left_not_right.is_empty() {
-            return Err(polars_err!(
-                assertion_error = "DataFrames",
-                format!(
-                    "columns mismatch: {:?} in left, but not in right",
-                    left_not_right
-                ),
-                format!("{:?}", left_set),
-                format!("{:?}", right_set)
-            ));
-        } else {
-            let right_not_left: Vec<_> = right_set
-                .iter()
-                .copied()
-                .filter(|col| !left_set.contains(col))
-                .collect();
-
-            return Err(polars_err!(
-                assertion_error = "DataFrames",
-                format!(
-                    "columns mismatch: {:?} in right, but not in left",
-                    right_not_left
-                ),
-                format!("{:?}", left_set),
-                format!("{:?}", right_set)
-            ));
+        if check_dtypes && l_dtype != r_dtype {
+            dtype_mismatch = true;
         }
     }
 
-    if check_column_order && ordered_left_cols != ordered_right_cols {
-        return Err(polars_err!(
-            assertion_error = "DataFrames",
+    if !one_sided_names.is_empty() {
+        polars_bail!(
+            assertion_error = context,
+            format!(
+                "columns mismatch: {:?} in left, but not in right",
+                one_sided_names
+            ),
+            left_schema.names_display(),
+            right_schema.names_display()
+        )
+    }
+
+    debug_assert!(right_schema.len() >= left_schema.len());
+
+    if right_schema.len() > left_schema.len() {
+        one_sided_names.reserve_exact(right_schema.len() - left_schema.len());
+        one_sided_names.extend(
+            right_schema
+                .iter_names()
+                .filter(|name| !left_schema.contains(name)),
+        );
+
+        polars_bail!(
+            assertion_error = context,
+            format!(
+                "columns mismatch: {:?} in right, but not in left",
+                one_sided_names
+            ),
+            left_schema.names_display(),
+            right_schema.names_display()
+        )
+    }
+
+    debug_assert_eq!(left_schema.len(), right_schema.len());
+
+    if check_column_order && column_name_order_mismatch {
+        polars_bail!(
+            assertion_error = context,
             "columns are not in the same order",
-            format!("{:?}", ordered_left_cols),
-            format!("{:?}", ordered_right_cols)
-        ));
+            left_schema.names_display(),
+            right_schema.names_display()
+        )
     }
 
-    if check_dtypes {
-        if check_column_order {
-            let left_dtypes_ordered: Vec<&DataType> = left_schema.iter_values().collect();
-            let right_dtypes_ordered: Vec<&DataType> = right_schema.iter_values().collect();
-            if left_dtypes_ordered != right_dtypes_ordered {
-                return Err(polars_err!(
-                    assertion_error = "DataFrames",
-                    "dtypes do not match",
-                    format!("{:?}", left_dtypes_ordered),
-                    format!("{:?}", right_dtypes_ordered)
-                ));
-            }
-        } else if left_schema.len() != right_schema.len()
-            || left_schema
-                .iter()
-                .any(|(name, dtype)| right_schema.get(name) != Some(dtype))
-        {
-            return Err(polars_err!(
-                assertion_error = "DataFrames",
-                "dtypes do not match",
-                format!("{:?}", left_schema),
-                format!("{:?}", right_schema)
-            ));
-        }
+    if check_dtypes && dtype_mismatch {
+        polars_bail!(
+            assertion_error = context,
+            "dtypes do not match",
+            left_schema.values_display(),
+            right_schema.values_display()
+        )
     }
 
     Ok(())
@@ -836,11 +842,12 @@ pub fn assert_dataframe_equal(
     let left_schema = left.schema();
     let right_schema = right.schema();
 
-    assert_schema_equal(
+    assert_schema_equal_impl(
         left_schema,
         right_schema,
         options.check_dtypes,
         options.check_column_order,
+        "DataFrames",
     )?;
 
     if left.height() != right.height() {
