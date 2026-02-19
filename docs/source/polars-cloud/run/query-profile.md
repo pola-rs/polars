@@ -56,9 +56,97 @@ orders = pl.scan_parquet(
 )
 ```
 
+{{code_block('polars-cloud/query-profile','execute',[])}}
+
 </details>
 
-{{code_block('polars-cloud/query-profile','execute',[])}}
+<!-- Execute query -->
+
+## Polars Cloud Query Profiler
+
+Polars Cloud has a built-in query profiler.
+It shows realtime status of the query during and after execution, and gives you detailed metrics to the node level.
+This can help you find and analyze bottlenecks, helping you to run your queries optimally.
+
+It can be accessed from the Cluster Dashboard.
+
+### Cluster Dashboard
+
+The cluster dashboard gives you insights into:
+
+* system metrics (CPU, memory, and network) of all nodes on your cluster.
+* an overview of the queries that are related to this cluster, scheduled, running, and finished.
+
+![Cluster Dashboard](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/cluster_dashboard.png)
+
+You can get into the cluster dashboard through the pop-ups on the Polars Cloud dashboard after starting a compute cluster, 
+or by going to the details page of your compute.
+
+![Compute Details page](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/compute_dashboard.png)
+
+This dashboard runs from the compute that you're running your queries on.
+It becomes available the moment your compute has started and is no longer available after your cluster shuts down.
+
+The system resources allow you to find bottlenecks and tweak your cluster configuration accordingly.
+
+* In case the CPU resources max out, you can add CPUs.
+* In case your memory maxes out, you can add memory.
+* In case your network bandwith maxes out, you can add more nodes.
+
+
+### Query Details
+
+When you select a query from the cluster dashboard you open the details.
+An overview opens that displays the general metrics of that query.
+
+![Query Details](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/query_details.png)
+
+From here you can dive deeper into different aspects of the query.
+The first one we'll explore is the logical plan.
+
+
+### Logical Plan
+
+In Polars, a logical plan is the intermediate representation (IR) of a query that describes what operations to perform, before physical execution details are decided.
+This shows the graph that is a representation of the query you sent to Polars Cloud.
+
+![Logical Plan](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/logical_plan.png)
+
+<!--What can you do with this?-->
+
+### Stage Graph
+
+The stage graph represents the different phases in which the plan is executed on the distributed cluster.
+
+From the overview with the stage graph you can click the stage itself, opening the stage graph details.
+
+![Stage graph details](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/stage_graph_stage_details.png)
+
+Alternatively, you can click one of the nodes in any stage to open up its details.
+
+![Stage graph node details](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/stage_graph_node_details.png)
+
+<!-- what is the exact definition of  a stage?-->
+
+When executing a query single node, this is not available.
+
+
+### Physical Plan
+
+The physical plan shows the strategy that was used to execute the query.
+
+![Physical plan](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/physical_plan.png)
+
+In it you can find the time spent per node, identifying choke points.
+Additionally some nodes are marked with warnings that they're memory intensive.
+In the details pane you can find specific metrics on how many rows went in and out, what the morsel sizes were and how many went through, and more.
+
+
+## Profile with the Polars Cloud SDK
+
+Besides the query profiler in the cluster dashboard, you can also get diagnostic information through the Polars Cloud SDK.
+
+### `QueryProfile` and `QueryResult`
 
 The `await_profile` method can be used to monitor an in-progress query. It returns a QueryProfile
 object containing a DataFrame with information about which stages are being processed across
@@ -105,7 +193,7 @@ As each worker starts and completes each stage of the query, it notifies the lea
 `await_profile` method will poll the lead worker until there is an update from any worker, and then
 return the full profile data of the query.
 
-The QueryProfile object also has a summary property to return an aggregated view of each stage.
+The `QueryProfile` object also has a `summary` property to return an aggregated view of each stage.
 
 {{code_block('polars-cloud/query-profile','await_summary',[])}}
 
@@ -129,3 +217,38 @@ shape: (13, 6)
 │ 7            ┆ Execute IR   ┆ true      ┆ i-xxx      ┆ 356662µs     ┆ 1131041     ┆ 289546496             ┆ 0                  │
 └──────────────┴──────────────┴───────────┴────────────┴──────────────┴─────────────┴───────────────────────┴────────────────────┘
 ```
+
+### Plan
+
+`QueryProfile` also exposes `.plan()` to retrieve the physical plan as a string, and `.graph()` to
+render it as a visual diagram. See [Explain](#explain) below for details.
+
+Use `.plan()` to retrieve the executed query plan as a string. This is useful for understanding
+exactly how Polars executed your query, including the physical stages and operations performed
+across the cluster.
+
+{{code_block('polars-cloud/query-profile','explain',['QueryResult'])}}
+
+```text
+# TODO: add example output
+```
+
+You can also retrieve the optimized intermediate representation (IR) of the query before execution
+by passing `"ir"` as the plan type.
+
+{{code_block('polars-cloud/query-profile','explain_ir',['QueryResult'])}}
+
+```text
+# TODO: add example output
+```
+
+``` Graph
+
+Both `plan()` and `graph()` are available on `QueryResult` (with `plan_type` set to `"physical"` or
+`"ir"`) and on `QueryProfile` (physical plan only). These methods are only available in direct mode.
+
+Use `.graph()` to render the plan as a visual dot diagram using matplotlib.
+
+{{code_block('polars-cloud/query-profile','graph',['QueryResult'])}}
+
+<!-- TODO: Image of graph output -->
