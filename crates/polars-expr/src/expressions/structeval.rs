@@ -136,6 +136,31 @@ impl StructEvalExpr {
                     .collect::<Vec<_>>();
 
                 let input_len = cols[base_ac_idx].len();
+
+                for (i, col) in cols.iter().enumerate().skip(1) {
+                    let col_len = col.len();
+                    if col_len != input_len
+                        && col_len == 1
+                        && !acs[i].is_literal()
+                        && !self.is_scalar()
+                    {
+                        let identifier = match self
+                            .evaluation
+                            .get(i.saturating_sub(1))
+                            .and_then(|e| e.as_expression())
+                        {
+                            Some(expr) => format!("expression: {expr}"),
+                            None => "this Series".to_string(),
+                        };
+                        polars_bail!(InvalidOperation:
+                            "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
+                            If you want {} to be broadcasted, ensure it is a scalar \
+                            (for instance by adding '.first()').",
+                            col.name(), col_len, input_len, identifier
+                        );
+                    }
+                }
+
                 let out = with_fields(&cols)?;
                 assert!(input_len == out.len());
 
