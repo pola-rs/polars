@@ -4780,7 +4780,13 @@ class DataFrame:
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
         delta_write_options
-            Additional keyword arguments while writing a Delta lake Table.
+            Additional keyword arguments forwarded to
+            :func:`deltalake.write_deltalake` while writing a Delta Lake table.
+
+            Note that some settings (such as compression) are configured via
+            :class:`deltalake.WriterProperties` and must be passed as the
+            ``writer_properties`` option.
+
             See a list of supported write options `here <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__.
         delta_merge_options
             Keyword arguments which are required to `MERGE` a Delta lake Table.
