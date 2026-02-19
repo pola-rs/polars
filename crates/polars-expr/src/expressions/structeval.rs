@@ -214,6 +214,7 @@ impl PhysicalExpr for StructEvalExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+        eprintln!("DEBUG: evaluate() called");
         let input = self.input.evaluate(df, state)?;
 
         // Set ExecutionState.
