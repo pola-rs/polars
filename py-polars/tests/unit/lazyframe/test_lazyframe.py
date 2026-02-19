@@ -583,6 +583,38 @@ def test_round(n: float, ndigits: int, expected: float, dtype: pl.DataType) -> N
     )
 
 
+@pytest.mark.parametrize(
+    ("n", "ndigits", "expected1", "expected2"),
+    [
+        (0.5, 0, 0.0, 1.0),
+        (1.5, 0, 2.0, 2.0),
+        (2.5, 0, 2.0, 3.0),
+        (-0.5, 0, -0.0, -1.0),
+        (-1.5, 0, -2.0, -2.0),
+        (2.25, 1, 2.2, 2.3),
+        (2.75, 1, 2.8, 2.8),
+        (-2.25, 1, -2.2, -2.3),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_round_mode(
+    n: float, ndigits: int, expected1: float, expected2: float, dtype: pl.DataType
+) -> None:
+    ldf = pl.LazyFrame({"value": [n]}, schema_overrides={"value": dtype})
+    assert_series_equal(
+        ldf.select(pl.col("value").round(ndigits, mode="half_to_even"))
+        .collect()
+        .to_series(),
+        pl.Series("value", [expected1], dtype=dtype),
+    )
+    assert_series_equal(
+        ldf.select(pl.col("value").round(ndigits, mode="half_away_from_zero"))
+        .collect()
+        .to_series(),
+        pl.Series("value", [expected2], dtype=dtype),
+    )
+
+
 def test_dot() -> None:
     ldf = pl.LazyFrame({"a": [1.8, 1.2, 3.0], "b": [3.2, 1, 2]}).select(
         pl.col("a").dot(pl.col("b"))
