@@ -7,60 +7,15 @@ spent during execution.
 This visibility helps you optimize complex queries and better understand the distributed execution
 of queries.
 
-<details>
+<details markdown>
 <summary>Example query and dataset</summary>
 
 You can copy and paste the example below to explore the feature yourself. Don't forget to change the
 workspace name to one of your own workspaces.
 
-```python
-import polars as pl
-import polars_cloud as pc
-
-pc.authenticate()
-
-ctx = pc.ComputeContext(workspace="your-workspace", cpus=12, memory=12, cluster_size=4)
-
-def pdsh_q3(customer, lineitem, orders):
-    return (
-        customer.filter(pl.col("c_mktsegment") == "BUILDING")
-        .join(orders, left_on="c_custkey", right_on="o_custkey")
-        .join(lineitem, left_on="o_orderkey", right_on="l_orderkey")
-        .filter(pl.col("o_orderdate") < pl.date(1995, 3, 15))
-        .filter(pl.col("l_shipdate") > pl.date(1995, 3, 15))
-        .with_columns(
-            (pl.col("l_extendedprice") * (1 - pl.col("l_discount"))).alias("revenue")
-        )
-        .group_by("o_orderkey", "o_orderdate", "o_shippriority")
-        .agg(pl.sum("revenue"))
-        .select(
-            pl.col("o_orderkey").alias("l_orderkey"),
-            "revenue",
-            "o_orderdate",
-            "o_shippriority",
-        )
-        .sort(by=["revenue", "o_orderdate"], descending=[True, False])
-    )
-
-lineitem = pl.scan_parquet(
-    "s3://polars-cloud-samples-us-east-2-prd/pdsh/sf100/lineitem/*.parquet",
-    storage_options={"request_payer": "true"},
-)
-customer = pl.scan_parquet(
-    "s3://polars-cloud-samples-us-east-2-prd/pdsh/sf100/customer/*.parquet",
-    storage_options={"request_payer": "true"},
-)
-orders = pl.scan_parquet(
-    "s3://polars-cloud-samples-us-east-2-prd/pdsh/sf100/orders/*.parquet",
-    storage_options={"request_payer": "true"},
-)
-```
-
-{{code_block('polars-cloud/query-profile','execute',[])}}
+{{code_block('polars-cloud/query-profile','query',[])}}
 
 </details>
-
-<!-- Execute query -->
 
 ## Polars Cloud Query Profiler
 
@@ -68,14 +23,14 @@ Polars Cloud has a built-in query profiler. It shows realtime status of the quer
 execution, and gives you detailed metrics to the node level. This can help you find and analyze
 bottlenecks, helping you to run your queries optimally.
 
-It can be accessed from the Cluster Dashboard.
+The query profiler can be accessed from the cluster dashboard.
 
 ### Cluster Dashboard
 
-The cluster dashboard gives you insights into:
+The cluster dashboard gives you:
 
-- system metrics (CPU, memory, and network) of all nodes on your cluster.
-- an overview of the queries that are related to this cluster, scheduled, running, and finished.
+- insights into system metrics (CPU, memory, and network) of all nodes on your cluster.
+- an overview of the queries that are related to this cluster: scheduled, running, and finished.
 
 ![Cluster Dashboard](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/cluster_dashboard.png)
 
@@ -89,9 +44,15 @@ moment your compute has started and is no longer available after your cluster sh
 
 The system resources allow you to find bottlenecks and tweak your cluster configuration accordingly.
 
-- In case the CPU resources max out, you can add CPUs.
-- In case your memory maxes out, you can add memory.
-- In case your network bandwidth maxes out, you can add more nodes.
+- In case of CPU or memory bottlenecks, you can scale vertically, adding more vCPUs and RAM.
+- In case your network bandwidth maxes out, you can scale horizontally, by adding more nodes.
+- In case none of the resources seems to be a bottleneck, you might have overprovisioned your
+  cluster. In this case you can scale it down until you notice higher resource usage, reducing cost.
+- Clusters that are underprovisioned but balanced can get the job done, but by scaling diagonally
+  (same instance type, but more nodes) you could still reduce runtime.
+
+There is no one size fits all solution. This is different for every dataset, query, and use case.
+These visualisations help you figure out what fits for you.
 
 ### Query Details
 
@@ -106,41 +67,48 @@ the logical plan.
 ### Logical Plan
 
 In Polars, a logical plan is the intermediate representation (IR) of a query that describes what
-operations to perform, before physical execution details are decided. This shows the graph that is a
-representation of the query you sent to Polars Cloud.
+operations are performed, and in which order, before physical execution details are decided. This
+shows the graph that is a representation of the query you sent to Polars Cloud. You can think of the
+logical plan as the `EXPLAIN` in SQL.
 
 ![Logical Plan](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/logical_plan.png)
 
-<!--What can you do with this?-->
+The logical plan lets you verify that Polars interprets your query correctly. You could, for
+example, check if filters are applied before joins, or if the expected columns are selected. It is
+also useful for understanding how query optimization has transformed your original query, which you
+defined in Polars' DSL.
 
 ### Stage Graph
 
-The stage graph represents the different phases in which the plan is executed on the distributed
-cluster.
+The stage graph represents the different that will be executed on a distributed query. Note that a
+single node query doesn't have a notion of stages.
 
-From the overview with the stage graph you can click the stage itself, opening the stage graph
-details.
-
-![Stage graph details](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/stage_graph_stage_details.png)
-
-Alternatively, you can click one of the nodes in any stage to open up its details.
+From the overview with the stage graph you can click one of the operations in any stage to open up
+its details.
 
 ![Stage graph node details](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/stage_graph_node_details.png)
 
-<!-- what is the exact definition of  a stage?-->
+In it you can see details of the operation in that node.
 
-When executing a query single node, this is not available.
+Alternatively, you can click the stage itself, opening the stage graph details.
+
+![Stage graph details](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/stage_graph_stage_details.png)
+
+You can see general performance metrics of this stage, such as the amount of workers involved, the
+output rows, the bytes read and written, and the timeline of the stage.
 
 ### Physical Plan
 
-The physical plan shows the strategy that was used to execute the query.
+The physical plan shows how the query was executed by the engine. You can get to this screen by
+clicking `View physical plan` in the Stage details, for a distributed query, or you'll go straight
+here from the query details for a single node query.
 
 ![Physical plan](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/physical_plan.png)
 
 In it you can find the time spent per node, identifying choke points. Additionally some nodes are
-marked with warnings that they're memory intensive. In the details pane you can find specific
-metrics on how many rows went in and out, what the morsel sizes were and how many went through, and
-more.
+marked with warnings when they're potentially memory intensive, or executed on a single node. In the
+details pane you can find specific metrics on how many rows went in and out, what the morsel sizes
+were and how many went through, and more.
 
 ## Profile with the Polars Cloud SDK
 
