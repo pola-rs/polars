@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from inspect import isfunction
 from typing import TYPE_CHECKING, Generic, TypeVar
 from warnings import warn
 
@@ -53,9 +54,12 @@ def _create_namespace(
         if name in _reserved_namespaces:
             msg = f"cannot override reserved namespace {name!r}"
             raise AttributeError(msg)
-        elif hasattr(cls, name):
+        elif (attr := getattr(cls, name, None)) is not None:
+            if isfunction(attr) or isinstance(attr, property) or name.startswith("_"):
+                msg = f"cannot override `{cls.__name__}.{name}` with custom namespace {ns_class.__name__!r}"
+                raise AttributeError(msg)
             warn(
-                f"Overriding existing custom namespace {name!r} (on {cls.__name__!r})",
+                f"overriding existing custom namespace {name!r} (on {cls.__name__})",
                 UserWarning,
                 stacklevel=find_stacklevel(),
             )
