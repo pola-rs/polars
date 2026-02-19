@@ -5174,20 +5174,16 @@ class Series:
                     else ""
                 )
 
-        pa_arr = self.to_arrow()
-        # pandas does not support unsigned dictionary indices
-        if pa.types.is_dictionary(pa_arr.type):
-            pa_dtype = pa.dictionary(pa.int64(), pa.large_string())
-            # Forcibly have at least 1 row as otherwise cast makes
-            # enum dictionary values disappear.
-            pa_arr = (
-                pa_arr.cast(pa_dtype)
-                if self.len() != 0
-                else Series([None], dtype=self.dtype)
-                .to_arrow()
-                .cast(pa_dtype)
-                .slice(0, 0)
+        if isinstance(self.dtype, (Categorical, Enum)):
+            return (
+                self.to_frame()
+                .to_pandas(
+                    use_pyarrow_extension_array=use_pyarrow_extension_array, **kwargs
+                )
+                .iloc[:, 0]
             )
+        else:
+            pa_arr = self.to_arrow()
 
         if use_pyarrow_extension_array:
             pd_series = pa_arr.to_pandas(
