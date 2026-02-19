@@ -282,7 +282,7 @@ impl PhysicalExpr for StructEvalExpr {
     ) -> PolarsResult<AggregationContext<'a>> {
         // The evaluation is similar to a regular Function, with the modification that the input
         // is evaluated first, and retained for future use in the ExecutionState.
-
+        eprintln!("DEBUG: evaluate_on_groups() called");
         // Evaluate input.
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
 
