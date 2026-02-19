@@ -114,8 +114,14 @@ impl MinMaxKernel for BooleanArray {
             return None;
         }
 
-        let unset_bits = self.values().unset_bits();
-        Some(unset_bits == 0)
+        if let Some(validity) = self.validity()
+            && validity.unset_bits() > 0
+        {
+            // min is true only if every valid position has value=true.
+            Some(self.values().num_intersections_with(validity) == validity.set_bits())
+        } else {
+            Some(self.values().unset_bits() == 0)
+        }
     }
 
     fn max_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
@@ -123,8 +129,14 @@ impl MinMaxKernel for BooleanArray {
             return None;
         }
 
-        let set_bits = self.values().set_bits();
-        Some(set_bits > 0)
+        if let Some(validity) = self.validity()
+            && validity.unset_bits() > 0
+        {
+            // max is true if any valid position has value=true.
+            Some(self.values().intersects_with(validity))
+        } else {
+            Some(self.values().set_bits() > 0)
+        }
     }
 
     #[inline(always)]
@@ -259,5 +271,69 @@ impl<O: Offset> MinMaxKernel for Utf8Array<O> {
     #[inline(always)]
     fn max_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
         self.max_ignore_nan_kernel()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_boolean_min_max_no_nulls() {
+        let all_true = BooleanArray::from_slice(&[true, true]);
+        assert_eq!(all_true.min_ignore_nan_kernel(), Some(true));
+        assert_eq!(all_true.max_ignore_nan_kernel(), Some(true));
+
+        let all_false = BooleanArray::from_slice(&[false, false]);
+        assert_eq!(all_false.min_ignore_nan_kernel(), Some(false));
+        assert_eq!(all_false.max_ignore_nan_kernel(), Some(false));
+
+        let mixed = BooleanArray::from_slice(&[true, false]);
+        assert_eq!(mixed.min_ignore_nan_kernel(), Some(false));
+        assert_eq!(mixed.max_ignore_nan_kernel(), Some(true));
+    }
+
+    #[test]
+    fn test_boolean_min_max_all_null() {
+        let all_null = BooleanArray::from(&[None, None, None]);
+        assert_eq!(all_null.min_ignore_nan_kernel(), None);
+        assert_eq!(all_null.max_ignore_nan_kernel(), None);
+    }
+
+    #[test]
+    fn test_boolean_min_max_empty() {
+        let empty = BooleanArray::from(&[] as &[Option<bool>]);
+        assert_eq!(empty.min_ignore_nan_kernel(), None);
+        assert_eq!(empty.max_ignore_nan_kernel(), None);
+    }
+
+    #[test]
+    fn test_boolean_min_with_nulls() {
+        let arr = BooleanArray::from(&[Some(true), Some(true), None]);
+        assert_eq!(arr.min_ignore_nan_kernel(), Some(true));
+
+        let arr = BooleanArray::from(&[Some(true), None]);
+        assert_eq!(arr.min_ignore_nan_kernel(), Some(true));
+
+        let arr = BooleanArray::from(&[Some(true), Some(false), None]);
+        assert_eq!(arr.min_ignore_nan_kernel(), Some(false));
+
+        let arr = BooleanArray::from(&[Some(false), Some(false), None]);
+        assert_eq!(arr.min_ignore_nan_kernel(), Some(false));
+    }
+
+    #[test]
+    fn test_boolean_max_with_nulls() {
+        let arr = BooleanArray::from(&[Some(false), Some(false), None]);
+        assert_eq!(arr.max_ignore_nan_kernel(), Some(false));
+
+        let arr = BooleanArray::from(&[Some(false), None]);
+        assert_eq!(arr.max_ignore_nan_kernel(), Some(false));
+
+        let arr = BooleanArray::from(&[Some(true), Some(false), None]);
+        assert_eq!(arr.max_ignore_nan_kernel(), Some(true));
+
+        let arr = BooleanArray::from(&[Some(true), Some(true), None]);
+        assert_eq!(arr.max_ignore_nan_kernel(), Some(true));
     }
 }
