@@ -280,15 +280,15 @@ mod tests {
 
     #[test]
     fn test_boolean_min_max_no_nulls() {
-        let all_true = BooleanArray::from_slice(&[true, true]);
+        let all_true = BooleanArray::from_slice([true, true]);
         assert_eq!(all_true.min_ignore_nan_kernel(), Some(true));
         assert_eq!(all_true.max_ignore_nan_kernel(), Some(true));
 
-        let all_false = BooleanArray::from_slice(&[false, false]);
+        let all_false = BooleanArray::from_slice([false, false]);
         assert_eq!(all_false.min_ignore_nan_kernel(), Some(false));
         assert_eq!(all_false.max_ignore_nan_kernel(), Some(false));
 
-        let mixed = BooleanArray::from_slice(&[true, false]);
+        let mixed = BooleanArray::from_slice([true, false]);
         assert_eq!(mixed.min_ignore_nan_kernel(), Some(false));
         assert_eq!(mixed.max_ignore_nan_kernel(), Some(true));
     }
