@@ -1849,6 +1849,51 @@ def test_ceil() -> None:
     assert_series_equal(s.ceil(), expected)
 
 
+def test_truncate() -> None:
+    a = pl.Series("f", [1.003, 2.003])
+    b = a.truncate(2)
+    assert b.to_list() == [1.00, 2.00]
+
+    b = a.truncate()
+    assert b.to_list() == [1.0, 2.0]
+
+
+def test_truncate_negative() -> None:
+    s = pl.Series("f", [-1.78, -2.56, -3.99])
+    assert s.truncate(1).to_list() == [-1.7, -2.5, -3.9]
+    assert s.truncate(0).to_list() == [-1.0, -2.0, -3.0]
+
+
+def test_truncate_int() -> None:
+    s = pl.Series([1, 2, 3])
+    assert_series_equal(s, s.truncate())
+
+
+def test_truncate_special_values() -> None:
+    # NaN values should remain NaN
+    s = pl.Series([1.5, float("nan"), 2.5])
+    result = s.truncate(1)
+    assert result[0] == 1.5
+    assert math.isnan(result[1])
+    assert result[2] == 2.5
+
+    # Inf values should remain inf
+    s = pl.Series([float("inf"), float("-inf"), 1.234])
+    result = s.truncate(2)
+    assert result[0] == float("inf")
+    assert result[1] == float("-inf")
+    assert result[2] == 1.23
+
+    # Null values should remain null
+    s = pl.Series("a", [1.234, None, 3.456], dtype=pl.Float64)
+    result = s.truncate(1)
+    assert result.to_list() == [1.2, None, 3.4]
+
+    # Empty series
+    s = pl.Series(dtype=pl.Float64)
+    assert_series_equal(s.truncate(2), s)
+
+
 def test_duration_arithmetic() -> None:
     # apply some basic duration math to series
     s = pl.Series([datetime(2022, 1, 1, 10, 20, 30), datetime(2022, 1, 2, 20, 40, 50)])

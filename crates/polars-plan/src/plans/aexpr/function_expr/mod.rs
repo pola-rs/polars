@@ -270,6 +270,10 @@ pub enum IRFunctionExpr {
         digits: i32,
     },
     #[cfg(feature = "round_series")]
+    Truncate {
+        decimals: u32,
+    },
+    #[cfg(feature = "round_series")]
     Floor,
     #[cfg(feature = "round_series")]
     Ceil,
@@ -609,6 +613,8 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "round_series")]
             IRFunctionExpr::RoundSF { digits } => digits.hash(state),
             #[cfg(feature = "round_series")]
+            Truncate { decimals } => decimals.hash(state),
+            #[cfg(feature = "round_series")]
             IRFunctionExpr::Floor => {},
             #[cfg(feature = "round_series")]
             Ceil => {},
@@ -845,6 +851,8 @@ impl Display for IRFunctionExpr {
             Round { .. } => "round",
             #[cfg(feature = "round_series")]
             RoundSF { .. } => "round_sig_figs",
+            #[cfg(feature = "round_series")]
+            Truncate { .. } => "truncate",
             #[cfg(feature = "round_series")]
             Floor => "floor",
             #[cfg(feature = "round_series")]
@@ -1163,7 +1171,7 @@ impl IRFunctionExpr {
                 }
             }),
             #[cfg(feature = "round_series")]
-            F::Round { .. } | F::RoundSF { .. } | F::Floor | F::Ceil => {
+            F::Round { .. } | F::RoundSF { .. } | F::Truncate { .. } | F::Floor | F::Ceil => {
                 FunctionOptions::elementwise()
             },
             #[cfg(feature = "fused")]
