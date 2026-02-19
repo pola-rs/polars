@@ -94,15 +94,16 @@ fn extract_literal_with_op<'a>(
     }
 }
 
-/// Ensure we have a common dtype from an input set of cast/typed-literal dtypes.
-fn resolve_common_dtype(dtypes: &[DataType]) -> PolarsResult<Option<DataType>> {
+/// Ensure we have a common dtype from an input set of dtypes (must match).
+fn resolve_common_dtype(dtypes: &[DataType], desc: Option<&str>) -> PolarsResult<Option<DataType>> {
     let Some(first) = dtypes.first() else {
         return Ok(None);
     };
+    let desc = desc.unwrap_or("");
     for dtype in &dtypes[1..] {
         polars_ensure!(
             dtype == first,
-            SQLInterface: "expected consistent dtypes (found {} and {})", first, dtype,
+            SQLInterface: "{desc}expected consistent dtypes (found {first:?} and {dtype:?})",
         );
     }
     Ok(Some(first.clone()))
@@ -159,7 +160,7 @@ impl SQLExprVisitor<'_> {
             array_elements.push(val);
         }
         let mut s = Series::from_any_values(PlSmallStr::EMPTY, &array_elements, true)?;
-        if let Some(dtype) = resolve_common_dtype(&cast_dtypes)? {
+        if let Some(dtype) = resolve_common_dtype(&cast_dtypes, Some("array literal "))? {
             s = cast_literal_series(&s, &dtype)?;
         }
         Ok(s)
