@@ -2150,7 +2150,7 @@ class Series:
         stats.columns = ["statistic", "value"]
         return stats.filter(F.col("value").is_not_null())
 
-    def sum(self) -> int | float | decimal.Decimal:
+    def sum(self) -> int | float | PyDecimal:
         """
         Reduce this Series to the sum value.
 
