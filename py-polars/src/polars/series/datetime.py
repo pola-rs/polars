@@ -155,7 +155,7 @@ class DateTimeNameSpace:
         >>> s.dt.min()
         datetime.date(2001, 1, 1)
         """
-        return wrap_s(self._s).min()  # type: ignore[return-value]
+        return wrap_s(self._s).min()
 
     def max(self) -> dt.date | dt.datetime | dt.timedelta | None:
         """
@@ -168,7 +168,7 @@ class DateTimeNameSpace:
         >>> s.dt.max()
         datetime.date(2001, 1, 3)
         """
-        return wrap_s(self._s).max()  # type: ignore[return-value]
+        return wrap_s(self._s).max()
 
     @deprecated("`Series.dt.median` is deprecated; use `Series.median` instead.")
     def median(self) -> TemporalLiteral | None:
