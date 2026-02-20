@@ -12,6 +12,7 @@ use crate::csv::read::schema_inference::infer_file_schema_impl;
 use crate::prelude::_csv_read_internal::{SplitLines, is_comment_line};
 use crate::prelude::{CsvParseOptions, CsvReadOptions};
 use crate::utils::compression::{ByteSourceReader, CompressedReader};
+#[cfg(feature = "async")]
 use crate::utils::stream_buf_reader::ReaderSource;
 
 pub type InspectContentFn<'a> = Box<dyn FnMut(&[u8]) + 'a>;
@@ -202,6 +203,7 @@ pub fn read_until_start_and_infer_schema_from_compressed_reader(
 /// The reading is done in an iterative streaming fashion
 ///
 /// This function isn't perf critical but would increase binary-size so don't inline it.
+#[cfg(feature = "async")]
 #[inline(never)]
 pub fn read_until_start_and_infer_schema(
     options: &CsvReadOptions,
@@ -508,6 +510,7 @@ fn for_each_line_from_reader_from_compressed_reader(
 ///
 /// Returning `ConsumeDiscard` after `ConsumeKeep` is a logic error, since a segmented `Buffer`
 /// can't be constructed.
+#[cfg(feature = "async")]
 fn for_each_line_from_reader(
     parse_options: &CsvParseOptions,
     is_file_start: bool,
@@ -692,6 +695,7 @@ fn skip_lines_naive(
     }
 }
 
+#[cfg(feature = "async")]
 fn skip_lines_naive_from_byte_source_reader(
     eol_char: u8,
     skip_lines: usize,

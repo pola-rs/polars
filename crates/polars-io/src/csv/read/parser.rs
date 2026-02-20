@@ -15,12 +15,15 @@ use super::builder::Builder;
 use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use crate::prelude::CsvReadOptions;
+#[cfg(feature = "async")]
 use crate::prelude::streaming::read_until_start_and_infer_schema;
 use crate::utils::compression::ByteSourceReader;
+#[cfg(feature = "async")]
 use crate::utils::stream_buf_reader::ReaderSource;
 
 /// Read the number of rows without parsing columns
 /// useful for count(*) queries
+#[cfg(feature = "async")]
 #[allow(clippy::too_many_arguments)]
 pub fn count_rows(
     path: PlRefPath,
@@ -61,6 +64,7 @@ pub fn count_rows(
 /// Read the number of rows without parsing columns.
 /// Useful for count(*) queries.
 /// Supports transparent decompression. Does not support truncated compressed files.
+#[cfg(feature = "async")]
 #[allow(clippy::too_many_arguments)]
 pub fn count_rows_from_reader_par(
     mut reader: ByteSourceReader<ReaderSource>,
@@ -202,6 +206,7 @@ pub fn count_rows_from_reader_par(
 /// Read the number of rows without parsing columns.
 /// Useful for count(*) queries.
 /// Supports transparent decompression.
+#[cfg(feature = "async")]
 #[allow(clippy::too_many_arguments)]
 pub fn count_rows_from_slice_par(
     buffer: Buffer<u8>,

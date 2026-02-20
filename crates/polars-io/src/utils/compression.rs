@@ -251,7 +251,6 @@ impl Read for CompressedReader {
 ///
 /// This is the generic successor to [`CompressedReader`], which only
 /// supports in-memory (`Buffer<u8>`) sources.
-#[cfg(feature = "async")]
 pub enum ByteSourceReader<R: BufRead> {
     UncompressedMemory {
         slice: Buffer<u8>,
@@ -266,7 +265,6 @@ pub enum ByteSourceReader<R: BufRead> {
     Zstd(zstd::Decoder<'static, R>),
 }
 
-#[cfg(feature = "async")]
 impl<R: BufRead> ByteSourceReader<R> {
     pub fn try_new(reader: R, compression: Option<SupportedCompression>) -> PolarsResult<Self> {
         Ok(match compression {
