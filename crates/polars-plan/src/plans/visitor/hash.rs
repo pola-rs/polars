@@ -188,8 +188,8 @@ impl Hash for IRHashWrap<'_> {
                 hash_exprs(keys, self.expr_arena, state);
                 hash_exprs(aggs, self.expr_arena, state);
 
-                std::mem::discriminant(&apply).hash(state);
                 if let Some(function) = apply {
+                    true.hash(state);
                     match function {
                         PlanCallback::Rust(f) => {
                             f.hash(state);
