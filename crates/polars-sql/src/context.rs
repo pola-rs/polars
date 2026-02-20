@@ -4,7 +4,7 @@ use std::sync::RwLock;
 use polars_core::frame::row::Row;
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
-use polars_ops::frame::JoinCoalesce;
+use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
@@ -1371,7 +1371,7 @@ impl SQLContext {
                                 slice: None,
                                 nulls_equal: false,
                                 coalesce: Default::default(),
-                                maintain_order: polars_ops::frame::MaintainOrderJoin::Left,
+                                maintain_order: MaintainOrderJoin::Left,
                                 build_side: None,
                             },
                         );
