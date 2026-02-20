@@ -55,54 +55,45 @@ impl CategoricalToArrowConverter {
 
     /// Initializes categorical converters for all categorical mappings present in this dtype.
     pub fn initialize(&mut self, dtype: &DataType) {
-        use DataType::*;
+        dtype.visit_with(|dtype| {
+            use DataType::*;
 
-        match dtype {
-            Categorical(_categories, mapping) => {
-                let key = Arc::as_ptr(mapping) as *const () as usize;
+            match dtype {
+                Categorical(_categories, mapping) => {
+                    let key = Arc::as_ptr(mapping) as *const () as usize;
 
-                if !self.converters.contains_key(&key) {
-                    with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |$C| {
+                    if !self.converters.contains_key(&key) {
+                        with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |$C| {
+                            self.converters.insert(
+                                key,
+                                CategoricalArrayToArrowConverter::Categorical {
+                                    mapping: mapping.clone(),
+                                    key_remap: CategoricalKeyRemap::from(
+                                        PlIndexSet::<<$C as PolarsCategoricalType>::Native>::with_capacity(
+                                            mapping.num_cats_upper_bound()
+                                        )
+                                    ),
+                                },
+                            );
+                        })
+                    }
+                },
+                Enum(categories, mapping) => {
+                    let key = Arc::as_ptr(mapping) as *const () as usize;
+
+                    if !self.converters.contains_key(&key) {
                         self.converters.insert(
                             key,
-                            CategoricalArrayToArrowConverter::Categorical {
+                            CategoricalArrayToArrowConverter::Enum {
+                                frozen: categories.clone(),
                                 mapping: mapping.clone(),
-                                key_remap: CategoricalKeyRemap::from(
-                                    PlIndexSet::<<$C as PolarsCategoricalType>::Native>::with_capacity(
-                                        mapping.num_cats_upper_bound()
-                                    )
-                                ),
                             },
                         );
-                    })
-                }
-            },
-            Enum(categories, mapping) => {
-                let key = Arc::as_ptr(mapping) as *const () as usize;
-
-                if !self.converters.contains_key(&key) {
-                    self.converters.insert(
-                        key,
-                        CategoricalArrayToArrowConverter::Enum {
-                            frozen: categories.clone(),
-                            mapping: mapping.clone(),
-                        },
-                    );
-                }
-            },
-            List(inner) => self.initialize(inner),
-            #[cfg(feature = "dtype-array")]
-            Array(inner, _width) => self.initialize(inner),
-            #[cfg(feature = "dtype-struct")]
-            Struct(fields) => {
-                for field in fields {
-                    self.initialize(field.dtype())
-                }
-            },
-            #[cfg(feature = "dtype-extension")]
-            Extension(_, inner) => self.initialize(inner),
-            _ => assert!(!dtype.is_nested()),
-        }
+                    }
+                },
+                _ => {},
+            }
+        });
     }
 }
 
