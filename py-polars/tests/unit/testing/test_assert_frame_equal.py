@@ -7,7 +7,6 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -369,8 +368,8 @@ def test_assert_frame_equal_check_row_order_unsortable(assert_function: Any) -> 
     df1 = pl.DataFrame({"a": [object(), object()], "b": [3, 4]})
     df2 = pl.DataFrame({"a": [object(), object()], "b": [4, 3]})
     with pytest.raises(
-        InvalidOperationError,
-        match="`arg_sort_multiple` operation not supported for dtype `object`",
+        pl.exceptions.InvalidOperationError,
+        match=r"column '.*' has a dtype of '.*', which does not support sorting",
     ):
         assert_function(df1, df2, check_row_order=False)
 
@@ -433,7 +432,10 @@ def test_assert_schema_equal_column_mismatch_order() -> None:
 
     df1_schema = df1.schema
     df2_schema = df2.schema
-    with pytest.raises(AssertionError, match="columns are not in the same order"):
+    with pytest.raises(
+        AssertionError,
+        match=r"Schemas are different.*columns are not in the same order",
+    ):
         assert_schema_equal(df1_schema, df2_schema)
 
     assert_schema_equal(df1_schema, df2_schema, check_column_order=False)
@@ -447,7 +449,9 @@ def test_assert_schema_equal_dtypes_mismatch() -> None:
     df1_schema = df1.schema
     df2_schema = df2.schema
 
-    with pytest.raises(AssertionError, match="dtypes do not match"):
+    with pytest.raises(
+        AssertionError, match=r"Schemas are different.*dtypes do not match"
+    ):
         assert_schema_equal(df1_schema, df2_schema, check_column_order=False)
 
 

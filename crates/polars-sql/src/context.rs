@@ -4,7 +4,7 @@ use std::sync::RwLock;
 use polars_core::frame::row::Row;
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
-use polars_ops::frame::JoinCoalesce;
+use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
@@ -13,7 +13,7 @@ use sqlparser::ast::{
     BinaryOperator, CreateTable, CreateTableLikeKind, Delete, Distinct, ExcludeSelectItem,
     Expr as SQLExpr, Fetch, FromTable, FunctionArg, GroupByExpr, Ident, JoinConstraint,
     JoinOperator, LimitClause, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectType,
-    OrderBy, OrderByKind, Query, RenameSelectItem, Select, SelectItem,
+    OrderBy, OrderByKind, Query, RenameSelectItem, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias,
     TableFactor, TableWithJoins, Truncate, UnaryOperator, Value as SQLValue, ValueWithSpan, Values,
     Visit, WildcardAdditionalOptions, WindowSpec,
@@ -1371,7 +1371,7 @@ impl SQLContext {
                                 slice: None,
                                 nulls_equal: false,
                                 coalesce: Default::default(),
-                                maintain_order: polars_ops::frame::MaintainOrderJoin::Left,
+                                maintain_order: MaintainOrderJoin::Left,
                                 build_side: None,
                             },
                         );
@@ -1465,6 +1465,12 @@ impl SQLContext {
         schema: &SchemaRef,
         select_modifiers: &mut SelectModifiers,
     ) -> PolarsResult<Vec<Expr>> {
+        if select_stmt.projection.is_empty()
+            && select_stmt.flavor == SelectFlavor::FromFirstNoSelect
+        {
+            // eg: bare "FROM tbl" is equivalent to "SELECT * FROM tbl".
+            return Ok(schema.iter_names().map(|name| col(name.clone())).collect());
+        }
         let mut items: Vec<ProjectionItem> = Vec::with_capacity(select_stmt.projection.len());
         let mut has_qualified_wildcard = false;
 
@@ -1505,11 +1511,7 @@ impl SQLContext {
                     },
                 },
                 SelectItem::Wildcard(wildcard_options) => {
-                    let cols = schema
-                        .iter_names()
-                        .map(|name| col(name.clone()))
-                        .collect::<Vec<_>>();
-
+                    let cols = schema.iter_names().map(|name| col(name.clone())).collect();
                     items.push(ProjectionItem::Exprs(
                         self.process_wildcard_additional_options(
                             cols,

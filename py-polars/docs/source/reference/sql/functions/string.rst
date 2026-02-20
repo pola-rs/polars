@@ -25,6 +25,8 @@ String
      - Returns the character length of the string.
    * - :ref:`LOWER <lower>`
      - Returns a lowercased column.
+   * - :ref:`LPAD <lpad>`
+     - Pads a string on the left to a specified length using an optional fill character (default is a space).
    * - :ref:`LTRIM <ltrim>`
      - Strips whitespaces from the left.
    * - :ref:`NORMALIZE <normalize>`
@@ -39,6 +41,8 @@ String
      - Returns the reversed string.
    * - :ref:`RIGHT <right>`
      - Returns the last (rightmost) `n` characters.
+   * - :ref:`RPAD <rpad>`
+     - Pads a string on the right to a specified length using an optional fill character (default is a space).
    * - :ref:`RTRIM <rtrim>`
      - Strips whitespaces from the right.
    * - :ref:`SPLIT_PART <split_part>`
@@ -346,6 +350,39 @@ Returns a lowercased column.
     # │ DD  ┆ dd        │
     # └─────┴───────────┘
 
+.. _lpad:
+
+LPAD
+----
+Pads a string on the left to a specified length using an optional fill character (default is a space).
+If the string is longer than the target length it is truncated.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["hello", "hi", "a", None, "longstr"]})
+    df.sql("""
+      SELECT
+        foo,
+        LPAD(foo, 7) AS lpad,
+        LPAD(foo, 7, 'x') AS lpad_x,
+        LPAD(foo, 4, '#') AS lpad_trunc
+      FROM self
+    """)
+    # shape: (5, 4)
+    # ┌─────────┬─────────┬─────────┬────────────┐
+    # │ foo     ┆ lpad    ┆ lpad_x  ┆ lpad_trunc │
+    # │ ---     ┆ ---     ┆ ---     ┆ ---        │
+    # │ str     ┆ str     ┆ str     ┆ str        │
+    # ╞═════════╪═════════╪═════════╪════════════╡
+    # │ hello   ┆   hello ┆ xxhello ┆ hell       │
+    # │ hi      ┆      hi ┆ xxxxxhi ┆ ##hi       │
+    # │ a       ┆       a ┆ xxxxxxa ┆ ###a       │
+    # │ null    ┆ null    ┆ null    ┆ null       │
+    # │ longstr ┆ longstr ┆ longstr ┆ long       │
+    # └─────────┴─────────┴─────────┴────────────┘
+
 .. _ltrim:
 
 LTRIM
@@ -542,6 +579,39 @@ Returns the last (rightmost) `n` characters.
     # │ fghi  ┆ hi  │
     # │ jklmn ┆ mn  │
     # └───────┴─────┘
+
+.. _rpad:
+
+RPAD
+----
+Pads a string on the right to a specified length using an optional fill character (default is a space).
+If the string is longer than the target length it is truncated.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["hello", "hi", "a", None, "longstr"]})
+    df.sql("""
+      SELECT
+        foo,
+        RPAD(foo, 7) AS rpad,
+        RPAD(foo, 7, '-') AS rpad_dash,
+        RPAD(foo, 4, '#') AS rpad_trunc
+      FROM self
+    """)
+    # shape: (5, 4)
+    # ┌─────────┬─────────┬───────────┬────────────┐
+    # │ foo     ┆ rpad    ┆ rpad_dash ┆ rpad_trunc │
+    # │ ---     ┆ ---     ┆ ---       ┆ ---        │
+    # │ str     ┆ str     ┆ str       ┆ str        │
+    # ╞═════════╪═════════╪═══════════╪════════════╡
+    # │ hello   ┆ hello   ┆ hello--   ┆ hell       │
+    # │ hi      ┆ hi      ┆ hi-----   ┆ hi##       │
+    # │ a       ┆ a       ┆ a------   ┆ a###       │
+    # │ null    ┆ null    ┆ null      ┆ null       │
+    # │ longstr ┆ longstr ┆ longstr   ┆ long       │
+    # └─────────┴─────────┴───────────┴────────────┘
 
 .. _rtrim:
 

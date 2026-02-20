@@ -459,6 +459,7 @@ impl IRFunctionExpr {
             }),
             #[cfg(feature = "dtype-struct")]
             RowDecode(fields, _) => mapper.with_dtype(DataType::Struct(fields.to_vec())),
+            DynamicPred { .. } => mapper.with_dtype(DataType::Boolean),
         }
     }
 

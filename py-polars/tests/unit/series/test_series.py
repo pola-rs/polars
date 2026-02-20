@@ -1974,9 +1974,24 @@ def test_repr_html(df: pl.DataFrame) -> None:
 @pytest.mark.parametrize(
     ("value", "time_unit", "exp", "exp_type"),
     [
-        (13285, "d", date(2006, 5, 17), pl.Date),
-        (1147880044, "s", datetime(2006, 5, 17, 15, 34, 4), pl.Datetime),
-        (1147880044 * 1_000, "ms", datetime(2006, 5, 17, 15, 34, 4), pl.Datetime("ms")),
+        (
+            13285,
+            "d",
+            date(2006, 5, 17),
+            pl.Date,
+        ),
+        (
+            1147880044,
+            "s",
+            datetime(2006, 5, 17, 15, 34, 4),
+            pl.Datetime("us"),
+        ),
+        (
+            1147880044 * 1_000,
+            "ms",
+            datetime(2006, 5, 17, 15, 34, 4),
+            pl.Datetime("us"),
+        ),
         (
             1147880044 * 1_000_000,
             "us",

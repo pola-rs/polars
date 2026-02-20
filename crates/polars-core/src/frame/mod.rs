@@ -3,7 +3,6 @@
 use arrow::datatypes::ArrowSchemaRef;
 use polars_row::ArrayRef;
 use polars_utils::UnitVec;
-use polars_utils::ideal_morsel_size::get_ideal_morsel_size;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -1416,6 +1415,14 @@ impl DataFrame {
             };
         }
 
+        for column in &by_column {
+            if column.dtype().is_object() {
+                polars_bail!(
+                    InvalidOperation: "column '{}' has a dtype of '{}', which does not support sorting", column.name(), column.dtype()
+                )
+            }
+        }
+
         // note that the by_column argument also contains evaluated expression from
         // polars-lazy that may not even be present in this dataframe. therefore
         // when we try to set the first columns as sorted, we ignore the error as
@@ -2745,7 +2752,7 @@ impl<'a> RecordBatchIterWrap<'a> {
     fn new_zero_width(height: usize) -> Self {
         Self::ZeroWidth {
             remaining_height: height,
-            chunk_size: get_ideal_morsel_size().get(),
+            chunk_size: polars_config::config().ideal_morsel_size() as usize,
         }
     }
 }

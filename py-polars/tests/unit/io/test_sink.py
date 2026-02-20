@@ -331,9 +331,9 @@ def test_write_unsupported_compression(write_fn_name: str, fmt: str) -> None:
 @pytest.mark.write_disk
 @pytest.mark.parametrize("file_name", ["凸变英雄X", "影分身の術"])
 def test_sink_path_slicing_utf8_boundaries_26324(
-    tmp_path: Path, file_name: str
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, file_name: str
 ) -> None:
-    os.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     df = pl.DataFrame({"a": 1})
     df.write_parquet(file_name)

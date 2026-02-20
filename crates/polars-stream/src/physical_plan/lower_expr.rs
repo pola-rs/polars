@@ -1846,6 +1846,7 @@ fn lower_exprs_with_ctx(
                     nulls_last: vec![true; by_column.len()],
                     reverse,
                     by_column,
+                    dyn_pred: None,
                 };
                 let output_schema = ctx.phys_sm[data_stream.node].output_schema.clone();
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));

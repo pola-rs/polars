@@ -12,7 +12,7 @@ SQL Clauses
    * - :ref:`DISTINCT <distinct>`
      - Returns unique values from a query.
    * - :ref:`FROM <from>`
-     - Specify the table(s) from which to retrieve or delete data.
+     - Specify the table(s) from which to retrieve or delete data. Can also be used as the leading clause.
    * - :ref:`JOIN <join>`
      - Combine rows from two or more tables based on a related column.
    * - :ref:`WHERE <where>`
@@ -65,6 +65,11 @@ Select the columns to be returned by the query.
     # │ 3   ┆ xx  │
     # └─────┴─────┘
 
+.. note::
+
+   Use of bare ``FROM tbl`` is also supported, as shorthand for ``SELECT * FROM tbl``;
+   see the :ref:`FROM <from>` clause for more detail.
+
 .. _distinct:
 
 DISTINCT
@@ -100,6 +105,12 @@ FROM
 ----
 Specifies the table(s) from which to retrieve or delete data.
 
+In addition to the usual ``SELECT ... FROM tbl`` syntax, the ``FROM`` clause can
+also be used as the leading clause in a query, supporting the following variations:
+
+* ``FROM tbl`` - equivalent to ``SELECT * FROM tbl``.
+* ``FROM tbl SELECT ...`` - a reordered ``SELECT`` with explicit projections.
+
 **Example:**
 
 .. code-block:: python
@@ -110,18 +121,39 @@ Specifies the table(s) from which to retrieve or delete data.
         "b": ["zz", "yy", "xx"],
       }
     )
+    for query in (
+      "SELECT * FROM self",
+      "FROM self SELECT *",
+      "FROM self",
+    ):
+      df.sql(query)
+      # shape: (3, 2)
+      # ┌─────┬─────┐
+      # │ a   ┆ b   │
+      # │ --- ┆ --- │
+      # │ i64 ┆ str │
+      # ╞═════╪═════╡
+      # │ 1   ┆ zz  │
+      # │ 2   ┆ yy  │
+      # │ 3   ┆ xx  │
+      # └─────┴─────┘
+
+Using ``FROM`` as the leading clause, with ``SELECT``:
+
+.. code-block:: python
+
     df.sql("""
-      SELECT * FROM self
+      FROM self SELECT b, a
     """)
     # shape: (3, 2)
     # ┌─────┬─────┐
-    # │ a   ┆ b   │
+    # │ b   ┆ a   │
     # │ --- ┆ --- │
-    # │ i64 ┆ str │
+    # │ str ┆ i64 │
     # ╞═════╪═════╡
-    # │ 1   ┆ zz  │
-    # │ 2   ┆ yy  │
-    # │ 3   ┆ xx  │
+    # │ zz  ┆ 1   │
+    # │ yy  ┆ 2   │
+    # │ xx  ┆ 3   │
     # └─────┴─────┘
 
 .. _join:

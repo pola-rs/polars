@@ -501,7 +501,7 @@ fn create_physical_plan_impl(
             Ok(Box::new(executors::SortExec {
                 input,
                 by_column,
-                slice,
+                slice: slice.map(|t| (t.0, t.1)),
                 sort_options,
             }))
         },

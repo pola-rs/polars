@@ -1,10 +1,12 @@
 use std::convert::identity;
 
 use arrow::array::{Array, BooleanArray, PrimitiveArray};
-use arrow::bitmap::{binary_fold, intersects_with};
+use arrow::bitmap::binary_fold;
 use arrow::datatypes::ArrowDataType;
 use arrow::legacy::utils::CustomIterTools;
 use polars_utils::float16::pf16;
+
+use crate::boolean::{all, any};
 
 pub trait BitwiseKernel {
     type Scalar;
@@ -217,31 +219,14 @@ impl BitwiseKernel for BooleanArray {
         self.count_zeros()
     }
 
+    #[inline(always)]
     fn reduce_and(&self) -> Option<Self::Scalar> {
-        if self.len() == self.null_count() {
-            None
-        } else if !self.has_nulls() {
-            Some(self.values().unset_bits() == 0)
-        } else {
-            let false_found = binary_fold(
-                self.values(),
-                self.validity().unwrap(),
-                |lhs, rhs| (!lhs & rhs) != 0,
-                false,
-                |a, b| a || b,
-            );
-            Some(!false_found)
-        }
+        all(self)
     }
 
+    #[inline(always)]
     fn reduce_or(&self) -> Option<Self::Scalar> {
-        if self.len() == self.null_count() {
-            None
-        } else if !self.has_nulls() {
-            Some(self.values().set_bits() > 0)
-        } else {
-            Some(intersects_with(self.values(), self.validity().unwrap()))
-        }
+        any(self)
     }
 
     fn reduce_xor(&self) -> Option<Self::Scalar> {
@@ -264,9 +249,11 @@ impl BitwiseKernel for BooleanArray {
     fn bit_and(lhs: Self::Scalar, rhs: Self::Scalar) -> Self::Scalar {
         lhs & rhs
     }
+
     fn bit_or(lhs: Self::Scalar, rhs: Self::Scalar) -> Self::Scalar {
         lhs | rhs
     }
+
     fn bit_xor(lhs: Self::Scalar, rhs: Self::Scalar) -> Self::Scalar {
         lhs ^ rhs
     }

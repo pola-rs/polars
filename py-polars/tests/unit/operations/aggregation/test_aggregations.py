@@ -1473,3 +1473,10 @@ def test_min_by_max_by_nested_type_key_26268(by_expr: pl.Expr) -> None:
         match="cannot use a nested type as `by` argument in `min_by`/`max_by`",
     ):
         df.select(pl.col("a").min_by(by_expr))
+
+
+def test_max_by_scalar_26548() -> None:
+    df = pl.DataFrame({"x": 1, "y": 2, "g": 3})
+    out = df.select(pl.col.x.max_by("y").over("g"))
+    expected = pl.DataFrame({"x": 1})
+    assert_frame_equal(out, expected)

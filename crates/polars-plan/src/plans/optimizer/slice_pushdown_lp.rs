@@ -347,7 +347,7 @@ impl SlicePushDown {
             (Sort {input, by_column, slice, sort_options}, Some(state)) => {
                 // The slice argument on Sort should be inserted by slice pushdown,
                 // so it shouldn't exist yet (or be idempotently the same).
-                let new_slice = Some((state.offset, state.len as usize));
+                let new_slice = Some((state.offset, state.len as usize, None));
                 assert!(slice.is_none() || slice == new_slice);
 
                 // first restart optimization in inputs and get the updated LP
