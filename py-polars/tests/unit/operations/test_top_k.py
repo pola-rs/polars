@@ -625,4 +625,6 @@ def test_top_k_dyn_pred_pushdown() -> None:
 
     pred = re.search(r"FILTER.*dynamic_predicate", plan)
     with_cols = re.search(r"WITH_COLUMNS", plan)
+    assert pred is not None
+    assert with_cols is not None
     assert pred.start() > with_cols.start()
