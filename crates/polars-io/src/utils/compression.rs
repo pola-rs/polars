@@ -297,8 +297,11 @@ impl<R: BufRead> ByteSourceReader<R> {
         match self {
             Self::UncompressedMemory { .. } => None,
             Self::UncompressedStream(_) => None,
+            #[cfg(feature = "decompress")]
             Self::Gzip(_) => Some(SupportedCompression::GZIP),
+            #[cfg(feature = "decompress")]
             Self::Zlib(_) => Some(SupportedCompression::ZLIB),
+            #[cfg(feature = "decompress")]
             Self::Zstd(_) => Some(SupportedCompression::ZSTD),
         }
     }
