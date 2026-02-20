@@ -485,7 +485,7 @@ impl Debug for Series {
                 )
             },
             #[cfg(feature = "dtype-extension")]
-            DataType::Extension(_, _) => format_extension_array(f, &self, self.name(), "Series"),
+            DataType::Extension(_, _) => format_extension_array(f, self, self.name(), "Series"),
             dt => panic!("{dt:?} not impl"),
         }
     }
