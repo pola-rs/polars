@@ -477,6 +477,7 @@ pub async fn csv_file_info(
                     csv_options.skip_lines,
                     csv_options.skip_rows,
                     csv_options.skip_rows_after_header,
+                    csv_options.raise_if_empty,
                 )?;
 
                 if row_count < infer_schema_length && !reached_eof {

@@ -34,6 +34,7 @@ pub fn count_rows(
     skip_lines: usize,
     skip_rows_before_header: usize,
     skip_rows_after_header: usize,
+    raise_if_empty: bool,
 ) -> PolarsResult<usize> {
     let file = if path.has_scheme() || polars_config::config().force_async() {
         feature_gated!("cloud", {
@@ -58,6 +59,7 @@ pub fn count_rows(
         skip_lines,
         skip_rows_before_header,
         skip_rows_after_header,
+        raise_if_empty,
     )
 }
 
@@ -75,6 +77,7 @@ pub fn count_rows_from_reader_par(
     skip_lines: usize,
     skip_rows_before_header: usize,
     skip_rows_after_header: usize,
+    raise_if_empty: bool,
     decompressed_size_hint: Option<usize>,
 ) -> PolarsResult<usize> {
     let reader_options = CsvReadOptions {
@@ -88,6 +91,7 @@ pub fn count_rows_from_reader_par(
         skip_lines,
         skip_rows: skip_rows_before_header,
         skip_rows_after_header,
+        raise_if_empty,
         ..Default::default()
     };
 
@@ -217,6 +221,7 @@ pub fn count_rows_from_slice_par(
     skip_lines: usize,
     skip_rows_before_header: usize,
     skip_rows_after_header: usize,
+    raise_if_empty: bool,
 ) -> PolarsResult<usize> {
     const ASSUMED_COMPRESSION_RATIO: usize = 4;
 
@@ -238,6 +243,7 @@ pub fn count_rows_from_slice_par(
         skip_lines,
         skip_rows_before_header,
         skip_rows_after_header,
+        raise_if_empty,
         decompressed_size_hint,
     )
 }
