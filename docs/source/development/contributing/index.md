@@ -199,6 +199,79 @@ Two other things to keep in mind:
 - If you add code that should be tested, add tests.
 - If you change the public API, [update the documentation](#api-reference).
 
+### Finding the commit that introduced a bug
+
+If you have found a bug, it can be very helpful to identify the exact commit that introduced it.
+This allows maintainers to understand the root cause more quickly. You can use
+[`git bisect`](https://git-scm.com/docs/git-bisect) to do this automatically.
+
+**1. Create a minimal reproducible example (MRE)**
+
+First, reduce your bug to the smallest possible Python script that reproduces it. See
+[this guide](https://matthewrocklin.com/minimal-bug-reports/) for guidance.
+
+**2. Turn your MRE into a bisect script**
+
+Save the following as `py-polars/bisect.py`, replacing the `...` with your MRE:
+
+```python
+import subprocess
+import sys
+
+# Try to build Polars. Skip this commit if the build fails.
+build = subprocess.run(["make", "build"])
+if build.returncode != 0:
+    sys.exit(125)  # tell git bisect to skip this commit
+
+import polars as pl
+...
+# Your MRE here - exit with a non-zero code if the bug is present.
+# Example:
+# result = pl.Series([1, 2, 3]).some_method()
+# assert result == expected, f"Got {result}"
+```
+
+The script must exit with:
+
+- `0` if the bug is **not** present (good commit)
+- `1` (or any non-zero code except `125`) if the bug **is** present (bad commit)
+- `125` to tell `git bisect` to skip the commit (e.g. it does not build)
+
+**3. Mark a good and a bad commit**
+
+Find a release tag in [the tags](https://github.com/pola-rs/polars/tags) where the bug did not exist
+(e.g. `py-1.32.0` for Polars 1.32.0) and a tag which is confirmed to contain the bug (e.g. `HEAD` if
+it still exists):
+
+```bash
+git bisect start
+git bisect bad HEAD
+git bisect good py-1.32.0
+```
+
+**4. Run the bisect automatically**
+
+From the `py-polars` directory, run:
+
+```bash
+git bisect run .venv/bin/python bisect.py
+```
+
+`git bisect` will binary-search through the commit history and print the first bad commit when it is
+done.
+
+**5. Include the result in your issue**
+
+Copy the output (the commit hash and message) and add it to your
+[bug report](https://github.com/pola-rs/polars/issues/new?labels=bug&template=bug_report_python.yml).
+This greatly speeds up the investigation for maintainers.
+
+When you are done, reset your repository:
+
+```bash
+git bisect reset
+```
+
 ### Pull requests
 
 When you have resolved your issue,
