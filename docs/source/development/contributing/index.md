@@ -212,7 +212,9 @@ First, reduce your bug to the smallest possible Python script that reproduces it
 
 **2. Turn your MRE into a bisect script**
 
-Save the following as `py-polars/bisect.py`, replacing the `...` with your MRE:
+Save the following as `bisect.py` in the root of the repository, adding your MRE at the bottom. You
+can add it to `.git/info/exclude` to ignore it locally without affecting the repository's
+`.gitignore`:
 
 ```python
 import subprocess
@@ -224,8 +226,10 @@ if build.returncode != 0:
     sys.exit(125)  # tell git bisect to skip this commit
 
 import polars as pl
-...
-# Your MRE here - exit with a non-zero code if the bug is present.
+
+# Your MRE here.
+# If Python exits with an unhandled exception, git bisect treats it as a bad commit.
+# If it exits normally (no exception, no sys.exit), it is treated as a good commit.
 # Example:
 # result = pl.Series([1, 2, 3]).some_method()
 # assert result == expected, f"Got {result}"
@@ -233,15 +237,16 @@ import polars as pl
 
 The script must exit with:
 
-- `0` if the bug is **not** present (good commit)
-- `1` (or any non-zero code except `125`) if the bug **is** present (bad commit)
+- `0` if the bug is **not** present (good commit, normal Python exit)
+- `1` (or any non-zero code except `125`) if the bug **is** present (bad commit, e.g. an assertion
+  error)
 - `125` to tell `git bisect` to skip the commit (e.g. it does not build)
 
 **3. Mark a good and a bad commit**
 
-Find a release tag in [the tags](https://github.com/pola-rs/polars/tags) where the bug did not exist
-(e.g. `py-1.32.0` for Polars 1.32.0) and a tag which is confirmed to contain the bug (e.g. `HEAD` if
-it still exists):
+Find a commit hash or [release tag](https://github.com/pola-rs/polars/tags) where the bug did not
+exist (e.g. `py-1.32.0` for Polars 1.32.0) and another hash or tag which is confirmed to contain the
+bug (e.g. `HEAD` if it still exists):
 
 ```bash
 git bisect start
@@ -251,7 +256,7 @@ git bisect good py-1.32.0
 
 **4. Run the bisect automatically**
 
-From the `py-polars` directory, run:
+From the root of the repository, run:
 
 ```bash
 git bisect run .venv/bin/python bisect.py
