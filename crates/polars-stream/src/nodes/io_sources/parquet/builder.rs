@@ -66,7 +66,12 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                     })
                     .get()
             })
-            .unwrap_or(execution_state.num_pipelines.saturating_mul(2))
+            .unwrap_or(
+                execution_state
+                    .num_pipelines
+                    .saturating_mul(2)
+                    .clamp(8, 512),
+            )
             .max(1);
 
         self.prefetch_limit.store(prefetch_limit);
