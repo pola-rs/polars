@@ -1443,10 +1443,8 @@ struct DtypeVisitor<'d, 'f> {
 
 impl<'d, 'f> DtypeVisitor<'d, 'f> {
     fn visit_rec(&mut self, dtype: Cow<'d, DataType>) -> PolarsResult<Cow<'d, DataType>> {
-        let curr_dtype = (self.visitor_fn)(dtype)?;
-
-        Ok(match curr_dtype.as_ref() {
-            DataType::List(_) => match curr_dtype {
+        let dtype = match dtype.as_ref() {
+            DataType::List(_) => match dtype {
                 Cow::Owned(DataType::List(mut inner)) => {
                     self.visit_ref_mut(inner.as_mut())?;
                     Cow::Owned(DataType::List(inner))
@@ -1455,7 +1453,7 @@ impl<'d, 'f> DtypeVisitor<'d, 'f> {
                     let ret = self.visit_rec(Cow::Borrowed(inner.as_ref()))?;
 
                     if std::ptr::eq(ret.as_ref(), inner.as_ref()) {
-                        curr_dtype
+                        dtype
                     } else {
                         Cow::Owned(DataType::List(Box::new(ret.into_owned())))
                     }
@@ -1463,7 +1461,7 @@ impl<'d, 'f> DtypeVisitor<'d, 'f> {
                 _ => unreachable!(),
             },
             #[cfg(feature = "dtype-array")]
-            DataType::Array(..) => match curr_dtype {
+            DataType::Array(..) => match dtype {
                 Cow::Owned(DataType::Array(mut inner, width)) => {
                     self.visit_ref_mut(inner.as_mut())?;
                     Cow::Owned(DataType::Array(inner, width))
@@ -1472,7 +1470,7 @@ impl<'d, 'f> DtypeVisitor<'d, 'f> {
                     let ret = self.visit_rec(Cow::Borrowed(inner.as_ref()))?;
 
                     if std::ptr::eq(ret.as_ref(), inner.as_ref()) {
-                        curr_dtype
+                        dtype
                     } else {
                         Cow::Owned(DataType::Array(Box::new(ret.into_owned()), *width))
                     }
@@ -1480,7 +1478,7 @@ impl<'d, 'f> DtypeVisitor<'d, 'f> {
                 _ => unreachable!(),
             },
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => match curr_dtype {
+            DataType::Struct(_) => match dtype {
                 Cow::Owned(DataType::Struct(mut fields)) => {
                     for f in &mut fields {
                         self.visit_ref_mut(&mut f.dtype)?;
@@ -1507,7 +1505,7 @@ impl<'d, 'f> DtypeVisitor<'d, 'f> {
                     }
 
                     if new_fields.is_empty() {
-                        curr_dtype
+                        dtype
                     } else {
                         assert_eq!(new_fields.len(), fields.len());
                         Cow::Owned(DataType::Struct(new_fields))
@@ -1516,7 +1514,7 @@ impl<'d, 'f> DtypeVisitor<'d, 'f> {
                 _ => unreachable!(),
             },
             #[cfg(feature = "dtype-extension")]
-            DataType::Extension(..) => match curr_dtype {
+            DataType::Extension(..) => match dtype {
                 Cow::Owned(DataType::Extension(ext, mut storage)) => {
                     self.visit_ref_mut(storage.as_mut())?;
                     Cow::Owned(DataType::Extension(ext, storage))
@@ -1525,7 +1523,7 @@ impl<'d, 'f> DtypeVisitor<'d, 'f> {
                     let ret = self.visit_rec(Cow::Borrowed(storage.as_ref()))?;
 
                     if std::ptr::eq(ret.as_ref(), storage.as_ref()) {
-                        curr_dtype
+                        dtype
                     } else {
                         Cow::Owned(DataType::Extension(ext.clone(), Box::new(ret.into_owned())))
                     }
@@ -1533,10 +1531,12 @@ impl<'d, 'f> DtypeVisitor<'d, 'f> {
                 _ => unreachable!(),
             },
             _ => {
-                debug_assert!(!curr_dtype.is_nested());
-                curr_dtype
+                debug_assert!(!dtype.is_nested());
+                dtype
             },
-        })
+        };
+
+        (self.visitor_fn)(dtype)
     }
 
     /// `dtype` will be set to an unspecified value if this returns an error.
