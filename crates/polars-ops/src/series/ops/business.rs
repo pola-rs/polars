@@ -503,18 +503,12 @@ fn prep_holidays(holidays: &Series, week_mask: [bool; 7]) -> PolarsResult<ListAr
     );
     let mut staging = vec![];
 
-    for maybe_list in holidays
-        .to_physical_repr()
-        .chunks()
-        .iter()
-        .map(|arr| {
-            arr.as_any()
-                .downcast_ref::<ListArray<i64>>()
-                .unwrap()
-                .iter()
-        })
-        .flatten()
-    {
+    for maybe_list in holidays.to_physical_repr().chunks().iter().flat_map(|arr| {
+        arr.as_any()
+            .downcast_ref::<ListArray<i64>>()
+            .unwrap()
+            .iter()
+    }) {
         let normalized_list = match maybe_list {
             Some(list) => {
                 staging.clear();
@@ -545,7 +539,8 @@ fn holidays_lists_iter(holidays: &ListArray<i32>) -> impl Iterator<Item = Option
     }
 }
 
-fn holidays_as_slice<'a>(arr: &'a Box<dyn Array + 'static>) -> &'a [i32] {
+#[expect(clippy::borrowed_box)]
+fn holidays_as_slice(arr: &Box<dyn Array>) -> &[i32] {
     arr.as_any()
         .downcast_ref::<PrimitiveArray<i32>>()
         .unwrap()
