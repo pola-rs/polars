@@ -64,7 +64,7 @@ pub fn business_day_count(
                         end_date,
                         &week_mask,
                         n_business_days_in_week_mask,
-                        holidays_as_slice(&holidays_list),
+                        holidays_list,
                     )
                 })
             } else {
@@ -81,7 +81,7 @@ pub fn business_day_count(
                         end_date,
                         &week_mask,
                         n_business_days_in_week_mask,
-                        holidays_as_slice(&holidays_list),
+                        holidays_list,
                     )
                 })
             } else {
@@ -105,7 +105,7 @@ pub fn business_day_count(
                             end_date,
                             &week_mask,
                             n_business_days_in_week_mask,
-                            holidays_as_slice(&holidays_list),
+                            holidays_list,
                         ))
                     },
                     _ => None,
@@ -248,19 +248,15 @@ pub fn add_business_days(
                 start_dates
                     .physical()
                     .try_apply_nonnull_values_generic(|start_date| {
-                        let (start_date, day_of_week) = roll_start_date(
-                            start_date,
-                            roll,
-                            &week_mask,
-                            holidays_as_slice(&holidays_list),
-                        )?;
+                        let (start_date, day_of_week) =
+                            roll_start_date(start_date, roll, &week_mask, holidays_list)?;
                         Ok::<i32, PolarsError>(add_business_days_impl(
                             start_date,
                             day_of_week,
                             n,
                             &week_mask,
                             n_business_days_in_week_mask,
-                            holidays_as_slice(&holidays_list),
+                            holidays_list,
                         ))
                     })?
             } else {
@@ -271,7 +267,6 @@ pub fn add_business_days(
             if let Some(start_date) = start_dates.physical().get(0)
                 && let Some(Some(holidays_list)) = holidays_lists.next()
             {
-                let holidays_list = holidays_as_slice(&holidays_list);
                 let (start_date, day_of_week) =
                     roll_start_date(start_date, roll, &week_mask, holidays_list)?;
                 n.apply_values(|n| {
@@ -298,7 +293,6 @@ pub fn add_business_days(
             try_binary_elementwise(start_dates.physical(), n, |opt_start_date, opt_n| {
                 match (opt_start_date, opt_n, holidays_lists.next()) {
                     (Some(start_date), Some(n), Some(Some(holidays_list))) => {
-                        let holidays_list = holidays_as_slice(&holidays_list);
                         let (start_date, day_of_week) =
                             roll_start_date(start_date, roll, &week_mask, holidays_list)?;
                         Ok::<Option<i32>, PolarsError>(Some(add_business_days_impl(
@@ -418,9 +412,7 @@ pub fn is_business_day(
                 // SAFETY: week_mask is length 7, day_of_week is between 0 and 6
                 Some(unsafe {
                     (*week_mask.get_unchecked(day_of_week))
-                        && holidays_as_slice(&holidays_list)
-                            .binary_search(&date)
-                            .is_err()
+                        && holidays_list.binary_search(&date).is_err()
                 })
             },
             _ => None,
@@ -529,23 +521,32 @@ fn prep_holidays(holidays: &Series, week_mask: [bool; 7]) -> PolarsResult<ListAr
     Ok(result.into())
 }
 
-fn holidays_lists_iter(holidays: &ListArray<i32>) -> impl Iterator<Item = Option<Box<dyn Array>>> {
-    if holidays.len() == 1 {
-        // A single list of holidays gets used for all rows:
-        let arr = holidays.iter().next().unwrap();
-        Either::Left(std::iter::repeat(arr))
-    } else {
-        Either::Right(holidays.iter())
-    }
-}
-
-#[expect(clippy::borrowed_box)]
-fn holidays_as_slice(arr: &Box<dyn Array>) -> &[i32] {
-    arr.as_any()
+fn holidays_lists_iter(holidays: &ListArray<i32>) -> impl Iterator<Item = Option<&[i32]>> {
+    let length = holidays.len();
+    // We know there are no nulls inside lists, so we can just get slices of off
+    // this.
+    let slice = holidays
+        .values()
+        .as_any()
         .downcast_ref::<PrimitiveArray<i32>>()
         .unwrap()
         .as_slice()
-        .unwrap()
+        .unwrap();
+    let mut iterator = (0..length).map(|i| {
+        if holidays.is_null(i) {
+            return None;
+        }
+        // SAFETY: we're iterating only up to length.
+        let (start, end) = unsafe { holidays.offsets().start_end_unchecked(i) };
+        Some(&slice[start..end])
+    });
+    if length == 1 {
+        // A single list of holidays gets used for all rows:
+        let arr = iterator.next().unwrap();
+        Either::Left(std::iter::repeat(arr))
+    } else {
+        Either::Right(iterator)
+    }
 }
 
 fn get_day_of_week(x: i32) -> usize {
