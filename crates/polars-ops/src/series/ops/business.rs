@@ -1,3 +1,4 @@
+use arrow::Either;
 use arrow::array::{
     Array, ListArray, MutableListArray, MutablePrimitiveArray, PrimitiveArray, TryPush,
 };
@@ -47,7 +48,7 @@ pub fn business_day_count(
     );
 
     let holidays = prep_holidays(holidays, week_mask)?;
-    let mut holidays_lists = holidays.iter();
+    let mut holidays_lists = holidays_lists_iter(&holidays);
     let start_dates = start.date()?;
     let end_dates = end.date()?;
     let n_business_days_in_week_mask = week_mask.iter().filter(|&x| *x).count() as i32;
@@ -226,7 +227,7 @@ pub fn add_business_days(
     }
 
     let holidays = prep_holidays(holidays, week_mask)?;
-    let mut holidays_lists = holidays.iter();
+    let mut holidays_lists = holidays_lists_iter(&holidays);
 
     let start_dates = start.date()?;
     let n = match &n.dtype() {
@@ -407,7 +408,7 @@ pub fn is_business_day(
     }
 
     let holidays = prep_holidays(holidays, week_mask)?;
-    let mut holidays_lists = holidays.iter();
+    let mut holidays_lists = holidays_lists_iter(&holidays);
 
     let dates = dates.date()?;
     let out: BooleanChunked = unary_elementwise(dates.physical(), |date| {
@@ -486,9 +487,8 @@ fn normalise_holidays(holidays: &mut Vec<i32>, week_mask: &[bool; 7]) {
     });
 }
 
-/// Convert from underlying primitive representation of dates to normalized
-/// representation (see `normalize_holidays`), trying to minimize allocations
-/// along the way.
+/// Convert from List of Date to normalized representation (see
+/// `normalize_holidays`), trying to minimize allocations along the way.
 ///
 /// If a list contains a null, that is considered an error.
 fn prep_holidays(holidays: &Series, week_mask: [bool; 7]) -> PolarsResult<ListArray<i32>> {
@@ -497,19 +497,19 @@ fn prep_holidays(holidays: &Series, week_mask: [bool; 7]) -> PolarsResult<ListAr
         ComputeError: "holidays list had wrong data type {}, expected List of Date", holidays.dtype()
     );
     let holidays = holidays.list()?;
-    let mut result = MutableListArray::new_from(
+    let mut result = MutableListArray::new_with_capacity(
         MutablePrimitiveArray::with_capacity(holidays.lst_lengths().sum().unwrap_or(0) as usize),
-        ArrowDataType::Int32,
         holidays.len(),
     );
     let mut staging = vec![];
 
     for maybe_list in holidays
+        .to_physical_repr()
         .chunks()
         .iter()
         .map(|arr| {
             arr.as_any()
-                .downcast_ref::<ListArray<i32>>()
+                .downcast_ref::<ListArray<i64>>()
                 .unwrap()
                 .iter()
         })
@@ -533,6 +533,16 @@ fn prep_holidays(holidays: &Series, week_mask: [bool; 7]) -> PolarsResult<ListAr
         result.try_push(normalized_list)?;
     }
     Ok(result.into())
+}
+
+fn holidays_lists_iter(holidays: &ListArray<i32>) -> impl Iterator<Item = Option<Box<dyn Array>>> {
+    if holidays.len() == 1 {
+        // A single list of holidays gets used for all rows:
+        let arr = holidays.iter().next().unwrap();
+        Either::Left(std::iter::repeat(arr))
+    } else {
+        Either::Right(holidays.iter())
+    }
 }
 
 fn holidays_as_slice<'a>(arr: &'a Box<dyn Array + 'static>) -> &'a [i32] {
