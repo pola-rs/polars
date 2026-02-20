@@ -35,8 +35,6 @@ pub fn read_until_start_and_infer_schema_from_compressed_reader(
     mut inspect_first_content_row_fn: Option<InspectContentFn<'_>>,
     reader: &mut CompressedReader,
 ) -> PolarsResult<(Schema, Buffer<u8>)> {
-    dbg!("start read_until_start_and_infer_schema_from_compressed_reader"); //kdn
-
     // It's better to be above than below here.
     const ESTIMATED_BYTES_PER_ROW: usize = 200;
 
@@ -189,7 +187,6 @@ pub fn read_until_start_and_infer_schema_from_compressed_reader(
         projected_schema,
     )?;
 
-    dbg!("done read_until_start_and_infer_schema_from_compressed_reader"); //kdn
     Ok((inferred_schema, leftover))
 }
 
@@ -213,7 +210,6 @@ pub fn read_until_start_and_infer_schema(
     mut inspect_first_content_row_fn: Option<InspectContentFn<'_>>,
     reader: &mut ByteSourceReader<ReaderSource>,
 ) -> PolarsResult<(Schema, Buffer<u8>)> {
-    dbg!("start read_until_start_and_infer_schema"); //kdn
     // It's better to be above than below here.
     const ESTIMATED_BYTES_PER_ROW: usize = 200;
 
@@ -368,7 +364,6 @@ pub fn read_until_start_and_infer_schema(
         projected_schema,
     )?;
 
-    dbg!("done read_until_start_and_infer_schema"); //kdn
     Ok((inferred_schema, leftover))
 }
 
@@ -522,7 +517,6 @@ fn for_each_line_from_reader(
     reader: &mut ByteSourceReader<ReaderSource>,
     mut line_fn: impl FnMut(Buffer<u8>) -> PolarsResult<LineUse>,
 ) -> PolarsResult<Buffer<u8>> {
-    dbg!("start for_each_line_from_reader"); //kdn
     let mut is_first_line = is_file_start;
 
     let fixed_read_size = std::env::var("POLARS_FORCE_CSV_INFER_READ_SIZE")
@@ -540,7 +534,7 @@ fn for_each_line_from_reader(
 
     loop {
         let (mut slice, bytes_read) =
-            reader.read_next_slice(&prev_leftover, read_size, decompressed_file_size_hint)?; //kdn DONE
+            reader.read_next_slice(&prev_leftover, read_size, decompressed_file_size_hint)?;
         if slice.is_empty() {
             return Ok(Buffer::new());
         }
@@ -637,7 +631,9 @@ fn for_each_line_from_reader(
             return Ok(prev_leftover);
         }
 
-        if read_size < CompressedReader::ideal_read_size() && fixed_read_size.is_none() {
+        if read_size < ByteSourceReader::<ReaderSource>::ideal_read_size()
+            && fixed_read_size.is_none()
+        {
             read_size *= 4;
         }
     }
@@ -714,7 +710,7 @@ fn skip_lines_naive_from_byte_source_reader(
 
     loop {
         let (slice, bytes_read) =
-            reader.read_next_slice(&prev_leftover, read_size, decompressed_file_size_hint)?; //kdn DONE
+            reader.read_next_slice(&prev_leftover, read_size, decompressed_file_size_hint)?;
         let mut bytes: &[u8] = &slice;
 
         'inner: loop {
@@ -758,7 +754,6 @@ fn infer_schema(
     options: &CsvReadOptions,
     projected_schema: Option<SchemaRef>,
 ) -> PolarsResult<Schema> {
-    dbg!("start infer_schema"); //kdn
     let has_no_inference_data = if options.has_header {
         header_line.is_none()
     } else {

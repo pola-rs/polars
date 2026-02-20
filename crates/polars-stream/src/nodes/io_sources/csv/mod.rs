@@ -76,7 +76,6 @@ pub struct InitializedState {
 #[async_trait]
 impl FileReader for CsvFileReader {
     async fn initialize(&mut self) -> PolarsResult<()> {
-        dbg!("start CsvFileReader::initialize"); //kdn
         if self.init_data.is_some() {
             return Ok(());
         }
@@ -152,7 +151,6 @@ impl FileReader for CsvFileReader {
         &mut self,
         args: BeginReadArgs,
     ) -> PolarsResult<(FileReaderOutputRecv, JoinHandle<PolarsResult<()>>)> {
-        dbg!("start CsvFileReader::begin_read"); //kdn
         let verbose = self.verbose;
 
         // Initialize.
@@ -277,7 +275,7 @@ impl FileReader for CsvFileReader {
                 .as_scan_source_ref()
                 .to_buffer_async_assume_latest(self.scan_source.run_async())?;
 
-            ByteSourceReader::from_memory(memslice, compression)?
+            ByteSourceReader::from_memory(memslice)?
         };
 
         let (inferred_schema, base_leftover) = read_until_start_and_infer_schema(

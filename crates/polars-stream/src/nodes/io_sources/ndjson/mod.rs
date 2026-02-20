@@ -475,7 +475,7 @@ impl FileReader for NDJsonFileReader {
                 .as_scan_source_ref()
                 .to_buffer_async_assume_latest(self.scan_source.run_async())?;
 
-            ByteSourceReader::from_memory(memslice, compression)?
+            ByteSourceReader::from_memory(memslice)?
         };
 
         const ASSUMED_COMPRESSION_RATIO: usize = 4;

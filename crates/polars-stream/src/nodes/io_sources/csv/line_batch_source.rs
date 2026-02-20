@@ -36,7 +36,6 @@ pub(super) struct LineBatchSource {
 impl LineBatchSource {
     /// Returns the number of rows skipped from the start of the file according to CountLines.
     pub(crate) async fn run(self) -> PolarsResult<usize> {
-        dbg!("start LineBatchSource::run"); //kdn
         let LineBatchSource {
             base_leftover,
             mut reader,

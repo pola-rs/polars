@@ -1445,7 +1445,7 @@ def test_scan_metrics(
     # from the actual file_size
     file_size = path.stat().st_size
     # for parquet, ipc: 131_072 is the maximum metadata size estimate
-    # for ndjson, csv: + 5 is the additional overhead for metaata (implementation detail)
+    # for ndjson, csv: + 5 is the additional overhead (implementation detail)
     upper_limit = {
         "parquet": min(2 * file_size, file_size + 131072),
         "ipc": min(2 * file_size, file_size + 131072),

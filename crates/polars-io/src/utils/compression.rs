@@ -293,6 +293,16 @@ impl<R: BufRead> ByteSourceReader<R> {
         )
     }
 
+    pub fn compression(&self) -> Option<SupportedCompression> {
+        match self {
+            Self::UncompressedMemory { .. } => None,
+            Self::UncompressedStream(_) => None,
+            Self::Gzip(_) => Some(SupportedCompression::GZIP),
+            Self::Zlib(_) => Some(SupportedCompression::ZLIB),
+            Self::Zstd(_) => Some(SupportedCompression::ZSTD),
+        }
+    }
+
     pub const fn initial_read_size() -> usize {
         // We don't want to read too much at the beginning to keep decompression to a minimum if for
         // example only the schema is needed or a slice op is used. Keep in sync with
@@ -359,8 +369,6 @@ impl<R: BufRead> ByteSourceReader<R> {
         // Cap the reserve_size, for the scenario where read_size == usize::MAX
         let max_reserve_size = uncompressed_size_hint.unwrap_or(4 * 1024 * 1024);
         let reserve_size = cmp::min(prev_len.saturating_add(read_size), max_reserve_size);
-
-        //kdn TODO - in case infer_schema_length = None, we should not hit this reserve
         buf.reserve_exact(reserve_size);
         buf.extend_from_slice(prev_leftover);
 
@@ -372,10 +380,8 @@ impl<R: BufRead> ByteSourceReader<R> {
 
 #[cfg(feature = "async")]
 impl ByteSourceReader<ReaderSource> {
-    pub fn from_memory(
-        slice: Buffer<u8>,
-        compression: Option<SupportedCompression>,
-    ) -> PolarsResult<Self> {
+    pub fn from_memory(slice: Buffer<u8>) -> PolarsResult<Self> {
+        let compression = SupportedCompression::check(&slice);
         match compression {
             None => Ok(Self::UncompressedMemory { slice, offset: 0 }),
             _ => Self::try_new(ReaderSource::Memory(Cursor::new(slice)), compression),
