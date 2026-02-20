@@ -78,6 +78,17 @@ impl ThreadLocalData {
         true
     }
 
+    /// Update an entry's cached height and size after its DataFrame was
+    /// mutated in place, then sync the drift to the global counter.
+    fn update_entry_size(&mut self, key: DfKey, global_bytes: &AtomicUsize) {
+        let entry = self.get_mut(key);
+        entry.height = entry.df.height();
+        let new_size = entry.df.estimated_size();
+        let old_size = std::mem::replace(&mut entry.size_bytes, new_size);
+        self.total_local_bytes = self.total_local_bytes + new_size - old_size;
+        self.try_sync(global_bytes);
+    }
+
     fn get(&self, key: DfKey) -> &Entry {
         self.slots.get(key).expect("missing memory manager entry")
     }
@@ -274,23 +285,18 @@ impl MemoryManager {
             let entry = tl.get_mut(token.key);
             if !entry.is_spilled {
                 let r = f(&mut entry.df);
-                entry.height = entry.df.height();
-                let new_size = entry.df.estimated_size();
-                let old_size = std::mem::replace(&mut entry.size_bytes, new_size);
-                tl.total_local_bytes = tl.total_local_bytes + new_size - old_size;
+                tl.update_entry_size(token.key, &self.total_bytes);
                 return r;
             }
         }
+        // Reload from disk without holding the lock.
         let df = self.spiller.load(token);
         let mut tl = self.lock(token);
         let entry = tl.get_mut(token.key);
         entry.df = df;
         entry.is_spilled = false;
         let r = f(&mut entry.df);
-        entry.height = entry.df.height();
-        let new_size = entry.df.estimated_size();
-        let old_size = std::mem::replace(&mut entry.size_bytes, new_size);
-        tl.total_local_bytes = tl.total_local_bytes + new_size - old_size;
+        tl.update_entry_size(token.key, &self.total_bytes);
         r
     }
 
