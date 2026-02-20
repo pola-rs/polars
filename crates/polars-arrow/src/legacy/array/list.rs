@@ -152,7 +152,7 @@ impl<'a> AnonymousBuilder<'a> {
                 (dtype.clone(), values)
             } else {
                 let values = concatenate::concatenate(&self.arrays)?;
-                (inner_dtype.clone(), values)
+                (values.dtype().clone(), values)
             }
         };
         let dtype = ListArray::<i64>::default_datatype(inner_dtype);
