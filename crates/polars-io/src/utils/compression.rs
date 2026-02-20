@@ -6,7 +6,6 @@ use polars_core::prelude::*;
 use polars_error::{feature_gated, to_compute_err};
 
 use crate::utils::file::{Writeable, WriteableTrait};
-#[cfg(feature = "async")]
 use crate::utils::stream_buf_reader::ReaderSource;
 use crate::utils::sync_on_close::SyncOnCloseType;
 
@@ -379,7 +378,6 @@ impl<R: BufRead> ByteSourceReader<R> {
     }
 }
 
-#[cfg(feature = "async")]
 impl ByteSourceReader<ReaderSource> {
     pub fn from_memory(slice: Buffer<u8>) -> PolarsResult<Self> {
         let compression = SupportedCompression::check(&slice);
