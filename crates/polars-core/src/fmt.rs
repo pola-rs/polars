@@ -617,8 +617,10 @@ fn fmt_df_shape((shape0, shape1): &(usize, usize)) -> String {
         fmt_int_string_custom(&shape1.to_string(), 3, "_")
     )
 }
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 fn col_to_str<'a>(c: &'a crate::prelude::Column, i: usize) -> Cow<'a, str> {
     match c.dtype() {
+        #[cfg(feature = "dtype-extension")]
         DataType::Extension(instance, _) => instance.0.dyn_display_value(c, i),
         _ => c.str_value(i).unwrap(),
     }
