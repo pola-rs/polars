@@ -187,11 +187,10 @@ impl Hash for IRHashWrap<'_> {
             } => {
                 hash_exprs(keys, self.expr_arena, state);
                 hash_exprs(aggs, self.expr_arena, state);
-                match apply {
-                    None => {
-                        1.hash(state);
-                    },
-                    Some(function) => match function {
+
+                std::mem::discriminant(&apply).hash(state);
+                if let Some(function) = apply {
+                    match function {
                         PlanCallback::Rust(f) => {
                             f.hash(state);
                         },
@@ -199,8 +198,9 @@ impl Hash for IRHashWrap<'_> {
                         PlanCallback::Python(f) => {
                             f.hash(state);
                         },
-                    },
+                    }
                 }
+
                 apply.is_none().hash(state);
                 maintain_order.hash(state);
                 options.hash(state);
