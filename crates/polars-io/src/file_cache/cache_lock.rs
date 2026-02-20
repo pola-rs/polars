@@ -1,8 +1,9 @@
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, LazyLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use fs4::fs_std::FileExt;
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use super::utils::FILE_CACHE_PREFIX;
 use crate::pl_async;
@@ -111,26 +112,6 @@ impl Drop for NotifyOnDrop {
     }
 }
 
-/// Recover from a poisoned `RwLock`; should be safe as `GlobalLockData`
-/// has no complex invariants (it's a file handle and optional enum tag).
-fn recover_read(lock: &RwLock<GlobalLockData>) -> RwLockReadGuard<'_, GlobalLockData> {
-    lock.read().unwrap_or_else(|e| e.into_inner())
-}
-
-fn recover_write(lock: &RwLock<GlobalLockData>) -> RwLockWriteGuard<'_, GlobalLockData> {
-    lock.write().unwrap_or_else(|e| e.into_inner())
-}
-
-fn recover_try_write(
-    lock: &RwLock<GlobalLockData>,
-) -> Option<RwLockWriteGuard<'_, GlobalLockData>> {
-    match lock.try_write() {
-        Ok(guard) => Some(guard),
-        Err(std::sync::TryLockError::Poisoned(e)) => Some(e.into_inner()),
-        Err(std::sync::TryLockError::WouldBlock) => None,
-    }
-}
-
 impl GlobalLock {
     fn get_access_tracker(&self) -> AccessTracker {
         let at = self.access_tracker.clone();
@@ -143,17 +124,14 @@ impl GlobalLock {
     /// * `Some(true)` - Unlocked (by this function call)
     /// * `Some(false)` - Unlocked (was not locked)
     fn try_unlock(&self) -> Option<bool> {
-        if let Some(mut this) = recover_try_write(&self.inner) {
+        if let Some(mut this) = self.inner.try_write() {
             if Arc::strong_count(&self.access_tracker.0) <= 2 {
-                if this.state.is_some() {
-                    if let Err(e) = FileExt::unlock(&this.file) {
-                        eprintln!("file cache: failed to unlock lockfile: {e}");
-                        return None;
-                    }
-                    this.state = None;
-                    return Some(true);
-                }
-                return Some(false);
+                return if this.state.take().is_some() {
+                    FileExt::unlock(&this.file).unwrap();
+                    Some(true)
+                } else {
+                    Some(false)
+                };
             }
         }
         None
@@ -165,7 +143,7 @@ impl GlobalLock {
         let _notify_on_drop = NotifyOnDrop(self.notify_lock_acquired.clone());
 
         {
-            let this = recover_read(&self.inner);
+            let this = self.inner.read();
 
             if let Some(LockedState::Shared) = this.state {
                 return this;
@@ -173,7 +151,7 @@ impl GlobalLock {
         }
 
         {
-            let mut this = recover_write(&self.inner);
+            let mut this = self.inner.write();
 
             if let Some(LockedState::Eviction) = this.state {
                 FileExt::unlock(&this.file).unwrap();
@@ -191,7 +169,7 @@ impl GlobalLock {
         debug_assert!(Arc::strong_count(&access_tracker.0) > 2);
 
         {
-            let this = recover_read(&self.inner);
+            let this = self.inner.read();
 
             if let Some(LockedState::Eviction) = this.state {
                 // Try again
@@ -213,7 +191,7 @@ impl GlobalLock {
     pub(super) fn try_lock_eviction(&self) -> Option<GlobalFileCacheGuardExclusive<'_>> {
         let access_tracker = self.get_access_tracker();
 
-        if let Some(mut this) = recover_try_write(&self.inner) {
+        if let Some(mut this) = self.inner.try_write() {
             if
             // 3:
             // * the Lazy<GlobalLock>
@@ -231,11 +209,8 @@ impl GlobalLock {
                 }
             }
 
-            if this.state.is_some() {
-                if FileExt::unlock(&this.file).is_err() {
-                    return None;
-                }
-                this.state = None;
+            if this.state.take().is_some() {
+                FileExt::unlock(&this.file).unwrap();
             }
 
             if this.file.try_lock_exclusive().is_ok() {
@@ -266,83 +241,29 @@ mod tests {
         })
     }
 
-    fn poison(lock: &Arc<GlobalLock>) {
-        let lock2 = Arc::clone(lock);
-        let result = std::thread::spawn(move || {
-            let _guard = lock2.inner.write().unwrap();
-            panic!("intentional panic to poison the RwLock");
-        })
-        .join();
-        assert!(result.is_err());
-        assert!(lock.inner.read().is_err(), "RwLock should be poisoned");
+    #[test]
+    fn try_unlock_when_not_locked() {
+        let lock = make_test_lock();
+        assert_eq!(lock.try_unlock(), Some(false));
     }
 
     #[test]
-    fn lock_shared_recovers_from_poison() {
+    fn lock_shared_lifecycle() {
         let lock = make_test_lock();
 
-        // Acquire + release a shared lock so state = Some(Shared).
-        drop(lock.lock_shared());
-
-        poison(&lock);
-
-        // Should recover from poison, see state = Shared, and return.
+        // Acquires the file lock and sets state = Shared.
         let guard = lock.lock_shared();
         assert!(matches!(guard.state, Some(LockedState::Shared)));
-    }
+        drop(guard);
 
-    #[test]
-    fn lock_shared_recovers_from_poison_with_no_prior_state() {
-        let lock = make_test_lock();
-
-        poison(&lock);
-
-        // State is None after poison — lock_shared must re-acquire the file lock.
+        // Second call sees existing Shared state (reentrant).
         let guard = lock.lock_shared();
         assert!(matches!(guard.state, Some(LockedState::Shared)));
-    }
+        drop(guard);
 
-    #[test]
-    fn try_unlock_recovers_from_poison() {
-        let lock = make_test_lock();
-
-        drop(lock.lock_shared());
-        poison(&lock);
-
-        // Should not panic; returns Some(true) on successful unlock.
-        let result = lock.try_unlock();
-        assert_eq!(result, Some(true));
-    }
-
-    #[test]
-    fn try_lock_eviction_recovers_from_poison() {
-        let lock = make_test_lock();
-
-        poison(&lock);
-
-        // Should not panic. May or may not acquire depending on Arc count,
-        // but must not abort the process.
-        let _result = lock.try_lock_eviction();
-    }
-
-    #[test]
-    fn concurrent_lock_shared_stress() {
-        let lock = make_test_lock();
-        let mut handles = Vec::new();
-
-        for _ in 0..8 {
-            let lock = Arc::clone(&lock);
-            handles.push(std::thread::spawn(move || {
-                for _ in 0..200 {
-                    let _guard = lock.lock_shared();
-                    std::thread::yield_now();
-                }
-            }));
-        }
-
-        for h in handles {
-            h.join().unwrap();
-        }
+        // `try_unlock` releases the file lock.
+        assert_eq!(lock.try_unlock(), Some(true));
+        assert_eq!(lock.try_unlock(), Some(false));
     }
 
     #[test]
@@ -361,7 +282,7 @@ mod tests {
             }));
         }
 
-        // try_unlock threads.
+        // `try_unlock` threads.
         for _ in 0..2 {
             let lock = Arc::clone(&lock);
             handles.push(std::thread::spawn(move || {
@@ -372,12 +293,12 @@ mod tests {
             }));
         }
 
-        // try_lock_eviction threads.
+        // `try_lock_eviction` threads.
         for _ in 0..2 {
             let lock = Arc::clone(&lock);
             handles.push(std::thread::spawn(move || {
                 for _ in 0..200 {
-                    let _ = lock.try_lock_eviction();
+                    drop(lock.try_lock_eviction());
                     std::thread::yield_now();
                 }
             }));
