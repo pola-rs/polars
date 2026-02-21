@@ -1,4 +1,4 @@
-use polars_testing::asserts::{SeriesEqualOptions, assert_series_equal};
+use polars_testing::asserts::{SeriesEqualOptions, assert_series_equal_impl};
 use pyo3::prelude::*;
 
 use crate::PySeries;
@@ -30,5 +30,6 @@ pub fn assert_series_equal_py(
         categorical_as_str,
     };
 
-    assert_series_equal(left_series, right_series, options).map_err(|e| PyPolarsErr::from(e).into())
+    assert_series_equal_impl(left_series, right_series, options)
+        .map_err(|e| PyPolarsErr::from(e).into())
 }

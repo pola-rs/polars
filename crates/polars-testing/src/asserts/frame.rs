@@ -44,7 +44,7 @@ macro_rules! assert_dataframe_equal {
         let mut options = $crate::asserts::DataFrameEqualOptions::default();
         $(options = $options;)?
 
-        match $crate::asserts::assert_dataframe_equal($left, $right, options) {
+        match $crate::asserts::assert_dataframe_equal_impl($left, $right, options) {
             Ok(_) => {},
             Err(e) => panic!("{}", e),
         }

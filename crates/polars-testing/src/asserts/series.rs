@@ -39,7 +39,7 @@ macro_rules! assert_series_equal {
             let mut options = $crate::asserts::SeriesEqualOptions::default();
             $(options = $options;)?
 
-            match $crate::asserts::assert_series_equal($left, $right, options) {
+            match $crate::asserts::assert_series_equal_impl($left, $right, options) {
                 Ok(_) => {},
                 Err(e) => panic!("{}", e),
             }

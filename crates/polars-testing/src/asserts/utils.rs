@@ -136,27 +136,24 @@ fn categorical_series_to_string(s: &Series) -> PolarsResult<Series> {
     }
 }
 
-/// Returns true if both DataTypes are floating point types.
-fn are_both_floats(left: &DataType, right: &DataType) -> bool {
-    left.is_float() && right.is_float()
+/// Returns true if both DataTypes match the predicate.
+fn are_both<F>(left: &DataType, right: &DataType, predicate: F) -> bool
+where
+    F: Fn(&DataType) -> bool,
+{
+    predicate(left) && predicate(right)
 }
 
-/// Returns true if both DataTypes are list-like (either List or Array types).
-fn are_both_lists(left: &DataType, right: &DataType) -> bool {
-    matches!(left, DataType::List(_) | DataType::Array(_, _))
-        && matches!(right, DataType::List(_) | DataType::Array(_, _))
-}
-
-/// Returns true if both DataTypes are struct types.
-fn are_both_structs(left: &DataType, right: &DataType) -> bool {
-    left.is_struct() && right.is_struct()
+/// Returns true if the DataType is list like (list or array).
+fn is_list_like(dt: &DataType) -> bool {
+    matches!(dt, DataType::List(_) | DataType::Array(_, _))
 }
 
 /// Returns true if both DataTypes are nested types (lists or structs) that contain floating point types within them.
 /// First checks if both types are either lists or structs, then unpacks their nested DataTypes to determine if
 /// at least one floating point type exists in each of the nested structures.
 fn comparing_nested_floats(left: &DataType, right: &DataType) -> bool {
-    if !are_both_lists(left, right) && !are_both_structs(left, right) {
+    if !are_both(left, right, is_list_like) && !are_both(left, right, |dt| dt.is_struct()) {
         return false;
     }
 
@@ -170,7 +167,7 @@ fn comparing_nested_floats(left: &DataType, right: &DataType) -> bool {
 }
 
 /// Ensures that null values in two Series match exactly and returns an error if any mismatches are found.
-fn assert_series_null_values_match(left: &Series, right: &Series) -> PolarsResult<()> {
+fn assert_series_null_values_match_impl(left: &Series, right: &Series) -> PolarsResult<()> {
     let null_value_mismatch = left.is_null().not_equal(&right.is_null());
 
     if null_value_mismatch.any() {
@@ -186,10 +183,11 @@ fn assert_series_null_values_match(left: &Series, right: &Series) -> PolarsResul
 }
 
 /// Validates that NaN patterns are identical between two float Series, returning error if any mismatches are found.
-fn assert_series_nan_values_match(left: &Series, right: &Series) -> PolarsResult<()> {
-    if !are_both_floats(left.dtype(), right.dtype()) {
+fn assert_series_nan_values_match_impl(left: &Series, right: &Series) -> PolarsResult<()> {
+    if !are_both(left.dtype(), right.dtype(), |dt| dt.is_float()) {
         return Ok(());
     }
+
     let left_nan = left.is_nan()?;
     let right_nan = right.is_nan()?;
 
@@ -233,7 +231,7 @@ fn assert_series_nan_values_match(left: &Series, right: &Series) -> PolarsResult
 /// Values are considered within tolerance if:
 /// `|left - right| <= max(rel_tol * max(abs(left), abs(right)), abs_tol)` OR values are exactly equal
 ///
-fn assert_series_values_within_tolerance(
+fn assert_series_values_within_tolerance_impl(
     left: &Series,
     right: &Series,
     unequal: &ChunkedArray<BooleanType>,
@@ -285,15 +283,15 @@ fn assert_series_values_within_tolerance(
 ///
 /// 1. Handles categorical Series based on `categorical_as_str` flag
 /// 2. Sorts Series if `check_order` is false
-/// 3. For nested float types, delegates to `assert_series_nested_values_equal`
+/// 3. For nested float types, delegates to `assert_series_nested_values_equal_impl`
 /// 4. For non-float types or when `check_exact` is true, requires exact match
 /// 5. For float types with approximate matching:
-///    - Verifies null values match using `assert_series_null_values_match`
-///    - Verifies NaN values match using `assert_series_nan_values_match`
-///    - Verifies float values are within tolerance using `assert_series_values_within_tolerance`
+///    - Verifies null values match using `assert_series_null_values_match_impl`
+///    - Verifies NaN values match using `assert_series_nan_values_match_impl`
+///    - Verifies float values are within tolerance using `assert_series_values_within_tolerance_impl`
 ///
 #[allow(clippy::too_many_arguments)]
-fn assert_series_values_equal(
+fn assert_series_values_equal_impl(
     left: &Series,
     right: &Series,
     check_order: bool,
@@ -345,7 +343,7 @@ fn assert_series_values_equal(
         let filtered_left = left.filter(&unequal)?;
         let filtered_right = right.filter(&unequal)?;
 
-        match assert_series_nested_values_equal(
+        match assert_series_nested_values_equal_impl(
             &filtered_left,
             &filtered_right,
             check_exact,
@@ -370,7 +368,7 @@ fn assert_series_values_equal(
         return Ok(());
     }
 
-    if check_exact || !left.dtype().is_float() || !right.dtype().is_float() {
+    if check_exact || !are_both(left.dtype(), right.dtype(), |dt| dt.is_float()) {
         return Err(polars_err!(
             assertion_error = "Series",
             "exact value mismatch",
@@ -379,9 +377,9 @@ fn assert_series_values_equal(
         ));
     }
 
-    assert_series_null_values_match(&left, &right)?;
-    assert_series_nan_values_match(&left, &right)?;
-    assert_series_values_within_tolerance(&left, &right, &unequal, rel_tol, abs_tol)?;
+    assert_series_null_values_match_impl(&left, &right)?;
+    assert_series_nan_values_match_impl(&left, &right)?;
+    assert_series_values_within_tolerance_impl(&left, &right, &unequal, rel_tol, abs_tol)?;
 
     Ok(())
 }
@@ -411,14 +409,14 @@ fn assert_series_values_equal(
 /// 1. Iterates through corresponding elements in both Series
 /// 2. Returns error if null values are encountered
 /// 3. Creates single-element Series for each value and explodes them
-/// 4. Recursively calls `assert_series_values_equal` on the exploded Series
+/// 4. Recursively calls `assert_series_values_equal_impl` on the exploded Series
 ///
 /// For Struct types:
 /// 1. Unnests both struct Series to access their columns
 /// 2. Iterates through corresponding columns
-/// 3. Recursively calls `assert_series_values_equal` on each column pair
+/// 3. Recursively calls `assert_series_values_equal_impl` on each column pair
 ///
-fn assert_series_nested_values_equal(
+fn assert_series_nested_values_equal_impl(
     left: &Series,
     right: &Series,
     check_exact: bool,
@@ -427,7 +425,7 @@ fn assert_series_nested_values_equal(
     abs_tol: f64,
     categorical_as_str: bool,
 ) -> PolarsResult<()> {
-    if are_both_lists(left.dtype(), right.dtype()) {
+    if are_both(left.dtype(), right.dtype(), is_list_like) {
         let zipped = left.iter().zip(right.iter());
 
         for (s1, s2) in zipped {
@@ -442,7 +440,7 @@ fn assert_series_nested_values_equal(
                 let s1_series = Series::new("".into(), std::slice::from_ref(&s1));
                 let s2_series = Series::new("".into(), std::slice::from_ref(&s2));
 
-                assert_series_values_equal(
+                assert_series_values_equal_impl(
                     &s1_series.explode(ExplodeOptions {
                         empty_as_null: true,
                         keep_nulls: true,
@@ -471,7 +469,7 @@ fn assert_series_nested_values_equal(
             let s1_series = s1_column.as_materialized_series();
             let s2_series = s2_column.as_materialized_series();
 
-            assert_series_values_equal(
+            assert_series_values_equal_impl(
                 s1_series,
                 s2_series,
                 true,
@@ -512,16 +510,16 @@ fn assert_series_nested_values_equal(
 ///   * Length mismatch
 ///   * Name mismatch (if checking names)
 ///   * Data type mismatch (if checking dtypes)
-///   * Value mismatches (via `assert_series_values_equal`)
+///   * Value mismatches (via `assert_series_values_equal_impl`)
 ///
 /// # Order of Checks
 ///
 /// 1. Series length
 /// 2. Series names (if `check_names` is true)
 /// 3. Data types (if `check_dtypes` is true)
-/// 4. Series values (delegated to `assert_series_values_equal`)
+/// 4. Series values (delegated to `assert_series_values_equal_impl`)
 ///
-pub fn assert_series_equal(
+pub fn assert_series_equal_impl(
     left: &Series,
     right: &Series,
     options: SeriesEqualOptions,
@@ -558,7 +556,7 @@ pub fn assert_series_equal(
         ));
     }
 
-    assert_series_values_equal(
+    assert_series_values_equal_impl(
         left,
         right,
         options.check_order,
@@ -821,7 +819,7 @@ fn assert_schema_equal_impl(
 /// 1. Schema validation (column names, order, and data types via `assert_schema_equal`)
 /// 2. DataFrame height (row count)
 /// 3. Row ordering (sorts both DataFrames if `check_row_order` is false)
-/// 4. Column-by-column value comparison (delegated to `assert_series_values_equal`)
+/// 4. Column-by-column value comparison (delegated to `assert_series_values_equal_impl`)
 ///
 /// # Behavior
 ///
@@ -829,7 +827,7 @@ fn assert_schema_equal_impl(
 /// consistent ordering before value comparison. This allows for row-order-independent equality
 /// checking while maintaining deterministic results.
 ///
-pub fn assert_dataframe_equal(
+pub fn assert_dataframe_equal_impl(
     left: &DataFrame,
     right: &DataFrame,
     options: DataFrameEqualOptions,
@@ -877,7 +875,7 @@ pub fn assert_dataframe_equal(
         let s_left_series = s_left.as_materialized_series();
         let s_right_series = s_right.as_materialized_series();
 
-        match assert_series_values_equal(
+        match assert_series_values_equal_impl(
             s_left_series,
             s_right_series,
             true,

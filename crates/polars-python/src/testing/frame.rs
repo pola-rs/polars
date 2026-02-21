@@ -1,4 +1,6 @@
-use polars_testing::asserts::{DataFrameEqualOptions, assert_dataframe_equal, assert_schema_equal};
+use polars_testing::asserts::{
+    DataFrameEqualOptions, assert_dataframe_equal_impl, assert_schema_equal,
+};
 use pyo3::prelude::*;
 
 use crate::error::PyPolarsErr;
@@ -30,7 +32,7 @@ pub fn assert_dataframe_equal_py(
         categorical_as_str,
     };
 
-    assert_dataframe_equal(left_df, right_df, options).map_err(|e| PyPolarsErr::from(e).into())
+    assert_dataframe_equal_impl(left_df, right_df, options).map_err(|e| PyPolarsErr::from(e).into())
 }
 
 #[pyfunction]
