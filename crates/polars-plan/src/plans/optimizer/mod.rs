@@ -157,8 +157,12 @@ pub fn optimize(
     // Run before slice pushdown
     if opt_flags.simplify_expr() {
         #[cfg(feature = "fused")]
-        rules.push(Box::new(fused::FusedArithmetic {}));
+        {
+            rules.push(Box::new(fused::FusedArithmetic {}));
+            rules.push(Box::new(fused::FusedSelectSlice::new()));
+        }
     }
+
 
     let run_pushdowns = if comm_subplan_elim {
         #[allow(unused_assignments)]

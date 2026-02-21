@@ -11,7 +11,10 @@ fn test_datetime_parse_overflow_7631() {
     .lazy();
 
     let df = df.with_column(
-        concat_str([col("year"), col("month"), col("day")], "-", false) // produces e.g., `2020-1-1`
+        concat_arr(vec![col("year"), col("month"), col("day")])
+            .unwrap() // produces e.g., `2020-1-1`
+
+
             .str()
             .strptime(
                 DataType::Datetime(TimeUnit::Milliseconds, None),

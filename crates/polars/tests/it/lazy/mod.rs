@@ -13,6 +13,7 @@ mod predicate_queries;
 mod projection_queries;
 mod queries;
 mod schema;
+mod slice_optimization;
 
 use polars::prelude::*;
 
