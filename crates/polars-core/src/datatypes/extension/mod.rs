@@ -48,7 +48,7 @@ pub trait ExtensionTypeImpl: 'static + Send + Sync + Any {
 
     /// Display representation of the extension type's data.
     ///
-    /// Default's to the storage type str_value
+    /// Defaults to the storage type str_value
     fn dyn_display_value<'a>(&self, column: &'a Column, index: usize) -> Cow<'a, str> {
         column.get(index).unwrap().str_value()
     }
