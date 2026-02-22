@@ -730,8 +730,11 @@ impl PyExpr {
         self.inner.clone().dot(other.inner).into()
     }
 
-    fn reinterpret(&self, dtype: PyDataType) -> Self {
-        self.inner.clone().reinterpret(dtype.0).into()
+    fn reinterpret(&self, signed: bool, dtype: Option<PyDataType>) -> Self {
+        self.inner
+            .clone()
+            .reinterpret(signed, dtype.map(|dt| dt.0))
+            .into()
     }
     fn mode(&self, maintain_order: bool) -> Self {
         self.inner.clone().mode(maintain_order).into()

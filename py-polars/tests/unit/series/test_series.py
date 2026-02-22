@@ -1008,6 +1008,13 @@ def test_apply_list_out() -> None:
     assert out[2].to_list() == [2, 2]
 
 
+def test_reinterpret_signed() -> None:
+    s = pl.Series("a", [1, 1, 2], dtype=pl.UInt64)
+    assert s.reinterpret(signed=True).dtype == pl.Int64
+    df = pl.DataFrame([s])
+    assert df.select([pl.col("a").reinterpret(signed=True)])["a"].dtype == pl.Int64
+
+
 @pytest.mark.parametrize(
     ("original", "reinterpreted"),
     [
@@ -1027,12 +1034,13 @@ def test_apply_list_out() -> None:
         (pl.Float64, pl.UInt64),
     ],
 )
-def test_reinterpret(original: pl.DataType, reinterpreted: pl.DataType) -> None:
+def test_reinterpret_dtype(original: pl.DataType, reinterpreted: pl.DataType) -> None:
     s = pl.Series("a", [1, 1, 2], dtype=original)
-    assert s.reinterpret(reinterpreted).dtype == reinterpreted
+    assert s.reinterpret(dtype=reinterpreted).dtype == reinterpreted
     df = pl.DataFrame([s])
     assert (
-        df.select([pl.col("a").reinterpret(reinterpreted)])["a"].dtype == reinterpreted
+        df.select([pl.col("a").reinterpret(dtype=reinterpreted)])["a"].dtype
+        == reinterpreted
     )
 
 

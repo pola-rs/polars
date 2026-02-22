@@ -1042,7 +1042,7 @@ pub(super) fn convert_functions(
         },
         F::GatherEvery { n, offset } => I::GatherEvery { n, offset },
         #[cfg(feature = "reinterpret")]
-        F::Reinterpret(v) => I::Reinterpret(v),
+        F::Reinterpret(signed, dtype) => I::Reinterpret(signed, dtype),
         F::ExtendConstant => {
             polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'value' must be a scalar value");
             polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");

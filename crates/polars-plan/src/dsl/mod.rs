@@ -1601,8 +1601,8 @@ impl Expr {
     }
 
     #[cfg(feature = "reinterpret")]
-    pub fn reinterpret(self, dtype: DataType) -> Expr {
-        self.map_unary(FunctionExpr::Reinterpret(dtype))
+    pub fn reinterpret(self, signed: bool, dtype: Option<DataType>) -> Expr {
+        self.map_unary(FunctionExpr::Reinterpret(signed, dtype))
     }
 
     pub fn extend_constant(self, value: Expr, n: Expr) -> Expr {

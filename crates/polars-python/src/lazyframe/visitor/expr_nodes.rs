@@ -1413,9 +1413,12 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::GatherEvery { n, offset } => {
                     ("gather_every", offset, n).into_py_any(py)
                 },
-                IRFunctionExpr::Reinterpret(dtype) => {
-                    ("reinterpret", &Wrap(dtype.clone())).into_py_any(py)
-                },
+                IRFunctionExpr::Reinterpret(signed, dtype) => (
+                    "reinterpret",
+                    signed,
+                    &dtype.as_ref().map(|dt| Wrap(dt.clone())),
+                )
+                    .into_py_any(py),
                 IRFunctionExpr::ExtendConstant => ("extend_constant",).into_py_any(py),
                 IRFunctionExpr::Business(_) => {
                     return Err(PyNotImplementedError::new_err("business"));

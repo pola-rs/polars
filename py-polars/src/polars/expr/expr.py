@@ -6409,7 +6409,9 @@ Consider using {self}.implode() instead"""
 
     def reinterpret(
         self,
-        dtype: PolarsDataType,
+        *,
+        signed: bool = True,
+        dtype: PolarsDataType | None = None,
     ) -> Expr:
         """
         Reinterpret the underlying bits as a signed/unsigned integer or float.
@@ -6417,8 +6419,13 @@ Consider using {self}.implode() instead"""
         This operation is only allowed for numeric typesof the same size.
         For lower bits numbers, you can safely use the cast operation.
 
+        `dtype` will be used as target type if specified.
+
         Parameters
         ----------
+        signed
+            If True, reinterpret as signed integer. Otherwise, reinterpret
+            as unsigned integer.
         dtype
             DataType to reinterpret to.
 
@@ -6428,7 +6435,7 @@ Consider using {self}.implode() instead"""
         >>> df = pl.DataFrame([s])
         >>> df.select(
         ...     [
-        ...         pl.col("a").reinterpret(pl.Int64).alias("reinterpreted"),
+        ...         pl.col("a").reinterpret(dtype=pl.Int64).alias("reinterpreted"),
         ...         pl.col("a").alias("original"),
         ...     ]
         ... )
@@ -6443,7 +6450,7 @@ Consider using {self}.implode() instead"""
         │ 2             ┆ 2        │
         └───────────────┴──────────┘
         """
-        return wrap_expr(self._pyexpr.reinterpret(dtype))
+        return wrap_expr(self._pyexpr.reinterpret(signed, dtype))
 
     def inspect(self, fmt: str = "{}") -> Expr:
         """

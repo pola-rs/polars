@@ -1,6 +1,28 @@
 use polars_core::prelude::*;
 
-pub fn reinterpret(s: &Series, dtype: DataType) -> PolarsResult<Series> {
+pub fn reinterpret(s: &Series, signed: bool, dtype: Option<DataType>) -> PolarsResult<Series> {
+    let dtype = dtype.unwrap_or_else(|| {
+        if signed {
+            match s.dtype() {
+                DataType::UInt8 => DataType::Int8,
+                DataType::UInt16 => DataType::Int16,
+                DataType::UInt32 => DataType::Int32,
+                DataType::UInt64 => DataType::Int64,
+                DataType::UInt128 => DataType::Int128,
+                _ => s.dtype().clone(),
+            }
+        } else {
+            match s.dtype() {
+                DataType::Int8 => DataType::UInt8,
+                DataType::Int16 => DataType::UInt16,
+                DataType::Int32 => DataType::UInt32,
+                DataType::Int64 => DataType::UInt64,
+                DataType::Int128 => DataType::UInt128,
+                _ => s.dtype().clone(),
+            }
+        }
+    });
+
     Ok(match (s.dtype(), dtype) {
         (DataType::UInt8, DataType::UInt8) => s.clone(),
         (DataType::UInt16, DataType::UInt16) => s.clone(),
