@@ -51,8 +51,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
         let prefetch_limit = std::env::var("POLARS_RECORD_BATCH_PREFETCH_SIZE")
             .map(|x| {
                 x.parse::<NonZeroUsize>()
-                    .ok()
-                    .unwrap_or_else(|| {
+                    .unwrap_or_else(|_| {
                         panic!("invalid value for POLARS_RECORD_BATCH_PREFETCH_SIZE: {x}")
                     })
                     .get()
@@ -97,11 +96,12 @@ impl FileReaderBuilder for IpcReaderBuilder {
             None
         };
 
-        let byte_source_builder = if scan_source.is_cloud_url() || config::force_async() {
-            DynByteSourceBuilder::ObjectStore
-        } else {
-            DynByteSourceBuilder::Mmap
-        };
+        let byte_source_builder =
+            if scan_source.is_cloud_url() || polars_config::config().force_async() {
+                DynByteSourceBuilder::ObjectStore
+            } else {
+                DynByteSourceBuilder::Mmap
+            };
 
         let reader = IpcFileReader {
             scan_source,

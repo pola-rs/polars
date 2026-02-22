@@ -24,7 +24,6 @@ pub fn create_file_writer_starter(
     Ok(match file_format {
         #[cfg(feature = "parquet")]
         FileWriteFormat::Parquet(options) => {
-            use polars_core::prelude::CompatLevel;
             use polars_io::schema_to_arrow_checked;
 
             use crate::nodes::io_sinks::writers::parquet::ParquetWriterStarter;
@@ -34,7 +33,7 @@ pub fn create_file_writer_starter(
             } else {
                 Arc::new(schema_to_arrow_checked(
                     file_schema.as_ref(),
-                    CompatLevel::newest(),
+                    options.compat_level(),
                     "",
                 )?)
             };

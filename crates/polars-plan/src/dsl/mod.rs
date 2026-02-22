@@ -198,7 +198,7 @@ impl Expr {
         .into()
     }
 
-    /// GroupBy the group to a Series.
+    /// Implode into a list scalar.
     pub fn implode(self) -> Self {
         AggExpr::Implode(Arc::new(self)).into()
     }

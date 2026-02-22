@@ -549,9 +549,9 @@ impl ChunkReader {
                 chunk.len()
             );
             if self.ignore_errors {
-                polars_warn!("{}", msg);
+                polars_warn!("{msg}");
             } else {
-                polars_bail!(ComputeError: msg);
+                polars_bail!(ComputeError: msg)
             }
         }
 

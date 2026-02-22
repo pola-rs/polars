@@ -11,16 +11,13 @@ mod inner {
     use polars_utils::unitvec;
 
     pub struct SlicePushDown {
-        #[expect(unused)]
-        pub new_streaming: bool,
         scratch: UnitVec<Node>,
         pub(super) maintain_errors: bool,
     }
 
     impl SlicePushDown {
-        pub fn new(maintain_errors: bool, new_streaming: bool) -> Self {
+        pub fn new(maintain_errors: bool) -> Self {
             Self {
-                new_streaming,
                 scratch: unitvec![],
                 maintain_errors,
             }
@@ -350,7 +347,7 @@ impl SlicePushDown {
             (Sort {input, by_column, slice, sort_options}, Some(state)) => {
                 // The slice argument on Sort should be inserted by slice pushdown,
                 // so it shouldn't exist yet (or be idempotently the same).
-                let new_slice = Some((state.offset, state.len as usize));
+                let new_slice = Some((state.offset, state.len as usize, None));
                 assert!(slice.is_none() || slice == new_slice);
 
                 // first restart optimization in inputs and get the updated LP

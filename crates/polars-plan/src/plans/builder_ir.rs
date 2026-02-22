@@ -184,7 +184,7 @@ impl<'a> IRBuilder<'a> {
         let ir = IR::Sort {
             input: self.root,
             by_column,
-            slice,
+            slice: slice.map(|t| (t.0, t.1, None)),
             sort_options,
         };
         let node = self.lp_arena.add(ir);

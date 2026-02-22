@@ -15,7 +15,7 @@ use polars_plan::dsl::{
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
-use polars_plan::plans::{AExpr, DataFrameUdf, IR};
+use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, IR};
 
 mod fmt;
 mod io;
@@ -239,6 +239,7 @@ pub enum PhysNodeKind {
         by_column: Vec<ExprIR>,
         reverse: Vec<bool>,
         nulls_last: Vec<bool>,
+        dyn_pred: Option<DynamicPred>,
     },
 
     Repeat {
@@ -358,6 +359,8 @@ pub enum PhysNodeKind {
         input_right: PhysStream,
         left_on: Vec<PlSmallStr>,
         right_on: Vec<PlSmallStr>,
+        tmp_left_key_col: Option<PlSmallStr>,
+        tmp_right_key_col: Option<PlSmallStr>,
         descending: bool,
         nulls_last: bool,
         keys_row_encoded: bool,
@@ -376,6 +379,16 @@ pub enum PhysNodeKind {
     CrossJoin {
         input_left: PhysStream,
         input_right: PhysStream,
+        args: JoinArgs,
+    },
+
+    AsOfJoin {
+        input_left: PhysStream,
+        input_right: PhysStream,
+        left_on: PlSmallStr,
+        right_on: PlSmallStr,
+        tmp_left_key_col: Option<PlSmallStr>,
+        tmp_right_key_col: Option<PlSmallStr>,
         args: JoinArgs,
     },
 
@@ -501,6 +514,11 @@ fn visit_node_inputs_mut(
                 ..
             }
             | PhysNodeKind::CrossJoin {
+                input_left,
+                input_right,
+                ..
+            }
+            | PhysNodeKind::AsOfJoin {
                 input_left,
                 input_right,
                 ..

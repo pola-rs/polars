@@ -40,12 +40,12 @@ def test_collect_schema_with_row_index_duplicate() -> None:
 def test_collect_schema_unpivot_duplicate() -> None:
     lf = pl.LazyFrame({"variable": [], "a": []}).unpivot(["a"])
     with pytest.raises(
-        pl.exceptions.DuplicateError, match="duplicate column name variable"
+        pl.exceptions.DuplicateError, match="duplicate column name 'variable'"
     ):
         _ = lf.collect_schema()
 
     lf = pl.LazyFrame({"value": [], "a": []}).unpivot(["a"])
     with pytest.raises(
-        pl.exceptions.DuplicateError, match="duplicate column name value"
+        pl.exceptions.DuplicateError, match="duplicate column name 'value'"
     ):
         _ = lf.collect_schema()

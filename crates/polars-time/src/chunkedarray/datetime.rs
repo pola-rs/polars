@@ -237,13 +237,13 @@ pub trait DatetimeMethods: AsDatetime {
                 {
                     NaiveDate::from_ymd_opt(y, m as u32, d as u32).map_or_else(
                         // We have an invalid date.
-                        || Err(polars_err!(ComputeError: format!("Invalid date components ({}, {}, {}) supplied", y, m, d))),
+                        || polars_bail!(ComputeError: "Invalid date components ({y}, {m}, {d}) supplied"),
                         // We have a valid date.
                         |date| {
                             date.and_hms_nano_opt(h as u32, mnt as u32, s as u32, ns as u32)
                                 .map_or_else(
                                     // We have invalid time components for the specified date.
-                                    || Err(polars_err!(ComputeError: format!("Invalid time components ({}, {}, {}, {}) supplied", h, mnt, s, ns))),
+                                    || polars_bail!(ComputeError: "Invalid time components ({h}, {mnt}, {s}, {ns}) supplied"),
                                     // We have a valid time.
                                     |ndt| {
                                         let t = ndt.and_utc();

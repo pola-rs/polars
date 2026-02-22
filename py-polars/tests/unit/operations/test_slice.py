@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_frame_not_equal
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_tail_union() -> None:
@@ -181,6 +186,7 @@ def test_slice_pushdown_set_sorted() -> None:
 
 
 def test_slice_pushdown_literal_projection_14349() -> None:
+    # use length 1 slices as length 0 has a special fast path
     lf = pl.select(a=pl.int_range(10)).lazy()
     expect = pl.DataFrame({"a": [0, 1, 2, 3, 4], "b": [10, 11, 12, 13, 14]})
 
@@ -190,36 +196,36 @@ def test_slice_pushdown_literal_projection_14349() -> None:
     out = lf.select("a", b=pl.int_range(10, 20, eager=True)).head(5).collect()
     assert_frame_equal(expect, out)
 
-    assert pl.LazyFrame().select(x=1).head(0).collect().height == 0
-    assert pl.LazyFrame().with_columns(x=1).head(0).collect().height == 0
+    assert pl.LazyFrame().select(x=1).head(1).collect().height == 1
+    assert pl.LazyFrame().with_columns(x=1).head(1).collect().height == 1
 
-    q = lf.select(x=1).head(0)
-    assert q.collect().height == 0
+    q = lf.select(x=1).head(1)
+    assert q.collect().height == 1
 
     # For select, slice pushdown should happen when at least 1 input column is selected
-    q = lf.select("a", x=1).head(0)
+    q = lf.select("a", x=1).head(1)
     # slice isn't in plan if it has been pushed down to the dataframe
     assert "SLICE" not in q.explain()
-    assert q.collect().height == 0
+    assert q.collect().height == 1
 
     # For with_columns, slice pushdown should happen if the input has at least 1 column
-    q = lf.with_columns(x=1).head(0)
+    q = lf.with_columns(x=1).head(1)
     assert "SLICE" not in q.explain()
-    assert q.collect().height == 0
+    assert q.collect().height == 1
 
-    q = lf.with_columns(pl.col("a") + 1).head(0)
+    q = lf.with_columns(pl.col("a") + 1).head(1)
     assert "SLICE" not in q.explain()
-    assert q.collect().height == 0
+    assert q.collect().height == 1
 
     # This does not project any of the original columns
-    q = lf.with_columns(a=1, b=2).head(0)
+    q = lf.with_columns(a=1, b=2).head(1)
     plan = q.explain()
     assert plan.index("SLICE") < plan.index("WITH_COLUMNS")
-    assert q.collect().height == 0
+    assert q.collect().height == 1
 
-    q = lf.with_columns(b=1, c=2).head(0)
+    q = lf.with_columns(b=1, c=2).head(1)
     assert "SLICE" not in q.explain()
-    assert q.collect().height == 0
+    assert q.collect().height == 1
 
 
 @pytest.mark.parametrize(
@@ -337,18 +343,22 @@ def test_slice_empty_morsel_input() -> None:
     ],
 )
 def test_slice_pushdown_pushes_past_fallible(
-    base_query: pl.LazyFrame, monkeypatch: pytest.MonkeyPatch
+    base_query: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     # Ensure baseline fails
     with pytest.raises(ComputeError, match="index is out of bounds"):
         base_query.collect()
 
-    q = base_query.head(0)
+    q = base_query.head(1)
 
     plan = q.explain()
-
     assert plan.index("BARRIER") > plan.index("SLICE") > plan.index("MARKER")
 
+    with pytest.raises(ComputeError, match="index is out of bounds"):
+        q.collect()
+
+    # We allow slice 0 to pass fallible
+    q = base_query.head(0)
     assert_frame_equal(q.collect(), pl.DataFrame(schema=q.collect_schema()))
 
 

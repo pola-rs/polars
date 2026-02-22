@@ -12,7 +12,7 @@ SQL Clauses
    * - :ref:`DISTINCT <distinct>`
      - Returns unique values from a query.
    * - :ref:`FROM <from>`
-     - Specify the table(s) from which to retrieve or delete data.
+     - Specify the table(s) from which to retrieve or delete data. Can also be used as the leading clause.
    * - :ref:`JOIN <join>`
      - Combine rows from two or more tables based on a related column.
    * - :ref:`WHERE <where>`
@@ -27,10 +27,12 @@ SQL Clauses
      - Filter rows in a query based on window function results.
    * - :ref:`ORDER BY <order_by>`
      - Sort the query result based on one or more specified columns.
-   * - :ref:`LIMIT <limit>`
-     - Specify the number of rows returned.
    * - :ref:`OFFSET <offset>`
      - Skip a specified number of rows.
+   * - :ref:`LIMIT <limit>`
+     - Specify the number of rows returned.
+   * - :ref:`FETCH <fetch>`
+     - Limit the number of rows returned (alternative to LIMIT).
 
 
 .. _select:
@@ -62,6 +64,11 @@ Select the columns to be returned by the query.
     # │ 2   ┆ yy  │
     # │ 3   ┆ xx  │
     # └─────┴─────┘
+
+.. note::
+
+   Use of bare ``FROM tbl`` is also supported, as shorthand for ``SELECT * FROM tbl``;
+   see the :ref:`FROM <from>` clause for more detail.
 
 .. _distinct:
 
@@ -98,6 +105,12 @@ FROM
 ----
 Specifies the table(s) from which to retrieve or delete data.
 
+In addition to the usual ``SELECT ... FROM tbl`` syntax, the ``FROM`` clause can
+also be used as the leading clause in a query, supporting the following variations:
+
+* ``FROM tbl`` - equivalent to ``SELECT * FROM tbl``.
+* ``FROM tbl SELECT ...`` - a reordered ``SELECT`` with explicit projections.
+
 **Example:**
 
 .. code-block:: python
@@ -108,18 +121,39 @@ Specifies the table(s) from which to retrieve or delete data.
         "b": ["zz", "yy", "xx"],
       }
     )
+    for query in (
+      "SELECT * FROM self",
+      "FROM self SELECT *",
+      "FROM self",
+    ):
+      df.sql(query)
+      # shape: (3, 2)
+      # ┌─────┬─────┐
+      # │ a   ┆ b   │
+      # │ --- ┆ --- │
+      # │ i64 ┆ str │
+      # ╞═════╪═════╡
+      # │ 1   ┆ zz  │
+      # │ 2   ┆ yy  │
+      # │ 3   ┆ xx  │
+      # └─────┴─────┘
+
+Using ``FROM`` as the leading clause, with ``SELECT``:
+
+.. code-block:: python
+
     df.sql("""
-      SELECT * FROM self
+      FROM self SELECT b, a
     """)
     # shape: (3, 2)
     # ┌─────┬─────┐
-    # │ a   ┆ b   │
+    # │ b   ┆ a   │
     # │ --- ┆ --- │
-    # │ i64 ┆ str │
+    # │ str ┆ i64 │
     # ╞═════╪═════╡
-    # │ 1   ┆ zz  │
-    # │ 2   ┆ yy  │
-    # │ 3   ┆ xx  │
+    # │ zz  ┆ 1   │
+    # │ yy  ┆ 2   │
+    # │ xx  ┆ 3   │
     # └─────┴─────┘
 
 .. _join:
@@ -412,6 +446,35 @@ Sort the query result based on one or more specified columns.
     # │ a   ┆ 10  │
     # └─────┴─────┘
 
+.. _offset:
+
+OFFSET
+------
+Skip a number of rows before starting to return rows from the query.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+      {
+        "foo": ["b", "a", "c", "b"],
+        "bar": [20, 10, 40, 30],
+      }
+    )
+    df.sql("""
+      SELECT foo, bar FROM self LIMIT 2 OFFSET 2
+    """)
+    # shape: (2, 2)
+    # ┌─────┬─────┐
+    # │ foo ┆ bar │
+    # │ --- ┆ --- │
+    # │ str ┆ i64 │
+    # ╞═════╪═════╡
+    # │ c   ┆ 40  │
+    # │ b   ┆ 30  │
+    # └─────┴─────┘
+
 .. _limit:
 
 LIMIT
@@ -441,11 +504,13 @@ Limit the number of rows returned by the query.
     # │ a   ┆ 10  │
     # └─────┴─────┘
 
-.. _offset:
+.. _fetch:
 
-OFFSET
-------
-Skip a number of rows before starting to return rows from the query.
+FETCH
+-----
+Limit the number of rows returned by the query; this is the ANSI SQL standard
+alternative to the ``LIMIT`` clause, and can be combined with ``OFFSET``. The
+`WITH TIES` and `PERCENT` modifiers are not currently supported.
 
 **Example:**
 
@@ -458,7 +523,10 @@ Skip a number of rows before starting to return rows from the query.
       }
     )
     df.sql("""
-      SELECT foo, bar FROM self LIMIT 2 OFFSET 2
+      SELECT foo, bar
+      FROM self
+      ORDER BY bar
+      OFFSET 1 FETCH NEXT 2 ROWS ONLY
     """)
     # shape: (2, 2)
     # ┌─────┬─────┐
@@ -466,6 +534,6 @@ Skip a number of rows before starting to return rows from the query.
     # │ --- ┆ --- │
     # │ str ┆ i64 │
     # ╞═════╪═════╡
-    # │ c   ┆ 40  │
+    # │ b   ┆ 20  │
     # │ b   ┆ 30  │
     # └─────┴─────┘

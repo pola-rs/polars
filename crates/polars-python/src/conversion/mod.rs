@@ -1411,18 +1411,25 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
 
         let py = ob.py();
 
-        let integer_upcast = match &*ob
-            .getattr(intern!(py, "integer_cast"))?
-            .extract::<PyBackedStr>()?
-        {
-            "upcast" => true,
-            "forbid" => false,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "unknown option for integer_cast: {v}"
-                )));
-            },
-        };
+        let mut integer_upcast = false;
+        let mut integer_to_float_cast = false;
+
+        let integer_cast_object = ob.getattr(intern!(py, "integer_cast"))?;
+
+        parse_multiple_options("integer_cast", integer_cast_object, |v| {
+            match v {
+                "upcast" => integer_upcast = true,
+                "allow-float" => integer_to_float_cast = true,
+                "forbid" => {},
+                v => {
+                    return Err(PyValueError::new_err(format!(
+                        "unknown option for integer_cast: {v}"
+                    )));
+                },
+            }
+
+            Ok(())
+        })?;
 
         let mut float_upcast = false;
         let mut float_downcast = false;
@@ -1431,9 +1438,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
 
         parse_multiple_options("float_cast", float_cast_object, |v| {
             match v {
-                "forbid" => {},
                 "upcast" => float_upcast = true,
                 "downcast" => float_downcast = true,
+                "forbid" => {},
                 v => {
                     return Err(PyValueError::new_err(format!(
                         "unknown option for float_cast: {v}"
@@ -1505,6 +1512,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
 
         return Ok(Wrap(CastColumnsPolicy {
             integer_upcast,
+            integer_to_float_cast,
             float_upcast,
             float_downcast,
             datetime_nanoseconds_downcast,

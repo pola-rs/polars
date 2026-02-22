@@ -109,7 +109,30 @@ pub enum PolarsError {
     },
 }
 
-impl Error for PolarsError {}
+impl Error for PolarsError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            PolarsError::AssertionError(_)
+            | PolarsError::ColumnNotFound(_)
+            | PolarsError::ComputeError(_)
+            | PolarsError::Duplicate(_)
+            | PolarsError::InvalidOperation(_)
+            | PolarsError::NoData(_)
+            | PolarsError::OutOfBounds(_)
+            | PolarsError::SchemaFieldNotFound(_)
+            | PolarsError::SchemaMismatch(_)
+            | PolarsError::ShapeMismatch(_)
+            | PolarsError::SQLInterface(_)
+            | PolarsError::SQLSyntax(_)
+            | PolarsError::StringCacheMismatch(_)
+            | PolarsError::StructFieldNotFound(_) => None,
+            PolarsError::IO { error, .. } => Some(error.as_ref()),
+            PolarsError::Context { error, .. } => Some(error.as_ref()),
+            #[cfg(feature = "python")]
+            PolarsError::Python { error } => error.deref().source(),
+        }
+    }
+}
 
 impl Display for PolarsError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -142,11 +165,27 @@ impl Display for PolarsError {
 }
 
 impl From<io::Error> for PolarsError {
-    fn from(value: io::Error) -> Self {
-        PolarsError::IO {
-            error: Arc::new(value),
-            msg: None,
+    fn from(mut value: io::Error) -> Self {
+        if let Some(polars_err) = value
+            .get_mut()
+            .and_then(|e| e.downcast_mut::<PolarsError>())
+        {
+            std::mem::replace(
+                polars_err,
+                PolarsError::ComputeError(ErrString::new_static("")),
+            )
+        } else {
+            PolarsError::IO {
+                error: Arc::new(value),
+                msg: None,
+            }
         }
+    }
+}
+
+impl From<PolarsError> for io::Error {
+    fn from(value: PolarsError) -> Self {
+        io::Error::other(value)
     }
 }
 
@@ -154,19 +193,6 @@ impl From<io::Error> for PolarsError {
 impl From<regex::Error> for PolarsError {
     fn from(err: regex::Error) -> Self {
         PolarsError::ComputeError(format!("regex error: {err}").into())
-    }
-}
-
-#[cfg(feature = "object_store")]
-impl From<object_store::Error> for PolarsError {
-    fn from(err: object_store::Error) -> Self {
-        if let object_store::Error::Generic { store, source } = &err {
-            if let Some(polars_err) = source.as_ref().downcast_ref::<PolarsError>() {
-                return polars_err.wrap_msg(|s| format!("{s} (store: {store})"));
-            }
-        }
-
-        std::io::Error::other(format!("object-store error: {err}")).into()
     }
 }
 
@@ -330,6 +356,22 @@ pub fn map_err<E: Error>(error: E) -> PolarsError {
 
 #[macro_export]
 macro_rules! polars_err {
+    ($variant:ident: format!($_:tt) $(, _:tt)* $(,)?) => {
+        const { panic!("remove unnecessary format! from polars_(bail|err)! macro") }
+    };
+    ($variant:ident: $fmt:literal $(,)?) => {{
+        if const { $crate::__private::has_brace($fmt) } {
+            $crate::__private::must_use(
+                $crate::PolarsError::$variant(format!($fmt).into())
+            )
+        } else {
+            const {
+                $crate::__private::must_use(
+                    $crate::PolarsError::$variant($crate::ErrString::new_static($fmt))
+                )
+            }
+        }
+    }};
     ($variant:ident: $fmt:literal $(, $arg:expr)* $(,)?) => {
         $crate::__private::must_use(
             $crate::PolarsError::$variant(format!($fmt, $($arg),*).into())
@@ -582,7 +624,70 @@ pub mod __private {
     #[inline]
     #[cold]
     #[must_use]
-    pub fn must_use(error: crate::PolarsError) -> crate::PolarsError {
+    pub const fn must_use(error: crate::PolarsError) -> crate::PolarsError {
         error
+    }
+
+    pub const fn has_brace(s: &str) -> bool {
+        let bytes = s.as_bytes();
+        let mut i: usize = 0;
+
+        while i < bytes.len() {
+            if bytes[i] == b'{' || bytes[i] == b'}' {
+                return true;
+            }
+
+            i += 1;
+        }
+
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{ErrString, PolarsError};
+
+    #[test]
+    fn test_polars_error_roundtrips_through_std_io_error() {
+        use PolarsError::ComputeError;
+
+        let error_magic = "err_magic_3";
+        let error = ComputeError(ErrString::new_static(error_magic));
+
+        let io_error: std::io::Error = error.into();
+        let error: PolarsError = io_error.into();
+
+        match error {
+            ComputeError(s) if &*s == error_magic => {},
+            e => panic!("error type mismatch: {e}"),
+        };
+    }
+
+    #[test]
+    fn test_polars_error_format_str() {
+        use PolarsError::ComputeError;
+
+        let a = "A";
+
+        match polars_err!(ComputeError: "{a}") {
+            ComputeError(out) if &*out == a => {},
+            e => panic!("{e}"),
+        }
+
+        match polars_err!(ComputeError: a) {
+            ComputeError(out) if &*out == a => {},
+            e => panic!("{e}"),
+        }
+
+        match polars_err!(ComputeError: "{{") {
+            ComputeError(out) if &*out == "{" => {},
+            e => panic!("{e}"),
+        }
+
+        match polars_err!(ComputeError: "}}") {
+            ComputeError(out) if &*out == "}" => {},
+            e => panic!("{e}"),
+        }
     }
 }

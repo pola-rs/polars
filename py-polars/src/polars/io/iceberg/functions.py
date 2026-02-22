@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 from typing import TYPE_CHECKING, Literal
 
 from polars._utils.unstable import issue_unstable_warning

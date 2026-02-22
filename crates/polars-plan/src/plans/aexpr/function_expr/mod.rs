@@ -87,6 +87,7 @@ pub use self::struct_::IRStructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::IRTrigonometricFunction;
 use super::*;
+use crate::plans::optimizer::DynamicPred;
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
@@ -387,6 +388,9 @@ pub enum IRFunctionExpr {
     RowEncode(Vec<DataType>, RowEncodingVariant),
     #[cfg(feature = "dtype-struct")]
     RowDecode(Vec<Field>, RowEncodingVariant),
+    DynamicPred {
+        pred: DynamicPred,
+    },
 }
 
 impl Hash for IRFunctionExpr {
@@ -693,6 +697,9 @@ impl Hash for IRFunctionExpr {
                 fs.hash(state);
                 variants.hash(state);
             },
+            DynamicPred { pred } => {
+                pred.id().hash(state);
+            },
         }
     }
 }
@@ -907,6 +914,7 @@ impl Display for IRFunctionExpr {
             RowEncode(..) => "row_encode",
             #[cfg(feature = "dtype-struct")]
             RowDecode(..) => "row_decode",
+            DynamicPred { .. } => "dynamic_predicate",
         };
         write!(f, "{s}")
     }
@@ -1236,6 +1244,7 @@ impl IRFunctionExpr {
             F::RowEncode(..) => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-struct")]
             F::RowDecode(..) => FunctionOptions::elementwise(),
+            F::DynamicPred { .. } => FunctionOptions::elementwise(),
         }
     }
 }

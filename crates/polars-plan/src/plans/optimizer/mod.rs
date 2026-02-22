@@ -34,7 +34,7 @@ pub use cse::NaiveExprMerger;
 use delay_rechunk::DelayRechunk;
 pub use expand_datasets::ExpandedDataset;
 use polars_core::config::verbose;
-pub use predicate_pushdown::PredicatePushDown;
+pub use predicate_pushdown::{DynamicPred, PredicateExpr, PredicatePushDown, TrivialPredicateExpr};
 pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
@@ -196,6 +196,23 @@ pub fn optimize(
         true
     };
 
+    if opt_flags.slice_pushdown() {
+        let mut slice_pushdown_opt = SlicePushDown::new(
+            // We don't maintain errors on slice as the behavior is much more predictable that way.
+            //
+            // Even if we enable maintain_errors (thereby preventing the slice from being pushed),
+            // the new-streaming engine still may not error due to early-stopping.
+            false, // maintain_errors
+        );
+        let ir = ir_arena.take(root);
+        let ir = slice_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
+
+        ir_arena.replace(root, ir);
+
+        // Expressions use the stack optimizer.
+        rules.push(Box::new(slice_pushdown_opt));
+    }
+
     if run_pushdowns {
         run_projection_predicate_pushdown(
             root,
@@ -206,7 +223,6 @@ pub fn optimize(
         )?;
     }
 
-    // Make sure its before slice pushdown.
     if opt_flags.fast_projection() {
         rules.push(Box::new(SimpleProjectionAndCollapse::new(
             opt_flags.eager(),
@@ -215,24 +231,6 @@ pub fn optimize(
 
     if !opt_flags.eager() {
         rules.push(Box::new(DelayRechunk::new()));
-    }
-
-    if opt_flags.slice_pushdown() {
-        let mut slice_pushdown_opt = SlicePushDown::new(
-            // We don't maintain errors on slice as the behavior is much more predictable that way.
-            //
-            // Even if we enable maintain_errors (thereby preventing the slice from being pushed),
-            // the new-streaming engine still may not error due to early-stopping.
-            false, // maintain_errors
-            opt_flags.new_streaming(),
-        );
-        let ir = ir_arena.take(root);
-        let ir = slice_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
-
-        ir_arena.replace(root, ir);
-
-        // Expressions use the stack optimizer.
-        rules.push(Box::new(slice_pushdown_opt));
     }
 
     // This optimization removes branches, so we must do it when type coercion

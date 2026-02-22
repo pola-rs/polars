@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import platform
 from ctypes import CFUNCTYPE, POINTER, c_long, c_size_t, c_uint32, c_ulong, c_void_p
 from typing import ClassVar
 
@@ -38,6 +39,15 @@ before/during the CPU feature check code.
 
 _IS_WINDOWS = os.name == "nt"
 _IS_64BIT = ctypes.sizeof(ctypes.c_void_p) == 8
+_SUPPORTS_CPUID = platform.machine().lower() in {
+    "x86_64",
+    "x64",
+    "amd64",
+    "x86",
+    "i368",
+    "i686",
+    "i686-64",
+}
 
 
 def get_runtime_repr() -> str:
@@ -204,6 +214,9 @@ class CPUID:
 
 
 def _read_cpu_flags() -> dict[str, bool]:
+    if not _SUPPORTS_CPUID:
+        return {}
+
     # CPU flags from https://en.wikipedia.org/wiki/CPUID
     cpuid = CPUID()
     cpuid1 = cpuid(1, 0)
@@ -229,19 +242,22 @@ def _read_cpu_flags() -> dict[str, bool]:
 
 
 def check_cpu_flags(feature_flags: str) -> None:
-    if not feature_flags or os.environ.get("POLARS_SKIP_CPU_CHECK"):
-        return
-
     expected_cpu_flags = [
         f.lstrip("+") for f in feature_flags.split(",") if not f.startswith("-")
     ]
+    expected_cpu_flags = [
+        f
+        for f in expected_cpu_flags
+        if f and f != "ctr-static"  # Not actually a CPU flag.
+    ]
+
+    if not expected_cpu_flags or os.environ.get("POLARS_SKIP_CPU_CHECK"):
+        return
+
     supported_cpu_flags = _read_cpu_flags()
 
     missing_features = []
     for f in expected_cpu_flags:
-        if f == "crt-static":  # Not actually a CPU flag.
-            continue
-
         if f not in supported_cpu_flags:
             msg = f"unknown feature flag: {f!r}"
             raise RuntimeError(msg)

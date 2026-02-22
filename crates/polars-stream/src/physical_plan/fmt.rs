@@ -368,6 +368,7 @@ fn visualize_plan_rec(
             by_column,
             reverse,
             nulls_last: _,
+            dyn_pred: _,
         } => {
             let name = if reverse.iter().all(|r| *r) {
                 "bottom-k"
@@ -719,6 +720,11 @@ fn visualize_plan_rec(
             input_right,
             args: _,
         } => ("cross-join".to_string(), &[*input_left, *input_right][..]),
+        PhysNodeKind::AsOfJoin {
+            input_left,
+            input_right,
+            ..
+        } => ("asof_join".to_string(), &[*input_left, *input_right][..]),
         #[cfg(feature = "merge_sorted")]
         PhysNodeKind::MergeSorted {
             input_left,

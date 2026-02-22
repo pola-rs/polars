@@ -4,8 +4,9 @@ import os
 import pickle
 import warnings
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 import pytest
@@ -19,7 +20,11 @@ from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
 from polars.io.delta._dataset import DeltaDataset
+from polars.io.delta._utils import _extract_table_statistics_from_delta_add_actions
 from polars.testing import assert_frame_equal, assert_frame_not_equal
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
@@ -92,10 +97,10 @@ def test_scan_delta_columns(delta_table_path: Path) -> None:
 
 def test_scan_delta_polars_storage_options_keys(
     delta_table_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
     lf = pl.scan_delta(
         delta_table_path,
         version=0,
@@ -541,7 +546,7 @@ def test_write_delta_w_compatible_schema(series: pl.Series, tmp_path: Path) -> N
     "expr",
     [
         pl.datetime(2010, 1, 1, time_unit="us", time_zone="UTC"),
-        pl.datetime(2010, 1, 1, time_unit="ns", time_zone="EST"),
+        pl.datetime(2010, 1, 1, time_unit="ns", time_zone="America/New_York"),
         pl.datetime(2010, 1, 1, time_unit="ms", time_zone="Europe/Amsterdam"),
     ],
 )
@@ -672,7 +677,7 @@ def test_read_delta_arrow_map_type(tmp_path: Path) -> None:
 @pytest.mark.write_disk
 def test_scan_delta_nanosecond_timestamp(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     df = pl.DataFrame(
@@ -722,7 +727,7 @@ def test_scan_delta_nanosecond_timestamp(
         pl.col("timestamp")
         < pl.lit(datetime(2025, 1, 1), dtype=pl.Datetime("us", time_zone="UTC"))
     )
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
 
     assert_frame_equal(q.collect(), df.clear())
@@ -821,7 +826,7 @@ def test_scan_delta_schema_evolution_nested_struct_field_19915(tmp_path: Path) -
 
 @pytest.mark.write_disk
 def test_scan_delta_storage_options_from_delta_table(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     import polars.io.delta._dataset
 
@@ -842,7 +847,7 @@ def test_scan_delta_storage_options_from_delta_table(
 
         return pl.scan_parquet(*a, **kw)
 
-    monkeypatch.setattr(
+    plmonkeypatch.setattr(
         polars.io.delta._dataset, "scan_parquet", assert_scan_parquet_storage_options
     )
 
@@ -878,7 +883,7 @@ def test_scan_delta_storage_options_from_delta_table(
 
 def test_scan_delta_loads_aws_profile_endpoint_url(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -891,8 +896,8 @@ aws_secret_access_key=A
 endpoint_url = http://127.0.0.1:54321
 """)
 
-    monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
-    monkeypatch.setenv("AWS_PROFILE", "endpoint_333")
+    plmonkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
+    plmonkeypatch.setenv("AWS_PROFILE", "endpoint_333")
 
     assert (
         builder := _init_credential_provider_builder(
@@ -916,6 +921,33 @@ endpoint_url = http://127.0.0.1:54321
 
     with pytest.raises((DeltaError, OSError), match=r"http://127.0.0.1:54321"):
         pl.DataFrame({"x": 1}).write_delta("s3://.../...", mode="append")
+
+
+def _df_many_types() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "p": [10, 10, 20, 20, 30, 30],
+            "a": [1, 2, 3, 4, 5, None],
+            "bool": [False, False, True, True, True, None],
+            "int": [1, 2, 3, 4, 5, None],
+            "float": [1.0, 2.0, 3.0, 4.0, 5.0, None],
+            "string": ["a", "b", "c", "cc", "ccc", None],
+            "struct": [
+                {"x": 1, "y": 10},
+                {"x": 2, "y": 20},
+                {"x": 3, "y": 30},
+                {"x": 4, "y": 40},
+                {"x": 5, "y": 50},
+                None,
+            ],
+        }
+    ).with_columns(
+        decimal=pl.col.a.cast(pl.Decimal(10, 2)),
+        date=pl.date_range(pl.date(2020, 1, 1), pl.date(2020, 1, 6), closed="both"),
+        datetime=pl.datetime_range(
+            pl.datetime(2020, 1, 1), pl.datetime(2020, 1, 6), closed="both"
+        ),
+    )
 
 
 # TODO: uncomment dtype when fixed
@@ -960,41 +992,17 @@ endpoint_url = http://127.0.0.1:54321
     ],
 )
 @pytest.mark.write_disk
-def test_parquet_filter_on_file_statistics_23780(
+def test_scan_delta_filter_delta_log_statistics_23780(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
     expr: pl.Expr,
 ) -> None:
-    df = pl.DataFrame(
-        {
-            "p": [10, 10, 20, 20, 30, 30],
-            "a": [1, 2, 3, 4, 5, None],
-            "bool": [False, False, True, True, True, None],
-            "int": [1, 2, 3, 4, 5, None],
-            "float": [1.0, 2.0, 3.0, 4.0, 5.0, None],
-            "string": ["a", "b", "c", "cc", "ccc", None],
-            "struct": [
-                {"x": 1, "y": 10},
-                {"x": 2, "y": 20},
-                {"x": 3, "y": 30},
-                {"x": 4, "y": 40},
-                {"x": 5, "y": 50},
-                None,
-            ],
-        }
-    ).with_columns(
-        decimal=pl.col.a.cast(pl.Decimal(10, 2)),
-        date=pl.date_range(pl.date(2020, 1, 1), pl.date(2020, 1, 6), closed="both"),
-        datetime=pl.datetime_range(
-            pl.datetime(2020, 1, 1), pl.datetime(2020, 1, 6), closed="both"
-        ),
-    )
+    df = _df_many_types()
     root = tmp_path / "delta"
-
     df.write_delta(root, delta_write_options={"partition_by": "p"})
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
 
     assert_frame_equal(
@@ -1004,6 +1012,64 @@ def test_parquet_filter_on_file_statistics_23780(
         check_row_order=False,
     )
     assert "skipping 2 / 3 files" in capfd.readouterr().err
+
+
+@pytest.mark.write_disk
+def test_scan_delta_extract_table_statistics_df(tmp_path: Path) -> None:
+    import datetime
+
+    df = _df_many_types()
+    root = tmp_path / "delta"
+    df.write_delta(root, delta_write_options={"partition_by": "p"})
+
+    statistics_df = _extract_table_statistics_from_delta_add_actions(
+        pl.DataFrame(DeltaTable(tmp_path / "delta").get_add_actions()),
+        filter_columns=df.columns,
+        schema=df.schema,
+        verbose=False,
+    )
+
+    assert statistics_df is not None
+
+    assert_frame_equal(
+        statistics_df,
+        pl.DataFrame(
+            [
+                pl.Series('len', [2, 2, 2], dtype=pl.Int64),
+                pl.Series('p_nc', [None, None, None], dtype=pl.UInt32),
+                pl.Series('p_min', [None, None, None], dtype=pl.Int64),
+                pl.Series('p_max', [None, None, None], dtype=pl.Int64),
+                pl.Series('a_nc', [0, 1, 0], dtype=pl.Int64),
+                pl.Series('a_min', [1, 5, 3], dtype=pl.Int64),
+                pl.Series('a_max', [2, 5, 4], dtype=pl.Int64),
+                pl.Series('bool_nc', [0, 1, 0], dtype=pl.Int64),
+                pl.Series('bool_min', [None, None, None], dtype=pl.Boolean),
+                pl.Series('bool_max', [None, None, None], dtype=pl.Boolean),
+                pl.Series('int_nc', [0, 1, 0], dtype=pl.Int64),
+                pl.Series('int_min', [1, 5, 3], dtype=pl.Int64),
+                pl.Series('int_max', [2, 5, 4], dtype=pl.Int64),
+                pl.Series('float_nc', [0, 1, 0], dtype=pl.Int64),
+                pl.Series('float_min', [1.0, 5.0, 3.0], dtype=pl.Float64),
+                pl.Series('float_max', [2.0, 5.0, 4.0], dtype=pl.Float64),
+                pl.Series('string_nc', [0, 1, 0], dtype=pl.Int64),
+                pl.Series('string_min', ['a', 'ccc', 'c'], dtype=pl.String),
+                pl.Series('string_max', ['b', 'ccc', 'cc'], dtype=pl.String),
+                pl.Series('struct_nc', [{'x': 0, 'y': 0}, {'x': 1, 'y': 1}, {'x': 0, 'y': 0}], dtype=pl.Struct({'x': pl.Int64, 'y': pl.Int64})),
+                pl.Series('struct_min', [{'x': 1, 'y': 10}, {'x': 5, 'y': 50}, {'x': 3, 'y': 30}], dtype=pl.Struct({'x': pl.Int64, 'y': pl.Int64})),
+                pl.Series('struct_max', [{'x': 2, 'y': 20}, {'x': 5, 'y': 50}, {'x': 4, 'y': 40}], dtype=pl.Struct({'x': pl.Int64, 'y': pl.Int64})),
+                pl.Series('decimal_nc', [0, 1, 0], dtype=pl.Int64),
+                pl.Series('decimal_min', [Decimal('1.00'), Decimal('5.00'), Decimal('3.00')], dtype=pl.Decimal(precision=10, scale=2)),
+                pl.Series('decimal_max', [Decimal('2.00'), Decimal('5.00'), Decimal('4.00')], dtype=pl.Decimal(precision=10, scale=2)),
+                pl.Series('date_nc', [0, 0, 0], dtype=pl.Int64),
+                pl.Series('date_min', [datetime.date(2020, 1, 1), datetime.date(2020, 1, 5), datetime.date(2020, 1, 3)], dtype=pl.Date),
+                pl.Series('date_max', [datetime.date(2020, 1, 2), datetime.date(2020, 1, 6), datetime.date(2020, 1, 4)], dtype=pl.Date),
+                pl.Series('datetime_nc', [0, 0, 0], dtype=pl.Int64),
+                pl.Series('datetime_min', [datetime.datetime(2020, 1, 1, 0, 0), datetime.datetime(2020, 1, 5, 0, 0), datetime.datetime(2020, 1, 3, 0, 0)], dtype=pl.Datetime(time_unit='us', time_zone=None)),
+                pl.Series('datetime_max', [datetime.datetime(2020, 1, 2, 0, 0), datetime.datetime(2020, 1, 6, 0, 0), datetime.datetime(2020, 1, 4, 0, 0)], dtype=pl.Datetime(time_unit='us', time_zone=None)),
+            ]
+        ),
+        check_row_order=False
+    )  # fmt: skip
 
 
 @pytest.mark.parametrize(
@@ -1016,9 +1082,9 @@ def test_parquet_filter_on_file_statistics_23780(
     ],
 )
 @pytest.mark.write_disk
-def test_parquet_filter_on_file_statistics_partial_23780(
+def test_scan_delta_filter_delta_log_statistics_partial_23780(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
     expr: pl.Expr,
     n_cols: str,
@@ -1037,7 +1103,7 @@ def test_parquet_filter_on_file_statistics_partial_23780(
         },
     )
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
 
     assert_frame_equal(
@@ -1050,9 +1116,9 @@ def test_parquet_filter_on_file_statistics_partial_23780(
 
 
 @pytest.mark.write_disk
-def test_parquet_filter_on_file_statistics_delete_partition_23780(
+def test_scan_delta_filter_delta_log_statistics_delete_partition_23780(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     df = pl.DataFrame(
@@ -1065,7 +1131,7 @@ def test_parquet_filter_on_file_statistics_delete_partition_23780(
 
     df.write_delta(root, delta_write_options={"partition_by": "p"})
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
 
     expr = pl.col.a == 2
@@ -1192,7 +1258,7 @@ def test_delta_partition_filter(tmp_path: Path, use_pyarrow: bool) -> None:
 def test_scan_delta_collect_without_version_scans_latest(
     tmp_path: Path,
     use_pyarrow: bool,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     pl.DataFrame({"a": [0]}).write_delta(tmp_path)
@@ -1216,7 +1282,7 @@ def test_scan_delta_collect_without_version_scans_latest(
 
     assert_frame_equal(q.collect().sort("*"), pl.DataFrame({"a": [0, 1, 2]}))
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
 
     assert_frame_equal(q_with_id.collect().sort("*"), pl.DataFrame({"a": [0, 1]}))
@@ -1226,3 +1292,70 @@ def test_scan_delta_collect_without_version_scans_latest(
     assert (
         "DeltaDataset: to_dataset_scan(): early return (version_key = '1')" in capture
     )
+
+
+@pytest.mark.write_disk
+def test_scan_delta_filter_delta_log_statistics_missing_26444(tmp_path: Path) -> None:
+    pl.DataFrame({"x": [1, 2], "y": [True, False]}).write_delta(tmp_path)
+
+    assert_frame_equal(
+        pl.scan_delta(tmp_path).filter("y").collect(),
+        pl.DataFrame({"x": 1, "y": True}),
+    )
+
+    schema = {
+        "bool": pl.Boolean,
+        "string": pl.String,
+        "binary": pl.Binary,
+        "int8": pl.Int8,
+        "null": pl.Null,
+    }
+
+    for actions_df in [
+        pl.DataFrame({"num_records": [1, 2, 3]}),
+        pl.DataFrame({"num_records": [1, 2, 3], "min": [{}, {}, {}]}),
+        pl.DataFrame({"num_records": [1, 2, 3], "max": [{}, {}, {}]}),
+        pl.DataFrame({"num_records": [1, 2, 3], "null_count": [{}, {}, {}]}),
+    ]:
+        df = _extract_table_statistics_from_delta_add_actions(
+            actions_df,
+            filter_columns=[*schema],
+            schema=schema,
+            verbose=False,
+        )
+
+        assert df is not None
+
+        assert_frame_equal(
+            df,
+            pl.DataFrame(
+                [
+                    pl.Series("len", [1, 2, 3], dtype=pl.Int64),
+                    pl.Series("bool_nc", [None, None, None], dtype=pl.UInt32),
+                    pl.Series("bool_min", [None, None, None], dtype=pl.Boolean),
+                    pl.Series("bool_max", [None, None, None], dtype=pl.Boolean),
+                    pl.Series("string_nc", [None, None, None], dtype=pl.UInt32),
+                    pl.Series("string_min", [None, None, None], dtype=pl.String),
+                    pl.Series("string_max", [None, None, None], dtype=pl.String),
+                    pl.Series("binary_nc", [None, None, None], dtype=pl.UInt32),
+                    pl.Series("binary_min", [None, None, None], dtype=pl.Binary),
+                    pl.Series("binary_max", [None, None, None], dtype=pl.Binary),
+                    pl.Series("int8_nc", [None, None, None], dtype=pl.UInt32),
+                    pl.Series("int8_min", [None, None, None], dtype=pl.Int8),
+                    pl.Series("int8_max", [None, None, None], dtype=pl.Int8),
+                    pl.Series("null_nc", [None, None, None], dtype=pl.UInt32),
+                    pl.Series("null_min", [None, None, None], dtype=pl.Null),
+                    pl.Series("null_max", [None, None, None], dtype=pl.Null),
+                ]
+            ),
+        )
+
+        assert (
+            _extract_table_statistics_from_delta_add_actions(
+                pl.DataFrame(),
+                filter_columns=[*schema],
+                schema=schema,
+                verbose=False,
+            )
+            is None
+        )

@@ -26,7 +26,7 @@ fn test_drop() -> PolarsResult<()> {
         "a" => [1],
     ]?
     .lazy()
-    .drop(by_name(["a"], true))
+    .drop(by_name(["a"], true, false))
     .collect()?;
     assert_eq!(out.width(), 0);
     Ok(())
@@ -144,7 +144,7 @@ fn test_sorted_path() -> PolarsResult<()> {
         .lazy()
         .with_row_index("index", None)
         .explode(
-            by_name(["a"], true),
+            by_name(["a"], true, false),
             ExplodeOptions {
                 empty_as_null: true,
                 keep_nulls: true,

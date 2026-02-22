@@ -26,6 +26,10 @@ macro_rules! impl_unsigned_div_mod {
         impl FloorDivMod for $T {
             #[inline]
             fn wrapping_floor_div_mod(self, other: Self) -> (Self, Self) {
+                if other == 0 {
+                    return (0, 0);
+                }
+
                 (self / other, self % other)
             }
         }

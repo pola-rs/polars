@@ -78,8 +78,8 @@ impl PySelector {
     }
 
     #[staticmethod]
-    fn by_name(names: Vec<String>, strict: bool) -> Self {
-        dsl::functions::by_name(names, strict).into()
+    fn by_name(names: Vec<String>, strict: bool, expand_patterns: bool) -> Self {
+        dsl::functions::by_name(names, strict, expand_patterns).into()
     }
 
     #[staticmethod]

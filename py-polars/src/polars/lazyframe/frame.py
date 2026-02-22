@@ -108,6 +108,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from builtins import slice as slice_
     from collections.abc import Awaitable, Callable, Iterator, Sequence
     from io import IOBase
     from typing import IO, Concatenate, Literal, ParamSpec
@@ -747,7 +748,7 @@ class LazyFrame:
     def __deepcopy__(self, memo: None = None) -> LazyFrame:
         return self.clone()
 
-    def __getitem__(self, item: slice) -> LazyFrame:
+    def __getitem__(self, item: slice_) -> LazyFrame:
         """
         Support slice syntax, returning a new LazyFrame.
 
@@ -4432,6 +4433,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ null ┆ null ┆ null │
         └──────┴──────┴──────┘
         """
+        if n == 0:
+            # This branch doesn't collect schema.
+            return self.limit(0)
+        # TODO: don't collect schema.
         return pl.DataFrame(schema=self.collect_schema()).clear(n).lazy()
 
     def clone(self) -> LazyFrame:
@@ -5667,9 +5672,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
                 By "calendar day", we mean the corresponding time on the next day
-                (which may not be 24 hours, due to daylight savings). Similarly for
-                "calendar week", "calendar month", "calendar quarter", and
-                "calendar year".
+                (which may not be 24 hours, due to daylight savings - in cases of
+                ambiguity, we follow RFC-5545 and preserve the DST fold of the original
+                datetime). Similarly for "calendar week", "calendar month",
+                "calendar quarter", and "calendar year".
 
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both

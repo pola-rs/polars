@@ -1,3 +1,5 @@
+use polars_utils::format_pl_smallstr;
+
 use super::*;
 
 /// converts a node from the AExpr arena to Expr
@@ -206,11 +208,13 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         AExpr::AnonymousAgg {
             input,
             fmt_str,
-            function,
-        } => Expr::AnonymousAgg {
-            input: expr_irs_to_exprs(input, expr_arena),
-            function,
-            fmt_str,
+            function: _,
+        } => {
+            let inputs = expr_irs_to_exprs(input.clone(), expr_arena);
+            Expr::Display {
+                inputs,
+                fmt_str: fmt_str.clone(),
+            }
         },
         AExpr::AnonymousFunction {
             input,
@@ -358,6 +362,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::Slice => B::Slice,
                 IB::Head => B::Head,
                 IB::Tail => B::Tail,
+                IB::Get(null_on_oob) => B::Get(null_on_oob),
             })
         },
         #[cfg(feature = "dtype-categorical")]
@@ -1172,6 +1177,12 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             fs.into_iter().map(|f| (f.name, f.dtype.into())).collect(),
             v,
         ),
+        IF::DynamicPred { pred } => {
+            return Expr::Display {
+                inputs: input,
+                fmt_str: Box::new(format_pl_smallstr!("{pred:?}")),
+            };
+        },
     };
 
     Expr::Function { input, function }

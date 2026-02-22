@@ -326,7 +326,7 @@ pub struct HConcat {
     #[pyo3(get)]
     inputs: Vec<usize>,
     #[pyo3(get)]
-    options: (),
+    options: Py<PyAny>,
 }
 #[pyclass(frozen)]
 /// This allows expressions to access other tables
@@ -492,7 +492,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 sort_options.nulls_last.clone(),
                 sort_options.descending.clone(),
             ),
-            slice: *slice,
+            slice: slice.as_ref().map(|t| (t.0, t.1)),
         }
         .into_py_any(py),
         IR::Cache { input, id } => Cache {
@@ -699,10 +699,15 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         IR::HConcat {
             inputs,
             schema: _,
-            options: _,
+            options,
         } => HConcat {
             inputs: inputs.iter().map(|n| n.0).collect(),
-            options: (),
+            options: (
+                options.parallel,
+                options.strict,
+                options.broadcast_unit_length,
+            )
+                .into_py_any(py)?,
         }
         .into_py_any(py),
         IR::ExtContext {

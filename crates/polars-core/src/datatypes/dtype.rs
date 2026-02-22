@@ -143,12 +143,6 @@ pub enum DataType {
     Unknown(UnknownKind),
 }
 
-impl Default for DataType {
-    fn default() -> Self {
-        DataType::Unknown(UnknownKind::Any)
-    }
-}
-
 pub trait AsRefDataType {
     fn as_ref_dtype(&self) -> &DataType;
 }

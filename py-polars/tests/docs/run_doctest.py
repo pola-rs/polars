@@ -56,11 +56,11 @@ if sys.version_info < (3, 12):
     )
 
 # associate specific doctest method names with optional modules.
-# if the module is found in the environment those doctests will
+# if the module is found in the environment, those doctests will
 # run; if the module is not found, their doctests are skipped.
 OPTIONAL_MODULES_AND_METHODS: dict[str, set[str]] = {
     "jax": {"to_jax"},
-    "torch": {"to_torch"},
+    "torch": {"to_torch", "from_torch"},
 }
 OPTIONAL_MODULES: set[str] = set()
 SKIP_METHODS: set[str] = set()
@@ -142,11 +142,6 @@ if __name__ == "__main__":
 
     doctest.OutputChecker = IgnoreResultOutputChecker  # type: ignore[misc]
 
-    # Want to be relaxed about whitespace, strict on True vs 1, and allow '...' pattern
-    doctest.NORMALIZE_WHITESPACE = True
-    doctest.DONT_ACCEPT_TRUE_FOR_1 = True
-    doctest.ELLIPSIS = True
-
     # If REPORT_NDIFF is turned on, it will report on line by line, character by
     # character, differences. The disadvantage is that you cannot just copy the output
     # directly into the docstring.
@@ -162,7 +157,11 @@ if __name__ == "__main__":
                 m,
                 extraglobs={"pl": pl, "dirpath": Path(tmpdir)},
                 tearDown=doctest_teardown,
-                optionflags=1,
+                optionflags=(
+                    doctest.NORMALIZE_WHITESPACE  # relaxed about whitespace
+                    | doctest.DONT_ACCEPT_TRUE_FOR_1  # strict on True vs 1,
+                    | doctest.ELLIPSIS  #  allow '...' pattern
+                ),
             )
             for m in modules_in_path(src_dir)
         ]

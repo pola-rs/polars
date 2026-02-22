@@ -126,6 +126,7 @@ Label: TypeAlias = Literal["left", "right", "datapoint"]
 MaintainOrderJoin: TypeAlias = Literal[
     "none", "left", "right", "left_right", "right_left"
 ]
+NdjsonCompression: TypeAlias = Literal["uncompressed", "gzip", "zstd"]
 NonExistent: TypeAlias = Literal["raise", "null"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
 ParallelStrategy: TypeAlias = Literal[
@@ -398,6 +399,7 @@ __all__ = [
     "MultiColSelector",
     "MultiIndexSelector",
     "MultiNameSelector",
+    "NdjsonCompression",
     "NonExistent",
     "NonNestedLiteral",
     "NullBehavior",

@@ -124,8 +124,7 @@ pub trait RoundSeries: SeriesSealed {
                         let multiplier = 10.0_f64.powi(decimals as i32);
                         let s = ca
                             .apply_values(|val| {
-                                let ret = ((val as f64 * multiplier).round_ties_even() / multiplier)
-                                    as f32;
+                                let ret = ((val as f64 * multiplier).round() / multiplier) as f32;
                                 if ret.is_finite() {
                                     ret
                                 } else {

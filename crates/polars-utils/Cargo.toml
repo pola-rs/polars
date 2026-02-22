@@ -9,6 +9,9 @@ repository = { workspace = true }
 description = "Private utils for the Polars DataFrame library"
 
 [dependencies]
+polars-config = { workspace = true }
+polars-error = { workspace = true }
+
 argminmax = { workspace = true, features = ["float", "half"] }
 bincode = { workspace = true, optional = true }
 bytemuck = { workspace = true }
@@ -17,6 +20,7 @@ compact_str = { workspace = true }
 either = { workspace = true }
 flate2 = { workspace = true, default-features = true, optional = true }
 foldhash = { workspace = true }
+futures = { workspace = true, optional = true }
 half = { workspace = true, optional = false, features = ["num-traits", "bytemuck"] }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
@@ -25,7 +29,6 @@ memmap = { workspace = true, optional = true }
 num-derive = { workspace = true }
 num-traits = { workspace = true }
 numpy = { workspace = true, optional = true, features = ["half"] }
-polars-error = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
 raw-cpuid = { workspace = true }
@@ -39,6 +42,7 @@ serde_stacker = { workspace = true, optional = true }
 slotmap = { workspace = true }
 stacker = { workspace = true }
 sysinfo = { version = "0.37", default-features = false, features = ["system"], optional = true }
+tokio = { workspace = true, optional = true, features = ["rt", "sync"] }
 uuid = { workspace = true }
 
 [dev-dependencies]
@@ -49,12 +53,14 @@ rand = { workspace = true }
 version_check = { workspace = true }
 
 [features]
+async-utils = ["dep:tokio", "dep:futures"]
 mmap = ["memmap"]
 bigidx = []
 nightly = []
 ir_serde = ["serde"]
 serde = [
   "dep:serde",
+  "polars-config/serde",
   "serde/derive",
   "dep:rmp-serde",
   "dep:bincode",

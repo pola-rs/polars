@@ -386,14 +386,15 @@ pub fn concat_lf_horizontal(
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let args = UnionArgs {
-        rechunk: false, // No need to rechunk with horizontal concatenation
-        parallel,
-        to_supertypes: false,
-        strict,
-        ..Default::default()
-    };
-    let lf = dsl::functions::concat_lf_horizontal(lfs, args).map_err(PyPolarsErr::from)?;
+    let lf = dsl::functions::concat_lf_horizontal(
+        lfs,
+        HConcatOptions {
+            parallel,
+            strict,
+            broadcast_unit_length: Default::default(),
+        },
+    )
+    .map_err(PyPolarsErr::from)?;
     Ok(lf.into())
 }
 

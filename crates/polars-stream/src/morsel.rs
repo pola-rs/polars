@@ -7,7 +7,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use crate::async_primitives::wait_group::WaitToken;
 
 pub fn get_ideal_morsel_size() -> usize {
-    polars_utils::ideal_morsel_size::get_ideal_morsel_size().get()
+    polars_config::config().ideal_morsel_size() as usize
 }
 
 /// A token indicating the order of morsels in a stream.
