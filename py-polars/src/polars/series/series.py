@@ -8066,7 +8066,7 @@ class Series:
                 -2
                 3
         ]
-        >>> s.reinterpret(signed=false)
+        >>> s.reinterpret(signed=False)
         shape: (3,)
         Series: 'a' [u64]
         [
