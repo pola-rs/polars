@@ -857,7 +857,8 @@ impl SQLExprVisitor<'_> {
                 if x.len() % 2 != 0 {
                     polars_bail!(SQLSyntax: "hex string literal must have an even number of digits; found '{}'", x)
                 };
-                lit(hex::decode(x.clone()).unwrap())
+                lit(hex::decode(x.clone())
+                    .map_err(|_| polars_err!(SQLSyntax: "invalid hex string literal: '{}'", x))?)
             },
             SQLValue::Null => Expr::Literal(LiteralValue::untyped_null()),
             SQLValue::Number(s, _) => {
@@ -896,7 +897,11 @@ impl SQLExprVisitor<'_> {
                 if x.len() % 2 != 0 {
                     polars_bail!(SQLSyntax: "hex string literal must have an even number of digits; found '{}'", x)
                 };
-                AnyValue::BinaryOwned(hex::decode(x.clone()).unwrap())
+                AnyValue::BinaryOwned(
+                    hex::decode(x.clone()).map_err(
+                        |_| polars_err!(SQLSyntax: "invalid hex string literal: '{}'", x),
+                    )?,
+                )
             },
             SQLValue::Null => AnyValue::Null,
             SQLValue::Number(s, _) => {
