@@ -1601,7 +1601,7 @@ impl Expr {
     }
 
     #[cfg(feature = "reinterpret")]
-    pub fn reinterpret(self, signed: bool, dtype: Option<DataType>) -> Expr {
+    pub fn reinterpret(self, signed: Option<bool>, dtype: Option<DataType>) -> Expr {
         self.map_unary(FunctionExpr::Reinterpret(signed, dtype))
     }
 

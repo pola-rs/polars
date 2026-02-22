@@ -442,9 +442,9 @@ impl IRFunctionExpr {
             GatherEvery { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "reinterpret")]
             Reinterpret(signed, dtype) => {
-                if let Some(dt) = dtype {
-                    mapper.with_dtype(dt.clone())
-                } else {
+                if let Some(signed) = signed
+                    && dtype.is_none()
+                {
                     mapper.map_dtype(|dt| {
                         if *signed {
                             match dt {
@@ -466,6 +466,12 @@ impl IRFunctionExpr {
                             }
                         }
                     })
+                } else if let Some(dt) = dtype
+                    && signed.is_none()
+                {
+                    mapper.with_dtype(dt.clone())
+                } else {
+                    polars_bail!(InvalidOperation: "reinterpret can only be called with either `signed` or `dtype` specified")
                 }
             },
             ExtendConstant => mapper.with_same_dtype(),

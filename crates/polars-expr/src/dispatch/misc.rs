@@ -344,7 +344,7 @@ pub(super) fn gather_every(s: &Column, n: usize, offset: usize) -> PolarsResult<
 #[cfg(feature = "reinterpret")]
 pub(super) fn reinterpret(
     s: &Column,
-    signed: bool,
+    signed: Option<bool>,
     dtype: Option<DataType>,
 ) -> PolarsResult<Column> {
     polars_ops::series::reinterpret(s.as_materialized_series(), signed, dtype).map(Column::from)

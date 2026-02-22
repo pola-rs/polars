@@ -6554,16 +6554,17 @@ Consider using {self}.implode() instead"""
     def reinterpret(
         self,
         *,
-        signed: bool = True,
+        signed: bool | None = None,
         dtype: PolarsDataType | None = None,
     ) -> Expr:
         """
         Reinterpret the underlying bits as a signed/unsigned integer or float.
 
-        This operation is only allowed for numeric typesof the same size.
+        This operation is only allowed for numeric types of the same size.
         For lower bits numbers, you can safely use the cast operation.
 
-        `dtype` will be used as target type if specified.
+        Either `signed` or `dtype` can be specified.
+        Defaults to `signed=True` otherwise.
 
         Parameters
         ----------
@@ -6594,7 +6595,13 @@ Consider using {self}.implode() instead"""
         │ 2             ┆ 2        │
         └───────────────┴──────────┘
         """
-        return wrap_expr(self._pyexpr.reinterpret(signed, dtype))
+        if signed is not None and dtype is not None:
+            msg = "cannot specify both `signed` and `dtype`"
+            raise ValueError(msg)
+        elif signed is None and dtype is None:
+            return wrap_expr(self._pyexpr.reinterpret(True, dtype))
+        else:
+            return wrap_expr(self._pyexpr.reinterpret(signed, dtype))
 
     def inspect(self, fmt: str_ = "{}") -> Expr:
         """

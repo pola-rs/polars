@@ -730,7 +730,7 @@ impl PyExpr {
         self.inner.clone().dot(other.inner).into()
     }
 
-    fn reinterpret(&self, signed: bool, dtype: Option<PyDataType>) -> Self {
+    fn reinterpret(&self, signed: Option<bool>, dtype: Option<PyDataType>) -> Self {
         self.inner
             .clone()
             .reinterpret(signed, dtype.map(|dt| dt.0))

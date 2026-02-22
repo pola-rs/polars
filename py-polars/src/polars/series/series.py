@@ -8162,16 +8162,17 @@ class Series:
     def reinterpret(
         self,
         *,
-        signed: bool = True,
+        signed: bool | None = None,
         dtype: type[int | float] | PolarsDataType | None = None,
     ) -> Series:
         """
         Reinterpret the underlying bits as a signed/unsigned integer or float.
 
-        This operation is only allowed for numeric typesof the same size.
+        This operation is only allowed for numeric types of the same size.
         For lower bits numbers, you can safely use the cast operation.
 
-        `dtype` will be used as target type if specified.
+        Either `signed` or `dtype` can be specified.
+        Defaults to `signed=True` otherwise.
 
         Parameters
         ----------

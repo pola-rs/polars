@@ -1,8 +1,19 @@
 use polars_core::prelude::*;
 
-pub fn reinterpret(s: &Series, signed: bool, dtype: Option<DataType>) -> PolarsResult<Series> {
+pub fn reinterpret(
+    s: &Series,
+    signed: Option<bool>,
+    dtype: Option<DataType>,
+) -> PolarsResult<Series> {
+    if signed.is_none() && dtype.is_none() {
+        polars_bail!(
+            ComputeError:
+            "reinterpret is only allowed with either `signed` or `dtype` specified"
+        )
+    }
+
     let dtype = dtype.unwrap_or_else(|| {
-        if signed {
+        if signed.unwrap() {
             match s.dtype() {
                 DataType::UInt8 => DataType::Int8,
                 DataType::UInt16 => DataType::Int16,
