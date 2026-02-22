@@ -16,17 +16,6 @@ if TYPE_CHECKING:
 
     from polars._utils.various import IdentityFunction
 
-if sys.version_info >= (3, 13):
-    from warnings import deprecated
-else:
-    try:
-        from typing_extensions import deprecated
-    except ImportError:
-
-        def deprecated(message: str) -> IdentityFunction:  # type: ignore[no-redef]
-            return _deprecate_function(message)
-
-
 from polars._utils.various import issue_warning
 
 if TYPE_CHECKING:
@@ -75,6 +64,16 @@ def _deprecate_function(message: str) -> IdentityFunction:
         return wrapper
 
     return decorate
+
+
+def deprecated(message: str) -> IdentityFunction:
+    """
+    Mark a function as deprecated.
+
+    Uses ``find_stacklevel()`` internally so that the warning is correctly
+    attributed to the caller regardless of decorator ordering.
+    """
+    return _deprecate_function(message)
 
 
 def deprecate_streaming_parameter() -> IdentityFunction:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import inspect
-from typing import TYPE_CHECKING, Any, get_args
+from typing import Any, get_args
 
 import pytest
 
@@ -14,14 +14,6 @@ from polars._utils.deprecation import (
     identify_deprecations,
     issue_deprecation_warning,
 )
-
-if TYPE_CHECKING:
-    import sys
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 
 def test_issue_deprecation_warning() -> None:
@@ -97,6 +89,37 @@ def test_deprecate_parameter_as_multi_positional_existing_arg(recwarn: Any) -> N
     with pytest.deprecated_call():
         result = hello(5, foo=["x", "y"])  # type: ignore[call-arg, arg-type]
     assert result == hello(5, "x", "y")
+
+
+def test_deprecated_decorator_ordering_26536() -> None:
+    """Test that @deprecated works regardless of decorator ordering."""
+    # @deprecated on top (outermost) — always worked
+    @deprecated("`func_a` is deprecated.")
+    @deprecate_renamed_parameter("old", "new", version="1.0.0")
+    def func_a(new: str) -> str:
+        return new
+
+    with pytest.deprecated_call(match="`func_a` is deprecated."):
+        assert func_a(old="x") == "x"  # type: ignore[call-arg]
+
+    # @deprecated on bottom (innermost) — previously broken
+    @deprecate_renamed_parameter("old", "new", version="1.0.0")
+    @deprecated("`func_b` is deprecated.")
+    def func_b(new: str) -> str:
+        return new
+
+    with pytest.deprecated_call(match="`func_b` is deprecated."):
+        assert func_b(old="x") == "x"  # type: ignore[call-arg]
+
+    # @deprecated sandwiched between multiple decorators
+    @deprecate_renamed_parameter("foo", "bar", version="1.0.0")
+    @deprecate_renamed_parameter("baz", "qux", version="1.0.0")
+    @deprecated("`func_c` is deprecated.")
+    def func_c(bar: str, qux: str) -> str:
+        return bar + qux
+
+    with pytest.deprecated_call(match="`func_c` is deprecated."):
+        assert func_c(foo="a", baz="b") == "ab"  # type: ignore[call-arg]
 
 
 @pytest.mark.slow
