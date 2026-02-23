@@ -104,7 +104,7 @@ fn sort_by_groups_single_by(
 fn sort_by_groups_no_match_single<'a>(
     mut ac_in: AggregationContext<'a>,
     mut ac_by: AggregationContext<'a>,
-    descending: bool,
+    options: SortOptions,
     expr: &Expr,
 ) -> PolarsResult<AggregationContext<'a>> {
     let s_in = ac_in.aggregated();
@@ -120,10 +120,9 @@ fn sort_by_groups_no_match_single<'a>(
                 (Some(s), Some(s_sort_by)) => {
                     polars_ensure!(s.len() == s_sort_by.len(), ComputeError: "series lengths don't match in 'sort_by' expression");
                     let idx = s_sort_by.arg_sort(SortOptions {
-                        descending,
                         // We are already in par iter.
                         multithreaded: false,
-                        ..Default::default()
+                        ..options
                     });
                     Ok(Some(unsafe { s.take_unchecked(&idx) }))
                 },
@@ -366,7 +365,7 @@ impl PhysicalExpr for SortByExpr {
                 return sort_by_groups_no_match_single(
                     ac_in,
                     ac_sort_by,
-                    self.sort_options.descending[0],
+                    SortOptions::from(&self.sort_options),
                     &self.expr,
                 );
             };
