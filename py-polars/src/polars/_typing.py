@@ -91,6 +91,7 @@ IntoExprColumn: TypeAlias = Union["Expr", "Series", str]
 IntoExpr: TypeAlias = PythonLiteral | IntoExprColumn | None
 
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
+Alignment: TypeAlias = Literal["left", "center", "right", "LEFT", "CENTER", "RIGHT"]
 
 # selector type, and related collection/sequence
 SelectorType: TypeAlias = "Selector"
@@ -348,6 +349,7 @@ DeprecationType: TypeAlias = Literal[
 
 
 __all__ = [
+    "Alignment",
     "Ambiguous",
     "ArrowArrayExportable",
     "ArrowStreamExportable",

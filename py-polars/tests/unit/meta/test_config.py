@@ -375,7 +375,7 @@ def test_shape_below_table_and_inlined_dtype() -> None:
     (
         pl.Config.set_tbl_formatting(None, rounded_corners=False)
         .set_tbl_column_data_type_inline(False)
-        .set_tbl_cell_alignment("RIGHT")
+        .set_tbl_cell_alignment("right")
     )
     assert (
         str(df) == "shape: (2, 3)\n"
