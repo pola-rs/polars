@@ -900,7 +900,7 @@ impl DataType {
             Float64 => Scalar::from(f64::INFINITY),
             #[cfg(feature = "dtype-time")]
             Time => Scalar::new(Time, AnyValue::Time(NS_IN_DAY - 1)),
-            dt => polars_bail!(ComputeError: "cannot determine upper bound for dtype `{}`", dt),
+            dt => polars_bail!(ComputeError: "cannot determine upper bound for dtype `{dt}`"),
         };
         Ok(v)
     }
