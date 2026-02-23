@@ -1157,6 +1157,18 @@ pub fn lower_ir(
                 assert!(right_on.len() == 1);
             }
 
+            // TODO: [amber] Do not sort if the input is already sorted
+            // let l1_descending = matches!(op1, InequalityOperator::Gt | InequalityOperator::GtEq);
+            // let l2_descending = matches!(op2, InequalityOperator::Lt | InequalityOperator::LtEq);
+
+            // LEFT HERE
+            // In the single-operator case, we will want to sort the build side first.
+            // So add a node for that.
+            //
+            // In the two-operator case that will not make it better.
+
+            // crates/polars-ops/src/frame/join/iejoin/mod.rs
+
             let trans_input_left = build_hstack_stream(
                 trans_input_left,
                 &right_key_exprs,

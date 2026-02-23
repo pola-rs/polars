@@ -418,6 +418,13 @@ fn iejoin_tuples(
     let mut x = selected_left[0].to_physical_repr().into_owned();
     let left_height = x.len();
 
+    // [amber] Why are X and Y extended with right? Why are they not a separate Series?
+    // Khayyat has them seperately.
+    //
+    // Maybe to add even more data locality?
+    //
+    // Yes. Khayyat describe this later in their paper.
+
     x.extend(&selected_right[0].to_physical_repr())?;
     // Rechunk because we will gather.
     let x = x.rechunk();
@@ -451,7 +458,7 @@ fn iejoin_tuples(
     let l2_order = l2_order.downcast_as_array().values().as_slice();
 
     let (left_row_idx, right_row_idx) = with_match_physical_numeric_polars_type!(x.dtype(), |$T| {
-         ie_join_impl_t::<$T>(
+        ie_join_impl_t::<$T>(
             slice,
             l1_order,
             l2_order,
@@ -464,8 +471,8 @@ fn iejoin_tuples(
     })?;
 
     debug_assert_eq!(left_row_idx.len(), right_row_idx.len());
-    let left_row_idx = IdxCa::from_vec("".into(), left_row_idx);
-    let right_row_idx = IdxCa::from_vec("".into(), right_row_idx);
+    let left_row_idx = IdxCa::from_vec(PlSmallStr::EMPTY, left_row_idx);
+    let right_row_idx = IdxCa::from_vec(PlSmallStr::EMPTY, right_row_idx);
     let (left_row_idx, right_row_idx) = match slice {
         None => (left_row_idx, right_row_idx),
         Some((offset, len)) => (
@@ -521,7 +528,8 @@ fn piecewise_merge_join_tuples(
         } else {
             IsSorted::Ascending
         };
-        if (series.is_sorted_flag() == expected_flag || series.len() <= 1) && !series.has_nulls() {
+        let is_nulls_last = !series.has_nulls() || series.last().is_null();
+        if (series.is_sorted_flag() == expected_flag || series.len() <= 1) && is_nulls_last {
             // Fast path, no need to re-sort
             (series, None)
         } else {

@@ -1225,7 +1225,7 @@ fn to_graph_rec<'a>(
             let left_input_schema = ctx.phys_sm[input_left.node].output_schema.clone();
             let right_input_schema = ctx.phys_sm[input_right.node].output_schema.clone();
             ctx.graph.add_node(
-                nodes::joins::range_join::RangeJoinNode::new(
+                nodes::joins::ie_join::IEJoinNode::new(
                     left_input_schema,
                     right_input_schema,
                     left_on.clone(),
