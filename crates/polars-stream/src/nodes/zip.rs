@@ -60,9 +60,8 @@ impl InputHead {
         }
 
         if morsel.df().height() > 0 {
-            // TODO: the consume token should be dropped before buffering to
-            // unblock backpressure, but the original code kept it alive until
-            // the drain loop. Keeping that behavior for now but needs checking.
+            // Zip is the exception: we keep the consume token alive until
+            // the drain loop rather than dropping it before buffering.
             let consume_token = morsel.take_consume_token();
             let (token, source_token) = morsel.store_into_token_and_source(Fifo).await;
             self.morsels.push_back((token, source_token, consume_token));
@@ -102,9 +101,12 @@ impl InputHead {
             return if self.morsels[0].0.height() == len {
                 self.morsels.pop_front().unwrap().0.into_df().await
             } else {
-                let (head, tail) = mm().df(&self.morsels[0].0).await.split_at(len as i64);
-                mm().with_df_mut(&self.morsels[0].0, |df| *df = tail).await;
-                head
+                mm().with_df_mut(&self.morsels[0].0, |df| {
+                    let (head, tail) = df.split_at(len as i64);
+                    *df = tail;
+                    head
+                })
+                .await
             };
         } else {
             self.schema

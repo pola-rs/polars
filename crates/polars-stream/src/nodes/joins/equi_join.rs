@@ -558,7 +558,7 @@ impl BuildState {
                             }
 
                             let (_mseq, token, keys) = l.morsels.get_unchecked(idx_in_l);
-                            let payload = get_runtime().block_on(mm().df(token));
+                            let payload = mm().df_blocking(token);
                             let p_morsel_idxs_start =
                                 l.morsel_idxs_offsets_per_p[idx_in_l * num_partitions + p];
                             let p_morsel_idxs_stop =
@@ -663,7 +663,7 @@ impl BuildState {
 
                         for (i, morsel) in l_morsels.iter().enumerate() {
                             let (_mseq, token, keys) = morsel;
-                            let payload = get_runtime().block_on(mm().df(token));
+                            let payload = mm().df_blocking(token);
                             unsafe {
                                 let p_morsel_idxs_start =
                                     l.morsel_idxs_offsets_per_p[i * num_partitions + p];

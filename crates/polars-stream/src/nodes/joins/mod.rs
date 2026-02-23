@@ -44,8 +44,7 @@ impl BufferedStream {
         // Relabel so we can insert into parallel streams later.
         let mut seq = start_offset;
         let queue = ArrayQueue::new(morsels.len().max(1));
-        for mut morsel in morsels {
-            morsel.set_seq(seq);
+        for morsel in morsels {
             let token = mm().store_blocking(morsel.into_df(), Fifo);
             queue.push((token, seq)).unwrap();
             seq = seq.successor();
