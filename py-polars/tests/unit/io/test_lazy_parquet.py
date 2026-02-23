@@ -1622,10 +1622,10 @@ def test_sink_parquet_pyarrow_filter_string_type_26435() -> None:
 
 
 def test_scan_parquet_temporal_lit_comparison_skip_batch_24095_25731(
-    monkeypatch: PlMonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     df = pl.DataFrame(
         {
@@ -1660,8 +1660,7 @@ def test_scan_parquet_temporal_lit_comparison_skip_batch_24095_25731(
     out = q.collect()
     capture = capfd.readouterr().err
 
-    if "reading 1 / 5 row groups" not in capture:
-        raise Exception(capture)
+    assert "reading 1 / 5 row groups" in capture
 
     assert_frame_equal(
         out.select(pl.col("datetime[ns]").dt.to_string()),
