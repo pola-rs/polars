@@ -1660,7 +1660,8 @@ def test_scan_parquet_temporal_lit_comparison_skip_batch_24095_25731(
     out = q.collect()
     capture = capfd.readouterr().err
 
-    assert "reading 1 / 5 row groups" in capture
+    if "reading 1 / 5 row groups" not in capture:
+        raise Exception(capture)
 
     assert_frame_equal(
         out.select(pl.col("datetime[ns]").dt.to_string()),
