@@ -31,15 +31,8 @@ pub(super) fn process_hconcat(
             }
 
             if input_pushdown.is_empty() {
-                // we can ignore this input since no columns are needed
-                if options.strict {
-                    return false;
-                }
-                // we read a single column (needed to compute the correct height)
-                if let Some((name, _)) = input_schema.get_at_index(0) {
-                    let node = expr_arena.add(AExpr::Column(name.clone()));
-                    input_pushdown.push(ColumnNode(node));
-                }
+                // We can ignore this input since no columns are needed.
+                return false;
             }
 
             let mut input_names = PlHashSet::new();
@@ -65,6 +58,13 @@ pub(super) fn process_hconcat(
         let new_schema = merge_schemas(&schemas)?;
         Arc::new(new_schema)
     };
+
+    // If only one input remains after projection pushdown eliminated the others,
+    // collapse the HConcat into that single input. This allows subsequent predicate
+    // pushdown to push filters directly into the input (e.g. into a parquet scan).
+    if inputs.len() == 1 {
+        return Ok(lp_arena.take(inputs[0]));
+    }
 
     Ok(IR::HConcat {
         inputs,

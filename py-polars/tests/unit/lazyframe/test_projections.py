@@ -107,18 +107,38 @@ def test_hconcat_projection_pushdown() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_hconcat_projection_pushdown_length_maintained() -> None:
-    # We can't eliminate the second input completely as this affects
-    # the length of the result, even though no columns are used.
+def test_hconcat_projection_pushdown_eliminates_unused_inputs() -> None:
+    # When no columns are projected from an input, it is eliminated entirely.
+    # This allows subsequent optimizations (e.g. predicate pushdown) to apply.
     lf1 = pl.LazyFrame({"a": [0, 1], "b": [2, 3]})
     lf2 = pl.LazyFrame({"c": [4, 5, 6, 7], "d": [8, 9, 10, 11]})
     query = pl.concat([lf1, lf2], how="horizontal").select(["a"])
 
     explanation = query.explain()
+    assert "HCONCAT" not in explanation
     assert "1/2 COLUMNS" in explanation
 
     out = query.collect()
-    expected = pl.DataFrame({"a": [0, 1, None, None]})
+    expected = pl.DataFrame({"a": [0, 1]})
+    assert_frame_equal(out, expected)
+
+
+def test_hconcat_filter_pushdown_after_input_elimination_26552() -> None:
+    lf = pl.LazyFrame({"A": [0, 1, 2], "C0": [10, 20, 30], "C1": [100, 200, 300]})
+    new_column = pl.LazyFrame({"D": [40, 50, 60]})
+
+    query = (
+        pl.concat([lf, new_column], how="horizontal")
+        .filter(pl.col("A") == 1)
+        .select(pl.col("C0").sum())
+    )
+
+    explanation = query.explain()
+    assert "HCONCAT" not in explanation
+    assert "2/3 COLUMNS" in explanation
+
+    out = query.collect()
+    expected = pl.DataFrame({"C0": [20]})
     assert_frame_equal(out, expected)
 
 
