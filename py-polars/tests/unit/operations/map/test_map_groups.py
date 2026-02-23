@@ -289,4 +289,4 @@ def test_map_groups_with_slice_25805() -> None:
 
 def test_map_groups_udf_error_does_not_panic_26647() -> None:
     with pytest.raises(ComputeError, match="UDF failed"):
-        pl.select(x=1).group_by("x").map_groups(lambda x, y: x)
+        pl.select(x=1).group_by("x").map_groups(lambda x, y: x)  # type: ignore[arg-type]
