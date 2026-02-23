@@ -12,7 +12,6 @@ use polars_utils::binary_search::{find_first_ge_index, find_first_gt_index};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::prelude::ListNameSpaceImpl;
 #[cfg(feature = "timezones")]
 use crate::prelude::replace_time_zone;
 
@@ -479,28 +478,22 @@ fn normalise_holidays(holidays: &mut Vec<i32>, week_mask: &[bool; 7]) {
     });
 }
 
-/// Convert from List of Date to normalized representation (see
-/// `normalize_holidays`), trying to minimize allocations along the way.
+/// Convert from lists of dates's physical representation, to normalized
+/// representation (see `normalize_holidays`), trying to minimize allocations
+/// along the way.
 ///
 /// If a list contains a null, that is considered an error.
-fn prep_holidays(holidays: &Series, week_mask: [bool; 7]) -> PolarsResult<ListArray<i32>> {
-    polars_ensure!(
-        holidays.dtype().is_list() && holidays.dtype().inner_dtype() == Some(&DataType::Date),
-        ComputeError: "holidays list had wrong data type {}, expected List of Date", holidays.dtype()
-    );
-    let holidays = holidays.list()?;
+fn prep_holidays_array(
+    holidays_arr: &ListArray<i64>,
+    week_mask: [bool; 7],
+) -> PolarsResult<ListArray<i64>> {
     let mut result = MutableListArray::new_with_capacity(
-        MutablePrimitiveArray::with_capacity(holidays.lst_lengths().sum().unwrap_or(0) as usize),
-        holidays.len(),
+        MutablePrimitiveArray::with_capacity(holidays_arr.values().len()),
+        holidays_arr.len(),
     );
     let mut staging = vec![];
 
-    for maybe_list in holidays.to_physical_repr().chunks().iter().flat_map(|arr| {
-        arr.as_any()
-            .downcast_ref::<ListArray<i64>>()
-            .unwrap()
-            .iter()
-    }) {
+    for maybe_list in holidays_arr.iter() {
         let normalized_list = match maybe_list {
             Some(list) => {
                 staging.clear();
@@ -521,26 +514,51 @@ fn prep_holidays(holidays: &Series, week_mask: [bool; 7]) -> PolarsResult<ListAr
     Ok(result.into())
 }
 
-fn holidays_lists_iter(holidays: &ListArray<i32>) -> impl Iterator<Item = Option<&[i32]>> {
-    let length = holidays.len();
-    // We know there are no nulls inside lists, so we can just get slices of off
-    // this.
-    let slice = holidays
+/// Convert from List of Date to normalized representation (see
+/// `normalize_holidays`), trying to minimize allocations along the way.
+///
+/// If a list contains a null, that is considered an error.
+fn prep_holidays(holidays: &Series, week_mask: [bool; 7]) -> PolarsResult<ListChunked> {
+    polars_ensure!(
+        holidays.dtype().is_list() && holidays.dtype().inner_dtype() == Some(&DataType::Date),
+        ComputeError: "holidays list had wrong data type {}, expected List of Date", holidays.dtype()
+    );
+    let holidays = holidays.list()?.to_physical_repr();
+    let results = holidays.chunks().iter().map(|arr| {
+        prep_holidays_array(
+            arr.as_any().downcast_ref::<ListArray<i64>>().unwrap(),
+            week_mask,
+        )
+    });
+    ListChunked::try_from_chunk_iter(holidays.name().clone(), results)
+}
+
+/// Turn output of `prep_holidays_array` into an iterator.
+fn holidays_lists_chunk_iter(chunk: &ListArray<i64>) -> impl Iterator<Item = Option<&[i32]>> {
+    let slice = chunk
         .values()
         .as_any()
         .downcast_ref::<PrimitiveArray<i32>>()
         .unwrap()
         .as_slice()
         .unwrap();
-    let mut iterator = (0..length).map(|i| {
-        if holidays.is_null(i) {
+    (0..(chunk.len())).map(|i| {
+        if chunk.is_null(i) {
             return None;
         }
         // SAFETY: we're iterating only up to length.
-        let (start, end) = unsafe { holidays.offsets().start_end_unchecked(i) };
+        let (start, end) = unsafe { chunk.offsets().start_end_unchecked(i) };
         Some(&slice[start..end])
+    })
+}
+
+/// Turn the output of `prep_holidays()` into an iterator.
+fn holidays_lists_iter(holidays: &ListChunked) -> impl Iterator<Item = Option<&[i32]>> {
+    let mut iterator = holidays.chunks().iter().flat_map(|chunk| {
+        let chunk = chunk.as_any().downcast_ref::<ListArray<i64>>().unwrap();
+        holidays_lists_chunk_iter(chunk)
     });
-    if length == 1 {
+    if holidays.len() == 1 {
         // A single list of holidays gets used for all rows:
         let arr = iterator.next().unwrap();
         Either::Left(std::iter::repeat(arr))
