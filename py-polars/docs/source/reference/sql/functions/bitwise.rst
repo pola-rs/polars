@@ -97,7 +97,7 @@ Returns the bitwise NOT of the given value.
         BIT_NOT(i) AS bitnot_i
       FROM self
     """)
-    # shape: (4, 3)
+    # shape: (4, 2)
     # ┌─────┬──────────┐
     # │ i   ┆ bitnot_i │
     # │ --- ┆ ---      │

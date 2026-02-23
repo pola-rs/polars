@@ -584,6 +584,30 @@ def test_round(n: float, ndigits: int, expected: float, dtype: pl.DataType) -> N
 
 
 @pytest.mark.parametrize(
+    ("n", "ndigits", "expected"),
+    [
+        (1.005, 2, 1.0),
+        (1835.665, 2, 1835.66),
+        (-1835.665, 2, -1835.66),
+        (2.49, 0, 2.0),
+        (123.45678, 2, 123.45),
+        (1254, 2, 1254.0),
+        (1254, 0, 1254.0),
+        (123.55, 0, 123.0),
+        (123.55, 1, 123.5),
+        (1.0e20, 2, 100000000000000000000.0),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_truncate(n: float, ndigits: int, expected: float, dtype: pl.DataType) -> None:
+    ldf = pl.LazyFrame({"value": [n]}, schema_overrides={"value": dtype})
+    assert_series_equal(
+        ldf.select(pl.col("value").truncate(decimals=ndigits)).collect().to_series(),
+        pl.Series("value", [expected], dtype=dtype),
+    )
+
+
+@pytest.mark.parametrize(
     ("n", "ndigits", "expected1", "expected2"),
     [
         (0.5, 0, 0.0, 1.0),

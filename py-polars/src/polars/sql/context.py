@@ -114,7 +114,6 @@ class SQLContext(Generic[FrameType]):
         frames: Mapping[str, CompatibleFrameType | None] | None = ...,
         *,
         register_globals: bool | int = ...,
-        all_compatible: bool = ...,
         eager: Literal[False] = False,
         **named_frames: CompatibleFrameType | None,
     ) -> None: ...
@@ -125,7 +124,6 @@ class SQLContext(Generic[FrameType]):
         frames: Mapping[str, CompatibleFrameType | None] | None = ...,
         *,
         register_globals: bool | int = ...,
-        all_compatible: bool = ...,
         eager: Literal[True],
         **named_frames: CompatibleFrameType | None,
     ) -> None: ...
@@ -136,7 +134,6 @@ class SQLContext(Generic[FrameType]):
         frames: Mapping[str, CompatibleFrameType | None] | None = ...,
         *,
         register_globals: bool | int = ...,
-        all_compatible: bool = ...,
         eager: bool,
         **named_frames: CompatibleFrameType | None,
     ) -> None: ...
