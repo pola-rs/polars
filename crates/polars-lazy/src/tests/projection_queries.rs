@@ -187,26 +187,18 @@ fn test_select_hconcat_pushdown_non_strict_25263() -> PolarsResult<()> {
     ]?
     .lazy();
 
-    // not strict: we read a single column from `df_a` to ensure that the concat output
-    // has the correct height
+    // Not strict: unprojected inputs are dropped entirely, so `df_a` is eliminated
+    // and the hconcat collapses to just `df_b`.
     let lf = concat_lf_horizontal([df_a, df_b], Default::default())?.select([col("d")]);
     let plan = lf.clone().to_alp_optimized()?;
 
     let node = plan.lp_top;
     let lp_arena = plan.lp_arena;
 
+    // `df_a` should not appear in the plan at all.
     assert!(lp_arena.iter(node).all(|(_, plan)| match plan {
-        IR::DataFrameScan {
-            schema,
-            output_schema,
-            ..
-        } => {
-            // make sure that for `df_a` we apply a projection pushdown to only read a single column
-            if schema.contains("a") {
-                assert_eq!(output_schema.as_ref().unwrap().len(), 1);
-            }
-            true
-        },
+        IR::DataFrameScan { schema, .. } => !schema.contains("a"),
+        IR::HConcat { .. } => false,
         _ => true,
     }));
 
@@ -214,7 +206,7 @@ fn test_select_hconcat_pushdown_non_strict_25263() -> PolarsResult<()> {
     assert_eq!(
         out,
         df![
-            "d" => [Some(1), Some(2), None]
+            "d" => [1, 2]
         ]?
     );
 
