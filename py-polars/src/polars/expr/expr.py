@@ -1847,12 +1847,18 @@ class Expr:
         decimals
             Number of decimals to round by.
         mode : {'half_to_even', 'half_away_from_zero'}
-            RoundMode.
+            Rounding mmde.
 
             * *half_to_even*
-                round to the nearest even number
+                Round to the nearest value, with numbers ending in 0.5 being rounded to
+                the nearest even number; so, 2.5 rounds to 2.0, -3.5 rounds to -4.0,
+                and so on (this is also known as "banker's rounding").
             * *half_away_from_zero*
-                round to the nearest number away from zero
+                Round to the nearest value, with numbers ending in 0.5 being rounded
+                away from zero; so, 2.5 rounds to 3.0, -3.5 rounds to -4.0, and so on.
+                (this is sometimes called "commercial rounding").
+            * *to_zero*
+                Round towards zero; this is equivalent to the `truncate` method.
 
         See Also
         --------
