@@ -1657,7 +1657,6 @@ def test_scan_parquet_temporal_lit_comparison_skip_batch_24095_25731(
     )
 
     capfd.readouterr()
-
     out = q.collect()
     capture = capfd.readouterr().err
 
@@ -1677,8 +1676,6 @@ def test_scan_parquet_temporal_lit_comparison_skip_batch_24095_25731(
         ),
     )
 
-    capfd.readouterr()
-
     q = pl.scan_parquet(f).filter(
         pl.col("datetime[ns]").is_between(
             pl.lit(datetime(2026, 1, 1)),
@@ -1687,7 +1684,6 @@ def test_scan_parquet_temporal_lit_comparison_skip_batch_24095_25731(
     )
 
     capfd.readouterr()
-
     out = q.collect()
     capture = capfd.readouterr().err
 
