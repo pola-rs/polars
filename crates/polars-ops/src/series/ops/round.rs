@@ -19,215 +19,121 @@ pub enum RoundMode {
     HalfAwayFromZero,
 }
 
+/// Apply the given rounding operation across f16/f32/f64 types.
+fn apply_float_rounding(
+    s: &Series,
+    decimals: u32,
+    f32_op: fn(f32) -> f32,
+    f64_op: fn(f64) -> f64,
+) -> Option<PolarsResult<Series>> {
+    #[cfg(feature = "dtype-f16")]
+    if let Ok(ca) = s.f16() {
+        return Some(if decimals == 0 {
+            let s = ca
+                .apply_values(|val| f32_op(f32::from(val)).into())
+                .into_series();
+            Ok(s)
+        } else if decimals >= 11 {
+            // More precise than smallest denormal.
+            Ok(s.clone())
+        } else {
+            let multiplier = 10.0_f32.powi(decimals as i32);
+            let s = ca
+                .apply_values(|val| {
+                    let val_f32: f32 = val.into();
+                    let ret: pf16 = (f32_op(val_f32 * multiplier) / multiplier).into();
+                    if ret.is_finite() {
+                        ret
+                    } else {
+                        // We return the original value which is correct both for overflows and non-finite inputs.
+                        val
+                    }
+                })
+                .into_series();
+            Ok(s)
+        });
+    }
+    if let Ok(ca) = s.f32() {
+        return Some(if decimals == 0 {
+            let s = ca.apply_values(f32_op).into_series();
+            Ok(s)
+        } else if decimals >= 47 {
+            // More precise than smallest denormal.
+            Ok(s.clone())
+        } else {
+            // Note we do the computation on f64 floats to not lose precision
+            // when the computation is done, we cast to f32
+            let multiplier = 10.0_f64.powi(decimals as i32);
+            let s = ca
+                .apply_values(|val| {
+                    let ret = (f64_op(val as f64 * multiplier) / multiplier) as f32;
+                    if ret.is_finite() {
+                        ret
+                    } else {
+                        // We return the original value which is correct both for overflows and non-finite inputs.
+                        val
+                    }
+                })
+                .into_series();
+            Ok(s)
+        });
+    }
+    if let Ok(ca) = s.f64() {
+        return Some(if decimals == 0 {
+            let s = ca.apply_values(f64_op).into_series();
+            Ok(s)
+        } else if decimals >= 326 {
+            // More precise than smallest denormal.
+            Ok(s.clone())
+        } else if decimals >= 300 {
+            // We're getting into unrepresentable territory for the multiplier
+            // here, split up the 10^n multiplier into 2^n and 5^n.
+            let mul2 = libm::scalbn(1.0, decimals as i32);
+            let invmul2 = 1.0 / mul2; // Still exact for any valid value of decimals.
+            let mul5 = 5.0_f64.powi(decimals as i32);
+            let s = ca
+                .apply_values(|val| {
+                    let ret = f64_op(val * mul2 * mul5) / mul5 * invmul2;
+                    if ret.is_finite() {
+                        ret
+                    } else {
+                        // We return the original value which is correct both for overflows and non-finite inputs.
+                        val
+                    }
+                })
+                .into_series();
+            Ok(s)
+        } else {
+            let multiplier = 10.0_f64.powi(decimals as i32);
+            let s = ca
+                .apply_values(|val| {
+                    let ret = f64_op(val * multiplier) / multiplier;
+                    if ret.is_finite() { ret } else { val }
+                })
+                .into_series();
+            Ok(s)
+        });
+    }
+    None
+}
+
 pub trait RoundSeries: SeriesSealed {
-    /// Round underlying floating point array to given decimal.
+    /// Round underlying floating point array to the given number of decimals.
     fn round(&self, decimals: u32, mode: RoundMode) -> PolarsResult<Series> {
         let s = self.as_series();
 
-        #[cfg(feature = "dtype-f16")]
-        if let Ok(ca) = s.f16() {
-            match mode {
-                RoundMode::HalfToEven => {
-                    return if decimals == 0 {
-                        let s = ca
-                            .apply_values(|val| f32::from(val).round_ties_even().into())
-                            .into_series();
-                        Ok(s)
-                    } else if decimals >= 11 {
-                        // More precise than smallest denormal.
-                        Ok(s.clone())
-                    } else {
-                        let multiplier = 10.0_f32.powi(decimals as i32);
-                        let s = ca
-                            .apply_values(|val| {
-                                let val_f32: f32 = val.into();
-                                let ret: pf16 =
-                                    ((val_f32 * multiplier).round_ties_even() / multiplier).into();
-                                if ret.is_finite() {
-                                    ret
-                                } else {
-                                    // We return the original value which is correct both for overflows and non-finite inputs.
-                                    val
-                                }
-                            })
-                            .into_series();
-                        Ok(s)
-                    };
-                },
-                RoundMode::HalfAwayFromZero => {
-                    return if decimals == 0 {
-                        let s = ca
-                            .apply_values(|val| f32::from(val).round().into())
-                            .into_series();
-                        Ok(s)
-                    } else if decimals >= 11 {
-                        // More precise than smallest denormal.
-                        Ok(s.clone())
-                    } else {
-                        let multiplier = 10.0_f32.powi(decimals as i32);
-                        let s = ca
-                            .apply_values(|val| {
-                                let val_f32: f32 = val.into();
-                                let ret: pf16 =
-                                    ((val_f32 * multiplier).round() / multiplier).into();
-                                if ret.is_finite() {
-                                    ret
-                                } else {
-                                    // We return the original value which is correct both for overflows and non-finite inputs.
-                                    val
-                                }
-                            })
-                            .into_series();
-                        Ok(s)
-                    };
-                },
-            }
-        }
-        if let Ok(ca) = s.f32() {
-            match mode {
-                RoundMode::HalfToEven => {
-                    return if decimals == 0 {
-                        let s = ca.apply_values(|val| val.round_ties_even()).into_series();
-                        Ok(s)
-                    } else if decimals >= 47 {
-                        // More precise than smallest denormal.
-                        Ok(s.clone())
-                    } else {
-                        // Note we do the computation on f64 floats to not lose precision
-                        // when the computation is done, we cast to f32
-                        let multiplier = 10.0_f64.powi(decimals as i32);
-                        let s = ca
-                            .apply_values(|val| {
-                                let ret = ((val as f64 * multiplier).round_ties_even() / multiplier)
-                                    as f32;
-                                if ret.is_finite() {
-                                    ret
-                                } else {
-                                    // We return the original value which is correct both for overflows and non-finite inputs.
-                                    val
-                                }
-                            })
-                            .into_series();
-                        Ok(s)
-                    };
-                },
-                RoundMode::HalfAwayFromZero => {
-                    return if decimals == 0 {
-                        let s = ca.apply_values(|val| val.round()).into_series();
-                        Ok(s)
-                    } else if decimals >= 47 {
-                        // More precise than smallest denormal.
-                        Ok(s.clone())
-                    } else {
-                        // Note we do the computation on f64 floats to not lose precision
-                        // when the computation is done, we cast to f32
-                        let multiplier = 10.0_f64.powi(decimals as i32);
-                        let s = ca
-                            .apply_values(|val| {
-                                let ret = ((val as f64 * multiplier).round() / multiplier) as f32;
-                                if ret.is_finite() {
-                                    ret
-                                } else {
-                                    // We return the original value which is correct both for overflows and non-finite inputs.
-                                    val
-                                }
-                            })
-                            .into_series();
-                        Ok(s)
-                    };
-                },
-            }
-        }
-        if let Ok(ca) = s.f64() {
-            match mode {
-                RoundMode::HalfToEven => {
-                    return if decimals == 0 {
-                        let s = ca.apply_values(|val| val.round_ties_even()).into_series();
-                        Ok(s)
-                    } else if decimals >= 326 {
-                        // More precise than smallest denormal.
-                        Ok(s.clone())
-                    } else if decimals >= 300 {
-                        // We're getting into unrepresentable territory for the multiplier
-                        // here, split up the 10^n multiplier into 2^n and 5^n.
-                        let mul2 = libm::scalbn(1.0, decimals as i32);
-                        let invmul2 = 1.0 / mul2; // Still exact for any valid value of decimals.
-                        let mul5 = 5.0_f64.powi(decimals as i32);
-                        let s = ca
-                            .apply_values(|val| {
-                                let ret = (val * mul2 * mul5).round_ties_even() / mul5 * invmul2;
-                                if ret.is_finite() {
-                                    ret
-                                } else {
-                                    // We return the original value which is correct both for overflows and non-finite inputs.
-                                    val
-                                }
-                            })
-                            .into_series();
-                        Ok(s)
-                    } else {
-                        let multiplier = 10.0_f64.powi(decimals as i32);
-                        let s = ca
-                            .apply_values(|val| {
-                                let ret = (val * multiplier).round_ties_even() / multiplier;
-                                if ret.is_finite() {
-                                    ret
-                                } else {
-                                    // We return the original value which is correct both for overflows and non-finite inputs.
-                                    val
-                                }
-                            })
-                            .into_series();
-                        Ok(s)
-                    };
-                },
-                RoundMode::HalfAwayFromZero => {
-                    return if decimals == 0 {
-                        let s = ca.apply_values(|val| val.round()).into_series();
-                        Ok(s)
-                    } else if decimals >= 326 {
-                        // More precise than smallest denormal.
-                        Ok(s.clone())
-                    } else if decimals >= 300 {
-                        // We're getting into unrepresentable territory for the multiplier
-                        // here, split up the 10^n multiplier into 2^n and 5^n.
-                        let mul2 = libm::scalbn(1.0, decimals as i32);
-                        let invmul2 = 1.0 / mul2; // Still exact for any valid value of decimals.
-                        let mul5 = 5.0_f64.powi(decimals as i32);
-                        let s = ca
-                            .apply_values(|val| {
-                                let ret = (val * mul2 * mul5).round() / mul5 * invmul2;
-                                if ret.is_finite() {
-                                    ret
-                                } else {
-                                    // We return the original value which is correct both for overflows and non-finite inputs.
-                                    val
-                                }
-                            })
-                            .into_series();
-                        Ok(s)
-                    } else {
-                        let multiplier = 10.0_f64.powi(decimals as i32);
-                        let s = ca
-                            .apply_values(|val| {
-                                let ret = (val * multiplier).round() / multiplier;
-                                if ret.is_finite() {
-                                    ret
-                                } else {
-                                    // We return the original value which is correct both for overflows and non-finite inputs.
-                                    val
-                                }
-                            })
-                            .into_series();
-                        Ok(s)
-                    };
-                },
-            }
+        #[allow(clippy::type_complexity)]
+        let (f32_op, f64_op): (fn(f32) -> f32, fn(f64) -> f64) = match mode {
+            RoundMode::HalfToEven => (f32::round_ties_even, f64::round_ties_even),
+            RoundMode::HalfAwayFromZero => (f32::round, f64::round),
+        };
+
+        if let Some(result) = apply_float_rounding(s, decimals, f32_op, f64_op) {
+            return result;
         }
         #[cfg(feature = "dtype-decimal")]
         if let Some(ca) = s.try_decimal() {
             let scale = ca.scale() as u32;
-
             if scale <= decimals {
                 return Ok(ca.clone().into_series());
             }
@@ -275,6 +181,7 @@ pub trait RoundSeries: SeriesSealed {
         Ok(s.clone())
     }
 
+    /// Round underlying floating point array to the given number of significant digits.
     fn round_sig_figs(&self, digits: i32) -> PolarsResult<Series> {
         let s = self.as_series();
         polars_ensure!(digits >= 1, InvalidOperation: "digits must be an integer >= 1");
@@ -340,6 +247,30 @@ pub trait RoundSeries: SeriesSealed {
             }).into_series();
             return Ok(s);
         });
+    }
+
+    /// Truncate underlying floating point array toward zero to the given number of decimals.
+    fn truncate(&self, decimals: u32) -> PolarsResult<Series> {
+        let s = self.as_series();
+        if let Some(result) = apply_float_rounding(s, decimals, f32::trunc, f64::trunc) {
+            return result;
+        }
+
+        #[cfg(feature = "dtype-decimal")]
+        if let Some(ca) = s.try_decimal() {
+            let scale = ca.scale() as u32;
+            if scale <= decimals {
+                return Ok(ca.clone().into_series());
+            }
+            let decimal_delta = scale - decimals;
+            let multiplier = 10i128.pow(decimal_delta);
+            let res = ca.physical().apply_values(|v| v - (v % multiplier));
+            return Ok(res
+                .into_decimal_unchecked(ca.precision(), scale as usize)
+                .into_series());
+        }
+        polars_ensure!(s.dtype().is_integer(), InvalidOperation: "truncate can only be used on numeric types" );
+        Ok(s.clone())
     }
 
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.

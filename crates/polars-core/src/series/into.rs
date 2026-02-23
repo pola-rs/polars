@@ -108,14 +108,12 @@ impl ToArrowConverter {
                 let arr: &StructArray = array.as_any().downcast_ref().unwrap();
 
                 let expected_output_fields: &[ArrowField] = match output_arrow_field {
-                    Some(
-                        field @ ArrowField {
-                            name: _,
-                            dtype: ArrowDataType::Struct(fields),
-                            is_nullable: _,
-                            metadata: _,
-                        },
-                    ) if fields.len() == arr.fields().len()
+                    Some(ArrowField {
+                        name: _,
+                        dtype: ArrowDataType::Struct(fields),
+                        is_nullable: _,
+                        metadata: _,
+                    }) if fields.len() == arr.fields().len()
                         && fields
                             .iter()
                             .zip(arr.fields())
@@ -211,14 +209,12 @@ impl ToArrowConverter {
                 let arr: &FixedSizeListArray = array.as_any().downcast_ref().unwrap();
 
                 let expected_inner_output_field: Option<&ArrowField> = match output_arrow_field {
-                    Some(
-                        field @ ArrowField {
-                            name: _,
-                            dtype: ArrowDataType::FixedSizeList(inner_field, width),
-                            is_nullable: _,
-                            metadata: _,
-                        },
-                    ) if *width == arr.size() && inner_field.name() == &LIST_VALUES_NAME => {
+                    Some(ArrowField {
+                        name: _,
+                        dtype: ArrowDataType::FixedSizeList(inner_field, width),
+                        is_nullable: _,
+                        metadata: _,
+                    }) if *width == arr.size() && inner_field.name() == &LIST_VALUES_NAME => {
                         Some(inner_field)
                     },
                     Some(ArrowField { dtype, .. }) => polars_bail!(
@@ -311,14 +307,12 @@ impl ToArrowConverter {
                     typ.serialize_metadata().map(|md| md.into());
 
                 let expected_inner_output_field: Option<ArrowField> = match output_arrow_field {
-                    Some(
-                        field @ ArrowField {
-                            name: _,
-                            dtype: ArrowDataType::Extension(ext_type),
-                            is_nullable: _,
-                            metadata: _,
-                        },
-                    ) if {
+                    Some(ArrowField {
+                        name: _,
+                        dtype: ArrowDataType::Extension(ext_type),
+                        is_nullable: _,
+                        metadata: _,
+                    }) if {
                         let ExtensionType {
                             name,
                             inner: _,
