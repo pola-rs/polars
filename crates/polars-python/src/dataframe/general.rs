@@ -390,13 +390,17 @@ impl PyDataFrame {
                     // Call the lambda and get a python-side DataFrame wrapper.
                     let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                         Ok(pyobj) => pyobj,
-                        Err(e) => panic!("UDF failed: {}", e.value(py)),
+                        Err(e) => {
+                            polars_bail!(ComputeError: "UDF failed: {}", e.value(py))
+                        },
                     };
-                    let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
-                        "Could not get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
-                    );
+                    let py_pydf = result_df_wrapper.getattr(py, "_df").map_err(|_| {
+                        polars_err!(ComputeError: "could not get DataFrame attribute '_df': make sure that you return a DataFrame object")
+                    })?;
 
-                    let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
+                    let pydf = py_pydf.extract::<PyDataFrame>(py).map_err(|_| {
+                        polars_err!(ComputeError: "could not extract DataFrame from UDF result: make sure that you return a DataFrame object")
+                    })?;
                     Ok(pydf.df.into_inner())
                 })
             };
