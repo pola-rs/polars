@@ -92,11 +92,11 @@ pub struct PyFileOptions {
 #[pymethods]
 impl PyFileOptions {
     #[getter]
-    fn n_rows(&self) -> Option<(i64, usize)> {
+    fn n_rows(&self) -> Option<(i64, IdxSize)> {
         self.inner
             .pre_slice
             .clone()
-            .map(|slice| <(i64, usize)>::try_from(slice).unwrap())
+            .map(|slice| slice.to_signed_offset_len())
     }
     #[getter]
     fn with_columns(&self) -> Option<Vec<&str>> {

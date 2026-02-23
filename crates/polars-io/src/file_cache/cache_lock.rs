@@ -1,8 +1,9 @@
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, LazyLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use fs4::fs_std::FileExt;
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use super::utils::FILE_CACHE_PREFIX;
 use crate::pl_async;
@@ -123,7 +124,7 @@ impl GlobalLock {
     /// * `Some(true)` - Unlocked (by this function call)
     /// * `Some(false)` - Unlocked (was not locked)
     fn try_unlock(&self) -> Option<bool> {
-        if let Ok(mut this) = self.inner.try_write() {
+        if let Some(mut this) = self.inner.try_write() {
             if Arc::strong_count(&self.access_tracker.0) <= 2 {
                 return if this.state.take().is_some() {
                     FileExt::unlock(&this.file).unwrap();
@@ -142,7 +143,7 @@ impl GlobalLock {
         let _notify_on_drop = NotifyOnDrop(self.notify_lock_acquired.clone());
 
         {
-            let this = self.inner.read().unwrap();
+            let this = self.inner.read();
 
             if let Some(LockedState::Shared) = this.state {
                 return this;
@@ -150,7 +151,7 @@ impl GlobalLock {
         }
 
         {
-            let mut this = self.inner.write().unwrap();
+            let mut this = self.inner.write();
 
             if let Some(LockedState::Eviction) = this.state {
                 FileExt::unlock(&this.file).unwrap();
@@ -168,7 +169,7 @@ impl GlobalLock {
         debug_assert!(Arc::strong_count(&access_tracker.0) > 2);
 
         {
-            let this = self.inner.read().unwrap();
+            let this = self.inner.read();
 
             if let Some(LockedState::Eviction) = this.state {
                 // Try again
@@ -190,7 +191,7 @@ impl GlobalLock {
     pub(super) fn try_lock_eviction(&self) -> Option<GlobalFileCacheGuardExclusive<'_>> {
         let access_tracker = self.get_access_tracker();
 
-        if let Ok(mut this) = self.inner.try_write() {
+        if let Some(mut this) = self.inner.try_write() {
             if
             // 3:
             // * the Lazy<GlobalLock>
@@ -218,5 +219,93 @@ impl GlobalLock {
             }
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_test_lock() -> Arc<GlobalLock> {
+        let at_bool = Arc::new(AtomicBool::new(false));
+        // Leak one ref to match the background unlock task's ref in production,
+        // keeping Arc strong count consistent for debug_assert in lock_shared.
+        std::mem::forget(at_bool.clone());
+        Arc::new(GlobalLock {
+            inner: RwLock::new(GlobalLockData {
+                file: tempfile::tempfile().unwrap(),
+                state: None,
+            }),
+            access_tracker: AccessTracker(at_bool),
+            notify_lock_acquired: Arc::new(tokio::sync::Notify::new()),
+        })
+    }
+
+    #[test]
+    fn try_unlock_when_not_locked() {
+        let lock = make_test_lock();
+        assert_eq!(lock.try_unlock(), Some(false));
+    }
+
+    #[test]
+    fn lock_shared_lifecycle() {
+        let lock = make_test_lock();
+
+        // Acquires the file lock and sets state = Shared.
+        let guard = lock.lock_shared();
+        assert!(matches!(guard.state, Some(LockedState::Shared)));
+        drop(guard);
+
+        // Second call sees existing Shared state (reentrant).
+        let guard = lock.lock_shared();
+        assert!(matches!(guard.state, Some(LockedState::Shared)));
+        drop(guard);
+
+        // `try_unlock` releases the file lock.
+        assert_eq!(lock.try_unlock(), Some(true));
+        assert_eq!(lock.try_unlock(), Some(false));
+    }
+
+    #[test]
+    fn concurrent_mixed_operations_stress() {
+        let lock = make_test_lock();
+        let mut handles = Vec::new();
+
+        // Shared-lock threads.
+        for _ in 0..6 {
+            let lock = Arc::clone(&lock);
+            handles.push(std::thread::spawn(move || {
+                for _ in 0..200 {
+                    let _guard = lock.lock_shared();
+                    std::thread::yield_now();
+                }
+            }));
+        }
+
+        // `try_unlock` threads.
+        for _ in 0..2 {
+            let lock = Arc::clone(&lock);
+            handles.push(std::thread::spawn(move || {
+                for _ in 0..200 {
+                    let _ = lock.try_unlock();
+                    std::thread::yield_now();
+                }
+            }));
+        }
+
+        // `try_lock_eviction` threads.
+        for _ in 0..2 {
+            let lock = Arc::clone(&lock);
+            handles.push(std::thread::spawn(move || {
+                for _ in 0..200 {
+                    drop(lock.try_lock_eviction());
+                    std::thread::yield_now();
+                }
+            }));
+        }
+
+        for h in handles {
+            h.join().unwrap();
+        }
     }
 }

@@ -5640,6 +5640,44 @@ class Series:
         ]
         """
 
+    def truncate(self, decimals: int = 0) -> Series:
+        """
+        Truncate numeric data toward zero to `decimals` number of decimal places.
+
+        Parameters
+        ----------
+        decimals
+            Number of decimal places to truncate to.
+
+        See Also
+        --------
+        round : Round to a given number of decimals.
+        floor : Round down to the nearest integer.
+        ceil : Round up to the nearest integer.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.12345, 2.56789, 3.901234])
+        >>> s.truncate(2)
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+                1.12
+                2.56
+                3.9
+        ]
+
+        >>> s = pl.Series("a", [-1.78, 2.56, -3.99])
+        >>> s.truncate(0)
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+                -1.0
+                2.0
+                -3.0
+        ]
+        """
+
     def round(self, decimals: int = 0, mode: RoundMode = "half_to_even") -> Series:
         """
         Round underlying floating point data by `decimals` digits.

@@ -1256,3 +1256,33 @@ def test_csee_streaming() -> None:
         b=expr * 100,
     )
     assert "__POLARS_CSER" not in q.explain(engine="streaming")
+
+
+def test_cspe_map_groups_26547() -> None:
+    X = pl.LazyFrame(
+        {"X": [0, 0], "PART": [0, 1]},
+        schema={"X": pl.Int32, "PART": pl.Int32},
+    )
+
+    def f_a(df: pl.DataFrame) -> pl.DataFrame:
+        return pl.DataFrame({"A": [1]}, schema={"A": pl.Int32})
+
+    def f_b(df: pl.DataFrame) -> pl.DataFrame:
+        return pl.DataFrame({"B": [2]}, schema={"B": pl.Int32})
+
+    df_a = X.group_by("PART").map_groups(
+        lambda df: f_a(df).with_columns(pl.lit(df["PART"][0]).alias("PART")),
+        schema={"A": pl.Int32, "PART": pl.Int32},
+    )
+
+    df_b = X.group_by("PART").map_groups(
+        lambda df: f_b(df).with_columns(pl.lit(df["PART"][0]).alias("PART")),
+        schema={"B": pl.Int32, "PART": pl.Int32},
+    )
+
+    out = df_a.join(df_b, on="PART").collect().sort("PART")
+    expected = pl.DataFrame(
+        {"A": [1, 1], "PART": [0, 1], "B": [2, 2]},
+        schema={"A": pl.Int32, "PART": pl.Int32, "B": pl.Int32},
+    )
+    assert_frame_equal(out, expected)

@@ -167,12 +167,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     Cbrt,
     /// SQL 'round' function.
-    /// Round a number to `x` decimals (default: 0) away from zero.
+    /// Round a number to `n` decimals (default: 0) away from zero.
     ///   .5 is rounded away from zero.
     /// ```sql
     /// SELECT ROUND(col1, 3) FROM df;
     /// ```
     Round,
+    /// SQL 'truncate' function.
+    /// Truncate a number toward zero to `n` decimals (default: 0).
+    /// ```sql
+    /// SELECT TRUNCATE(col1, 2) FROM df;
+    /// ```
+    Truncate,
     /// SQL 'sign' function.
     /// Returns the sign of the argument as -1, 0, or +1.
     /// ```sql
@@ -932,6 +938,7 @@ impl PolarsSQLFunctions {
             "pi" => Self::Pi,
             "pow" | "power" => Self::Pow,
             "round" => Self::Round,
+            "trunc" | "truncate" => Self::Truncate,
             "sign" => Self::Sign,
             "sqrt" => Self::Sqrt,
 
@@ -1128,13 +1135,30 @@ impl SQLFunctionVisitor<'_> {
                         Ok(e.round(match decimals {
                             Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
                                 if n >= 0 { n as u32 } else {
-                                    polars_bail!(SQLInterface: "ROUND does not currently support negative decimals value ({})", args[1])
+                                    polars_bail!(SQLInterface: "ROUND does not support negative decimals value ({})", args[1])
                                 }
                             },
                             _ => polars_bail!(SQLSyntax: "invalid value for ROUND decimals ({})", args[1]),
                         }, RoundMode::default()))
                     }),
                     _ => polars_bail!(SQLSyntax: "ROUND expects 1-2 arguments (found {})", args.len()),
+                }
+            },
+            Truncate => {
+                let args = extract_args(function)?;
+                match args.len() {
+                    1 => self.visit_unary(|e| e.truncate(0)),
+                    2 => self.try_visit_binary(|e, decimals| {
+                        Ok(e.truncate(match decimals {
+                            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
+                                if n >= 0 { n as u32 } else {
+                                    polars_bail!(SQLInterface: "TRUNCATE does not support negative decimals value ({})", args[1])
+                                }
+                            },
+                            _ => polars_bail!(SQLSyntax: "invalid value for TRUNCATE decimals ({})", args[1]),
+                        }))
+                    }),
+                    _ => polars_bail!(SQLSyntax: "TRUNCATE expects 1-2 arguments (found {})", args.len()),
                 }
             },
             Sign => self.visit_unary(Expr::sign),
