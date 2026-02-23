@@ -368,7 +368,7 @@ pub(super) fn coerce_comparison_literal(
     fn matching_and_supported_dtype_class(dtype_lhs: &DataType, dtype_rhs: &DataType) -> bool {
         (dtype_lhs.is_integer() && dtype_rhs.is_integer())
         || (
-            (dtype_lhs.is_datetime() || dtype_lhs.is_date())
+            dtype_lhs.is_datetime()
             && (dtype_rhs.is_datetime() || dtype_rhs.is_date())
         )
         || (dtype_lhs.is_duration() && dtype_rhs.is_duration())
