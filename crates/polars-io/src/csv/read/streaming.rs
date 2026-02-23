@@ -57,7 +57,7 @@ pub fn read_until_start_and_infer_schema_from_compressed_reader(
 
     // We have to treat skip_lines differently since the lines it skips may not follow regular CSV
     // quote escape rules.
-    let prev_leftover = skip_lines_naive(
+    let prev_leftover = skip_lines_naive_from_compressed_reader(
         options.parse_options.eol_char,
         options.skip_lines,
         options.raise_if_empty,
@@ -232,7 +232,7 @@ pub fn read_until_start_and_infer_schema(
 
     // We have to treat skip_lines differently since the lines it skips may not follow regular CSV
     // quote escape rules.
-    let prev_leftover = skip_lines_naive_from_byte_source_reader(
+    let prev_leftover = skip_lines_naive(
         options.parse_options.eol_char,
         options.skip_lines,
         options.raise_if_empty,
@@ -639,7 +639,7 @@ fn for_each_line_from_reader(
     }
 }
 
-fn skip_lines_naive(
+fn skip_lines_naive_from_compressed_reader(
     eol_char: u8,
     skip_lines: usize,
     raise_if_empty: bool,
@@ -692,7 +692,7 @@ fn skip_lines_naive(
     }
 }
 
-fn skip_lines_naive_from_byte_source_reader(
+fn skip_lines_naive(
     eol_char: u8,
     skip_lines: usize,
     raise_if_empty: bool,
