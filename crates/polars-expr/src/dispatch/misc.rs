@@ -16,7 +16,7 @@ use polars_plan::dsl::ReshapeDimension;
 use polars_plan::plans::FusedOperator;
 #[cfg(feature = "cov")]
 use polars_plan::plans::IRCorrelationMethod;
-use polars_plan::plans::RowEncodingVariant;
+use polars_plan::plans::{DynamicPred, RowEncodingVariant};
 use polars_row::RowEncodingOptions;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -1053,4 +1053,8 @@ pub fn repeat(args: &[Column]) -> PolarsResult<Column> {
     )?;
 
     Ok(c.new_from_index(0, n))
+}
+
+pub fn dynamic_pred(columns: &[Column], pred: &DynamicPred) -> PolarsResult<Column> {
+    pred.evaluate(columns)
 }

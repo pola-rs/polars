@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 from typing import TYPE_CHECKING, Any
 
 from polars._utils.wrap import wrap_ldf

@@ -498,6 +498,10 @@ impl PyExpr {
         self.clone().inner.round_sig_figs(digits).into()
     }
 
+    fn truncate(&self, decimals: u32) -> Self {
+        self.inner.clone().truncate(decimals).into()
+    }
+
     fn floor(&self) -> Self {
         self.inner.clone().floor().into()
     }

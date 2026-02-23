@@ -94,6 +94,10 @@ def test_cat_to_pandas(dtype: pl.DataType) -> None:
         pa.dictionary(pa.int64(), pa.large_string())
     )
 
+    assert pl.Series(dtype=pl.Enum(["A"])).to_pandas().dtype.categories.tolist() == [  # type: ignore[union-attr]
+        "A"
+    ]
+
 
 @given(
     column_type_names=st.lists(

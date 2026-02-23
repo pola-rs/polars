@@ -4,19 +4,19 @@ use std::sync::RwLock;
 use polars_core::frame::row::Row;
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
-use polars_ops::frame::JoinCoalesce;
+use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
-    BinaryOperator, CreateTable, CreateTableLikeKind, Delete, Distinct, ExcludeSelectItem,
-    Expr as SQLExpr, Fetch, FromTable, FunctionArg, GroupByExpr, Ident, JoinConstraint,
-    JoinOperator, LimitClause, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectType,
-    OrderBy, OrderByKind, Query, RenameSelectItem, Select, SelectFlavor, SelectItem,
+    BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, Delete, Distinct,
+    ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg, GroupByExpr, Ident,
+    JoinConstraint, JoinOperator, LimitClause, NamedWindowDefinition, NamedWindowExpr, ObjectName,
+    ObjectType, OrderBy, OrderByKind, Query, RenameSelectItem, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias,
-    TableFactor, TableWithJoins, Truncate, UnaryOperator, Value as SQLValue, ValueWithSpan, Values,
-    Visit, WildcardAdditionalOptions, WindowSpec,
+    TableFactor, TableWithJoins, Truncate, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
+    ValueWithSpan, Values, Visit, WildcardAdditionalOptions, WindowSpec,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -376,7 +376,7 @@ impl SQLContext {
     ) -> PolarsResult<Expr> {
         match e {
             SQLExpr::UnaryOp {
-                op: UnaryOperator::Minus,
+                op: SQLUnaryOperator::Minus,
                 expr,
             } if matches!(
                 **expr,
@@ -1371,7 +1371,7 @@ impl SQLContext {
                                 slice: None,
                                 nulls_equal: false,
                                 coalesce: Default::default(),
-                                maintain_order: polars_ops::frame::MaintainOrderJoin::Left,
+                                maintain_order: MaintainOrderJoin::Left,
                                 build_side: None,
                             },
                         );
@@ -1565,10 +1565,10 @@ impl SQLContext {
                     ..
                 }) => (*b, !*b),
                 SQLExpr::BinaryOp { left, op, right } => match (&**left, &**right, op) {
-                    (SQLExpr::Value(a), SQLExpr::Value(b), BinaryOperator::Eq) => {
+                    (SQLExpr::Value(a), SQLExpr::Value(b), SQLBinaryOperator::Eq) => {
                         (a.value == b.value, a.value != b.value)
                     },
-                    (SQLExpr::Value(a), SQLExpr::Value(b), BinaryOperator::NotEq) => {
+                    (SQLExpr::Value(a), SQLExpr::Value(b), SQLBinaryOperator::NotEq) => {
                         (a.value != b.value, a.value == b.value)
                     },
                     _ => (false, false),
@@ -2634,14 +2634,14 @@ fn process_join_on(
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     match sql_expr {
         SQLExpr::BinaryOp { left, op, right } => match op {
-            BinaryOperator::And => {
+            SQLBinaryOperator::And => {
                 let (mut left_i, mut right_i) = process_join_on(ctx, left, tbl_left, tbl_right)?;
                 let (mut left_j, mut right_j) = process_join_on(ctx, right, tbl_left, tbl_right)?;
                 left_i.append(&mut left_j);
                 right_i.append(&mut right_j);
                 Ok((left_i, right_i))
             },
-            BinaryOperator::Eq => {
+            SQLBinaryOperator::Eq => {
                 // establish unified schema with cols from both tables; needed for multi/chained
                 // joins where suffixed intermediary/joined cols aren't in an existing schema.
                 let mut join_schema =

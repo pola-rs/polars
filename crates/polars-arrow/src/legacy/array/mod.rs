@@ -222,11 +222,7 @@ pub fn convert_inner_type(array: &dyn Array, dtype: &ArrowDataType) -> Box<dyn A
                 array.len()
             } else {
                 assert!(!array.values().is_empty() || width != 0);
-                if width == 0 {
-                    0
-                } else {
-                    array.values().len() / width
-                }
+                array.values().len().checked_div(width).unwrap_or(0)
             };
             let new_values = convert_inner_type(inner.as_ref(), field.dtype());
             let dtype = FixedSizeListArray::default_datatype(new_values.dtype().clone(), width);

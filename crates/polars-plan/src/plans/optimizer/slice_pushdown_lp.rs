@@ -240,6 +240,31 @@ impl SlicePushDown {
                 // TODO: This can be `true` after Anonymous scan dispatches to new-streaming.
                 FileScanIR::Anonymous { .. } => state.offset == 0,
             }  =>  {
+                if let Some(sl) = &unified_scan_args.pre_slice {
+                    // Already existing slice, dispatch to slice-slice pushdown.
+                    let mut unified_scan_args = unified_scan_args.clone();
+                    unified_scan_args.pre_slice = None;
+                    let scan = lp_arena.add(Scan {
+                        sources,
+                        file_info,
+                        hive_parts,
+                        output_schema,
+                        scan_type,
+                        unified_scan_args,
+                        predicate,
+                        predicate_file_skip_applied,
+                    });
+
+                    let (offset, len) = sl.to_signed_offset_len();
+                    let slice_scan = Slice {
+                        input: scan,
+                        offset,
+                        len,
+                    };
+
+                    return self.pushdown(slice_scan, Some(state), lp_arena, expr_arena);
+                }
+
                 unified_scan_args.pre_slice = Some(state.to_slice_enum());
 
                 let lp = Scan {
@@ -347,7 +372,7 @@ impl SlicePushDown {
             (Sort {input, by_column, slice, sort_options}, Some(state)) => {
                 // The slice argument on Sort should be inserted by slice pushdown,
                 // so it shouldn't exist yet (or be idempotently the same).
-                let new_slice = Some((state.offset, state.len as usize));
+                let new_slice = Some((state.offset, state.len as usize, None));
                 assert!(slice.is_none() || slice == new_slice);
 
                 // first restart optimization in inputs and get the updated LP

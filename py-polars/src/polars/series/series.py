@@ -2150,7 +2150,7 @@ class Series:
         stats.columns = ["statistic", "value"]
         return stats.filter(F.col("value").is_not_null())
 
-    def sum(self) -> int | float:
+    def sum(self) -> int | float | PyDecimal:
         """
         Reduce this Series to the sum value.
 
@@ -5174,10 +5174,16 @@ class Series:
                     else ""
                 )
 
-        pa_arr = self.to_arrow()
-        # pandas does not support unsigned dictionary indices
-        if pa.types.is_dictionary(pa_arr.type):
-            pa_arr = pa_arr.cast(pa.dictionary(pa.int64(), pa.large_string()))
+        if isinstance(self.dtype, (Categorical, Enum)):
+            return (
+                self.to_frame()
+                .to_pandas(
+                    use_pyarrow_extension_array=use_pyarrow_extension_array, **kwargs
+                )
+                .iloc[:, 0]
+            )
+        else:
+            pa_arr = self.to_arrow()
 
         if use_pyarrow_extension_array:
             pd_series = pa_arr.to_pandas(
@@ -5631,6 +5637,44 @@ class Series:
                 2.0
                 3.0
                 4.0
+        ]
+        """
+
+    def truncate(self, decimals: int = 0) -> Series:
+        """
+        Truncate numeric data toward zero to `decimals` number of decimal places.
+
+        Parameters
+        ----------
+        decimals
+            Number of decimal places to truncate to.
+
+        See Also
+        --------
+        round : Round to a given number of decimals.
+        floor : Round down to the nearest integer.
+        ceil : Round up to the nearest integer.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.12345, 2.56789, 3.901234])
+        >>> s.truncate(2)
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+                1.12
+                2.56
+                3.9
+        ]
+
+        >>> s = pl.Series("a", [-1.78, 2.56, -3.99])
+        >>> s.truncate(0)
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+                -1.0
+                2.0
+                -3.0
         ]
         """
 

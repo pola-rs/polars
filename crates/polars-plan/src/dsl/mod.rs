@@ -712,6 +712,12 @@ impl Expr {
         self.map_unary(FunctionExpr::RoundSF { digits })
     }
 
+    /// Truncate underlying floating point array toward zero to given decimal.
+    #[cfg(feature = "round_series")]
+    pub fn truncate(self, decimals: u32) -> Self {
+        self.map_unary(FunctionExpr::Truncate { decimals })
+    }
+
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
     #[cfg(feature = "round_series")]
     pub fn floor(self) -> Self {

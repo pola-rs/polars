@@ -536,3 +536,7 @@ def test_slice_negative_offset_none_len_26150() -> None:
 
     out = df.slice(-10, None)
     assert_frame_equal(out, df)
+
+
+def test_n_rows_slice_pushdown_26656() -> None:
+    assert pl.scan_csv(b"x\n" * 20, n_rows=5).head(10).collect().height == 5

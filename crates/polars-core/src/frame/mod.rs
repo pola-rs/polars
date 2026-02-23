@@ -1415,6 +1415,14 @@ impl DataFrame {
             };
         }
 
+        for column in &by_column {
+            if column.dtype().is_object() {
+                polars_bail!(
+                    InvalidOperation: "column '{}' has a dtype of '{}', which does not support sorting", column.name(), column.dtype()
+                )
+            }
+        }
+
         // note that the by_column argument also contains evaluated expression from
         // polars-lazy that may not even be present in this dataframe. therefore
         // when we try to set the first columns as sorted, we ignore the error as
