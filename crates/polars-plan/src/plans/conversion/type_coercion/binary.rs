@@ -364,6 +364,25 @@ pub(super) fn coerce_comparison_literal(
 ) -> Option<CmpLiteralRhsRewrite> {
     use CmpLiteralRhsRewrite::*;
 
+    #[rustfmt::skip]
+    fn matching_and_supported_dtype_class(dtype_lhs: &DataType, dtype_rhs: &DataType) -> bool {
+        (dtype_lhs.is_integer() && dtype_rhs.is_integer())
+        || (
+            (dtype_lhs.is_datetime() || dtype_lhs.is_date())
+            && (dtype_rhs.is_datetime() || dtype_rhs.is_date())
+        )
+        || (dtype_lhs.is_duration() && dtype_rhs.is_duration())
+    }
+
+    fn supertype_introduces_nulls_on_lhs(dtype_lhs: &DataType, supertype: &DataType) -> bool {
+        dtype_lhs.is_integer()
+            && dtype_lhs != supertype
+            && get_numeric_upcast_supertype_lossless(dtype_lhs, supertype).as_ref()
+                != Some(supertype)
+    }
+
+    let supertype = get_supertype(dtype_lhs, lit_rhs.dtype())?;
+
     macro_rules! finish_rewrite_cmp_with_null_literal {
         () => {{
             let ir_boolean_function = match cmp_op {
@@ -376,6 +395,10 @@ pub(super) fn coerce_comparison_literal(
                     });
                 },
             };
+
+            if supertype_introduces_nulls_on_lhs(dtype_lhs, &supertype) {
+                return None;
+            }
 
             let function = IRFunctionExpr::Boolean(ir_boolean_function);
             let options = function.function_options();
@@ -391,26 +414,7 @@ pub(super) fn coerce_comparison_literal(
         }};
     }
 
-    #[rustfmt::skip]
-    fn matching_and_supported_dtype_class(dtype_lhs: &DataType, dtype_rhs: &DataType) -> bool {
-        (dtype_lhs.is_integer() && dtype_rhs.is_integer())
-        || (
-            (dtype_lhs.is_datetime() || dtype_lhs.is_date())
-            && (dtype_rhs.is_datetime() || dtype_rhs.is_date())
-        )
-        || (dtype_lhs.is_duration() && dtype_rhs.is_duration())
-    }
-
-    fn supertype_introduces_nulls_on_lhs(dtype_lhs: &DataType, supertype: &DataType) -> bool {
-        dtype_lhs.is_integer()
-            && get_numeric_upcast_supertype_lossless(dtype_lhs, supertype).as_ref()
-                != Some(supertype)
-    }
-
-    if lit_rhs.is_null()
-        && get_supertype(dtype_lhs, lit_rhs.dtype())
-            .is_some_and(|supertype| !supertype_introduces_nulls_on_lhs(dtype_lhs, &supertype))
-    {
+    if lit_rhs.is_null() {
         finish_rewrite_cmp_with_null_literal!();
     }
 
@@ -421,8 +425,6 @@ pub(super) fn coerce_comparison_literal(
     if !matching_and_supported_dtype_class(dtype_lhs, lit_rhs.dtype()) {
         return None;
     }
-
-    let supertype = get_supertype(dtype_lhs, lit_rhs.dtype())?;
 
     if !matching_and_supported_dtype_class(dtype_lhs, &supertype) {
         // Reject integer comparisons that compare as floats (e.g. Int64<>UInt64).
