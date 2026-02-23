@@ -60,5 +60,6 @@ Manipulation/selection
     Series.to_dummies
     Series.top_k
     Series.top_k_by
+    Series.truncate
     Series.unique
     Series.zip_with
