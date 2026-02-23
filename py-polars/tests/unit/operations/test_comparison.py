@@ -524,7 +524,10 @@ def test_date_duration_comparison_error_25517() -> None:
         _ = date == duration
 
 
-@pytest.mark.parametrize(("dtype_lhs", "dtype_rhs"), combinations(INTEGER_DTYPES, 2))
+@pytest.mark.parametrize(
+    ("dtype_lhs", "dtype_rhs"),
+    combinations(sorted(INTEGER_DTYPES, key=lambda v: str(v)), 2),
+)
 @pytest.mark.parametrize("swap", [True, False])
 def test_comparison_literal_behavior_matches_nonliteral_behavior(
     dtype_lhs: PolarsDataType,
