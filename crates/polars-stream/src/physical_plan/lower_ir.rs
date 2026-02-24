@@ -1136,8 +1136,8 @@ pub fn lower_ir(
 
             let mut left_key_exprs = vec![left_key_expr1];
             let mut right_key_exprs = vec![right_key_expr1];
-            let mut left_tmp_col_names = (left_tmp_col_name1, None);
-            let mut right_tmp_col_names = (right_tmp_col_name1, None);
+            let mut left_tmp_col_names = [left_tmp_col_name1, None];
+            let mut right_tmp_col_names = [right_tmp_col_name1, None];
 
             if ie_options.operator2.is_some() {
                 assert!((1..=2).contains(&left_on.len()));
@@ -1150,28 +1150,16 @@ pub fn lower_ir(
 
                 left_key_exprs.push(left_key_expr2);
                 right_key_exprs.push(right_key_expr2);
-                left_tmp_col_names.1 = left_tmp_col_name2;
-                right_tmp_col_names.1 = right_tmp_col_name2;
+                left_tmp_col_names[1] = left_tmp_col_name2;
+                right_tmp_col_names[1] = right_tmp_col_name2;
             } else {
                 assert!(left_on.len() == 1);
                 assert!(right_on.len() == 1);
             }
 
-            // TODO: [amber] Do not sort if the input is already sorted
-            // let l1_descending = matches!(op1, InequalityOperator::Gt | InequalityOperator::GtEq);
-            // let l2_descending = matches!(op2, InequalityOperator::Lt | InequalityOperator::LtEq);
-
-            // LEFT HERE
-            // In the single-operator case, we will want to sort the build side first.
-            // So add a node for that.
-            //
-            // In the two-operator case that will not make it better.
-
-            // crates/polars-ops/src/frame/join/iejoin/mod.rs
-
             let trans_input_left = build_hstack_stream(
                 trans_input_left,
-                &right_key_exprs,
+                &left_key_exprs,
                 expr_arena,
                 phys_sm,
                 expr_cache,

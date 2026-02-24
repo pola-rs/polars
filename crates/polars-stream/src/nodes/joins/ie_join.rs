@@ -1,22 +1,19 @@
+use std::mem;
+use std::ops::Range;
+
 use polars_core::prelude::*;
 use polars_ops::frame::{IEJoinOptions, JoinArgs};
 
-use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::async_primitives::distributor_channel as dc;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
-use crate::morsel::{MorselSeq, SourceToken};
+use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::ComputeNode;
 use crate::nodes::in_memory_sink::InMemorySinkNode;
 use crate::nodes::joins::utils::DataFrameSearchBuffer as DFSB;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
-
-#[derive(Clone, Copy, Debug)]
-enum NeedMore {
-    Left,
-    Right,
-}
+use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, morsel};
 
 #[derive(Debug)]
 enum IEJoinState {
@@ -26,7 +23,12 @@ enum IEJoinState {
 }
 
 #[derive(Debug)]
-struct ProbeState {}
+struct ProbeState {
+    // TODO: [amber] Add doc comments
+    build_df: DataFrame,
+    build_l1_s: IdxCa,
+    build_l2: Option<Series>,
+}
 
 #[derive(Debug)]
 pub struct IEJoinNode {
@@ -46,15 +48,15 @@ struct IEJoinParams {
 struct RangeJoinSideParams {
     schema: SchemaRef,
     on: (PlSmallStr, Option<PlSmallStr>),
-    tmp_key_cols: (Option<PlSmallStr>, Option<PlSmallStr>),
+    tmp_key_cols: [Option<PlSmallStr>; 2],
 }
 
 impl RangeJoinSideParams {
-    fn fst_key_col(&self) -> &PlSmallStr {
-        self.tmp_key_cols.0.as_ref().unwrap_or(&self.on.0)
+    fn l1_key_col(&self) -> &PlSmallStr {
+        self.tmp_key_cols[0].as_ref().unwrap_or(&self.on.0)
     }
-    fn snd_key_col(&self) -> Option<&PlSmallStr> {
-        self.tmp_key_cols.1.as_ref().or(self.on.1.as_ref())
+    fn l2_key_col(&self) -> Option<&PlSmallStr> {
+        self.tmp_key_cols[1].as_ref().or(self.on.1.as_ref())
     }
 }
 
@@ -64,8 +66,8 @@ impl IEJoinNode {
         right_schema: SchemaRef,
         left_on: (PlSmallStr, Option<PlSmallStr>),
         right_on: (PlSmallStr, Option<PlSmallStr>),
-        tmp_left_key_cols: (Option<PlSmallStr>, Option<PlSmallStr>),
-        tmp_right_key_cols: (Option<PlSmallStr>, Option<PlSmallStr>),
+        tmp_left_key_cols: [Option<PlSmallStr>; 2],
+        tmp_right_key_cols: [Option<PlSmallStr>; 2],
         args: JoinArgs,
         options: IEJoinOptions,
     ) -> Self {
@@ -108,20 +110,42 @@ impl ComputeNode for IEJoinNode {
     ) -> PolarsResult<()> {
         assert!(recv.len() == 2 && send.len() == 1);
 
-        let input_channels_done = recv.iter().all(|r| *r == PortState::Done);
-        // let input_buffers_empty = self.left_dfsb.is_empty() && self.right_dfsb.is_empty();
+        // TODO: [amber] Which side is build?
+        let (build, probe) = recv.split_at_mut(1);
 
         if send[0] == PortState::Done {
             self.state = IEJoinState::Done;
         }
 
-        if let IEJoinState::Build(build) = &self.state
-            && input_channels_done
+        if let IEJoinState::Build(sink_node) = &mut self.state
+            && build[0] == PortState::Done
         {
-            self.state = IEJoinState::Probe(transition_to_probe(build)?);
+            self.state = IEJoinState::Probe(transition_to_probe(sink_node, &self.params)?);
         }
 
-        todo!()
+        if let IEJoinState::Probe(_) = &self.state
+            && probe[0] == PortState::Done
+        {
+            self.state = IEJoinState::Done;
+        }
+
+        match self.state {
+            IEJoinState::Build(ref mut sink_node) => {
+                sink_node.update_state(build, &mut [], state)?;
+                probe[0] = PortState::Blocked;
+                send[0] = PortState::Blocked;
+            },
+            IEJoinState::Probe(_) => {
+                build[0] = PortState::Done;
+                mem::swap(&mut probe[0], &mut send[0]);
+            },
+            IEJoinState::Done => {
+                build[0] = PortState::Done;
+                probe[0] = PortState::Done;
+                send[0] = PortState::Done;
+            },
+        }
+        Ok(())
     }
 
     fn spawn<'env, 's>(
@@ -134,43 +158,126 @@ impl ComputeNode for IEJoinNode {
     ) {
         assert!(recv_ports.len() == 2 && send_ports.len() == 1);
 
+        // TODO: [amber] Which side is build?
+        let build_idx = 0;
+        let probe_idx = 1 - build_idx;
+        let params = &self.params;
+
         match &mut self.state {
             IEJoinState::Build(sink_node) => {
-                // assert!(send_ports[0].is_none());
-                // assert!(recv_ports[probe_idx].is_none());
-                // sink_node.spawn(
-                //     scope,
-                //     &mut recv_ports[build_idx..build_idx + 1],
-                //     &mut [],
-                //     state,
-                //     join_handles,
-                // );
-                todo!()
+                assert!(recv_ports[probe_idx].is_none());
+                let build = recv_ports[build_idx].take().unwrap();
+                sink_node.spawn(scope, &mut [Some(build)], &mut [], state, join_handles)
             },
-            IEJoinState::Probe(probe) => todo!(),
+            IEJoinState::Probe(probe_state) => {
+                let probe_state = &*probe_state;
+                assert!(recv_ports[build_idx].is_none());
+                let probe = recv_ports[probe_idx].take().unwrap().parallel();
+                let send = send_ports[0].take().unwrap().parallel();
+                let (distr_send, distr_recv) =
+                    async_channel::bounded(*DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+
+                join_handles.extend(probe.into_iter().map(|recv| {
+                    let send = distr_send.clone();
+                    scope.spawn_task(TaskPriority::High, async move {
+                        distribute_work_task(recv, probe_state, params, send).await
+                    })
+                }));
+                join_handles.extend(send.into_iter().map(|send| {
+                    let recv = distr_recv.clone();
+                    scope.spawn_task(TaskPriority::High, async move {
+                        compute_and_emit_task(recv, send, probe_state, params).await
+                    })
+                }));
+            },
             IEJoinState::Done => unreachable!(),
         }
     }
 }
 
-async fn distribute_work_task(
-    mut recv_left: Option<PortReceiver>,
-    mut recv_right: Option<PortReceiver>,
-    mut distributor: dc::Sender<(DFSB, DFSB, MorselSeq, SourceToken)>,
-    right_dfsb: &mut DFSB,
+fn transition_to_probe(
+    sink_node: &mut InMemorySinkNode,
     params: &IEJoinParams,
-) -> PolarsResult<()> {
-    todo!()
+) -> PolarsResult<ProbeState> {
+    let mut build_df = sink_node.get_output()?.expect("sink_node is empty");
+    let build_l1 = build_df
+        .column(params.build.l1_key_col())?
+        .as_materialized_series()
+        .to_owned();
+    let build_l2 = params
+        .build
+        .l2_key_col()
+        .map(|name| build_df.column(name))
+        .transpose()?
+        .map(|c| c.as_materialized_series().to_owned());
+    let l1_descending = false; // TODO: [amber]
+    let l1_sort_options = SortOptions::default()
+        .with_maintain_order(true)
+        .with_nulls_last(false)
+        .with_order_descending(l1_descending);
+    let build_l1_s = build_l1.arg_sort(l1_sort_options);
+
+    // After this point we do not need the temporary columns anymore, as they
+    // are moved to build_l1_s and build_l2.
+    for tmp_key_col in &params.build.tmp_key_cols {
+        if let Some(name) = tmp_key_col {
+            build_df.drop_in_place(name)?;
+        }
+    }
+
+    Ok(ProbeState {
+        build_df,
+        build_l1_s,
+        build_l2,
+    })
 }
 
-fn transition_to_probe(build: &InMemorySinkNode) -> PolarsResult<ProbeState> {
-    todo!()
+async fn distribute_work_task(
+    mut recv: PortReceiver,
+    probe_state: &ProbeState,
+    params: &IEJoinParams,
+    distributor: async_channel::Sender<(Morsel, IdxCa, Range<usize>, Range<usize>)>,
+) -> PolarsResult<()> {
+    let l1_descending = false; // TODO: [amber]
+    let l1_sort_options = SortOptions::default()
+        .with_maintain_order(true)
+        .with_nulls_last(false)
+        .with_order_descending(l1_descending);
+
+    loop {
+        let Ok(morsel) = recv.recv().await else {
+            return Ok(());
+        };
+        let l1_select_probe = morsel
+            .df()
+            .column(params.probe.l1_key_col())?
+            .as_materialized_series()
+            .to_owned();
+        let probe_l1_s = l1_select_probe.arg_sort(l1_sort_options);
+
+        // TODO: [amber] Partition this better
+        let range_build = 0..probe_state.build_l1_s.len();
+        let range_probe = 0..probe_l1_s.len();
+        distributor
+            .send((morsel, probe_l1_s, range_build, range_probe))
+            .await
+            .expect("send error");
+    }
 }
 
 async fn compute_and_emit_task(
-    mut dist_recv: dc::Receiver<(DFSB, DFSB, MorselSeq, SourceToken)>,
+    mut dist_recv: async_channel::Receiver<(Morsel, IdxCa, Range<usize>, Range<usize>)>,
     mut send: PortSender,
+    probe_state: &ProbeState,
     params: &IEJoinParams,
 ) -> PolarsResult<()> {
-    todo!()
+    loop {
+        let Ok((morsel, probe_l1_s, range_build, range_probe)) = dist_recv.recv().await else {
+            return Ok(());
+        };
+        dbg!(morsel.df());
+        dbg!(probe_l1_s);
+        dbg!(range_build);
+        dbg!(range_probe);
+    }
 }

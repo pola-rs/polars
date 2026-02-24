@@ -702,7 +702,6 @@ fn visualize_plan_rec(
                 PhysNodeKind::MergeJoin { .. } => "merge-join",
                 PhysNodeKind::EquiJoin { .. } => "equi-join",
                 PhysNodeKind::InMemoryJoin { .. } => "in-memory-join",
-                PhysNodeKind::CrossJoin { .. } => "cross-join",
                 PhysNodeKind::SemiAntiJoin {
                     output_bool: false, ..
                 } if args.how.is_semi() => "semi-join",
