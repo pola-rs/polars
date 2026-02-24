@@ -144,7 +144,9 @@ impl VarState {
 
 impl CovState {
     fn new(x: &[f64], y: &[f64]) -> Self {
-        assert!(x.len() == y.len());
+        if x.len() != y.len() {
+            return Self::default();
+        }
         if x.is_empty() {
             return Self::default();
         }
@@ -196,7 +198,9 @@ impl CovState {
 
 impl PearsonState {
     fn new(x: &[f64], y: &[f64]) -> Self {
-        assert!(x.len() == y.len());
+        if x.len() != y.len() {
+            return Self::default();
+        }
         if x.is_empty() {
             return Self::default();
         }
@@ -665,7 +669,13 @@ where
     T: NativeType + AsPrimitive<f64>,
     U: NativeType + AsPrimitive<f64>,
 {
-    assert!(x.len() == y.len());
+    if x.len() != y.len() {
+        return CovState {
+            weight: f64::INFINITY,
+            dp_xy: f64::NAN,
+            ..CovState::default()
+        };
+    }
     let mut out = CovState::default();
     if x.has_nulls() || y.has_nulls() {
         chunk_as_float_binary(
@@ -688,7 +698,9 @@ where
     T: NativeType + AsPrimitive<f64>,
     U: NativeType + AsPrimitive<f64>,
 {
-    assert!(x.len() == y.len());
+    if x.len() != y.len() {
+        return PearsonState::default();
+    }
     let mut out = PearsonState::default();
     if x.has_nulls() || y.has_nulls() {
         chunk_as_float_binary(
