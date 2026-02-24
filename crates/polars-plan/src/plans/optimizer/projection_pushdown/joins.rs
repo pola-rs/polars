@@ -7,6 +7,8 @@ use polars_utils::arena::Arena;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
+use crate::dsl::JoinTypeOptionsIR;
+use crate::plans::optimizer::projection_pushdown::add_expr_to_accumulated;
 use crate::plans::{
     AExpr, ColumnNode, ExprIR, ExprOrigin, IR, IRBuilder, OutputName, PlHashSet, det_join_schema,
 };
@@ -18,7 +20,7 @@ use crate::utils::{aexpr_to_leaf_names_iter, column_node_to_name};
 /// Panics if `join_ir` is not `IR::Join`.
 pub(super) fn process_join(
     mut join_ir: IR,
-    proj_cx: ProjectionContext,
+    mut proj_cx: ProjectionContext,
     proj_pd: &mut ProjectionPushDown,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
@@ -34,6 +36,15 @@ pub(super) fn process_join(
     else {
         panic!()
     };
+
+    if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) = &options.options {
+        add_expr_to_accumulated(
+            predicate.node(),
+            &mut proj_cx.acc_projections,
+            &mut proj_cx.projected_names,
+            expr_arena,
+        );
+    }
 
     let is_projected =
         |name: &str| proj_cx.projected_names.contains(name) || !proj_cx.has_pushed_down();

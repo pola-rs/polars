@@ -445,6 +445,15 @@ impl ProjectionPushDown {
                 mut unified_scan_args,
                 mut output_schema,
             } => {
+                if let Some(pred) = &predicate {
+                    add_expr_to_accumulated(
+                        pred.node(),
+                        &mut ctx.acc_projections,
+                        &mut ctx.projected_names,
+                        expr_arena,
+                    );
+                }
+
                 let do_optimization = match &*scan_type {
                     FileScanIR::Anonymous { function, .. } => function.allows_projection_pushdown(),
                     #[cfg(feature = "json")]
