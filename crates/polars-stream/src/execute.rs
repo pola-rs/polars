@@ -14,6 +14,7 @@ use tokio::task::JoinHandle;
 
 use crate::async_executor;
 use crate::graph::{Graph, GraphNode, GraphNodeKey, LogicalPipeKey, PortState};
+use crate::memory::MemoryTracker;
 use crate::metrics::{GraphMetrics, MetricsBuilder};
 use crate::pipe::PhysicalPipe;
 
@@ -24,6 +25,9 @@ pub struct StreamingExecutionState {
 
     /// The ExecutionState passed to any non-streaming operations.
     pub in_memory_exec_state: ExecutionState,
+
+    /// Memory tracker for applying backpressure when a limit is configured.
+    pub memory_tracker: Arc<MemoryTracker>,
 
     query_tasks_send: Sender<JoinHandle<PolarsResult<()>>>,
     subphase_tasks_send: Sender<JoinHandle<PolarsResult<()>>>,
@@ -312,9 +316,19 @@ pub fn execute_graph(
     let (query_tasks_send, query_tasks_recv) = crossbeam_channel::unbounded();
     let (subphase_tasks_send, subphase_tasks_recv) = crossbeam_channel::unbounded();
 
+    let memory_limit = polars_config::config().streaming_memory_limit();
+    let memory_tracker = Arc::new(MemoryTracker::new(memory_limit));
+    if memory_tracker.has_limit() && polars_core::config::verbose() {
+        eprintln!(
+            "polars-stream: streaming memory limit set to {} bytes",
+            memory_limit
+        );
+    }
+
     let state = StreamingExecutionState {
         num_pipelines,
         in_memory_exec_state: ExecutionState::default(),
+        memory_tracker,
         query_tasks_send,
         subphase_tasks_send,
     };

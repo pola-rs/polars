@@ -10,6 +10,7 @@ pub use skeleton::{run_query, visualize_physical_plan};
 mod execute;
 pub use dispatch::build_streaming_query_executor;
 pub(crate) mod expression;
+pub(crate) mod memory;
 mod graph;
 pub use graph::{GraphNodeKey, LogicalPipe, LogicalPipeKey};
 pub use skeleton::{QueryResult, StreamingQuery};

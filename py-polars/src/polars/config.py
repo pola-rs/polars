@@ -74,6 +74,7 @@ _POLARS_CFG_ENV_VARS: Final[set[str]] = {
     "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE",
     "POLARS_FMT_TABLE_ROUNDED_CORNERS",
     "POLARS_STREAMING_CHUNK_SIZE",
+    "POLARS_STREAMING_MEMORY_LIMIT",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
     "POLARS_MAX_EXPR_DEPTH",
@@ -107,6 +108,7 @@ class ConfigParameters(TypedDict, total=False):
     fmt_str_lengths: int | None
     fmt_table_cell_list_len: int | None
     streaming_chunk_size: int | None
+    streaming_memory_limit: int | None
     tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
     tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
     tbl_cols: int | None
@@ -132,6 +134,7 @@ class ConfigParameters(TypedDict, total=False):
     set_fmt_str_lengths: int | None
     set_fmt_table_cell_list_len: int | None
     set_streaming_chunk_size: int | None
+    set_streaming_memory_limit: int | None
     set_tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
     set_tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
     set_tbl_cols: int | None
@@ -905,6 +908,35 @@ class Config(contextlib.ContextDecorator):
 
             os.environ["POLARS_STREAMING_CHUNK_SIZE"] = str(size)
         plr.config_reload_env_var("POLARS_STREAMING_CHUNK_SIZE")
+        return cls
+
+    @classmethod
+    def set_streaming_memory_limit(cls, size: int | None) -> type[Config]:
+        """
+        Set the memory limit for the streaming engine.
+
+        When the streaming engine accumulates more data than the given limit
+        (in bytes), it applies backpressure to slow down data ingestion.
+        This is a soft limit.
+
+        Parameters
+        ----------
+        size
+            Memory limit in bytes. Set to ``None`` or ``0`` to remove the limit.
+
+        Raises
+        ------
+        ValueError
+            If `size` is negative.
+        """
+        if size is None or size == 0:
+            os.environ.pop("POLARS_STREAMING_MEMORY_LIMIT", None)
+        else:
+            if size < 0:
+                msg = "streaming memory limit must be >= 0"
+                raise ValueError(msg)
+            os.environ["POLARS_STREAMING_MEMORY_LIMIT"] = str(size)
+        plr.config_reload_env_var("POLARS_STREAMING_MEMORY_LIMIT")
         return cls
 
     @classmethod
