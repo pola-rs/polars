@@ -858,7 +858,11 @@ class ArrayNameSpace:
         """
 
     def gather_every(
-        self, n: int | IntoExprColumn, offset: int | IntoExprColumn = 0
+        self,
+        n: int | IntoExprColumn,
+        offset: int | IntoExprColumn = 0,
+        *,
+        as_array: bool = False,
     ) -> Series:
         """
         Take every n-th value starting from offset in sub-arrays.
@@ -869,11 +873,16 @@ class ArrayNameSpace:
             Gather every n-th element.
         offset
             Starting index.
+        as_array
+            If ``True``, return a Series of :class:`Array` dtype instead of
+            :class:`List`.  Both ``n`` and ``offset`` must be literal integers
+            when this is set.
 
         Returns
         -------
         Series
-            Series of data type :class:`List`.
+            Series of data type :class:`List` (default) or :class:`Array`
+            (when ``as_array=True``).
 
         Examples
         --------

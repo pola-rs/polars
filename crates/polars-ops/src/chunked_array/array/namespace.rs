@@ -205,82 +205,55 @@ pub trait ArrayNameSpace: AsArray {
         Ok(out.into_series())
     }
 
-    #[cfg(feature = "list_gather")]
-    fn array_gather_every(&self, n: &IdxCa, offset: &IdxCa) -> PolarsResult<Series> {
+    #[cfg(feature = "array_gather")]
+    fn array_gather_every(&self, n: i64, offset: i64) -> PolarsResult<Series> {
         let ca = self.as_array();
-
-        polars_ensure!(
-            (n.len() == 1 || n.len() == ca.len()) && (offset.len() == 1 || offset.len() == ca.len()),
-            ComputeError: "The lengths of `n` and `offset` should be 1 or equal to the length of array."
-        );
-
-        let out = match (n.len(), offset.len()) {
-            (1, 1) => match (n.get(0), offset.get(0)) {
-                (Some(n_val), Some(offset_val)) => ca.try_apply_amortized_to_list(|s| {
-                    s.as_ref().gather_every(n_val as usize, offset_val as usize)
-                })?,
-                _ => {
-                    ListChunked::full_null_with_dtype(ca.name().clone(), ca.len(), ca.inner_dtype())
-                },
-            },
-            (1, _) => {
-                if let Some(n_val) = n.get(0) {
-                    let mut out: ListChunked = ca
-                        .amortized_iter()
-                        .zip(offset.iter())
-                        .map(|(opt_s, opt_offset)| match (opt_s, opt_offset) {
-                            (Some(s), Some(offset_val)) => s
-                                .as_ref()
-                                .gather_every(n_val as usize, offset_val as usize)
-                                .map(Some),
-                            _ => Ok(None),
-                        })
-                        .collect::<PolarsResult<_>>()?;
-                    out.rename(ca.name().clone());
-                    out
-                } else {
-                    ListChunked::full_null_with_dtype(ca.name().clone(), ca.len(), ca.inner_dtype())
-                }
-            },
-            (_, 1) => {
-                if let Some(offset_val) = offset.get(0) {
-                    let mut out: ListChunked = ca
-                        .amortized_iter()
-                        .zip(n.iter())
-                        .map(|(opt_s, opt_n)| match (opt_s, opt_n) {
-                            (Some(s), Some(n_val)) => s
-                                .as_ref()
-                                .gather_every(n_val as usize, offset_val as usize)
-                                .map(Some),
-                            _ => Ok(None),
-                        })
-                        .collect::<PolarsResult<_>>()?;
-                    out.rename(ca.name().clone());
-                    out
-                } else {
-                    ListChunked::full_null_with_dtype(ca.name().clone(), ca.len(), ca.inner_dtype())
-                }
-            },
-            _ => {
-                let mut out: ListChunked = ca
-                    .amortized_iter()
-                    .zip(n.iter())
-                    .zip(offset.iter())
-                    .map(
-                        |((opt_s, opt_n), opt_offset)| match (opt_s, opt_n, opt_offset) {
-                            (Some(s), Some(n_val), Some(offset_val)) => s
-                                .as_ref()
-                                .gather_every(n_val as usize, offset_val as usize)
-                                .map(Some),
-                            _ => Ok(None),
-                        },
-                    )
-                    .collect::<PolarsResult<_>>()?;
-                out.rename(ca.name().clone());
-                out
-            },
+        polars_ensure!(n > 0, ComputeError: "cannot gather every for `n=0`");
+        let n = n as usize;
+        let offset = offset as usize;
+        let width = ca.width();
+        let new_width = if offset >= width {
+            0
+        } else {
+            (width - offset + n - 1) / n
         };
-        Ok(out.into_series())
+
+        let result: ArrayChunked = unary_kernel(
+            ca,
+            move |arr: &FixedSizeListArray| -> FixedSizeListArray {
+                let mut builder = make_builder(arr.values().dtype());
+                builder.reserve(new_width * arr.len());
+                let mut validity = BitmapBuilder::with_capacity(arr.len());
+                let values = arr.values().as_ref();
+
+                for row in 0..arr.len() {
+                    if !arr.is_valid(row) {
+                        validity.push(false);
+                        builder.extend_nulls(new_width);
+                        continue;
+                    }
+                    let base = row * arr.size();
+                    for i in (offset..arr.size()).step_by(n) {
+                        builder.subslice_extend(values, base + i, 1, ShareStrategy::Always);
+                    }
+                    validity.push(true);
+                }
+
+                let new_dtype = match arr.dtype() {
+                    ArrowDataType::FixedSizeList(inner, _) => {
+                        ArrowDataType::FixedSizeList(inner.clone(), new_width)
+                    },
+                    _ => unreachable!(),
+                };
+                FixedSizeListArray::new(
+                    new_dtype,
+                    arr.len(),
+                    builder.freeze_reset(),
+                    validity.into_opt_validity(),
+                )
+            },
+        );
+        Ok(result.into_series())
     }
 
     fn array_slice(&self, offset: i64, length: i64) -> PolarsResult<Series> {

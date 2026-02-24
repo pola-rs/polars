@@ -707,7 +707,7 @@ def test_array_gather_every() -> None:
         schema={"a": pl.Array(pl.Int64, 5), "n": pl.Int64, "offset": pl.Int64},
     )
 
-    # Test with scalar n and offset
+    # Test with scalar n and offset (default: returns list)
     out = df.select(pl.col("a").arr.gather_every(2, 0))
     expected = pl.DataFrame({"a": [[1, 3, 5], [6, 8, 10], [11, 13, 15]]})
     assert_frame_equal(out, expected)
@@ -732,6 +732,82 @@ def test_array_gather_every() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_array_gather_every_as_array() -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 2, 3, 4, 5], [6, 7, 8, 9, 10], [11, 12, 13, 14, 15]]},
+        schema={"a": pl.Array(pl.Int64, 5)},
+    )
+
+    # as_array=True returns Array dtype
+    out = df.select(pl.col("a").arr.gather_every(2, 0, as_array=True))
+    expected = pl.DataFrame(
+        {"a": [[1, 3, 5], [6, 8, 10], [11, 13, 15]]},
+        schema={"a": pl.Array(pl.Int64, 3)},
+    )
+    assert_frame_equal(out, expected)
+
+    out = df.select(pl.col("a").arr.gather_every(2, 1, as_array=True))
+    expected = pl.DataFrame(
+        {"a": [[2, 4], [7, 9], [12, 14]]},
+        schema={"a": pl.Array(pl.Int64, 2)},
+    )
+    assert_frame_equal(out, expected)
+
+    # n > width -> single element per row
+    out = df.select(pl.col("a").arr.gather_every(10, 0, as_array=True))
+    expected = pl.DataFrame(
+        {"a": [[1], [6], [11]]},
+        schema={"a": pl.Array(pl.Int64, 1)},
+    )
+    assert_frame_equal(out, expected)
+
+    # offset >= width -> zero-width array
+    out = df.select(pl.col("a").arr.gather_every(1, 5, as_array=True))
+    assert out.dtypes == [pl.Array(pl.Int64, 0)]
+    assert out.shape == (3, 1)
+
+    # width=1 array
+    df1 = pl.DataFrame(
+        {"a": [[10], [20], [30]]},
+        schema={"a": pl.Array(pl.Int64, 1)},
+    )
+    out = df1.select(pl.col("a").arr.gather_every(1, 0, as_array=True))
+    expected = pl.DataFrame(
+        {"a": [[10], [20], [30]]},
+        schema={"a": pl.Array(pl.Int64, 1)},
+    )
+    assert_frame_equal(out, expected)
+
+    # String inner dtype
+    df_str = pl.DataFrame(
+        {"a": [["a", "b", "c", "d"], ["e", "f", "g", "h"]]},
+        schema={"a": pl.Array(pl.String, 4)},
+    )
+    out = df_str.select(pl.col("a").arr.gather_every(2, 0, as_array=True))
+    expected = pl.DataFrame(
+        {"a": [["a", "c"], ["e", "g"]]},
+        schema={"a": pl.Array(pl.String, 2)},
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_array_gather_every_as_array_schema() -> None:
+    # Verify schema inference in the lazy path
+    lf = pl.LazyFrame(
+        {"a": [[1, 2, 3, 4, 5]]},
+        schema={"a": pl.Array(pl.Int64, 5)},
+    )
+    schema = lf.select(
+        pl.col("a").arr.gather_every(2, 0, as_array=True)
+    ).collect_schema()
+    assert schema["a"] == pl.Array(pl.Int64, 3)
+
+    schema = lf.select(
+        pl.col("a").arr.gather_every(3, 1, as_array=True)
+    ).collect_schema()
+    assert schema["a"] == pl.Array(pl.Int64, 2)
+
+
 def test_array_gather_every_with_nulls() -> None:
     s = pl.Series(
         "a",
@@ -739,8 +815,16 @@ def test_array_gather_every_with_nulls() -> None:
         dtype=pl.Array(pl.Int64, 4),
     )
 
+    # Default (list)
     out = s.arr.gather_every(2, 0)
     expected = pl.Series("a", [[1, 3], [None, None], None])
+    assert_series_equal(out, expected)
+
+    # as_array=True with nulls
+    out = s.arr.gather_every(2, 0, as_array=True)
+    expected = pl.Series(
+        "a", [[1, 3], [None, None], None], dtype=pl.Array(pl.Int64, 2)
+    )
     assert_series_equal(out, expected)
 
 
@@ -752,3 +836,7 @@ def test_array_gather_every_nzero() -> None:
     )
     with pytest.raises(ComputeError):
         df.select(pl.col("a").arr.gather_every(0, 0))
+
+    # Also for as_array=True
+    with pytest.raises(ComputeError):
+        df.select(pl.col("a").arr.gather_every(0, 0, as_array=True))

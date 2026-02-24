@@ -43,8 +43,8 @@ pub fn function_expr_to_udf(func: IRArrayFunction) -> SpecialEq<Arc<dyn ColumnsU
         Slice(offset, length) => map!(slice, offset, length),
         #[cfg(feature = "array_to_struct")]
         ToStruct(ng) => map!(arr_to_struct, ng.clone()),
-        #[cfg(feature = "list_gather")]
-        GatherEvery => map_as_slice!(gather_every),
+        #[cfg(feature = "array_gather")]
+        GatherEvery(n, offset) => map!(gather_every, n, offset),
     }
 }
 
@@ -251,14 +251,10 @@ fn concat_arr_output_dtype(
     ))
 }
 
-#[cfg(feature = "list_gather")]
-pub(super) fn gather_every(args: &[Column]) -> PolarsResult<Column> {
-    let ca = args[0].array()?;
-    let n = &args[1].strict_cast(&polars_core::prelude::IDX_DTYPE)?;
-    let offset = &args[2].strict_cast(&polars_core::prelude::IDX_DTYPE)?;
-
-    ca.array_gather_every(n.idx()?, offset.idx()?)
-        .map(Column::from)
+#[cfg(feature = "array_gather")]
+pub(super) fn gather_every(s: &Column, n: i64, offset: i64) -> PolarsResult<Column> {
+    let ca = s.array()?;
+    ca.array_gather_every(n, offset).map(Column::from)
 }
 
 #[cfg(feature = "array_to_struct")]

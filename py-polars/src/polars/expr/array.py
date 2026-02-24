@@ -1056,6 +1056,8 @@ class ExprArrayNameSpace:
         self,
         n: int | IntoExprColumn,
         offset: int | IntoExprColumn = 0,
+        *,
+        as_array: bool = False,
     ) -> Expr:
         """
         Take every n-th value starting from offset in sub-arrays.
@@ -1066,11 +1068,16 @@ class ExprArrayNameSpace:
             Gather every n-th element.
         offset
             Starting index.
+        as_array
+            If ``True``, return a fixed-size :class:`Array` column instead of
+            :class:`List`.  Both ``n`` and ``offset`` must be literal integers
+            when this is set.
 
         Returns
         -------
         Expr
-            Expression of data type :class:`List`.
+            Expression of data type :class:`List` (default) or :class:`Array`
+            (when ``as_array=True``).
 
         Examples
         --------
@@ -1097,7 +1104,23 @@ class ExprArrayNameSpace:
         │ [6, 7, … 10]      ┆ 1   ┆ 1      ┆ [7, 8, … 10] │
         │ [11, 12, … 15]    ┆ 3   ┆ 0      ┆ [11, 14]     │
         └───────────────────┴─────┴────────┴──────────────┘
+
+        With ``as_array=True`` the result retains the :class:`Array` dtype:
+
+        >>> df.select(pl.col("a").arr.gather_every(2, 0, as_array=True))
+        shape: (3, 1)
+        ┌───────────────┐
+        │ a             │
+        │ ---           │
+        │ array[i64, 3] │
+        ╞═══════════════╡
+        │ [1, 3, 5]     │
+        │ [6, 8, 10]    │
+        │ [11, 13, 15]  │
+        └───────────────┘
         """
         n_pyexpr = parse_into_expression(n)
         offset_pyexpr = parse_into_expression(offset)
-        return wrap_expr(self._pyexpr.arr_gather_every(n_pyexpr, offset_pyexpr))
+        return wrap_expr(
+            self._pyexpr.arr_gather_every(n_pyexpr, offset_pyexpr, as_array)
+        )

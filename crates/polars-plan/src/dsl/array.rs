@@ -213,12 +213,29 @@ impl ArrayNameSpace {
     }
 
     /// Take every n-th value starting from offset in the sub-arrays.
-    #[cfg(feature = "list_gather")]
-    pub fn gather_every(self, n: Expr, offset: Expr) -> Expr {
-        self.0.map_ternary(
-            FunctionExpr::ArrayExpr(ArrayFunction::GatherEvery),
-            n,
-            offset,
-        )
+    #[cfg(feature = "array_gather")]
+    pub fn gather_every(self, n: Expr, offset: Expr, as_array: bool) -> PolarsResult<Expr> {
+        if as_array {
+            let Ok(n) = n.extract_i64() else {
+                polars_bail!(InvalidOperation: "`n` must be a constant integer if `as_array=true`, got: {}", n)
+            };
+            let Ok(offset) = offset.extract_i64() else {
+                polars_bail!(InvalidOperation: "`offset` must be a constant integer if `as_array=true`, got: {}", offset)
+            };
+            Ok(self
+                .0
+                .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::GatherEvery(
+                    n, offset,
+                ))))
+        } else {
+            Ok(self
+                .0
+                .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::ToList))
+                .map_ternary(
+                    FunctionExpr::ListExpr(ListFunction::GatherEvery),
+                    n,
+                    offset,
+                ))
+        }
     }
 }
