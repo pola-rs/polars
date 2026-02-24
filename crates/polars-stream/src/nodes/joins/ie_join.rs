@@ -2,18 +2,19 @@ use std::mem;
 use std::ops::Range;
 
 use polars_core::prelude::*;
-use polars_ops::frame::{IEJoinOptions, InequalityOperator, JoinArgs};
+use polars_core::utils::Container;
+use polars_ops::frame::{
+    _finish_join, IEJoinOptions, InequalityOperator, JoinArgs, iejoin_par_partition,
+};
 
+use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::distributor_channel as dc;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
-use crate::morsel::{Morsel, MorselSeq, SourceToken};
+use crate::morsel::Morsel;
 use crate::nodes::ComputeNode;
 use crate::nodes::in_memory_sink::InMemorySinkNode;
-use crate::nodes::joins::utils::DataFrameSearchBuffer as DFSB;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
-use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, morsel};
 
 #[derive(Debug)]
 enum IEJoinState {
@@ -27,7 +28,6 @@ struct ProbeState {
     // TODO: [amber] Add doc comments
     build_df: DataFrame,
     build_l1_s: IdxCa,
-    build_l2: Option<Series>,
 }
 
 #[derive(Debug)]
@@ -45,11 +45,8 @@ struct IEJoinParams {
 }
 
 impl IEJoinParams {
-    fn l1_descending(&self) -> bool {
-        matches!(
-            self.options.operator1,
-            InequalityOperator::Gt | InequalityOperator::GtEq
-        )
+    fn left_is_build(&self) -> bool {
+        true
     }
 }
 
@@ -208,35 +205,30 @@ fn transition_to_probe(
     sink_node: &mut InMemorySinkNode,
     params: &IEJoinParams,
 ) -> PolarsResult<ProbeState> {
-    let mut build_df = sink_node.get_output()?.expect("sink_node is empty");
+    let build_df = sink_node.get_output()?.expect("sink_node is empty");
     let build_l1 = build_df
         .column(params.build.l1_key_col())?
         .as_materialized_series()
         .to_owned();
-    let build_l2 = params
-        .build
-        .l2_key_col()
-        .map(|name| build_df.column(name))
-        .transpose()?
-        .map(|c| c.as_materialized_series().to_owned());
     let l1_sort_options = SortOptions::default()
         .with_maintain_order(true)
+        .with_multithreaded(true)
         .with_nulls_last(false)
-        .with_order_descending(params.l1_descending());
+        .with_order_descending(params.options.l1_descending());
+
     let build_l1_s = build_l1.arg_sort(l1_sort_options);
 
     // After this point we do not need the temporary columns anymore, as they
     // are moved to build_l1_s and build_l2.
-    for tmp_key_col in &params.build.tmp_key_cols {
-        if let Some(name) = tmp_key_col {
-            build_df.drop_in_place(name)?;
-        }
-    }
+    // for tmp_key_col in &params.build.tmp_key_cols {
+    //     if let Some(name) = tmp_key_col {
+    //         build_df.drop_in_place(name)?;
+    //     }
+    // }
 
     Ok(ProbeState {
         build_df,
         build_l1_s,
-        build_l2,
     })
 }
 
@@ -249,7 +241,7 @@ async fn distribute_work_task(
     let l1_sort_options = SortOptions::default()
         .with_maintain_order(true)
         .with_nulls_last(false)
-        .with_order_descending(params.l1_descending());
+        .with_order_descending(params.options.l1_descending());
 
     loop {
         let Ok(morsel) = recv.recv().await else {
@@ -273,18 +265,74 @@ async fn distribute_work_task(
 }
 
 async fn compute_and_emit_task(
-    mut dist_recv: async_channel::Receiver<(Morsel, IdxCa, Range<usize>, Range<usize>)>,
+    dist_recv: async_channel::Receiver<(Morsel, IdxCa, Range<usize>, Range<usize>)>,
     mut send: PortSender,
     probe_state: &ProbeState,
     params: &IEJoinParams,
 ) -> PolarsResult<()> {
     loop {
-        let Ok((morsel, probe_l1_s, range_build, range_probe)) = dist_recv.recv().await else {
+        let Ok((morsel, probe_l1, range_build, range_probe)) = dist_recv.recv().await else {
             return Ok(());
         };
-        dbg!(morsel.df());
-        dbg!(probe_l1_s);
-        dbg!(range_build);
-        dbg!(range_probe);
+        let build_l1 = &probe_state.build_l1_s;
+        let (probe_df, seq, st, wt) = morsel.into_inner();
+
+        let build_key_columns = match params.build.l2_key_col() {
+            None => &[params.build.l1_key_col()][..],
+            Some(l2_key_col) => &[params.build.l1_key_col(), l2_key_col][..],
+        };
+        let probe_key_columns = match params.probe.l2_key_col() {
+            None => &[params.probe.l1_key_col()][..],
+            Some(l2_key_col) => &[params.probe.l1_key_col(), l2_key_col][..],
+        };
+
+        let selected_build = probe_state
+            .build_df
+            .select_to_vec(build_key_columns)?
+            .into_iter()
+            .map(|c| {
+                c.as_materialized_series()
+                    .slice(range_build.start as i64, range_build.len())
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+
+        let selected_probe = probe_df
+            .select_to_vec(probe_key_columns)?
+            .into_iter()
+            .map(|c| {
+                c.as_materialized_series()
+                    .slice(range_probe.start as i64, range_probe.len())
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+
+        let Some((build_rows, probe_rows)) = iejoin_par_partition(
+            build_l1,
+            &probe_l1,
+            &selected_build,
+            &selected_probe,
+            &params.options,
+        )?
+        else {
+            continue;
+        };
+
+        let build_gather = unsafe { probe_state.build_df.take_unchecked(&build_rows) };
+        let probe_gather = unsafe { probe_df.take_unchecked(&probe_rows) };
+        let output = if params.left_is_build() {
+            _finish_join(build_gather, probe_gather, params.args.suffix.clone())?
+        } else {
+            _finish_join(probe_gather, build_gather, params.args.suffix.clone())?
+        };
+        // TODO: [amber] We still need to drop the key columns
+        let mut morsel = Morsel::new(output, seq, st);
+        if let Some(wt) = wt {
+            morsel.set_consume_token(wt);
+        }
+        dbg!(morsel.df().height());
+        if send.send(morsel).await.is_err() {
+            return Ok(());
+        }
     }
 }

@@ -1061,7 +1061,6 @@ pub fn lower_ir(
             right_on,
             options,
         } if options.args.how == JoinType::IEJoin => {
-            dbg!(&j);
             let input_left = *input_left;
             let input_right = *input_right;
             let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);

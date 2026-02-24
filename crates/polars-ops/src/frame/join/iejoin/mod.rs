@@ -49,6 +49,27 @@ pub struct IEJoinOptions {
     pub operator2: Option<InequalityOperator>,
 }
 
+impl IEJoinOptions {
+    // Determine the sort order based on the comparison operators used.
+    // We want to sort L1 so that "x[i] op1 x[j]" is true for j > i,
+    // and L2 so that "y[i] op2 y[j]" is true for j < i
+    // (except in the case of duplicates and strict inequalities).
+    // Note that the algorithms published in Khayyat et al. have incorrect logic for
+    // determining whether to sort descending.
+    pub fn l1_descending(&self) -> bool {
+        matches!(
+            self.operator1,
+            InequalityOperator::Gt | InequalityOperator::GtEq
+        )
+    }
+    pub fn l2_descending(&self) -> bool {
+        matches!(
+            self.operator2.unwrap(),
+            InequalityOperator::Lt | InequalityOperator::LtEq
+        )
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn ie_join_impl_t<T: PolarsNumericType>(
     slice: Option<(i64, usize)>,
@@ -205,6 +226,93 @@ where
     Ok((left_row_idx, right_row_idx))
 }
 
+pub fn iejoin_par_partition(
+    l_l1_idx: &IdxCa,
+    r_l1_idx: &IdxCa,
+    selected_left: &[Series],
+    selected_right: &[Series],
+    options: &IEJoinOptions,
+) -> PolarsResult<Option<(IdxCa, IdxCa)>> {
+    let sorted_flag = options
+        .l1_descending()
+        .then(|| IsSorted::Descending)
+        .unwrap_or_else(|| IsSorted::Ascending);
+
+    let sl = &selected_left[0];
+    let sr = &selected_right[0];
+    if l_l1_idx.is_empty() || r_l1_idx.is_empty() {
+        return Ok(None);
+    }
+    fn get_extrema<'a>(l1_idx: &'a IdxCa, s: &'a Series) -> Option<(AnyValue<'a>, AnyValue<'a>)> {
+        let first = l1_idx.first()?;
+        let last = l1_idx.last()?;
+
+        let start = s.get(first as usize).unwrap();
+        let end = s.get(last as usize).unwrap();
+
+        Some(if start < end {
+            (start, end)
+        } else {
+            (end, start)
+        })
+    }
+    let Some((min_l, max_l)) = get_extrema(l_l1_idx, sl) else {
+        return Ok(None);
+    };
+    let Some((min_r, max_r)) = get_extrema(r_l1_idx, sr) else {
+        return Ok(None);
+    };
+
+    // TODO: [amber] Okay the Khayyat paper says you should do this, but I feel
+    // like you can do better if you instead find drop the part of the series that
+    // is outside of the matchable range. Why don't we do that?
+    let may_have_results = match options.operator1 {
+        InequalityOperator::Lt => min_l < max_r,
+        InequalityOperator::LtEq => min_l <= max_r,
+        InequalityOperator::Gt => max_l > min_r,
+        InequalityOperator::GtEq => max_l >= min_r,
+    };
+    if !may_have_results {
+        return Ok(None);
+    }
+
+    let (mut l, mut r) = unsafe {
+        (
+            selected_left
+                .iter()
+                .map(|s| s.take_unchecked(l_l1_idx))
+                .collect_vec(),
+            selected_right
+                .iter()
+                .map(|s| s.take_unchecked(r_l1_idx))
+                .collect_vec(),
+        )
+    };
+    // We sorted using the first series
+    l[0].set_sorted_flag(sorted_flag);
+    r[0].set_sorted_flag(sorted_flag);
+
+    // Compute the row indexes
+    let (idx_l, idx_r) = if options.operator2.is_some() {
+        iejoin_tuples(l, r, options, None)
+    } else {
+        piecewise_merge_join_tuples(l, r, options, None)
+    }?;
+
+    if idx_l.is_empty() {
+        return Ok(None);
+    }
+
+    // These are row indexes in the slices we have given, so we use those to gather in the
+    // original l1 offset arrays. This gives us indexes in the original tables.
+    unsafe {
+        Ok(Some((
+            l_l1_idx.take_unchecked(&idx_l),
+            r_l1_idx.take_unchecked(&idx_r),
+        )))
+    }
+}
+
 pub(super) fn iejoin_par(
     left: &DataFrame,
     right: &DataFrame,
@@ -214,15 +322,10 @@ pub(super) fn iejoin_par(
     suffix: Option<PlSmallStr>,
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
-    let l1_descending = matches!(
-        options.operator1,
-        InequalityOperator::Gt | InequalityOperator::GtEq
-    );
-
     let l1_sort_options = SortOptions::default()
         .with_maintain_order(true)
         .with_nulls_last(false)
-        .with_order_descending(l1_descending);
+        .with_order_descending(options.l1_descending());
 
     let sl = &selected_left[0];
     let l1_s_l = sl
@@ -246,87 +349,10 @@ pub(super) fn iejoin_par(
         .flat_map(|l| splitted_b.iter().map(move |r| (l, r)))
         .collect::<Vec<_>>();
 
-    let iter = cartesian_prod.par_iter().map(|(l_l1_idx, r_l1_idx)| {
-        if l_l1_idx.is_empty() || r_l1_idx.is_empty() {
-            return Ok(None);
-        }
-        fn get_extrema<'a>(
-            l1_idx: &'a IdxCa,
-            s: &'a Series,
-        ) -> Option<(AnyValue<'a>, AnyValue<'a>)> {
-            let first = l1_idx.first()?;
-            let last = l1_idx.last()?;
-
-            let start = s.get(first as usize).unwrap();
-            let end = s.get(last as usize).unwrap();
-
-            Some(if start < end {
-                (start, end)
-            } else {
-                (end, start)
-            })
-        }
-        let Some((min_l, max_l)) = get_extrema(l_l1_idx, sl) else {
-            return Ok(None);
-        };
-        let Some((min_r, max_r)) = get_extrema(r_l1_idx, sr) else {
-            return Ok(None);
-        };
-
-        let include_block = match options.operator1 {
-            InequalityOperator::Lt => min_l < max_r,
-            InequalityOperator::LtEq => min_l <= max_r,
-            InequalityOperator::Gt => max_l > min_r,
-            InequalityOperator::GtEq => max_l >= min_r,
-        };
-
-        if include_block {
-            let (mut l, mut r) = unsafe {
-                (
-                    selected_left
-                        .iter()
-                        .map(|s| s.take_unchecked(l_l1_idx))
-                        .collect_vec(),
-                    selected_right
-                        .iter()
-                        .map(|s| s.take_unchecked(r_l1_idx))
-                        .collect_vec(),
-                )
-            };
-            let sorted_flag = if l1_descending {
-                IsSorted::Descending
-            } else {
-                IsSorted::Ascending
-            };
-            // We sorted using the first series
-            l[0].set_sorted_flag(sorted_flag);
-            r[0].set_sorted_flag(sorted_flag);
-
-            // Compute the row indexes
-            let (idx_l, idx_r) = if options.operator2.is_some() {
-                iejoin_tuples(l, r, options, None)
-            } else {
-                piecewise_merge_join_tuples(l, r, options, None)
-            }?;
-
-            if idx_l.is_empty() {
-                return Ok(None);
-            }
-
-            // These are row indexes in the slices we have given, so we use those to gather in the
-            // original l1 offset arrays. This gives us indexes in the original tables.
-            unsafe {
-                Ok(Some((
-                    l_l1_idx.take_unchecked(&idx_l),
-                    r_l1_idx.take_unchecked(&idx_r),
-                )))
-            }
-        } else {
-            Ok(None)
-        }
+    let parallel_iter = cartesian_prod.par_iter().map(|(l_l1_idx, r_l1_idx)| {
+        iejoin_par_partition(l_l1_idx, r_l1_idx, &selected_left, &selected_right, options)
     });
-
-    let row_indices = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+    let row_indices = POOL.install(|| parallel_iter.collect::<PolarsResult<Vec<_>>>())?;
 
     let mut left_idx = IdxCa::default();
     let mut right_idx = IdxCa::default();
@@ -406,15 +432,6 @@ fn iejoin_tuples(
         Some(op2) => op2,
     };
 
-    // Determine the sort order based on the comparison operators used.
-    // We want to sort L1 so that "x[i] op1 x[j]" is true for j > i,
-    // and L2 so that "y[i] op2 y[j]" is true for j < i
-    // (except in the case of duplicates and strict inequalities).
-    // Note that the algorithms published in Khayyat et al. have incorrect logic for
-    // determining whether to sort descending.
-    let l1_descending = matches!(op1, InequalityOperator::Gt | InequalityOperator::GtEq);
-    let l2_descending = matches!(op2, InequalityOperator::Lt | InequalityOperator::LtEq);
-
     let mut x = selected_left[0].to_physical_repr().into_owned();
     let left_height = x.len();
 
@@ -437,7 +454,7 @@ fn iejoin_tuples(
     let l1_sort_options = SortOptions::default()
         .with_maintain_order(true)
         .with_nulls_last(false)
-        .with_order_descending(l1_descending);
+        .with_order_descending(options.l1_descending());
     // Get ordering of x, skipping any null entries as these cannot be matches
     let l1_order = x
         .arg_sort(l1_sort_options)
@@ -447,7 +464,7 @@ fn iejoin_tuples(
     let l2_sort_options = SortOptions::default()
         .with_maintain_order(true)
         .with_nulls_last(false)
-        .with_order_descending(l2_descending);
+        .with_order_descending(options.l2_descending());
     // Get the indexes into l1, ordered by y values.
     // l2_order is the same as "p" from Khayyat et al.
     let l2_order = y_ordered_by_x.arg_sort(l2_sort_options).slice(
