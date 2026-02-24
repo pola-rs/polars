@@ -1972,8 +1972,14 @@ class Expr:
 
         Notes
         -----
-        This method performs numeric truncation. For truncating temporal
-        data (dates/datetimes), use :func:`Expr.dt.truncate` instead.
+        * Truncation discards the fractional part beyond the given number of decimals.
+          For example, when rounding to 0 decimals 0.25, -0.25, 0.99, and -0.99 will
+          all round to 0. When rounding to 1 decimal 1.9999 rounds to 1.9 and -1.9999
+          rounds to -1.9. There is no tiebreak behaviour at midpoint values as there
+          is with :meth:`round` so 0.5 and -0.5 will also round to 0 when decimals=1.
+
+        * This method performs numeric truncation. For truncating temporal
+          data (dates/datetimes), use :func:`Expr.dt.truncate` instead.
 
         See Also
         --------
