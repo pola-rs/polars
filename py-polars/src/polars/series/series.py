@@ -5688,19 +5688,37 @@ class Series:
         ----------
         decimals
             Number of decimals to round by.
-        mode : {'half_to_even', 'half_away_from_zero'}
-            Rounding mmde.
+        mode : {'half_to_even', 'half_away_from_zero', 'to_zero'}
+            The rounding strategy used for tiebreaks of values at the midpoint; the
+            choice of mode only affects values that are exactly halfway between two
+            rounded candidates.
 
-            * *half_to_even*
-                Round to the nearest value, with numbers ending in 0.5 being rounded to
-                the nearest even number; so, 2.5 rounds to 2.0, -3.5 rounds to -4.0,
-                and so on (this is also known as "banker's rounding").
+            * *half_to_even* (default)
+                Round midpoints to the nearest **even** number. For example, when
+                rounding to 0 decimals: 0.5 rounds to 0, 1.5 rounds to 2, 2.5 rounds
+                to 2. When rounding to 1 decimal: 0.25 rounds to 0.2, 0.35 rounds to
+                0.4. Also known as "banker's rounding"; this is the default because
+                it tends to minimise cumulative rounding bias.
             * *half_away_from_zero*
-                Round to the nearest value, with numbers ending in 0.5 being rounded
-                away from zero; so, 2.5 rounds to 3.0, -3.5 rounds to -4.0, and so on.
-                (this is sometimes called "commercial rounding").
+                Round midpoints **away from zero**. For example, when rounding to
+                0 decimals: 0.5 rounds to 1, -0.5 rounds to -1, 2.5 rounds to 3. When
+                rounding to 1 decimal: 0.25 rounds to 0.3, -0.35 rounds to -0.4.
+                Also known as "commercial rounding".
             * *to_zero*
-                Round towards zero; this is equivalent to the `truncate` method.
+                Always round (truncate) **towards zero**, discarding the fractional
+                part beyond the given number of decimals. For example, when rounding
+                to 0 decimals: 0.9 rounds to 0, -0.9 rounds to 0. When rounding to 1
+                decimal: 1.29 rounds to 1.2, -1.29 rounds to -1.2. This is entirely
+                equivalent to the :meth:`truncate` method.
+
+        Notes
+        -----
+        Rounding modes only differ in how they handle ties at the "midpoint", which is
+        the value that falls exactly halfway between two rounded candidates. When
+        rounding to 0 decimals the midpoint is 0.5, when rounding to 1 decimal it is
+        0.05, when rounding to 2 decimals it is 0.005, and so on. Values that are not
+        exactly at the midpoint are *always* rounded to the nearest value (with respect
+        to the number of decimals).
 
         Examples
         --------

@@ -259,6 +259,8 @@ pub trait RoundSeries: SeriesSealed {
 
     /// Truncate underlying floating point array toward zero to the given number of decimals.
     fn truncate(&self, decimals: u32) -> PolarsResult<Series> {
+        // Note: we make `truncate` available as its own function for discoverability
+        // as this is how it is commonly known in other libraries/languages.
         self.round(decimals, RoundMode::ToZero)
     }
 
