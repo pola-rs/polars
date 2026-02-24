@@ -217,6 +217,7 @@ theme:
 extra_javascript:
     - _build/js/mathjax.js
     - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+    - https://unpkg.com/mermaid@11/dist/mermaid.min.js
 extra_css:
     - _build/css/extra.css
 extra:
@@ -236,7 +237,11 @@ markdown_extensions:
     - pymdownx.emoji:
           emoji_index: !!python/name:material.extensions.emoji.twemoji
           emoji_generator: !!python/name:material.extensions.emoji.to_svg
-    - pymdownx.superfences
+    - pymdownx.superfences:
+          custom_fences:
+              - name: mermaid
+                class: mermaid
+                format: !!python/name:pymdownx.superfences.fence_code_format
     - pymdownx.tabbed:
           alternate_style: true
     - pymdownx.snippets:
