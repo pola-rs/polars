@@ -231,7 +231,7 @@ pub fn test_slice_pushdown_sort() -> PolarsResult<()> {
     assert!(lp_arena.iter(lp).all(|(_, lp)| {
         use IR::*;
         match lp {
-            Sort { slice, .. } => *slice == Some((1, 3)),
+            Sort { slice, .. } => matches!(slice, Some((1, 3, _))),
             Slice { .. } => false,
             _ => true,
         }

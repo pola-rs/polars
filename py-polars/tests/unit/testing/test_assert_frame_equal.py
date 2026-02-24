@@ -7,7 +7,6 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -369,8 +368,8 @@ def test_assert_frame_equal_check_row_order_unsortable(assert_function: Any) -> 
     df1 = pl.DataFrame({"a": [object(), object()], "b": [3, 4]})
     df2 = pl.DataFrame({"a": [object(), object()], "b": [4, 3]})
     with pytest.raises(
-        InvalidOperationError,
-        match="`arg_sort_multiple` operation not supported for dtype `object`",
+        pl.exceptions.InvalidOperationError,
+        match=r"column '.*' has a dtype of '.*', which does not support sorting",
     ):
         assert_function(df1, df2, check_row_order=False)
 

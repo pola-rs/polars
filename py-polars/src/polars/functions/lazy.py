@@ -23,7 +23,7 @@ from polars._utils.parse import (
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import extend_bool, qualified_type_name
 from polars._utils.wrap import wrap_df, wrap_expr, wrap_s
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime
 from polars.datatypes._parse import parse_into_datatype_expr
 from polars.lazyframe.opt_flags import (
     DEFAULT_QUERY_OPT_FLAGS,
@@ -2554,12 +2554,12 @@ def from_epoch(column: str | Expr, time_unit: EpochTimeUnit = ...) -> Expr: ...
 
 @overload
 def from_epoch(
-    column: Series | Sequence[int], time_unit: EpochTimeUnit = ...
+    column: Series | Sequence[int | float], time_unit: EpochTimeUnit = ...
 ) -> Series: ...
 
 
 def from_epoch(
-    column: str | Expr | Series | Sequence[int], time_unit: EpochTimeUnit = "s"
+    column: str | Expr | Series | Sequence[int | float], time_unit: EpochTimeUnit = "s"
 ) -> Expr | Series:
     """
     Utility function that parses an epoch timestamp (or Unix time) to Polars Date(time).
@@ -2567,25 +2567,25 @@ def from_epoch(
     Depending on the `time_unit` provided, this function will return a different dtype:
 
     - time_unit="d" returns pl.Date
-    - time_unit="s" returns pl.Datetime["us"] (pl.Datetime's default)
-    - time_unit="ms" returns pl.Datetime["ms"]
-    - time_unit="us" returns pl.Datetime["us"]
     - time_unit="ns" returns pl.Datetime["ns"]
+    - otherwise returns pl.Datetime["us"] (Polars' default time unit)
 
     Parameters
     ----------
     column
-        Series or expression to parse integers to pl.Datetime.
+        Series or Expression to parse to Datetime.
     time_unit
         The unit of time of the timesteps since epoch time.
 
     Examples
     --------
-    >>> df = pl.DataFrame({"timestamp": [1666683077, 1666683099]}).lazy()
-    >>> df.select(pl.from_epoch(pl.col("timestamp"), time_unit="s")).collect()
+    Convert from integer seconds:
+
+    >>> df = pl.LazyFrame({"ts": [1666683077, 1666683099]})
+    >>> df.select(pl.from_epoch(pl.col("ts"), time_unit="s")).collect()
     shape: (2, 1)
     ┌─────────────────────┐
-    │ timestamp           │
+    │ ts                  │
     │ ---                 │
     │ datetime[μs]        │
     ╞═════════════════════╡
@@ -2593,7 +2593,23 @@ def from_epoch(
     │ 2022-10-25 07:31:39 │
     └─────────────────────┘
 
-    The function can also be used in an eager context by passing a Series.
+    Convert from fractional seconds:
+
+    >>> df = pl.LazyFrame({"ts": [-609066.723456, 1066445333.8888, 3405071999.987654]})
+    >>> df.select(pl.from_epoch(pl.col("ts"), time_unit="s")).collect()
+    shape: (3, 1)
+    ┌────────────────────────────┐
+    │ ts                         │
+    │ ---                        │
+    │ datetime[μs]               │
+    ╞════════════════════════════╡
+    │ 1969-12-24 22:48:53.276544 │
+    │ 2003-10-18 02:48:53.888800 │
+    │ 2077-11-25 13:19:59.987654 │
+    └────────────────────────────┘
+
+    The function can also be used in an eager context by passing a Series
+    or sequence of int/float values.
 
     >>> s = pl.Series([12345, 12346])
     >>> pl.from_epoch(s, time_unit="d")
@@ -2607,17 +2623,18 @@ def from_epoch(
     if isinstance(column, str):
         column = F.col(column)
     elif not isinstance(column, (pl.Series, pl.Expr)):
-        column = pl.Series(column)  # Sequence input handled by Series constructor
+        column = pl.Series(column)
 
     if time_unit == "d":
         return column.cast(Date)
-    elif time_unit == "s":
-        return (column.cast(Int64) * 1_000_000).cast(Datetime("us"))
-    elif time_unit in DTYPE_TEMPORAL_UNITS:
-        return column.cast(Datetime(time_unit))
-    else:
-        msg = f"`time_unit` must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
-        raise ValueError(msg)
+    if time_unit in (scale := {"s": 1_000_000, "ms": 1_000}):
+        return (column * scale[time_unit]).cast(Datetime("us"))
+    if time_unit in DTYPE_TEMPORAL_UNITS:
+        return column.cast(Datetime(time_unit))  # type: ignore[arg-type]
+
+    valid_units = "'ns', 'us', 'ms', 's', 'd'"
+    msg = f"`time_unit` must be one of {valid_units}, got {time_unit!r}"
+    raise ValueError(msg)
 
 
 @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")

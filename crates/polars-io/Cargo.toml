@@ -37,6 +37,7 @@ memchr = { workspace = true }
 memmap = { workspace = true }
 num-traits = { workspace = true }
 object_store = { workspace = true, optional = true }
+parking_lot = { workspace = true, optional = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
@@ -138,7 +139,7 @@ cloud = [
   "reqwest",
   "http",
 ]
-file_cache = ["async", "dep:blake3", "dep:fs4", "serde_json", "cloud"]
+file_cache = ["async", "dep:blake3", "dep:fs4", "dep:parking_lot", "serde_json", "cloud"]
 aws = ["object_store/aws", "cloud", "reqwest"]
 azure = ["object_store/azure", "cloud"]
 gcp = ["object_store/gcp", "cloud"]

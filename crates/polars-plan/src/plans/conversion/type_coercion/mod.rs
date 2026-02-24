@@ -234,6 +234,142 @@ impl OptimizationRule for TypeCoercionRule {
                 op,
                 right: node_right,
             } => return process_binary(expr_arena, schema, node_left, op, node_right),
+            #[cfg(feature = "is_between")]
+            AExpr::Function {
+                ref input,
+                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }),
+                options,
+            } => {
+                use CmpLiteralRhsRewrite::*;
+
+                use crate::plans::type_coercion::binary::{
+                    BoolValueAlways, CmpLiteralRhsRewrite, coerce_comparison_literal,
+                };
+
+                let [needle, low, high] = input.as_slice() else {
+                    return Ok(None);
+                };
+
+                let needle = needle.clone();
+                let low = low.clone();
+                let high = high.clone();
+
+                let mut new_low: Option<ExprIR> = None;
+                let mut new_high: Option<ExprIR> = None;
+                // Some(v):
+                // * v @ false -> LHS only
+                // * v @ true -> RHS only
+                let mut one_side: Option<bool> = None;
+
+                let cmp_op_low = match closed {
+                    ClosedInterval::Both | ClosedInterval::Left => Operator::GtEq,
+                    ClosedInterval::Right | ClosedInterval::None => Operator::Gt,
+                };
+                let cmp_op_high = match closed {
+                    ClosedInterval::Both | ClosedInterval::Right => Operator::LtEq,
+                    ClosedInterval::Left | ClosedInterval::None => Operator::Lt,
+                };
+
+                let needle_dtype = unpack!(try_get_dtype(expr_arena, needle.node(), schema).ok());
+
+                let (low_ae, low_dtype) =
+                    unpack!(get_aexpr_and_type(expr_arena, low.node(), schema));
+
+                if low_dtype != needle_dtype
+                    && let AExpr::Literal(lv) = low_ae
+                {
+                    use crate::plans::type_coercion::binary::BoolValueAlways;
+
+                    if let LiteralValue::Scalar(lit) = lv.clone().materialize() {
+                        match unpack!(coerce_comparison_literal(
+                            needle.node(),
+                            &needle_dtype,
+                            cmp_op_low,
+                            lit,
+                            expr_arena,
+                        )) {
+                            ReplaceLit(new_lit) => {
+                                new_low = Some(ExprIR::from_node(
+                                    expr_arena.add(AExpr::Literal(LiteralValue::Scalar(new_lit))),
+                                    expr_arena,
+                                ));
+                            },
+                            NewAExpr {
+                                aexpr,
+                                output_constraint,
+                            } => match output_constraint {
+                                Some(BoolValueAlways::True | BoolValueAlways::TrueOrNull) => {
+                                    one_side = Some(true)
+                                },
+                                Some(BoolValueAlways::FalseOrNull) => return Ok(Some(aexpr)),
+                                None => return Ok(None),
+                            },
+                        }
+                    }
+                }
+
+                let (high_ae, high_dtype) =
+                    unpack!(get_aexpr_and_type(expr_arena, high.node(), schema));
+
+                if high_dtype != needle_dtype
+                    && let AExpr::Literal(lv) = high_ae
+                {
+                    if let LiteralValue::Scalar(lit) = lv.clone().materialize() {
+                        match unpack!(coerce_comparison_literal(
+                            needle.node(),
+                            &needle_dtype,
+                            cmp_op_high,
+                            lit,
+                            expr_arena,
+                        )) {
+                            ReplaceLit(new_lit) => {
+                                new_high = Some(ExprIR::from_node(
+                                    expr_arena.add(AExpr::Literal(LiteralValue::Scalar(new_lit))),
+                                    expr_arena,
+                                ));
+                            },
+                            NewAExpr {
+                                aexpr,
+                                output_constraint,
+                            } => match output_constraint {
+                                Some(BoolValueAlways::True | BoolValueAlways::TrueOrNull) => {
+                                    one_side = Some(false)
+                                },
+                                Some(BoolValueAlways::FalseOrNull) => return Ok(Some(aexpr)),
+                                None => return Ok(None),
+                            },
+                        }
+                    }
+                }
+
+                let out = match one_side {
+                    Some(false) => AExpr::BinaryExpr {
+                        left: needle.node(),
+                        op: cmp_op_low,
+                        right: new_low.unwrap_or(low).node(),
+                    },
+                    Some(true) => AExpr::BinaryExpr {
+                        left: needle.node(),
+                        op: cmp_op_high,
+                        right: new_high.unwrap_or(high).node(),
+                    },
+                    None => {
+                        if new_low.is_none() && new_high.is_none() {
+                            return Ok(None);
+                        }
+
+                        AExpr::Function {
+                            input: vec![needle, new_low.unwrap_or(low), new_high.unwrap_or(high)],
+                            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween {
+                                closed,
+                            }),
+                            options,
+                        }
+                    },
+                };
+
+                Some(out)
+            },
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 ref function,

@@ -1619,3 +1619,122 @@ def test_sink_parquet_pyarrow_filter_string_type_26435() -> None:
         pl.DataFrame(pq.read_table(f, filters=[("string", "=", "A")])),
         pl.DataFrame({"string": "A", "int": 0}),
     )
+
+
+def test_scan_parquet_temporal_lit_comparison_skip_batch_24095_25731(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    df = pl.DataFrame(
+        {
+            "datetime[ns]": pl.Series(
+                [
+                    "2025-12-31 23:59:59.999999999",
+                    "2025-12-31 23:59:59.999999999",
+                    "2026-01-01 00:00:00.000000000",
+                    "2026-01-01 00:00:00.000000999",
+                    "2026-01-01 00:00:00.000001000",
+                    "2026-01-01 00:00:00.000001999",
+                    "2026-01-01 00:00:00.000002000",
+                    "2026-01-01 00:00:00.000999999",
+                    "2026-01-01 00:00:00.001000000",
+                    "2026-01-01 00:00:00.001000000",
+                ]
+            ).str.strptime(dtype=pl.Datetime("ns"), format="%Y-%m-%d %H:%M:%S%.f"),
+            "duration[ns]": pl.Series(
+                [-1, -1, 0, 999, 1000, 1999, 2000, -1, -1, -1]
+            ).cast(pl.Duration("ns")),
+        }
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=2)
+
+    q = pl.scan_parquet(f).filter(
+        pl.col("datetime[ns]") == pl.lit(datetime(2026, 1, 1))
+    )
+
+    capfd.readouterr()
+    out = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "reading 1 / 5 row groups" in capture
+
+    assert_frame_equal(
+        out.select(pl.col("datetime[ns]").dt.to_string()),
+        pl.DataFrame(
+            {
+                "datetime[ns]": pl.Series(
+                    [
+                        "2026-01-01 00:00:00.000000000",
+                        "2026-01-01 00:00:00.000000999",
+                    ]
+                )
+            }
+        ),
+    )
+
+    q = pl.scan_parquet(f).filter(
+        pl.col("datetime[ns]").is_between(
+            pl.lit(datetime(2026, 1, 1)),
+            pl.lit(datetime(2026, 1, 1, microsecond=1)),
+        )
+    )
+
+    capfd.readouterr()
+    out = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "reading 2 / 5 row groups" in capture
+
+    assert_frame_equal(
+        out.select(pl.col("datetime[ns]").dt.to_string()),
+        pl.DataFrame(
+            {
+                "datetime[ns]": pl.Series(
+                    [
+                        "2026-01-01 00:00:00.000000000",
+                        "2026-01-01 00:00:00.000000999",
+                        "2026-01-01 00:00:00.000001000",
+                        "2026-01-01 00:00:00.000001999",
+                    ]
+                )
+            }
+        ),
+    )
+
+    capfd.readouterr()
+
+    q = pl.scan_parquet(f).filter(
+        pl.col("datetime[ns]").is_between(
+            pl.lit(datetime(2026, 1, 1)),
+            pl.lit(datetime(2026, 1, 1, microsecond=1)),
+        )
+    )
+
+    capfd.readouterr()
+
+    out = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "reading 2 / 5 row groups" in capture
+
+    assert_frame_equal(
+        out.select(pl.col("duration[ns]").dt.to_string()),
+        pl.DataFrame(
+            {
+                "duration[ns]": pl.Series(
+                    [
+                        "PT0S",
+                        "PT0.000000999S",
+                        "PT0.000001S",
+                        "PT0.000001999S",
+                    ]
+                )
+            }
+        ),
+    )
+
+    capfd.readouterr()

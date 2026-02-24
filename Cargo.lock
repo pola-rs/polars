@@ -3241,6 +3241,7 @@ dependencies = [
  "memmap2",
  "num-traits",
  "object_store",
+ "parking_lot",
  "percent-encoding",
  "polars-arrow",
  "polars-buffer",
@@ -3340,6 +3341,18 @@ dependencies = [
  "rayon",
  "recursive",
  "tokio",
+]
+
+[[package]]
+name = "polars-ooc"
+version = "0.53.0"
+dependencies = [
+ "boxcar",
+ "parking_lot",
+ "polars-config",
+ "polars-core",
+ "polars-utils",
+ "slotmap",
 ]
 
 [[package]]
@@ -3629,6 +3642,7 @@ dependencies = [
  "polars-io",
  "polars-json",
  "polars-mem-engine",
+ "polars-ooc",
  "polars-ops",
  "polars-parquet",
  "polars-plan",

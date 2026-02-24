@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import importlib.util
 import os
 import sys
 from typing import TYPE_CHECKING, Any, Literal

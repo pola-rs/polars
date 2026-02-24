@@ -450,8 +450,8 @@ impl Debug for ExpandedDataset {
 
             use polars_utils::pl_str::PlSmallStr;
 
+            #[allow(dead_code)]
             #[derive(Debug)]
-            #[expect(unused)]
             pub struct ExpandedDataset<'a> {
                 pub version: &'a str,
                 pub limit: &'a Option<usize>,

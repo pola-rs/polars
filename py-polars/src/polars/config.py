@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from types import TracebackType
     from typing import TypeAlias
 
-    from polars._typing import FloatFmt
+    from polars._typing import Alignment, FloatFmt
     from polars.io.cloud.credential_provider._providers import (
         CredentialProviderFunction,
     )
@@ -107,8 +107,8 @@ class ConfigParameters(TypedDict, total=False):
     fmt_str_lengths: int | None
     fmt_table_cell_list_len: int | None
     streaming_chunk_size: int | None
-    tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
-    tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
+    tbl_cell_alignment: Alignment | None
+    tbl_cell_numeric_alignment: Alignment | None
     tbl_cols: int | None
     tbl_column_data_type_inline: bool | None
     tbl_dataframe_shape_below: bool | None
@@ -132,8 +132,8 @@ class ConfigParameters(TypedDict, total=False):
     set_fmt_str_lengths: int | None
     set_fmt_table_cell_list_len: int | None
     set_streaming_chunk_size: int | None
-    set_tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
-    set_tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
+    set_tbl_cell_alignment: Alignment | None
+    set_tbl_cell_numeric_alignment: Alignment | None
     set_tbl_cols: int | None
     set_tbl_column_data_type_inline: bool | None
     set_tbl_dataframe_shape_below: bool | None
@@ -908,9 +908,7 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
-    def set_tbl_cell_alignment(
-        cls, format: Literal["LEFT", "CENTER", "RIGHT"] | None
-    ) -> type[Config]:
+    def set_tbl_cell_alignment(cls, format: Alignment | None) -> type[Config]:
         """
         Set table cell alignment.
 
@@ -945,7 +943,7 @@ class Config(contextlib.ContextDecorator):
         """
         if format is None:
             os.environ.pop("POLARS_FMT_TABLE_CELL_ALIGNMENT", None)
-        elif format not in {"LEFT", "CENTER", "RIGHT"}:
+        elif (format := format.upper()) not in {"LEFT", "CENTER", "RIGHT"}:  # type: ignore[assignment]
             msg = f"invalid alignment: {format!r}"
             raise ValueError(msg)
         else:
@@ -954,9 +952,7 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
-    def set_tbl_cell_numeric_alignment(
-        cls, format: Literal["LEFT", "CENTER", "RIGHT"] | None
-    ) -> type[Config]:
+    def set_tbl_cell_numeric_alignment(cls, format: Alignment | None) -> type[Config]:
         """
         Set table cell alignment for numeric columns.
 
@@ -996,7 +992,7 @@ class Config(contextlib.ContextDecorator):
         """
         if format is None:
             os.environ.pop("POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT", None)
-        elif format not in {"LEFT", "CENTER", "RIGHT"}:
+        elif (format := format.upper()) not in {"LEFT", "CENTER", "RIGHT"}:  # type: ignore[assignment]
             msg = f"invalid alignment: {format!r}"
             raise ValueError(msg)
         else:
@@ -1170,7 +1166,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_TABLE_FORMATTING", None)
         else:
             valid_format_names = get_args(TableFormatNames)
-            if format not in valid_format_names:
+            if (format := format.upper()) not in valid_format_names:  # type: ignore[assignment]
                 msg = f"invalid table format name: {format!r}\nExpected one of: {', '.join(valid_format_names)}"
                 raise ValueError(msg)
             os.environ["POLARS_FMT_TABLE_FORMATTING"] = format
