@@ -26,7 +26,7 @@ macro_rules! bail_unhandled_arrow_conversion_dtype_pair {
     }};
 }
 
-/// Boxes a primitive array and sets its dtype.
+/// Downcasts to a primitive array, boxes it, then sets its dtype.
 macro_rules! primitive_to_boxed_with_logical {
     ($array:expr, $physical:ty, $logical_arrow_dtype:expr) => {{
         let arr: &PrimitiveArray<$physical> = $array.as_any().downcast_ref().unwrap();
@@ -284,6 +284,14 @@ impl ToArrowConverter {
             (DataType::Time, ArrowDataType::Time64(ArrowTimeUnit::Nanosecond)) => {
                 primitive_to_boxed_with_logical!(array, i64, to_owned_dtype(arrow_field))
             },
+            #[cfg(feature = "dtype-time")]
+            (DataType::Time, ArrowDataType::Time64(ArrowTimeUnit::Microsecond)) => {
+                use polars_compute::cast::time64ns_to_time64us;
+
+                let array: &PrimitiveArray<i64> = array.as_any().downcast_ref().unwrap();
+
+                time64ns_to_time64us(array).boxed()
+            },
             #[cfg(feature = "dtype-decimal")]
             (DataType::Decimal(prec, scale), ArrowDataType::Decimal(a_prec, a_scale)) => {
                 let matching = *a_prec == *prec && *a_scale == *scale;
@@ -317,6 +325,30 @@ impl ToArrowConverter {
             (DataType::Binary, ArrowDataType::BinaryView) => array.to_boxed(),
             (DataType::Binary, ArrowDataType::LargeBinary) => {
                 cast_unchecked(array, &ArrowDataType::LargeBinary).unwrap()
+            },
+            (DataType::Binary, ArrowDataType::FixedSizeBinary(row_width)) => {
+                use polars_compute::cast::binview_to_fixed_binary;
+
+                let array: &BinaryViewArray = array.as_any().downcast_ref().unwrap();
+
+                binview_to_fixed_binary(array, *row_width)?.boxed()
+            },
+            (DataType::Binary, ArrowDataType::Extension(_)) => {
+                let arrow_dtype = to_owned_dtype(arrow_field);
+
+                let ArrowDataType::Extension(ext_type) = &arrow_dtype else {
+                    unreachable!()
+                };
+
+                let storage_field =
+                    ArrowField::new(ext_type.name.clone(), ext_type.inner.clone(), true);
+
+                let mut array =
+                    self.array_to_arrow(array, &DataType::Binary, Cow::Owned(storage_field))?;
+
+                *array.dtype_mut() = arrow_dtype;
+
+                array.to_boxed()
             },
             #[cfg(feature = "dtype-extension")]
             (
