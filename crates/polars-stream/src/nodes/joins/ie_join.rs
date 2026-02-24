@@ -2,7 +2,7 @@ use std::mem;
 use std::ops::Range;
 
 use polars_core::prelude::*;
-use polars_ops::frame::{IEJoinOptions, JoinArgs};
+use polars_ops::frame::{IEJoinOptions, InequalityOperator, JoinArgs};
 
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::async_primitives::distributor_channel as dc;
@@ -42,6 +42,15 @@ struct IEJoinParams {
     probe: RangeJoinSideParams,
     args: JoinArgs,
     options: IEJoinOptions,
+}
+
+impl IEJoinParams {
+    fn l1_descending(&self) -> bool {
+        matches!(
+            self.options.operator1,
+            InequalityOperator::Gt | InequalityOperator::GtEq
+        )
+    }
 }
 
 #[derive(Debug)]
@@ -210,11 +219,10 @@ fn transition_to_probe(
         .map(|name| build_df.column(name))
         .transpose()?
         .map(|c| c.as_materialized_series().to_owned());
-    let l1_descending = false; // TODO: [amber]
     let l1_sort_options = SortOptions::default()
         .with_maintain_order(true)
         .with_nulls_last(false)
-        .with_order_descending(l1_descending);
+        .with_order_descending(params.l1_descending());
     let build_l1_s = build_l1.arg_sort(l1_sort_options);
 
     // After this point we do not need the temporary columns anymore, as they
@@ -238,11 +246,10 @@ async fn distribute_work_task(
     params: &IEJoinParams,
     distributor: async_channel::Sender<(Morsel, IdxCa, Range<usize>, Range<usize>)>,
 ) -> PolarsResult<()> {
-    let l1_descending = false; // TODO: [amber]
     let l1_sort_options = SortOptions::default()
         .with_maintain_order(true)
         .with_nulls_last(false)
-        .with_order_descending(l1_descending);
+        .with_order_descending(params.l1_descending());
 
     loop {
         let Ok(morsel) = recv.recv().await else {
