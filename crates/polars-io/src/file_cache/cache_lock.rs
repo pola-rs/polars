@@ -29,7 +29,8 @@ pub(super) static GLOBAL_FILE_CACHE_LOCK: LazyLock<GlobalLock> = LazyLock::new(|
     let notify_lock_acquired_2 = notify_lock_acquired.clone();
 
     pl_async::get_runtime().spawn(async move {
-        let access_tracker = at_bool;
+        let at_bool = std::mem::ManuallyDrop::new(at_bool);
+        let access_tracker = at_bool.as_ref();
         let notify_lock_acquired = notify_lock_acquired_2;
         let verbose = false;
 
