@@ -445,14 +445,23 @@ impl ProjectionPushDown {
                 mut unified_scan_args,
                 mut output_schema,
             } => {
-                if let Some(pred) = &predicate {
+                // If we have a predicate, load those columns, but drop
+                // them after loading the file.
+                let post_project = if let Some(pred) = &predicate
+                    && ctx.has_pushed_down()
+                {
+                    let post_project = ctx.acc_projections.clone();
+
                     add_expr_to_accumulated(
                         pred.node(),
                         &mut ctx.acc_projections,
                         &mut ctx.projected_names,
                         expr_arena,
                     );
-                }
+                    Some(post_project)
+                } else {
+                    None
+                };
 
                 let do_optimization = match &*scan_type {
                     FileScanIR::Anonymous { function, .. } => function.allows_projection_pushdown(),
@@ -504,7 +513,7 @@ impl ProjectionPushDown {
                             ));
 
                             unified_scan_args.projection = Some(projection)
-                        } else {
+                        } else if ctx.acc_projections.is_empty() {
                             // All nodes in new-streaming support projecting empty morsels with the correct height
                             // from the file.
                             unified_scan_args.projection = Some(Arc::from([]));
@@ -585,7 +594,14 @@ impl ProjectionPushDown {
                     unified_scan_args,
                 };
 
-                Ok(lp)
+                if let Some(post_project) = post_project {
+                    let root = lp_arena.add(lp);
+                    Ok(IRBuilder::new(root, expr_arena, lp_arena)
+                        .project_simple_nodes(post_project)?
+                        .build())
+                } else {
+                    Ok(lp)
+                }
             },
             Sort {
                 input,

@@ -37,13 +37,19 @@ pub(super) fn process_join(
         panic!()
     };
 
-    if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) = &options.options {
+    // If we have a predicate, ensure we load those columns, but drop
+    // them after doing the join if we can.
+    let mut post_project = false;
+    if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) = &options.options
+        && proj_cx.has_pushed_down()
+    {
         add_expr_to_accumulated(
             predicate.node(),
             &mut proj_cx.acc_projections,
             &mut proj_cx.projected_names,
             expr_arena,
         );
+        post_project = true;
     }
 
     let is_projected =
@@ -218,7 +224,7 @@ pub(super) fn process_join(
     )
     .unwrap();
 
-    let post_project: Option<Vec<ExprIR>> = if proj_cx.has_pushed_down() {
+    let post_project: Option<Vec<ExprIR>> = if proj_cx.has_pushed_down() || post_project {
         let mut needs_post_project = proj_cx.acc_projections.len() != new_join_output_schema.len();
 
         // Build post-projection to re-order the columns and add suffixes if necessary.
