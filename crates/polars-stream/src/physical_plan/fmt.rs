@@ -1,5 +1,6 @@
 use std::fmt::Write;
 
+use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::PartitionStrategyIR;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
@@ -146,6 +147,24 @@ pub fn fmt_exprs(
             fmt_expr(f, e, expr_arena).unwrap();
         }
     }
+}
+
+fn fmt_join_label(base_label: &str, left_on: &str, right_on: &str, args: &JoinArgs) -> String {
+    let mut label = base_label.to_string();
+    write!(label, r"\nleft_on:\n{}", left_on).unwrap();
+    write!(label, r"\nright_on:\n{}", right_on).unwrap();
+    if args.how.is_equi() {
+        write!(
+            label,
+            r"\nhow: {}",
+            escape_graphviz(&format!("{:?}", args.how))
+        )
+        .unwrap();
+    }
+    if args.nulls_equal {
+        write!(label, r"\njoin-nulls").unwrap();
+    }
+    label
 }
 
 #[recursive::recursive]
@@ -670,7 +689,7 @@ fn visualize_plan_rec(
             args,
             output_bool: _,
         } => {
-            let label = match phys_sm[node_key].kind {
+            let base_label = match phys_sm[node_key].kind {
                 PhysNodeKind::MergeJoin { .. } => "merge-join",
                 PhysNodeKind::EquiJoin { .. } => "equi-join",
                 PhysNodeKind::InMemoryJoin { .. } => "in-memory-join",
@@ -689,30 +708,12 @@ fn visualize_plan_rec(
                 } if args.how.is_anti() => "is-not-in",
                 _ => unreachable!(),
             };
-            let mut label = label.to_string();
-            write!(
-                label,
-                r"\nleft_on:\n{}",
-                fmt_exprs_to_label(left_on, expr_arena, FormatExprStyle::NoAliases)
-            )
-            .unwrap();
-            write!(
-                label,
-                r"\nright_on:\n{}",
-                fmt_exprs_to_label(right_on, expr_arena, FormatExprStyle::NoAliases)
-            )
-            .unwrap();
-            if args.how.is_equi() {
-                write!(
-                    label,
-                    r"\nhow: {}",
-                    escape_graphviz(&format!("{:?}", args.how))
-                )
-                .unwrap();
-            }
-            if args.nulls_equal {
-                write!(label, r"\njoin-nulls").unwrap();
-            }
+            let label = fmt_join_label(
+                base_label,
+                &fmt_exprs_to_label(left_on, expr_arena, FormatExprStyle::NoAliases),
+                &fmt_exprs_to_label(right_on, expr_arena, FormatExprStyle::NoAliases),
+                args,
+            );
             (label, &[*input_left, *input_right][..])
         },
         PhysNodeKind::CrossJoin {
@@ -723,8 +724,19 @@ fn visualize_plan_rec(
         PhysNodeKind::AsOfJoin {
             input_left,
             input_right,
+            left_on,
+            right_on,
+            args,
             ..
-        } => ("asof_join".to_string(), &[*input_left, *input_right][..]),
+        } => {
+            let label = fmt_join_label(
+                "asof-join",
+                &escape_graphviz(&left_on[..]),
+                &escape_graphviz(&right_on[..]),
+                args,
+            );
+            (label, &[*input_left, *input_right][..])
+        },
         #[cfg(feature = "merge_sorted")]
         PhysNodeKind::MergeSorted {
             input_left,
