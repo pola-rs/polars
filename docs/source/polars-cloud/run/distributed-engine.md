@@ -14,7 +14,8 @@ significantly reduced, allowing users to process data at scale.
 
 ## Using distributed engine
 
-To execute queries using the distributed engine, you can call the `distributed()` method.
+To execute queries using the distributed engine, you can call the `distributed()` method. This is
+the default mode of execution for remote queries.
 
 ```python
 lf: LazyFrame
@@ -55,3 +56,41 @@ query takes around xx seconds to execute.
 !!! tip "Try on SF1000 (approx. 1TB of data)"
 
     You can also run this example on a higher scale factor. The data is available on the same bucket. You can change the URL from `sf100` to `sf1000`.
+
+## How it works
+
+When you call `.execute()` on a distributed query, it passes through the following pipeline:
+
+```mermaid
+%%{init: {"flowchart": {"nodeSpacing": 60, "rankSpacing": 60}} }%%
+flowchart LR
+    A([DSL]) --> B([Logical plan])
+    B --> C([Optimized<br/>logical plan])
+    C --> D([Stage graph])
+    D --> E([Worker<br/>dispatch])
+    E --> F([Physical plan])
+    F --> G([Execution])
+
+    click A "/polars-cloud/run/glossary/#dsl"
+    click B "/polars-cloud/run/glossary/#logical-plan"
+    click C "/polars-cloud/run/glossary/#optimized-logical-plan"
+    click D "/polars-cloud/run/glossary/#stage-graph"
+    click E "/polars-cloud/run/glossary/#scheduler"
+    click F "/polars-cloud/run/glossary/#physical-plan"
+```
+
+1. You write a query using the Polars [DSL](glossary.md#dsl), building up a
+   [LazyFrame](glossary.md#query).
+2. The LazyFrame is translated into a [logical plan](glossary.md#logical-plan): a tree of operations
+   capturing _what_ to compute.
+3. The [query optimizer](glossary.md#optimized-logical-plan) rewrites the logical plan into an
+   equivalent but more efficient optimized logical plan.
+4. The distributed query planner walks the optimized logical plan and produces a
+   [stage graph](glossary.md#stage-graph): a DAG of [stages](glossary.md#stage) separated by
+   [shuffles](glossary.md#shuffle) at each point where a blocking operation requires data to be
+   redistributed across workers.
+5. The [scheduler](glossary.md#scheduler) dispatches stages to [workers](glossary.md#worker) in
+   dependency order, waiting for all required shuffles to complete before starting the next stage.
+6. Each worker receives the optimized logical plan for its stage together with its assigned
+   [partitions](glossary.md#partition), derives its own [physical plan](glossary.md#physical-plan),
+   and executes it.
