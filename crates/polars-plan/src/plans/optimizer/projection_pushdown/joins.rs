@@ -10,7 +10,6 @@ use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::dsl::JoinTypeOptionsIR;
-use crate::plans::optimizer::projection_pushdown::add_expr_to_accumulated;
 use crate::plans::{
     AExpr, ColumnNode, ExprIR, ExprOrigin, IR, IRBuilder, OutputName, PlHashSet, det_join_schema,
 };
