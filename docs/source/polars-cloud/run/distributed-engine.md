@@ -61,23 +61,10 @@ query takes around xx seconds to execute.
 
 When you call `.execute()` on a distributed query, it passes through the following pipeline:
 
-```mermaid
-%%{init: {"flowchart": {"nodeSpacing": 60, "rankSpacing": 60}} }%%
-flowchart LR
-    A([DSL]) --> B([Logical plan])
-    B --> C([Optimized<br/>logical plan])
-    C --> D([Stage graph])
-    D --> E([Worker<br/>dispatch])
-    E --> F([Physical plan])
-    F --> G([Execution])
-
-    click A "/polars-cloud/run/glossary/#dsl"
-    click B "/polars-cloud/run/glossary/#logical-plan"
-    click C "/polars-cloud/run/glossary/#optimized-logical-plan"
-    click D "/polars-cloud/run/glossary/#stage-graph"
-    click E "/polars-cloud/run/glossary/#scheduler"
-    click F "/polars-cloud/run/glossary/#physical-plan"
-```
+[DSL](glossary.md#dsl) → [Logical plan](glossary.md#logical-plan) →
+[Optimized logical plan](glossary.md#optimized-logical-plan) →
+[Stage graph](glossary.md#stage-graph) → [Worker dispatch](glossary.md#scheduler) →
+[Physical plan](glossary.md#physical-plan) → Execution
 
 1. You write a query using the Polars [DSL](glossary.md#dsl), building up a
    [LazyFrame](glossary.md#query).
