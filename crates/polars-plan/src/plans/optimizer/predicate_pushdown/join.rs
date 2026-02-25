@@ -195,6 +195,8 @@ pub(super) fn process_join(
 
             #[cfg(feature = "iejoin")]
             IEJoin => false,
+            #[cfg(feature = "iejoin")]
+            Range => todo!("[amber]"),
 
             Cross => unreachable!(), // Cross left/right_on should be empty
         } {
@@ -313,7 +315,8 @@ pub(super) fn process_join(
 
             // Same as inner-join.
             #[cfg(feature = "iejoin")]
-            JoinType::IEJoin => !(push_left || push_right),
+            // TODO: [amber] Double-check if this is correct for range-join
+            JoinType::IEJoin | JoinType::Range => !(push_left || push_right),
         };
 
         if has_residual {
@@ -393,7 +396,7 @@ fn try_rewrite_join_type(
 
     let suffix = options.args.suffix().clone();
 
-    // * Cross -> Inner | IEJoin
+    // * Cross -> Inner | RangeJoin | IEJoin
     // * IEJoin -> Inner
     //
     // Note: The join rewrites here all maintain output column ordering, hence this does not need
@@ -419,7 +422,7 @@ fn try_rewrite_join_type(
             },
 
             #[cfg(feature = "iejoin")]
-            Some(JoinTypeOptionsIR::IEJoin(_)) => {},
+            Some(JoinTypeOptionsIR::IEJoin(_) | JoinTypeOptionsIR::Range(_)) => {},
             None => {},
         }
 
@@ -449,6 +452,49 @@ fn try_rewrite_join_type(
 
         if options.args.how == JoinType::Inner {
             return Ok(());
+        }
+
+        // Try converting cross join to RangeJoin
+        #[cfg(feature = "iejoin")]
+        if streaming
+            && matches!(options.args.maintain_order, MaintainOrderJoin::None)
+            && left_on.is_empty()
+        {
+            let range_predicate = take_double_bounded_range_join_filter(
+                acc_predicates,
+                expr_arena,
+                schema_left,
+                schema_right,
+                output_schema,
+                &suffix,
+            )?;
+            if let Some((bound_lower, bound_upper, left_is_bounded)) = range_predicate {
+                let join_options = Arc::make_mut(options);
+                join_options.args.how = JoinType::Range;
+
+                let JoinTypeOptionsIR::IEJoin(ie_options) = join_options
+                    .options
+                    .get_or_insert(JoinTypeOptionsIR::IEJoin(IEJoinOptions::default()))
+                else {
+                    unreachable!()
+                };
+
+                let expr_eq = |e1, e2| {
+                    AExpr::is_expr_equal_to(expr_arena.get(e1), expr_arena.get(e2), expr_arena)
+                };
+                left_on.push(ExprIR::from_node(bound_lower.input_lhs, expr_arena));
+                right_on.push(ExprIR::from_node(bound_lower.input_rhs, expr_arena));
+                if left_is_bounded {
+                    debug_assert!(expr_eq(bound_upper.input_lhs, bound_lower.input_lhs));
+                    right_on.push(ExprIR::from_node(bound_upper.input_rhs, expr_arena));
+                } else {
+                    debug_assert!(expr_eq(bound_upper.input_rhs, bound_lower.input_rhs));
+                    left_on.push(ExprIR::from_node(bound_upper.input_lhs, expr_arena));
+                }
+                ie_options.operator1 = bound_lower.ie_op;
+                ie_options.operator2 = Some(bound_upper.ie_op);
+                return Ok(());
+            }
         }
 
         // Try converting cross join to IEJoin
@@ -1027,6 +1073,7 @@ fn take_inner_join_compatible_filters(
 }
 
 #[cfg(feature = "iejoin")]
+#[derive(Debug, Clone)]
 struct IEJoinCompatiblePredicate {
     input_lhs: Node,
     input_rhs: Node,
@@ -1117,6 +1164,86 @@ fn take_iejoin_compatible_filters(
             _ => None,
         }
     }
+}
+
+#[cfg(feature = "iejoin")]
+fn take_double_bounded_range_join_filter(
+    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
+    expr_arena: &mut Arena<AExpr>,
+    schema_left: &Schema,
+    schema_right: &Schema,
+    output_schema: &Schema,
+    suffix: &str,
+) -> PolarsResult<Option<(IEJoinCompatiblePredicate, IEJoinCompatiblePredicate, bool)>> {
+    // TODO: [amber] Add another function for single range predicate
+
+    use InequalityOperator::*;
+    use polars_utils::itertools::Itertools;
+
+    let ie_join_filters = take_iejoin_compatible_filters(
+        acc_predicates,
+        expr_arena,
+        schema_left,
+        schema_right,
+        output_schema,
+        suffix,
+    )?
+    .collect_vec();
+
+    let (lower_idx, upper_idx, left_is_bounded_side) = 'bound_preds: {
+        for (idx1, pred1) in ie_join_filters.iter().enumerate() {
+            for (idx2, pred2) in ie_join_filters.iter().enumerate() {
+                if idx1 == idx2 {
+                    continue;
+                }
+                let lhs1 = expr_arena.get(pred1.input_lhs);
+                let rhs1 = expr_arena.get(pred1.input_rhs);
+                let lhs2 = expr_arena.get(pred2.input_lhs);
+                let rhs2 = expr_arena.get(pred2.input_rhs);
+                let op1_is_less = matches!(pred1.ie_op, Lt | LtEq);
+                let op2_is_less = matches!(pred2.ie_op, Lt | LtEq);
+                if lhs1.is_expr_equal_to(lhs2, expr_arena) && !op1_is_less && op2_is_less {
+                    break 'bound_preds (idx1, idx2, true);
+                } else if lhs1.is_expr_equal_to(lhs2, expr_arena) && op1_is_less && !op2_is_less {
+                    break 'bound_preds (idx2, idx1, true);
+                } else if rhs1.is_expr_equal_to(rhs2, expr_arena) && op1_is_less && !op2_is_less {
+                    break 'bound_preds (idx1, idx2, false);
+                } else if rhs1.is_expr_equal_to(rhs2, expr_arena) && !op1_is_less && op2_is_less {
+                    break 'bound_preds (idx2, idx1, false);
+                }
+            }
+        }
+        // No compatible filters found
+        for pred in ie_join_filters.into_iter() {
+            insert_predicate_dedup(
+                acc_predicates,
+                &ExprIR::from_node(pred.source_node, expr_arena),
+                expr_arena,
+            );
+        }
+        return Ok(None);
+    };
+
+    let mut bound_lower = None;
+    let mut bound_upper = None;
+    for (idx, pred) in ie_join_filters.into_iter().enumerate() {
+        if idx == lower_idx {
+            bound_lower = Some(pred);
+        } else if idx == upper_idx {
+            bound_upper = Some(pred);
+        } else {
+            insert_predicate_dedup(
+                acc_predicates,
+                &ExprIR::from_node(pred.source_node, expr_arena),
+                expr_arena,
+            );
+        }
+    }
+    Ok(Some((
+        bound_lower.unwrap(),
+        bound_upper.unwrap(),
+        left_is_bounded_side,
+    )))
 }
 
 /// Removes all filters that can be used as nested loop join conditions from `acc_predicates`.

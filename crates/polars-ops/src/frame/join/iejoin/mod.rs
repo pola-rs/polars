@@ -273,7 +273,6 @@ pub fn iejoin_par_partition(
         InequalityOperator::GtEq => max_l >= min_r,
     };
     if !may_have_results {
-        dbg!("skip");
         return Ok(None);
     }
 

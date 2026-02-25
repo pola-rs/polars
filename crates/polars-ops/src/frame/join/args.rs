@@ -73,8 +73,13 @@ pub enum JoinType {
     #[cfg(feature = "semi_anti_join")]
     Anti,
     #[cfg(feature = "iejoin")]
+    /// Inequality join with two arbitrary predicates
     // Options are set by optimizer/planner in Options
     IEJoin,
+    #[cfg(feature = "iejoin")]
+    /// Inequality join with col ∈ [lo, hi] predicate
+    // Options are set by optimizer/planner in Options
+    Range,
     // Options are set by optimizer/planner in Options
     Cross,
 }
@@ -103,7 +108,7 @@ impl JoinCoalesce {
             #[cfg(feature = "asof_join")]
             AsOf(_) => matches!(self, JoinSpecific | CoalesceColumns),
             #[cfg(feature = "iejoin")]
-            IEJoin => false,
+            IEJoin | Range => false,
             Cross => false,
             #[cfg(feature = "semi_anti_join")]
             Semi | Anti => false,
@@ -241,6 +246,8 @@ impl Display for JoinType {
             AsOf(_) => "ASOF",
             #[cfg(feature = "iejoin")]
             IEJoin => "IEJOIN",
+            #[cfg(feature = "iejoin")]
+            Range => "RANGE",
             Cross => "CROSS",
             #[cfg(feature = "semi_anti_join")]
             Semi => "SEMI",

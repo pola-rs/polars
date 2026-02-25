@@ -724,6 +724,7 @@ fn visualize_plan_rec(
             );
             (label, &[*input_left, *input_right][..])
         },
+        #[cfg(feature = "iejoin")]
         PhysNodeKind::RangeJoin {
             input_left,
             input_right,

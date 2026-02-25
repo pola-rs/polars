@@ -253,6 +253,27 @@ async fn distribute_work_task(
     // You'll figure it out. Good luck!
     //
     // Don't forget to drink water 💦
+    //
+    // TODO list:
+    //
+    //   * Update the IR Lowering s.t. it only lowers to range-join if we have
+    //     a single inequality, or if there are two inequalities, for which:
+    //
+    //       - The predicates are R1 <op1> L AND L <op2> R1
+    //         i.e.:
+    //       - L <op1> R1
+    //         L <op2> R2
+    //         where one of <op1> is lower-bounding, and the other is upper-bounding
+    //       - then ↦ RL <op1> L <op2> RH, where both ops are now ∈ {≤, <}.
+    //   * Actually, maybe I should add a range-join IR node instead? Because
+    //     it is considerably different from an IEJoin node now => Yes
+    //   * Add IR lowering for the new range-join node
+    //   * Revisit and implement the range-join node
+    //
+    // For a single-predicate range it is generally pretty clear that I should
+    // use a range join node, but what about two incompatible predicates. Should
+    // that become a range-join <then> filter, or should that remain an
+    // in-memory ie-join?
 
     let l1_sort_options = SortOptions::default()
         .with_maintain_order(true)

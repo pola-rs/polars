@@ -80,6 +80,8 @@ impl Default for StrptimeOptions {
 pub enum JoinTypeOptionsIR {
     #[cfg(feature = "iejoin")]
     IEJoin(IEJoinOptions),
+    #[cfg(feature = "iejoin")]
+    Range(IEJoinOptions),
     // Fused cross join and filter (only used in the in-memory engine)
     CrossAndFilter {
         predicate: ExprIR, // Must be elementwise.
@@ -91,7 +93,7 @@ impl Hash for JoinTypeOptionsIR {
         use JoinTypeOptionsIR::*;
         match self {
             #[cfg(feature = "iejoin")]
-            IEJoin(opt) => opt.hash(state),
+            IEJoin(opt) | Range(opt) => opt.hash(state),
             CrossAndFilter { predicate } => {
                 predicate.node().hash(state);
             },
@@ -113,6 +115,8 @@ impl JoinTypeOptionsIR {
             },
             #[cfg(feature = "iejoin")]
             IEJoin(opt) => Ok(JoinTypeOptions::IEJoin(opt)),
+            #[cfg(feature = "iejoin")]
+            Range(_) => unimplemented!(),
         }
     }
 }

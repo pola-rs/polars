@@ -1060,7 +1060,10 @@ pub fn lower_ir(
             left_on,
             right_on,
             options,
-        } if options.args.how == JoinType::IEJoin => {
+        } if options.args.how == JoinType::Range => {
+            // TODO: [amber] This code is still very crude and should be merged
+            // into the big join arm anyway.
+
             let input_left = *input_left;
             let input_right = *input_right;
             let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);
@@ -1092,7 +1095,7 @@ pub fn lower_ir(
                 aug_right_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
             }
 
-            let (mut trans_input_left, mut trans_left_on) = lower_exprs(
+            let (trans_input_left, mut trans_left_on) = lower_exprs(
                 phys_left,
                 &aug_left_on,
                 expr_arena,
@@ -1100,7 +1103,7 @@ pub fn lower_ir(
                 expr_cache,
                 ctx,
             )?;
-            let (mut trans_input_right, mut trans_right_on) = lower_exprs(
+            let (trans_input_right, mut trans_right_on) = lower_exprs(
                 phys_right,
                 &aug_right_on,
                 expr_arena,
@@ -1120,7 +1123,6 @@ pub fn lower_ir(
                 |c: &ExprIR, ea: &mut Arena<AExpr>| matches!(ea.get(c.node()), AExpr::Column(_));
             let mut prepare_key_col = |expr: &ExprIR, schema: &Schema| -> PolarsResult<_> {
                 if !key_expr_is_trivial(&expr, expr_arena) {
-                    assert!(expr.dtype(&schema, expr_arena)?.is_nested());
                     let tmp_col_name = unique_column_name();
                     let tmp_col_expr = expr.with_alias(tmp_col_name.clone());
                     Ok((tmp_col_expr, Some(tmp_col_name)))
@@ -1128,37 +1130,38 @@ pub fn lower_ir(
                     Ok((expr.clone(), None))
                 }
             };
-            let (left_key_expr1, left_tmp_col_name1) =
-                prepare_key_col(&trans_left_on[0], &input_left_schema)?;
-            let (right_key_expr1, right_tmp_col_name1) =
-                prepare_key_col(&trans_right_on[0], &input_left_schema)?;
 
-            let mut left_key_exprs = vec![left_key_expr1];
-            let mut right_key_exprs = vec![right_key_expr1];
-            let mut left_tmp_col_names = [left_tmp_col_name1, None];
-            let mut right_tmp_col_names = [right_tmp_col_name1, None];
+            let left_key_exprs: Vec<(ExprIR, Option<PlSmallStr>)> = trans_left_on
+                .iter()
+                .map(|on| prepare_key_col(on, &input_left_schema))
+                .try_collect_vec()?;
+            let right_key_exprs: Vec<(ExprIR, Option<PlSmallStr>)> = trans_right_on
+                .iter()
+                .map(|on| prepare_key_col(on, &input_right_schema))
+                .try_collect_vec()?;
 
-            if range_options.operator2.is_some() {
-                assert!((1..=2).contains(&left_on.len()));
-                assert!((1..=2).contains(&right_on.len()));
-
-                let (left_key_expr2, left_tmp_col_name2) =
-                    prepare_key_col(&trans_left_on[0], &input_left_schema)?;
-                let (right_key_expr2, right_tmp_col_name2) =
-                    prepare_key_col(&trans_right_on[0], &input_left_schema)?;
-
-                left_key_exprs.push(left_key_expr2);
-                right_key_exprs.push(right_key_expr2);
-                left_tmp_col_names[1] = left_tmp_col_name2;
-                right_tmp_col_names[1] = right_tmp_col_name2;
-            } else {
-                assert!(left_on.len() == 1);
-                assert!(right_on.len() == 1);
+            let mut left_tmp_col_names = [const { None }; 2];
+            for (i, (_, name)) in left_key_exprs.iter().enumerate() {
+                left_tmp_col_names[i] = name.clone();
             }
+
+            let mut right_tmp_col_names = [const { None }; 2];
+            for (i, (_, name)) in right_key_exprs.iter().enumerate() {
+                right_tmp_col_names[i] = name.clone();
+            }
+
+            let left_hstack_exprs = left_key_exprs
+                .into_iter()
+                .map(|(expr, _)| expr)
+                .collect_vec();
+            let right_hstack_exprs = right_key_exprs
+                .into_iter()
+                .map(|(expr, _)| expr)
+                .collect_vec();
 
             let trans_input_left = build_hstack_stream(
                 trans_input_left,
-                &left_key_exprs,
+                &left_hstack_exprs,
                 expr_arena,
                 phys_sm,
                 expr_cache,
@@ -1166,7 +1169,7 @@ pub fn lower_ir(
             )?;
             let trans_input_right = build_hstack_stream(
                 trans_input_right,
-                &right_key_exprs,
+                &right_hstack_exprs,
                 expr_arena,
                 phys_sm,
                 expr_cache,
