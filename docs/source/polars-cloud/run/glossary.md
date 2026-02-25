@@ -57,24 +57,22 @@ dispatching tasks to workers in dependency order (a stage is only dispatched onc
 stages and shuffles have completed). The scheduler tracks worker progress, records where shuffle
 data is stored and which workers need it, and determines when the query is finished.
 
-On top of that it runs auxiliary services, such as the compute dashboard, and managing the query
-queue.
+On top of that it runs auxiliary services, such as managing the query queue.
 
 ## Worker
 
 A **worker** is a machine that executes tasks on behalf of the scheduler. Each worker is assigned a
-set of partitions to process and executes a given optimized logical plan for that stage
-independently, reading input data or consuming shuffle data produced by a previous stage. Workers
-report task completion back to the scheduler and write shuffle output for downstream stages to
-consume.
+set of partitions to process and executes a stage using the Polars streaming engine independently,
+reading input data or consuming shuffle data produced by a previous stage. Workers report task
+completion back to the scheduler and write shuffle output for downstream stages to consume.
 
 ## Stage graph
 
 The **stage graph** is produced by the distributed query planner from the optimized logical plan.
-The planner walks the logical plan and identifies **stage boundaries**: points where a blocking
-operation requires data from multiple workers to be combined before execution can continue. Joins
-and group-bys are typical examples, a worker cannot produce its final result without first receiving
-the relevant rows or partial aggregates from other workers.
+The planner walks the logical plan and identifies **stage boundaries**: points where a data shuffle
+is required to optimize stages to maximize parallelism, minimize data shuffle, and keep peak memory
+usage under control. Joins and group-bys are typical examples, a worker cannot produce its final
+result without first receiving the relevant keys or partial aggregates from other workers.
 
 At each stage boundary, the planner inserts a shuffle and starts a new stage. The result is a
 directed acyclic graph (DAG) in which each node is a stage and each edge is a shuffle. All workers
@@ -86,8 +84,8 @@ completed.
 A **stage** is a node in the stage graph. It represents a series of operations that every worker can
 execute independently, without needing to exchange data with other workers mid-execution. A stage
 begins either at the start of the query or immediately after an incoming shuffle, and ends at the
-next stage boundary where a blocking operation makes a shuffle necessary, or at the end of the query
-where the final stage sinks its results to the output.
+next stage boundary where a data shuffle is necessary, or at the end of the query where the final
+stage sinks its results to the output.
 
 When a stage is dispatched, each worker receives the optimized logical plan together with its
 assigned inputs (which partitions to read, which shuffle data to consume) and derives its own
