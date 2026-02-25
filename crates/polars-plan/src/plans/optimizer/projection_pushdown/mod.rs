@@ -655,19 +655,19 @@ impl ProjectionPushDown {
                 self.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
                 Ok(Distinct { input, options })
             },
-            Filter { predicate, input } => {
-                if ctx.has_pushed_down() {
-                    // make sure that the filter column is projected
-                    add_expr_to_accumulated(
-                        predicate.node(),
-                        &mut ctx.acc_projections,
-                        &mut ctx.projected_names,
-                        expr_arena,
-                    );
-                };
-                self.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
-                Ok(Filter { predicate, input })
-            },
+            Filter { predicate, input } => pre_post_predicate(
+                Some(predicate),
+                ctx,
+                expr_arena,
+                lp_arena,
+                |ctx, expr_arena: &mut Arena<AExpr>, lp_arena: &mut Arena<IR>, predicate| {
+                    self.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
+                    Ok(Filter {
+                        predicate: predicate.unwrap(),
+                        input,
+                    })
+                },
+            ),
             GroupBy {
                 input,
                 keys,
