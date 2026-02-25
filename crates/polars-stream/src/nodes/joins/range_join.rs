@@ -15,7 +15,7 @@ use crate::nodes::in_memory_sink::InMemorySinkNode;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
 #[derive(Debug)]
-enum IEJoinState {
+enum RangeJoinState {
     Build(InMemorySinkNode),
     Probe(ProbeState),
     Done,
@@ -29,20 +29,20 @@ struct ProbeState {
 }
 
 #[derive(Debug)]
-pub struct IEJoinNode {
-    state: IEJoinState,
-    params: IEJoinParams,
+pub struct RangeJoinNode {
+    state: RangeJoinState,
+    params: RangeJoinParams,
 }
 
 #[derive(Debug)]
-struct IEJoinParams {
+struct RangeJoinParams {
     build: RangeJoinSideParams,
     probe: RangeJoinSideParams,
     args: JoinArgs,
     options: IEJoinOptions,
 }
 
-impl IEJoinParams {
+impl RangeJoinParams {
     fn left_is_build(&self) -> bool {
         true
     }
@@ -64,7 +64,7 @@ impl RangeJoinSideParams {
     }
 }
 
-impl IEJoinNode {
+impl RangeJoinNode {
     pub fn new(
         left_schema: SchemaRef,
         right_schema: SchemaRef,
@@ -88,22 +88,22 @@ impl IEJoinNode {
             on: right_on,
             tmp_key_cols: tmp_right_key_cols,
         };
-        let params = IEJoinParams {
+        let params = RangeJoinParams {
             build,
             probe,
             args,
             options,
         };
-        IEJoinNode {
-            state: IEJoinState::Build(InMemorySinkNode::new(left_schema)),
+        RangeJoinNode {
+            state: RangeJoinState::Build(InMemorySinkNode::new(left_schema)),
             params,
         }
     }
 }
 
-impl ComputeNode for IEJoinNode {
+impl ComputeNode for RangeJoinNode {
     fn name(&self) -> &str {
-        "ie-join"
+        "range-join"
     }
 
     fn update_state(
@@ -118,32 +118,32 @@ impl ComputeNode for IEJoinNode {
         let (build, probe) = recv.split_at_mut(1);
 
         if send[0] == PortState::Done {
-            self.state = IEJoinState::Done;
+            self.state = RangeJoinState::Done;
         }
 
-        if let IEJoinState::Build(sink_node) = &mut self.state
+        if let RangeJoinState::Build(sink_node) = &mut self.state
             && build[0] == PortState::Done
         {
-            self.state = IEJoinState::Probe(transition_to_probe(sink_node, &self.params)?);
+            self.state = RangeJoinState::Probe(transition_to_probe(sink_node, &self.params)?);
         }
 
-        if let IEJoinState::Probe(_) = &self.state
+        if let RangeJoinState::Probe(_) = &self.state
             && probe[0] == PortState::Done
         {
-            self.state = IEJoinState::Done;
+            self.state = RangeJoinState::Done;
         }
 
         match self.state {
-            IEJoinState::Build(ref mut sink_node) => {
+            RangeJoinState::Build(ref mut sink_node) => {
                 sink_node.update_state(build, &mut [], state)?;
                 probe[0] = PortState::Blocked;
                 send[0] = PortState::Blocked;
             },
-            IEJoinState::Probe(_) => {
+            RangeJoinState::Probe(_) => {
                 build[0] = PortState::Done;
                 mem::swap(&mut probe[0], &mut send[0]);
             },
-            IEJoinState::Done => {
+            RangeJoinState::Done => {
                 build[0] = PortState::Done;
                 probe[0] = PortState::Done;
                 send[0] = PortState::Done;
@@ -168,12 +168,12 @@ impl ComputeNode for IEJoinNode {
         let params = &self.params;
 
         match &mut self.state {
-            IEJoinState::Build(sink_node) => {
+            RangeJoinState::Build(sink_node) => {
                 assert!(recv_ports[probe_idx].is_none());
                 let build = recv_ports[build_idx].take().unwrap();
                 sink_node.spawn(scope, &mut [Some(build)], &mut [], state, join_handles)
             },
-            IEJoinState::Probe(probe_state) => {
+            RangeJoinState::Probe(probe_state) => {
                 let probe_state = &*probe_state;
                 assert!(recv_ports[build_idx].is_none());
                 let probe = recv_ports[probe_idx].take().unwrap().parallel();
@@ -194,14 +194,14 @@ impl ComputeNode for IEJoinNode {
                     })
                 }));
             },
-            IEJoinState::Done => unreachable!(),
+            RangeJoinState::Done => unreachable!(),
         }
     }
 }
 
 fn transition_to_probe(
     sink_node: &mut InMemorySinkNode,
-    params: &IEJoinParams,
+    params: &RangeJoinParams,
 ) -> PolarsResult<ProbeState> {
     let build_df = sink_node.get_output()?.expect("sink_node is empty");
     let build_l1 = build_df
@@ -233,7 +233,7 @@ fn transition_to_probe(
 async fn distribute_work_task(
     mut recv: PortReceiver,
     probe_state: &ProbeState,
-    params: &IEJoinParams,
+    params: &RangeJoinParams,
     distributor: async_channel::Sender<(Morsel, IdxCa, Range<usize>, Range<usize>)>,
 ) -> PolarsResult<()> {
     // TODO: [amber] LEFT HERE
@@ -300,7 +300,7 @@ async fn compute_and_emit_task(
     dist_recv: async_channel::Receiver<(Morsel, IdxCa, Range<usize>, Range<usize>)>,
     mut send: PortSender,
     probe_state: &ProbeState,
-    params: &IEJoinParams,
+    params: &RangeJoinParams,
 ) -> PolarsResult<()> {
     loop {
         let Ok((morsel, probe_l1_s, range_build, range_probe)) = dist_recv.recv().await else {

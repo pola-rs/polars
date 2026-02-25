@@ -1112,7 +1112,7 @@ pub fn lower_ir(
             trans_left_on.drain(left_on.len()..);
             trans_right_on.drain(right_on.len()..);
 
-            let Some(JoinTypeOptionsIR::IEJoin(ie_options)) = options else {
+            let Some(JoinTypeOptionsIR::IEJoin(range_options)) = options else {
                 unreachable!()
             };
 
@@ -1138,7 +1138,7 @@ pub fn lower_ir(
             let mut left_tmp_col_names = [left_tmp_col_name1, None];
             let mut right_tmp_col_names = [right_tmp_col_name1, None];
 
-            if ie_options.operator2.is_some() {
+            if range_options.operator2.is_some() {
                 assert!((1..=2).contains(&left_on.len()));
                 assert!((1..=2).contains(&right_on.len()));
 
@@ -1184,7 +1184,7 @@ pub fn lower_ir(
                         tmp_left_key_cols: left_tmp_col_names,
                         tmp_right_key_cols: right_tmp_col_names,
                         args: args.clone(),
-                        options: ie_options,
+                        options: range_options,
                     },
                 ))
             };
