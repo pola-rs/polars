@@ -6560,6 +6560,77 @@ Consider using {self}.implode() instead"""
             self._pyexpr.is_close(other_pyexpr, abs_tol, rel_tol, nans_equal)
         )
 
+    def is_sorted(
+        self,
+        *,
+        descending: bool | None = False,
+        nulls_last: bool | None = False,
+    ) -> Expr:
+        """
+        Checks if an expression is sorted.
+
+        If `descending` and/or `nulls_last` are None, it will check `True` and `False`
+        for the unspecified option(s), and return `True` if the expression is sorted
+        under any combination of those settings.
+
+        Parameters
+        ----------
+        descending
+            Checks if the expression is sorted in descending order.
+            Defaults to False.
+        nulls_last
+            Consider null values as being ordered last when checking sortedness.
+            Defaults to False.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Boolean`.
+
+        Examples
+        --------
+        Check if a column is sorted in ascending order.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
+        >>> df.select(pl.col("a").is_sorted())
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ bool │
+        ╞══════╡
+        │ true │
+        └──────┘
+
+        Check if a column is sorted in descending order.
+
+        >>> df = pl.DataFrame({"a": [4, 3, 2, 1]})
+        >>> df.select(pl.col("a").is_sorted(descending=True))
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ bool │
+        ╞══════╡
+        │ true │
+        └──────┘
+
+        Check if a column is sorted in either direction.
+
+        >>> df = pl.DataFrame({"a": [4, 3, 2, 1]})
+        >>> df.select(pl.col("a").is_sorted(descending=None))
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ bool │
+        ╞══════╡
+        │ true │
+        └──────┘
+
+        """
+        return wrap_expr(self._pyexpr.is_sorted(descending, nulls_last))
+
     def hash(
         self,
         seed: int = 0,
