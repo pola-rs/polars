@@ -218,6 +218,7 @@ extra_javascript:
     - _build/js/mathjax.js
     - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
     - https://unpkg.com/mermaid@11/dist/mermaid.min.js
+    - _build/js/mermaid.js
 extra_css:
     - _build/css/extra.css
 extra:
