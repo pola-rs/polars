@@ -730,10 +730,8 @@ fn visualize_plan_rec(
             input_right,
             left_on,
             right_on,
-            tmp_left_key_cols,
-            tmp_right_key_cols,
             args,
-            options,
+            ..
         } => {
             // TODO: [amber] fmt this without using Debug
             let label = fmt_join_label(

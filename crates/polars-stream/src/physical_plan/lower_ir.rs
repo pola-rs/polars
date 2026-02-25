@@ -1159,7 +1159,7 @@ pub fn lower_ir(
                 .map(|(expr, _)| expr)
                 .collect_vec();
 
-            let trans_input_left = build_hstack_stream(
+            let mut trans_input_left = build_hstack_stream(
                 trans_input_left,
                 &left_hstack_exprs,
                 expr_arena,
@@ -1167,7 +1167,7 @@ pub fn lower_ir(
                 expr_cache,
                 ctx,
             )?;
-            let trans_input_right = build_hstack_stream(
+            let mut trans_input_right = build_hstack_stream(
                 trans_input_right,
                 &right_hstack_exprs,
                 expr_arena,
@@ -1182,8 +1182,8 @@ pub fn lower_ir(
                     PhysNodeKind::RangeJoin {
                         input_left: trans_input_left,
                         input_right: trans_input_right,
-                        left_on: (left_on_names[0].clone(), left_on_names.get(1).cloned()),
-                        right_on: (right_on_names[0].clone(), right_on_names.get(1).cloned()),
+                        left_on: left_on_names,
+                        right_on: right_on_names,
                         tmp_left_key_cols: left_tmp_col_names,
                         tmp_right_key_cols: right_tmp_col_names,
                         args: args.clone(),
