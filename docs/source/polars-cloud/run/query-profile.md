@@ -36,18 +36,16 @@ workspace name to one of your own workspaces.
 </details>
 
 The cluster dashboard and built-in query profiler are available through the Polars Cloud compute
-dashboard. They show real-time status during execution and detailed metrics per stage after
-completion, such as the percentage of time spent shuffling and total bytes shuffled.
+dashboard. They show detailed metrics, both real-time during execution and after completion, such as
+the percentage of time spent shuffling and total bytes shuffled.
 
 ![Query details](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/query_details.png)
 
 ### Stage graph
 
 The stage graph shows how the query is divided into [stages](glossary.md#stage) separated by
-[shuffles](glossary.md#shuffle). Each node in the stage graph represents an operation. Clicking a
-node shows its details, such as the join type and keys, grouping columns, sort order, and so on,
-which lets you connect the performance metrics you observe back to the specific operations in your
-query.
+[shuffles](glossary.md#shuffle). Each stage can be expanded to inspect the operations it contains
+and understand what work is happening at each point in the pipeline.
 
 ![Stage graph with node details](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/stage_graph_node_details.png)
 
@@ -59,16 +57,16 @@ the next stage points to a computation-heavy filtering or aggregation step.
 
 ### Query plans
 
-The profiler also lets you inspect the [logical plan](glossary.md#logical-plan) and
-[physical plan](glossary.md#physical-plan) for the query. The logical plan shows how your query has
-been optimized. The physical plan shows how the engine executes them: the concrete algorithms,
-operator implementations, and data flow chosen at runtime.
+The profiler also lets you inspect the [logical plan](glossary.md#logical-plan) for the full query
+and the [physical plan](glossary.md#physical-plan) for each individual stage. The logical plan shows
+how your query has been optimized. The physical plan shows how the engine executes a stage: the
+concrete algorithms, operator implementations, and data flow chosen at runtime.
 
 ![Physical plan](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/physical_plan.png)
 
 Each node in the physical plan is annotated with the percentage of total execution time it consumed,
 making it straightforward to spot computational bottlenecks. Nodes are also flagged when they are
-memory-intensive or execute on a single worker rather than in parallel across the cluster.
+memory-intensive.
 
 Together, the stage graph and query plans give you a complete picture of where your query spends its
 time: from the high-level distribution of work across stages down to the specific operations driving
