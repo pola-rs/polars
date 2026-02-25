@@ -2,16 +2,14 @@ use std::mem;
 use std::ops::Range;
 
 use polars_core::prelude::*;
-use polars_core::utils::Container;
-use polars_ops::frame::{
-    _finish_join, IEJoinOptions, InequalityOperator, JoinArgs, iejoin_par_partition,
-};
+use polars_core::utils::_split_offsets;
+use polars_ops::frame::{_finish_join, IEJoinOptions, JoinArgs, iejoin_par_partition};
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
-use crate::morsel::Morsel;
+use crate::morsel::{Morsel, get_ideal_morsel_size};
 use crate::nodes::ComputeNode;
 use crate::nodes::in_memory_sink::InMemorySinkNode;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
@@ -218,8 +216,8 @@ fn transition_to_probe(
 
     let build_l1_s = build_l1.arg_sort(l1_sort_options);
 
-    // After this point we do not need the temporary columns anymore, as they
-    // are moved to build_l1_s and build_l2.
+    // TODO: After this point we do not need the temporary columns anymore,
+    // as they are moved to build_l1_s and build_l2.
     // for tmp_key_col in &params.build.tmp_key_cols {
     //     if let Some(name) = tmp_key_col {
     //         build_df.drop_in_place(name)?;
@@ -238,6 +236,24 @@ async fn distribute_work_task(
     params: &IEJoinParams,
     distributor: async_channel::Sender<(Morsel, IdxCa, Range<usize>, Range<usize>)>,
 ) -> PolarsResult<()> {
+    // TODO: [amber] LEFT HERE
+    //
+    // Soo, we cannot implement Khayyat like this. And also we don't want to.
+    // Khayyat uses the the fact that both inputs are sorted at the beginning,
+    // and it prunes a bunch of data based on that.
+    // In our case, one DataFrame comes streaming in, so it will not be sorted.
+    //
+    // Instead, I should rename the whole thing to RangeJoin; not IEJoin.
+    // And then it's time to just implement the whole thing using my own search
+    // logic.
+    // I.e., for each row on one side we do a couple of binary searches to find
+    // the range where it sits on the build side. And I think that we can do it
+    // too for L2 (use arg_sort?).
+    //
+    // You'll figure it out. Good luck!
+    //
+    // Don't forget to drink water 💦
+
     let l1_sort_options = SortOptions::default()
         .with_maintain_order(true)
         .with_nulls_last(false)
@@ -254,13 +270,29 @@ async fn distribute_work_task(
             .to_owned();
         let probe_l1_s = l1_select_probe.arg_sort(l1_sort_options);
 
-        // TODO: [amber] Partition this better
-        let range_build = 0..probe_state.build_l1_s.len();
-        let range_probe = 0..probe_l1_s.len();
-        distributor
-            .send((morsel, probe_l1_s, range_build, range_probe))
-            .await
-            .expect("send error");
+        // Partition equally: use the same number of partitions for both
+        // sides, derived from the larger side.
+
+        let n_product = probe_state.build_l1_s.len() as i128 * probe_l1_s.len() as i128;
+        let n_partitions = (n_product / (2 * get_ideal_morsel_size() as i128)).isqrt() as usize;
+        let n_partitions = n_partitions.clamp(1, *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+        let build_offsets = _split_offsets(probe_state.build_l1_s.len(), n_partitions);
+        let probe_offsets = _split_offsets(probe_l1_s.len(), n_partitions);
+
+        // Send all cartesian partition pairs.
+        for &(build_off, build_len) in &build_offsets {
+            for &(probe_off, probe_len) in &probe_offsets {
+                distributor
+                    .send((
+                        morsel.clone(),
+                        probe_l1_s.clone(),
+                        build_off..build_off + build_len,
+                        probe_off..probe_off + probe_len,
+                    ))
+                    .await
+                    .expect("send error");
+            }
+        }
     }
 }
 
@@ -271,10 +303,13 @@ async fn compute_and_emit_task(
     params: &IEJoinParams,
 ) -> PolarsResult<()> {
     loop {
-        let Ok((morsel, probe_l1, range_build, range_probe)) = dist_recv.recv().await else {
+        let Ok((morsel, probe_l1_s, range_build, range_probe)) = dist_recv.recv().await else {
             return Ok(());
         };
-        let build_l1 = &probe_state.build_l1_s;
+        let build_l1 = probe_state
+            .build_l1_s
+            .slice(range_build.start as i64, range_build.len());
+        let probe_l1 = probe_l1_s.slice(range_probe.start as i64, range_probe.len());
         let (probe_df, seq, st, wt) = morsel.into_inner();
 
         let build_key_columns = match params.build.l2_key_col() {
@@ -290,25 +325,19 @@ async fn compute_and_emit_task(
             .build_df
             .select_to_vec(build_key_columns)?
             .into_iter()
-            .map(|c| {
-                c.as_materialized_series()
-                    .slice(range_build.start as i64, range_build.len())
-                    .to_owned()
-            })
+            .map(|c| c.as_materialized_series().clone())
             .collect::<Vec<_>>();
 
         let selected_probe = probe_df
             .select_to_vec(probe_key_columns)?
             .into_iter()
-            .map(|c| {
-                c.as_materialized_series()
-                    .slice(range_probe.start as i64, range_probe.len())
-                    .to_owned()
-            })
+            .map(|c| c.as_materialized_series().clone())
             .collect::<Vec<_>>();
 
+        // dbg!(build_l1.len(), probe_l1.len());
+
         let Some((build_rows, probe_rows)) = iejoin_par_partition(
-            build_l1,
+            &build_l1,
             &probe_l1,
             &selected_build,
             &selected_probe,
@@ -330,7 +359,7 @@ async fn compute_and_emit_task(
         if let Some(wt) = wt {
             morsel.set_consume_token(wt);
         }
-        dbg!(morsel.df().height());
+        // dbg!(morsel.df().height());
         if send.send(morsel).await.is_err() {
             return Ok(());
         }
