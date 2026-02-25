@@ -41,6 +41,10 @@ pub enum BooleanFunction {
         rel_tol: TotalOrdWrap<f64>,
         nans_equal: bool,
     },
+    IsSorted {
+        descending: Option<bool>,
+        nulls_last: Option<bool>,
+    },
     AllHorizontal,
     AnyHorizontal,
     // Also bitwise negate
@@ -73,6 +77,7 @@ impl Display for BooleanFunction {
             IsIn { .. } => "is_in",
             #[cfg(feature = "is_close")]
             IsClose { .. } => "is_close",
+            IsSorted { .. } => "is_sorted",
             AnyHorizontal => "any_horizontal",
             AllHorizontal => "all_horizontal",
             Not => "not",

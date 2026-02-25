@@ -469,6 +469,13 @@ pub(super) fn convert_functions(
                     rel_tol,
                     nans_equal,
                 },
+                B::IsSorted {
+                    descending,
+                    nulls_last,
+                } => IB::IsSorted {
+                    descending,
+                    nulls_last,
+                },
                 B::AllHorizontal => {
                     let Some(fst) = e.first() else {
                         return Ok((

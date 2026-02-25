@@ -974,6 +974,13 @@ impl Expr {
         )
     }
 
+    pub fn is_sorted(self, descending: Option<bool>, nulls_last: Option<bool>) -> Self {
+        self.map_unary(BooleanFunction::IsSorted {
+            descending,
+            nulls_last,
+        })
+    }
+
     /// Get the approximate count of unique values.
     #[cfg(feature = "approx_unique")]
     pub fn approx_n_unique(self) -> Self {

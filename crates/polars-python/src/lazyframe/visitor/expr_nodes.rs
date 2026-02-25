@@ -204,6 +204,7 @@ pub enum PyBooleanFunction {
     IsBetween,
     IsIn,
     IsClose,
+    IsSorted,
     AllHorizontal,
     AnyHorizontal,
     Not,
@@ -1125,6 +1126,10 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         nans_equal,
                     } => (PyBooleanFunction::IsClose, abs_tol.0, rel_tol.0, nans_equal)
                         .into_py_any(py),
+                    IRBooleanFunction::IsSorted {
+                        descending,
+                        nulls_last,
+                    } => (PyBooleanFunction::IsSorted, *descending, *nulls_last).into_py_any(py),
                     IRBooleanFunction::AllHorizontal => {
                         (PyBooleanFunction::AllHorizontal,).into_py_any(py)
                     },
