@@ -12,7 +12,7 @@ where
     T::Native: AsPrimitive<f64>,
     ChunkedArray<T>: ChunkVar,
 {
-    if a.len() != b.len() {
+    if a.len() == 1 || b.len() == 1 {
         return Some(f64::NAN);
     }
     let (a, b) = align_chunks_binary(a, b);
@@ -30,7 +30,7 @@ where
     T::Native: AsPrimitive<f64>,
     ChunkedArray<T>: ChunkVar,
 {
-    if a.len() != b.len() {
+    if a.len() == 1 || b.len() == 1 {
         return Some(f64::NAN);
     }
     let (a, b) = align_chunks_binary(a, b);
