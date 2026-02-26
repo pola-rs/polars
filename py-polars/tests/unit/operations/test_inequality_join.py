@@ -5,13 +5,14 @@ from typing import TYPE_CHECKING, Any
 
 import hypothesis.strategies as st
 import numpy as np
-from polars.testing.parametric.strategies.core import dataframes
 import pytest
 from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_frame_equal
 from polars.testing.parametric.strategies import series
+from polars.testing.parametric.strategies.core import dataframes
+from polars.testing.parametric.strategies.dtype import _SIMPLE_DTYPES
 
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
@@ -88,6 +89,29 @@ def test_basic_ie_join() -> None:
         }
     )
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
+
+
+@pytest.mark.parametrize("operator", ["<", "<=", ">", ">="])
+@given(data=st.data())
+def test_ie_join_parametric(data: st.DataObject, operator: str) -> None:
+    dtype = data.draw(st.sampled_from(list(_SIMPLE_DTYPES)))
+    left = (
+        data.draw(dataframes(min_cols=1, max_cols=1, allowed_dtypes=[dtype]))
+        .with_row_index("idx")
+        .lazy()
+    )
+    right = (
+        data.draw(dataframes(min_cols=1, max_cols=1, allowed_dtypes=[dtype]))
+        .with_row_index("idx_right")
+        .lazy()
+    )
+    right.clear()
+    ie_condition = _inequality_expression("col0", operator, "col0_right")
+    expected = left.join(right, how="cross").collect().filter(ie_condition)
+    actual = left.join_where(right, ie_condition)
+    assert_frame_equal(
+        actual.collect(), expected, check_row_order=False, check_exact=True
+    )
 
 
 @given(
