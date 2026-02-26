@@ -454,7 +454,7 @@ fn try_rewrite_join_type(
             return Ok(());
         }
 
-        // Try converting cross join to RangeJoin
+        // Try converting cross join to double-bounded RangeJoin
         #[cfg(feature = "iejoin")]
         if streaming
             && matches!(options.args.maintain_order, MaintainOrderJoin::None)
@@ -471,7 +471,6 @@ fn try_rewrite_join_type(
             if let Some((bound_lower, bound_upper, left_is_bounded)) = range_predicate {
                 let join_options = Arc::make_mut(options);
                 join_options.args.how = JoinType::Range;
-
                 let JoinTypeOptionsIR::IEJoin(ie_options) = join_options
                     .options
                     .get_or_insert(JoinTypeOptionsIR::IEJoin(IEJoinOptions::default()))
@@ -497,9 +496,38 @@ fn try_rewrite_join_type(
             }
         }
 
+        // Try converting cross join to single-bounded RangeJoin
+        #[cfg(feature = "iejoin")]
+        if streaming
+            && matches!(options.args.maintain_order, MaintainOrderJoin::None)
+            && left_on.is_empty()
+            && let Some(pred) = take_first_iejoin_compatible_filter(
+                acc_predicates,
+                expr_arena,
+                schema_left,
+                schema_right,
+                output_schema,
+                &suffix,
+            )?
+        {
+            let join_options = Arc::make_mut(options);
+            join_options.args.how = JoinType::Range;
+            let JoinTypeOptionsIR::IEJoin(ie_options) = join_options
+                .options
+                .get_or_insert(JoinTypeOptionsIR::IEJoin(IEJoinOptions::default()))
+            else {
+                unreachable!()
+            };
+            left_on.push(ExprIR::from_node(pred.input_lhs, expr_arena));
+            right_on.push(ExprIR::from_node(pred.input_rhs, expr_arena));
+            ie_options.operator1 = pred.ie_op;
+            return Ok(());
+        }
+
         // Try converting cross join to IEJoin
         #[cfg(feature = "iejoin")]
-        if matches!(options.args.maintain_order, MaintainOrderJoin::None)
+        if !streaming
+            && matches!(options.args.maintain_order, MaintainOrderJoin::None)
             && left_on.len() < IEJOIN_MAX_PREDICATES
         {
             let ie_conditions = take_iejoin_compatible_filters(
@@ -1164,6 +1192,34 @@ fn take_iejoin_compatible_filters(
             _ => None,
         }
     }
+}
+
+#[cfg(feature = "iejoin")]
+fn take_first_iejoin_compatible_filter(
+    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
+    expr_arena: &mut Arena<AExpr>,
+    schema_left: &Schema,
+    schema_right: &Schema,
+    output_schema: &Schema,
+    suffix: &str,
+) -> PolarsResult<Option<IEJoinCompatiblePredicate>> {
+    let mut all_filters = take_iejoin_compatible_filters(
+        acc_predicates,
+        expr_arena,
+        schema_left,
+        schema_right,
+        output_schema,
+        suffix,
+    )?;
+    let first = all_filters.next();
+    for pred in all_filters {
+        insert_predicate_dedup(
+            acc_predicates,
+            &ExprIR::from_node(pred.source_node, expr_arena),
+            expr_arena,
+        );
+    }
+    Ok(first)
 }
 
 #[cfg(feature = "iejoin")]

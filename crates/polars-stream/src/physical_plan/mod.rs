@@ -397,9 +397,9 @@ pub enum PhysNodeKind {
     RangeJoin {
         input_left: PhysStream,
         input_right: PhysStream,
-        left_on: Vec<PlSmallStr>,
+        left_on: PlSmallStr,
         right_on: Vec<PlSmallStr>,
-        tmp_left_key_cols: [Option<PlSmallStr>; 2],
+        tmp_left_key_col: Option<PlSmallStr>,
         tmp_right_key_cols: [Option<PlSmallStr>; 2],
         args: JoinArgs,
         options: polars_ops::frame::IEJoinOptions,

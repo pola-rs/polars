@@ -1053,7 +1053,7 @@ pub fn lower_ir(
             );
         },
         #[cfg(feature = "iejoin")]
-        j @ IR::Join {
+        IR::Join {
             input_left,
             input_right,
             schema: _,
@@ -1061,6 +1061,9 @@ pub fn lower_ir(
             right_on,
             options,
         } if options.args.how == JoinType::Range => {
+            assert!(left_on.len() == 1);
+            assert!((1..=2).contains(&right_on.len()));
+
             // TODO: [amber] This code is still very crude and should be merged
             // into the big join arm anyway.
 
@@ -1071,7 +1074,7 @@ pub fn lower_ir(
             let left_on = left_on.clone();
             let right_on = right_on.clone();
             let get_expr_name = |e: &ExprIR| e.output_name().clone();
-            let left_on_names = left_on.iter().map(get_expr_name).collect_vec();
+            let left_on_name = get_expr_name(&left_on[0]);
             let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
             let args = options.args.clone();
             let options = options.options.clone();
@@ -1121,7 +1124,7 @@ pub fn lower_ir(
 
             let key_expr_is_trivial =
                 |c: &ExprIR, ea: &mut Arena<AExpr>| matches!(ea.get(c.node()), AExpr::Column(_));
-            let mut prepare_key_col = |expr: &ExprIR, schema: &Schema| -> PolarsResult<_> {
+            let mut prepare_key_col = |expr: &ExprIR, _schema: &Schema| -> PolarsResult<_> {
                 if !key_expr_is_trivial(&expr, expr_arena) {
                     let tmp_col_name = unique_column_name();
                     let tmp_col_expr = expr.with_alias(tmp_col_name.clone());
@@ -1131,35 +1134,25 @@ pub fn lower_ir(
                 }
             };
 
-            let left_key_exprs: Vec<(ExprIR, Option<PlSmallStr>)> = trans_left_on
-                .iter()
-                .map(|on| prepare_key_col(on, &input_left_schema))
-                .try_collect_vec()?;
+            let (left_key_expr, left_tmp_col_name) =
+                prepare_key_col(&trans_left_on[0], &input_left_schema)?;
             let right_key_exprs: Vec<(ExprIR, Option<PlSmallStr>)> = trans_right_on
                 .iter()
                 .map(|on| prepare_key_col(on, &input_right_schema))
                 .try_collect_vec()?;
-
-            let mut left_tmp_col_names = [const { None }; 2];
-            for (i, (_, name)) in left_key_exprs.iter().enumerate() {
-                left_tmp_col_names[i] = name.clone();
-            }
 
             let mut right_tmp_col_names = [const { None }; 2];
             for (i, (_, name)) in right_key_exprs.iter().enumerate() {
                 right_tmp_col_names[i] = name.clone();
             }
 
-            let left_hstack_exprs = left_key_exprs
-                .into_iter()
-                .map(|(expr, _)| expr)
-                .collect_vec();
+            let left_hstack_exprs = [left_key_expr];
             let right_hstack_exprs = right_key_exprs
                 .into_iter()
                 .map(|(expr, _)| expr)
                 .collect_vec();
 
-            let mut trans_input_left = build_hstack_stream(
+            let trans_input_left = build_hstack_stream(
                 trans_input_left,
                 &left_hstack_exprs,
                 expr_arena,
@@ -1167,7 +1160,7 @@ pub fn lower_ir(
                 expr_cache,
                 ctx,
             )?;
-            let mut trans_input_right = build_hstack_stream(
+            let trans_input_right = build_hstack_stream(
                 trans_input_right,
                 &right_hstack_exprs,
                 expr_arena,
@@ -1182,9 +1175,9 @@ pub fn lower_ir(
                     PhysNodeKind::RangeJoin {
                         input_left: trans_input_left,
                         input_right: trans_input_right,
-                        left_on: left_on_names,
+                        left_on: left_on_name,
                         right_on: right_on_names,
-                        tmp_left_key_cols: left_tmp_col_names,
+                        tmp_left_key_col: left_tmp_col_name,
                         tmp_right_key_cols: right_tmp_col_names,
                         args: args.clone(),
                         options: range_options,

@@ -64,9 +64,9 @@ impl RangeJoinNode {
     pub fn new(
         left_schema: SchemaRef,
         right_schema: SchemaRef,
-        left_on: Vec<PlSmallStr>,
+        left_on: PlSmallStr,
         right_on: Vec<PlSmallStr>,
-        tmp_left_key_cols: [Option<PlSmallStr>; 2],
+        tmp_left_key_cols: Option<PlSmallStr>,
         tmp_right_key_cols: [Option<PlSmallStr>; 2],
         args: JoinArgs,
         options: IEJoinOptions,
@@ -76,8 +76,8 @@ impl RangeJoinNode {
         }
         let point = RangeJoinSideParams {
             schema: left_schema.clone(),
-            on: left_on,
-            tmp_key_cols: tmp_left_key_cols,
+            on: vec![left_on],
+            tmp_key_cols: [tmp_left_key_cols, None],
         };
         let interval = RangeJoinSideParams {
             schema: right_schema.clone(),
@@ -225,7 +225,6 @@ async fn compute_and_emit_task(
             return Ok(());
         };
         let (df, seq, st, wt) = morsel.into_inner();
-        dbg!(&point_key_i64);
 
         let lower_bound_key: &Int64Chunked = df
             .column(params.interval.key_col::<0>())?
@@ -237,9 +236,6 @@ async fn compute_and_emit_task(
             .as_materialized_series()
             .as_ref()
             .as_ref();
-
-        dbg!(&lower_bound_key);
-        dbg!(&upper_bound_key);
 
         let starts = binary_search_ca(
             point_key_i64,
