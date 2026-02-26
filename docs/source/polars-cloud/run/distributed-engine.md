@@ -63,21 +63,26 @@ When you call `.execute()` on a distributed query, it passes through the followi
 
 [DSL](glossary.md#dsl) → [Logical plan](glossary.md#logical-plan) →
 [Optimized logical plan](glossary.md#optimized-logical-plan) →
-[Stage graph](glossary.md#stage-graph) → [Worker dispatch](glossary.md#scheduler) →
-[Physical plan](glossary.md#physical-plan) → Execution
+[Stage graph](glossary.md#stage-graph) → [Stage execution](glossary.md#scheduler) →
+[Physical plan](glossary.md#physical-plan) → Execution → Result
 
 1. You write a query using the Polars [DSL](glossary.md#dsl), building up a
    [LazyFrame](glossary.md#query).
 2. The LazyFrame is translated into a [logical plan](glossary.md#logical-plan): a tree of operations
-   capturing _what_ to compute.
-3. The [query optimizer](glossary.md#optimized-logical-plan) rewrites the logical plan into an
-   equivalent but more efficient optimized logical plan.
+   capturing _what_ to compute. You can inspect this logical plan by running
+   `lf.explain(optimized=False)`.
+3. The query optimizer rewrites the logical plan into an equivalent but more efficient
+   [optimized logical plan](glossary.md#optimized-logical-plan). You can inspect the optimized
+   logical plan with `lf.explain()`.
 4. The distributed query planner walks the optimized logical plan and produces a
    [stage graph](glossary.md#stage-graph): a DAG of [stages](glossary.md#stage) separated by
    [shuffles](glossary.md#shuffle) at each point where a blocking operation requires data to be
    redistributed across workers.
-5. The [scheduler](glossary.md#scheduler) dispatches stages to [workers](glossary.md#worker) in
-   dependency order, waiting for all required shuffles to complete before starting the next stage.
+5. The [scheduler](glossary.md#scheduler) executes stages and assigns
+   [partitions](glossary.md#partition) to [workers](glossary.md#worker) in dependency order, waiting
+   for all required shuffles to complete before starting the next stage.
 6. Each worker receives the optimized logical plan for its stage together with its assigned
-   [partitions](glossary.md#partition), derives its own [physical plan](glossary.md#physical-plan),
-   and executes it.
+   partitions, derives its own [physical plan](glossary.md#physical-plan), and executes it. After
+   finishing the stage, intermediate results are written to a local or network-shared disk.
+7. After the final stage, results are written to the destination location, or sent back to the user,
+   depending on the query.
