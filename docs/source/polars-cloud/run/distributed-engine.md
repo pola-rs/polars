@@ -81,8 +81,8 @@ When you call `.execute()` on a distributed query, it passes through the followi
 5. The [scheduler](glossary.md#scheduler) executes stages and assigns
    [partitions](glossary.md#partition) to [workers](glossary.md#worker) in dependency order, waiting
    for all required shuffles to complete before starting the next stage.
-6. Each worker receives the optimized logical plan for its stage together with its assigned
-   partitions, derives its own [physical plan](glossary.md#physical-plan), and executes it. After
-   finishing the stage, intermediate results are written to a local or network-shared disk.
+6. Each worker receives the optimized logical plan together with its assigned partitions, derives
+   its own [physical plan](glossary.md#physical-plan), and executes it. After finishing the stage,
+   intermediate results are written to a local or network-shared disk.
 7. After the final stage, results are written to the destination location, or sent back to the user,
    depending on the query.
