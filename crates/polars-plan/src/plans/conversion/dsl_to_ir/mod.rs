@@ -815,7 +815,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             agg,
             maintain_order,
             separator,
+            column_naming,
         } => {
+            use polars_core::frame::PivotColumnNaming;
+
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(unique)))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
@@ -882,7 +885,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
                 for i in 0..on_columns.height() {
                     let mut name = String::new();
-                    if values.len() > 1 {
+                    if values.len() > 1 || matches!(column_naming, PivotColumnNaming::Combine) {
                         name.push_str(value.as_str());
                         name.push_str(separator.as_str());
                     }
