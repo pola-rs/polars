@@ -885,3 +885,28 @@ def test_rolling_with_slice() -> None:
     assert_frame_equal(lf.slice(5, 1).collect(), expected.slice(5, 1))
     assert_frame_equal(lf.slice(5, 0).collect(), expected.slice(5, 0))
     assert_frame_equal(lf.slice(2, 1).collect(), expected.slice(2, 1))
+
+
+@pytest.mark.parametrize("offset", [-99, -3, -2, -1, 0, 1, 2, 3, 99])
+def test_rolling_positive_offset_window_26717(offset: int) -> None:
+    df = pl.DataFrame(
+        {
+            "idx": [1, 2, 3, 4, 5, 6, 11, 12, 13, 21],
+            "a": [1 for _ in range(10)],
+            "g": [0 for _ in range(10)],
+        }
+    )
+
+    offset_str = str(offset) + "i"
+
+    out_base = df.select(
+        sum=pl.sum("a").rolling(index_column="idx", period="2i", offset=offset_str)
+    )
+
+    out_flat = df.select(
+        sum=pl.sum("a")
+        .rolling(index_column="idx", period="2i", offset=offset_str)
+        .over("g")
+    )
+
+    assert_frame_equal(out_base, out_flat)

@@ -185,10 +185,18 @@ impl PhysicalExpr for RollingExpr {
                 let mut i = 0;
                 for idx in idx.all() {
                     nested_groups.extend(windows[i..][..idx.len()].iter().map(|[s, l]| {
-                        (
-                            idx[*s as usize],
-                            UnitVec::from_iter(idx[*s as usize..][..*l as usize].iter().copied()),
-                        )
+                        if *l == 0 {
+                            // Do not index into `idx` for empty windows as they may be out-of-bounds
+                            // in the case of offsets larger than the default offset.
+                            (0, UnitVec::default())
+                        } else {
+                            (
+                                idx[*s as usize],
+                                UnitVec::from_iter(
+                                    idx[*s as usize..][..*l as usize].iter().copied(),
+                                ),
+                            )
+                        }
                     }));
                     i += idx.len();
                 }
