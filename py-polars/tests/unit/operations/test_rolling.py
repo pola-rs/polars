@@ -903,10 +903,10 @@ def test_rolling_positive_offset_window_26717(offset: int) -> None:
         sum=pl.sum("a").rolling(index_column="idx", period="2i", offset=offset_str)
     )
 
-    out_flat = df.select(
+    out_over = df.select(
         sum=pl.sum("a")
         .rolling(index_column="idx", period="2i", offset=offset_str)
         .over("g")
     )
 
-    assert_frame_equal(out_base, out_flat)
+    assert_frame_equal(out_base, out_over)
