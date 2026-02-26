@@ -1,26 +1,44 @@
 """
-from typing import cast
-
+# --8<-- [start:single-node-query]
 import polars as pl
 import polars_cloud as pc
+from datetime import date
 
 
-def pdsh_q3(
-    customer: pl.LazyFrame, lineitem: pl.LazyFrame, orders: pl.LazyFrame
-) -> pl.LazyFrame:
-    pass
+pc.authenticate()
+ctx = pc.ComputeContext(workspace="your-workspace", cpus=8, memory=8, cluster_size=1)
 
+lineitem = pl.scan_parquet("s3://polars-cloud-samples-us-east-2-prd/pdsh/sf10/lineitem.parquet",
+    storage_options={"request_payer": "true"}
+)
+var1 = date(1998, 9, 2)
 
-customer = pl.LazyFrame()
-lineitem = pl.LazyFrame()
-orders = pl.LazyFrame()
+(
+    lineitem.filter(pl.col("l_shipdate") <= var1)
+    .group_by("l_returnflag", "l_linestatus")
+    .agg(
+        pl.sum("l_quantity").alias("sum_qty"),
+        pl.sum("l_extendedprice").alias("sum_base_price"),
+        (pl.col("l_extendedprice") * (1.0 - pl.col("l_discount")))
+        .sum()
+        .alias("sum_disc_price"),
+        (
+            pl.col("l_extendedprice")
+            * (1.0 - pl.col("l_discount"))
+            * (1.0 + pl.col("l_tax"))
+        )
+        .sum()
+        .alias("sum_charge"),
+        pl.mean("l_quantity").alias("avg_qty"),
+        pl.mean("l_extendedprice").alias("avg_price"),
+        pl.mean("l_discount").alias("avg_disc"),
+        pl.len().alias("count_order"),
+    )
+    .sort("l_returnflag", "l_linestatus")
+).remote(ctx).single_node().execute()
+# --8<-- [end:single-node-query]
 
-ctx = pc.ComputeContext()
-
-# --8<-- [start:execute]
-query = pdsh_q3(customer, lineitem, orders).remote(ctx).distributed().execute()
-# --8<-- [end:execute]
-# --8<-- [start:query]
+# --8<-- [start:distributed-query]
 import polars as pl
 import polars_cloud as pc
 
@@ -62,28 +80,6 @@ orders = pl.scan_parquet(
     storage_options={"request_payer": "true"},
 )
 
-result = pdsh_q3(customer, lineitem, orders).remote(ctx).distributed().execute()
-# --8<-- [end:query]
-
-query = cast("pc.DirectQuery", query)
-
-# --8<-- [start:await_profile]
-query.await_profile().data
-# --8<-- [end:await_profile]
-
-# --8<-- [start:await_summary]
-query.await_profile().summary
-# --8<-- [end:await_summary]
-
-# --8<-- [start:explain]
-result.await_result().plan()
-# --8<-- [end:explain]
-
-# --8<-- [start:explain_ir]
-result.await_result().plan("ir")
-# --8<-- [end:explain_ir]
-
-# --8<-- [start:graph]
-result.await_result().graph()
-# --8<-- [end:graph]
+pdsh_q3(customer, lineitem, orders).remote(ctx).distributed().execute()
+# --8<-- [end:distributed-query]
 """
