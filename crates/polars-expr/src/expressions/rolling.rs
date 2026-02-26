@@ -186,9 +186,10 @@ impl PhysicalExpr for RollingExpr {
                 for idx in idx.all() {
                     nested_groups.extend(windows[i..][..idx.len()].iter().map(|[s, l]| {
                         if *l == 0 {
-                            // Do not index into `idx` for empty windows as they may be out-of-bounds
-                            // in the case of offsets larger than the default offset.
-                            (0, UnitVec::default())
+                            // Do not index into `idx` for an empty window as this may lead to
+                            // out-of-bound access, e.g. when offset is larger than the default offset.
+                            // Instead, we use 0 as a (meaningless) placeholder value.
+                            (0, UnitVec::new())
                         } else {
                             (
                                 idx[*s as usize],
