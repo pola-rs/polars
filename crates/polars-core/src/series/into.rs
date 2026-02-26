@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 
+use arrow::offset::OffsetsBuffer;
 use polars_compute::cast::cast_unchecked;
+use polars_compute::prune_list_values_validity::prune_list_values_validity;
 
 use crate::prelude::*;
 
@@ -178,13 +180,45 @@ impl ToArrowConverter {
                 Box::new(arr)
             },
             (DataType::List(item_dtype), ArrowDataType::LargeList(_)) => {
-                let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
+                let mut arr: Cow<ListArray<i64>> =
+                    Cow::Borrowed(array.as_any().downcast_ref().unwrap());
 
                 let mut arrow_dtype = to_owned_dtype(arrow_field);
 
                 let ArrowDataType::LargeList(arrow_item_field) = &mut arrow_dtype else {
                     unreachable!()
                 };
+
+                if arr.offsets().range() as usize != arr.values().len() {
+                    arr = Cow::Owned({
+                        let offsets = arr.offsets();
+
+                        let first_idx = *arr.offsets().first();
+
+                        let offsets = if first_idx == 0 {
+                            offsets.clone()
+                        } else {
+                            let v: Vec<i64> = offsets.iter().map(|x| *x - first_idx).collect();
+                            unsafe { OffsetsBuffer::<i64>::new_unchecked(v.into()) }
+                        };
+
+                        let values = arr
+                            .values()
+                            .clone()
+                            .sliced(first_idx as usize, offsets.range() as usize);
+
+                        ListArray::<i64>::new(
+                            arr.dtype().clone(),
+                            offsets,
+                            values,
+                            arr.validity().cloned(),
+                        )
+                    });
+                }
+
+                if !arrow_item_field.is_nullable {
+                    arr = prune_list_values_validity(&arr).map_or(arr, Cow::Owned);
+                }
 
                 self.attach_pl_field_metadata(std::iter::once((
                     item_dtype.as_ref(),
@@ -209,7 +243,8 @@ impl ToArrowConverter {
             #[cfg(feature = "dtype-array")]
             (DataType::Array(item_dtype, width), ArrowDataType::FixedSizeList(_, arrow_width)) => {
                 use arrow::array::FixedSizeListArray;
-                let arr: &FixedSizeListArray = array.as_any().downcast_ref().unwrap();
+                let mut arr: Cow<FixedSizeListArray> =
+                    Cow::Borrowed(array.as_any().downcast_ref().unwrap());
 
                 polars_ensure!(
                     *arrow_width == *width,
@@ -223,6 +258,11 @@ impl ToArrowConverter {
                 let ArrowDataType::FixedSizeList(arrow_item_field, _) = &mut arrow_dtype else {
                     unreachable!()
                 };
+
+                if !arrow_item_field.is_nullable {
+                    use polars_compute::prune_list_values_validity::prune_fixed_size_list_values_validity;
+                    arr = prune_fixed_size_list_values_validity(&arr).map_or(arr, Cow::Owned);
+                }
 
                 self.attach_pl_field_metadata(std::iter::once((
                     item_dtype.as_ref(),

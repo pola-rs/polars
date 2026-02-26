@@ -30,6 +30,7 @@ pub mod moment;
 pub mod nan;
 pub mod propagate_dictionary;
 pub mod propagate_nulls;
+pub mod prune_list_values_validity;
 pub mod rolling;
 pub mod size;
 pub mod sum;
