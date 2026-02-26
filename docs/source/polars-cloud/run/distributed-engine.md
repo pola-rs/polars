@@ -61,10 +61,7 @@ query takes around xx seconds to execute.
 
 When you call `.execute()` on a distributed query, it passes through the following pipeline:
 
-[DSL](glossary.md#dsl) → [Logical plan](glossary.md#logical-plan) →
-[Optimized logical plan](glossary.md#optimized-logical-plan) →
-[Stage graph](glossary.md#stage-graph) → [Stage execution](glossary.md#scheduler) →
-[Physical plan](glossary.md#physical-plan) → Execution → Result
+![Flow graph](https://raw.githubusercontent.com/pola-rs/polars-static/master/docs/distributed-query-flow.png)
 
 1. You write a query using the Polars [DSL](glossary.md#dsl), building up a
    [LazyFrame](glossary.md#query).
@@ -76,11 +73,11 @@ When you call `.execute()` on a distributed query, it passes through the followi
    logical plan with `lf.explain()`.
 4. The distributed query planner walks the optimized logical plan and produces a
    [stage graph](glossary.md#stage-graph): a DAG of [stages](glossary.md#stage) separated by
-   [shuffles](glossary.md#shuffle) at each point where a blocking operation requires data to be
-   redistributed across workers.
+   [shuffles](glossary.md#shuffle) at each point where a data needs to be redistributed across
+   workers.
 5. The [scheduler](glossary.md#scheduler) executes stages and assigns
    [partitions](glossary.md#partition) to [workers](glossary.md#worker) in dependency order, waiting
-   for all required shuffles to complete before starting the next stage.
+   for all workers to finish before starting the next stage.
 6. Each worker receives the optimized logical plan together with its assigned partitions, derives
    its own [physical plan](glossary.md#physical-plan), and executes it. After finishing the stage,
    intermediate results are written to a local or network-shared disk.
