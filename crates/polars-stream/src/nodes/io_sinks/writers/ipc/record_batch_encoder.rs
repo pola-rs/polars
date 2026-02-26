@@ -1,7 +1,10 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use arrow::array::Array;
+use arrow::datatypes::Field as ArrowField;
 use arrow::io::ipc::write::encode_dictionary_values;
+use polars_core::prelude::CompatLevel;
 use polars_core::series::ToArrowConverter;
 use polars_core::utils::arrow;
 use polars_core::utils::arrow::io::ipc::write::{
@@ -20,7 +23,8 @@ use crate::nodes::io_sinks::writers::ipc::IpcBatch;
 pub struct RecordBatchEncoder {
     pub morsel_rx: connector::Receiver<SinkMorsel>,
     pub ipc_batch_tx: tokio::sync::mpsc::Sender<IpcBatch>,
-    pub arrow_converters: Vec<ToArrowConverter>,
+    pub arrow_converters: Vec<(ToArrowConverter, ArrowField)>,
+    pub compat_level: CompatLevel,
     pub dictionary_id_offsets: Arc<[usize]>,
     pub write_options: WriteOptions,
     // Unstable.
@@ -33,6 +37,7 @@ impl RecordBatchEncoder {
             mut morsel_rx,
             ipc_batch_tx,
             mut arrow_converters,
+            compat_level,
             dictionary_id_offsets,
             write_options,
             write_statistics_flags,
@@ -65,20 +70,24 @@ impl RecordBatchEncoder {
             for fut in parallelize_first_to_local(
                 TaskPriority::High,
                 columns.into_iter().zip(arrow_converters.drain(..)).map(
-                    |(column, mut arrow_converter)| async move {
+                    |(column, (mut arrow_converter, arrow_field))| async move {
                         let rechunked = column.take_materialized_series().rechunk();
                         let dtype = rechunked.dtype();
 
                         let array: Box<dyn Array> = arrow_converter
-                            .array_to_arrow(rechunked.chunks()[0].as_ref(), dtype, None)
+                            .array_to_arrow(
+                                rechunked.chunks()[0].as_ref(),
+                                dtype,
+                                Cow::Borrowed(&arrow_field),
+                            )
                             .unwrap();
 
-                        (array, arrow_converter)
+                        (array, (arrow_converter, arrow_field))
                     },
                 ),
             ) {
-                let (array, arrow_converter) = fut.await;
-                arrow_converters.push(arrow_converter);
+                let (array, arrow_converter_and_field) = fut.await;
+                arrow_converters.push(arrow_converter_and_field);
                 record_batch_arrow_arrays.push(array);
             }
 
@@ -173,10 +182,10 @@ impl RecordBatchEncoder {
             arrow_converters
                 .into_iter()
                 .zip(dictionary_id_offsets.iter().copied())
-                .filter(|(arrow_converter, _)| {
+                .filter(|((arrow_converter, _), _)| {
                     !arrow_converter.categorical_converter.converters.is_empty()
                 })
-                .flat_map(|(arrow_converter, dictionary_id_offset)| {
+                .flat_map(|((arrow_converter, _), dictionary_id_offset)| {
                     let ipc_batch_tx = ipc_batch_tx.clone();
 
                     arrow_converter
@@ -191,7 +200,7 @@ impl RecordBatchEncoder {
                                 let encoded_data = encode_dictionary_values(
                                     i64::try_from(i + dictionary_id_offset).unwrap(),
                                     categorical_converter
-                                        .build_values_array(arrow_converter.compat_level)
+                                        .build_values_array(compat_level.uses_binview_types())
                                         .as_ref(),
                                     &write_options,
                                 )?;

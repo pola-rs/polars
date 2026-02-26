@@ -1,8 +1,8 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use polars_buffer::Buffer;
-use polars_core::prelude::CompatLevel;
 use polars_error::PolarsResult;
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::read::ParquetError;
@@ -23,7 +23,6 @@ pub struct RowGroupEncoder {
         tokio::sync::mpsc::Sender<async_executor::AbortOnDropHandle<PolarsResult<EncodedRowGroup>>>,
     /// Note: We assume it is checked in IR that this will match the schema of incoming morsels.
     pub arrow_schema: ArrowSchemaRef,
-    pub compat_level: CompatLevel,
     pub schema_descriptor: Arc<SchemaDescriptor>,
     pub write_options: WriteOptions,
     pub encodings: Buffer<Vec<Encoding>>,
@@ -36,7 +35,6 @@ impl RowGroupEncoder {
             mut morsel_rx,
             encoded_row_group_tx,
             arrow_schema,
-            compat_level,
             schema_descriptor,
             write_options,
             encodings,
@@ -68,8 +66,8 @@ impl RowGroupEncoder {
                                 let array =
                                     c.as_materialized_series().rechunk().to_arrow_with_field(
                                         0,
-                                        compat_level,
-                                        Some(arrow_schema.get_at_index(i).unwrap().1),
+                                        Cow::Borrowed(arrow_schema.get_at_index(i).unwrap().1),
+                                        true,
                                     )?;
 
                                 let mut data: UnitVec<Vec<CompressedPage>> =
