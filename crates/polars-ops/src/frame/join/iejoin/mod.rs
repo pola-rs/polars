@@ -276,9 +276,6 @@ pub fn iejoin_par_partition(
         return Ok(None);
     };
 
-    // TODO: [amber] Okay the Khayyat paper says you should do this, but I feel
-    // like you can do better if you instead find drop the part of the series that
-    // is outside of the matchable range. Why don't we do that?
     let may_have_results = match options.operator1 {
         InequalityOperator::Lt => min_l < max_r,
         InequalityOperator::LtEq => min_l <= max_r,
@@ -558,8 +555,7 @@ fn piecewise_merge_join_tuples(
         } else {
             IsSorted::Ascending
         };
-        let is_nulls_last = !series.has_nulls() || series.last().is_null();
-        if (series.is_sorted_flag() == expected_flag || series.len() <= 1) && is_nulls_last {
+        if (series.is_sorted_flag() == expected_flag || series.len() <= 1) && !series.has_nulls() {
             // Fast path, no need to re-sort
             (series, None)
         } else {
