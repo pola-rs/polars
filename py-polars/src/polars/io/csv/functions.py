@@ -1095,7 +1095,7 @@ def scan_csv(
     null_values: str | Sequence[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
-    cache: bool = True,
+    cache: bool | None = None,
     with_column_names: Callable[[list[str]], list[str]] | None = None,
     infer_schema: bool = True,
     infer_schema_length: int | None = N_INFER_DEFAULT,
@@ -1184,6 +1184,9 @@ def scan_csv(
         `pl.String` to check which values might cause an issue.
     cache
         Cache the result after reading.
+
+        .. deprecated:: 1.39.0
+            File cache is no longer supported.
     with_column_names
         Apply a function over the column names just in time (when they are determined);
         this function will receive (and should return) a list of column names.
@@ -1267,8 +1270,8 @@ def scan_csv(
         in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
         (which defaults to 1 hour) if not given.
 
-        .. deprecated:: 1.37.1
-            Pass {"file_cache_ttl": n} via `storage_options` instead.
+        .. deprecated:: 1.39.0
+            File cache is no longer supported.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
 
@@ -1380,11 +1383,11 @@ def scan_csv(
         storage_options = storage_options or {}
         storage_options["max_retries"] = retries
 
-    if file_cache_ttl is not None:
-        msg = "the `file_cache_ttl` parameter was deprecated in 1.37.1; specify 'file_cache_ttl' in `storage_options` instead."
+    if file_cache_ttl is not None or cache is not None:
+        msg = "file cache is no longer supported as of 1.39.0."
         issue_deprecation_warning(msg)
-        storage_options = storage_options or {}
-        storage_options["file_cache_ttl"] = file_cache_ttl
+
+    cache_deprecated = False
 
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "scan_csv"
@@ -1404,7 +1407,7 @@ def scan_csv(
         null_values=null_values,
         missing_utf8_is_empty_string=missing_utf8_is_empty_string,
         ignore_errors=ignore_errors,
-        cache=cache,
+        cache=cache_deprecated,
         with_column_names=with_column_names,
         infer_schema_length=infer_schema_length,
         n_rows=n_rows,

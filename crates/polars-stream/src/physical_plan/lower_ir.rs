@@ -190,7 +190,10 @@ pub fn lower_ir(
     let node_kind = match ir_node {
         IR::SimpleProjection { input, columns } => {
             disable_morsel_split.get_or_insert(true);
-            let columns = columns.iter_names_cloned().collect::<Vec<_>>();
+            let columns = columns
+                .iter_names_cloned()
+                .map(|c| (c.clone(), c))
+                .collect();
             let phys_input = lower_ir!(*input)?;
             PhysNodeKind::SimpleProjection {
                 input: phys_input,
@@ -256,9 +259,13 @@ pub fn lower_ir(
                         .any(|(l, r)| l != r)
                 {
                     let phys_input = phys_sm.insert(PhysNode::new(schema, node_kind));
+                    let columns = projection_schema
+                        .iter_names_cloned()
+                        .map(|c| (c.clone(), c))
+                        .collect();
                     node_kind = PhysNodeKind::SimpleProjection {
                         input: PhysStream::first(phys_input),
-                        columns: projection_schema.iter_names_cloned().collect::<Vec<_>>(),
+                        columns,
                     };
                 }
             }
@@ -665,8 +672,15 @@ pub fn lower_ir(
                     }) as _,
 
                     #[cfg(feature = "csv")]
-                    FileScanIR::Csv { options } => Arc::new(Arc::clone(options)) as _,
-
+                    FileScanIR::Csv { options } => {
+                        Arc::new(crate::nodes::io_sources::csv::builder::CsvReaderBuilder {
+                            options: options.clone(),
+                            prefetch_limit: RelaxedCell::new_usize(0),
+                            prefetch_semaphore: std::sync::OnceLock::new(),
+                            shared_prefetch_wait_group_slot: Default::default(),
+                            io_metrics: std::sync::OnceLock::new(),
+                        }) as _
+                    },
                     #[cfg(feature = "json")]
                     FileScanIR::NDJson { options } => Arc::new(
                         crate::nodes::io_sources::ndjson::builder::NDJsonReaderBuilder {
@@ -677,7 +691,6 @@ pub fn lower_ir(
                             io_metrics: std::sync::OnceLock::new(),
                         },
                     ) as _,
-                    // Arc::new(options.clone()) as _,
                     #[cfg(feature = "python")]
                     FileScanIR::PythonDataset {
                         dataset_object: _,
@@ -875,9 +888,13 @@ pub fn lower_ir(
                         stream = PhysStream::first(node_key);
 
                         if reorder_after_row_index_post {
+                            let columns = output_schema
+                                .iter_names_cloned()
+                                .map(|c| (c.clone(), c))
+                                .collect();
                             let node = PhysNodeKind::SimpleProjection {
                                 input: stream,
-                                columns: output_schema.iter_names_cloned().collect(),
+                                columns,
                             };
 
                             let node_key = phys_sm.insert(PhysNode {
@@ -904,9 +921,13 @@ pub fn lower_ir(
                         stream = PhysStream::first(node_key);
 
                         if reorder_after_row_index_post {
+                            let columns = output_schema
+                                .iter_names_cloned()
+                                .map(|c| (c.clone(), c))
+                                .collect();
                             let node = PhysNodeKind::SimpleProjection {
                                 input: stream,
-                                columns: output_schema.iter_names_cloned().collect(),
+                                columns,
                             };
 
                             let node_key = phys_sm.insert(PhysNode {

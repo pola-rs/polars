@@ -4,7 +4,7 @@ import io
 import tempfile
 from collections import OrderedDict
 from pathlib import Path
-from typing import IO
+from typing import IO, TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -12,6 +12,10 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import CsvCompression
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
@@ -553,3 +557,28 @@ def test_scan_csv_multiple_files_skip_rows_overflow_26127() -> None:
         ).collect(),
         pl.DataFrame(schema={"4": pl.String, "5": pl.String, "6": pl.String}),
     )
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize("compression", ["uncompressed", "zstd", "gzip"])
+def test_scan_csv_progressive_infer_schema_length(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, compression: CsvCompression
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    n_rows = 60_000
+    df = (
+        pl.DataFrame()
+        .with_columns(pl.int_range(n_rows).alias("a"))
+        .with_columns(pl.col.a.cast(pl.Float64).alias("b"))
+    )
+
+    df.lazy().sink_csv(file_path, compression=compression, check_extension=False)
+
+    for infer_len in [1, 2, 100, n_rows - 1, n_rows, n_rows + 1, None]:
+        out = pl.scan_csv(file_path, infer_schema_length=infer_len).collect()
+        assert df.schema == out.schema

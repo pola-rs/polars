@@ -721,6 +721,23 @@ impl DataType {
         }
     }
 
+    pub fn contains_dtype_recursive(&self, dtype: &DataType) -> bool {
+        if self == dtype {
+            return true;
+        }
+        use DataType as D;
+        match self {
+            D::List(inner) => inner.contains_dtype_recursive(dtype),
+            #[cfg(feature = "dtype-array")]
+            D::Array(inner, _) => inner.contains_dtype_recursive(dtype),
+            #[cfg(feature = "dtype-struct")]
+            D::Struct(fields) => fields
+                .iter()
+                .any(|field| field.dtype.contains_dtype_recursive(dtype)),
+            _ => false,
+        }
+    }
+
     /// Check if type is sortable
     pub fn is_ord(&self) -> bool {
         let phys = self.to_physical();

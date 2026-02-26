@@ -17,6 +17,7 @@ pub enum RoundMode {
     #[default]
     HalfToEven,
     HalfAwayFromZero,
+    ToZero,
 }
 
 /// Apply the given rounding operation across f16/f32/f64 types.
@@ -126,6 +127,7 @@ pub trait RoundSeries: SeriesSealed {
         let (f32_op, f64_op): (fn(f32) -> f32, fn(f64) -> f64) = match mode {
             RoundMode::HalfToEven => (f32::round_ties_even, f64::round_ties_even),
             RoundMode::HalfAwayFromZero => (f32::round, f64::round),
+            RoundMode::ToZero => (f32::trunc, f64::trunc),
         };
 
         if let Some(result) = apply_float_rounding(s, decimals, f32_op, f64_op) {
@@ -171,13 +173,19 @@ pub trait RoundSeries: SeriesSealed {
                     };
                     v - rem + round_offset
                 }),
+                RoundMode::ToZero => ca.physical().apply_values(|v| v - (v % multiplier)),
             };
             return Ok(res
                 .into_decimal_unchecked(ca.precision(), scale as usize)
                 .into_series());
         }
 
-        polars_ensure!(s.dtype().is_integer(), InvalidOperation: "round can only be used on numeric types" );
+        let op = match mode {
+            RoundMode::ToZero => "truncation ('to_zero')",
+            RoundMode::HalfToEven => "rounding ('half_to_even')",
+            RoundMode::HalfAwayFromZero => "rounding ('half_away_from_zero')",
+        };
+        polars_ensure!(s.dtype().is_integer(), InvalidOperation: "{} can only be used on numeric types", op);
         Ok(s.clone())
     }
 
@@ -251,26 +259,9 @@ pub trait RoundSeries: SeriesSealed {
 
     /// Truncate underlying floating point array toward zero to the given number of decimals.
     fn truncate(&self, decimals: u32) -> PolarsResult<Series> {
-        let s = self.as_series();
-        if let Some(result) = apply_float_rounding(s, decimals, f32::trunc, f64::trunc) {
-            return result;
-        }
-
-        #[cfg(feature = "dtype-decimal")]
-        if let Some(ca) = s.try_decimal() {
-            let scale = ca.scale() as u32;
-            if scale <= decimals {
-                return Ok(ca.clone().into_series());
-            }
-            let decimal_delta = scale - decimals;
-            let multiplier = 10i128.pow(decimal_delta);
-            let res = ca.physical().apply_values(|v| v - (v % multiplier));
-            return Ok(res
-                .into_decimal_unchecked(ca.precision(), scale as usize)
-                .into_series());
-        }
-        polars_ensure!(s.dtype().is_integer(), InvalidOperation: "truncate can only be used on numeric types" );
-        Ok(s.clone())
+        // Note: we make `truncate` available as its own function for discoverability
+        // as this is how it is commonly known in other libraries/languages.
+        self.round(decimals, RoundMode::ToZero)
     }
 
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
