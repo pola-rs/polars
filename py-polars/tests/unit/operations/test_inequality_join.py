@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 import hypothesis.strategies as st
 import numpy as np
+from polars.testing.parametric.strategies.core import dataframes
 import pytest
 from hypothesis import given
 
@@ -690,3 +691,70 @@ def test_boolean_predicate_join_where() -> None:
     assert "NESTED LOOP JOIN" in plan
 
     assert_frame_equal(q.collect(), expect)
+
+
+@st.composite
+def range_join_frames(draw: DrawFn) -> tuple[pl.DataFrame, pl.DataFrame]:
+    n_left = draw(st.integers(0, 20))
+    n_right = draw(st.integers(0, 20))
+
+    values = draw(st.lists(st.integers(0, 20), min_size=n_left, max_size=n_left))
+
+    lo_vals = draw(st.lists(st.integers(0, 20), min_size=n_right, max_size=n_right))
+    widths = draw(st.lists(st.integers(0, 10), min_size=n_right, max_size=n_right))
+    hi_vals = [lo + w for lo, w in zip(lo_vals, widths)]
+
+    left = pl.DataFrame(
+        [
+            pl.Series("id", list(range(n_left)), dtype=pl.Int64),
+            pl.Series("value", values, dtype=pl.Int64),
+        ]
+    )
+    right = pl.DataFrame(
+        [
+            pl.Series("id", list(range(n_right)), dtype=pl.Int64),
+            pl.Series("lo", lo_vals, dtype=pl.Int64),
+            pl.Series("hi", hi_vals, dtype=pl.Int64),
+        ]
+    )
+    return left, right
+
+
+@pytest.mark.parametrize("lower_op", [None, ">", ">="])
+@pytest.mark.parametrize("upper_op", [None, "<", "<="])
+@given(
+    point=dataframes(
+        min_cols=1, max_cols=1, allowed_dtypes=[pl.Int16], allow_null=False
+    ),
+    interval=dataframes(
+        min_cols=2, max_cols=2, allowed_dtypes=[pl.Int16], allow_null=False
+    ),
+)
+def test_ie_join_streaming_range(
+    point: pl.DataFrame,
+    interval: pl.DataFrame,
+    lower_op: str,
+    upper_op: str,
+) -> None:
+    if lower_op is None and upper_op is None:
+        pytest.skip("at least one of lower_op or upper_op must be set")
+
+    point_lf = pl.LazyFrame(point.rename({"col0": "point"})).with_row_index()
+    interval_lf = pl.LazyFrame(
+        interval.rename({"col0": "lo", "col1": "hi"})
+    ).with_row_index()
+
+    predicates = []
+    if lower_op:
+        predicates.append(_inequality_expression("point", lower_op, "lo"))
+    if upper_op:
+        predicates.append(_inequality_expression("point", upper_op, "hi"))
+
+    q = point_lf.join_where(interval_lf, *predicates)
+
+    dot = q.show_graph(plan_stage="physical", engine="streaming", raw_output=True)
+    assert "range-join" in dot
+
+    expected = q.collect(engine="in-memory")
+    actual = q.collect(engine="streaming")
+    assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)

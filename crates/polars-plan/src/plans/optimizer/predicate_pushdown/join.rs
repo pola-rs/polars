@@ -194,9 +194,7 @@ pub(super) fn process_join(
             Right => false,
 
             #[cfg(feature = "iejoin")]
-            IEJoin => false,
-            #[cfg(feature = "iejoin")]
-            Range => todo!("[amber]"),
+            IEJoin | Range => false, // TODO: [amber] Double check this
 
             Cross => unreachable!(), // Cross left/right_on should be empty
         } {
@@ -1231,11 +1229,11 @@ fn take_double_bounded_range_join_filter(
     output_schema: &Schema,
     suffix: &str,
 ) -> PolarsResult<Option<(IEJoinCompatiblePredicate, IEJoinCompatiblePredicate, bool)>> {
-    // TODO: [amber] Add another function for single range predicate
-
     use InequalityOperator::*;
     use polars_utils::itertools::Itertools;
 
+    let mut l_stack = Vec::new();
+    let mut r_stack = Vec::new();
     let ie_join_filters = take_iejoin_compatible_filters(
         acc_predicates,
         expr_arena,
@@ -1252,20 +1250,21 @@ fn take_double_bounded_range_join_filter(
                 if idx1 == idx2 {
                     continue;
                 }
-                let lhs1 = expr_arena.get(pred1.input_lhs);
-                let rhs1 = expr_arena.get(pred1.input_rhs);
-                let lhs2 = expr_arena.get(pred2.input_lhs);
-                let rhs2 = expr_arena.get(pred2.input_rhs);
+                let lhs_expr1 = expr_arena.get(pred1.input_lhs);
+                let lhs_expr2 = expr_arena.get(pred2.input_lhs);
                 let op1_is_less = matches!(pred1.ie_op, Lt | LtEq);
                 let op2_is_less = matches!(pred2.ie_op, Lt | LtEq);
-                if lhs1.is_expr_equal_to(lhs2, expr_arena) && !op1_is_less && op2_is_less {
+                let lhs_exprs_eq = AExpr::is_expr_equal_to_amortized(
+                    lhs_expr1,
+                    lhs_expr2,
+                    expr_arena,
+                    &mut l_stack,
+                    &mut r_stack,
+                );
+                if lhs_exprs_eq && !op1_is_less && op2_is_less {
                     break 'bound_preds (idx1, idx2, true);
-                } else if lhs1.is_expr_equal_to(lhs2, expr_arena) && op1_is_less && !op2_is_less {
+                } else if lhs_exprs_eq && op1_is_less && !op2_is_less {
                     break 'bound_preds (idx2, idx1, true);
-                } else if rhs1.is_expr_equal_to(rhs2, expr_arena) && op1_is_less && !op2_is_less {
-                    break 'bound_preds (idx1, idx2, false);
-                } else if rhs1.is_expr_equal_to(rhs2, expr_arena) && !op1_is_less && op2_is_less {
-                    break 'bound_preds (idx2, idx1, false);
                 }
             }
         }

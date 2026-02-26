@@ -1,19 +1,13 @@
-use std::mem;
-use std::ops::Range;
+use std::{iter, mem};
 
-use polars_core::prelude::search_sorted::binary_search_ca;
 use polars_core::prelude::*;
-use polars_core::utils::{
-    _split_offsets, accumulate_dataframes_vertical_unchecked, concat_df_unchecked,
-};
-use polars_ops::frame::{_finish_join, IEJoinOptions, JoinArgs, iejoin_par_partition};
-use polars_ops::series::SearchSortedSide;
+use polars_ops::frame::{_finish_join, IEJoinOptions, InequalityOperator, JoinArgs};
+use polars_ops::series::{SearchSortedSide, search_sorted};
 
-use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
-use crate::morsel::{Morsel, get_ideal_morsel_size};
+use crate::morsel::Morsel;
 use crate::nodes::ComputeNode;
 use crate::nodes::in_memory_sink::InMemorySinkNode;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
@@ -38,25 +32,42 @@ pub struct RangeJoinNode {
 
 #[derive(Debug)]
 struct RangeJoinParams {
-    point: RangeJoinSideParams,
-    interval: RangeJoinSideParams,
+    point_on: PlSmallStr,
+    point_tmp_key_col: Option<PlSmallStr>,
+    lower_on: Option<PlSmallStr>,
+    lower_tmp_key_col: Option<PlSmallStr>,
+    lower_op: Option<InequalityOperator>,
+    upper_on: Option<PlSmallStr>,
+    upper_op: Option<InequalityOperator>,
+    upper_tmp_key_col: Option<PlSmallStr>,
+    point_schema: SchemaRef,
+    interval_schema: SchemaRef,
+    output_schema: SchemaRef,
     args: JoinArgs,
     options: IEJoinOptions,
     left_is_point: bool,
 }
 
-#[derive(Debug)]
-struct RangeJoinSideParams {
-    schema: SchemaRef,
-    on: Vec<PlSmallStr>,
-    tmp_key_cols: [Option<PlSmallStr>; 2],
-}
-
-impl RangeJoinSideParams {
-    fn key_col<const IDX: usize>(&self) -> &PlSmallStr {
-        debug_assert!((0..=1).contains(&IDX));
-        let idx = IDX.clamp(0, self.on.len() - 1);
-        self.tmp_key_cols[idx].as_ref().unwrap_or(&self.on[idx])
+impl RangeJoinParams {
+    fn point_key_col(&self) -> &PlSmallStr {
+        self.point_tmp_key_col.as_ref().unwrap_or(&self.point_on)
+    }
+    fn lower_key_col(&self) -> Option<&PlSmallStr> {
+        self.lower_tmp_key_col.as_ref().or(self.lower_on.as_ref())
+    }
+    fn upper_key_col(&self) -> Option<&PlSmallStr> {
+        self.upper_tmp_key_col.as_ref().or(self.upper_on.as_ref())
+    }
+    fn operator<const IDX: usize>(&self) -> InequalityOperator {
+        let left_right_op = match IDX {
+            0 => self.options.operator1,
+            1 => self.options.operator2.unwrap(),
+            _ => unreachable!(),
+        };
+        match self.left_is_point {
+            true => left_right_op,
+            false => !left_right_op,
+        }
     }
 }
 
@@ -64,35 +75,93 @@ impl RangeJoinNode {
     pub fn new(
         left_schema: SchemaRef,
         right_schema: SchemaRef,
-        left_on: PlSmallStr,
+        left_on: Vec<PlSmallStr>,
         right_on: Vec<PlSmallStr>,
-        tmp_left_key_cols: Option<PlSmallStr>,
+        tmp_left_key_cols: [Option<PlSmallStr>; 2],
         tmp_right_key_cols: [Option<PlSmallStr>; 2],
+        output_schema: SchemaRef,
         args: JoinArgs,
         options: IEJoinOptions,
     ) -> Self {
-        if options.operator2.is_some() {
-            assert!(left_on.len() > 1 || right_on.len() > 1);
-        }
-        let point = RangeJoinSideParams {
-            schema: left_schema.clone(),
-            on: vec![left_on],
-            tmp_key_cols: [tmp_left_key_cols, None],
+        let left_is_point = left_on.len() == 1;
+        let ops_n = if options.operator2.is_some() { 2 } else { 1 };
+        let op1_is_lower_bound = match (left_is_point, options.operator1) {
+            (true, InequalityOperator::Gt | InequalityOperator::GtEq) => true,
+            (true, InequalityOperator::Lt | InequalityOperator::LtEq) => false,
+            (false, InequalityOperator::Gt | InequalityOperator::GtEq) => false,
+            (false, InequalityOperator::Lt | InequalityOperator::LtEq) => true,
         };
-        let interval = RangeJoinSideParams {
-            schema: right_schema.clone(),
-            on: right_on,
-            tmp_key_cols: tmp_right_key_cols,
+        let mut point_on;
+        let mut point_tmp_key_cols;
+        let point_schema;
+        let mut interval_on_vec;
+        let mut interval_tmp_key_cols;
+        let interval_schema;
+        if left_is_point {
+            assert!(left_on.len() == 1 && right_on.len() == ops_n);
+            point_on = left_on;
+            point_tmp_key_cols = tmp_left_key_cols;
+            point_schema = left_schema;
+            interval_on_vec = right_on;
+            interval_tmp_key_cols = tmp_right_key_cols;
+            interval_schema = right_schema;
+        } else {
+            assert!(right_on.len() == 1 && left_on.len() == ops_n);
+            point_on = right_on;
+            point_tmp_key_cols = tmp_right_key_cols;
+            point_schema = right_schema;
+            interval_on_vec = left_on;
+            interval_tmp_key_cols = tmp_left_key_cols;
+            interval_schema = left_schema;
         };
+        let point_on = mem::take(&mut point_on[0]);
+        let point_tmp_key_col = mem::take(&mut point_tmp_key_cols[0]);
+        let (lower_on, lower_tmp_key_col, lower_op, upper_on, upper_tmp_key_col, upper_op) =
+            match (ops_n, op1_is_lower_bound) {
+                (2, _) => (
+                    interval_on_vec.get_mut(0).map(mem::take),
+                    mem::take(&mut interval_tmp_key_cols[0]),
+                    Some(options.operator1),
+                    interval_on_vec.get_mut(1).map(mem::take),
+                    mem::take(&mut interval_tmp_key_cols[1]),
+                    Some(options.operator2.unwrap()),
+                ),
+                (1, true) => (
+                    interval_on_vec.get_mut(0).map(mem::take),
+                    mem::take(&mut interval_tmp_key_cols[0]),
+                    Some(options.operator1),
+                    None,
+                    None,
+                    None,
+                ),
+                (1, false) => (
+                    None,
+                    None,
+                    None,
+                    interval_on_vec.get_mut(0).map(mem::take),
+                    mem::take(&mut interval_tmp_key_cols[0]),
+                    Some(options.operator1),
+                ),
+                _ => unreachable!(),
+            };
         let params = RangeJoinParams {
-            point,
-            interval,
+            point_on,
+            point_tmp_key_col,
+            lower_on,
+            lower_tmp_key_col,
+            lower_op,
+            upper_on,
+            upper_tmp_key_col,
+            upper_op,
+            point_schema: point_schema.clone(),
+            interval_schema,
+            output_schema,
             args,
             options,
-            left_is_point: true,
+            left_is_point,
         };
         RangeJoinNode {
-            state: RangeJoinState::Build(InMemorySinkNode::new(left_schema)),
+            state: RangeJoinState::Build(InMemorySinkNode::new(point_schema)),
             params,
         }
     }
@@ -115,7 +184,6 @@ impl ComputeNode for RangeJoinNode {
     ) -> PolarsResult<()> {
         assert!(recv.len() == 2 && send.len() == 1);
 
-        // TODO: [amber] Which side is point?
         let (point, interval) = recv.split_at_mut(1);
 
         if send[0] == PortState::Done {
@@ -163,7 +231,6 @@ impl ComputeNode for RangeJoinNode {
     ) {
         assert!(recv_ports.len() == 2 && send_ports.len() == 1);
 
-        // TODO: [amber] Which side is point?
         let params = &self.params;
         let point_idx = if params.left_is_point { 0 } else { 1 };
         let interval_idx = 1 - point_idx;
@@ -198,7 +265,7 @@ fn transition_to_probe(
 ) -> PolarsResult<ProbeState> {
     let sort_options = SortMultipleOptions::default().with_multithreaded(true);
     let mut point_df = sink_node.get_output()?.unwrap();
-    point_df.sort_in_place([params.point.key_col::<0>()], sort_options)?;
+    point_df.sort_in_place([params.point_key_col()], sort_options)?;
     Ok(ProbeState { point_df })
 }
 
@@ -210,75 +277,108 @@ async fn compute_and_emit_task(
 ) -> PolarsResult<()> {
     let ProbeState { point_df } = probe_state;
     let point_key = point_df
-        .column(params.point.key_col::<0>())?
+        .column(params.point_key_col())?
         .as_materialized_series();
 
-    let point_key_i64: &Int64Chunked = point_key.as_ref().as_ref();
-
-    // TODO: LEFT HERE
-    //
-    // Very crude implementation of the double-bounded range join.
-    // Make it less buggy and less slow.
+    let sss_lower = match params.lower_op {
+        Some(InequalityOperator::GtEq) => Some(SearchSortedSide::Left),
+        Some(InequalityOperator::Gt) => Some(SearchSortedSide::Right),
+        Some(_) => unreachable!(),
+        _ => None,
+    };
+    let sss_upper = match params.upper_op {
+        Some(InequalityOperator::LtEq) => Some(SearchSortedSide::Right),
+        Some(InequalityOperator::Lt) => Some(SearchSortedSide::Left),
+        Some(_) => unreachable!(),
+        _ => None,
+    };
 
     loop {
         let Ok(morsel) = recv.recv().await else {
             return Ok(());
         };
-        let (df, seq, st, wt) = morsel.into_inner();
+        let (interval_df, seq, st, _) = morsel.into_inner();
 
-        let lower_bound_key: &Int64Chunked = df
-            .column(params.interval.key_col::<0>())?
-            .as_materialized_series()
-            .as_ref()
-            .as_ref();
-        let upper_bound_key: &Int64Chunked = df
-            .column(params.interval.key_col::<1>())?
-            .as_materialized_series()
-            .as_ref()
-            .as_ref();
+        let starts = params
+            .lower_key_col()
+            .map(|c| {
+                let search_values = interval_df.column(c)?.as_materialized_series();
+                search_sorted(point_key, search_values, sss_lower.unwrap(), false)
+            })
+            .transpose()?;
+        let ends = params
+            .upper_key_col()
+            .map(|c| {
+                let search_values = interval_df.column(c)?.as_materialized_series();
+                search_sorted(point_key, search_values, sss_upper.unwrap(), false)
+            })
+            .transpose()?;
 
-        let starts = binary_search_ca(
-            point_key_i64,
-            lower_bound_key.iter(),
-            SearchSortedSide::Left,
-            false,
-        );
-        let ends = binary_search_ca(
-            point_key_i64,
-            upper_bound_key.iter(),
-            SearchSortedSide::Right,
-            false,
-        );
+        let starts = match starts {
+            Some(v) => v,
+            None => IdxCa::new_vec(
+                PlSmallStr::EMPTY,
+                vec![0 as IdxSize; ends.as_ref().unwrap().len()],
+            ),
+        };
+        let ends = match ends {
+            Some(v) => v,
+            None => IdxCa::new_vec(
+                PlSmallStr::EMPTY,
+                vec![point_df.height() as IdxSize; starts.len()],
+            ),
+        };
+
+        let mut accumulator_point = DataFrame::empty_with_arc_schema(params.point_schema.clone());
+        let mut accumulator_interval =
+            DataFrame::empty_with_arc_schema(params.interval_schema.clone());
         for (row_idx, (start, end)) in
-            Iterator::zip(starts.into_iter(), ends.into_iter()).enumerate()
+            Iterator::zip(starts.into_no_null_iter(), ends.into_no_null_iter()).enumerate()
         {
-            let sliced = point_df.slice(start as i64, (end - start) as usize);
-            let repeat = std::iter::repeat_n(df.slice(row_idx as i64, 1), (end - start) as usize);
-            let interval_gather = accumulate_dataframes_vertical_unchecked(repeat);
-            debug_assert_eq!(sliced.height(), interval_gather.height());
-
-            let mut output = if params.left_is_point {
-                _finish_join(sliced, interval_gather, params.args.suffix.clone())?
-            } else {
-                _finish_join(interval_gather, sliced, params.args.suffix.clone())?
-            };
-            drop_key_columns(&mut output, params);
-            if send
-                .send(Morsel::new(output, seq, st.clone()))
-                .await
-                .is_err()
-            {
-                return Ok(());
+            if !(start <= end) {
+                continue;
             }
+
+            let sliced = point_df.slice(start as i64, end.saturating_sub(start) as usize);
+            accumulator_point.vstack_mut_owned_unchecked(sliced);
+
+            for gather_chunk in iter::repeat_n(
+                interval_df.slice(row_idx as i64, 1),
+                end.saturating_sub(start) as usize,
+            ) {
+                accumulator_interval.vstack_mut_owned_unchecked(gather_chunk);
+            }
+            debug_assert!(accumulator_point.height() == accumulator_interval.height());
+        }
+
+        let mut output = if params.left_is_point {
+            _finish_join(
+                accumulator_point,
+                accumulator_interval,
+                params.args.suffix.clone(),
+            )?
+        } else {
+            _finish_join(
+                accumulator_interval,
+                accumulator_point,
+                params.args.suffix.clone(),
+            )?
+        };
+
+        drop_key_columns(&mut output, params);
+        let morsel = Morsel::new(output, seq, st.clone());
+        if send.send(morsel).await.is_err() {
+            return Ok(());
         }
     }
 }
 
 fn drop_key_columns(df: &mut DataFrame, params: &RangeJoinParams) {
-    for col in Iterator::chain(
-        params.point.tmp_key_cols.iter(),
-        params.interval.tmp_key_cols.iter(),
-    ) {
+    for col in [
+        &params.point_tmp_key_col,
+        &params.lower_tmp_key_col,
+        &params.upper_tmp_key_col,
+    ] {
         if let Some(col) = col
             && df.schema().contains(col)
         {

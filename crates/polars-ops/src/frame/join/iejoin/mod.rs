@@ -3,6 +3,7 @@ mod filtered_bit_array;
 mod l1_l2;
 
 use std::cmp::min;
+use std::ops::Not;
 
 use filtered_bit_array::FilteredBitArray;
 use l1_l2::*;
@@ -38,6 +39,18 @@ pub enum InequalityOperator {
 impl InequalityOperator {
     fn is_strict(&self) -> bool {
         matches!(self, InequalityOperator::Gt | InequalityOperator::Lt)
+    }
+}
+
+impl Not for InequalityOperator {
+    type Output = Self;
+    fn not(self) -> Self::Output {
+        match self {
+            InequalityOperator::Lt => InequalityOperator::Gt,
+            InequalityOperator::LtEq => InequalityOperator::GtEq,
+            InequalityOperator::Gt => InequalityOperator::Lt,
+            InequalityOperator::GtEq => InequalityOperator::LtEq,
+        }
     }
 }
 
