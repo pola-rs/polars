@@ -402,7 +402,7 @@ fn try_rewrite_join_type(
     (|| {
         match &options.args.how {
             #[cfg(feature = "iejoin")]
-            JoinType::IEJoin => {},
+            JoinType::IEJoin | JoinType::Range => {},
             JoinType::Cross => {},
 
             _ => return PolarsResult::Ok(()),
