@@ -110,7 +110,8 @@ impl SchemaExt for Schema {
         if !recursive {
             self.iter_values().any(|dt| dt == dtype)
         } else {
-            self.iter_values().any(|dt| dt.contains_dtype(dtype))
+            self.iter_values()
+                .any(|dt| dt.contains_dtype_recursive(dtype))
         }
     }
 }

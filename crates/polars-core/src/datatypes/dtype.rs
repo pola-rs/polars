@@ -721,17 +721,19 @@ impl DataType {
         }
     }
 
-    pub fn contains_dtype(&self, dtype: &DataType) -> bool {
+    pub fn contains_dtype_recursive(&self, dtype: &DataType) -> bool {
         if self == dtype {
             return true;
         }
         use DataType as D;
         match self {
-            D::List(inner) => inner.contains_dtype(dtype),
+            D::List(inner) => inner.contains_dtype_recursive(dtype),
             #[cfg(feature = "dtype-array")]
-            D::Array(inner, _) => inner.contains_dtype(dtype),
+            D::Array(inner, _) => inner.contains_dtype_recursive(dtype),
             #[cfg(feature = "dtype-struct")]
-            D::Struct(fields) => fields.iter().any(|field| field.dtype.contains_dtype(dtype)),
+            D::Struct(fields) => fields
+                .iter()
+                .any(|field| field.dtype.contains_dtype_recursive(dtype)),
             _ => false,
         }
     }
