@@ -1,73 +1,131 @@
 # Query profiling
 
 Monitor query execution across workers to identify bottlenecks, understand data flow, and optimize
-performance.
+performance. You can see which stages are running, how data moves between workers, and where time is
+spent during execution.
 
-## Phases of a distributed query
+This visibility helps you optimize complex queries and better understand the distributed execution
+of queries.
 
-A distributed query spends its time in three phases, each of which is visible in the query profiler:
-
-**Input/Output**: Each worker reads its assigned [partitions](glossary.md#partition) from storage
-and stores the results in the destination location. These are typically the first and last
-activities you see in the profiler. IO-heavy queries benefit from scaling horizontally: adding more
-workers reduces the per-worker download and upload volume.
-
-**Computation**: Workers execute the query operations (filters, joins, aggregations) on their local
-data. Computation-heavy queries benefit from scaling vertically, adding more CPU and memory per
-node.
-
-**Shuffling**: When an operation such as a join or group-by requires all rows with a given key to be
-on the same worker, data is redistributed across the cluster in a [shuffle](glossary.md#shuffle). A
-shuffle separates two [stages](glossary.md#stage). Shuffle-heavy queries produce large volumes of
-inter-node traffic, which you can observe as network bandwidth usage in the cluster dashboard.
-
-## Using the query profiler
-
-You can follow along in your own environment with the following example query:
-
-<details markdown>
-<summary>Example query</summary>
+<details>
+<summary>Example query and dataset</summary>
 
 You can copy and paste the example below to explore the feature yourself. Don't forget to change the
 workspace name to one of your own workspaces.
 
-{{code_block('polars-cloud/query-profile','query',[])}}
+```python
+import polars as pl
+import polars_cloud as pc
+
+pc.authenticate()
+
+ctx = pc.ComputeContext(workspace="your-workspace", cpus=12, memory=12, cluster_size=4)
+
+def pdsh_q3(customer, lineitem, orders):
+    return (
+        customer.filter(pl.col("c_mktsegment") == "BUILDING")
+        .join(orders, left_on="c_custkey", right_on="o_custkey")
+        .join(lineitem, left_on="o_orderkey", right_on="l_orderkey")
+        .filter(pl.col("o_orderdate") < pl.date(1995, 3, 15))
+        .filter(pl.col("l_shipdate") > pl.date(1995, 3, 15))
+        .with_columns(
+            (pl.col("l_extendedprice") * (1 - pl.col("l_discount"))).alias("revenue")
+        )
+        .group_by("o_orderkey", "o_orderdate", "o_shippriority")
+        .agg(pl.sum("revenue"))
+        .select(
+            pl.col("o_orderkey").alias("l_orderkey"),
+            "revenue",
+            "o_orderdate",
+            "o_shippriority",
+        )
+        .sort(by=["revenue", "o_orderdate"], descending=[True, False])
+    )
+
+lineitem = pl.scan_parquet(
+    "s3://polars-cloud-samples-us-east-2-prd/pdsh/sf100/lineitem/*.parquet",
+    storage_options={"request_payer": "true"},
+)
+customer = pl.scan_parquet(
+    "s3://polars-cloud-samples-us-east-2-prd/pdsh/sf100/customer/*.parquet",
+    storage_options={"request_payer": "true"},
+)
+orders = pl.scan_parquet(
+    "s3://polars-cloud-samples-us-east-2-prd/pdsh/sf100/orders/*.parquet",
+    storage_options={"request_payer": "true"},
+)
+```
 
 </details>
 
-The cluster dashboard and built-in query profiler are available through the Polars Cloud compute
-dashboard. They show detailed metrics, both real-time during execution and after completion, such as
-the percentage of time spent shuffling and total bytes shuffled.
+{{code_block('polars-cloud/query-profile','execute',[])}}
 
-![Query details](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/query_details.png)
+The `await_profile` method can be used to monitor an in-progress query. It returns a QueryProfile
+object containing a DataFrame with information about which stages are being processed across
+workers, which can be analyzed in the same way as any Polars query.
 
-### Stage graph
+{{code_block('polars-cloud/query-profile','await_profile',[])}}
 
-The stage graph shows how the query is divided into [stages](glossary.md#stage) separated by
-[shuffles](glossary.md#shuffle). Each stage can be expanded to inspect the operations it contains
-and understand what work is happening at each point in the pipeline.
+Each row represents one worker processing a span. A span represents a chunk of work done by a
+worker, for example generating the query plan, reading data from another worker, or executing the
+query on that data. Some spans may output data, which is recorded in the output_rows column.
 
-![Stage graph with node details](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/stage_graph_node_details.png)
+```text
+shape: (53, 6)
+┌──────────────┬──────────────┬───────────┬─────────────────────┬────────────────────┬─────────────┬───────────────────────┬────────────────────┐
+│ stage_number ┆ span_name    ┆ worker_id ┆ start_time          ┆ end_time           ┆ output_rows ┆ shuffle_bytes_written ┆ shuffle_bytes_read │
+│ ---          ┆ ---          ┆ ---       ┆ ---                 ┆ ---                ┆ ---         ┆ ---                   ┆                    │
+│ u32          ┆ str          ┆ str       ┆ datetime[ns]        ┆ datetime[ns]       ┆ u64         ┆ u64                   ┆ u64                │
+╞══════════════╪══════════════╪═══════════╪═════════════════════╪════════════════════╪═════════════╪═══════════════════════╪════════════════════╡
+│ 6            ┆ Execute IR   ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ 282794      ┆ 72395264              ┆ null               │
+│              ┆              ┆           ┆ 08:08:52.820228585  ┆ 08:08:52.878229914 ┆             ┆                       ┆                    │
+│ 3            ┆ Execute IR   ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ 3643370     ┆ 932702720             ┆ null               │
+│              ┆              ┆           ┆ 08:08:45.421053731  ┆ 08:08:45.600081475 ┆             ┆                       ┆                    │
+│ 5            ┆ Execute IR   ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ 282044      ┆ 723203264             ┆ null               │
+│              ┆              ┆           ┆ 08:08:52.667547917  ┆ 08:08:52.718114297 ┆             ┆                       ┆                    │
+│ 5            ┆ Shuffle read ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ null        ┆ null                  ┆ 932702720          │
+│              ┆              ┆           ┆ 08:08:52.694917167  ┆ 08:08:52.720657155 ┆             ┆                       ┆                    │
+│ 7            ┆ Execute IR   ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ 145179      ┆ 37165824              ┆ null               │
+│              ┆              ┆           ┆ 08:08:53.039771274  ┆ 08:08:53.166535930 ┆             ┆                       ┆                    │
+│ …            ┆ …            ┆ …         ┆ …                   ┆ …                  ┆ …           ┆ …                     ┆ …                  │
+│ 5            ┆ Shuffle read ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ null        ┆ null                  ┆ 72503808           │
+│              ┆              ┆           ┆ 08:08:52.649434841  ┆ 08:08:52.667065947 ┆             ┆                       ┆                    │
+│ 6            ┆ Execute IR   ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ 283218      ┆ 72503808              ┆ null               │
+│              ┆              ┆           ┆ 08:08:52.818787714  ┆ 08:08:52.880324797 ┆             ┆                       ┆                    │
+│ 4            ┆ Shuffle read ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ null        ┆ null                  ┆ 3979787264         │
+│              ┆              ┆           ┆ 08:08:46.188322234  ┆ 08:08:50.871792346 ┆             ┆                       ┆                    │
+│ 1            ┆ Execute IR   ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ 15546044    ┆ 3979787264            ┆ null               │
+│              ┆              ┆           ┆ 08:08:40.325404872  ┆ 08:08:44.030028095 ┆             ┆                       ┆                    │
+│ 7            ┆ Shuffle read ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ null        ┆ null                  ┆ 37165824           │
+│              ┆              ┆           ┆ 08:08:52.925442390  ┆ 08:08:52.962600065 ┆             ┆                       ┆                    │
+└──────────────┴──────────────┴───────────┴─────────────────────┴────────────────────┴─────────────┴───────────────────────┴────────────────────┘
+```
 
-The metrics on each stage tell you where the query is spending its time. High shuffle bytes indicate
-a shuffle-heavy query; a stage with a large output row count followed by a significant reduction in
-the next stage points to a computation-heavy filtering or aggregation step.
+As each worker starts and completes each stage of the query, it notifies the lead worker. The
+`await_profile` method will poll the lead worker until there is an update from any worker, and then
+return the full profile data of the query.
 
-![Stage graph with stage details](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/stage_graph_stage_details.png)
+The QueryProfile object also has a summary property to return an aggregated view of each stage.
 
-### Query plans
+{{code_block('polars-cloud/query-profile','await_summary',[])}}
 
-The profiler also lets you inspect the [logical plan](glossary.md#logical-plan) for the full query
-and the [physical plan](glossary.md#physical-plan) for each individual stage. The logical plan shows
-how your query has been optimized. The physical plan shows how the engine executes a stage: the
-concrete algorithms, operator implementations, and data flow chosen at runtime.
-
-![Physical plan](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/physical_plan.png)
-
-Each node in the physical plan is annotated with the percentage of total execution time it consumed,
-making it straightforward to spot computational bottlenecks. Nodes are also flagged when they are
-memory-intensive.
-
-Together, the stage graph and query plans give you a complete picture of where your query spends its
-time: from the high-level distribution of work across stages down to the specific operations driving
-the cost.
+```text
+shape: (13, 6)
+┌──────────────┬──────────────┬───────────┬────────────┬──────────────┬─────────────┬───────────────────────┬────────────────────┐
+│ stage_number ┆ span_name    ┆ completed ┆ worker_ids ┆ duration     ┆ output_rows ┆ shuffle_bytes_written ┆ shuffle_bytes_read │
+│ ---          ┆ ---          ┆ ---       ┆ ---        ┆ ---          ┆ ---         ┆ ---                   ┆ ---                │
+│ u32          ┆ str          ┆ bool      ┆ str        ┆ duration[μs] ┆ u64         ┆ u64                   ┆ u64                │
+╞══════════════╪══════════════╪═══════════╪════════════╪══════════════╪═════════════╪═══════════════════════╪════════════════════╡
+│ 6            ┆ Shuffle read ┆ true      ┆ i-xxx      ┆ 1228µs       ┆ 0           ┆ 0                     ┆ 289546496          │
+│ 5            ┆ Shuffle read ┆ true      ┆ i-xxx      ┆ 140759µs     ┆ 0           ┆ 0                     ┆ 289546496          │
+│ 4            ┆ Execute IR   ┆ true      ┆ i-xxx      ┆ 1s 73534µs   ┆ 1131041     ┆ 289546496             ┆ 0                  │
+│ 2            ┆ Execute IR   ┆ true      ┆ i-xxx      ┆ 6s 944740µs  ┆ 3000188     ┆ 768048128             ┆ 0                  │
+│ 5            ┆ Execute IR   ┆ true      ┆ i-xxx      ┆ 167483µs     ┆ 1131041     ┆ 289546496             ┆ 0                  │
+│ …            ┆ …            ┆ …         ┆ …          ┆ …            ┆ …           ┆ …                     ┆ …                  │
+│ 4            ┆ Shuffle read ┆ true      ┆ i-xxx      ┆ 4s 952005µs  ┆ 0           ┆ 0                     ┆ 255627121          │
+│ 1            ┆ Execute IR   ┆ true      ┆ i-xxx      ┆ 7s 738907µs  ┆ 72874383    ┆ 18655842048           ┆ 0                  │
+│ 3            ┆ Shuffle read ┆ true      ┆ i-xxx      ┆ 812807µs     ┆ 0           ┆ 0                     ┆ 768048128          │
+│ 0            ┆ Execute IR   ┆ true      ┆ i-xxx      ┆ 15s 2883µs   ┆ 323494519   ┆ 82814596864           ┆ 0                  │
+│ 7            ┆ Execute IR   ┆ true      ┆ i-xxx      ┆ 356662µs     ┆ 1131041     ┆ 289546496             ┆ 0                  │
+└──────────────┴──────────────┴───────────┴────────────┴──────────────┴─────────────┴───────────────────────┴────────────────────┘
+```
