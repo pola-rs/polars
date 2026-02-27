@@ -18,7 +18,7 @@ pub fn column_to_mask<'a>(
         // We don't want to materialize scalars
         Column::Scalar(s) => {
             let len = s.len();
-            polars_ensure!(len == expected_len || len == 1, ShapeMismatch: "filter predicate lenght of {len} doesn't match that of the DataFrame");
+            polars_ensure!(len == expected_len || len == 1, ShapeMismatch: "filter predicate length of {len} doesn't match that of the DataFrame");
             if let AnyValue::Boolean(v) = s.scalar().value() {
                 Ok(Cow::Owned(BooleanChunked::new(PlSmallStr::EMPTY, [*v])))
             } else {
