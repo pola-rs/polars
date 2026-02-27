@@ -452,6 +452,10 @@ def test_list_sample_fraction_out_of_bounds_raises() -> None:
 
     with pytest.raises(ValueError, match=r"fraction must be between 0\.0 and 1\.0"):
         df.select(pl.col("values").list.sample(fraction=-0.1))
+    out = df.select(pl.col("values").list.sample(fraction=1.0, seed=0))
+    assert out.shape == (2, 1)
+    out_bool = df.select(pl.col("values").list.sample(fraction=True, seed=0))
+    assert out_bool.shape == (2, 1)
 
 
 def test_list_diff() -> None:
