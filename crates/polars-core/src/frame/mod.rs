@@ -1155,8 +1155,8 @@ impl DataFrame {
     pub fn filter(&self, mask: &BooleanChunked) -> PolarsResult<Self> {
         if self.width() == 0 {
             filter_zero_width(self.height(), mask)
-        } else if mask.len() == 1 && mask.null_count() == 0 && self.len() >= 1 {
-            if mask.all() {
+        } else if mask.len() == 1 && self.len() >= 1 {
+            if mask.all() && mask.null_count() == 0 {
                 Ok(self.clone())
             } else {
                 Ok(self.clear())
@@ -1176,7 +1176,7 @@ impl DataFrame {
         if self.width() == 0 {
             filter_zero_width(self.height(), mask)
         } else if mask.len() == 1 && mask.null_count() == 0 && self.len() >= 1 {
-            if mask.all() {
+            if mask.all() && mask.null_count() == 0 {
                 Ok(self.clone())
             } else {
                 Ok(self.clear())

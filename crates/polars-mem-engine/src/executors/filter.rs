@@ -19,8 +19,14 @@ pub fn column_to_mask<'a>(
         Column::Scalar(s) => {
             let len = s.len();
             polars_ensure!(len == expected_len || len == 1, ShapeMismatch: "filter predicate length of {len} doesn't match that of the DataFrame");
-            if let AnyValue::Boolean(v) = s.scalar().value() {
-                Ok(Cow::Owned(BooleanChunked::new(PlSmallStr::EMPTY, [*v])))
+
+            if matches!(s.dtype(), DataType::Boolean) {
+                let ca = match s.scalar().value() {
+                    AnyValue::Null => BooleanChunked::full_null(PlSmallStr::EMPTY, 1),
+                    AnyValue::Boolean(v) => BooleanChunked::new(PlSmallStr::EMPTY, [*v]),
+                    _ => unreachable!(),
+                };
+                Ok(Cow::Owned(ca))
             } else {
                 polars_bail!(ComputeError: "filter predicate must be of type `Boolean`, got `{}`", s.dtype())
             }
