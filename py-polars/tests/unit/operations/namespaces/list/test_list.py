@@ -453,12 +453,15 @@ def test_list_diff() -> None:
 
 def test_list_sample_invalid_n_literal() -> None:
     df = pl.DataFrame({"x": [[1, 2, 3], [4, 5]]})
+
     with pytest.raises(ValueError, match=r"n.*non-negative"):
         df.select(pl.col("x").list.sample(n=-1))
+
     with pytest.raises(TypeError, match=r"n.*bool"):
         df.select(pl.col("x").list.sample(n=True))
+
     with pytest.raises(TypeError, match=r"n.*int"):
-        df.select(pl.col("x").list.sample(n=1.2))
+        df.select(pl.col("x").list.sample(n=Any(1.2)))
 
 
 def test_list_sample_allows_expr_n() -> None:
