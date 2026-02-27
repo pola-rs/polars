@@ -451,6 +451,22 @@ def test_list_diff() -> None:
     assert s.list.diff().to_list() == expected.to_list()
 
 
+def test_list_sample_invalid_n_literal() -> None:
+    df = pl.DataFrame({"x": [[1, 2, 3], [4, 5]]})
+    with pytest.raises(ValueError, match=r"n.*non-negative"):
+        df.select(pl.col("x").list.sample(n=-1))
+    with pytest.raises(TypeError, match=r"n.*bool"):
+        df.select(pl.col("x").list.sample(n=True))
+    with pytest.raises(TypeError, match=r"n.*int"):
+        df.select(pl.col("x").list.sample(n=1.2))
+
+
+def test_list_sample_allows_expr_n() -> None:
+    df = pl.DataFrame({"x": [[1, 2, 3], [4, 5]], "n": [2, 1]})
+    out = df.select(pl.col("x").list.sample(n=pl.col("n"), seed=1).alias("s"))
+    assert out["s"].list.len().to_list() == [2, 1]
+
+
 def test_slice() -> None:
     vals = [[1, 2, 3, 4], [10, 2, 1]]
     s = pl.Series("a", vals)
