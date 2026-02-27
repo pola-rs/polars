@@ -4368,7 +4368,7 @@ class DataFrame:
                     adbc_driver = _import_optional_adbc_driver(
                         adbc_module_name, dbapi_submodule=False
                     )
-                    adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
+                    adbc_driver_str_version = getattr(adbc_driver, "__version__", driver_manager_str_version)
 
                 elif _PYARROW_AVAILABLE:
                 # We know that if the we are able to instrospect
@@ -4384,10 +4384,10 @@ class DataFrame:
                         adbc_driver = _import_optional_adbc_driver(
                             adbc_module_name, dbapi_submodule=False
                         )
-                        adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
+                        adbc_driver_str_version = getattr(adbc_driver, "__version__", driver_manager_str_version)
                     except ModuleNotFoundError:
                         adbc_driver = adbc_module_name
-                        adbc_driver_str_version = adbc_connection_info.get('driver_version',0.0)
+                        adbc_driver_str_version = adbc_connection_info.get('driver_version',driver_manager_str_version)
 
                 else:
                     # If we can't introspect the driver, guess that it has the same
