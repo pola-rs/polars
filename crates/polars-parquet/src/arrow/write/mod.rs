@@ -388,7 +388,7 @@ pub fn array_to_page_simple(
 ) -> PolarsResult<Page> {
     let dtype = array.dtype();
 
-    if type_.field_info.repetition == Repetition::Required && array.null_count() > 0 {
+    if type_.field_info.repetition == Repetition::Required && array.has_nulls() {
         polars_bail!(InvalidOperation: "writing a missing value to required parquet column '{}'", type_.field_info.name);
     }
 
@@ -830,9 +830,7 @@ fn array_to_page_nested(
     options: WriteOptions,
     _encoding: Encoding,
 ) -> PolarsResult<Page> {
-    if type_.field_info.repetition == Repetition::Required
-        && array.validity().is_some_and(|v| v.unset_bits() > 0)
-    {
+    if type_.field_info.repetition == Repetition::Required && array.has_nulls() {
         polars_bail!(InvalidOperation: "writing a missing value to required parquet column '{}'", type_.field_info.name);
     }
 

@@ -1649,12 +1649,6 @@ def test_sink_parquet_arrow_schema_view_types() -> None:
     assert_frame_equal(pl.scan_parquet(f).collect(), df)
 
 
-@pytest.mark.xfail(
-    reason="""
-unimplemented: NULLs in list values array corresponding to masked out rows.
-ref https://github.com/pola-rs/polars/issues/26600.
-""",
-)
 def test_sink_parquet_arrow_schema_sliced_non_nullable_list() -> None:
     schema = {
         "list": pl.List(pl.Int64),
@@ -1697,8 +1691,8 @@ def test_sink_parquet_arrow_schema_sliced_non_nullable_list() -> None:
         pl.scan_parquet(f).collect(),
         pl.DataFrame(
             {
-                "list": [[1], [2]],
-                "fixed_size_list": [[1], [2]],
+                "list": [None, [1], [2]],
+                "fixed_size_list": [None, [1], [2]],
             },
             schema=schema,
         ),
