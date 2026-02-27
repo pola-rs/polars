@@ -29,7 +29,10 @@ if TYPE_CHECKING:
 
 
 def lit(
-    value: Any, dtype: PolarsDataType | None = None, *, allow_object: bool = False
+    value: Any,
+    dtype: PolarsDataType | DataTypeExpr | None = None,
+    *,
+    allow_object: bool = False,
 ) -> Expr:
     """
     Return an expression representing a literal value.
