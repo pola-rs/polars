@@ -132,14 +132,12 @@ impl FileWriterStarter for ParquetWriterStarter {
         );
 
         let arrow_schema = Arc::clone(&self.arrow_schema);
-        let compat_level = self.options.compat_level();
         let compute_handle = async_executor::AbortOnDropHandle::new(async_executor::spawn(
             TaskPriority::High,
             row_group_encoder::RowGroupEncoder {
                 morsel_rx,
                 encoded_row_group_tx,
                 arrow_schema,
-                compat_level,
                 schema_descriptor,
                 write_options,
                 encodings,

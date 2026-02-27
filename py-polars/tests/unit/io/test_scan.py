@@ -1393,13 +1393,12 @@ def test_scan_sink_error_captures_path() -> None:
         )
 
 
-# TODO: Uncomment file_format once properly instrumented
 @pytest.mark.parametrize(
     "file_format",
     [
         "parquet",
         "ipc",
-        # "csv",
+        "csv",
         "ndjson",
     ],
 )
@@ -1445,12 +1444,23 @@ def test_scan_metrics(
     # because of how metadata is accounted for, the bytes_requested may deviate
     # from the actual file_size
     file_size = path.stat().st_size
-    # note, 131_072 is the maximum metadata size estimate for parquet, ipc
-    upper_limit_bytes = min(2 * file_size, file_size + 131072)
-    lower_limit_bytes = 2
+    # for parquet, ipc: 131_072 is the maximum metadata size estimate
+    # for ndjson, csv: + 5 is the additional overhead (implementation detail)
+    upper_limit = {
+        "parquet": min(2 * file_size, file_size + 131072),
+        "ipc": min(2 * file_size, file_size + 131072),
+        "ndjson": file_size + 5,
+        "csv": file_size + 5,
+    }
+    lower_limit = {
+        "parquet": 2,
+        "ipc": 2,
+        "ndjson": file_size,
+        "csv": file_size,
+    }
 
-    assert logged_bytes_requested <= upper_limit_bytes
-    assert logged_bytes_requested >= lower_limit_bytes
+    assert logged_bytes_requested <= upper_limit[file_format]
+    assert logged_bytes_requested >= lower_limit[file_format]
     assert logged_bytes_received == logged_bytes_requested
 
     assert_frame_equal(out, df)

@@ -695,3 +695,13 @@ def test_read_enum_from_csv() -> None:
     read = pl.read_csv(f, schema=schema)
     assert read.schema == schema
     assert_frame_equal(df.cast(schema), read)  # type: ignore[arg-type]
+
+
+def test_enum_struct_slice_25821() -> None:
+    df = pl.select(
+        x=pl.concat_list(
+            pl.struct(y=pl.lit("a", pl.Enum(["a", "b", "c"]))),
+        ),
+    )
+    res = df.select(pl.col.x.list.head(1))
+    assert res.to_dict(as_series=False) == {"x": [[{"y": "a"}]]}

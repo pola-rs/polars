@@ -26,6 +26,8 @@ pub trait SchemaExt {
 
     /// Select fields using a bitmap.
     fn project_select(&self, select: &Bitmap) -> Self;
+
+    fn contains_dtype(&self, dtype: &DataType, recursive: bool) -> bool;
 }
 
 impl SchemaExt for Schema {
@@ -102,6 +104,15 @@ impl SchemaExt for Schema {
             .filter(|(_, select)| *select)
             .map(|((n, dt), _)| (n.clone(), dt.clone()))
             .collect()
+    }
+
+    fn contains_dtype(&self, dtype: &DataType, recursive: bool) -> bool {
+        if !recursive {
+            self.iter_values().any(|dt| dt == dtype)
+        } else {
+            self.iter_values()
+                .any(|dt| dt.contains_dtype_recursive(dtype))
+        }
     }
 }
 

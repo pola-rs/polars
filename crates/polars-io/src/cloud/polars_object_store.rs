@@ -123,7 +123,7 @@ mod inner {
         }
 
         /// Gets the underlying [`ObjectStore`] implementation.
-        async fn to_dyn_object_store(&self) -> Cow<'_, Arc<dyn ObjectStore>> {
+        pub async fn to_dyn_object_store(&self) -> Cow<'_, Arc<dyn ObjectStore>> {
             if !self.rebuilt.load() {
                 Cow::Borrowed(&self.initial_store)
             } else {

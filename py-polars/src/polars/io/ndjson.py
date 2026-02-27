@@ -125,8 +125,8 @@ def read_ndjson(
         in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
         (which defaults to 1 hour) if not given.
 
-        .. deprecated:: 1.37.1
-            Pass {"file_cache_ttl": n} via `storage_options` instead.
+        .. deprecated:: 1.39.0
+            File cache is no longer supported.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
 
@@ -179,7 +179,7 @@ def read_ndjson(
         retries=retries,
         storage_options=storage_options,
         credential_provider=credential_provider_builder,  # type: ignore[arg-type]
-        file_cache_ttl=file_cache_ttl,
+        file_cache_ttl=None,
     ).collect()
 
 
@@ -291,8 +291,8 @@ def scan_ndjson(
         in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
         (which defaults to 1 hour) if not given.
 
-        .. deprecated:: 1.37.1
-            Pass {"file_cache_ttl": n} via `storage_options` instead.
+        .. deprecated:: 1.39.0
+            File cache is no longer supported.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     """
@@ -321,10 +321,8 @@ def scan_ndjson(
         storage_options["max_retries"] = retries
 
     if file_cache_ttl is not None:
-        msg = "the `file_cache_ttl` parameter was deprecated in 1.37.1; specify 'file_cache_ttl' in `storage_options` instead."
+        msg = "file cache is no longer supported as of 1.39.0."
         issue_deprecation_warning(msg)
-        storage_options = storage_options or {}
-        storage_options["file_cache_ttl"] = file_cache_ttl
 
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "scan_ndjson"

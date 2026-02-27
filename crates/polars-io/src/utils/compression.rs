@@ -6,7 +6,6 @@ use polars_core::prelude::*;
 use polars_error::{feature_gated, to_compute_err};
 
 use crate::utils::file::{Writeable, WriteableTrait};
-#[cfg(feature = "async")]
 use crate::utils::stream_buf_reader::ReaderSource;
 use crate::utils::sync_on_close::SyncOnCloseType;
 
@@ -251,7 +250,6 @@ impl Read for CompressedReader {
 ///
 /// This is the generic successor to [`CompressedReader`], which only
 /// supports in-memory (`Buffer<u8>`) sources.
-#[cfg(feature = "async")]
 pub enum ByteSourceReader<R: BufRead> {
     UncompressedMemory {
         slice: Buffer<u8>,
@@ -266,7 +264,6 @@ pub enum ByteSourceReader<R: BufRead> {
     Zstd(zstd::Decoder<'static, R>),
 }
 
-#[cfg(feature = "async")]
 impl<R: BufRead> ByteSourceReader<R> {
     pub fn try_new(reader: R, compression: Option<SupportedCompression>) -> PolarsResult<Self> {
         Ok(match compression {
@@ -291,6 +288,19 @@ impl<R: BufRead> ByteSourceReader<R> {
             &self,
             Self::UncompressedMemory { .. } | Self::UncompressedStream(_)
         )
+    }
+
+    pub fn compression(&self) -> Option<SupportedCompression> {
+        match self {
+            Self::UncompressedMemory { .. } => None,
+            Self::UncompressedStream(_) => None,
+            #[cfg(feature = "decompress")]
+            Self::Gzip(_) => Some(SupportedCompression::GZIP),
+            #[cfg(feature = "decompress")]
+            Self::Zlib(_) => Some(SupportedCompression::ZLIB),
+            #[cfg(feature = "decompress")]
+            Self::Zstd(_) => Some(SupportedCompression::ZSTD),
+        }
     }
 
     pub const fn initial_read_size() -> usize {
@@ -368,12 +378,9 @@ impl<R: BufRead> ByteSourceReader<R> {
     }
 }
 
-#[cfg(feature = "async")]
 impl ByteSourceReader<ReaderSource> {
-    pub fn from_memory(
-        slice: Buffer<u8>,
-        compression: Option<SupportedCompression>,
-    ) -> PolarsResult<Self> {
+    pub fn from_memory(slice: Buffer<u8>) -> PolarsResult<Self> {
+        let compression = SupportedCompression::check(&slice);
         match compression {
             None => Ok(Self::UncompressedMemory { slice, offset: 0 }),
             _ => Self::try_new(ReaderSource::Memory(Cursor::new(slice)), compression),

@@ -89,7 +89,7 @@ pub fn concat_df_horizontal(
 
     let mut out_width = 0;
 
-    let all_equal_height = dfs.iter().all(|df| {
+    let all_equal_height = dfs.iter().filter(|df| df.shape() != (0, 0)).all(|df| {
         out_width += df.width();
         df.height() == output_height
     });
@@ -105,6 +105,7 @@ pub fn concat_df_horizontal(
 
         owned_df = dfs
             .iter()
+            .filter(|df| df.shape() != (0, 0))
             .cloned()
             .map(|mut df| {
                 out_width += df.width();

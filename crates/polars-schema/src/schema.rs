@@ -490,6 +490,32 @@ where
         })
     }
 
+    pub fn try_project_with_alias<I, O, C>(&self, columns: I) -> PolarsResult<Self>
+    where
+        I: IntoIterator<Item = (O, C)>,
+        O: AsRef<str>,
+        C: AsRef<str>,
+    {
+        let mut fields = PlIndexMap::new();
+        for (out_name, col) in columns {
+            let (out_name, col) = (out_name.as_ref(), col.as_ref());
+            let dtype = self
+                .fields
+                .get(col)
+                .ok_or_else(|| polars_err!(col_not_found = col))?;
+            if fields
+                .insert(PlSmallStr::from(out_name), dtype.clone())
+                .is_some()
+            {
+                polars_bail!(duplicate = out_name);
+            }
+        }
+        Ok(Self {
+            fields,
+            metadata: self.metadata().clone(),
+        })
+    }
+
     pub fn try_project_indices(&self, indices: &[usize]) -> PolarsResult<Self> {
         let fields = indices
             .iter()
