@@ -119,6 +119,7 @@ nav:
       - polars-cloud/run/remote-query.md
       - polars-cloud/run/distributed-engine.md
       - polars-cloud/run/query-profile.md
+      - polars-cloud/run/glossary.md
     - Integrations:
       - Orchestration:
         - polars-cloud/integrations/index.md

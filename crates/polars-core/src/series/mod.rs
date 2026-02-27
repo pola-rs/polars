@@ -19,13 +19,15 @@ pub mod amortized_iter;
 mod any_value;
 pub mod arithmetic;
 pub mod builder;
-#[cfg(feature = "dtype-categorical")]
-pub mod categorical_to_arrow;
+
 mod comparison;
 mod from;
 pub mod implementations;
+#[macro_use]
 mod into;
 pub use into::ToArrowConverter;
+#[cfg(feature = "dtype-categorical")]
+pub mod categorical_to_arrow;
 pub(crate) mod iterator;
 pub mod ops;
 #[cfg(feature = "proptest")]

@@ -56,6 +56,8 @@ python:
   Expr.name:
     name: name namespace
     link: https://docs.pola.rs/api/python/stable/reference/expressions/name.html
+  Expr.entropy: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.entropy.html
+  Expr.sort_by: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.sort_by.html
   Expr.str:
     name: str namespace
     link: https://docs.pola.rs/api/python/stable/reference/expressions/string.html
@@ -85,6 +87,7 @@ python:
   lazy: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.lazy.html
   LazyFrame: https://docs.pola.rs/api/python/stable/reference/lazyframe/index.html
   List: https://docs.pola.rs/api/python/stable/reference/api/polars.datatypes.List.html
+  list.agg: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.list.html
   list.eval: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.list.eval.html
   map: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.name.map.html
   map_batches: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.map_batches.html
@@ -227,6 +230,8 @@ rust:
     name: concat_str
     link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/fn.concat_str.html
     feature_flags: [concat_str]
+  CredentialProviderAWS: https://docs.pola.rs/api/rust/dev/polars_io/cloud/credential_provider/index.html
+  CredentialProviderAzure: https://docs.pola.rs/api/rust/dev/polars_io/cloud/credential_provider/index.html
   cross_join:
     name: cross_join
     link: https://docs.pola.rs/api/rust/dev/polars/prelude/struct.LazyFrame.html#method.cross_join
@@ -287,6 +292,11 @@ rust:
     name: name namespace
     link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/struct.ExprNameNameSpace.html
     feature_flags: [lazy]
+  Expr.entropy:
+    name: entropy
+    link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.entropy
+    feature_flags: [approx_unique]
+  Expr.sort_by: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.sort_by
   Expr.str:
     name: str namespace
     link: https://docs.pola.rs/api/rust/dev/polars/prelude/trait.StringNameSpaceImpl.html
@@ -331,6 +341,7 @@ rust:
     feature_flags: [iejoin]
   LazyFrame: https://docs.pola.rs/api/rust/dev/polars/prelude/struct.LazyFrame.html
   List: https://docs.pola.rs/api/rust/dev/polars/datatypes/enum.DataType.html#variant.List
+  list.agg: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/struct.ListNameSpace.html
   list.eval:
     name: list.eval
     link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/trait.ListNameSpaceExtension.html#method.eval
@@ -354,6 +365,10 @@ rust:
     link: https://docs.pola.rs/api/rust/dev/polars/prelude/struct.IpcReader.html
     feature_flags: [ipc]
   read_json:
+    name: JsonReader
+    link: https://docs.pola.rs/api/rust/dev/polars_io/json/struct.JsonReader.html
+    feature_flags: [json]
+  read_ndjson:
     name: JsonReader
     link: https://docs.pola.rs/api/rust/dev/polars_io/json/struct.JsonReader.html
     feature_flags: [json]

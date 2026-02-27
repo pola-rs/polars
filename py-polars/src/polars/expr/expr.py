@@ -4098,7 +4098,7 @@ class Expr:
                 partition_by_pyexprs,
                 order_by=order_by_pyexprs,
                 order_by_descending=descending,
-                order_by_nulls_last=False,  # does not work yet
+                order_by_nulls_last=nulls_last,
                 mapping_strategy=mapping_strategy,
             )
         )
