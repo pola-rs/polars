@@ -169,6 +169,8 @@ pub fn aexpr_to_column_predicates(
                                 function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }),
                                 options: _,
                             } => {
+                                into_column(input[0].node(), expr_arena)?;
+
                                 let (Some(l), Some(r)) = (
                                     constant_evaluate(
                                         input[1].node(),
@@ -363,7 +365,8 @@ mod tests {
     use polars_error::PolarsResult;
 
     use super::*;
-    use crate::dsl::{Expr, col};
+    use crate::dsl::Expr;
+    use crate::dsl::functions::col;
     use crate::plans::{ExprToIRContext, to_expr_ir, typed_lit};
 
     /// Given a single-column `Expr`, call `aexpr_to_column_predicates()` and

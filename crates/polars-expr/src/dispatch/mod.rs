@@ -127,7 +127,7 @@ mod shift_and_fill;
 #[cfg(feature = "strings")]
 mod strings;
 #[cfg(feature = "dtype-struct")]
-mod struct_;
+pub(crate) mod struct_;
 #[cfg(feature = "temporal")]
 mod temporal;
 #[cfg(feature = "trigonometry")]
@@ -296,6 +296,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             descending,
             nulls_last,
         } => map!(misc::arg_sort, descending, nulls_last),
+        F::MinBy => map_as_slice!(misc::min_by),
+        F::MaxBy => map_as_slice!(misc::max_by),
         F::Product => map!(misc::product),
         F::Repeat => map_as_slice!(misc::repeat),
         #[cfg(feature = "rank")]
@@ -361,6 +363,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::Round { decimals, mode } => map!(round::round, decimals, mode),
         #[cfg(feature = "round_series")]
         F::RoundSF { digits } => map!(round::round_sig_figs, digits),
+        #[cfg(feature = "round_series")]
+        F::Truncate { decimals } => map!(round::truncate, decimals),
         #[cfg(feature = "round_series")]
         F::Floor => map!(round::floor),
         #[cfg(feature = "round_series")]
@@ -524,6 +528,9 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         #[cfg(feature = "dtype-struct")]
         F::RowDecode(fs, variants) => {
             map_as_slice!(misc::row_decode, fs.clone(), variants.clone())
+        },
+        F::DynamicPred { pred } => {
+            map_as_slice!(misc::dynamic_pred, &pred)
         },
     }
 }

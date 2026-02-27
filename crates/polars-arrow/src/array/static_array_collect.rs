@@ -71,7 +71,7 @@ pub trait ArrayFromIter<T>: Sized {
 impl<T, A: ParameterFreeDtypeStaticArray + ArrayFromIter<T>> ArrayFromIterDtype<T> for A {
     #[inline(always)]
     fn arr_from_iter_with_dtype<I: IntoIterator<Item = T>>(dtype: ArrowDataType, iter: I) -> Self {
-        // FIXME: currently some Object arrays have Unknown dtype, when this is fixed remove this bypass.
+        // TODO: currently some Object arrays have Unknown dtype, when this is fixed remove this bypass.
         if dtype != ArrowDataType::Unknown {
             debug_assert_eq!(
                 std::mem::discriminant(&dtype),
@@ -87,7 +87,7 @@ impl<T, A: ParameterFreeDtypeStaticArray + ArrayFromIter<T>> ArrayFromIterDtype<
         I: IntoIterator<Item = T>,
         I::IntoIter: TrustedLen,
     {
-        // FIXME: currently some Object arrays have Unknown dtype, when this is fixed remove this bypass.
+        // TODO: currently some Object arrays have Unknown dtype, when this is fixed remove this bypass.
         if dtype != ArrowDataType::Unknown {
             debug_assert_eq!(
                 std::mem::discriminant(&dtype),
@@ -102,7 +102,7 @@ impl<T, A: ParameterFreeDtypeStaticArray + ArrayFromIter<T>> ArrayFromIterDtype<
         dtype: ArrowDataType,
         iter: I,
     ) -> Result<Self, E> {
-        // FIXME: currently some Object arrays have Unknown dtype, when this is fixed remove this bypass.
+        // TODO: currently some Object arrays have Unknown dtype, when this is fixed remove this bypass.
         if dtype != ArrowDataType::Unknown {
             debug_assert_eq!(
                 std::mem::discriminant(&dtype),
@@ -118,7 +118,7 @@ impl<T, A: ParameterFreeDtypeStaticArray + ArrayFromIter<T>> ArrayFromIterDtype<
         I: IntoIterator<Item = Result<T, E>>,
         I::IntoIter: TrustedLen,
     {
-        // FIXME: currently some Object arrays have Unknown dtype, when this is fixed remove this bypass.
+        // TODO: currently some Object arrays have Unknown dtype, when this is fixed remove this bypass.
         if dtype != ArrowDataType::Unknown {
             debug_assert_eq!(
                 std::mem::discriminant(&dtype),
@@ -791,29 +791,6 @@ impl<T: AsArray> ArrayFromIterDtype<Option<T>> for ListArray<i64> {
         Ok(builder
             .finish(Some(&inner.underlying_physical_type()))
             .unwrap())
-    }
-}
-
-impl<T: AsArray> ArrayFromIter<Option<T>> for ListArray<i64> {
-    fn arr_from_iter<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-        let iter_values: Vec<Option<T>> = iter.into_iter().collect();
-        let mut builder = AnonymousListArrayBuilder::new(iter_values.len());
-        for arr in &iter_values {
-            builder.push_opt(arr.as_ref().map(|a| a.as_array()));
-        }
-        builder.finish(None).unwrap()
-    }
-
-    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<T>, E>>>(
-        iter: I,
-    ) -> Result<Self, E> {
-        let iter_values = iter.into_iter().collect::<Result<Vec<_>, E>>()?;
-        let mut builder = AnonymousListArrayBuilder::new(iter_values.len());
-        for arr in &iter_values {
-            builder.push_opt(arr.as_ref().map(|a| a.as_array()));
-        }
-        Ok(builder.finish(None).unwrap())
     }
 }
 

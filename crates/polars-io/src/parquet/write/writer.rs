@@ -1,19 +1,17 @@
 use std::io::Write;
 use std::sync::Mutex;
 
-use arrow::datatypes::PhysicalType;
+use polars_buffer::Buffer;
 use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
 use polars_parquet::write::{
-    ChildWriteOptions, ColumnWriteOptions, CompressionOptions, Encoding, FieldWriteOptions,
-    FileWriter, KeyValue, ListLikeFieldWriteOptions, StatisticsOptions, StructFieldWriteOptions,
-    Version, WriteOptions, to_parquet_schema,
+    CompressionOptions, Encoding, FileWriter, StatisticsOptions, Version, WriteOptions,
+    get_dtype_encoding, to_parquet_schema,
 };
 
 use super::batched_writer::BatchedWriter;
 use super::options::ParquetCompression;
-use super::{KeyValueMetadata, MetadataKeyValue, ParquetFieldOverwrites, ParquetWriteOptions};
-use crate::prelude::ChildFieldOverwrites;
+use super::{KeyValueMetadata, ParquetWriteOptions};
 use crate::shared::schema_to_arrow_checked;
 
 impl ParquetWriteOptions {
@@ -44,7 +42,6 @@ pub struct ParquetWriter<W> {
     data_page_size: Option<usize>,
     /// Serialize columns in parallel
     parallel: bool,
-    field_overwrites: Vec<ParquetFieldOverwrites>,
     /// Custom file-level key value metadata
     key_value_metadata: Option<KeyValueMetadata>,
     /// Context info for the Parquet file being written.
@@ -67,7 +64,6 @@ where
             row_group_size: None,
             data_page_size: None,
             parallel: true,
-            field_overwrites: Vec::new(),
             key_value_metadata: None,
             context_info: None,
         }
@@ -121,20 +117,15 @@ where
 
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let schema = schema_to_arrow_checked(schema, CompatLevel::newest(), "parquet")?;
-        let column_options = get_column_write_options(&schema, &self.field_overwrites);
-        let parquet_schema = to_parquet_schema(&schema, &column_options)?;
+        let parquet_schema = to_parquet_schema(&schema)?;
+        let encodings = get_encodings(&schema);
         let options = self.materialize_options();
-        let writer = Mutex::new(FileWriter::try_new(
-            self.writer,
-            schema,
-            options,
-            &column_options,
-        )?);
+        let writer = Mutex::new(FileWriter::try_new(self.writer, schema, options)?);
 
         Ok(BatchedWriter {
             writer,
             parquet_schema,
-            column_options,
+            encodings,
             options,
             parallel: self.parallel,
             key_value_metadata: self.key_value_metadata,
@@ -160,140 +151,9 @@ where
     }
 }
 
-fn convert_metadata(md: &Option<Vec<MetadataKeyValue>>) -> Vec<KeyValue> {
-    md.as_ref()
-        .map(|metadata| {
-            metadata
-                .iter()
-                .map(|kv| KeyValue {
-                    key: kv.key.to_string(),
-                    value: kv.value.as_ref().map(|v| v.to_string()),
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn to_column_write_options_rec(
-    field: &ArrowField,
-    overwrites: Option<&ParquetFieldOverwrites>,
-) -> ColumnWriteOptions {
-    let mut column_options = ColumnWriteOptions {
-        field_id: None,
-        metadata: Vec::new(),
-        required: None,
-
-        // Dummy value.
-        children: ChildWriteOptions::Leaf(FieldWriteOptions {
-            encoding: Encoding::Plain,
-        }),
-    };
-
-    if let Some(overwrites) = overwrites {
-        column_options.field_id = overwrites.field_id;
-        column_options.metadata = convert_metadata(&overwrites.metadata);
-        column_options.required = overwrites.required;
-    }
-
-    use arrow::datatypes::PhysicalType::*;
-    match field.dtype().to_physical_type() {
-        Null | Boolean | Primitive(_) | Binary | FixedSizeBinary | LargeBinary | Utf8
-        | Dictionary(_) | LargeUtf8 | BinaryView | Utf8View => {
-            column_options.children = ChildWriteOptions::Leaf(FieldWriteOptions {
-                encoding: encoding_map(field.dtype()),
-            });
-        },
-        List | FixedSizeList | LargeList => {
-            let child_overwrites = overwrites.and_then(|o| match &o.children {
-                ChildFieldOverwrites::None => None,
-                ChildFieldOverwrites::ListLike(child_overwrites) => Some(child_overwrites.as_ref()),
-                _ => unreachable!(),
-            });
-
-            let a = field.dtype().to_storage();
-            let child = if let ArrowDataType::List(inner) = a {
-                to_column_write_options_rec(inner, child_overwrites)
-            } else if let ArrowDataType::LargeList(inner) = a {
-                to_column_write_options_rec(inner, child_overwrites)
-            } else if let ArrowDataType::FixedSizeList(inner, _) = a {
-                to_column_write_options_rec(inner, child_overwrites)
-            } else {
-                unreachable!()
-            };
-
-            column_options.children =
-                ChildWriteOptions::ListLike(Box::new(ListLikeFieldWriteOptions { child }));
-        },
-        Struct => {
-            if let ArrowDataType::Struct(fields) = field.dtype().to_storage() {
-                if fields.is_empty() {
-                    // Allow empty structs by mapping to boolean array.
-                    column_options.children = ChildWriteOptions::Leaf(FieldWriteOptions {
-                        encoding: Encoding::Rle,
-                    });
-                } else {
-                    let children_overwrites = overwrites.and_then(|o| match &o.children {
-                        ChildFieldOverwrites::None => None,
-                        ChildFieldOverwrites::Struct(child_overwrites) => {
-                            Some(PlHashMap::from_iter(
-                                child_overwrites
-                                    .iter()
-                                    .map(|f| (f.name.as_ref().unwrap(), f)),
-                            ))
-                        },
-                        _ => unreachable!(),
-                    });
-
-                    let children = fields
-                        .iter()
-                        .map(|f| {
-                            let overwrites = children_overwrites
-                                .as_ref()
-                                .and_then(|o| o.get(&f.name).copied());
-                            to_column_write_options_rec(f, overwrites)
-                        })
-                        .collect();
-
-                    column_options.children =
-                        ChildWriteOptions::Struct(Box::new(StructFieldWriteOptions { children }));
-                }
-            } else {
-                unreachable!()
-            }
-        },
-
-        Map | Union => unreachable!(),
-    }
-
-    column_options
-}
-
-pub fn get_column_write_options(
-    schema: &ArrowSchema,
-    field_overwrites: &[ParquetFieldOverwrites],
-) -> Vec<ColumnWriteOptions> {
-    let field_overwrites = PlHashMap::from(
-        field_overwrites
-            .iter()
-            .map(|f| (f.name.as_ref().unwrap(), f))
-            .collect(),
-    );
+pub fn get_encodings(schema: &ArrowSchema) -> Buffer<Vec<Encoding>> {
     schema
         .iter_values()
-        .map(|f| to_column_write_options_rec(f, field_overwrites.get(&f.name).copied()))
+        .map(|f| get_dtype_encoding(&f.dtype))
         .collect()
-}
-
-/// Declare encodings
-fn encoding_map(dtype: &ArrowDataType) -> Encoding {
-    match dtype.to_physical_type() {
-        PhysicalType::Dictionary(_)
-        | PhysicalType::LargeBinary
-        | PhysicalType::LargeUtf8
-        | PhysicalType::Utf8View
-        | PhysicalType::BinaryView
-        | PhysicalType::Primitive(_) => Encoding::RleDictionary,
-        // remaining is plain
-        _ => Encoding::Plain,
-    }
 }

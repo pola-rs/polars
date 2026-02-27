@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from polars import functions as F
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from polars import Series
     from polars._plr import PySeries

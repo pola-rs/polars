@@ -19,13 +19,15 @@ pub mod amortized_iter;
 mod any_value;
 pub mod arithmetic;
 pub mod builder;
-#[cfg(feature = "dtype-categorical")]
-pub mod categorical_to_arrow;
+
 mod comparison;
 mod from;
 pub mod implementations;
+#[macro_use]
 mod into;
 pub use into::ToArrowConverter;
+#[cfg(feature = "dtype-categorical")]
+pub mod categorical_to_arrow;
 pub(crate) mod iterator;
 pub mod ops;
 #[cfg(feature = "proptest")]
@@ -277,7 +279,7 @@ impl Series {
 
     pub fn into_frame(self) -> DataFrame {
         // SAFETY: A single-column dataframe cannot have length mismatches or duplicate names
-        unsafe { DataFrame::new_no_checks(self.len(), vec![self.into()]) }
+        unsafe { DataFrame::new_unchecked(self.len(), vec![self.into()]) }
     }
 
     /// Rename series.
@@ -463,8 +465,9 @@ impl Series {
         }
 
         let new_options = match options {
-            // Strictness is handled on this level to improve error messages.
-            CastOptions::Strict => CastOptions::NonStrict,
+            // Strictness is handled on this level to improve error messages, if not nested.
+            // Nested types could hide cast errors, so have to be done internally.
+            CastOptions::Strict if !dtype.is_nested() => CastOptions::NonStrict,
             opt => opt,
         };
 
@@ -1085,7 +1088,14 @@ impl Series {
             &[self.clone().into_column()],
             &[descending],
             &[nulls_last],
+            false,
         )
+    }
+}
+
+impl Default for Series {
+    fn default() -> Self {
+        NullChunked::new(PlSmallStr::EMPTY, 0).into_series()
     }
 }
 
@@ -1100,12 +1110,6 @@ impl Deref for Series {
 impl<'a> AsRef<dyn SeriesTrait + 'a> for Series {
     fn as_ref(&self) -> &(dyn SeriesTrait + 'a) {
         self.0.as_ref()
-    }
-}
-
-impl Default for Series {
-    fn default() -> Self {
-        Int64Chunked::default().into_series()
     }
 }
 

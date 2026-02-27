@@ -36,13 +36,17 @@ bitflags::bitflags! {
     }
 }
 
+const _: () = {
+    assert!(std::mem::size_of::<FileScanDsl>() <= 100);
+};
+
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-// TODO: Arc<> some of the options and the cloud options.
+/// Note: This is cheaply cloneable.
 pub enum FileScanDsl {
     #[cfg(feature = "csv")]
-    Csv { options: CsvReadOptions },
+    Csv { options: Arc<CsvReadOptions> },
 
     #[cfg(feature = "json")]
     NDJson { options: NDJsonReadOptions },
@@ -69,13 +73,17 @@ pub enum FileScanDsl {
     },
 }
 
+const _: () = {
+    assert!(std::mem::size_of::<FileScanIR>() <= 80);
+};
+
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-// TODO: Arc<> some of the options and the cloud options.
+/// Note: This is cheaply cloneable.
 pub enum FileScanIR {
     #[cfg(feature = "csv")]
-    Csv { options: CsvReadOptions },
+    Csv { options: Arc<CsvReadOptions> },
 
     #[cfg(feature = "json")]
     NDJson { options: NDJsonReadOptions },
@@ -173,6 +181,10 @@ pub struct CastColumnsPolicy {
     /// Allow casting when target dtype is lossless supertype
     pub integer_upcast: bool,
 
+    /// Allow casting integers to floats.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub integer_to_float_cast: bool,
+
     /// Allow upcasting from small floats to bigger floats
     pub float_upcast: bool,
     /// Allow downcasting from big floats to smaller floats
@@ -201,6 +213,7 @@ impl CastColumnsPolicy {
     /// Configuration variant that defaults to raising on mismatch.
     pub const ERROR_ON_MISMATCH: Self = Self {
         integer_upcast: false,
+        integer_to_float_cast: false,
         float_upcast: false,
         float_downcast: false,
         datetime_nanoseconds_downcast: false,
@@ -677,6 +690,16 @@ impl CastColumnsPolicy {
                 },
 
                 _ => unreachable!(),
+            };
+        }
+
+        if target_dtype.is_float() && incoming_dtype.is_integer() {
+            return if !self.integer_to_float_cast {
+                mismatch_err(
+                    "hint: pass cast_options=pl.ScanCastOptions(integer_cast='allow-float')",
+                )
+            } else {
+                Ok(true)
             };
         }
 

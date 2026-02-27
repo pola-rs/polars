@@ -597,7 +597,7 @@ pub trait ListNameSpaceImpl: AsList {
 
         let ca = self.as_list();
 
-        let n_s = n.cast(&IDX_DTYPE)?;
+        let n_s = n.strict_cast(&IDX_DTYPE)?;
         let n = n_s.idx()?;
 
         polars_ensure!(

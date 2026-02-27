@@ -28,6 +28,10 @@ where
             is_valid: false,
         }
     }
+
+    pub fn into_inner(self) -> (I, F) {
+        (self.iterator, self.f)
+    }
 }
 
 impl<I, F, T> StreamingIterator for BufStreamingIterator<I, F, T>

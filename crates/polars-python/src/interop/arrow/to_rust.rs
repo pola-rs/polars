@@ -96,7 +96,7 @@ pub fn to_rust_df(
             .collect::<Vec<_>>();
 
         // no need to check as a record batch has the same guarantees
-        return Ok(unsafe { DataFrame::new_no_checks_height_from_first(columns) });
+        return Ok(unsafe { DataFrame::new_unchecked_infer_height(columns) });
     }
 
     let dfs = rb
@@ -174,7 +174,7 @@ pub fn to_rust_df(
             }?;
 
             // no need to check as a record batch has the same guarantees
-            Ok(unsafe { DataFrame::new_no_checks_height_from_first(columns) })
+            Ok(unsafe { DataFrame::new_unchecked_infer_height(columns) })
         })
         .collect::<PyResult<Vec<_>>>()?;
 

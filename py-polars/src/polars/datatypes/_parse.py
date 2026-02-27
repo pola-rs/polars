@@ -3,11 +3,20 @@ from __future__ import annotations
 import enum
 import functools
 import re
-import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Final, ForwardRef, NoReturn, Union, get_args
+from types import NoneType, UnionType
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Final,
+    ForwardRef,
+    NoReturn,
+    Union,
+    get_args,
+    get_origin,
+)
 
 import polars._reexport as pl
 from polars.datatypes.classes import (
@@ -33,15 +42,6 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType, PythonDataType, SchemaDict
 
 
-UnionTypeOld = type(Union[int, str])
-if sys.version_info >= (3, 10):
-    from types import NoneType, UnionType
-else:  # pragma: no cover
-    # Define equivalent for older Python versions
-    NoneType = type(None)
-    UnionType = UnionTypeOld
-
-
 def parse_into_datatype_expr(input: Any) -> pl.DataTypeExpr:
     """Parse an input into a DataTypeExpr."""
     if isinstance(input, pl.DataTypeExpr):
@@ -63,7 +63,7 @@ def parse_into_dtype(input: Any) -> PolarsDataType:
         return input
     elif isinstance(input, ForwardRef):
         return _parse_forward_ref_into_dtype(input)
-    elif isinstance(input, (UnionType, UnionTypeOld)):
+    elif isinstance(input, UnionType) or get_origin(input) is Union:
         return _parse_union_type_into_dtype(input)
     else:
         return parse_py_type_into_dtype(input)

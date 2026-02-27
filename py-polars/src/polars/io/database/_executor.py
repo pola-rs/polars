@@ -459,12 +459,8 @@ class ConnectionExecutor:
 
         # check if connection is already started (eg: user awaited `engine.connect()`);
         # if so, use it directly without entering the context manager again
-        try:
-            if object.__getattribute__(cursor, "sync_connection") is not None:
-                result = await cursor.execute(query, **options)
-                return result
-        except AttributeError:
-            pass
+        if getattr(cursor, "sync_connection", None) is not None:
+            return await cursor.execute(query, **options)
 
         async with cursor as conn:  # type: ignore[union-attr]
             if is_session and not hasattr(conn, "execute"):
@@ -557,7 +553,7 @@ class ConnectionExecutor:
         # note: some cursors execute in-place, some access results via a property
         result = self.cursor if (result is None or result is True) else result
         if self.driver_name == "duckdb" and self._is_alchemy_result(result):
-            result = result.cursor
+            result = result.cursor  # type: ignore[union-attr]
 
         self.result = result
         return self

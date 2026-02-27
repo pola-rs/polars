@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars import Expr
     from polars._typing import IntoExpr, IntoExprColumn
 

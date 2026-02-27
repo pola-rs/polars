@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     NoReturn,
     TypeVar,
@@ -109,12 +108,14 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Awaitable, Iterator, Sequence
-    from concurrent.futures import Future
+    from builtins import slice as slice_
+    from collections.abc import Awaitable, Callable, Iterator, Sequence
     from io import IOBase
-    from typing import IO, Literal
+    from typing import IO, Concatenate, Literal, ParamSpec
 
-    from polars.io.partition import _SinkDirectory
+    import deltalake
+
+    from polars.io.partition import PartitionBy
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -126,6 +127,8 @@ if TYPE_CHECKING:
     from polars import DataFrame, DataType, Expr
     from polars._dependencies import numpy as np
     from polars._typing import (
+        Alignment,
+        ArrowSchemaExportable,
         AsofJoinStrategy,
         ClosedInterval,
         ColumnNameOrSelector,
@@ -153,17 +156,12 @@ if TYPE_CHECKING:
         SchemaDict,
         SerializationFormat,
         StartBy,
+        StorageOptionsDict,
         SyncOnCloseMethod,
         UniqueKeepStrategy,
     )
     from polars.config import TableFormatNames
     from polars.io.cloud import CredentialProviderFunction
-    from polars.io.parquet import ParquetFieldOverwrites
-
-    if sys.version_info >= (3, 10):
-        from typing import Concatenate, ParamSpec
-    else:
-        from typing_extensions import Concatenate, ParamSpec
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -187,15 +185,15 @@ def _select_engine(engine: EngineType) -> EngineType:
 
 
 def _to_sink_target(
-    path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
-) -> str | Path | IO[bytes] | IO[str] | _SinkDirectory:
-    from polars.io.partition import _SinkDirectory
+    path: str | Path | IO[bytes] | IO[str] | PartitionBy,
+) -> str | Path | IO[bytes] | IO[str] | PartitionBy:
+    from polars.io.partition import PartitionBy
 
     if isinstance(path, (str, Path)):
         return normalize_filepath(path)
     elif isinstance(path, io.IOBase):
         return path
-    elif isinstance(path, _SinkDirectory):
+    elif isinstance(path, PartitionBy):
         return path
     elif callable(getattr(path, "write", None)):
         # This allows for custom writers
@@ -293,6 +291,13 @@ class LazyFrame:
     nan_to_null : bool, default False
         If the data comes from one or more numpy arrays, can optionally convert input
         data np.nan values to null instead. This is a no-op for all other input data.
+    height : int or None, default None
+        Allows constructing DataFrames with 0 width and a specified height. If
+        passed with data, ensures the resulting DataFrame has this height.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Notes
     -----
@@ -414,6 +419,7 @@ class LazyFrame:
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         nan_to_null: bool = False,
+        height: int | None = None,
     ) -> None:
         from polars.dataframe import DataFrame
 
@@ -426,6 +432,7 @@ class LazyFrame:
                 orient=orient,
                 infer_schema_length=infer_schema_length,
                 nan_to_null=nan_to_null,
+                height=height,
             )
             .lazy()
             ._ldf
@@ -742,7 +749,7 @@ class LazyFrame:
     def __deepcopy__(self, memo: None = None) -> LazyFrame:
         return self.clone()
 
-    def __getitem__(self, item: slice) -> LazyFrame:
+    def __getitem__(self, item: slice_) -> LazyFrame:
         """
         Support slice syntax, returning a new LazyFrame.
 
@@ -1221,7 +1228,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             df_metrics.row(0)[(n * n_metrics) : (n + 1) * n_metrics]
             for n in range(schema.len())
         ]
-        summary = dict(zip(schema, column_metrics))
+        summary = dict(zip(schema, column_metrics, strict=True))
 
         # cast by column type (numeric/bool -> float), (other -> string)
         for c in schema:
@@ -1322,7 +1329,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming
             Unused parameter, kept for backward compatibility.
 
-           ... deprecated:: 1.30.0
+            .. deprecated:: 1.30.0
                 Use the `engine` parameter instead.
         engine
             Select the engine used to process the query, optional.
@@ -2594,7 +2601,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | _SinkDirectory,
+        path: str | Path | IO[bytes] | PartitionBy,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2602,27 +2609,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
-        field_overwrites: ParquetFieldOverwrites
-        | Sequence[ParquetFieldOverwrites]
-        | Mapping[str, ParquetFieldOverwrites]
-        | None = None,
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
+        arrow_schema: ArrowSchemaExportable | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> None: ...
 
     @overload
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | _SinkDirectory,
+        path: str | Path | IO[bytes] | PartitionBy,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2630,26 +2634,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
-        field_overwrites: ParquetFieldOverwrites
-        | Sequence[ParquetFieldOverwrites]
-        | Mapping[str, ParquetFieldOverwrites]
-        | None = None,
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
+        arrow_schema: ArrowSchemaExportable | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame: ...
 
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | _SinkDirectory,
+        path: str | Path | IO[bytes] | PartitionBy,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2657,19 +2658,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         metadata: ParquetMetadata | None = None,
+        arrow_schema: ArrowSchemaExportable | None = None,
         mkdir: bool = False,
         lazy: bool = False,
-        field_overwrites: ParquetFieldOverwrites
-        | Sequence[ParquetFieldOverwrites]
-        | Mapping[str, ParquetFieldOverwrites]
-        | None = None,
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame | None:
@@ -2748,6 +2746,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
+
+            .. deprecated:: 1.37.1
+                Pass {"max_retries": n} via `storage_options` instead.
         sync_on_close: { None, 'data', 'all' }
             Sync to disk when before closing a file.
 
@@ -2765,6 +2766,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **experimental**. It may be removed or
                 changed at any point without it being considered a breaking change.
+        arrow_schema
+            Provide a custom arrow schema to write to the file. This allows
+            setting custom schema and field-level metadata. Names and dtypes
+            must match.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         mkdir: bool
             Recursively create all the directories in the path.
 
@@ -2777,15 +2786,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
-        field_overwrites
-            Property overwrites for individual Parquet fields.
-
-            This allows more control over the writing process to the granularity of a
-            Parquet field.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
@@ -2821,17 +2821,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Split into a hive-partitioning style partition:
 
         >>> pl.LazyFrame({"x": [1, 2, 1], "y": [3, 4, 5]}).sink_parquet(
-        ...     pl.PartitionByKey("./out/", by="x"),
+        ...     pl.PartitionBy("./out/", key="x"),
         ...     mkdir=True
         ... )  # doctest: +SKIP
 
         See Also
         --------
-        PartitionByKey
+        PartitionBy
         """
         engine = _select_engine(engine)
         if metadata is not None:
             msg = "`metadata` parameter is considered experimental"
+            issue_unstable_warning(msg)
+
+        if arrow_schema is not None:
+            msg = "`arrow_schema` parameter is considered unstable"
             issue_unstable_warning(msg)
 
         if isinstance(statistics, bool) and statistics:
@@ -2855,6 +2859,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             _init_credential_provider_builder,
         )
 
+        if retries is not None:
+            msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
+            issue_deprecation_warning(msg)
+            storage_options = storage_options or {}
+            storage_options["max_retries"] = retries
+
         credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_parquet"
         )
@@ -2871,44 +2881,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         elif callable(metadata):
             metadata = wrap_parquet_metadata_callback(metadata)  # type: ignore[assignment]
 
-        # Convert the field overwrites into something that can be ingested by Rust.
-        field_overwrites_dicts: list[dict[str, Any]] = []
-        if field_overwrites is not None:
-            import collections
-
-            from polars.io.parquet.field_overwrites import (
-                ParquetFieldOverwrites,
-                _parquet_field_overwrites_dict_to_dict_list,
-                _parquet_field_overwrites_to_dict,
-            )
-
-            if isinstance(field_overwrites, ParquetFieldOverwrites):
-                field_overwrites_dicts = [
-                    _parquet_field_overwrites_to_dict(field_overwrites)
-                ]
-            elif isinstance(field_overwrites, collections.abc.Mapping):
-                field_overwrites_dicts = _parquet_field_overwrites_dict_to_dict_list(
-                    dict(field_overwrites)
-                )
-            elif isinstance(field_overwrites, collections.abc.Sequence):
-                field_overwrites_dicts = [
-                    _parquet_field_overwrites_to_dict(c) for c in field_overwrites
-                ]
-            else:
-                msg = f"field_overwrites got the wrong type {type(field_overwrites)}"
-                raise TypeError(msg)
-
         from polars.io.partition import _SinkOptions
 
         sink_options = _SinkOptions(
             mkdir=mkdir,
             maintain_order=maintain_order,
             sync_on_close=sync_on_close,
-            storage_options=(
-                list(storage_options.items()) if storage_options is not None else None
-            ),
+            storage_options=storage_options,
             credential_provider=credential_provider_builder,
-            retries=retries,
         )
 
         ldf_py = self._ldf.sink_parquet(
@@ -2920,7 +2900,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             row_group_size=row_group_size,
             data_page_size=data_page_size,
             metadata=metadata,
-            field_overwrites=field_overwrites_dicts,
+            arrow_schema=arrow_schema,
         )
 
         if not lazy:
@@ -2931,62 +2911,371 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return LazyFrame._from_pyldf(ldf_py)
 
     @overload
-    def sink_ipc(
+    def sink_delta(
         self,
-        path: str | Path | IO[bytes] | _SinkDirectory,
+        target: str | Path | deltalake.DeltaTable,
         *,
-        compression: IpcCompression | None = "uncompressed",
-        compat_level: CompatLevel | None = None,
-        maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        mode: Literal["error", "append", "overwrite", "ignore"] = ...,
+        storage_options: StorageOptionsDict | None = ...,
+        credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
+        delta_write_options: dict[str, Any] | None = ...,
+        optimizations: QueryOptFlags = ...,
+    ) -> None: ...
+
+    @overload
+    def sink_delta(
+        self,
+        target: str | Path | deltalake.DeltaTable,
+        *,
+        mode: Literal["merge"],
+        storage_options: StorageOptionsDict | None = ...,
+        credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
+        delta_merge_options: dict[str, Any],
+        optimizations: QueryOptFlags = ...,
+    ) -> deltalake.table.TableMerger: ...
+
+    @unstable()
+    def sink_delta(
+        self,
+        target: str | Path | deltalake.DeltaTable,
+        *,
+        mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        delta_write_options: dict[str, Any] | None = None,
+        delta_merge_options: dict[str, Any] | None = None,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    ) -> deltalake.table.TableMerger | None:
+        """
+        Sink DataFrame as delta table.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        target
+            URI of a table or a DeltaTable object.
+        mode : {'error', 'append', 'overwrite', 'ignore', 'merge'}
+            How to handle existing data.
+
+            - If 'error', throw an error if the table already exists (default).
+            - If 'append', will add new data.
+            - If 'overwrite', will replace table with new data.
+            - If 'ignore', will not write anything if table already exists.
+            - If 'merge', return a `TableMerger` object to merge data from the DataFrame
+              with the existing data.
+        storage_options
+            Extra options for the storage backends supported by `deltalake`.
+            For cloud storages, this may include configurations for authentication etc.
+
+            - See a list of supported storage options for S3 `here <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants>`__.
+            - See a list of supported storage options for GCS `here <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html#variants>`__.
+            - See a list of supported storage options for Azure `here <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        delta_write_options
+            Additional keyword arguments while writing a Delta lake Table.
+            See a list of supported write options `here <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__.
+        delta_merge_options
+            Keyword arguments which are required to `MERGE` a Delta lake Table.
+            See a list of supported merge options `here <https://delta-io.github.io/delta-rs/api/delta_table/#deltalake.DeltaTable.merge>`__.
+        engine
+            Select the engine used to process the query, optional.
+            At the moment, if set to `"auto"` (default), the query is run
+            using the polars streaming engine. Polars will also
+            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+            environment variable. If it cannot run the query using the
+            selected engine, the query is run using the polars streaming
+            engine.
+        optimizations
+            The optimization passes done during query optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
+        Raises
+        ------
+        TypeError
+            If the DataFrame contains unsupported data types.
+        ArrowInvalidError
+            If the DataFrame contains data types that could not be cast to their
+            primitive type.
+        TableNotFoundError
+            If the delta table doesn't exist and MERGE action is triggered
+
+        Notes
+        -----
+        The Polars data types :class:`Null` and :class:`Time` are not supported
+        by the delta protocol specification and will raise a TypeError. Columns
+        using The :class:`Categorical` data type will be converted to
+        normal (non-categorical) strings when written.
+
+        Polars columns are always nullable. To write data to a delta table with
+        non-nullable columns, a custom pyarrow schema has to be passed to the
+        `delta_write_options`. See the last example below.
+
+        Examples
+        --------
+        Sink a large than fits into memory dataset to a Delta Lake table.
+
+        >>> lf = pl.scan_parquet(
+        ...     "/path/to/my_larger_than_ram_file.parquet"
+        ... )  # doctest: +SKIP
+        >>> table_path = "/path/to/delta-table/"
+        >>> lf.sink_delta(table_path)  # doctest: +SKIP
+
+
+        Sink a dataframe to the local filesystem as a Delta Lake table.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
+        >>> table_path = "/path/to/delta-table/"
+        >>> df.lazy().sink_delta(table_path)  # doctest: +SKIP
+
+        Append data to an existing Delta Lake table on the local filesystem.
+        Note that this will fail if the schema of the new data does not match the
+        schema of the existing table.
+
+        >>> df.lazy().sink_delta(table_path, mode="append")  # doctest: +SKIP
+
+        Overwrite a Delta Lake table as a new version.
+        If the schemas of the new and old data are the same, specifying the
+        `schema_mode` is not required.
+
+        >>> existing_table_path = "/path/to/delta-table/"
+        >>> df.lazy().sink_delta(
+        ...     existing_table_path,
+        ...     mode="overwrite",
+        ...     delta_write_options={"schema_mode": "overwrite"},
+        ... )  # doctest: +SKIP
+
+        Sink a DataFrame as a Delta Lake table to a cloud object store like S3.
+
+        >>> table_path = "s3://bucket/prefix/to/delta-table/"
+        >>> df.lazy().sink_delta(
+        ...     table_path,
+        ...     storage_options={
+        ...         "AWS_REGION": "THE_AWS_REGION",
+        ...         "AWS_ACCESS_KEY_ID": "THE_AWS_ACCESS_KEY_ID",
+        ...         "AWS_SECRET_ACCESS_KEY": "THE_AWS_SECRET_ACCESS_KEY",
+        ...     },
+        ... )  # doctest: +SKIP
+
+        Sink DataFrame as a Delta Lake table with non-nullable columns.
+
+        >>> import pyarrow as pa
+        >>> existing_table_path = "/path/to/delta-table/"
+        >>> df.lazy().sink_delta(
+        ...     existing_table_path,
+        ...     delta_write_options={
+        ...         "schema": pa.schema([pa.field("foo", pa.int64(), nullable=False)])
+        ...     },
+        ... )  # doctest: +SKIP
+
+        Sink DataFrame as a Delta Lake table with zstd compression.
+        For all `delta_write_options` keyword arguments, check the deltalake docs
+        `here
+        <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__,
+        and for Writer Properties in particular `here
+        <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.WriterProperties>`__.
+
+        >>> import deltalake
+        >>> df.lazy().sink_delta(
+        ...     table_path,
+        ...     delta_write_options={
+        ...         "writer_properties": deltalake.WriterProperties(compression="zstd"),
+        ...     },
+        ... )  # doctest: +SKIP
+
+        Merge the DataFrame with an existing Delta Lake table.
+        For all `TableMerger` methods, check the deltalake docs
+        `here <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
+        >>> table_path = "/path/to/delta-table/"
+        >>> (
+        ...     df.lazy()
+        ...     .sink_delta(
+        ...         "table_path",
+        ...         mode="merge",
+        ...         delta_merge_options={
+        ...             "predicate": "s.foo = t.foo",
+        ...             "source_alias": "s",
+        ...             "target_alias": "t",
+        ...         },
+        ...     )
+        ...     .when_matched_update_all()
+        ...     .when_not_matched_insert_all()
+        ...     .execute()
+        ... )  # doctest: +SKIP
+        """
+        from polars.io.delta._utils import (
+            _check_for_unsupported_types,
+            _check_if_delta_available,
+            _resolve_delta_lake_uri,
+        )
+
+        _check_if_delta_available()
+
+        from deltalake import DeltaTable, write_deltalake
+
+        _check_for_unsupported_types(self.collect_schema().dtypes())
+
+        if isinstance(target, (str, Path)):
+            target = _resolve_delta_lake_uri(str(target), strict=False)
+
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
+        from polars.io.cloud.credential_provider._providers import (
+            _get_credentials_from_provider_expiry_aware,
+        )
+
+        if not isinstance(target, DeltaTable):
+            credential_provider_builder = _init_credential_provider_builder(
+                credential_provider, target, storage_options, "sink_delta"
+            )
+        elif credential_provider is not None and credential_provider != "auto":
+            msg = "cannot use credential_provider when passing a DeltaTable object"
+            raise ValueError(msg)
+        else:
+            credential_provider_builder = None
+
+        del credential_provider
+
+        credential_provider_creds = {}
+
+        if credential_provider_builder and (
+            provider := credential_provider_builder.build_credential_provider()
+        ):
+            credential_provider_creds = (
+                _get_credentials_from_provider_expiry_aware(provider) or {}
+            )
+
+        # We aren't calling into polars-native write functions so we just update
+        # the storage_options here.
+        storage_options = (
+            {**(storage_options or {}), **credential_provider_creds}
+            if storage_options is not None or credential_provider_builder is not None
+            else None
+        )
+        stream = self.collect_batches(
+            engine="streaming",
+            maintain_order=True,
+            chunk_size=None,
+            lazy=True,
+            optimizations=optimizations,
+        )
+
+        if mode == "merge":
+            if delta_merge_options is None:
+                msg = "you need to pass delta_merge_options with at least a given predicate for `MERGE` to work."
+                raise ValueError(msg)
+            if isinstance(target, str):
+                dt = DeltaTable(table_uri=target, storage_options=storage_options)
+            else:
+                dt = target
+
+            return dt.merge(stream, **delta_merge_options)  # type: ignore[arg-type]
+
+        else:
+            if delta_write_options is None:
+                delta_write_options = {}
+
+            write_deltalake(
+                table_or_uri=target,
+                data=stream,  # type: ignore[call-overload]
+                mode=mode,
+                storage_options=storage_options,
+                **delta_write_options,
+            )
+            return None
+
+    @overload
+    def sink_ipc(
+        self,
+        path: str | Path | IO[bytes] | PartitionBy,
+        *,
+        compression: IpcCompression | None = "uncompressed",
+        compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
+        maintain_order: bool = True,
+        storage_options: StorageOptionsDict | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        _record_batch_statistics: bool = False,
     ) -> None: ...
 
     @overload
     def sink_ipc(
         self,
-        path: str | Path | IO[bytes] | _SinkDirectory,
+        path: str | Path | IO[bytes] | PartitionBy,
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        _record_batch_statistics: bool = False,
     ) -> LazyFrame: ...
 
     def sink_ipc(
         self,
-        path: str | Path | IO[bytes] | _SinkDirectory,
+        path: str | Path | IO[bytes] | PartitionBy,
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: bool = False,
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        _record_batch_statistics: bool = False,
     ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to an IPC file.
@@ -3003,6 +3292,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compat_level
             Use a specific compatibility level
             when exporting Polars' internal data structures.
+        record_batch_size
+            Size of the record batches in number of rows.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
@@ -3034,6 +3329,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
+
+            .. deprecated:: 1.37.1
+                Pass {"max_retries": n} via `storage_options` instead.
         sync_on_close: { None, 'data', 'all' }
             Sync to disk when before closing a file.
 
@@ -3094,19 +3392,25 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Split into a hive-partitioning style partition:
 
         >>> pl.LazyFrame({"x": [1, 2, 1], "y": [3, 4, 5]}).sink_ipc(
-        ...     pl.PartitionByKey("./out/", by="x"),
+        ...     pl.PartitionBy("./out/", key="x"),
         ...     mkdir=True
         ... )  # doctest: +SKIP
 
         See Also
         --------
-        PartitionByKey
+        PartitionBy
         """
         engine = _select_engine(engine)
 
         from polars.io.cloud.credential_provider._builder import (
             _init_credential_provider_builder,
         )
+
+        if retries is not None:
+            msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
+            issue_deprecation_warning(msg)
+            storage_options = storage_options or {}
+            storage_options["max_retries"] = retries
 
         credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_ipc"
@@ -3133,11 +3437,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             mkdir=mkdir,
             maintain_order=maintain_order,
             sync_on_close=sync_on_close,
-            storage_options=(
-                list(storage_options.items()) if storage_options is not None else None
-            ),
+            storage_options=storage_options,
             credential_provider=credential_provider_builder,
-            retries=retries,
         )
 
         ldf_py = self._ldf.sink_ipc(
@@ -3145,6 +3446,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             sink_options=sink_options,
             compression=compression,
             compat_level=compat_level_py,
+            record_batch_size=record_batch_size,
+            record_batch_statistics=_record_batch_statistics,
         )
 
         if not lazy:
@@ -3157,9 +3460,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
+        path: str | Path | IO[bytes] | IO[str] | PartitionBy,
         *,
         include_bom: bool = False,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
         include_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
@@ -3174,11 +3480,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
@@ -3189,9 +3495,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
+        path: str | Path | IO[bytes] | IO[str] | PartitionBy,
         *,
         include_bom: bool = False,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
         include_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
@@ -3206,11 +3515,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
@@ -3220,9 +3529,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
+        path: str | Path | IO[bytes] | IO[str] | PartitionBy,
         *,
         include_bom: bool = False,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
         include_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
@@ -3237,11 +3549,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: bool = False,
@@ -3259,6 +3571,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             File path to which the file should be written.
         include_bom
             Whether to include UTF-8 BOM in the CSV output.
+        compression
+            What compression format to use.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
+        compression_level
+            The compression level to use, typically 0-9 or `None` to let the
+            engine choose.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
+        check_extension
+            Whether to check if the filename matches the compression settings.
+            Will raise an error if compression is set to 'uncompressed' and the
+            filename ends in one of (".gz", ".zst", ".zstd") or if
+            compression != 'uncompressed' and the file uses an mismatched
+            extension. Only applies if file is a path.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         include_header
             Whether to include header in the CSV output.
         separator
@@ -3342,6 +3677,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
+
+            .. deprecated:: 1.37.1
+                Pass {"max_retries": n} via `storage_options` instead.
         sync_on_close: { None, 'data', 'all' }
             Sync to disk when before closing a file.
 
@@ -3399,13 +3737,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Split into a hive-partitioning style partition:
 
         >>> pl.LazyFrame({"x": [1, 2, 1], "y": [3, 4, 5]}).sink_csv(
-        ...     pl.PartitionByKey("./out/", by="x"),
+        ...     pl.PartitionBy("./out/", key="x"),
         ...     mkdir=True
         ... )  # doctest: +SKIP
 
         See Also
         --------
-        PartitionByKey
+        PartitionBy
         """
         from polars.io.csv._utils import _check_arg_is_1byte
 
@@ -3428,21 +3766,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         from polars.io.partition import _SinkOptions
 
+        if retries is not None:
+            msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
+            issue_deprecation_warning(msg)
+            storage_options = storage_options or {}
+            storage_options["max_retries"] = retries
+
         sink_options = _SinkOptions(
             mkdir=mkdir,
             maintain_order=maintain_order,
             sync_on_close=sync_on_close,
-            storage_options=(
-                list(storage_options.items()) if storage_options is not None else None
-            ),
+            storage_options=storage_options,
             credential_provider=credential_provider_builder,
-            retries=retries,
         )
 
         ldf_py = self._ldf.sink_csv(
             target=target,
             sink_options=sink_options,
             include_bom=include_bom,
+            compression=compression,
+            compression_level=compression_level,
+            check_extension=check_extension,
             include_header=include_header,
             separator=ord(separator),
             line_terminator=line_terminator,
@@ -3468,14 +3812,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
+        path: str | Path | IO[bytes] | IO[str] | PartitionBy,
         *,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
@@ -3486,14 +3833,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
+        path: str | Path | IO[bytes] | IO[str] | PartitionBy,
         *,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
@@ -3503,14 +3853,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
+        path: str | Path | IO[bytes] | IO[str] | PartitionBy,
         *,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: bool = False,
@@ -3526,6 +3879,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         path
             File path to which the file should be written.
+        compression
+            What compression format to use.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
+        compression_level
+            The compression level to use, typically 0-9 or `None` to let the
+            engine choose.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
+        check_extension
+            Whether to check if the filename matches the compression settings.
+            Will raise an error if compression is set to 'uncompressed' and the
+            filename ends in one of (".gz", ".zst", ".zstd") or if
+            compression != 'uncompressed' and the file uses an mismatched
+            extension. Only applies if file is a path.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
@@ -3557,6 +3933,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
+
+            .. deprecated:: 1.37.1
+                Pass {"max_retries": n} via `storage_options` instead.
         sync_on_close: { None, 'data', 'all' }
             Sync to disk when before closing a file.
 
@@ -3614,19 +3993,25 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Split into a hive-partitioning style partition:
 
         >>> pl.LazyFrame({"x": [1, 2, 1], "y": [3, 4, 5]}).sink_ndjson(
-        ...     pl.PartitionByKey("./out/", by="x"),
+        ...     pl.PartitionBy("./out/", key="x"),
         ...     mkdir=True
         ... )  # doctest: +SKIP
 
         See Also
         --------
-        PartitionByKey
+        PartitionBy
         """
         engine = _select_engine(engine)
 
         from polars.io.cloud.credential_provider._builder import (
             _init_credential_provider_builder,
         )
+
+        if retries is not None:
+            msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
+            issue_deprecation_warning(msg)
+            storage_options = storage_options or {}
+            storage_options["max_retries"] = retries
 
         credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_ndjson"
@@ -3641,14 +4026,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             mkdir=mkdir,
             maintain_order=maintain_order,
             sync_on_close=sync_on_close,
-            storage_options=(
-                list(storage_options.items()) if storage_options is not None else None
-            ),
+            storage_options=storage_options,
             credential_provider=credential_provider_builder,
-            retries=retries,
         )
 
-        ldf_py = self._ldf.sink_json(target=target, sink_options=sink_options)
+        ldf_py = self._ldf.sink_ndjson(
+            target=target,
+            compression=compression,
+            compression_level=compression_level,
+            check_extension=check_extension,
+            sink_options=sink_options,
+        )
 
         if not lazy:
             ldf_py = ldf_py.with_optimizations(optimizations._pyoptflags)
@@ -3806,101 +4194,31 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> for df in lf.collect_batches():
         ...     print(df)  # doctest: +SKIP
         """
-        from queue import Queue
 
-        class BatchCollector:
-            def __init__(
-                self,
-                *,
-                lf: pl.LazyFrame,
-                chunk_size: int | None,
-                maintain_order: bool,
-                lazy: bool,
-                engine: EngineType,
-                optimizations: QueryOptFlags,
-            ) -> None:
-                class SharedState:
-                    def __init__(self) -> None:
-                        self.queue: Queue[pl.DataFrame | None] = Queue(maxsize=1)
-                        self.stopped = False
+        class CollectBatches:
+            def __init__(self, inner: Any) -> None:
+                self._inner = inner
 
-                self._lf = lf
-                self._chunk_size = chunk_size
-                self._maintain_order = maintain_order
-                self._engine = engine
-                self._optimizations = optimizations
-                self._shared = SharedState()
-                self._fut: Future[None] | None = None
-
-                if not lazy:
-                    self._start()
-
-            def _start(self) -> None:
-                if self._fut is not None:
-                    return
-
-                # Make sure we don't capture self which would cause __del__
-                # to not get called.
-                shared = self._shared
-                chunk_size = self._chunk_size
-                maintain_order = self._maintain_order
-                engine = self._engine
-                optimizations = self._optimizations
-                lf = self._lf
-
-                def task() -> None:
-                    def put_batch_in_queue(df: DataFrame) -> bool | None:
-                        if shared.stopped:
-                            return True
-                        shared.queue.put(df)
-                        return shared.stopped
-
-                    try:
-                        lf.sink_batches(
-                            put_batch_in_queue,
-                            chunk_size=chunk_size,
-                            maintain_order=maintain_order,
-                            engine=engine,
-                            optimizations=optimizations,
-                            lazy=False,
-                        )
-                    finally:
-                        shared.queue.put(None)  # Signal the end of batches.
-
-                self._fut = _COLLECT_BATCHES_POOL.submit(task)
-
-            def __iter__(self) -> BatchCollector:
+            def __iter__(self) -> CollectBatches:
                 return self
 
             def __next__(self) -> DataFrame:
-                if self._shared.stopped:
-                    raise StopIteration
+                pydf = next(self._inner)
+                return pl.DataFrame._from_pydf(pydf)
 
-                self._start()
-                df = self._shared.queue.get()
-                if df is None:
-                    self._shared.stopped = True
-                    raise StopIteration
+            def __arrow_c_stream__(
+                self, requested_schema: object | None = None
+            ) -> object:
+                return self._inner.__arrow_c_stream__(requested_schema)
 
-                return df
-
-            def __del__(self) -> None:
-                if not self._shared.stopped:
-                    # Signal to stop and unblock sink_batches task.
-                    self._shared.stopped = True
-                    while self._shared.queue.get() is not None:
-                        pass
-                if self._fut is not None:
-                    self._fut.result()
-
-        return BatchCollector(
-            lf=self,
-            chunk_size=chunk_size,
-            maintain_order=maintain_order,
-            lazy=lazy,
+        ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
+        inner = ldf.collect_batches(
             engine=engine,
-            optimizations=optimizations,
+            maintain_order=maintain_order,
+            chunk_size=chunk_size,
+            lazy=lazy,
         )
+        return CollectBatches(inner)
 
     @deprecated(
         "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "
@@ -3974,6 +4292,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ]
             | PolarsDataType
             | pl.DataTypeExpr
+            | Schema
         ),
         *,
         strict: bool = True,
@@ -4115,6 +4434,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ null ┆ null ┆ null │
         └──────┴──────┴──────┘
         """
+        if n == 0:
+            # This branch doesn't collect schema.
+            return self.limit(0)
+        # TODO: don't collect schema.
         return pl.DataFrame(schema=self.collect_schema()).clear(n).lazy()
 
     def clone(self) -> LazyFrame:
@@ -5350,9 +5673,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
                 By "calendar day", we mean the corresponding time on the next day
-                (which may not be 24 hours, due to daylight savings). Similarly for
-                "calendar week", "calendar month", "calendar quarter", and
-                "calendar year".
+                (which may not be 24 hours, due to daylight savings - in cases of
+                ambiguity, we follow RFC-5545 and preserve the DST fold of the original
+                datetime). Similarly for "calendar week", "calendar month",
+                "calendar quarter", and "calendar year".
 
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
@@ -9017,8 +9341,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         fmt_float: FloatFmt | None = None,
         fmt_str_lengths: int | None = None,
         fmt_table_cell_list_len: int | None = None,
-        tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
-        tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
+        tbl_cell_alignment: Alignment | None = None,
+        tbl_cell_numeric_alignment: Alignment | None = None,
         tbl_cols: int | None = None,
         tbl_column_data_type_inline: bool | None = None,
         tbl_dataframe_shape_below: bool | None = None,

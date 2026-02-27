@@ -4,12 +4,12 @@ use std::sync::Arc;
 use arrow::array::{ArrayRef, Utf8ViewArray};
 use arrow::datatypes::{ArrowSchema, Field};
 use arrow::record_batch::RecordBatchT;
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_parquet::arrow::write::{FileWriter, WriteOptions};
 use polars_parquet::read::read_metadata;
 use polars_parquet::write::{
-    ColumnWriteOptions, CompressionOptions, Encoding, FieldWriteOptions, RowGroupIterator,
-    StatisticsOptions, Version,
+    CompressionOptions, Encoding, RowGroupIterator, StatisticsOptions, Version,
 };
 
 use crate::io::parquet::read::file::FileReader;
@@ -18,7 +18,7 @@ fn round_trip(
     array: &ArrayRef,
     version: Version,
     compression: CompressionOptions,
-    column_options: Vec<ColumnWriteOptions>,
+    encodings: Vec<Encoding>,
 ) -> PolarsResult<()> {
     let field = Field::new("a1".into(), array.dtype().clone(), true);
     let schema = ArrowSchema::from_iter([field]);
@@ -36,16 +36,20 @@ fn round_trip(
         vec![array.clone()],
     )];
 
-    let row_groups =
-        RowGroupIterator::try_new(iter.into_iter(), &schema, options, column_options.clone())?;
+    let row_groups = RowGroupIterator::try_new(
+        iter.into_iter(),
+        &schema,
+        options,
+        Buffer::from_iter([encodings]),
+    )?;
 
     let writer = Cursor::new(vec![]);
-    let mut writer = FileWriter::try_new(writer, schema.clone(), options, &column_options)?;
+    let mut writer = FileWriter::try_new(writer, schema.clone(), options)?;
 
     for group in row_groups {
-        writer.write(group?)?;
+        writer.write(u64::MAX, group?)?;
     }
-    writer.end(None, &column_options)?;
+    writer.end(None)?;
 
     let data = writer.into_inner().into_inner();
 
@@ -82,9 +86,6 @@ fn roundtrip_binview() -> PolarsResult<()> {
         &array.boxed(),
         Version::V1,
         CompressionOptions::Uncompressed,
-        vec![
-            FieldWriteOptions::default_with_encoding(Encoding::Plain)
-                .into_default_column_write_options(),
-        ],
+        vec![Encoding::Plain],
     )
 }

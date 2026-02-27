@@ -15,20 +15,14 @@ const PAIRWISE_RECURSION_LIMIT: usize = 128;
 
 // We want to be generic over both integers and floats, requiring this helper trait.
 #[cfg(feature = "simd")]
-pub trait SimdCastGeneric<const N: usize>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
+pub trait SimdCastGeneric<const N: usize> {
     fn cast_generic<U: SimdCast>(self) -> Simd<U, N>;
 }
 
 macro_rules! impl_cast_custom {
     ($_type:ty) => {
         #[cfg(feature = "simd")]
-        impl<const N: usize> SimdCastGeneric<N> for Simd<$_type, N>
-        where
-            LaneCount<N>: SupportedLaneCount,
-        {
+        impl<const N: usize> SimdCastGeneric<N> for Simd<$_type, N> {
             fn cast_generic<U: SimdCast>(self) -> Simd<U, N> {
                 self.cast::<U>()
             }
@@ -96,7 +90,7 @@ where
             .chunks_exact(STRIPE)
             .enumerate()
             .map(|(i, a)| {
-                let m: Mask<_, STRIPE> = mask.get_simd(i * STRIPE);
+                let m: Mask<T::Mask, STRIPE> = mask.get_simd(i * STRIPE);
                 m.select(Simd::from_slice(a).cast_generic::<F>(), zero)
             })
             .sum::<Simd<F, STRIPE>>();

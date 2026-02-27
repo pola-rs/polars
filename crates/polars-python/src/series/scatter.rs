@@ -65,7 +65,8 @@ fn scatter(s: Series, idx: &Series, values: &Series) -> Result<Series, (Series, 
         values
     };
 
-    let idx = match polars_ops::prelude::convert_to_unsigned_index(idx, s.len()) {
+    let null_on_oob = false;
+    let idx = match polars_ops::prelude::convert_and_bound_index(idx, s.len(), null_on_oob) {
         Ok(idx) => idx,
         Err(err) => return Err((s, err)),
     };

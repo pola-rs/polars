@@ -448,7 +448,9 @@ fn take_aggregations() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by([col("user")])
-        .agg([col("book").get(col("count").arg_max()).alias("fav_book")])
+        .agg([col("book")
+            .get(col("count").arg_max(), false)
+            .alias("fav_book")])
         .sort(["user"], Default::default())
         .collect()?;
 
@@ -481,7 +483,7 @@ fn take_aggregations() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by([col("user")])
-        .agg([col("book").get(lit(0)).alias("take_lit")])
+        .agg([col("book").get(lit(0), false).alias("take_lit")])
         .sort(["user"], Default::default())
         .collect()?;
 
@@ -498,7 +500,7 @@ fn test_take_consistency() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .select([col("A").arg_sort(true, false).get(lit(0))])
+        .select([col("A").arg_sort(true, false).get(lit(0), false)])
         .collect()?;
 
     let a = out.column("A")?;
@@ -509,7 +511,7 @@ fn test_take_consistency() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by_stable([col("cars")])
-        .agg([col("A").arg_sort(true, false).get(lit(0))])
+        .agg([col("A").arg_sort(true, false).get(lit(0), false)])
         .collect()?;
 
     let out = out.column("A")?;
@@ -521,9 +523,9 @@ fn test_take_consistency() -> PolarsResult<()> {
         .group_by_stable([col("cars")])
         .agg([
             col("A"),
-            col("A").arg_sort(true, false).get(lit(0)).alias("1"),
+            col("A").arg_sort(true, false).get(lit(0), false).alias("1"),
             col("A")
-                .get(col("A").arg_sort(true, false).get(lit(0)))
+                .get(col("A").arg_sort(true, false).get(lit(0), false), false)
                 .alias("2"),
         ])
         .collect()?;
@@ -546,7 +548,10 @@ fn test_take_in_groups() -> PolarsResult<()> {
     let out = df
         .lazy()
         .sort(["fruits"], Default::default())
-        .select([col("B").get(lit(0u32)).over([col("fruits")]).alias("taken")])
+        .select([col("B")
+            .get(lit(0u32), false)
+            .over([col("fruits")])
+            .alias("taken")])
         .collect()?;
 
     assert_eq!(
@@ -569,7 +574,7 @@ fn test_anonymous_function_returns_scalar_all_null_20679() {
     let a = Column::new("a".into(), &[0, 0, 1]);
     let dtype = DataType::Null;
     let b = Column::new_scalar("b".into(), Scalar::new(dtype, AnyValue::Null), 3);
-    let df = DataFrame::new(vec![a, b]).unwrap();
+    let df = DataFrame::new_infer_height(vec![a, b]).unwrap();
 
     let f = move |c: &mut [Column]| reduction_function(std::mem::take(&mut c[0]));
     let dt = |_: &Schema, fs: &[Field]| Ok(fs[0].clone());
@@ -590,5 +595,5 @@ fn test_anonymous_function_returns_scalar_all_null_20679() {
         .collect()
         .unwrap();
 
-    assert_eq!(grouped_df.get_columns()[1].dtype(), &DataType::Null);
+    assert_eq!(grouped_df.columns()[1].dtype(), &DataType::Null);
 }

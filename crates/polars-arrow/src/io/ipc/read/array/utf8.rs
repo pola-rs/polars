@@ -1,11 +1,12 @@
 use std::io::{Read, Seek};
 
+use polars_buffer::Buffer;
 use polars_error::polars_err;
+use polars_utils::bool::UnsafeBool;
 
 use super::super::read_basic::*;
 use super::*;
 use crate::array::Utf8Array;
-use crate::buffer::Buffer;
 use crate::offset::Offset;
 
 #[allow(clippy::too_many_arguments)]
@@ -19,6 +20,7 @@ pub fn read_utf8<O: Offset, R: Read + Seek>(
     compression: Option<Compression>,
     limit: Option<usize>,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<Utf8Array<O>> {
     let field_node = try_get_field_node(field_nodes, &dtype)?;
 
@@ -58,7 +60,20 @@ pub fn read_utf8<O: Offset, R: Read + Seek>(
         scratch,
     )?;
 
-    Utf8Array::<O>::try_new(dtype, offsets.try_into()?, values, validity)
+    if *checked {
+        Utf8Array::<O>::try_new(dtype, offsets.try_into()?, values, validity)
+    } else {
+        // SAFETY:
+        // Invariant of the `checked` state that this is valid.
+        unsafe {
+            Ok(Utf8Array::<O>::new_unchecked(
+                dtype,
+                offsets.try_into()?,
+                values,
+                validity,
+            ))
+        }
+    }
 }
 
 pub fn skip_utf8(

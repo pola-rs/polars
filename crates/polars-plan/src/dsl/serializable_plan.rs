@@ -716,7 +716,8 @@ mod tests {
     fn test_dsl_plan_serialization() {
         let name = || "a".into();
         let df = Arc::new(
-            DataFrame::new(vec![Column::new(name(), Series::new(name(), &[1, 2, 3]))]).unwrap(),
+            DataFrame::new_infer_height(vec![Column::new(name(), Series::new(name(), &[1, 2, 3]))])
+                .unwrap(),
         );
         let dfscan = Arc::new(DslPlan::DataFrameScan {
             df: df.clone(),

@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import sys
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import polars._reexport as pl
 from polars import functions as F
@@ -11,14 +11,12 @@ from polars._utils.wrap import wrap_s
 from polars.datatypes import dtype_to_ffiname
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from typing import ParamSpec
+
     from polars import Series
     from polars._plr import PySeries
     from polars._typing import PolarsDataType
-
-    if sys.version_info >= (3, 10):
-        from typing import ParamSpec
-    else:
-        from typing_extensions import ParamSpec
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -97,7 +95,7 @@ def call_expr(func: SeriesMethod) -> SeriesMethod:
     """Dispatch Series method to an expression implementation."""
 
     @wraps(func)
-    def wrapper(self: Any, *args: P.args, **kwargs: P.kwargs) -> Series:
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Series:
         s = wrap_s(self._s)
         expr = F.col(s.name)
         if (namespace := getattr(self, "_accessor", None)) is not None:

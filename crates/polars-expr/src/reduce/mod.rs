@@ -11,6 +11,7 @@ mod first_last_nonnull;
 mod len;
 mod mean;
 mod min_max;
+mod min_max_by;
 mod sum;
 mod var_std;
 
@@ -58,6 +59,8 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// reductions, seq_id can be used to resolve order between calls/multiple
     /// reductions.
     ///
+    /// The column MUST consist of single chunk.
+    ///
     /// # Safety
     /// The subset and group_idxs are in-bounds.
     unsafe fn update_groups_subset(
@@ -69,9 +72,7 @@ pub trait GroupedReduction: Any + Send + Sync {
     ) -> PolarsResult<()> {
         assert!(values.len() < (1 << (IdxSize::BITS - 1)));
         // SAFETY: EvictIdx is a wrapper for IdxSize and has same alignment.
-        let evict_group_idxs = unsafe {
-            std::slice::from_raw_parts(group_idxs.as_ptr() as *const EvictIdx, subset.len())
-        };
+        let evict_group_idxs = EvictIdx::cast_slice(group_idxs);
         self.update_groups_while_evicting(values, subset, evict_group_idxs, seq_id)
     }
 
@@ -80,6 +81,8 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// reductions, seq_id can be used to resolve order between calls/multiple
     /// reductions. If the group_idxs[i] has its evict bit set the current value
     /// in the group should be evicted and reset before updating.
+    ///
+    /// The column MUST consist of single chunk.
     ///
     /// # Safety
     /// The subset and group_idxs are in-bounds.

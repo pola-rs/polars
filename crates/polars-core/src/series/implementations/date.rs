@@ -85,6 +85,16 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_max(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         self.0
@@ -418,6 +428,26 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
             DataType::Datetime(TimeUnit::Microseconds, None),
             av,
         ))
+    }
+
+    #[cfg(feature = "dtype-datetime")]
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let result = self.0.physical().quantiles_reduce(quantiles, method)?;
+        if let AnyValue::List(float_s) = result.value() {
+            let float_ca = float_s.f64().unwrap();
+            let int_s = float_ca
+                .iter()
+                .map(|v: Option<f64>| v.map(|f| (f * (US_IN_DAY as f64)) as i64))
+                .collect::<Int64Chunked>()
+                .into_datetime(TimeUnit::Microseconds, None)
+                .into_series();
+            Ok(Scalar::new(
+                DataType::List(Box::new(DataType::Datetime(TimeUnit::Microseconds, None))),
+                AnyValue::List(int_s),
+            ))
+        } else {
+            polars_bail!(ComputeError: "expected list scalar from quantiles_reduce")
+        }
     }
 
     #[cfg(feature = "approx_unique")]

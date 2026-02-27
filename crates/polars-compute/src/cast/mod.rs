@@ -287,7 +287,8 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
         let length = end - start;
         polars_ensure!(
             length <= MAX_BUF_SIZE,
-            InvalidOperation: format!("when casting to BinaryView, list lengths must be <= {MAX_BUF_SIZE}")
+            InvalidOperation:
+            "when casting to BinaryView, list lengths must be <= {MAX_BUF_SIZE}"
         );
 
         // Check if the list contains nulls:

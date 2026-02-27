@@ -3,7 +3,7 @@
 documentation:
   - '/\bdocs\b|documentation/i'
 performance:
-  - '/performance/i'
+  - '/performance|\bslow/i'
 regression:
   - '/regression/i'
 A-dtype-categorical:
@@ -47,6 +47,8 @@ A-panic:
 A-plugin:
   - '/plugin/i'
 A-sql:
-  - '/\bsql\b/i'
+  - '/\bsql\b|sqlcontext/i'
+A-selectors:
+  - '/selector/i'
 A-streaming:
   - '/streaming/i'

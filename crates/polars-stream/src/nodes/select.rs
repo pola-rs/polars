@@ -67,10 +67,10 @@ impl ComputeNode for SelectNode {
 
                     let ret = if slf.extend_original {
                         let mut out = df;
-                        out._add_columns(selected, &slf.schema)?;
+                        out.with_columns_mut(selected, &slf.schema)?;
                         out
                     } else {
-                        DataFrame::new_with_broadcast(selected)?
+                        unsafe { DataFrame::new_unchecked_infer_broadcast(selected)? }
                     };
 
                     let mut morsel = Morsel::new(ret, seq, source_token);

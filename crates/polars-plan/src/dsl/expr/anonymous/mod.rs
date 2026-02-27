@@ -1,7 +1,7 @@
 mod agg;
 mod expr;
 
-pub use agg::{AnonymousStreamingAgg, OpaqueStreamingAgg};
+pub use agg::{AnonymousAgg, OpaqueStreamingAgg};
 pub use expr::*;
 
 #[cfg(feature = "dsl-schema")]

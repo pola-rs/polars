@@ -9,7 +9,7 @@ from datetime import time
 from glob import glob
 from io import BufferedReader, BytesIO, StringIO, TextIOWrapper
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, overload
+from typing import IO, TYPE_CHECKING, Any, NoReturn, overload
 
 import polars._reexport as pl
 from polars import from_arrow
@@ -43,6 +43,7 @@ from polars.io._utils import looks_like_url, process_file_url
 from polars.io.csv.functions import read_csv
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from typing import Literal
 
     from polars._typing import ExcelSpreadsheetEngine, FileSource, SchemaDict
@@ -173,8 +174,8 @@ def read_excel(
 
 # note: 'ignore' required as mypy thinks that the return value for
 # Literal[0] overlaps with the return value for other integers
-@overload  # type: ignore[overload-overlap]
-def read_excel(
+@overload
+def read_excel(  # type: ignore[overload-overlap]
     source: FileSource,
     *,
     sheet_id: Literal[0] | Sequence[int],
@@ -220,7 +221,7 @@ def read_excel(
     source: FileSource,
     *,
     sheet_id: None = ...,
-    sheet_name: list[str] | tuple[str],
+    sheet_name: list[str] | tuple[str, ...],
     table_name: str | None = ...,
     engine: ExcelSpreadsheetEngine = ...,
     engine_options: dict[str, Any] | None = ...,
@@ -242,7 +243,7 @@ def read_excel(
     source: FileSource,
     *,
     sheet_id: int | Sequence[int] | None = None,
-    sheet_name: str | list[str] | tuple[str] | None = None,
+    sheet_name: str | list[str] | tuple[str, ...] | None = None,
     table_name: str | None = None,
     engine: ExcelSpreadsheetEngine = "calamine",
     engine_options: dict[str, Any] | None = None,
@@ -476,8 +477,8 @@ def read_ods(
 ) -> NoReturn: ...
 
 
-@overload  # type: ignore[overload-overlap]
-def read_ods(
+@overload
+def read_ods(  # type: ignore[overload-overlap]
     source: FileSource,
     *,
     sheet_id: Literal[0] | Sequence[int],
@@ -515,7 +516,7 @@ def read_ods(
     source: FileSource,
     *,
     sheet_id: None = ...,
-    sheet_name: list[str] | tuple[str],
+    sheet_name: list[str] | tuple[str, ...],
     has_header: bool = ...,
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
@@ -531,7 +532,7 @@ def read_ods(
     source: FileSource,
     *,
     sheet_id: int | Sequence[int] | None = None,
-    sheet_name: str | list[str] | tuple[str] | None = None,
+    sheet_name: str | list[str] | tuple[str, ...] | None = None,
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
     schema_overrides: SchemaDict | None = None,
@@ -1134,7 +1135,7 @@ def _read_spreadsheet_calamine(
         if str_to_temporal:
             lf = lf.with_columns(*str_to_temporal)
         if updated_overrides:
-            lf = lf.cast(dtypes=updated_overrides)
+            lf = lf.cast(dtypes=updated_overrides)  # type: ignore[arg-type]
         df = lf.collect()
 
     # standardise on string dtype for null columns in empty frame
@@ -1163,7 +1164,9 @@ def _read_spreadsheet_calamine(
     if type_checks:
         apply_cast = df.select(d[0].all(ignore_nulls=True) for d in type_checks).row(0)
         if downcast := [
-            cast for apply, (_, cast) in zip(apply_cast, type_checks) if apply
+            cast
+            for apply, (_, cast) in zip(apply_cast, type_checks, strict=True)
+            if apply
         ]:
             df = df.with_columns(*downcast)
 
@@ -1239,7 +1242,7 @@ def _read_spreadsheet_openpyxl(
 
     dtype = String if no_inference else None
     series_data = []
-    for name, column_data in zip(header, zip(*rows_iter)):
+    for name, column_data in zip(header, zip(*rows_iter, strict=False), strict=False):
         if name or not drop_empty_cols:
             values = [cell.value for cell in column_data]
             if no_inference or (dtype := schema_overrides.get(name)) == String:  # type: ignore[assignment,arg-type]
@@ -1267,7 +1270,7 @@ def _read_spreadsheet_openpyxl(
 
     names = deduplicate_names(s.name for s in series_data)
     df = pl.DataFrame(
-        dict(zip(names, series_data)),
+        dict(zip(names, series_data, strict=True)),
         schema_overrides=schema_overrides,
         infer_schema_length=infer_schema_length,
         strict=False,

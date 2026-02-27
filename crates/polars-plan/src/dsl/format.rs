@@ -109,9 +109,16 @@ impl fmt::Debug for Expr {
                 expr,
                 idx,
                 returns_scalar,
+                null_on_oob,
             } => {
                 if *returns_scalar {
-                    write!(f, "{expr:?}.get({idx:?})")
+                    if *null_on_oob {
+                        write!(f, "{expr:?}.get({idx:?}, null_on_oob=true)")
+                    } else {
+                        write!(f, "{expr:?}.get({idx:?})")
+                    }
+                } else if *null_on_oob {
+                    write!(f, "{expr:?}.gather({idx:?}, null_on_oob=true)")
                 } else {
                     write!(f, "{expr:?}.gather({idx:?})")
                 }
@@ -203,6 +210,13 @@ impl fmt::Debug for Expr {
                     _ => write!(f, "{:?}.{function}({:?})", input[0], &input[1..]),
                 }
             },
+            Display {
+                inputs, fmt_str, ..
+            } => match inputs.len() {
+                0 => write!(f, "{fmt_str}()"),
+                1 => write!(f, "{:?}.{fmt_str}()", inputs[0]),
+                _ => write!(f, "{:?}.{fmt_str}({:?})", inputs[0], &inputs[1..]),
+            },
             AnonymousFunction {
                 input,
                 fmt_str,
@@ -238,6 +252,13 @@ impl fmt::Debug for Expr {
                     f,
                     "{input:?}.Cumulative_eval({evaluation:?}, min_samples={min_samples}"
                 ),
+            },
+            #[cfg(feature = "dtype-struct")]
+            StructEval {
+                expr: input,
+                evaluation,
+            } => {
+                write!(f, "{input:?}.struct.eval({evaluation:?}")
             },
             Slice {
                 input,

@@ -1,3 +1,5 @@
+use polars_utils::format_pl_smallstr;
+
 use super::*;
 
 /// converts a node from the AExpr arena to Expr
@@ -12,6 +14,8 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             options,
         },
         AExpr::Column(a) => Expr::Column(a),
+        #[cfg(feature = "dtype-struct")]
+        AExpr::StructField(a) => Expr::Field(Arc::new([a])),
         AExpr::Literal(s) => Expr::Literal(s),
         AExpr::BinaryExpr { left, op, right } => {
             let l = node_to_expr(left, expr_arena);
@@ -45,6 +49,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             expr,
             idx,
             returns_scalar,
+            null_on_oob,
         } => {
             let expr = node_to_expr(expr, expr_arena);
             let idx = node_to_expr(idx, expr_arena);
@@ -52,6 +57,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 expr: Arc::new(expr),
                 idx: Arc::new(idx),
                 returns_scalar,
+                null_on_oob,
             }
         },
         AExpr::SortBy {
@@ -199,6 +205,17 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 falsy: Arc::new(f),
             }
         },
+        AExpr::AnonymousAgg {
+            input,
+            fmt_str,
+            function: _,
+        } => {
+            let inputs = expr_irs_to_exprs(input.clone(), expr_arena);
+            Expr::Display {
+                inputs,
+                fmt_str: fmt_str.clone(),
+            }
+        },
         AExpr::AnonymousFunction {
             input,
             function,
@@ -218,6 +235,11 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             expr: Arc::new(node_to_expr(expr, expr_arena)),
             evaluation: Arc::new(node_to_expr(evaluation, expr_arena)),
             variant,
+        },
+        #[cfg(feature = "dtype-struct")]
+        AExpr::StructEval { expr, evaluation } => Expr::StructEval {
+            expr: Arc::new(node_to_expr(expr, expr_arena)),
+            evaluation: expr_irs_to_exprs(evaluation, expr_arena),
         },
         AExpr::Function {
             input,
@@ -272,7 +294,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             length: Arc::new(node_to_expr(length, expr_arena)),
         },
         AExpr::Len => Expr::Len,
-        AExpr::AnonymousStreamingAgg { .. } => unreachable!("should not be hit"),
     }
 }
 
@@ -341,6 +362,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::Slice => B::Slice,
                 IB::Head => B::Head,
                 IB::Tail => B::Tail,
+                IB::Get(null_on_oob) => B::Get(null_on_oob),
             })
         },
         #[cfg(feature = "dtype-categorical")]
@@ -502,6 +524,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     B::Strptime(dtype.into(), strptime_options)
                 },
                 IB::Split(v) => B::Split(v),
+                #[cfg(feature = "regex")]
+                IB::SplitRegex { inclusive, strict } => B::SplitRegex { inclusive, strict },
                 #[cfg(feature = "dtype-decimal")]
                 IB::ToDecimal { scale } => B::ToDecimal { scale },
                 #[cfg(feature = "nightly")]
@@ -557,7 +581,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::SuffixFields(pl_small_str) => B::SuffixFields(pl_small_str),
                 #[cfg(feature = "json")]
                 IB::JsonEncode => B::JsonEncode,
-                IB::WithFields => B::WithFields,
                 IB::MapFieldNames(f) => B::MapFieldNames(f),
             })
         },
@@ -923,6 +946,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             descending,
             nulls_last,
         },
+        IF::MinBy => F::MinBy,
+        IF::MaxBy => F::MaxBy,
         IF::Product => F::Product,
         #[cfg(feature = "rank")]
         IF::Rank { options, seed } => F::Rank { options, seed },
@@ -984,6 +1009,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Round { decimals, mode } => F::Round { decimals, mode },
         #[cfg(feature = "round_series")]
         IF::RoundSF { digits } => F::RoundSF { digits },
+        #[cfg(feature = "round_series")]
+        IF::Truncate { decimals } => F::Truncate { decimals },
         #[cfg(feature = "round_series")]
         IF::Floor => F::Floor,
         #[cfg(feature = "round_series")]
@@ -1152,6 +1179,12 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             fs.into_iter().map(|f| (f.name, f.dtype.into())).collect(),
             v,
         ),
+        IF::DynamicPred { pred } => {
+            return Expr::Display {
+                inputs: input,
+                fmt_str: Box::new(format_pl_smallstr!("{pred:?}")),
+            };
+        },
     };
 
     Expr::Function { input, function }

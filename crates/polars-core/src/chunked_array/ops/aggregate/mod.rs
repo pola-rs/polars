@@ -16,7 +16,7 @@ pub use var::*;
 use super::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
-use crate::chunked_array::ChunkedArray;
+use crate::chunked_array::{ChunkedArray, arg_max_binary, arg_min_binary};
 use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -351,6 +351,15 @@ where
         Ok(Scalar::new(DataType::Float64, v.into()))
     }
 
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantiles(quantiles, method)?;
+        let s =
+            Float64Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter())
+                .into_series();
+        let dtype = DataType::List(Box::new(s.dtype().clone()));
+        Ok(Scalar::new(dtype, AnyValue::List(s)))
+    }
+
     fn median_reduce(&self) -> Scalar {
         let v = self.median();
         Scalar::new(DataType::Float64, v.into())
@@ -362,6 +371,15 @@ impl QuantileAggSeries for Float16Chunked {
     fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
         let v = self.quantile(quantile, method)?;
         Ok(Scalar::new(DataType::Float16, v.into()))
+    }
+
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantiles(quantiles, method)?;
+        let s =
+            Float16Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter())
+                .into_series();
+        let dtype = DataType::List(Box::new(s.dtype().clone()));
+        Ok(Scalar::new(dtype, AnyValue::List(s)))
     }
 
     fn median_reduce(&self) -> Scalar {
@@ -376,6 +394,15 @@ impl QuantileAggSeries for Float32Chunked {
         Ok(Scalar::new(DataType::Float32, v.into()))
     }
 
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantiles(quantiles, method)?;
+        let s =
+            Float32Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter())
+                .into_series();
+        let dtype = DataType::List(Box::new(s.dtype().clone()));
+        Ok(Scalar::new(dtype, AnyValue::List(s)))
+    }
+
     fn median_reduce(&self) -> Scalar {
         let v = self.median();
         Scalar::new(DataType::Float32, v.into())
@@ -386,6 +413,15 @@ impl QuantileAggSeries for Float64Chunked {
     fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
         let v = self.quantile(quantile, method)?;
         Ok(Scalar::new(DataType::Float64, v.into()))
+    }
+
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantiles(quantiles, method)?;
+        let s =
+            Float64Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter())
+                .into_series();
+        let dtype = DataType::List(Box::new(s.dtype().clone()));
+        Ok(Scalar::new(dtype, AnyValue::List(s)))
     }
 
     fn median_reduce(&self) -> Scalar {
@@ -589,6 +625,29 @@ impl BinaryChunked {
                 .downcast_iter()
                 .filter_map(MinMaxKernel::min_ignore_nan_kernel)
                 .reduce(MinMax::min_ignore_nan),
+        }
+    }
+    pub fn arg_min_binary(&self) -> Option<usize> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
+
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => self.first_non_null(),
+            IsSorted::Descending => self.last_non_null(),
+            IsSorted::Not => arg_min_binary(self),
+        }
+    }
+
+    pub fn arg_max_binary(&self) -> Option<usize> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
+
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => self.last_non_null(),
+            IsSorted::Descending => self.first_non_null(),
+            IsSorted::Not => arg_max_binary(self),
         }
     }
 }

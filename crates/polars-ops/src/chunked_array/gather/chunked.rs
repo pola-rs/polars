@@ -3,9 +3,9 @@ use std::fmt::Debug;
 
 use arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
 use arrow::bitmap::BitmapBuilder;
-use arrow::buffer::Buffer;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::Entry;
+use polars_buffer::Buffer;
 use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -53,9 +53,9 @@ impl TakeChunked for DataFrame {
     ) -> DataFrame {
         let cols = self
             .to_df()
-            ._apply_columns(&|s| s.take_chunked_unchecked(idx, sorted, avoid_sharing));
+            .apply_columns(|s| s.take_chunked_unchecked(idx, sorted, avoid_sharing));
 
-        unsafe { DataFrame::new_no_checks_height_from_first(cols) }
+        unsafe { DataFrame::new_unchecked_infer_height(cols) }
     }
 
     /// Take elements by a slice of optional [`ChunkId`]s.
@@ -69,9 +69,9 @@ impl TakeChunked for DataFrame {
     ) -> DataFrame {
         let cols = self
             .to_df()
-            ._apply_columns(&|s| s.take_opt_chunked_unchecked(idx, avoid_sharing));
+            .apply_columns(|s| s.take_opt_chunked_unchecked(idx, avoid_sharing));
 
-        unsafe { DataFrame::new_no_checks_height_from_first(cols) }
+        unsafe { DataFrame::new_unchecked_infer_height(cols) }
     }
 }
 
@@ -85,9 +85,9 @@ pub trait TakeChunkedHorPar: IntoDf {
     ) -> DataFrame {
         let cols = self
             .to_df()
-            ._apply_columns_par(&|s| s.take_chunked_unchecked(idx, sorted, false));
+            .apply_columns_par(|s| s.take_chunked_unchecked(idx, sorted, false));
 
-        unsafe { DataFrame::new_no_checks_height_from_first(cols) }
+        unsafe { DataFrame::new_unchecked_infer_height(cols) }
     }
 
     /// # Safety
@@ -100,9 +100,9 @@ pub trait TakeChunkedHorPar: IntoDf {
     ) -> DataFrame {
         let cols = self
             .to_df()
-            ._apply_columns_par(&|s| s.take_opt_chunked_unchecked(idx, false));
+            .apply_columns_par(|s| s.take_opt_chunked_unchecked(idx, false));
 
-        unsafe { DataFrame::new_no_checks_height_from_first(cols) }
+        unsafe { DataFrame::new_unchecked_infer_height(cols) }
     }
 }
 

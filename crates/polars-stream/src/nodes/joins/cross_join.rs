@@ -3,7 +3,8 @@ use std::sync::Arc;
 use arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::schema::Schema;
-use polars_ops::frame::{JoinArgs, MaintainOrderJoin};
+use polars_error::polars_warn;
+use polars_ops::frame::{JoinArgs, JoinBuildSide, MaintainOrderJoin};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -26,9 +27,23 @@ impl CrossJoinNode {
         args: &JoinArgs,
     ) -> Self {
         let left_is_build = match args.maintain_order {
-            MaintainOrderJoin::None => true, // TODO: size estimation.
-            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => false,
-            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => true,
+            MaintainOrderJoin::None => match args.build_side {
+                // TODO: size estimation.
+                None | Some(JoinBuildSide::PreferLeft) | Some(JoinBuildSide::ForceLeft) => true,
+                Some(JoinBuildSide::PreferRight) | Some(JoinBuildSide::ForceRight) => false,
+            },
+            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => {
+                if args.build_side == Some(JoinBuildSide::ForceLeft) {
+                    polars_warn!("can't force left build-side with left-maintaining cross-join");
+                }
+                false
+            },
+            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => {
+                if args.build_side == Some(JoinBuildSide::ForceRight) {
+                    polars_warn!("can't force right build-side with right-maintaining cross-join");
+                }
+                true
+            },
         };
         let build_input_schema = if left_is_build {
             &left_input_schema
@@ -173,18 +188,15 @@ impl ComputeNode for CrossJoinNode {
                                             core::mem::swap(&mut left_join_df, &mut right_join_df);
                                         }
 
-                                        for (col, opt_rename) in right_join_df
-                                            .get_columns_mut()
-                                            .iter_mut()
-                                            .zip(right_rename)
+                                        for (col, opt_rename) in
+                                            right_join_df.columns_mut().iter_mut().zip(right_rename)
                                         {
                                             if let Some(rename) = opt_rename {
                                                 col.rename(rename.clone());
                                             }
                                         }
 
-                                        left_join_df
-                                            .hstack_mut_unchecked(right_join_df.get_columns());
+                                        left_join_df.hstack_mut_unchecked(right_join_df.columns());
                                         Morsel::new(
                                             left_join_df,
                                             morsel.seq(),

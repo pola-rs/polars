@@ -1,6 +1,6 @@
 use arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
 
 use super::*;
@@ -82,7 +82,7 @@ impl BinviewHashGrouper {
             );
             let s =
                 Series::from_chunks_and_dtype_unchecked(name.clone(), vec![Box::new(keys)], dtype);
-            DataFrame::new(vec![Column::from(s)]).unwrap()
+            DataFrame::new_unchecked(s.len(), vec![Column::from(s)])
         }
     }
 }

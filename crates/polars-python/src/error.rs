@@ -77,6 +77,15 @@ impl From<PyPolarsErr> for PyErr {
                     } else {
                         error.to_string()
                     };
+                    // This error might have an underlying PolarsError, so
+                    // if we can find one of those, use it instead.
+                    let mut source = error.source();
+                    while let Some(error) = source {
+                        if let Some(e) = error.downcast_ref::<PolarsError>() {
+                            return PyPolarsErr::Polars(e.to_owned()).into();
+                        }
+                        source = error.source();
+                    }
                     match error.kind() {
                         ErrorKind::NotFound => PyFileNotFoundError::new_err(msg),
                         ErrorKind::PermissionDenied => PyPermissionError::new_err(msg),

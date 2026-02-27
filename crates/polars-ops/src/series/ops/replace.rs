@@ -166,7 +166,17 @@ pub fn replace_strict(
     }
     validate_old(&old)?;
 
+    // Extra check because strict_cast is too permissive, e.g. allows string -> struct cast.
+    if old.dtype().can_cast_to(s.dtype()) != Some(true) {
+        polars_bail!(
+            InvalidOperation: "cannot use values of type `{}` to replace values in a column of type `{}`",
+            old.dtype(),
+            s.dtype()
+        )
+    }
+
     let old = old.strict_cast(s.dtype())?;
+
     let new = match return_dtype {
         Some(dtype) => new.strict_cast(&dtype)?,
         None => new,
@@ -323,7 +333,7 @@ fn create_replacer(mut old: Series, mut new: Series, add_mask: bool) -> PolarsRe
     } else {
         vec![old.into(), new.into()]
     };
-    let out = unsafe { DataFrame::new_no_checks(len, cols) };
+    let out = unsafe { DataFrame::new_unchecked(len, cols) };
     Ok(out)
 }
 

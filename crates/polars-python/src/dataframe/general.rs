@@ -18,7 +18,7 @@ use crate::error::PyPolarsErr;
 use crate::prelude::strings_to_pl_smallstr;
 use crate::py_modules::polars;
 use crate::series::{PySeries, ToPySeries, ToSeries};
-use crate::utils::EnterPolarsExt;
+use crate::utils::{EnterPolarsExt, to_py_err};
 
 #[pymethods]
 impl PyDataFrame {
@@ -27,8 +27,17 @@ impl PyDataFrame {
         let columns = columns.to_series();
         // @scalar-opt
         let columns = columns.into_iter().map(|s| s.into()).collect();
-        let df = DataFrame::new(columns).map_err(PyPolarsErr::from)?;
+        let df = DataFrame::new_infer_height(columns).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
+    }
+
+    #[staticmethod]
+    pub fn empty_with_height(height: u64) -> PyResult<Self> {
+        Ok(PyDataFrame::new(DataFrame::empty_with_height(
+            IdxSize::try_from(height)
+                .map_err(|_| polars_err!(bigidx, ctx = "DataFrame(height = _)", size = height))
+                .map_err(to_py_err)? as usize,
+        )))
     }
 
     pub fn estimated_size(&self) -> usize {
@@ -38,7 +47,7 @@ impl PyDataFrame {
     pub fn dtype_strings(&self) -> Vec<String> {
         self.df
             .read()
-            .get_columns()
+            .columns()
             .iter()
             .map(|s| format!("{}", s.dtype()))
             .collect()
@@ -119,7 +128,7 @@ impl PyDataFrame {
     pub fn rechunk(&self, py: Python) -> PyResult<Self> {
         py.enter_polars_df(|| {
             let mut df = self.df.read().clone();
-            df.as_single_chunk_par();
+            df.rechunk_mut_par();
             Ok(df)
         })
     }
@@ -130,7 +139,7 @@ impl PyDataFrame {
     }
 
     pub fn get_columns(&self) -> Vec<PySeries> {
-        let cols = self.df.read().get_columns().to_vec();
+        let cols = self.df.read().columns().to_vec();
         cols.to_pyseries()
     }
 
@@ -138,7 +147,7 @@ impl PyDataFrame {
     pub fn columns(&self) -> Vec<String> {
         self.df
             .read()
-            .get_columns()
+            .columns()
             .iter()
             .map(|s| s.name().to_string())
             .collect()
@@ -148,7 +157,7 @@ impl PyDataFrame {
     pub fn set_column_names(&self, names: Vec<PyBackedStr>) -> PyResult<()> {
         self.df
             .write()
-            .set_column_names(names.iter().map(|x| &**x))
+            .set_column_names(&names)
             .map_err(PyPolarsErr::from)?;
         Ok(())
     }
@@ -157,6 +166,7 @@ impl PyDataFrame {
     pub fn dtypes<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         let df = self.df.read();
         let iter = df
+            .columns()
             .iter()
             .map(|s| Wrap(s.dtype().clone()).into_pyobject(py).unwrap());
         PyList::new(py, iter)
@@ -179,7 +189,7 @@ impl PyDataFrame {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.df.read().is_empty()
+        self.df.read().shape_has_zero()
     }
 
     pub fn hstack(&self, py: Python<'_>, columns: Vec<PySeries>) -> PyResult<Self> {
@@ -205,7 +215,7 @@ impl PyDataFrame {
         py.enter_polars(|| {
             // Prevent self-vstack deadlocks.
             let other = other.df.read().clone();
-            self.df.write().vstack_mut(&other)?;
+            self.df.write().vstack_mut_owned(other)?;
             PolarsResult::Ok(())
         })?;
         Ok(())
@@ -285,7 +295,7 @@ impl PyDataFrame {
     pub fn replace(&self, column: &str, new_col: PySeries) -> PyResult<()> {
         self.df
             .write()
-            .replace(column, new_col.series.into_inner())
+            .replace(column, new_col.series.into_inner().into_column())
             .map_err(PyPolarsErr::from)?;
         Ok(())
     }
@@ -293,7 +303,7 @@ impl PyDataFrame {
     pub fn replace_column(&self, index: usize, new_column: PySeries) -> PyResult<()> {
         self.df
             .write()
-            .replace_column(index, new_column.series.into_inner())
+            .replace_column(index, new_column.series.into_inner().into_column())
             .map_err(PyPolarsErr::from)?;
         Ok(())
     }
@@ -301,7 +311,7 @@ impl PyDataFrame {
     pub fn insert_column(&self, index: usize, column: PySeries) -> PyResult<()> {
         self.df
             .write()
-            .insert_column(index, column.series.into_inner())
+            .insert_column(index, column.series.into_inner().into_column())
             .map_err(PyPolarsErr::from)?;
         Ok(())
     }
@@ -310,7 +320,8 @@ impl PyDataFrame {
     pub fn slice(&self, py: Python<'_>, offset: i64, length: Option<usize>) -> PyResult<Self> {
         py.enter_polars_df(|| {
             let df = self.df.read();
-            Ok(df.slice(offset, length.unwrap_or_else(|| df.height())))
+            let len = length.unwrap_or(usize::MAX);
+            Ok(df.slice(offset, len))
         })
     }
 
@@ -554,7 +565,7 @@ impl PyDataFrame {
         use polars_ffi::version_0::export_column;
 
         let df = self.df.read();
-        let cols = df.get_columns();
+        let cols = df.columns();
 
         let location = location as *mut SeriesExport;
 
@@ -593,16 +604,17 @@ impl PyDataFrame {
             let is_unordered = opts.first().is_some_and(|(_, _, v)| *v);
 
             let ca = if is_unordered {
-                _get_rows_encoded_ca_unordered(name, self.df.read().get_columns())
+                _get_rows_encoded_ca_unordered(name, self.df.read().columns())
             } else {
                 let descending = opts.iter().map(|(v, _, _)| *v).collect::<Vec<_>>();
                 let nulls_last = opts.iter().map(|(_, v, _)| *v).collect::<Vec<_>>();
 
                 _get_rows_encoded_ca(
                     name,
-                    self.df.read().get_columns(),
+                    self.df.read().columns(),
                     descending.as_slice(),
                     nulls_last.as_slice(),
+                    false,
                 )
             }?;
 

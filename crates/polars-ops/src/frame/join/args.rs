@@ -19,6 +19,23 @@ pub type ChunkJoinIds = Vec<IdxSize>;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
+/// Parameters for which side to use as the build side in a join. Currently only
+/// respected by the streaming engine.
+#[derive(Clone, PartialEq, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum JoinBuildSide {
+    /// Unless there's a very good reason to believe that the right side is
+    /// smaller, use the left side.
+    PreferLeft,
+    /// Regardless of other heuristics, use the left side as build side.
+    ForceLeft,
+
+    // Similar to above.
+    PreferRight,
+    ForceRight,
+}
+
 #[derive(Clone, PartialEq, Debug, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -30,6 +47,7 @@ pub struct JoinArgs {
     pub nulls_equal: bool,
     pub coalesce: JoinCoalesce,
     pub maintain_order: MaintainOrderJoin,
+    pub build_side: Option<JoinBuildSide>,
 }
 
 impl JoinArgs {
@@ -128,6 +146,7 @@ impl JoinArgs {
             nulls_equal: false,
             coalesce: Default::default(),
             maintain_order: Default::default(),
+            build_side: None,
         }
     }
 
@@ -138,6 +157,11 @@ impl JoinArgs {
 
     pub fn with_suffix(mut self, suffix: Option<PlSmallStr>) -> Self {
         self.suffix = suffix;
+        self
+    }
+
+    pub fn with_build_side(mut self, build_side: Option<JoinBuildSide>) -> Self {
+        self.build_side = build_side;
         self
     }
 

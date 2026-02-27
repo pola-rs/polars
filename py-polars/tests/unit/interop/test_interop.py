@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -14,12 +14,16 @@ import polars as pl
 from polars.exceptions import (
     ComputeError,
     DuplicateError,
+    InvalidOperationError,
     PanicException,
     UnstableWarning,
 )
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_arrow_list_roundtrip() -> None:
@@ -29,7 +33,7 @@ def test_arrow_list_roundtrip() -> None:
 
     assert arw.shape == tbl.shape
     assert arw.schema.names == tbl.schema.names
-    for c1, c2 in zip(arw.columns, tbl.columns):
+    for c1, c2 in zip(arw.columns, tbl.columns, strict=True):
         assert c1.to_pylist() == c2.to_pylist()
 
 
@@ -44,7 +48,7 @@ def test_arrow_null_roundtrip() -> None:
 
     assert arw.shape == tbl.shape
     assert arw.schema.names == tbl.schema.names
-    for c1, c2 in zip(arw.columns, tbl.columns):
+    for c1, c2 in zip(arw.columns, tbl.columns, strict=True):
         assert c1.to_pylist() == c2.to_pylist()
 
 
@@ -115,7 +119,9 @@ def test_from_dict() -> None:
     data = {"a": [1, 2], "b": [3, 4]}
     df = pl.from_dict(data)
     assert df.shape == (2, 2)
-    for s1, s2 in zip(list(df), [pl.Series("a", [1, 2]), pl.Series("b", [3, 4])]):
+    for s1, s2 in zip(
+        list(df), [pl.Series("a", [1, 2]), pl.Series("b", [3, 4])], strict=True
+    ):
         assert_series_equal(s1, s2)
 
 
@@ -860,9 +866,9 @@ def test_from_numpy_different_resolution_invalid() -> None:
         )
 
 
-def test_compat_level(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_compat_level(plmonkeypatch: PlMonkeyPatch) -> None:
     # change these if compat level bumped
-    monkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
+    plmonkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
     oldest = CompatLevel.oldest()
     assert oldest is CompatLevel.oldest()  # test singleton
     assert oldest._version == 0
@@ -1171,11 +1177,13 @@ def test_pycapsule_stream_interface_all_types() -> None:
     assert_frame_equal(
         df.map_columns(
             pl.selectors.all(),
-            lambda s: pl.Series(
-                PyCapsuleStreamHolder(pl.select(pl.struct(pl.lit(s))).to_series())
-            )
-            .struct.unnest()
-            .to_series(),
+            lambda s: (
+                pl.Series(
+                    PyCapsuleStreamHolder(pl.select(pl.struct(pl.lit(s))).to_series())
+                )
+                .struct.unnest()
+                .to_series()
+            ),
         ),
         df,
     )
@@ -1224,7 +1232,7 @@ def pyarrow_table_to_ipc_bytes(tbl: pa.Table) -> bytes:
 
 
 @pytest.mark.write_disk
-def test_month_day_nano_from_ffi_15969(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_month_day_nano_from_ffi_15969(plmonkeypatch: PlMonkeyPatch) -> None:
     import datetime
 
     def new_interval_scalar(months: int, days: int, nanoseconds: int) -> pa.Scalar:
@@ -1275,7 +1283,7 @@ def test_month_day_nano_from_ffi_15969(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ComputeError, match=import_err_msg):
         pl.Series(pa.array([], type=pa.month_day_nano_interval()))
 
-    monkeypatch.setenv("POLARS_IMPORT_INTERVAL_AS_STRUCT", "1")
+    plmonkeypatch.setenv("POLARS_IMPORT_INTERVAL_AS_STRUCT", "1")
 
     expect = pl.DataFrame(
         [
@@ -1395,3 +1403,43 @@ def test_schema_to_arrow_15563() -> None:
     assert pl.Schema({"x": pl.String}).to_arrow(
         compat_level=CompatLevel.oldest()
     ) == pa.schema([pa.field("x", pa.large_string())])
+
+
+def test_0_width_df_roundtrip() -> None:
+    assert pl.DataFrame(height=(1 << 32) - 1).to_numpy().shape == ((1 << 32) - 1, 0)
+    assert pl.DataFrame(np.zeros((10, 0))).shape == (10, 0)
+
+    arrow_table = pl.DataFrame(height=(1 << 32) - 1).to_arrow()
+    assert arrow_table.shape == ((1 << 32) - 1, 0)
+    assert pl.DataFrame(arrow_table).shape == ((1 << 32) - 1, 0)
+
+    pandas_df = pl.DataFrame(height=(1 << 32) - 1).to_pandas()
+    assert pandas_df.shape == ((1 << 32) - 1, 0)
+    assert pl.DataFrame(pandas_df).shape == ((1 << 32) - 1, 0)
+
+    df = pl.DataFrame(height=5)
+
+    assert pl.DataFrame.deserialize(df.serialize()).shape == (5, 0)
+    assert pl.LazyFrame.deserialize(df.lazy().serialize()).collect().shape == (5, 0)
+
+    for file_format in ["parquet", "ipc", "ndjson"]:
+        f = io.BytesIO()
+        getattr(pl.DataFrame, f"write_{file_format}")(df, f)
+        f.seek(0)
+        assert getattr(pl, f"read_{file_format}")(f).shape == (5, 0)
+
+        f = io.BytesIO()
+        getattr(pl.LazyFrame, f"sink_{file_format}")(df.lazy(), f)
+        f.seek(0)
+        assert getattr(pl, f"scan_{file_format}")(f).collect().shape == (5, 0)
+
+    f = io.BytesIO()
+    pl.LazyFrame().sink_csv(f)
+    v = f.getvalue()
+    assert v == b"\n"
+
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"cannot sink 0-width DataFrame with non-zero height \(1\) to CSV",
+    ):
+        pl.LazyFrame(height=1).sink_csv(io.BytesIO())

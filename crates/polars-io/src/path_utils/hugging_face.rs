@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 
 use polars_error::{PolarsResult, polars_bail, to_compute_err};
-use polars_utils::plpath::PlPath;
+use polars_utils::pl_path::PlRefPath;
 
 use crate::cloud::{
     CloudConfig, CloudOptions, Matcher, USER_AGENT, extract_prefix_expansion,
@@ -219,11 +219,11 @@ impl GetPages<'_> {
 }
 
 pub(super) async fn expand_paths_hf(
-    paths: &[PlPath],
+    paths: &[PlRefPath],
     check_directory_level: bool,
     cloud_options: &Option<CloudOptions>,
     glob: bool,
-) -> PolarsResult<(usize, Vec<PlPath>)> {
+) -> PolarsResult<(usize, Vec<PlRefPath>)> {
     assert!(!paths.is_empty());
 
     let client = reqwest::ClientBuilder::new()
@@ -253,7 +253,7 @@ pub(super) async fn expand_paths_hf(
     };
 
     for (path_idx, path) in paths.iter().enumerate() {
-        let path_parts = &HFPathParts::try_from_uri(path.to_str())?;
+        let path_parts = &HFPathParts::try_from_uri(path.as_str())?;
         let repo_location = &HFRepoLocation::new(
             &path_parts.bucket,
             &path_parts.repository,
@@ -284,7 +284,7 @@ pub(super) async fn expand_paths_hf(
                 == 200
             {
                 hive_idx_tracker.update(0, path_idx)?;
-                out_paths.push(PlPath::from_string(file_uri));
+                out_paths.push(PlRefPath::new(file_uri));
                 continue;
             }
         }
@@ -296,6 +296,8 @@ pub(super) async fn expand_paths_hf(
             uri: Some(uri),
             client,
         };
+
+        let sort_start_idx = out_paths.len();
 
         while let Some(bytes) = gp.next().await {
             let bytes = bytes?;
@@ -312,11 +314,14 @@ pub(super) async fn expand_paths_hf(
                     };
 
                     if matches {
-                        out_paths
-                            .push(PlPath::from_string(repo_location.get_file_uri(&entry.path)));
+                        out_paths.push(PlRefPath::new(repo_location.get_file_uri(&entry.path)));
                     }
                 }
             }
+        }
+
+        if let Some(mut_slice) = out_paths.get_mut(sort_start_idx..) {
+            <[PlRefPath]>::sort_unstable(mut_slice);
         }
     }
 

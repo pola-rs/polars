@@ -3,12 +3,17 @@ from __future__ import annotations
 import copy
 import sys
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.mark.parametrize(
@@ -76,11 +81,11 @@ def test_read_missing_file_path_truncated() -> None:
 
 
 def test_read_missing_file_path_expanded_when_polars_verbose_enabled(
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     content = "lskdfj".join(str(i) for i in range(25))
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     with pytest.raises(
         FileNotFoundError,

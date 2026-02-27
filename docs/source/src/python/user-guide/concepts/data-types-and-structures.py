@@ -40,7 +40,7 @@ print(df.head(3))
 # --8<-- [end:head]
 
 # --8<-- [start:glimpse]
-print(df.glimpse(return_as_string=True))
+print(df.glimpse(return_type="string"))
 # --8<-- [end:glimpse]
 
 # --8<-- [start:tail]

@@ -2,7 +2,7 @@
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter, Write};
-use std::str::FromStr;
+use std::num::IntErrorKind;
 use std::sync::RwLock;
 use std::{fmt, str};
 
@@ -94,20 +94,23 @@ pub fn set_trim_decimal_zeros(trim: Option<bool>) {
     arrow::compute::decimal::set_trim_decimal_zeros(trim)
 }
 
-/// Parses an environment variable value.
-fn parse_env_var<T: FromStr>(name: &str) -> Option<T> {
-    std::env::var(name).ok().and_then(|v| v.parse().ok())
-}
 /// Parses an environment variable value as a limit or set a default.
 ///
 /// Negative values (e.g. -1) are parsed as 'no limit' or [`usize::MAX`].
 fn parse_env_var_limit(name: &str, default: usize) -> usize {
-    parse_env_var(name).map_or(
-        default,
-        |n: i64| {
-            if n < 0 { usize::MAX } else { n as usize }
+    let Ok(v) = std::env::var(name) else {
+        return default;
+    };
+
+    let n = match v.parse::<i64>() {
+        Ok(n) => n,
+        Err(e) => match e.kind() {
+            IntErrorKind::PosOverflow | IntErrorKind::NegOverflow => -1,
+            _ => return default,
         },
-    )
+    };
+
+    if n < 0 { usize::MAX } else { n as usize }
 }
 
 fn get_row_limit() -> usize {
@@ -590,7 +593,7 @@ impl Display for DataFrame {
         {
             let height = self.height();
             assert!(
-                self.columns.iter().all(|s| s.len() == height),
+                self.columns().iter().all(|s| s.len() == height),
                 "The column lengths in the DataFrame are not equal."
             );
 
@@ -666,7 +669,7 @@ impl Display for DataFrame {
 
                     for i in 0..(half + rest) {
                         let row = self
-                            .get_columns()
+                            .columns()
                             .iter()
                             .map(|c| c.str_value(i).unwrap())
                             .collect();
@@ -687,7 +690,7 @@ impl Display for DataFrame {
 
                     for i in (height - half)..height {
                         let row = self
-                            .get_columns()
+                            .columns()
                             .iter()
                             .map(|c| c.str_value(i).unwrap())
                             .collect();
@@ -728,7 +731,7 @@ impl Display for DataFrame {
                     }
                 }
             } else if height > 0 {
-                let dots: Vec<String> = vec![ellipsis; self.columns.len()];
+                let dots: Vec<String> = vec![ellipsis; self.width()];
                 table.add_row(dots);
             }
             let tbl_fallback_width = 100;

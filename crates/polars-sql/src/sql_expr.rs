@@ -4,7 +4,7 @@
 //!
 //! This module defines:
 //! - all Polars SQL keywords [`all_keywords`]
-//! - all of polars SQL functions [`all_functions`]
+//! - all Polars SQL functions [`all_functions`]
 
 use std::fmt::Display;
 use std::ops::Div;
@@ -14,15 +14,14 @@ use polars_lazy::prelude::*;
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::typed_lit;
 use polars_time::Duration;
-use rand::Rng;
-use rand::distr::Alphanumeric;
+use polars_utils::unique_column_name;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
     AccessExpr, BinaryOperator as SQLBinaryOperator, CastFormat, CastKind, DataType as SQLDataType,
     DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident, Interval, Query as Subquery,
-    SelectItem, Subscript, TimezoneInfo, TrimWhereField, TypedString, UnaryOperator,
-    Value as SQLValue, ValueWithSpan,
+    SelectItem, Subscript, TimezoneInfo, TrimWhereField, TypedString,
+    UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -300,29 +299,20 @@ impl SQLExprVisitor<'_> {
         }
         // note: we have to execute subqueries in an isolated scope to prevent
         // propagating any context/arena mutation into the rest of the query
-        let (mut lf, schema) = self
+        let lf = self
             .ctx
             .execute_isolated(|ctx| ctx.execute_query_no_ctes(subquery))?;
 
         if restriction == SubqueryRestriction::SingleColumn {
-            if schema.len() != 1 {
-                polars_bail!(SQLSyntax: "SQL subquery returns more than one column");
-            }
-            let rand_string: String = rand::rng()
-                .sample_iter(&Alphanumeric)
-                .take(16)
-                .map(char::from)
-                .collect();
-
-            let schema_entry = schema.get_at_index(0);
-            if let Some((old_name, _)) = schema_entry {
-                let new_name = String::from(old_name.as_str()) + rand_string.as_str();
-                lf = lf.rename([old_name.to_string()], [new_name.clone()], true);
-                return Ok(Expr::SubPlan(
-                    SpecialEq::new(Arc::new(lf.logical_plan)),
-                    vec![new_name],
-                ));
-            }
+            let new_name = unique_column_name();
+            return Ok(Expr::SubPlan(
+                SpecialEq::new(Arc::new(lf.logical_plan)),
+                // TODO: pass the implode depending on expr.
+                vec![(
+                    new_name.clone(),
+                    first().as_expr().implode().alias(new_name.clone()),
+                )],
+            ));
         };
         polars_bail!(SQLInterface: "subquery type not supported");
     }
@@ -567,27 +557,32 @@ impl SQLExprVisitor<'_> {
             SQLBinaryOperator::Xor => lhs.xor(rhs),  // "x XOR y"
 
             // ----
-            // General operators
+            // Comparison operators
             // ----
-            SQLBinaryOperator::And => lhs.and(rhs),  // "x AND y"
-            SQLBinaryOperator::Divide => lhs / rhs,  // "x / y"
-            SQLBinaryOperator::DuckIntegerDivide => lhs.floor_div(rhs).cast(DataType::Int64),  // "x // y"
             SQLBinaryOperator::Eq => lhs.eq(rhs),  // "x = y"
             SQLBinaryOperator::Gt => lhs.gt(rhs),  // "x > y"
             SQLBinaryOperator::GtEq => lhs.gt_eq(rhs),  // "x >= y"
             SQLBinaryOperator::Lt => lhs.lt(rhs),  // "x < y"
             SQLBinaryOperator::LtEq => lhs.lt_eq(rhs),  // "x <= y"
+            SQLBinaryOperator::NotEq => lhs.eq(rhs).not(),  // "x != y"
+            SQLBinaryOperator::Spaceship => lhs.eq_missing(rhs),  // "x <=> y"
+
+            // ----
+            // Logical operators
+            // ----
+            SQLBinaryOperator::And => lhs.and(rhs),  // "x AND y"
+            SQLBinaryOperator::Or => lhs.or(rhs),  // "x OR y"
+
+            // ----
+            // Mathematical operators
+            // ----
+            SQLBinaryOperator::Divide => lhs / rhs,  // "x / y"
+            SQLBinaryOperator::DuckIntegerDivide => lhs.floor_div(rhs).cast(DataType::Int64),  // "x // y"
             SQLBinaryOperator::Minus => lhs - rhs,  // "x - y"
             SQLBinaryOperator::Modulo => lhs % rhs,  // "x % y"
             SQLBinaryOperator::Multiply => lhs * rhs,  // "x * y"
-            SQLBinaryOperator::NotEq => lhs.eq(rhs).not(),  // "x != y"
-            SQLBinaryOperator::Or => lhs.or(rhs),  // "x OR y"
             SQLBinaryOperator::Plus => lhs + rhs,  // "x + y"
-            SQLBinaryOperator::Spaceship => lhs.eq_missing(rhs),  // "x <=> y"
-            SQLBinaryOperator::StringConcat => {  // "x || y"
-                lhs.cast(DataType::String) + rhs.cast(DataType::String)
-            },
-            SQLBinaryOperator::PGStartsWith => lhs.str().starts_with(rhs),  // "x ^@ y"
+
             // ----
             // Regular expression operators
             // ----
@@ -645,7 +640,14 @@ impl SQLExprVisitor<'_> {
                 self.visit_expr(&expr)?
             },
             // ----
-            // JSON/Struct field access operators
+            // String operators
+            // ----
+            SQLBinaryOperator::PGStartsWith => lhs.str().starts_with(rhs),  // "x ^@ y"
+            SQLBinaryOperator::StringConcat => {  // "x || y"
+                lhs.cast(DataType::String) + rhs.cast(DataType::String)
+            },
+            // ----
+            // Nested (JSON) field access operators
             // ----
             SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow => match rhs {  // "x -> y", "x ->> y"
                 Expr::Literal(lv) if lv.extract_str().is_some() => {
@@ -691,26 +693,29 @@ impl SQLExprVisitor<'_> {
     /// Visit a SQL unary operator.
     ///
     /// e.g. +column or -column
-    fn visit_unary_op(&mut self, op: &UnaryOperator, expr: &SQLExpr) -> PolarsResult<Expr> {
+    fn visit_unary_op(&mut self, op: &SQLUnaryOperator, expr: &SQLExpr) -> PolarsResult<Expr> {
         let expr = self.visit_expr(expr)?;
         Ok(match (op, expr.clone()) {
             // simplify the parse tree by special-casing common unary +/- ops
-            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) => {
+            (SQLUnaryOperator::Plus, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) => {
                 lit(n)
             },
-            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(n)))) => {
-                lit(n)
-            },
-            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) => {
-                lit(-n)
-            },
-            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(n)))) => {
-                lit(-n)
-            },
+            (
+                SQLUnaryOperator::Plus,
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(n))),
+            ) => lit(n),
+            (
+                SQLUnaryOperator::Minus,
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))),
+            ) => lit(-n),
+            (
+                SQLUnaryOperator::Minus,
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(n))),
+            ) => lit(-n),
             // general case
-            (UnaryOperator::Plus, _) => lit(0) + expr,
-            (UnaryOperator::Minus, _) => lit(0) - expr,
-            (UnaryOperator::Not, _) => match &expr {
+            (SQLUnaryOperator::Plus, _) => lit(0) + expr,
+            (SQLUnaryOperator::Minus, _) => lit(0) - expr,
+            (SQLUnaryOperator::Not, _) => match &expr {
                 Expr::Column(name)
                     if self
                         .active_schema
@@ -867,7 +872,8 @@ impl SQLExprVisitor<'_> {
                 if x.len() % 2 != 0 {
                     polars_bail!(SQLSyntax: "hex string literal must have an even number of digits; found '{}'", x)
                 };
-                lit(hex::decode(x.clone()).unwrap())
+                lit(hex::decode(x.clone())
+                    .map_err(|_| polars_err!(SQLSyntax: "invalid hex string literal: '{}'", x))?)
             },
             SQLValue::Null => Expr::Literal(LiteralValue::untyped_null()),
             SQLValue::Number(s, _) => {
@@ -896,7 +902,7 @@ impl SQLExprVisitor<'_> {
     fn visit_any_value(
         &self,
         value: &SQLValue,
-        op: Option<&UnaryOperator>,
+        op: Option<&SQLUnaryOperator>,
     ) -> PolarsResult<AnyValue<'_>> {
         Ok(match value {
             SQLValue::Boolean(b) => AnyValue::Boolean(*b),
@@ -906,14 +912,18 @@ impl SQLExprVisitor<'_> {
                 if x.len() % 2 != 0 {
                     polars_bail!(SQLSyntax: "hex string literal must have an even number of digits; found '{}'", x)
                 };
-                AnyValue::BinaryOwned(hex::decode(x.clone()).unwrap())
+                AnyValue::BinaryOwned(
+                    hex::decode(x.clone()).map_err(
+                        |_| polars_err!(SQLSyntax: "invalid hex string literal: '{}'", x),
+                    )?,
+                )
             },
             SQLValue::Null => AnyValue::Null,
             SQLValue::Number(s, _) => {
                 let negate = match op {
-                    Some(UnaryOperator::Minus) => true,
+                    Some(SQLUnaryOperator::Minus) => true,
                     // no op should be taken as plus.
-                    Some(UnaryOperator::Plus) | None => false,
+                    Some(SQLUnaryOperator::Plus) | None => false,
                     Some(op) => {
                         polars_bail!(SQLInterface: "unary op {:?} not supported for numeric SQL value", op)
                     },
@@ -1082,9 +1092,7 @@ impl SQLExprVisitor<'_> {
         subquery: &Subquery,
         negated: bool,
     ) -> PolarsResult<Expr> {
-        let subquery_result = self
-            .visit_subquery(subquery, SubqueryRestriction::SingleColumn)?
-            .implode();
+        let subquery_result = self.visit_subquery(subquery, SubqueryRestriction::SingleColumn)?;
         let expr = self.visit_expr(expr)?;
         Ok(if negated {
             expr.is_in(subquery_result, false).not()
@@ -1277,7 +1285,7 @@ pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> Pola
             let value = value.to_ascii_lowercase();
             match value.as_str() {
                 "millennium" | "millennia" => &DateTimeField::Millennium,
-                "century" | "centuries" => &DateTimeField::Century,
+                "century" | "centuries" | "c" => &DateTimeField::Century,
                 "decade" | "decades" => &DateTimeField::Decade,
                 "isoyear" => &DateTimeField::Isoyear,
                 "year" | "years" | "y" => &DateTimeField::Year,
@@ -1287,7 +1295,7 @@ pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> Pola
                 "dayofweek" | "dow" => &DateTimeField::DayOfWeek,
                 "isoweek" | "week" | "weeks" => &DateTimeField::IsoWeek,
                 "isodow" => &DateTimeField::Isodow,
-                "day" | "days" | "d" => &DateTimeField::Day,
+                "day" | "days" | "dayofmonth" | "d" => &DateTimeField::Day,
                 "hour" | "hours" | "h" => &DateTimeField::Hour,
                 "minute" | "minutes" | "mins" | "min" | "m" => &DateTimeField::Minute,
                 "second" | "seconds" | "sec" | "secs" | "s" => &DateTimeField::Second,

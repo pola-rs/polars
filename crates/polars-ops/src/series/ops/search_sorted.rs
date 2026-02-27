@@ -99,12 +99,14 @@ pub fn search_sorted(
                 &[s.as_ref().clone().into_column()],
                 &[descending],
                 &[false],
+                false,
             )?;
             let search_values = _get_rows_encoded_ca(
                 "".into(),
                 &[search_values.clone().into_column()],
                 &[descending],
                 &[false],
+                false,
             )?;
             let idx = binary_search_ca(&ca, search_values.iter(), side, false);
             Ok(IdxCa::new_vec(s.name().clone(), idx))

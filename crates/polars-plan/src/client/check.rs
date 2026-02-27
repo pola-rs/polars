@@ -10,7 +10,7 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan, allow_local_scans: bool) -> P
     }
 
     // Check that the plan ends with a sink.
-    if !matches!(dsl, DslPlan::Sink { .. }) {
+    if !matches!(dsl, DslPlan::Sink { .. } | DslPlan::SinkMultiple { .. }) {
         return ineligible_error("does not contain a sink");
     }
 
@@ -22,11 +22,11 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan, allow_local_scans: bool) -> P
                 sources, scan_type, ..
             } => {
                 match sources {
-                    ScanSources::Paths(addrs) => {
+                    ScanSources::Paths(paths) => {
                         if !allow_local_scans
-                            && addrs
+                            && paths
                                 .iter()
-                                .any(|p| !p.is_cloud_url() && p.to_str() != POLARS_PLACEHOLDER)
+                                .any(|p| !p.has_scheme() && p.as_str() != POLARS_PLACEHOLDER)
                         {
                             return ineligible_error("contains scan of local file system");
                         }
@@ -57,9 +57,6 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan, allow_local_scans: bool) -> P
                     },
                 }
             },
-            DslPlan::SinkMultiple { .. } => {
-                return ineligible_error("contains sink multiple");
-            },
             _ => (),
         }
     }
@@ -71,77 +68,4 @@ fn ineligible_error(message: &str) -> PolarsResult<()> {
         InvalidOperation:
         "logical plan ineligible for execution on Polars Cloud: {message}"
     ))
-}
-
-impl DslPlan {
-    fn inputs<'a>(&'a self, scratch: &mut Vec<&'a DslPlan>) {
-        use DslPlan::*;
-        match self {
-            Select { input, .. }
-            | GroupBy { input, .. }
-            | Filter { input, .. }
-            | Distinct { input, .. }
-            | Sort { input, .. }
-            | Slice { input, .. }
-            | HStack { input, .. }
-            | MatchToSchema { input, .. }
-            | MapFunction { input, .. }
-            | Sink { input, .. }
-            | Cache { input, .. } => scratch.push(input),
-            Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
-                scratch.extend(inputs)
-            },
-            PipeWithSchema { input, .. } => scratch.extend(input.iter()),
-            Join {
-                input_left,
-                input_right,
-                ..
-            } => {
-                scratch.push(input_left);
-                scratch.push(input_right);
-            },
-            ExtContext { input, contexts } => {
-                scratch.push(input);
-                scratch.extend(contexts);
-            },
-            IR { dsl, .. } => scratch.push(dsl),
-            Scan { .. } | DataFrameScan { .. } => (),
-            #[cfg(feature = "pivot")]
-            Pivot { input, .. } => scratch.push(input),
-            #[cfg(feature = "python")]
-            PythonScan { .. } => (),
-            #[cfg(feature = "merge_sorted")]
-            MergeSorted {
-                input_left,
-                input_right,
-                ..
-            } => {
-                scratch.push(input_left);
-                scratch.push(input_right);
-            },
-        }
-    }
-}
-
-pub struct DslPlanIter<'a> {
-    stack: Vec<&'a DslPlan>,
-}
-
-impl<'a> Iterator for DslPlanIter<'a> {
-    type Item = &'a DslPlan;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.stack
-            .pop()
-            .inspect(|next| next.inputs(&mut self.stack))
-    }
-}
-
-impl<'a> IntoIterator for &'a DslPlan {
-    type Item = &'a DslPlan;
-    type IntoIter = DslPlanIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        DslPlanIter { stack: vec![self] }
-    }
 }

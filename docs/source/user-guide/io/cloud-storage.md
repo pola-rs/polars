@@ -75,6 +75,12 @@ use for authentication. This can be done in a few ways:
 {{code_block('user-guide/io/cloud-storage','credential_provider_class_global_default',['scan_parquet',
 'CredentialProviderAWS'])}}
 
+## Cloud retry configuration
+
+- Retry behavior such as maximum retries and backoff can be configured via `storage_options`:
+
+{{code_block('user-guide/io/cloud-storage','storage_options_retry_configuration',['scan_parquet'])}}
+
 ## Scanning with PyArrow
 
 We can also scan from cloud storage using PyArrow. This is particularly useful for partitioned

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from functools import partial
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from hypothesis import assume, given
@@ -15,6 +15,8 @@ from polars.testing.parametric import series
 from tests.unit.conftest import FLOAT_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import TimeUnit
 
 
@@ -349,9 +351,38 @@ def test_duration_total_units_fractional(
     s: pl.Series,
 ) -> None:
     expected = s.cast(pl.Float64) * time_unit_scale / total_units_scale
+
     actual = total_units_fn(
         pl.select(pl.duration(**{time_unit_kw: s}, time_unit=time_unit).alias("a"))  # type: ignore[arg-type]
         .to_series()
         .dt,
     )
     assert_series_equal(actual, expected)
+
+    # Check scalar case separately, since it's handled separately
+    actual = total_units_fn(
+        pl.select(pl.duration(**{time_unit_kw: s[0]}, time_unit=time_unit).alias("a"))  # type: ignore[arg-type]
+        .to_series()
+        .dt,
+    )
+    assert_series_equal(actual, expected.slice(0, 1))
+
+
+def test_scalar_i64_overflow() -> None:
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="9223372036854775808",
+    ):
+        pl.select(pl.duration(nanoseconds=2**63))
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="18446744073709551616",
+    ):
+        pl.select(pl.duration(nanoseconds=2**64))
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="-9223372036854775809",
+    ):
+        pl.select(pl.duration(nanoseconds=-(2**63) - 1))

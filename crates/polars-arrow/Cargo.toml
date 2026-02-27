@@ -15,6 +15,7 @@ description = "Minimal implementation of the Arrow specification forked from arr
 [dependencies]
 bitflags = { workspace = true }
 bytemuck = { workspace = true, features = ["must_cast"] }
+bytes = { workspace = true }
 chrono = { workspace = true }
 # for timezone support
 chrono-tz = { workspace = true, optional = true }
@@ -23,6 +24,7 @@ either = { workspace = true }
 half = { workspace = true, optional = false, features = ["num-traits", "bytemuck"] }
 hashbrown = { workspace = true }
 num-traits = { workspace = true }
+polars-buffer = { workspace = true }
 polars-error = { workspace = true }
 polars-schema = { workspace = true }
 polars-utils = { workspace = true }
@@ -102,20 +104,22 @@ compute_aggregate = []
 compute_arithmetics_decimal = []
 compute_arithmetics = ["compute_arithmetics_decimal"]
 compute_bitwise = []
-compute_boolean = []
-compute_boolean_kleene = []
-compute_comparison = ["compute_boolean"]
+compute_comparison = []
 compute_temporal = []
 compute = [
   "compute_aggregate",
   "compute_arithmetics",
   "compute_bitwise",
-  "compute_boolean",
-  "compute_boolean_kleene",
   "compute_comparison",
   "compute_temporal",
 ]
-serde = ["dep:serde", "polars-schema/serde", "polars-utils/serde", "half/serde"]
+serde = [
+  "dep:serde",
+  "polars-buffer/serde",
+  "polars-schema/serde",
+  "polars-utils/serde",
+  "half/serde",
+]
 dsl-schema = ["dep:schemars", "polars-schema/dsl-schema", "polars-utils/dsl-schema"]
 simd = []
 

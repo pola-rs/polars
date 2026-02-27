@@ -11,7 +11,7 @@ use polars_core::prelude::{PolarsError, PolarsResult, polars_bail};
 #[cfg(feature = "csv")]
 use polars_lazy::prelude::LazyCsvReader;
 use polars_lazy::prelude::LazyFrame;
-use polars_utils::plpath::PlPath;
+use polars_utils::pl_path::PlRefPath;
 use sqlparser::ast::{
     Expr as SQLExpr, FunctionArg as SQLFunctionArg, FunctionArgExpr as SQLFunctionArgExpr,
     Value as SQLValue, ValueWithSpan as SQLValueWithSpan,
@@ -67,7 +67,7 @@ impl FromStr for PolarsTableFunctions {
 
 impl PolarsTableFunctions {
     #[allow(unused_variables, unreachable_patterns)]
-    pub(crate) fn execute(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlPath, LazyFrame)> {
+    pub(crate) fn execute(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlRefPath, LazyFrame)> {
         match self {
             #[cfg(feature = "csv")]
             PolarsTableFunctions::ReadCsv => self.read_csv(args),
@@ -82,7 +82,7 @@ impl PolarsTableFunctions {
     }
 
     #[cfg(feature = "csv")]
-    fn read_csv(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlPath, LazyFrame)> {
+    fn read_csv(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlRefPath, LazyFrame)> {
         polars_ensure!(args.len() == 1, SQLSyntax: "`read_csv` expects a single file path; found {:?} arguments", args.len());
 
         use polars_lazy::frame::LazyFileListReader;
@@ -95,7 +95,7 @@ impl PolarsTableFunctions {
     }
 
     #[cfg(feature = "parquet")]
-    fn read_parquet(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlPath, LazyFrame)> {
+    fn read_parquet(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlRefPath, LazyFrame)> {
         polars_ensure!(args.len() == 1, SQLSyntax: "`read_parquet` expects a single file path; found {:?} arguments", args.len());
 
         let path = self.get_file_path_from_arg(&args[0])?;
@@ -104,7 +104,7 @@ impl PolarsTableFunctions {
     }
 
     #[cfg(feature = "ipc")]
-    fn read_ipc(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlPath, LazyFrame)> {
+    fn read_ipc(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlRefPath, LazyFrame)> {
         polars_ensure!(args.len() == 1, SQLSyntax: "`read_ipc` expects a single file path; found {:?} arguments", args.len());
 
         let path = self.get_file_path_from_arg(&args[0])?;
@@ -112,7 +112,7 @@ impl PolarsTableFunctions {
         Ok((path, lf))
     }
     #[cfg(feature = "json")]
-    fn read_ndjson(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlPath, LazyFrame)> {
+    fn read_ndjson(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlRefPath, LazyFrame)> {
         polars_ensure!(args.len() == 1, SQLSyntax: "`read_ndjson` expects a single file path; found {:?} arguments", args.len());
 
         use polars_lazy::frame::LazyFileListReader;
@@ -124,14 +124,14 @@ impl PolarsTableFunctions {
     }
 
     #[allow(dead_code)]
-    fn get_file_path_from_arg(&self, arg: &SQLFunctionArg) -> PolarsResult<PlPath> {
+    fn get_file_path_from_arg(&self, arg: &SQLFunctionArg) -> PolarsResult<PlRefPath> {
         match arg {
             SQLFunctionArg::Unnamed(SQLFunctionArgExpr::Expr(SQLExpr::Value(
                 SQLValueWithSpan {
                     value: SQLValue::SingleQuotedString(s),
                     ..
                 },
-            ))) => Ok(PlPath::from_str(s)),
+            ))) => Ok(PlRefPath::new(s)),
             _ => polars_bail!(
                 SQLSyntax:
                 "expected a valid file path as a single-quoted string; found: {}", arg,

@@ -7,8 +7,6 @@ from typing import (
     Any,
     ForwardRef,
     NamedTuple,
-    Optional,
-    Union,
 )
 
 import pytest
@@ -121,9 +119,9 @@ def test_parse_forward_ref_into_dtype(input: Any, expected: PolarsDataType) -> N
 @pytest.mark.parametrize(
     ("input", "expected"),
     [
-        (Optional[int], pl.Int64()),
-        (Optional[pl.String], pl.String),
-        (Union[float, None], pl.Float64()),
+        (int | None, pl.Int64()),
+        (pl.String | None, pl.String),
+        (float | None, pl.Float64()),
     ],
 )
 def test_parse_union_type_into_dtype(input: Any, expected: PolarsDataType) -> None:
@@ -134,8 +132,8 @@ def test_parse_union_type_into_dtype(input: Any, expected: PolarsDataType) -> No
 @pytest.mark.parametrize(
     "input",
     [
-        Union[int, float],
-        Optional[Union[int, str]],
+        int | float,
+        int | str | None,
     ],
 )
 def test_parse_union_type_into_dtype_invalid(input: Any) -> None:

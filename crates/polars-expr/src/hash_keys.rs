@@ -115,7 +115,7 @@ impl HashKeys {
             || df.width() > 1
             || first_col_variant == HashKeysVariant::RowEncoded;
         if use_row_encoding {
-            let keys = df.get_columns();
+            let keys = df.columns();
             let mut keys_encoded = _get_rows_encoded_unordered(keys).unwrap().into_array();
 
             if !null_is_valid {
@@ -129,7 +129,7 @@ impl HashKeys {
 
             // TODO: use vechash? Not supported yet for lists.
             // let mut hashes = Vec::with_capacity(df.height());
-            // columns_to_hashes(df.get_columns(), Some(random_state), &mut hashes).unwrap();
+            // columns_to_hashes(df.columns(), Some(random_state), &mut hashes).unwrap();
 
             let hashes = keys_encoded
                 .values_iter()

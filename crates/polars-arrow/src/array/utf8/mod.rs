@@ -1,4 +1,5 @@
 use either::Either;
+use polars_buffer::Buffer;
 
 use super::specification::try_check_utf8;
 use super::{Array, GenericBinaryArray, Splitable};
@@ -6,7 +7,6 @@ use crate::array::BinaryArray;
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::Bitmap;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 use crate::trusted_len::TrustedLen;
@@ -36,7 +36,7 @@ impl<T: AsRef<str>> AsRef<[u8]> for StrAsBytes<T> {
 /// # Example
 /// ```
 /// use polars_arrow::bitmap::Bitmap;
-/// use polars_arrow::buffer::Buffer;
+/// use polars_buffer::Buffer;
 /// use polars_arrow::array::Utf8Array;
 /// # fn main() {
 /// let array = Utf8Array::<i32>::from([Some("hi"), None, Some("there")]);

@@ -1,6 +1,6 @@
 use arrow::array::{BinaryArray, PrimitiveArray};
-use arrow::buffer::Buffer;
 use arrow::offset::{Offsets, OffsetsBuffer};
+use polars_buffer::Buffer;
 use polars_utils::vec::PushUnchecked;
 
 use super::*;

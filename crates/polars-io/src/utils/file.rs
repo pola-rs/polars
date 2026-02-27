@@ -1,19 +1,23 @@
 use std::io;
+#[cfg(feature = "cloud")]
+use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 #[cfg(feature = "cloud")]
-pub use async_writeable::AsyncWriteable;
-use polars_core::config;
-use polars_error::{PolarsError, PolarsResult, feature_gated};
+pub use async_writeable::{AsyncDynWriteable, AsyncWriteable};
+use polars_error::{PolarsResult, feature_gated, polars_err};
 use polars_utils::create_file;
 use polars_utils::file::close_file;
 use polars_utils::mmap::ensure_not_mapped;
-use polars_utils::plpath::PlPathRef;
+use polars_utils::pl_path::{PlRefPath, format_file_uri};
 
 use super::sync_on_close::SyncOnCloseType;
 use crate::cloud::CloudOptions;
+use crate::metrics::IOMetrics;
 use crate::resolve_homedir;
 
+// TODO document precise contract.
 pub trait WriteableTrait: std::io::Write {
     fn close(&mut self) -> std::io::Result<()>;
     fn sync_all(&self) -> std::io::Result<()>;
@@ -33,65 +37,62 @@ pub enum Writeable {
     Dyn(Box<dyn WriteableTrait + Send>),
     Local(std::fs::File),
     #[cfg(feature = "cloud")]
-    Cloud(crate::cloud::BlockingCloudWriter),
+    Cloud(crate::cloud::cloud_writer::CloudWriterIoTraitWrap),
 }
 
 impl Writeable {
     pub fn try_new(
-        path: PlPathRef<'_>,
-        #[cfg_attr(not(feature = "cloud"), allow(unused))] cloud_options: Option<&CloudOptions>,
-        #[cfg_attr(not(feature = "cloud"), allow(unused))] cloud_upload_chunk_size: usize,
+        path: PlRefPath,
+        #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_options: Option<&CloudOptions>,
+        #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_upload_chunk_size: usize,
+        #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_upload_concurrency: usize,
+        io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<Self> {
-        match path {
-            PlPathRef::Cloud(_) => {
-                feature_gated!("cloud", {
-                    use crate::cloud::BlockingCloudWriter;
+        Ok(if path.has_scheme() {
+            feature_gated!("cloud", {
+                use crate::cloud::cloud_writer::CloudWriterIoTraitWrap;
+                use crate::pl_async::get_runtime;
 
-                    let writer = crate::pl_async::get_runtime().block_in_place_on(
-                        BlockingCloudWriter::new(path, cloud_options, cloud_upload_chunk_size),
-                    )?;
+                let writer = get_runtime().block_in_place_on(new_cloud_writer(
+                    path,
+                    cloud_options,
+                    cloud_upload_chunk_size,
+                    cloud_upload_concurrency.try_into().unwrap(),
+                    io_metrics,
+                ))?;
 
-                    Ok(Self::Cloud(writer))
-                })
-            },
-            PlPathRef::Local(path) if config::force_async() => {
-                feature_gated!("cloud", {
-                    use crate::cloud::BlockingCloudWriter;
-
-                    let path = resolve_homedir(&path);
-
-                    create_file(&path)?;
-                    let path = std::fs::canonicalize(&path)?;
-
-                    ensure_not_mapped(&path.metadata()?)?;
-
-                    let path = format!(
-                        "file://{}",
-                        if cfg!(target_family = "windows") {
-                            path.to_str().unwrap().strip_prefix(r#"\\?\"#).unwrap()
-                        } else {
-                            path.to_str().unwrap()
-                        }
-                    );
-
-                    let writer = crate::pl_async::get_runtime().block_in_place_on(
-                        BlockingCloudWriter::new(
-                            PlPathRef::new(&path),
-                            cloud_options,
-                            cloud_upload_chunk_size,
-                        ),
-                    )?;
-
-                    Ok(Self::Cloud(writer))
-                })
-            },
-            PlPathRef::Local(path) => {
-                let path = resolve_homedir(&path);
+                Self::Cloud(CloudWriterIoTraitWrap::from(writer))
+            })
+        } else if polars_config::config().force_async() {
+            feature_gated!("cloud", {
+                let path = resolve_homedir(path.as_std_path());
                 create_file(&path)?;
+                let path = std::fs::canonicalize(&path)?;
 
-                Ok(Self::Local(polars_utils::open_file_write(&path)?))
-            },
-        }
+                ensure_not_mapped(&path.metadata()?)?;
+
+                let path = path.to_str().ok_or_else(|| polars_err!(non_utf8_path))?;
+                let path = format_file_uri(path);
+
+                use crate::cloud::cloud_writer::CloudWriterIoTraitWrap;
+                use crate::pl_async::get_runtime;
+
+                let writer = get_runtime().block_in_place_on(new_cloud_writer(
+                    path,
+                    cloud_options,
+                    cloud_upload_chunk_size,
+                    cloud_upload_concurrency.try_into().unwrap(),
+                    io_metrics,
+                ))?;
+
+                Self::Cloud(CloudWriterIoTraitWrap::from(writer))
+            })
+        } else {
+            let path = resolve_homedir(path.as_std_path());
+            create_file(&path)?;
+
+            Self::Local(polars_utils::open_file_write(&path)?)
+        })
     }
 
     /// This returns `Result<>` - if a write was performed before calling this,
@@ -103,12 +104,7 @@ impl Writeable {
         match self {
             Self::Dyn(v) => Ok(AsyncWriteable::Dyn(AsyncDynWriteable(v))),
             Self::Local(v) => Ok(AsyncWriteable::Local(tokio::fs::File::from_std(v))),
-            // Moves the `BufWriter` out of the `BlockingCloudWriter` wrapper, as
-            // `BlockingCloudWriter` has a `Drop` impl that we don't want.
-            Self::Cloud(v) => v
-                .try_into_inner()
-                .map(AsyncWriteable::Cloud)
-                .map_err(PolarsError::from),
+            Self::Cloud(v) => Ok(AsyncWriteable::Cloud(v)),
         }
     }
 
@@ -152,6 +148,21 @@ impl Writeable {
             #[cfg(feature = "cloud")]
             Self::Cloud(mut v) => v.close(),
         }
+    }
+}
+
+impl io::Write for Writeable {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            Self::Dyn(v) => v.write(buf),
+            Self::Local(v) => v.write(buf),
+            #[cfg(feature = "cloud")]
+            Self::Cloud(v) => v.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.sync_all()
     }
 }
 
@@ -204,21 +215,52 @@ impl DerefMut for BufferedWriteable<'_> {
         }
     }
 }
+
+#[cfg(feature = "cloud")]
+async fn new_cloud_writer(
+    path: PlRefPath,
+    cloud_options: Option<&CloudOptions>,
+    cloud_upload_chunk_size: usize,
+    cloud_upload_concurrency: NonZeroUsize,
+    io_metrics: Option<Arc<IOMetrics>>,
+) -> PolarsResult<crate::cloud::cloud_writer::CloudWriter> {
+    use crate::cloud::cloud_writer::CloudWriter;
+    use crate::cloud::object_path_from_str;
+
+    let (cloud_location, object_store) =
+        crate::cloud::build_object_store(path, cloud_options, false).await?;
+
+    let mut writer = CloudWriter::new(
+        object_store,
+        object_path_from_str(&cloud_location.prefix)?,
+        cloud_upload_chunk_size,
+        cloud_upload_concurrency,
+        io_metrics,
+    );
+
+    writer.start().await?;
+
+    Ok(writer)
+}
+
 #[cfg(feature = "cloud")]
 mod async_writeable {
     use std::io;
     use std::ops::{Deref, DerefMut};
     use std::pin::Pin;
+    use std::sync::Arc;
     use std::task::{Context, Poll};
 
+    use bytes::Bytes;
     use polars_error::{PolarsError, PolarsResult};
     use polars_utils::file::close_file;
-    use polars_utils::plpath::PlPathRef;
+    use polars_utils::pl_path::PlRefPath;
     use tokio::io::AsyncWriteExt;
     use tokio::task;
 
     use super::{Writeable, WriteableTrait};
     use crate::cloud::CloudOptions;
+    use crate::metrics::IOMetrics;
     use crate::utils::sync_on_close::SyncOnCloseType;
 
     /// Turn an abstract io::Write into an abstract tokio::io::AsyncWrite.
@@ -253,18 +295,39 @@ mod async_writeable {
     pub enum AsyncWriteable {
         Dyn(AsyncDynWriteable),
         Local(tokio::fs::File),
-        Cloud(object_store::buffered::BufWriter),
+        Cloud(crate::cloud::cloud_writer::CloudWriterIoTraitWrap),
     }
 
     impl AsyncWriteable {
         pub async fn try_new(
-            path: PlPathRef<'_>,
+            path: PlRefPath,
             cloud_options: Option<&CloudOptions>,
             cloud_upload_chunk_size: usize,
+            cloud_upload_concurrency: usize,
+            io_metrics: Option<Arc<IOMetrics>>,
         ) -> PolarsResult<Self> {
             // TODO: Native async impl
-            Writeable::try_new(path, cloud_options, cloud_upload_chunk_size)
-                .and_then(|x| x.try_into_async_writeable())
+            Writeable::try_new(
+                path,
+                cloud_options,
+                cloud_upload_chunk_size,
+                cloud_upload_concurrency,
+                io_metrics,
+            )
+            .and_then(|x| x.try_into_async_writeable())
+        }
+
+        /// If this writer holds a cloud writer, it will `mem::take(T)`. `T` is unmodified for other
+        /// writer types.
+        pub async fn write_all_owned<T>(&mut self, src: &mut T) -> io::Result<()>
+        where
+            T: AsRef<[u8]> + Default + Drop, // `Drop` is to exclude `&[u8]` slices.
+            Bytes: From<T>,
+        {
+            match self {
+                Self::Cloud(v) => v.write_all_owned(Bytes::from(std::mem::take(src))).await,
+                Self::Dyn(_) | Self::Local(_) => self.write_all(src.as_ref()).await,
+            }
         }
 
         pub async fn sync_all(&mut self) -> io::Result<()> {

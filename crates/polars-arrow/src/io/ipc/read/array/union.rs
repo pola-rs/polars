@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
 use polars_error::{PolarsResult, polars_err};
+use polars_utils::bool::UnsafeBool;
 
 use super::super::super::IpcField;
 use super::super::deserialize::{read, skip};
@@ -26,6 +27,7 @@ pub fn read_union<R: Read + Seek>(
     limit: Option<usize>,
     version: Version,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<UnionArray> {
     let field_node = try_get_field_node(field_nodes, &dtype)?;
 
@@ -85,6 +87,7 @@ pub fn read_union<R: Read + Seek>(
                 None,
                 version,
                 scratch,
+                checked,
             )
         })
         .collect::<PolarsResult<Vec<_>>>()?;

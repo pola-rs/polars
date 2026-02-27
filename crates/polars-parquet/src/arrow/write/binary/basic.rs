@@ -34,8 +34,8 @@ pub(crate) fn encode_plain<O: Offset>(
             array.get_values_size() + (array.len() - array.null_count()) * size_of::<u32>();
         buffer.reserve(capacity);
         encode_non_null_values(array.non_null_values_iter(), buffer);
-        // Ensure we allocated properly.
-        debug_assert_eq!(buffer.len() - len_before, capacity);
+        // Assert <= as reserve size may include masked out values.
+        debug_assert!(buffer.len() - len_before <= capacity);
     } else {
         let len_before = buffer.len();
         let capacity = array.get_values_size() + array.len() * size_of::<u32>();
@@ -153,11 +153,4 @@ pub(crate) fn encode_delta<O: Offset>(
     buffer.extend_from_slice(
         &values[offsets.first().unwrap().to_usize()..offsets.last().unwrap().to_usize()],
     )
-}
-
-/// Returns the ordering of two binary values. This corresponds to pyarrows' ordering
-/// of statistics.
-#[inline(always)]
-pub(crate) fn ord_binary<'a>(a: &'a [u8], b: &'a [u8]) -> std::cmp::Ordering {
-    a.cmp(b)
 }

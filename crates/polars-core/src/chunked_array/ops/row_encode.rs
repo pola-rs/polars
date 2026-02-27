@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use arrow::compute::utils::combine_validities_and_many;
 use polars_row::{RowEncodingContext, RowEncodingOptions, RowsEncoded, convert_columns};
+use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::POOL;
@@ -226,17 +227,36 @@ pub fn _get_rows_encoded_ca(
     by: &[Column],
     descending: &[bool],
     nulls_last: &[bool],
+    broadcast_nulls: bool,
 ) -> PolarsResult<BinaryOffsetChunked> {
-    _get_rows_encoded(by, descending, nulls_last)
-        .map(|rows| BinaryOffsetChunked::with_chunk(name, rows.into_array()))
+    let mut rows_arr = _get_rows_encoded(by, descending, nulls_last)?.into_array();
+    if broadcast_nulls {
+        let validities = by
+            .iter()
+            .map(|c| c.as_materialized_series().rechunk_validity())
+            .collect_vec();
+        let combined = combine_validities_and_many(&validities);
+        rows_arr.set_validity(combined);
+    }
+    Ok(BinaryOffsetChunked::with_chunk(name, rows_arr))
 }
 
 pub fn _get_rows_encoded_arr(
     by: &[Column],
     descending: &[bool],
     nulls_last: &[bool],
+    broadcast_nulls: bool,
 ) -> PolarsResult<BinaryArray<i64>> {
-    _get_rows_encoded(by, descending, nulls_last).map(|rows| rows.into_array())
+    let mut rows_arr = _get_rows_encoded(by, descending, nulls_last)?.into_array();
+    if broadcast_nulls {
+        let validities = by
+            .iter()
+            .map(|c| c.as_materialized_series().rechunk_validity())
+            .collect_vec();
+        let combined = combine_validities_and_many(&validities);
+        rows_arr.set_validity(combined);
+    }
+    Ok(rows_arr)
 }
 
 pub fn _get_rows_encoded_ca_unordered(

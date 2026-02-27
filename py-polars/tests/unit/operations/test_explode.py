@@ -22,7 +22,9 @@ def test_explode_multiple() -> None:
 
 def test_group_by_flatten_list() -> None:
     df = pl.DataFrame({"group": ["a", "b", "b"], "values": [[1, 2], [2, 3], [4]]})
-    result = df.group_by("group", maintain_order=True).agg(pl.col("values").flatten())
+    result = df.group_by("group", maintain_order=True).agg(
+        pl.col("values").list.explode(keep_nulls=False, empty_as_null=False)
+    )
 
     expected = pl.DataFrame({"group": ["a", "b"], "values": [[1, 2], [2, 3, 4]]})
     assert_frame_equal(result, expected)
@@ -135,7 +137,7 @@ def test_explode_in_agg_context(maintain_order: bool) -> None:
         df.with_row_index()
         .explode("idxs")
         .group_by("index", maintain_order=maintain_order)
-        .agg(pl.col("array").flatten()),
+        .agg(pl.col("array").list.explode(keep_nulls=False, empty_as_null=False)),
         pl.DataFrame(
             {
                 "index": [0, 1, 2],

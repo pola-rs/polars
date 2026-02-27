@@ -67,7 +67,7 @@ impl ToDummies for Series {
             })
             .collect::<Vec<_>>();
 
-        DataFrame::new(sort_columns(columns))
+        DataFrame::new_infer_height(sort_columns(columns))
     }
 }
 

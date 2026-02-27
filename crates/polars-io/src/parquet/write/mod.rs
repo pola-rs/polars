@@ -7,9 +7,6 @@ mod writer;
 
 pub use batched_writer::BatchedWriter;
 pub use key_value_metadata::{KeyValueMetadata, ParquetMetadataContext};
-pub use options::{
-    ChildFieldOverwrites, MetadataKeyValue, ParquetCompression, ParquetFieldOverwrites,
-    ParquetWriteOptions,
-};
+pub use options::{ParquetCompression, ParquetWriteOptions};
 pub use polars_parquet::write::{RowGroupIterColumns, StatisticsOptions};
-pub use writer::{ParquetWriter, get_column_write_options};
+pub use writer::{ParquetWriter, get_encodings};

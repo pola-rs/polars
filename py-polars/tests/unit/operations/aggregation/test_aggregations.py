@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -13,6 +13,9 @@ from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from typing import Any
+
     import numpy.typing as npt
 
     from polars._typing import PolarsDataType, TimeUnit
@@ -24,6 +27,15 @@ def test_quantile_expr_input() -> None:
     assert_frame_equal(
         df.select([pl.col("a").quantile(pl.col("b").sum() + 0.1)]),
         df.select(pl.col("a").quantile(0.6)),
+    )
+
+    df = pl.DataFrame({"x": [1, 2, 3, 4], "y": [0.25, 0.3, 0.4, 0.75]})
+
+    assert_frame_equal(
+        df.select(
+            pl.col.x.quantile(pl.concat_list(pl.col.y.min(), pl.col.y.max().first()))
+        ),
+        df.select(pl.col.x.quantile([0.25, 0.75])),
     )
 
 
@@ -107,6 +119,23 @@ def test_quantile() -> None:
     assert s.quantile(0.5, "nearest") == 2
     assert s.quantile(0.5, "lower") == 2
     assert s.quantile(0.5, "higher") == 2
+    assert s.quantile([0.25, 0.75], "linear") == [1.5, 2.5]
+
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0]})
+    expected = pl.DataFrame({"a": [[2.0]]})
+    assert_frame_equal(
+        df.select(pl.col("a").quantile([0.5], interpolation="linear")), expected
+    )
+
+
+def test_quantile_error_checking() -> None:
+    s = pl.Series([1, 2, 3])
+    with pytest.raises(pl.exceptions.ComputeError):
+        s.quantile(-0.1)
+    with pytest.raises(pl.exceptions.ComputeError):
+        s.quantile(1.1)
+    with pytest.raises(pl.exceptions.ComputeError):
+        s.quantile([0.0, 1.2])
 
 
 def test_quantile_date() -> None:
@@ -293,6 +322,16 @@ def test_quantile_vs_numpy(tp: type, n: int) -> None:
             pl.Series(a).quantile(q, interpolation="linear"),  # type: ignore[arg-type]
             np_result,  # type: ignore[arg-type]
         )
+
+    df = pl.DataFrame({"a": a})
+
+    expected = df.select(
+        pl.col.a.quantile(0.25).alias("low"), pl.col.a.quantile(0.75).alias("high")
+    ).select(pl.concat_list(["low", "high"]).alias("quantiles"))
+
+    result = df.select(pl.col.a.quantile([0.25, 0.75]).alias("quantiles"))
+
+    assert_frame_equal(expected, result)
 
 
 def test_mean_overflow() -> None:
@@ -1282,3 +1321,162 @@ def test_sum_inf_not_nan_25849() -> None:
     data = [10.0, None, 10.0, 10.0, 10.0, 10.0, float("inf"), 10.0, 10.0]
     df = pl.DataFrame({"x": data, "g": ["X"] * len(data)})
     assert df.group_by("g").agg(pl.col("x").sum())["x"].item() == float("inf")
+
+
+COLS = ["flt", "dec", "int", "str", "cat", "enum", "date", "dt"]
+
+
+@pytest.mark.parametrize(
+    "agg_funcs", [(pl.Expr.min_by, pl.Expr.min), (pl.Expr.max_by, pl.Expr.max)]
+)
+@pytest.mark.parametrize("by_col", COLS)
+def test_min_max_by(agg_funcs: Any, by_col: str) -> None:
+    agg_by, agg = agg_funcs
+    df = pl.DataFrame(
+        {
+            "flt": [3.0, 2.0, float("nan"), 5.0, None, 4.0],
+            "dec": [3, 2, None, 5, None, 4],
+            "int": [3, 2, None, 5, None, 4],
+            "str": ["c", "b", None, "e", None, "d"],
+            "cat": ["c", "b", None, "e", None, "d"],
+            "enum": ["c", "b", None, "e", None, "d"],
+            "date": [
+                date(2023, 3, 3),
+                date(2023, 2, 2),
+                None,
+                date(2023, 5, 5),
+                None,
+                date(2023, 4, 4),
+            ],
+            "dt": [
+                datetime(2023, 3, 3),
+                datetime(2023, 2, 2),
+                None,
+                datetime(2023, 5, 5),
+                None,
+                datetime(2023, 4, 4),
+            ],
+            "g": [1, 1, 1, 2, 2, 2],
+        },
+        schema_overrides={
+            "dec": pl.Decimal(scale=5),
+            "cat": pl.Categorical,
+            "enum": pl.Enum(["a", "b", "c", "d", "e", "f"]),
+        },
+    )
+
+    result = df.select([agg_by(pl.col(c), pl.col(by_col)) for c in COLS])
+    expected = df.select([agg(pl.col(c)) for c in COLS])
+    assert_frame_equal(result, expected)
+
+    # TODO: remove after https://github.com/pola-rs/polars/issues/25906.
+    if by_col != "cat":
+        df = df.drop("cat")
+        cols = [c for c in COLS if c != "cat"]
+
+        result = df.group_by("g").agg([agg_by(pl.col(c), pl.col(by_col)) for c in cols])
+        expected = df.group_by("g").agg([agg(pl.col(c)) for c in cols])
+        assert_frame_equal(result, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(("agg", "expected"), [("max", 2), ("min", 0)])
+def test_grouped_minmax_after_reverse_on_sorted_column_26141(
+    agg: str, expected: int
+) -> None:
+    df = pl.DataFrame({"a": [0, 1, 2]}).sort("a")
+
+    expr = getattr(pl.col("a").reverse(), agg)()
+    out = df.group_by(1).agg(expr)
+
+    expected_df = pl.DataFrame(
+        {
+            "literal": pl.Series([1], dtype=pl.Int32),
+            "a": [expected],
+        }
+    )
+    assert_frame_equal(out, expected_df)
+
+
+@pytest.mark.may_fail_auto_streaming
+@pytest.mark.parametrize("agg_by", [pl.Expr.min_by, pl.Expr.max_by])
+def test_min_max_by_series_length_mismatch_26049(
+    agg_by: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [0, 10, 20, 30, 40, 50, 60, 70, 80, 90],
+            "b": [18, 5, 8, 8, 4, 5, 6, 8, 1, -10],
+            "group": ["A", "A", "A", "A", "A", "B", "B", "C", "C", "C"],
+        }
+    )
+
+    q = lf.with_columns(
+        agg_by(pl.col("group").filter(pl.col("b") % 2 == 0), pl.col("a"))
+    )
+
+    with pytest.raises(
+        pl.exceptions.ShapeError,
+        match=r"^'by' column in (min|max)_by expression has incorrect length: expected \d+, got \d+$",
+    ):
+        q.collect(engine="in-memory")
+    with pytest.raises(
+        pl.exceptions.ShapeError,
+        match=r"^zip node received non-equal length inputs$",
+    ):
+        q.collect(engine="streaming")
+
+    actual = (
+        lf.group_by("group")
+        .agg(
+            pl.col("a")
+            .max_by(pl.col("b").filter(pl.col("b") < 20).abs())
+            .alias("max_by")
+        )
+        .sort("group")
+    ).collect()
+    expected = pl.DataFrame(
+        {
+            "group": ["A", "B", "C"],
+            "max_by": [0, 60, 90],
+        }
+    )
+    assert_frame_equal(actual, expected)
+
+    q = (
+        lf.group_by("group")
+        .agg(
+            pl.col("a")
+            .max_by(pl.col("b").filter(pl.col("b") < 7).abs())
+            .alias("group_length_mismatch")
+        )
+        .sort("group")
+    )
+    with pytest.raises(
+        pl.exceptions.ShapeError,
+        match=r"^expressions must have matching group lengths$",
+    ):
+        q.collect(engine="in-memory")
+
+
+@pytest.mark.parametrize(
+    "by_expr",
+    [
+        pl.struct("b", "c"),
+        pl.concat_list("b", "c"),
+    ],
+)
+def test_min_by_max_by_nested_type_key_26268(by_expr: pl.Expr) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 6, 5], "c": [7, 5, 2]})
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="cannot use a nested type as `by` argument in `min_by`/`max_by`",
+    ):
+        df.select(pl.col("a").min_by(by_expr))
+
+
+def test_max_by_scalar_26548() -> None:
+    df = pl.DataFrame({"x": 1, "y": 2, "g": 3})
+    out = df.select(pl.col.x.max_by("y").over("g"))
+    expected = pl.DataFrame({"x": 1})
+    assert_frame_equal(out, expected)

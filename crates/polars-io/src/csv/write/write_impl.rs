@@ -154,7 +154,7 @@ impl CsvSerializer {
         let options = options.as_ref();
 
         let mut serializers_vec = reuse_vec(std::mem::take(&mut self.serializers));
-        let serializers = self.build_serializers(df.get_columns(), &mut serializers_vec)?;
+        let serializers = self.build_serializers(df.columns(), &mut serializers_vec)?;
 
         for _ in 0..df.height() {
             serializers[0].serialize(buffer, options);
@@ -225,7 +225,7 @@ pub(crate) fn write(
                 // so will be faster.
                 // and allows writing `pl.concat([df] * 100, rechunk=False).write_csv()` as the rechunk
                 // would go OOM
-                df.as_single_chunk();
+                df.rechunk_mut();
 
                 csv_serializer.serialize_to_csv(&df, write_buffer)?;
 
@@ -256,11 +256,7 @@ pub(crate) fn write(
 }
 
 /// Writes a CSV header to `writer`.
-pub fn write_csv_header(
-    mut writer: impl std::io::Write,
-    names: &[&str],
-    options: &SerializeOptions,
-) -> PolarsResult<()> {
+pub fn csv_header(names: &[&str], options: &SerializeOptions) -> PolarsResult<Vec<u8>> {
     let mut header = Vec::new();
 
     // A hack, but it works for this case.
@@ -278,13 +274,7 @@ pub fn write_csv_header(
         }
     }
     header.extend_from_slice(options.line_terminator.as_bytes());
-    writer.write_all(&header)?;
-    Ok(())
+    Ok(header)
 }
 
-/// Writes a UTF-8 BOM to `writer`.
-pub fn write_bom(mut writer: impl std::io::Write) -> PolarsResult<()> {
-    const BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
-    writer.write_all(&BOM)?;
-    Ok(())
-}
+pub const UTF8_BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];

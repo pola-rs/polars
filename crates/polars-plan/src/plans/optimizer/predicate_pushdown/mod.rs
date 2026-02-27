@@ -1,8 +1,10 @@
+mod dynamic;
 mod group_by;
 mod join;
 mod keys;
 mod utils;
 
+pub use dynamic::{DynamicPred, PredicateExpr, TrivialPredicateExpr};
 use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
@@ -10,21 +12,18 @@ use recursive::recursive;
 use utils::*;
 
 use super::*;
+use crate::plans::optimizer::predicate_pushdown::dynamic::new_dynamic_pred;
 use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::utils::{check_input_node, has_aexpr};
 
 /// The struct is wrapped in a mod to prevent direct member access of `nodes_scratch`
 mod inner {
-    use polars_core::config::verbose;
     use polars_utils::arena::Node;
     use polars_utils::idx_vec::UnitVec;
     use polars_utils::unitvec;
 
     pub struct PredicatePushDown {
-        // TODO: Remove unused
-        #[expect(unused)]
-        pub(super) verbose: bool,
         // How many cache nodes a predicate may be pushed down to.
         // Normally this is 0. Only needed for CSPE.
         pub(super) caches_pass_allowance: u32,
@@ -37,7 +36,6 @@ mod inner {
     impl PredicatePushDown {
         pub fn new(maintain_errors: bool, new_streaming: bool) -> Self {
             Self {
-                verbose: verbose(),
                 caches_pass_allowance: 0,
                 nodes_scratch: unitvec![],
                 new_streaming,
@@ -577,7 +575,31 @@ impl PredicatePushDown {
             lp @ Union { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
-            lp @ Sort { .. } => {
+            Sort {
+                input,
+                by_column,
+                mut slice,
+                sort_options,
+            } => {
+                if let Some((offset, len, None)) = slice
+                    && by_column.len() == 1
+                {
+                    let n = by_column[0].node();
+                    if let AExpr::Column(_) = expr_arena.get(n) {
+                        let (dyn_pred_node, pred) = new_dynamic_pred(n, expr_arena);
+                        slice = Some((offset, len, Some(pred)));
+
+                        let predicate = ExprIR::from_node(dyn_pred_node, expr_arena);
+                        insert_predicate_dedup(&mut acc_predicates, &predicate, expr_arena);
+                    }
+                }
+
+                let lp = Sort {
+                    input,
+                    by_column,
+                    slice,
+                    sort_options,
+                };
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
             },
             lp @ Sink { .. } | lp @ SinkMultiple { .. } => {

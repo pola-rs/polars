@@ -31,6 +31,15 @@ class ExprMetaNameSpace:
     def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
+    def __str__(self) -> str:
+        return f"{wrap_expr(self._pyexpr).__str__()}.meta"
+
+    def __repr__(self) -> str:
+        return f"{wrap_expr(self._pyexpr).__repr__()}.meta"
+
+    def __hash__(self) -> int:
+        return self._pyexpr.__hash__()
+
     def __eq__(self, other: ExprMetaNameSpace | Expr) -> bool:  # type: ignore[override]
         return self._pyexpr.meta_eq(other._pyexpr)
 
@@ -271,6 +280,10 @@ class ExprMetaNameSpace:
         True
         """
         return wrap_expr(self._pyexpr.meta_undo_aliases())
+
+    def as_expression(self) -> Expr:
+        """Return the original expression."""
+        return wrap_expr(self._pyexpr)
 
     def as_selector(self) -> pl.Selector:
         """

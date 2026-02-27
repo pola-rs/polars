@@ -42,14 +42,14 @@ impl ComputeNode for InputIndependentSelectNode {
             if let Self::ToSelect { selectors } = self {
                 let empty_df = DataFrame::empty();
                 let state = ExecutionState::new();
-                let selected: Result<Vec<_>, _> = selectors
+                let selected: Vec<_> = selectors
                     .par_iter()
                     .map(|selector| {
                         let s = selector.evaluate_blocking(&empty_df, &state)?;
                         PolarsResult::Ok(s.into_column())
                     })
-                    .collect();
-                let ret = DataFrame::new_with_broadcast(selected?)?;
+                    .collect::<PolarsResult<_>>()?;
+                let ret = unsafe { DataFrame::new_unchecked_infer_broadcast(selected)? };
                 let src_node = InMemorySourceNode::new(Arc::new(ret), MorselSeq::default());
                 *self = InputIndependentSelectNode::Source(src_node);
             }

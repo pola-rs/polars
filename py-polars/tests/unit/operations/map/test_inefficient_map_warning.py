@@ -7,7 +7,7 @@ import re
 from datetime import date, datetime
 from functools import partial
 from math import cosh
-from typing import Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pytest
@@ -17,6 +17,9 @@ from polars._utils.udfs import _BYTECODE_PARSER_CACHE_, _NUMPY_FUNCTIONS, Byteco
 from polars._utils.various import in_terminal_that_supports_colour
 from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 MY_CONSTANT = 3
 MY_DICT = {0: "a", 1: "b", 2: "c", 3: "d", 4: "e"}

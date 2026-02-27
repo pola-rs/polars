@@ -2,7 +2,6 @@ use std::io::Cursor;
 use std::num::NonZeroUsize;
 
 use polars::io::RowIndex;
-use polars_core::utils::concat_df;
 
 use super::*;
 
@@ -62,7 +61,7 @@ fn write_dates() {
             None,
         ],
     );
-    let mut df = DataFrame::new(vec![s0, s1, s2.clone()]).unwrap();
+    let mut df = DataFrame::new_infer_height(vec![s0, s1, s2.clone()]).unwrap();
 
     let mut buf: Vec<u8> = Vec::new();
     CsvWriter::new(&mut buf)
@@ -125,7 +124,7 @@ fn write_dates() {
     )
     .unwrap()
     .into_column();
-    let mut with_timezone_df = DataFrame::new(vec![with_timezone]).unwrap();
+    let mut with_timezone_df = DataFrame::new_infer_height(vec![with_timezone]).unwrap();
     buf.clear();
     CsvWriter::new(&mut buf)
         .include_header(false)
@@ -222,7 +221,7 @@ fn test_parser() -> PolarsResult<()> {
     assert_eq!(col.get(0)?, AnyValue::String("Setosa"));
     assert_eq!(col.get(2)?, AnyValue::String("Setosa"));
 
-    assert_eq!("sepal_length", df.get_columns()[0].name().as_str());
+    assert_eq!("sepal_length", df.columns()[0].name().as_str());
     assert_eq!(df.height(), 7);
 
     // test windows line endings
@@ -236,7 +235,7 @@ fn test_parser() -> PolarsResult<()> {
         .finish()
         .unwrap();
 
-    assert_eq!("head_1", df.get_columns()[0].name().as_str());
+    assert_eq!("head_1", df.columns()[0].name().as_str());
     assert_eq!(df.shape(), (3, 2));
 
     // test windows line ending with 1 byte char column and no line endings for last line.
@@ -250,7 +249,7 @@ fn test_parser() -> PolarsResult<()> {
         .finish()
         .unwrap();
 
-    assert_eq!("head_1", df.get_columns()[0].name().as_str());
+    assert_eq!("head_1", df.columns()[0].name().as_str());
     assert_eq!(df.shape(), (3, 1));
     Ok(())
 }
@@ -525,6 +524,7 @@ fn test_empty_bytes_to_dataframe() {
     let file = Cursor::new(vec![]);
 
     let result = CsvReadOptions::default()
+        .with_raise_if_empty(false)
         .with_has_header(false)
         .with_columns(Some(schema.iter_names_cloned().collect()))
         .with_schema(Some(Arc::new(schema)))
@@ -746,7 +746,7 @@ null-value,b,bar
         })
         .into_reader_with_file_handle(file)
         .finish()?;
-    assert!(df.get_columns()[0].null_count() > 0);
+    assert!(df.columns()[0].null_count() > 0);
     Ok(())
 }
 
@@ -1383,27 +1383,6 @@ fn test_leading_whitespace_with_quote() -> PolarsResult<()> {
     assert_eq!(col_1.get(0)?, AnyValue::Float64(24.5));
     assert_eq!(col_2.get(0)?, AnyValue::String("  4.1"));
     Ok(())
-}
-
-#[test]
-fn test_read_io_reader() {
-    let path = "../../examples/datasets/foods1.csv";
-    let file = std::fs::File::open(path).unwrap();
-    let mut reader = CsvReadOptions::default()
-        .with_chunk_size(5)
-        .try_into_reader_with_file_path(Some(path.into()))
-        .unwrap();
-
-    let mut reader = reader.batched_borrowed().unwrap();
-    let batches = reader.next_batches(5).unwrap().unwrap();
-    assert_eq!(batches.len(), 5);
-    let df = concat_df(&batches).unwrap();
-    assert!(df.height() > 0);
-    let expected = CsvReader::new(file)
-        .finish()
-        .unwrap()
-        .head(Some(df.height()));
-    assert_eq!(&df, &expected);
 }
 
 #[test]

@@ -5,7 +5,7 @@ from collections import OrderedDict
 from datetime import date, datetime, time
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -20,7 +20,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from polars._typing import (
         ExcelSpreadsheetEngine,
@@ -636,7 +636,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
     )
     df = pl.read_excel(
         path_xlsx,
-        sheet_name=["test4", "test4"],
+        sheet_name=("test4", "test4"),
         schema_overrides=overrides,
     )
     for col, dtype in overrides.items():
@@ -922,7 +922,7 @@ def test_excel_write_compound_types(
         xls.getbuffer(),
     ):
         xldf = pl.read_excel(
-            binary_data,
+            binary_data,  # type: ignore[arg-type]
             sheet_name="data",
             engine=engine,
             include_file_paths="wbook",

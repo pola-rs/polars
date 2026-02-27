@@ -1,5 +1,5 @@
-SQL Clauses
-===========
+Query Clauses
+=============
 
 .. list-table::
    :header-rows: 1
@@ -11,24 +11,34 @@ SQL Clauses
      - Retrieves specific column data from one or more tables.
    * - :ref:`DISTINCT <distinct>`
      - Returns unique values from a query.
+   * - :ref:`DISTINCT ON <distinct_on>`
+     - Returns the first row for each unique combination of the specified columns.
    * - :ref:`FROM <from>`
-     - Specify the table(s) from which to retrieve or delete data.
+     - Specify the table(s) from which to retrieve or delete data. Can also be used as the leading clause.
    * - :ref:`JOIN <join>`
      - Combine rows from two or more tables based on a related column.
    * - :ref:`WHERE <where>`
      - Filter rows returned from the query based on the given conditions.
    * - :ref:`GROUP BY <group_by>`
      - Aggregate row values based based on one or more key columns.
+   * - :ref:`GROUP BY ALL <group_by_all>`
+     - Automatically group by all non-aggregate columns in the projection.
    * - :ref:`HAVING <having>`
      - Filter groups in a `GROUP BY` based on the given conditions.
-   * - :ref:`ORDER BY <order_by>`
-     - Sort the query result based on one or more specified columns.
-   * - :ref:`LIMIT <limit>`
-     - Specify the number of rows returned.
-   * - :ref:`OFFSET <offset>`
-     - Skip a specified number of rows.
    * - :ref:`WINDOW <window>`
      - Define named window specifications for window functions.
+   * - :ref:`QUALIFY <qualify>`
+     - Filter rows in a query based on window function results.
+   * - :ref:`ORDER BY <order_by>`
+     - Sort the query result based on one or more specified columns.
+   * - :ref:`ORDER BY ALL <order_by_all>`
+     - Sort the query result by all selected columns.
+   * - :ref:`OFFSET <offset>`
+     - Skip a specified number of rows.
+   * - :ref:`LIMIT <limit>`
+     - Specify the number of rows returned.
+   * - :ref:`FETCH <fetch>`
+     - Limit the number of rows returned (alternative to LIMIT).
 
 
 .. _select:
@@ -61,6 +71,11 @@ Select the columns to be returned by the query.
     # │ 3   ┆ xx  │
     # └─────┴─────┘
 
+.. note::
+
+   Use of bare ``FROM tbl`` is also supported, as shorthand for ``SELECT * FROM tbl``;
+   see the :ref:`FROM <from>` clause for more detail.
+
 .. _distinct:
 
 DISTINCT
@@ -90,11 +105,57 @@ Returns unique values from a query.
     # │ 2   ┆ yy  │
     # └─────┴─────┘
 
+.. _distinct_on:
+
+DISTINCT ON
+-----------
+Returns the first row for each unique combination of the specified columns. When used
+with ``ORDER BY``, this keeps the first row per group according to the given ordering.
+
+.. note::
+
+   ``DISTINCT ON`` only supports column names (not arbitrary expressions).
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+      {
+        "category": ["A", "A", "A", "B", "B", "B"],
+        "value": [30, 10, 20, 50, 40, 60],
+        "label": ["x", "y", "z", "p", "q", "r"],
+      }
+    )
+    df.sql("""
+      SELECT DISTINCT ON (category)
+        category,
+        value,
+        label
+      FROM self
+      ORDER BY category, value DESC
+    """)
+    # shape: (2, 3)
+    # ┌──────────┬───────┬───────┐
+    # │ category ┆ value ┆ label │
+    # │ ---      ┆ ---   ┆ ---   │
+    # │ str      ┆ i64   ┆ str   │
+    # ╞══════════╪═══════╪═══════╡
+    # │ A        ┆ 30    ┆ x     │
+    # │ B        ┆ 60    ┆ r     │
+    # └──────────┴───────┴───────┘
+
 .. _from:
 
 FROM
 ----
 Specifies the table(s) from which to retrieve or delete data.
+
+In addition to the usual ``SELECT ... FROM tbl`` syntax, the ``FROM`` clause can
+also be used as the leading clause in a query, supporting the following variations:
+
+* ``FROM tbl`` - equivalent to ``SELECT * FROM tbl``.
+* ``FROM tbl SELECT ...`` - a reordered ``SELECT`` with explicit projections.
 
 **Example:**
 
@@ -106,18 +167,39 @@ Specifies the table(s) from which to retrieve or delete data.
         "b": ["zz", "yy", "xx"],
       }
     )
+    for query in (
+      "SELECT * FROM self",
+      "FROM self SELECT *",
+      "FROM self",
+    ):
+      df.sql(query)
+      # shape: (3, 2)
+      # ┌─────┬─────┐
+      # │ a   ┆ b   │
+      # │ --- ┆ --- │
+      # │ i64 ┆ str │
+      # ╞═════╪═════╡
+      # │ 1   ┆ zz  │
+      # │ 2   ┆ yy  │
+      # │ 3   ┆ xx  │
+      # └─────┴─────┘
+
+Using ``FROM`` as the leading clause, with ``SELECT``:
+
+.. code-block:: python
+
     df.sql("""
-      SELECT * FROM self
+      FROM self SELECT b, a
     """)
     # shape: (3, 2)
     # ┌─────┬─────┐
-    # │ a   ┆ b   │
+    # │ b   ┆ a   │
     # │ --- ┆ --- │
-    # │ i64 ┆ str │
+    # │ str ┆ i64 │
     # ╞═════╪═════╡
-    # │ 1   ┆ zz  │
-    # │ 2   ┆ yy  │
-    # │ 3   ┆ xx  │
+    # │ zz  ┆ 1   │
+    # │ yy  ┆ 2   │
+    # │ xx  ┆ 3   │
     # └─────┴─────┘
 
 .. _join:
@@ -129,9 +211,10 @@ Combines rows from two or more tables based on a related column.
 **Join Types**
 
 * `CROSS JOIN`
-* `[NATURAL] FULL JOIN`
-* `[NATURAL] INNER JOIN`
-* `[NATURAL] LEFT JOIN`
+* `[NATURAL] FULL [OUTER] JOIN`
+* `[NATURAL] INNER [OUTER] JOIN`
+* `[NATURAL] LEFT [OUTER] JOIN`
+* `[NATURAL] RIGHT [OUTER] JOIN`
 * `[LEFT | RIGHT] ANTI JOIN`
 * `[LEFT | RIGHT] SEMI JOIN`
 
@@ -237,6 +320,43 @@ Group rows that have the same values in specified columns into summary rows.
     # │ a   ┆ 10  │
     # └─────┴─────┘
 
+.. _group_by_all:
+
+GROUP BY ALL
+------------
+Automatically groups by all columns in the ``SELECT`` projection that are not wrapped in
+an aggregate function, a window expression, or a literal value. This is a convenience
+shorthand that avoids having to manually repeat column names in the ``GROUP BY`` clause.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+      {
+        "category": ["A", "A", "B", "B"],
+        "sub": ["x", "y", "x", "y"],
+        "value": [10, 20, 30, 40],
+      }
+    )
+    df.sql("""
+      SELECT category, sub, SUM(value) AS total
+      FROM self
+      GROUP BY ALL
+      ORDER BY category, sub
+    """)
+    # shape: (4, 3)
+    # ┌──────────┬─────┬───────┐
+    # │ category ┆ sub ┆ total │
+    # │ ---      ┆ --- ┆ ---   │
+    # │ str      ┆ str ┆ i64   │
+    # ╞══════════╪═════╪═══════╡
+    # │ A        ┆ x   ┆ 10    │
+    # │ A        ┆ y   ┆ 20    │
+    # │ B        ┆ x   ┆ 30    │
+    # │ B        ┆ y   ┆ 40    │
+    # └──────────┴─────┴───────┘
+
 .. _having:
 
 HAVING
@@ -262,95 +382,6 @@ Filter groups in a `GROUP BY` based on the given conditions.
     # ╞═════╪═════╡
     # │ c   ┆ 40  │
     # │ b   ┆ 50  │
-    # └─────┴─────┘
-
-.. _order_by:
-
-ORDER BY
---------
-Sort the query result based on one or more specified columns.
-
-**Example:**
-
-.. code-block:: python
-
-    df = pl.DataFrame(
-      {
-        "foo": ["b", "a", "c", "b"],
-        "bar": [20, 10, 40, 30],
-      }
-    )
-    df.sql("""
-      SELECT foo, bar FROM self ORDER BY bar DESC
-    """)
-    # shape: (4, 2)
-    # ┌─────┬─────┐
-    # │ foo ┆ bar │
-    # │ --- ┆ --- │
-    # │ str ┆ i64 │
-    # ╞═════╪═════╡
-    # │ c   ┆ 40  │
-    # │ b   ┆ 30  │
-    # │ b   ┆ 20  │
-    # │ a   ┆ 10  │
-    # └─────┴─────┘
-
-.. _limit:
-
-LIMIT
------
-Limit the number of rows returned by the query.
-
-**Example:**
-
-.. code-block:: python
-
-    df = pl.DataFrame(
-      {
-        "foo": ["b", "a", "c", "b"],
-        "bar": [20, 10, 40, 30],
-      }
-    )
-    df.sql("""
-      SELECT foo, bar FROM self LIMIT 2
-    """)
-    # shape: (2, 2)
-    # ┌─────┬─────┐
-    # │ foo ┆ bar │
-    # │ --- ┆ --- │
-    # │ str ┆ i64 │
-    # ╞═════╪═════╡
-    # │ b   ┆ 20  │
-    # │ a   ┆ 10  │
-    # └─────┴─────┘
-
-.. _offset:
-
-OFFSET
-------
-Skip a number of rows before starting to return rows from the query.
-
-**Example:**
-
-.. code-block:: python
-
-    df = pl.DataFrame(
-      {
-        "foo": ["b", "a", "c", "b"],
-        "bar": [20, 10, 40, 30],
-      }
-    )
-    df.sql("""
-      SELECT foo, bar FROM self LIMIT 2 OFFSET 2
-    """)
-    # shape: (2, 2)
-    # ┌─────┬─────┐
-    # │ foo ┆ bar │
-    # │ --- ┆ --- │
-    # │ str ┆ i64 │
-    # ╞═════╪═════╡
-    # │ c   ┆ 40  │
-    # │ b   ┆ 30  │
     # └─────┴─────┘
 
 .. _window:
@@ -428,3 +459,213 @@ Multiple windows, multiple expressions:
     # │ B        ┆ 50    ┆ 31.666667    ┆ 190           ┆ 7           │
     # │ C        ┆ 35    ┆ 35.0         ┆ 140           ┆ 7           │
     # └──────────┴───────┴──────────────┴───────────────┴─────────────┘
+
+.. _qualify:
+
+QUALIFY
+-------
+Filter rows in a query based on window function results.
+
+**Example:**
+
+Constrain the result to the top (largest) two values per category:
+
+.. code-block:: python
+
+    df = pl.DataFrame({
+        "id": [100, 200, 300, 400, 500, 600, 700, 800],
+        "category": ["A", "A", "A", "B", "B", "B", "B", "A"],
+        "value": [20, 15, 30, 25, 15, 50, 35, 45],
+    })
+    df.sql("""
+      SELECT
+        id,
+        category,
+        value
+      FROM self
+      WINDOW w AS (PARTITION BY category ORDER BY value DESC)
+      QUALIFY ROW_NUMBER() OVER w <= 2
+      ORDER BY category, value DESC
+    """)
+    # shape: (4, 3)
+    # ┌─────┬──────────┬───────┐
+    # │ id  ┆ category ┆ value │
+    # │ --- ┆ ---      ┆ ---   │
+    # │ i64 ┆ str      ┆ i64   │
+    # ╞═════╪══════════╪═══════╡
+    # │ 800 ┆ A        ┆ 45    │
+    # │ 300 ┆ A        ┆ 30    │
+    # │ 600 ┆ B        ┆ 50    │
+    # │ 700 ┆ B        ┆ 35    │
+    # └─────┴──────────┴───────┘
+
+.. _order_by:
+
+ORDER BY
+--------
+Sort the query result based on one or more specified columns.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+      {
+        "foo": ["b", "a", "c", "b"],
+        "bar": [20, 10, 40, 30],
+      }
+    )
+    df.sql("""
+      SELECT foo, bar FROM self ORDER BY bar DESC
+    """)
+    # shape: (4, 2)
+    # ┌─────┬─────┐
+    # │ foo ┆ bar │
+    # │ --- ┆ --- │
+    # │ str ┆ i64 │
+    # ╞═════╪═════╡
+    # │ c   ┆ 40  │
+    # │ b   ┆ 30  │
+    # │ b   ┆ 20  │
+    # │ a   ┆ 10  │
+    # └─────┴─────┘
+
+.. _order_by_all:
+
+ORDER BY ALL
+------------
+Sort the query result by all selected columns. This is a convenience shorthand that
+avoids repeating column names. The ``ASC``/``DESC`` and ``NULLS FIRST``/``NULLS LAST``
+modifiers apply to every column.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+      {
+        "a": ["x", "y", "x", "y"],
+        "b": [30, 10, 20, 40],
+      }
+    )
+    df.sql("""
+      SELECT a, b FROM self ORDER BY ALL
+    """)
+    # shape: (4, 2)
+    # ┌─────┬─────┐
+    # │ a   ┆ b   │
+    # │ --- ┆ --- │
+    # │ str ┆ i64 │
+    # ╞═════╪═════╡
+    # │ x   ┆ 20  │
+    # │ x   ┆ 30  │
+    # │ y   ┆ 10  │
+    # │ y   ┆ 40  │
+    # └─────┴─────┘
+
+    df.sql("""
+      SELECT a, b FROM self ORDER BY ALL DESC
+    """)
+    # shape: (4, 2)
+    # ┌─────┬─────┐
+    # │ a   ┆ b   │
+    # │ --- ┆ --- │
+    # │ str ┆ i64 │
+    # ╞═════╪═════╡
+    # │ y   ┆ 40  │
+    # │ y   ┆ 10  │
+    # │ x   ┆ 30  │
+    # │ x   ┆ 20  │
+    # └─────┴─────┘
+
+.. _offset:
+
+OFFSET
+------
+Skip a number of rows before starting to return rows from the query.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+      {
+        "foo": ["b", "a", "c", "b"],
+        "bar": [20, 10, 40, 30],
+      }
+    )
+    df.sql("""
+      SELECT foo, bar FROM self LIMIT 2 OFFSET 2
+    """)
+    # shape: (2, 2)
+    # ┌─────┬─────┐
+    # │ foo ┆ bar │
+    # │ --- ┆ --- │
+    # │ str ┆ i64 │
+    # ╞═════╪═════╡
+    # │ c   ┆ 40  │
+    # │ b   ┆ 30  │
+    # └─────┴─────┘
+
+.. _limit:
+
+LIMIT
+-----
+Limit the number of rows returned by the query.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+      {
+        "foo": ["b", "a", "c", "b"],
+        "bar": [20, 10, 40, 30],
+      }
+    )
+    df.sql("""
+      SELECT foo, bar FROM self LIMIT 2
+    """)
+    # shape: (2, 2)
+    # ┌─────┬─────┐
+    # │ foo ┆ bar │
+    # │ --- ┆ --- │
+    # │ str ┆ i64 │
+    # ╞═════╪═════╡
+    # │ b   ┆ 20  │
+    # │ a   ┆ 10  │
+    # └─────┴─────┘
+
+.. _fetch:
+
+FETCH
+-----
+Limit the number of rows returned by the query; this is the ANSI SQL standard
+alternative to the ``LIMIT`` clause, and can be combined with ``OFFSET``. The
+`WITH TIES` and `PERCENT` modifiers are not currently supported.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+      {
+        "foo": ["b", "a", "c", "b"],
+        "bar": [20, 10, 40, 30],
+      }
+    )
+    df.sql("""
+      SELECT foo, bar
+      FROM self
+      ORDER BY bar
+      OFFSET 1 FETCH NEXT 2 ROWS ONLY
+    """)
+    # shape: (2, 2)
+    # ┌─────┬─────┐
+    # │ foo ┆ bar │
+    # │ --- ┆ --- │
+    # │ str ┆ i64 │
+    # ╞═════╪═════╡
+    # │ b   ┆ 20  │
+    # │ b   ┆ 30  │
+    # └─────┴─────┘

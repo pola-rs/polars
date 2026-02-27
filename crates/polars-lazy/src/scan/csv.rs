@@ -1,16 +1,14 @@
 #[cfg(feature = "csv")]
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
-    CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues, infer_file_schema,
+    CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
 };
 use polars_io::path_utils::expand_paths;
-use polars_io::utils::compression::maybe_decompress_bytes;
-use polars_io::utils::get_reader_bytes;
 use polars_io::{HiveOptions, RowIndex};
-use polars_utils::mmap::MemSlice;
-use polars_utils::plpath::PlPath;
+use polars_utils::mmap::MMapSemaphore;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::slice_enum::Slice;
 
 use crate::prelude::*;
@@ -37,7 +35,7 @@ impl LazyCsvReader {
         self
     }
 
-    pub fn new_paths(paths: Buffer<PlPath>) -> Self {
+    pub fn new_paths(paths: Buffer<PlRefPath>) -> Self {
         Self::new_with_sources(ScanSources::Paths(paths))
     }
 
@@ -52,7 +50,7 @@ impl LazyCsvReader {
         }
     }
 
-    pub fn new(path: PlPath) -> Self {
+    pub fn new(path: PlRefPath) -> Self {
         Self::new_with_sources(ScanSources::Paths(Buffer::from_iter([path])))
     }
 
@@ -253,58 +251,62 @@ impl LazyCsvReader {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
+        const ASSUMED_COMPRESSION_RATIO: usize = 4;
         let n_threads = self.read_options.n_threads;
 
-        let infer_schema = |bytes: MemSlice| {
-            let skip_rows = self.read_options.skip_rows;
-            let skip_lines = self.read_options.skip_lines;
-            let parse_options = self.read_options.get_parse_options();
+        let infer_schema = |bytes: Buffer<u8>| {
+            use polars_io::prelude::streaming::read_until_start_and_infer_schema;
+            use polars_io::utils::compression::ByteSourceReader;
 
-            let mut owned = vec![];
-            let bytes = maybe_decompress_bytes(bytes.as_ref(), &mut owned)?;
+            let bytes_len = bytes.len();
+            let mut reader = ByteSourceReader::from_memory(bytes)?;
+            let decompressed_size_hint = Some(
+                bytes_len
+                    * reader
+                        .compression()
+                        .map_or(1, |_| ASSUMED_COMPRESSION_RATIO),
+            );
 
-            PolarsResult::Ok(
-                infer_file_schema(
-                    &get_reader_bytes(&mut std::io::Cursor::new(bytes))?,
-                    &parse_options,
-                    self.read_options.infer_schema_length,
-                    self.read_options.has_header,
-                    // we set it to None and modify them after the schema is updated
-                    None,
-                    skip_rows,
-                    skip_lines,
-                    self.read_options.skip_rows_after_header,
-                    self.read_options.raise_if_empty,
-                )?
-                .0,
-            )
+            let (inferred_schema, _) = read_until_start_and_infer_schema(
+                &self.read_options,
+                None,
+                decompressed_size_hint,
+                None,
+                &mut reader,
+            )?;
+
+            PolarsResult::Ok(inferred_schema)
         };
 
         let schema = match self.sources.clone() {
             ScanSources::Paths(paths) => {
                 // TODO: Path expansion should happen when converting to the IR
                 // https://github.com/pola-rs/polars/issues/17634
-                let paths = expand_paths(
+
+                use polars_io::pl_async::get_runtime;
+
+                let paths = get_runtime().block_on(expand_paths(
                     &paths[..],
                     self.glob(),
                     &[], // hidden_file_prefix
                     &mut self.cloud_options,
-                )?;
+                ))?;
 
                 let Some(path) = paths.first() else {
                     polars_bail!(ComputeError: "no paths specified for this reader");
                 };
 
-                infer_schema(MemSlice::from_file(&polars_utils::open_file(
-                    path.as_ref().as_local_path().unwrap(),
-                )?)?)?
+                let file = polars_utils::open_file(path.as_std_path())?;
+                let mmap = MMapSemaphore::new_from_file(&file)?;
+                infer_schema(Buffer::from_owner(mmap))?
             },
             ScanSources::Files(files) => {
                 let Some(file) = files.first() else {
                     polars_bail!(ComputeError: "no buffers specified for this reader");
                 };
 
-                infer_schema(MemSlice::from_file(file)?)?
+                let mmap = MMapSemaphore::new_from_file(file)?;
+                infer_schema(Buffer::from_owner(mmap))?
             },
             ScanSources::Buffers(buffers) => {
                 let Some(buffer) = buffers.first() else {

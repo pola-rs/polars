@@ -99,19 +99,21 @@ pub trait UnpivotDF: IntoDf {
         let variable_col_empty = Column::new_empty(variable_name.clone(), &DataType::String);
         let value_col_empty = Column::new_empty(value_name.clone(), &DataType::Null);
 
-        if self_.get_columns().is_empty() {
-            return DataFrame::new(vec![variable_col_empty, value_col_empty]);
+        if self_.width() == 0 {
+            return Ok(unsafe {
+                DataFrame::new_unchecked(0, vec![variable_col_empty, value_col_empty])
+            });
         }
 
         // If the parameter `on` is empty or there are no columns available to use as value vars. we
         // want to produce an empty DataFrame but with the standard unpivot schema.
         if on.is_empty() {
-            let mut out = self_.select(index)?.clear().take_columns();
+            let mut out = self_.select(index)?.clear().into_columns();
 
             out.push(variable_col_empty);
             out.push(value_col_empty);
 
-            return Ok(unsafe { DataFrame::new_no_checks(0, out) });
+            return Ok(unsafe { DataFrame::new_unchecked(0, out) });
         }
 
         let len = self_.height();
@@ -128,18 +130,20 @@ pub trait UnpivotDF: IntoDf {
         // The column name of the variable that is unpivoted
         let mut variable_col = MutablePlString::with_capacity(len * on.len() + 1);
         // prepare ids
-        let ids_ = self_.select_with_schema_unchecked(index, schema)?;
+        let ids_ = unsafe { self_.select_unchecked(index.as_slice())? };
         let mut ids = ids_.clone();
         if ids.width() > 0 {
             for _ in 0..on.len() - 1 {
-                ids.vstack_mut_unchecked(&ids_)
+                ids.vstack_mut_unchecked(&ids_);
             }
+        } else {
+            unsafe { ids.set_height(0) };
         }
-        ids.as_single_chunk_par();
+        ids.rechunk_mut_par();
         drop(ids_);
 
         let mut values = Vec::with_capacity(on.len());
-        let columns = self_.get_columns();
+        let columns = self_.columns();
 
         for value_column_name in &on {
             variable_col.extend_constant(len, Some(value_column_name.as_str()));

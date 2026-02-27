@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::PlHashMap;
+#[cfg(feature = "asof_join")]
+use polars_ops::frame::JoinType;
 use polars_ops::frame::MaintainOrderJoin;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
@@ -98,6 +100,13 @@ pub(super) fn pullup_orders(
                         SinkTypeIR::Callback(s) => s.maintain_order = false,
                     }
                 }
+            },
+            #[cfg(feature = "asof_join")]
+            IR::Join { options, .. } if matches!(options.args.how, JoinType::AsOf(_)) => {
+                // NOTE: As-of joins semantically require ordered inputs.
+                // If the inputs are not ordered, this should ideally be an error.
+                // However, the optimizer currently has no mechanism to surface errors,
+                // so we intentionally do nothing here and leave validation to later stages.
             },
             IR::Join { options, .. } => {
                 let left_unordered = !inputs_ordered[0];

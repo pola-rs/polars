@@ -87,6 +87,7 @@ pub use self::struct_::IRStructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::IRTrigonometricFunction;
 use super::*;
+use crate::plans::optimizer::DynamicPred;
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
@@ -182,6 +183,8 @@ pub enum IRFunctionExpr {
         descending: bool,
         nulls_last: bool,
     },
+    MinBy,
+    MaxBy,
     Product,
     #[cfg(feature = "rank")]
     Rank {
@@ -256,7 +259,7 @@ pub enum IRFunctionExpr {
     Log1p,
     #[cfg(feature = "log")]
     Exp,
-    Unique(bool),
+    Unique(/* maintain_order */ bool),
     #[cfg(feature = "round_series")]
     Round {
         decimals: u32,
@@ -265,6 +268,10 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "round_series")]
     RoundSF {
         digits: i32,
+    },
+    #[cfg(feature = "round_series")]
+    Truncate {
+        decimals: u32,
     },
     #[cfg(feature = "round_series")]
     Floor,
@@ -385,6 +392,9 @@ pub enum IRFunctionExpr {
     RowEncode(Vec<DataType>, RowEncodingVariant),
     #[cfg(feature = "dtype-struct")]
     RowDecode(Vec<Field>, RowEncodingVariant),
+    DynamicPred {
+        pred: DynamicPred,
+    },
 }
 
 impl Hash for IRFunctionExpr {
@@ -491,7 +501,7 @@ impl Hash for IRFunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill | Rechunk => {},
+            | ArgMax | Product | Shift | ShiftAndFill | Rechunk | MinBy | MaxBy => {},
             Append { upcast } => {
                 upcast.hash(state);
             },
@@ -603,6 +613,8 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "round_series")]
             IRFunctionExpr::RoundSF { digits } => digits.hash(state),
             #[cfg(feature = "round_series")]
+            Truncate { decimals } => decimals.hash(state),
+            #[cfg(feature = "round_series")]
             IRFunctionExpr::Floor => {},
             #[cfg(feature = "round_series")]
             Ceil => {},
@@ -688,6 +700,9 @@ impl Hash for IRFunctionExpr {
                 fs.hash(state);
                 variants.hash(state);
             },
+            DynamicPred { pred } => {
+                pred.id().hash(state);
+            },
         }
     }
 }
@@ -765,6 +780,8 @@ impl Display for IRFunctionExpr {
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             ArgSort { .. } => "arg_sort",
+            MinBy => "min_by",
+            MaxBy => "max_by",
             Product => "product",
             Repeat => "repeat",
             #[cfg(feature = "rank")]
@@ -835,6 +852,8 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "round_series")]
             RoundSF { .. } => "round_sig_figs",
             #[cfg(feature = "round_series")]
+            Truncate { .. } => "truncate",
+            #[cfg(feature = "round_series")]
             Floor => "floor",
             #[cfg(feature = "round_series")]
             Ceil => "ceil",
@@ -900,6 +919,7 @@ impl Display for IRFunctionExpr {
             RowEncode(..) => "row_encode",
             #[cfg(feature = "dtype-struct")]
             RowDecode(..) => "row_decode",
+            DynamicPred { .. } => "dynamic_predicate",
         };
         write!(f, "{s}")
     }
@@ -1084,6 +1104,7 @@ impl IRFunctionExpr {
             F::ArgUnique => FunctionOptions::groupwise(),
             F::ArgMin | F::ArgMax => FunctionOptions::aggregation(),
             F::ArgSort { .. } => FunctionOptions::length_preserving(),
+            F::MinBy | F::MaxBy => FunctionOptions::aggregation(),
             F::Product => FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING),
             #[cfg(feature = "rank")]
             F::Rank { .. } => FunctionOptions::length_preserving(),
@@ -1150,7 +1171,7 @@ impl IRFunctionExpr {
                 }
             }),
             #[cfg(feature = "round_series")]
-            F::Round { .. } | F::RoundSF { .. } | F::Floor | F::Ceil => {
+            F::Round { .. } | F::RoundSF { .. } | F::Truncate { .. } | F::Floor | F::Ceil => {
                 FunctionOptions::elementwise()
             },
             #[cfg(feature = "fused")]
@@ -1228,6 +1249,7 @@ impl IRFunctionExpr {
             F::RowEncode(..) => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-struct")]
             F::RowDecode(..) => FunctionOptions::elementwise(),
+            F::DynamicPred { .. } => FunctionOptions::elementwise(),
         }
     }
 }

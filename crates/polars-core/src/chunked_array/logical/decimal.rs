@@ -20,9 +20,9 @@ impl Int128Chunked {
     pub fn into_decimal(self, precision: usize, scale: usize) -> PolarsResult<DecimalChunked> {
         dec128_verify_prec_scale(precision, scale)?;
         if let Some((min, max)) = self.min_max() {
-            let max_abs = max.abs().max(min.abs());
+            let max_abs = max.unsigned_abs().max(min.unsigned_abs());
             polars_ensure!(
-                dec128_fits(max_abs, precision),
+                max_abs < i128::MAX as u128 && dec128_fits(max_abs as i128, precision),
                 ComputeError: "decimal precision {} can't fit values with {} digits",
                 precision,
                 max_abs.to_string().len()
@@ -137,9 +137,9 @@ impl DecimalChunked {
                 self.phys.clone()
             } else if strict {
                 if let Some((min, max)) = self.phys.min_max() {
-                    let max_abs = max.abs().max(min.abs());
+                    let max_abs = max.unsigned_abs().max(min.unsigned_abs());
                     polars_ensure!(
-                        dec128_fits(max_abs, prec),
+                        max_abs < i128::MAX as u128 && dec128_fits(max_abs as i128, prec),
                         ComputeError: "decimal precision {} can't fit values with {} digits",
                         prec,
                         max_abs.to_string().len()

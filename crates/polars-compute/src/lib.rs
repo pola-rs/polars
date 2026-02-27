@@ -6,6 +6,7 @@ pub mod arithmetic;
 pub mod arity;
 pub mod binview_index_map;
 pub mod bitwise;
+pub mod boolean;
 #[cfg(feature = "approx_unique")]
 pub mod cardinality;
 #[cfg(feature = "cast")]
@@ -26,6 +27,7 @@ pub mod hyperloglogplus;
 pub mod if_then_else;
 pub mod min_max;
 pub mod moment;
+pub mod nan;
 pub mod propagate_dictionary;
 pub mod propagate_nulls;
 pub mod rolling;

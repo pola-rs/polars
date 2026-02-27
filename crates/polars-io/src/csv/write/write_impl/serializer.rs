@@ -109,7 +109,7 @@ fn integer_serializer<I: NativeType + itoa::Integer>(
 
 fn float_serializer_no_precision_autoformat_f16(array: &Float16Array) -> impl Serializer<'_> {
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
-        let mut buffer = ryu::Buffer::new();
+        let mut buffer = zmij::Buffer::new();
         let cast: f32 = NumCast::from(item).unwrap();
         let value = buffer.format(cast);
         buf.extend_from_slice(value.as_bytes());
@@ -117,11 +117,11 @@ fn float_serializer_no_precision_autoformat_f16(array: &Float16Array) -> impl Se
     float_serializer_no_precision_autoformat_(array, f)
 }
 
-fn float_serializer_no_precision_autoformat<I: NativeType + ryu::Float>(
+fn float_serializer_no_precision_autoformat<I: NativeType + zmij::Float>(
     array: &PrimitiveArray<I>,
 ) -> impl Serializer<'_> {
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
-        let mut buffer = ryu::Buffer::new();
+        let mut buffer = zmij::Buffer::new();
         let value = buffer.format(item);
         buf.extend_from_slice(value.as_bytes());
     };
@@ -143,7 +143,7 @@ fn float_serializer_no_precision_autoformat_decimal_comma_f16(
     array: &Float16Array,
 ) -> impl Serializer<'_> {
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
-        let mut buffer = ryu::Buffer::new();
+        let mut buffer = zmij::Buffer::new();
         let cast: f32 = NumCast::from(item).unwrap();
         let value = buffer.format(cast);
 
@@ -154,11 +154,11 @@ fn float_serializer_no_precision_autoformat_decimal_comma_f16(
     float_serializer_no_precision_autoformat_decimal_comma_(array, f)
 }
 
-fn float_serializer_no_precision_autoformat_decimal_comma<I: NativeType + ryu::Float>(
+fn float_serializer_no_precision_autoformat_decimal_comma<I: NativeType + zmij::Float>(
     array: &PrimitiveArray<I>,
 ) -> impl Serializer<'_> {
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
-        let mut buffer = ryu::Buffer::new();
+        let mut buffer = zmij::Buffer::new();
         let value = buffer.format(item).as_bytes();
 
         for ch in value {
@@ -365,7 +365,7 @@ type ChronoFormatIter<'a, 'b> = std::slice::Iter<'a, chrono::format::Item<'b>>;
 
 #[cfg(any(feature = "dtype-date", feature = "dtype-time"))]
 fn date_and_time_serializer<'a, Underlying: NativeType, T: std::fmt::Display>(
-    format_str: &'a Option<String>,
+    format_str: Option<&'a str>,
     description: &str,
     array: &'a dyn Array,
     sample_value: T,
@@ -779,7 +779,7 @@ pub(super) fn serializer_for<'a>(
         },
         #[cfg(feature = "dtype-date")]
         DataType::Date => date_and_time_serializer(
-            &options.date_format,
+            options.date_format.as_deref(),
             "NaiveDate",
             array,
             chrono::NaiveDate::MAX,
@@ -789,7 +789,7 @@ pub(super) fn serializer_for<'a>(
         )?,
         #[cfg(feature = "dtype-time")]
         DataType::Time => date_and_time_serializer(
-            &options.time_format,
+            Some(options.time_format.as_deref().unwrap_or("%T%.9f")),
             "NaiveTime",
             array,
             chrono::NaiveTime::MIN,

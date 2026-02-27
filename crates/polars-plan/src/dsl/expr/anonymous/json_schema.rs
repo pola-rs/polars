@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_core::series::Series;
 
-use super::{AnonymousColumnsUdf, SpecialEq};
+use super::{AnonymousAgg, AnonymousColumnsUdf, SpecialEq};
 use crate::dsl::LazySerde;
 
 impl<T: schemars::JsonSchema> schemars::JsonSchema for SpecialEq<Arc<T>> {
@@ -44,6 +44,20 @@ impl schemars::JsonSchema for SpecialEq<Series> {
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         Series::json_schema(generator)
+    }
+}
+
+impl schemars::JsonSchema for SpecialEq<Arc<dyn AnonymousAgg>> {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "AnonymousAgg".into()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "AnonymousAgg"))
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        Vec::<u8>::json_schema(generator)
     }
 }
 

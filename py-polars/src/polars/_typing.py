@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Collection, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import (
     IO,
     TYPE_CHECKING,
     Any,
-    Callable,
     Literal,
     Protocol,
     TypedDict,
@@ -15,9 +14,9 @@ from typing import (
 )
 
 if TYPE_CHECKING:
-    import sys
     from datetime import date, datetime, time, timedelta
     from decimal import Decimal
+    from typing import TypeAlias
 
     from sqlalchemy.engine import Connection, Engine
     from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
@@ -31,11 +30,6 @@ if TYPE_CHECKING:
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
     from polars.lazyframe.engine_config import GPUEngine
     from polars.selectors import Selector
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
 
 
 class ArrowArrayExportable(Protocol):
@@ -62,45 +56,46 @@ class ArrowSchemaExportable(Protocol):
 PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
 PolarsTemporalType: TypeAlias = Union[type["TemporalType"], "TemporalType"]
 PolarsIntegerType: TypeAlias = Union[type["IntegerType"], "IntegerType"]
-OneOrMoreDataTypes: TypeAlias = Union[PolarsDataType, Iterable[PolarsDataType]]
-PythonDataType: TypeAlias = Union[
-    type[int],
-    type[float],
-    type[bool],
-    type[str],
-    type["date"],
-    type["time"],
-    type["datetime"],
-    type["timedelta"],
-    type[list[Any]],
-    type[tuple[Any, ...]],
-    type[bytes],
-    type[object],
-    type["Decimal"],
-    type[None],
-]
+OneOrMoreDataTypes: TypeAlias = PolarsDataType | Iterable[PolarsDataType]
+PythonDataType: TypeAlias = (
+    type[int]
+    | type[float]
+    | type[bool]
+    | type[str]
+    | type["date"]
+    | type["time"]
+    | type["datetime"]
+    | type["timedelta"]
+    | type[list[Any]]
+    | type[tuple[Any, ...]]
+    | type[bytes]
+    | type[object]
+    | type["Decimal"]
+    | type[None]
+)
 
-SchemaDefinition: TypeAlias = Union[
-    Mapping[str, Union[PolarsDataType, PythonDataType, None]],
-    Sequence[Union[str, tuple[str, Union[PolarsDataType, PythonDataType, None]]]],
-]
+SchemaDefinition: TypeAlias = (
+    Mapping[str, PolarsDataType | PythonDataType | None]
+    | Sequence[str | tuple[str, PolarsDataType | PythonDataType | None]]
+)
 SchemaDict: TypeAlias = Mapping[str, PolarsDataType]
 
 NumericLiteral: TypeAlias = Union[int, float, "Decimal"]
 TemporalLiteral: TypeAlias = Union["date", "time", "datetime", "timedelta"]
-NonNestedLiteral: TypeAlias = Union[NumericLiteral, TemporalLiteral, str, bool, bytes]
+NonNestedLiteral: TypeAlias = NumericLiteral | TemporalLiteral | str | bool | bytes
 # Python literal types (can convert into a `lit` expression)
 PythonLiteral: TypeAlias = Union[NonNestedLiteral, "np.ndarray[Any, Any]", list[Any]]
 # Inputs that can convert into a `col` expression
 IntoExprColumn: TypeAlias = Union["Expr", "Series", str]
 # Inputs that can convert into an expression
-IntoExpr: TypeAlias = Union[PythonLiteral, IntoExprColumn, None]
+IntoExpr: TypeAlias = PythonLiteral | IntoExprColumn | None
 
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
+Alignment: TypeAlias = Literal["left", "center", "right", "LEFT", "CENTER", "RIGHT"]
 
 # selector type, and related collection/sequence
 SelectorType: TypeAlias = "Selector"
-ColumnNameOrSelector: TypeAlias = Union[str, SelectorType]
+ColumnNameOrSelector: TypeAlias = Union["str", SelectorType]
 
 # User-facing string literal types
 # The following all have an equivalent Rust enum with the same name
@@ -108,6 +103,7 @@ Ambiguous: TypeAlias = Literal["earliest", "latest", "raise", "null"]
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric", "never"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
+CsvCompression: TypeAlias = Literal["uncompressed", "gzip", "zstd"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 ColumnMapping: TypeAlias = tuple[
     Literal["iceberg-column-mapping"],
@@ -132,6 +128,7 @@ Label: TypeAlias = Literal["left", "right", "datapoint"]
 MaintainOrderJoin: TypeAlias = Literal[
     "none", "left", "right", "left_right", "right_left"
 ]
+NdjsonCompression: TypeAlias = Literal["uncompressed", "gzip", "zstd"]
 NonExistent: TypeAlias = Literal["raise", "null"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
 ParallelStrategy: TypeAlias = Literal[
@@ -148,7 +145,7 @@ QuantileMethod: TypeAlias = Literal[
 ]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 Roll: TypeAlias = Literal["raise", "forward", "backward"]
-RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero"]
+RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero", "to_zero"]
 SerializationFormat: TypeAlias = Literal["binary", "json"]
 Endianness: TypeAlias = Literal["little", "big"]
 SizeUnit: TypeAlias = Literal[
@@ -231,29 +228,25 @@ FrameInitTypes: TypeAlias = Union[
 # Excel IO
 ColumnFormatDict: TypeAlias = Mapping[
     # dict of colname(s) or selector(s) to format string or dict
-    Union[ColumnNameOrSelector, tuple[ColumnNameOrSelector, ...]],
-    Union[str, Mapping[str, str]],
+    ColumnNameOrSelector | tuple[ColumnNameOrSelector, ...],
+    str | Mapping[str, str],
 ]
 ConditionalFormatDict: TypeAlias = Mapping[
     # dict of colname(s) to str, dict, or sequence of str/dict
-    Union[ColumnNameOrSelector, Collection[str]],
-    Union[str, Union[Mapping[str, Any], Sequence[Union[str, Mapping[str, Any]]]]],
+    ColumnNameOrSelector | Collection[str],
+    str | Mapping[str, Any] | Sequence[str | Mapping[str, Any]],
 ]
-ColumnTotalsDefinition: TypeAlias = Union[
-    # dict of colname(s) to str, a collection of str, or a boolean
-    Mapping[Union[ColumnNameOrSelector, tuple[ColumnNameOrSelector]], str],
-    Sequence[str],
-    bool,
-]
-ColumnWidthsDefinition: TypeAlias = Union[
-    Mapping[ColumnNameOrSelector, Union[tuple[str, ...], int]], int
-]
-RowTotalsDefinition: TypeAlias = Union[
-    # dict of colname to str(s), a collection of str, or a boolean
-    Mapping[str, Union[str, Collection[str]]],
-    Collection[str],
-    bool,
-]
+ColumnTotalsDefinition: TypeAlias = (
+    Mapping[ColumnNameOrSelector | tuple[ColumnNameOrSelector], str]
+    | Sequence[str]
+    | bool
+)
+ColumnWidthsDefinition: TypeAlias = (
+    Mapping[ColumnNameOrSelector, tuple[str, ...] | int] | int
+)
+RowTotalsDefinition: TypeAlias = (
+    Mapping[str, str | Collection[str]] | Collection[str] | bool
+)
 
 # standard/named hypothesis profiles used for parametric testing
 ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]
@@ -299,9 +292,9 @@ AlchemyConnection: TypeAlias = Union["Connection", "Engine", "Session"]
 AlchemyAsyncConnection: TypeAlias = Union[
     "AsyncConnection", "AsyncEngine", "AsyncSession"
 ]
-ConnectionOrCursor: TypeAlias = Union[
-    BasicConnection, BasicCursor, Cursor, AlchemyConnection, AlchemyAsyncConnection
-]
+ConnectionOrCursor: TypeAlias = (
+    BasicConnection | BasicCursor | Cursor | AlchemyConnection | AlchemyAsyncConnection
+)
 
 # Annotations for `__getitem__` methods
 SingleIndexSelector: TypeAlias = int
@@ -324,8 +317,8 @@ BooleanMask: TypeAlias = Union[
     "Series",
     "np.ndarray[Any, Any]",
 ]
-SingleColSelector: TypeAlias = Union[SingleIndexSelector, SingleNameSelector]
-MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, BooleanMask]
+SingleColSelector: TypeAlias = SingleIndexSelector | SingleNameSelector
+MultiColSelector: TypeAlias = MultiIndexSelector | MultiNameSelector | BooleanMask
 
 # LazyFrame engine selection
 EngineType: TypeAlias = Union[
@@ -334,18 +327,18 @@ EngineType: TypeAlias = Union[
 
 PlanStage: TypeAlias = Literal["ir", "physical"]
 
-FileSource: TypeAlias = Union[
-    str,
-    Path,
-    IO[bytes],
-    bytes,
-    list[str],
-    list[Path],
-    list[IO[bytes]],
-    list[bytes],
-]
+FileSource: TypeAlias = (
+    str
+    | Path
+    | IO[bytes]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[bytes]]
+    | list[bytes]
+)
 
-JSONEncoder = Union[Callable[[Any], bytes], Callable[[Any], str]]
+JSONEncoder = Callable[[Any], bytes] | Callable[[Any], str]
 
 DeprecationType: TypeAlias = Literal[
     "function",
@@ -357,6 +350,7 @@ DeprecationType: TypeAlias = Literal[
 
 
 __all__ = [
+    "Alignment",
     "Ambiguous",
     "ArrowArrayExportable",
     "ArrowStreamExportable",
@@ -408,6 +402,7 @@ __all__ = [
     "MultiColSelector",
     "MultiIndexSelector",
     "MultiNameSelector",
+    "NdjsonCompression",
     "NonExistent",
     "NonNestedLiteral",
     "NullBehavior",
@@ -467,4 +462,6 @@ class ParquetMetadataContext:
 
 
 ParquetMetadataFn: TypeAlias = Callable[[ParquetMetadataContext], dict[str, str]]
-ParquetMetadata: TypeAlias = Union[dict[str, str], ParquetMetadataFn]
+ParquetMetadata: TypeAlias = dict[str, str] | ParquetMetadataFn
+
+StorageOptionsDict: TypeAlias = dict[str, Any]

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
 from polars._utils.unstable import unstable
@@ -9,7 +9,7 @@ from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from collections.abc import Collection
+    from collections.abc import Callable, Collection
 
     from polars import Expr, Series
     from polars._plr import PySeries

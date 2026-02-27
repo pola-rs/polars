@@ -45,7 +45,7 @@ pub trait SeriesMethods: SeriesSealed {
 
         let height = counts.len();
         let cols = vec![values, counts];
-        let df = unsafe { DataFrame::new_no_checks(height, cols) };
+        let df = unsafe { DataFrame::new_unchecked(height, cols) };
         if sort {
             df.sort(
                 [name],
@@ -60,7 +60,7 @@ pub trait SeriesMethods: SeriesSealed {
 
     #[cfg(feature = "hash")]
     fn hash(&self, build_hasher: PlSeedableRandomStateQuality) -> UInt64Chunked {
-        let s = self.as_series().to_physical_repr();
+        let s = self.as_series();
         let mut h = vec![];
         s.0.vec_hash(build_hasher, &mut h).unwrap();
         UInt64Chunked::from_vec(s.name().clone(), h)
@@ -95,6 +95,7 @@ pub trait SeriesMethods: SeriesSealed {
                 &[s.clone().into()],
                 &[options.descending],
                 &[options.nulls_last],
+                false,
             )?;
             return encoded.into_series().is_sorted(options);
         }

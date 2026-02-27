@@ -168,6 +168,8 @@ pub enum FunctionExpr {
         descending: bool,
         nulls_last: bool,
     },
+    MinBy,
+    MaxBy,
     Product,
     #[cfg(feature = "rank")]
     Rank {
@@ -251,6 +253,10 @@ pub enum FunctionExpr {
     #[cfg(feature = "round_series")]
     RoundSF {
         digits: i32,
+    },
+    #[cfg(feature = "round_series")]
+    Truncate {
+        decimals: u32,
     },
     #[cfg(feature = "round_series")]
     Floor,
@@ -474,7 +480,7 @@ impl Hash for FunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill | Rechunk => {},
+            | ArgMax | Product | Shift | ShiftAndFill | Rechunk | MinBy | MaxBy => {},
             Append { upcast } => upcast.hash(state),
             ArgSort {
                 descending,
@@ -581,6 +587,8 @@ impl Hash for FunctionExpr {
             },
             #[cfg(feature = "round_series")]
             FunctionExpr::RoundSF { digits } => digits.hash(state),
+            #[cfg(feature = "round_series")]
+            Truncate { decimals } => decimals.hash(state),
             #[cfg(feature = "round_series")]
             FunctionExpr::Floor => {},
             #[cfg(feature = "round_series")]
@@ -743,6 +751,8 @@ impl Display for FunctionExpr {
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             ArgSort { .. } => "arg_sort",
+            MinBy => "min_by",
+            MaxBy => "max_by",
             Product => "product",
             Repeat => "repeat",
             #[cfg(feature = "rank")]
@@ -812,6 +822,8 @@ impl Display for FunctionExpr {
             Round { .. } => "round",
             #[cfg(feature = "round_series")]
             RoundSF { .. } => "round_sig_figs",
+            #[cfg(feature = "round_series")]
+            Truncate { .. } => "truncate",
             #[cfg(feature = "round_series")]
             Floor => "floor",
             #[cfg(feature = "round_series")]

@@ -1,11 +1,11 @@
 use std::hash::Hash;
 #[cfg(feature = "json")]
 use std::num::NonZeroUsize;
-use std::str::FromStr;
 use std::sync::Arc;
 
+pub mod file_provider;
 pub mod sink;
-pub mod sink2;
+pub use polars_config::Engine;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
@@ -13,7 +13,7 @@ use polars_io::csv::write::CsvWriterOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcWriterOptions;
 #[cfg(feature = "json")]
-use polars_io::json::JsonWriterOptions;
+use polars_io::ndjson::NDJsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::write::ParquetWriteOptions;
 #[cfg(feature = "iejoin")]
@@ -29,16 +29,15 @@ use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 pub use sink::{
-    CallbackSinkType, FileSinkOptions, PartitionTargetCallback, PartitionTargetCallbackResult,
-    PartitionTargetContext, PartitionTargetContextKey, PartitionVariantIR, PartitionedSinkOptions,
-    PartitionedSinkOptionsIR, SinkFinishCallback, SinkOptions, SinkTarget, SinkType, SinkTypeIR,
-    SortColumn, SortColumnIR,
+    CallbackSinkType, FileSinkOptions, PartitionStrategy, PartitionStrategyIR,
+    PartitionedSinkOptions, PartitionedSinkOptionsIR, SinkDestination, SinkTarget, SinkType,
+    SinkTypeIR, UnifiedSinkArgs,
 };
-pub use sink2::{PartitionStrategy, PartitionStrategyIR, SinkDestination, UnifiedSinkArgs};
 use strum_macros::IntoStaticStr;
 
-use super::{Expr, ExprIR};
+use super::Expr;
 use crate::dsl::Selector;
+use crate::plans::ExprIR;
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -149,7 +148,7 @@ pub struct JoinOptions {
 
 impl Default for JoinOptions {
     fn default() -> Self {
-        JoinOptions {
+        Self {
             allow_parallel: true,
             force_parallel: false,
             // Todo!: make default
@@ -196,44 +195,6 @@ pub struct UnpivotArgsDSL {
 
 #[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum Engine {
-    Auto,
-    Streaming,
-    InMemory,
-    Gpu,
-}
-
-impl FromStr for Engine {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            // "cpu" for backwards compatibility
-            "auto" => Ok(Engine::Auto),
-            "cpu" | "in-memory" => Ok(Engine::InMemory),
-            "streaming" => Ok(Engine::Streaming),
-            "gpu" => Ok(Engine::Gpu),
-            "old-streaming" => Err("the 'old-streaming' engine has been removed".to_owned()),
-            v => Err(format!(
-                "`engine` must be one of {{'auto', 'in-memory', 'streaming', 'gpu'}}, got {v}",
-            )),
-        }
-    }
-}
-
-impl Engine {
-    pub fn into_static_str(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Streaming => "streaming",
-            Self::InMemory => "in-memory",
-            Self::Gpu => "gpu",
-        }
-    }
-}
-
-#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
     pub slice: Option<(i64, usize)>,
     // known row_output, estimated row output
@@ -259,12 +220,25 @@ impl Default for UnionOptions {
     }
 }
 
-#[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct HConcatOptions {
     pub parallel: bool,
     pub strict: bool,
+    // Treat unit values as scalar.
+    // E.g. broadcast them instead of fill nulls.
+    pub broadcast_unit_length: bool,
+}
+
+impl Default for HConcatOptions {
+    fn default() -> Self {
+        Self {
+            parallel: true,
+            strict: false,
+            broadcast_unit_length: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
@@ -335,22 +309,25 @@ pub struct AnonymousScanOptions {
     pub fmt_str: &'static str,
 }
 
+const _: () = {
+    assert!(std::mem::size_of::<FileWriteFormat>() <= 50);
+};
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, strum_macros::IntoStaticStr)]
-/// TODO: Rename to `FileWriteFormat`
-pub enum FileType {
+pub enum FileWriteFormat {
     #[cfg(feature = "parquet")]
-    Parquet(ParquetWriteOptions),
+    Parquet(Arc<ParquetWriteOptions>),
     #[cfg(feature = "ipc")]
     Ipc(IpcWriterOptions),
     #[cfg(feature = "csv")]
     Csv(CsvWriterOptions),
     #[cfg(feature = "json")]
-    Json(JsonWriterOptions),
+    NDJson(NDJsonWriterOptions),
 }
 
-impl FileType {
+impl FileWriteFormat {
     pub fn extension(&self) -> &'static str {
         match self {
             #[cfg(feature = "parquet")]
@@ -360,7 +337,7 @@ impl FileType {
             #[cfg(feature = "csv")]
             Self::Csv(_) => "csv",
             #[cfg(feature = "json")]
-            Self::Json(_) => "jsonl",
+            Self::NDJson(_) => "jsonl",
 
             #[allow(unreachable_patterns)]
             _ => unreachable!("enable file type features"),

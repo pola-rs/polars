@@ -6,7 +6,7 @@ from functools import reduce
 from inspect import signature
 from operator import add
 from string import ascii_letters
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, cast
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 import numpy as np
 import pytest
@@ -23,9 +23,12 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from _pytest.capture import CaptureFixture
 
     from polars._typing import MapElementsStrategy, PolarsDataType
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_init_signature_match() -> None:
@@ -577,6 +580,62 @@ def test_round(n: float, ndigits: int, expected: float, dtype: pl.DataType) -> N
     assert_series_equal(
         ldf.select(pl.col("value").round(decimals=ndigits)).collect().to_series(),
         pl.Series("value", [expected], dtype=dtype),
+    )
+
+
+@pytest.mark.parametrize(
+    ("n", "ndigits", "expected"),
+    [
+        (1.005, 2, 1.0),
+        (1835.665, 2, 1835.66),
+        (-1835.665, 2, -1835.66),
+        (2.49, 0, 2.0),
+        (123.45678, 2, 123.45),
+        (1254, 2, 1254.0),
+        (1254, 0, 1254.0),
+        (123.55, 0, 123.0),
+        (123.55, 1, 123.5),
+        (1.0e20, 2, 100000000000000000000.0),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_truncate(n: float, ndigits: int, expected: float, dtype: pl.DataType) -> None:
+    ldf = pl.LazyFrame({"value": [n]}, schema_overrides={"value": dtype})
+    assert_series_equal(
+        ldf.select(pl.col("value").truncate(decimals=ndigits)).collect().to_series(),
+        pl.Series("value", [expected], dtype=dtype),
+    )
+
+
+@pytest.mark.parametrize(
+    ("n", "ndigits", "expected1", "expected2"),
+    [
+        (0.5, 0, 0.0, 1.0),
+        (1.5, 0, 2.0, 2.0),
+        (2.5, 0, 2.0, 3.0),
+        (-0.5, 0, -0.0, -1.0),
+        (-1.5, 0, -2.0, -2.0),
+        (2.25, 1, 2.2, 2.3),
+        (2.75, 1, 2.8, 2.8),
+        (-2.25, 1, -2.2, -2.3),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_round_mode(
+    n: float, ndigits: int, expected1: float, expected2: float, dtype: pl.DataType
+) -> None:
+    ldf = pl.LazyFrame({"value": [n]}, schema_overrides={"value": dtype})
+    assert_series_equal(
+        ldf.select(pl.col("value").round(ndigits, mode="half_to_even"))
+        .collect()
+        .to_series(),
+        pl.Series("value", [expected1], dtype=dtype),
+    )
+    assert_series_equal(
+        ldf.select(pl.col("value").round(ndigits, mode="half_away_from_zero"))
+        .collect()
+        .to_series(),
+        pl.Series("value", [expected2], dtype=dtype),
     )
 
 
@@ -1163,8 +1222,8 @@ def test_lazy_cache_same_key() -> None:
 
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 @pytest.mark.may_fail_auto_streaming
-def test_lazy_cache_hit(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+def test_lazy_cache_hit(plmonkeypatch: PlMonkeyPatch, capfd: Any) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": ["x", "y", "z"]})
     add_node = ldf.select([(pl.col("a") + pl.col("b")).alias("a"), pl.col("c")]).cache()
@@ -1260,10 +1319,11 @@ def test_from_epoch(input_dtype: PolarsDataType) -> None:
     exp_dt = datetime(2006, 5, 17, 15, 34, 4)
     expected = pl.DataFrame(
         [
+            # 'd' → Date, 'ns' → Datetime('ns'), otherwise → Datetime('us')
             pl.Series("timestamp_d", [date(2006, 5, 17)]),
-            pl.Series("timestamp_s", [exp_dt]),  # s is no Polars dtype, defaults to us
-            pl.Series("timestamp_ms", [exp_dt]).cast(pl.Datetime("ms")),
-            pl.Series("timestamp_us", [exp_dt]),  # us is Polars Datetime default
+            pl.Series("timestamp_s", [exp_dt]),
+            pl.Series("timestamp_ms", [exp_dt]),
+            pl.Series("timestamp_us", [exp_dt]),
             pl.Series("timestamp_ns", [exp_dt]).cast(pl.Datetime("ns")),
         ]
     )

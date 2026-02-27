@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 
-use arrow::array::Array;
+use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::BitmapBuilder;
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
 use numpy::{Element, PyArray1, PyArrayMethods, PyUntypedArrayMethods};
 use polars::prelude::*;
-use polars_core::utils::CustomIterTools;
+use polars_buffer::{Buffer, SharedStorage};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
@@ -25,7 +25,10 @@ macro_rules! init_method {
         impl PySeries {
             #[staticmethod]
             fn $name(name: &str, array: &Bound<PyArray1<$type>>, _strict: bool) -> Self {
-                mmap_numpy_array(name, array)
+                let arr = numpy_array_to_arrow(array);
+                Series::from_arrow(name.into(), arr.to_boxed())
+                    .unwrap()
+                    .into()
             }
         }
     };
@@ -40,13 +43,15 @@ init_method!(new_u16, u16);
 init_method!(new_u32, u32);
 init_method!(new_u64, u64);
 
-fn mmap_numpy_array<T: Element + NativeType>(name: &str, array: &Bound<PyArray1<T>>) -> PySeries {
-    let vals = unsafe { array.as_slice().unwrap() };
-
-    let arr = unsafe { arrow::ffi::mmap::slice_and_owner(vals, array.clone().unbind()) };
-    Series::from_arrow(name.into(), arr.to_boxed())
-        .unwrap()
-        .into()
+fn numpy_array_to_arrow<T: Element + NativeType>(array: &Bound<PyArray1<T>>) -> PrimitiveArray<T> {
+    let owner = array.clone().unbind();
+    let ro = array.readonly();
+    let vals = ro.as_slice().unwrap();
+    unsafe {
+        let storage = SharedStorage::from_slice_with_owner(vals, owner);
+        let buffer = Buffer::from_storage(storage);
+        PrimitiveArray::new_unchecked(T::PRIMITIVE.into(), buffer, None)
+    }
 }
 
 #[cfg(feature = "object")]
@@ -91,18 +96,14 @@ impl PySeries {
         array: &Bound<PyArray1<pf16>>,
         nan_is_null: bool,
     ) -> PyResult<Self> {
+        let arr = numpy_array_to_arrow(array);
         if nan_is_null {
-            let array = array.readonly();
-            let vals = array.as_slice().unwrap();
             py.enter_polars_series(|| {
-                let ca: Float16Chunked = vals
-                    .iter()
-                    .map(|&val| if pf16::is_nan(val) { None } else { Some(val) })
-                    .collect_trusted();
-                Ok(ca.with_name(name.into()))
+                let validity = polars_compute::nan::is_not_nan(arr.values());
+                Ok(Series::from_array(name.into(), arr.with_validity(validity)))
             })
         } else {
-            Ok(mmap_numpy_array(name, array))
+            Ok(Series::from_array(name.into(), arr).into())
         }
     }
 
@@ -113,18 +114,14 @@ impl PySeries {
         array: &Bound<PyArray1<f32>>,
         nan_is_null: bool,
     ) -> PyResult<Self> {
+        let arr = numpy_array_to_arrow(array);
         if nan_is_null {
-            let array = array.readonly();
-            let vals = array.as_slice().unwrap();
             py.enter_polars_series(|| {
-                let ca: Float32Chunked = vals
-                    .iter()
-                    .map(|&val| if f32::is_nan(val) { None } else { Some(val) })
-                    .collect_trusted();
-                Ok(ca.with_name(name.into()))
+                let validity = polars_compute::nan::is_not_nan(arr.values());
+                Ok(Series::from_array(name.into(), arr.with_validity(validity)))
             })
         } else {
-            Ok(mmap_numpy_array(name, array))
+            Ok(Series::from_array(name.into(), arr).into())
         }
     }
 
@@ -135,18 +132,14 @@ impl PySeries {
         array: &Bound<PyArray1<f64>>,
         nan_is_null: bool,
     ) -> PyResult<Self> {
+        let arr = numpy_array_to_arrow(array);
         if nan_is_null {
-            let array = array.readonly();
-            let vals = array.as_slice().unwrap();
             py.enter_polars_series(|| {
-                let ca: Float64Chunked = vals
-                    .iter()
-                    .map(|&val| if f64::is_nan(val) { None } else { Some(val) })
-                    .collect_trusted();
-                Ok(ca.with_name(name.into()))
+                let validity = polars_compute::nan::is_not_nan(arr.values());
+                Ok(Series::from_array(name.into(), arr.with_validity(validity)))
             })
         } else {
-            Ok(mmap_numpy_array(name, array))
+            Ok(Series::from_array(name.into(), arr).into())
         }
     }
 }

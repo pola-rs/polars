@@ -2,6 +2,7 @@ use std::fmt::Formatter;
 use std::iter::FlatMap;
 
 use polars_core::prelude::*;
+use polars_utils::format_pl_smallstr;
 
 use self::visitor::{AexprNode, RewritingVisitor, TreeWalker};
 use crate::constants::get_len_name;
@@ -360,6 +361,38 @@ pub fn rename_columns(
 
     AexprNode::new(node)
         .rewrite(&mut RenameColumns(map), expr_arena)
+        .unwrap()
+        .node()
+}
+
+/// Rename any `StructField(x)` to its corresponding `Column(prefix_x)` using the provided prefix.
+#[cfg(feature = "dtype-struct")]
+pub fn structfield_to_column(
+    node: Node,
+    expr_arena: &mut Arena<AExpr>,
+    prefix: &PlSmallStr,
+) -> Node {
+    struct MapStructFields<'a>(&'a PlSmallStr);
+    impl RewritingVisitor for MapStructFields<'_> {
+        type Node = AexprNode;
+        type Arena = Arena<AExpr>;
+
+        fn mutate(
+            &mut self,
+            node: Self::Node,
+            arena: &mut Self::Arena,
+        ) -> PolarsResult<Self::Node> {
+            if let AExpr::StructField(name) = arena.get(node.node()) {
+                let new_name = format_pl_smallstr!("{}{}", self.0, name);
+                return Ok(AexprNode::new(arena.add(AExpr::Column(new_name))));
+            }
+
+            Ok(node)
+        }
+    }
+
+    AexprNode::new(node)
+        .rewrite(&mut MapStructFields(prefix), expr_arena)
         .unwrap()
         .node()
 }

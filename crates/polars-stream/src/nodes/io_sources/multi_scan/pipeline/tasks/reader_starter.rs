@@ -409,6 +409,7 @@ async fn start_reader_impl(
         missing_columns_policy,
         forbid_extra_columns,
         num_pipelines,
+        disable_morsel_split,
         verbose,
     } = constant_args;
 
@@ -545,7 +546,7 @@ async fn start_reader_impl(
         if let Some(hp) = &hive_parts {
             external_predicate_cols.extend(
                 hp.df()
-                    .get_columns()
+                    .columns()
                     .iter()
                     .filter(|c| predicate.live_columns.contains(c.name()))
                     .map(|c| {
@@ -605,6 +606,7 @@ async fn start_reader_impl(
         predicate,
         cast_columns_policy: cast_columns_policy.clone(),
         num_pipelines,
+        disable_morsel_split,
         callbacks,
     };
 

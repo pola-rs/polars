@@ -29,9 +29,9 @@ pub fn _merge_sorted_dfs(
 
     let merge_indicator = series_to_merge_indicator(left_s, right_s)?;
     let new_columns = left
-        .get_columns()
+        .columns()
         .iter()
-        .zip(right.get_columns())
+        .zip(right.columns())
         .map(|(lhs, rhs)| {
             let lhs_phys = lhs.to_physical_repr();
             let rhs_phys = rhs.to_physical_repr();
@@ -48,7 +48,7 @@ pub fn _merge_sorted_dfs(
         })
         .collect::<PolarsResult<_>>()?;
 
-    Ok(unsafe { DataFrame::new_no_checks(left.height() + right.height(), new_columns) })
+    Ok(unsafe { DataFrame::new_unchecked(left.height() + right.height(), new_columns) })
 }
 
 fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsResult<Series> {

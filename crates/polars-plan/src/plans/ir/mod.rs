@@ -3,8 +3,6 @@ mod format;
 pub mod inputs;
 mod schema;
 pub(crate) mod tree_format;
-#[cfg(feature = "ir_visualization")]
-pub mod visualization;
 
 use std::borrow::Cow;
 use std::fmt;
@@ -91,7 +89,7 @@ pub enum IR {
     Sort {
         input: Node,
         by_column: Vec<ExprIR>,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, usize, Option<DynamicPred>)>,
         sort_options: SortMultipleOptions,
     },
     Cache {
