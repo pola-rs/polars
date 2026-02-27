@@ -412,8 +412,7 @@ def test_list_drop_nulls_lazy(engine: EngineType, data: list[Any]) -> None:
 
 
 def test_list_sample() -> None:
-    s = pl.Series("values", [[1, 2, 3, None], [None, None], [1, 2], None])
-
+    s = pl.Series("values", [[1, 2, 3, None], [None, None], [1, 2], None])    
     expected_sample_n = pl.Series("values", [[None, 3], [None], [2], None])
     assert_series_equal(
         s.list.sample(n=pl.Series([2, 1, 1, 1]), seed=1), expected_sample_n
@@ -444,6 +443,15 @@ def test_list_sample() -> None:
     )
     assert_frame_equal(df, expected_df)
 
+
+def test_list_sample_fraction_out_of_bounds_raises() -> None:
+    df = pl.DataFrame({"values": [["a"], ["eb", "d"]]})
+
+    with pytest.raises(ValueError, match="fraction must be between 0.0 and 1.0"):
+        df.select(pl.col("values").list.sample(fraction=1.2))
+
+    with pytest.raises(ValueError, match="fraction must be between 0.0 and 1.0"):
+        df.select(pl.col("values").list.sample(fraction=-0.1))
 
 def test_list_diff() -> None:
     s = pl.Series("a", [[1, 2], [10, 2, 1]])
