@@ -397,3 +397,20 @@ def test_bitwise_in_group_by() -> None:
             bwxor=pl.col.a.bitwise_xor(),
         ),
     )
+
+
+def test_bool_bitwise_xor_group_by_26748() -> None:
+    df = pl.DataFrame(
+        {
+            "g": ["a", "a", "b", "b", "c"],
+            "v": [True, None, True, True, None],
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "g": ["a", "b", "c"],
+            "v": [True, False, False],
+        }
+    )
+    actual = df.group_by("g", maintain_order=True).agg(pl.col("v").bitwise_xor())
+    assert_frame_equal(actual, expected)
