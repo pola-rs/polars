@@ -9,6 +9,7 @@ from polars._utils.deprecation import deprecated
 from polars._utils.parse.expr import _parse_inputs_as_iterable
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Callable, Iterable, Iterator
     from datetime import timedelta
 
@@ -22,8 +23,6 @@ if TYPE_CHECKING:
         StartBy,
     )
     from polars.lazyframe.group_by import LazyGroupBy
-
-    import sys
 
     if sys.version_info >= (3, 13):
         from warnings import deprecated

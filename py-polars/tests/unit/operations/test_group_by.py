@@ -570,7 +570,7 @@ def test_group_by_next_without_iter() -> None:
     # GroupBy is not an iterator; next() on it must raise TypeError
     df = pl.DataFrame({"a": ["x", "y"], "b": [1, 2]})
     with pytest.raises(TypeError, match="not an iterator"):
-        next(df.group_by("a"))
+        next(df.group_by("a"))  # type: ignore[call-overload]
 
 
 def test_group_by_iter_stopiteration() -> None:
