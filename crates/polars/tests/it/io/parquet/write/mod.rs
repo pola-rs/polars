@@ -1,6 +1,7 @@
 mod binary;
 mod primitive;
 mod sidecar;
+mod statistics;
 
 use std::io::{Cursor, Read, Seek};
 

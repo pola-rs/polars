@@ -3893,3 +3893,43 @@ def test_parquet_dict_and_data_page_offset_26531(tmp_path: Path) -> None:
     assert "RLE_DICTIONARY" in str(col.encodings)
     assert col.dictionary_page_offset is not None
     assert col.data_page_offset > col.dictionary_page_offset
+
+
+@pytest.mark.parametrize(
+    "make_df",
+    [
+        pytest.param(
+            lambda s: pl.Series("col", [s]).to_frame(),
+            id="utf8_view",
+        ),
+        pytest.param(
+            lambda s: pl.Series("col", [s.encode()], dtype=pl.Binary).to_frame(),
+            id="binary_view",
+        ),
+        pytest.param(
+            lambda s: pl.from_arrow(
+                pa.table({"col": pa.array([s], type=pa.large_utf8())})
+            ),
+            id="large_utf8",
+        ),
+        pytest.param(
+            lambda s: pl.from_arrow(
+                pa.table({"col": pa.array([s.encode()], type=pa.large_binary())})
+            ),
+            id="large_binary",
+        ),
+    ],
+)
+def test_parquet_statistics_truncation_large_values_23498(
+    make_df: Callable[[str], pl.DataFrame],
+) -> None:
+    big_string = "A" * 1_000_000
+    df = make_df(big_string)
+    f = io.BytesIO()
+    df.write_parquet(f)
+    file_size = f.tell()
+    # Without statistics truncation, the full 1 MiB value is stored in both
+    # the page header and column chunk metadata (min + max), bloating the file.
+    # With the default truncation (64 bytes) and default compression, the file should be
+    # much smaller.
+    assert file_size < 5_000

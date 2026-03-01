@@ -149,3 +149,102 @@ pub(super) fn invalid_encoding(encoding: Encoding, dtype: &ArrowDataType) -> Pol
         encoding
     )
 }
+
+/// Truncates a min statistics value to `len` bytes.
+/// A prefix is always <= the original in lexicographic order,
+/// so the truncated value remains a valid lower bound.
+pub(super) fn truncate_min_statistics_value(mut val: Vec<u8>, len: usize) -> Vec<u8> {
+    if val.len() > len {
+        val.truncate(len);
+    }
+    val
+}
+
+/// Truncates a max statistics value to `len` bytes, incrementing the
+/// last non-0xFF byte to maintain a valid upper bound.
+/// Falls back to the original (untruncated) value if all bytes in the prefix are 0xFF.
+pub(super) fn truncate_max_statistics_value(val: Vec<u8>, len: usize) -> Vec<u8> {
+    if val.len() <= len {
+        return val;
+    }
+    let mut truncated = val[..len].to_vec();
+    // Increment the last non-0xFF byte so the truncated value is still
+    // an upper bound. E.g. [0x01, 0x02] -> [0x01, 0x03].
+    // If trailing bytes are 0xFF, roll them over: [0x01, 0xFF] -> [0x02].
+    while let Some(&last) = truncated.last() {
+        if last == 0xFF {
+            truncated.pop();
+        } else {
+            *truncated.last_mut().unwrap() = last + 1;
+            return truncated;
+        }
+    }
+    // All bytes in the prefix were 0xFF — we can't produce a valid short
+    // upper bound, so fall back to the original untruncated value.
+    val
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_min_value_shorter_than_limit() {
+        let val = vec![0x01, 0x02];
+        assert_eq!(truncate_min_statistics_value(val, 5), vec![0x01, 0x02]);
+    }
+
+    #[test]
+    fn test_truncate_min_value_exact_limit() {
+        let val = vec![0x01, 0x02, 0x03];
+        assert_eq!(
+            truncate_min_statistics_value(val, 3),
+            vec![0x01, 0x02, 0x03]
+        );
+    }
+
+    #[test]
+    fn test_truncate_min_value_longer_than_limit() {
+        let val = vec![0x01, 0x02, 0x03, 0x04, 0x05];
+        assert_eq!(truncate_min_statistics_value(val, 2), vec![0x01, 0x02]);
+    }
+
+    #[test]
+    fn test_truncate_max_value_shorter_than_limit() {
+        let val = vec![0x01, 0x02];
+        assert_eq!(truncate_max_statistics_value(val, 5), vec![0x01, 0x02]);
+    }
+
+    #[test]
+    fn test_truncate_max_value_exact_limit() {
+        let val = vec![0x01, 0x02, 0x03];
+        assert_eq!(
+            truncate_max_statistics_value(val, 3),
+            vec![0x01, 0x02, 0x03]
+        );
+    }
+
+    #[test]
+    fn test_truncate_max_value_longer_than_limit() {
+        let val = vec![0x01, 0x02, 0x03, 0x04, 0x05];
+        // prefix [0x01, 0x02] -> increment last byte -> [0x01, 0x03]
+        assert_eq!(truncate_max_statistics_value(val, 2), vec![0x01, 0x03]);
+    }
+
+    #[test]
+    fn test_truncate_max_value_trailing_0xff_rollover() {
+        let val = vec![0x01, 0xFF, 0x03];
+        // prefix [0x01, 0xFF] -> 0xFF rolls over, pop -> [0x01] -> increment -> [0x02]
+        assert_eq!(truncate_max_statistics_value(val, 2), vec![0x02]);
+    }
+
+    #[test]
+    fn test_truncate_max_value_all_0xff_fallback() {
+        let val = vec![0xFF, 0xFF, 0x03];
+        // prefix [0xFF, 0xFF] -> all 0xFF, can't increment -> fallback to original
+        assert_eq!(
+            truncate_max_statistics_value(val, 2),
+            vec![0xFF, 0xFF, 0x03]
+        );
+    }
+}

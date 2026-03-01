@@ -7,7 +7,7 @@ use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{BinaryStatistics, ParquetStatistics};
 use crate::read::schema::is_nullable;
 use crate::write::binary::encode_non_null_values;
-use crate::write::utils::invalid_encoding;
+use crate::write::utils::{invalid_encoding, truncate_max_statistics_value, truncate_min_statistics_value};
 use crate::write::{EncodeNullability, Encoding, Page, StatisticsOptions, WriteOptions, utils};
 
 pub(crate) fn encode_plain(
@@ -111,18 +111,26 @@ pub(crate) fn build_statistics(
     primitive_type: PrimitiveType,
     options: &StatisticsOptions,
 ) -> ParquetStatistics {
+    let mut min_value = options
+        .min_value
+        .then(|| array.min_propagate_nan_kernel().map(<[u8]>::to_vec))
+        .flatten();
+    let mut max_value = options
+        .max_value
+        .then(|| array.max_propagate_nan_kernel().map(<[u8]>::to_vec))
+        .flatten();
+
+    if let Some(len) = options.statistics_truncate_length {
+        min_value = min_value.map(|v| truncate_min_statistics_value(v, len));
+        max_value = max_value.map(|v| truncate_max_statistics_value(v, len));
+    }
+
     BinaryStatistics {
         primitive_type,
         null_count: options.null_count.then_some(array.null_count() as i64),
         distinct_count: None,
-        max_value: options
-            .max_value
-            .then(|| array.max_propagate_nan_kernel().map(<[u8]>::to_vec))
-            .flatten(),
-        min_value: options
-            .min_value
-            .then(|| array.min_propagate_nan_kernel().map(<[u8]>::to_vec))
-            .flatten(),
+        max_value,
+        min_value,
     }
     .serialize()
 }
