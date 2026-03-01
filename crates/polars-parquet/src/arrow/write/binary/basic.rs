@@ -8,7 +8,9 @@ use crate::arrow::read::schema::is_nullable;
 use crate::parquet::encoding::{Encoding, delta_bitpacked};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{BinaryStatistics, ParquetStatistics};
-use crate::write::utils::{invalid_encoding, truncate_max_statistics_value, truncate_min_statistics_value};
+use crate::write::utils::{
+    invalid_encoding, truncate_max_statistics_value, truncate_min_statistics_value,
+};
 use crate::write::{EncodeNullability, Page, StatisticsOptions};
 
 pub(crate) fn encode_non_null_values<'a, I: Iterator<Item = &'a [u8]>>(

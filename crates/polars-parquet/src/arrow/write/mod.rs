@@ -67,7 +67,10 @@ pub struct StatisticsOptions {
     pub null_count: bool,
     /// Maximum length (in bytes) for binary/string min/max statistics.
     /// Values longer than this will be truncated. `None` disables truncation.
-    #[cfg_attr(feature = "serde", serde(default = "default_statistics_truncate_length"))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default = "default_statistics_truncate_length")
+    )]
     pub statistics_truncate_length: Option<usize>,
 }
 

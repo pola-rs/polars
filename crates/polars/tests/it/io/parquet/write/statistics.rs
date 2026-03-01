@@ -85,12 +85,7 @@ fn test_truncation_for_array(array: &ArrayRef) {
     assert_truncated_statistics(array, Some(2), Some(b"Bl"), Some(b"Bm"));
 
     // Truncation disabled: full values preserved.
-    assert_truncated_statistics(
-        array,
-        None,
-        Some(b"Blart"),
-        Some(b"Blart"),
-    );
+    assert_truncated_statistics(array, None, Some(b"Blart"), Some(b"Blart"));
 }
 
 // --- Per-type truncation tests -----------------------------------------------
@@ -109,8 +104,7 @@ fn statistics_truncation_binaryview() {
 
 #[test]
 fn statistics_truncation_large_binary() {
-    let array: BinaryArray<i64> =
-        [Some(b"Blart".as_slice())].into_iter().collect();
+    let array: BinaryArray<i64> = [Some(b"Blart".as_slice())].into_iter().collect();
     test_truncation_for_array(&array.boxed());
 }
 

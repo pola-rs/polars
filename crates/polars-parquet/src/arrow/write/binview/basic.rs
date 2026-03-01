@@ -7,7 +7,9 @@ use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{BinaryStatistics, ParquetStatistics};
 use crate::read::schema::is_nullable;
 use crate::write::binary::encode_non_null_values;
-use crate::write::utils::{invalid_encoding, truncate_max_statistics_value, truncate_min_statistics_value};
+use crate::write::utils::{
+    invalid_encoding, truncate_max_statistics_value, truncate_min_statistics_value,
+};
 use crate::write::{EncodeNullability, Encoding, Page, StatisticsOptions, WriteOptions, utils};
 
 pub(crate) fn encode_plain(
