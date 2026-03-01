@@ -70,7 +70,13 @@ def _deprecate_function(message: str) -> IdentityFunction:
 # The stdlib versions use a fixed stacklevel=2, which breaks warning attribution
 # when @deprecated is stacked under other deprecation decorators. _deprecate_function
 # calls find_stacklevel() to locate the first non-Polars frame regardless of depth.
-deprecated = _deprecate_function
+if TYPE_CHECKING:
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated
+else:
+    deprecated = _deprecate_function  # type: ignore[assignment]
 
 
 def deprecate_streaming_parameter() -> IdentityFunction:
