@@ -49,6 +49,16 @@ def test_deprecate_renamed_parameter(recwarn: Any) -> None:
     assert "rab" in str(recwarn[1].message)
 
 
+def test_deprecated_under_rename_decorator() -> None:
+    # @deprecated must fire even when it is the innermost decorator
+    @deprecate_renamed_parameter("old", "new", version="1.0")
+    @deprecated("`hello` is deprecated.")
+    def hello(new: str) -> None: ...
+
+    with pytest.deprecated_call():
+        hello(new="x")
+
+
 class Foo:  # noqa: D101
     @deprecate_nonkeyword_arguments(allowed_args=["self", "baz"], version="1.0.0")
     def bar(

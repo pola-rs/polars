@@ -16,17 +16,6 @@ if TYPE_CHECKING:
 
     from polars._utils.various import IdentityFunction
 
-if sys.version_info >= (3, 13):
-    from warnings import deprecated
-else:
-    try:
-        from typing_extensions import deprecated
-    except ImportError:
-
-        def deprecated(message: str) -> IdentityFunction:  # type: ignore[no-redef]
-            return _deprecate_function(message)
-
-
 from polars._utils.various import issue_warning
 
 if TYPE_CHECKING:
@@ -75,6 +64,13 @@ def _deprecate_function(message: str) -> IdentityFunction:
         return wrapper
 
     return decorate
+
+
+# Always use _deprecate_function rather than typing_extensions/warnings.deprecated.
+# The stdlib versions use a fixed stacklevel=2, which breaks warning attribution
+# when @deprecated is stacked under other deprecation decorators. _deprecate_function
+# calls find_stacklevel() to locate the first non-Polars frame regardless of depth.
+deprecated = _deprecate_function
 
 
 def deprecate_streaming_parameter() -> IdentityFunction:
