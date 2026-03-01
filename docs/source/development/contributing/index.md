@@ -308,7 +308,7 @@ in the Polars repository. Please adhere to the following guidelines:
     - Clearly state in your pull request's description which parts of the code were AI-generated.
     - Explicitly state that you yourself have reviewed *all* changes in your pull request, and believe
       that they are relevant and correct.
-    - Adhere to the rest of our [AI policy](/AI_policy.md).
+    - Adhere to the rest of our [AI policy](/AI_POLICY.md).
   If you fail either requirement the maintainer may simply close your pull request.
 <!-- dprint-ignore-end -->
 
