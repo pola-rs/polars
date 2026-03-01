@@ -1495,7 +1495,13 @@ class Series:
 
     def __setitem__(
         self,
-        key: int | range | slice | Series | np.ndarray[Any, Any] | Sequence[object] | tuple[object],
+        key: int
+        | range
+        | slice
+        | Series
+        | np.ndarray[Any, Any]
+        | Sequence[object]
+        | tuple[object],
         value: Any,
     ) -> None:
         # do the single idx as first branch as those are likely in a tight loop
