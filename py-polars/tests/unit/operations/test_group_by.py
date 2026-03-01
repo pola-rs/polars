@@ -566,6 +566,13 @@ def test_group_by_iteration() -> None:
     assert result3 == expected3
 
 
+def test_group_by_next_without_iter() -> None:
+    # GroupBy is not an iterator; next() on it must raise TypeError
+    df = pl.DataFrame({"a": ["x", "y"], "b": [1, 2]})
+    with pytest.raises(TypeError, match="not an iterator"):
+        next(df.group_by("a"))
+
+
 def test_group_by_iteration_selector() -> None:
     df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
     result = dict(df.group_by(cs.string()))
