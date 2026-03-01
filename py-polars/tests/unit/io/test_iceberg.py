@@ -229,16 +229,16 @@ class TestIcebergExpressions:
 
     def test_is_null_expression(self) -> None:
         expr = _to_ast("(pa.compute.field('id')).is_null()")
-        assert _convert_predicate(expr) == IsNull("id")
+        assert _convert_predicate(expr) == IsNull(term=Reference(name="id"))
 
     def test_is_not_null_expression(self) -> None:
         expr = _to_ast("~(pa.compute.field('id')).is_null()")
-        assert _convert_predicate(expr) == Not(IsNull("id"))
+        assert _convert_predicate(expr) == Not(IsNull(term=Reference(name="id")))
 
     def test_isin_expression(self) -> None:
         expr = _to_ast("(pa.compute.field('id')).isin([1,2,3])")
         assert _convert_predicate(expr) == In(
-            "id", {literal(1), literal(2), literal(3)}
+            term=Reference(name="id"), values={literal(1), literal(2), literal(3)}
         )
 
     def test_parse_combined_expression(self) -> None:
@@ -248,45 +248,45 @@ class TestIcebergExpressions:
         assert _convert_predicate(expr) == Or(
             left=And(
                 left=EqualTo(term=Reference(name="str"), literal=literal("2")),
-                right=GreaterThan(term="id", literal=literal(10)),
+                right=GreaterThan(term=Reference(name="id"), literal=literal(10)),
             ),
-            right=In("id", {literal(1), literal(2), literal(3)}),
+            right=In(term=Reference(name="id"), values={literal(1), literal(2), literal(3)}),
         )
 
     def test_parse_gt(self) -> None:
         expr = _to_ast("(pa.compute.field('ts') > '2023-08-08')")
-        assert _convert_predicate(expr) == GreaterThan("ts", "2023-08-08")
+        assert _convert_predicate(expr) == GreaterThan(term=Reference(name="ts"), value="2023-08-08")
 
     def test_parse_gteq(self) -> None:
         expr = _to_ast("(pa.compute.field('ts') >= '2023-08-08')")
-        assert _convert_predicate(expr) == GreaterThanOrEqual("ts", "2023-08-08")
+        assert _convert_predicate(expr) == GreaterThanOrEqual(term=Reference(name="ts"), value="2023-08-08")
 
     def test_parse_eq(self) -> None:
         expr = _to_ast("(pa.compute.field('ts') == '2023-08-08')")
-        assert _convert_predicate(expr) == EqualTo("ts", "2023-08-08")
+        assert _convert_predicate(expr) == EqualTo(term=Reference(name="ts"), value="2023-08-08")
 
     def test_parse_lt(self) -> None:
         expr = _to_ast("(pa.compute.field('ts') < '2023-08-08')")
-        assert _convert_predicate(expr) == LessThan("ts", "2023-08-08")
+        assert _convert_predicate(expr) == LessThan(term=Reference(name="ts"), value="2023-08-08")
 
     def test_parse_lteq(self) -> None:
         expr = _to_ast("(pa.compute.field('ts') <= '2023-08-08')")
-        assert _convert_predicate(expr) == LessThanOrEqual("ts", "2023-08-08")
+        assert _convert_predicate(expr) == LessThanOrEqual(term=Reference(name="ts"), value="2023-08-08")
 
     def test_compare_boolean(self) -> None:
         expr = _to_ast("(pa.compute.field('ts') == pa.compute.scalar(True))")
-        assert _convert_predicate(expr) == EqualTo("ts", True)
+        assert _convert_predicate(expr) == EqualTo(term=Reference(name="ts"), value=True)
 
         expr = _to_ast("(pa.compute.field('ts') == pa.compute.scalar(False))")
-        assert _convert_predicate(expr) == EqualTo("ts", False)
+        assert _convert_predicate(expr) == EqualTo(term=Reference(name="ts"), value=False)
 
     def test_bare_boolean_field(self) -> None:
         expr = try_convert_pyarrow_predicate("pa.compute.field('is_active')")
-        assert expr == EqualTo("is_active", True)
+        assert expr == EqualTo(term=Reference(name="is_active"), value=True)
 
     def test_bare_boolean_field_negated(self) -> None:
         expr = try_convert_pyarrow_predicate("~pa.compute.field('is_active')")
-        assert expr == Not(EqualTo("is_active", True))
+        assert expr == Not(EqualTo(term=Reference(name="is_active"), value=True))
 
 
 @pytest.mark.write_disk
