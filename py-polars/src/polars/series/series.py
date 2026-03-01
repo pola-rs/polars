@@ -1495,7 +1495,7 @@ class Series:
 
     def __setitem__(
         self,
-        key: int | Series | np.ndarray[Any, Any] | Sequence[object] | tuple[object],
+        key: int | range | slice | Series | np.ndarray[Any, Any] | Sequence[object] | tuple[object],
         value: Any,
     ) -> None:
         # do the single idx as first branch as those are likely in a tight loop
@@ -1531,7 +1531,7 @@ class Series:
                 )
                 self.__setitem__(s, value)
         elif isinstance(key, range):
-            self.__setitem__(list(range(len(self))[key]), value)
+            self.__setitem__(list(key), value)
         elif isinstance(key, slice):
             self.__setitem__(list(range(len(self))[key]), value)
         elif isinstance(key, (list, tuple)):
