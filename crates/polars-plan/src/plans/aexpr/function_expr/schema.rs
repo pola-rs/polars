@@ -409,14 +409,18 @@ impl IRFunctionExpr {
                 )),
             },
 
-            MaxHorizontal => mapper.map_to_supertype(),
-            MinHorizontal => mapper.map_to_supertype(),
-            SumHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
-                if f.dtype == DataType::Boolean {
-                    f.dtype = IDX_DTYPE;
-                }
-                f
-            }),
+            MaxHorizontal => mapper.map_to_supertype_materialized_dyn_numeric(),
+            MinHorizontal => mapper.map_to_supertype_materialized_dyn_numeric(),
+            SumHorizontal { .. } => {
+                mapper
+                    .map_to_supertype_materialized_dyn_numeric()
+                    .map(|mut f| {
+                        if f.dtype == DataType::Boolean {
+                            f.dtype = IDX_DTYPE;
+                        }
+                        f
+                    })
+            },
             MeanHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
                 match f.dtype {
                     #[cfg(feature = "dtype-f16")]
@@ -637,6 +641,15 @@ impl<'a> FieldsMapper<'a> {
         Ok(first)
     }
 
+    /// Map the dtype to the "supertype" of all fields, materializing dynamic
+    /// numeric literals first (to match horizontal execution semantics).
+    pub fn map_to_supertype_materialized_dyn_numeric(&self) -> PolarsResult<Field> {
+        let st = args_to_supertype_materialized_dyn_numeric(self.fields)?;
+        let mut first = self.fields[0].clone();
+        first.coerce(st);
+        Ok(first)
+    }
+
     /// Map the dtype to the dtype of the list/array elements.
     pub fn map_to_list_and_array_inner_dtype(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
@@ -838,4 +851,19 @@ pub(crate) fn args_to_supertype<D: AsRef<DataType>>(dtypes: &[D]) -> PolarsResul
     }
 
     Ok(st)
+}
+
+pub(crate) fn args_to_supertype_materialized_dyn_numeric<D: AsRef<DataType>>(
+    dtypes: &[D],
+) -> PolarsResult<DataType> {
+    let materialized = dtypes
+        .iter()
+        .map(|dt| match dt.as_ref() {
+            DataType::Unknown(UnknownKind::Int(v)) => materialize_dyn_int(*v).dtype(),
+            DataType::Unknown(UnknownKind::Float) => DataType::Float64,
+            dt => dt.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    args_to_supertype(&materialized)
 }
