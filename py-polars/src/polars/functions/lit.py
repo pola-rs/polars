@@ -27,6 +27,20 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType, TimeUnit
 
 
+def _datetime_to_timestamp(value: datetime, time_unit: TimeUnit) -> int:
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    delta = value - epoch
+    micros = ((delta.days * 86_400) + delta.seconds) * 1_000_000 + delta.microseconds
+    if time_unit == "ns":
+        return micros * 1_000
+    if time_unit == "us":
+        return micros
+    if time_unit == "ms":
+        return micros // 1_000
+    msg = f"invalid time unit: {time_unit!r}"
+    raise ValueError(msg)
+
+
 def lit(
     value: Any, dtype: PolarsDataType | None = None, *, allow_object: bool = False
 ) -> Expr:
@@ -135,12 +149,14 @@ def lit(
                 raise TypeError(msg)
 
         dt_utc = value.replace(tzinfo=timezone.utc)
-        dt_utc_s = pl.Series("literal", [dt_utc]).cast(Datetime(time_unit))
+        dt_utc_int = _datetime_to_timestamp(dt_utc, time_unit)
+        expr = wrap_expr(plr.lit(dt_utc_int, allow_object=False, is_scalar=True)).cast(
+            Datetime(time_unit)
+        )
         if tz is not None:
-            dt_utc_s = dt_utc_s.dt.replace_time_zone(
+            expr = expr.dt.replace_time_zone(
                 tz, ambiguous="earliest" if value.fold == 0 else "latest"
             )
-        expr = wrap_expr(plr.lit(dt_utc_s._s, allow_object=False, is_scalar=True))
         return expr
 
     elif isinstance(value, timedelta):

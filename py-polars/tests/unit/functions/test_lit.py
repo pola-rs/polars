@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import enum
+import subprocess
 import sys
+import textwrap
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -83,6 +85,32 @@ def test_lit_ambiguous_datetimes_11379() -> None:
         result = df.filter(pl.col("ts") >= df["ts"][i])
         expected = df[i:]
         assert_frame_equal(result, expected)
+
+
+def test_lit_datetime_after_datetime_monkeypatch_26698() -> None:
+    code = textwrap.dedent(
+        """
+        from datetime import datetime
+        import datetime as datetime_module
+        import polars as pl
+
+        class FakeDatetime(datetime_module.datetime):
+            pass
+
+        datetime_module.datetime = FakeDatetime
+        pl.lit(datetime_module.datetime(2026, 1, 1, 12))
+        datetime_module.datetime = datetime
+        pl.lit(datetime(2026, 1, 1, 12))
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_list_datetime_11571() -> None:
