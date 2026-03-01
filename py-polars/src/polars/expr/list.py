@@ -229,6 +229,32 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_sum())
 
+    def product(self) -> Expr:
+        """
+        Compute the product of the elements in every sublist.
+
+        Notes
+        -----
+        Null values are ignored. If there are no non-null elements in a row, the
+        output is `1` (the multiplicative identity).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[1], [2, 3], [None, 4]]})
+        >>> df.with_columns(product=pl.col("values").list.product())
+        shape: (3, 2)
+        ┌──────────────┬─────────┐
+        │ values       ┆ product │
+        │ ---          ┆ ---     │
+        │ list[i64]    ┆ i64     │
+        ╞══════════════╪═════════╡
+        │ [1]          ┆ 1       │
+        │ [2, 3]       ┆ 6       │
+        │ [null, 4]    ┆ 4       │
+        └──────────────┴─────────┘
+        """
+        return wrap_expr(self._pyexpr.list_product())
+
     def max(self) -> Expr:
         """
         Compute the max value of the lists in the array.

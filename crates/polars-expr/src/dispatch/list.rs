@@ -41,6 +41,7 @@ pub fn function_expr_to_udf(func: IRListFunction) -> SpecialEq<Arc<dyn ColumnsUd
         #[cfg(feature = "list_count")]
         CountMatches => map_as_slice!(count_matches),
         Sum => map!(sum),
+        Product => map!(product),
         Length => map!(length),
         Max => map!(max),
         Min => map!(min),
@@ -298,6 +299,10 @@ pub(super) fn count_matches(args: &[Column]) -> PolarsResult<Column> {
 
 pub(super) fn sum(s: &Column) -> PolarsResult<Column> {
     s.list()?.lst_sum().map(Column::from)
+}
+
+pub(super) fn product(s: &Column) -> PolarsResult<Column> {
+    s.list()?.lst_product().map(Column::from)
 }
 
 pub(super) fn length(s: &Column) -> PolarsResult<Column> {

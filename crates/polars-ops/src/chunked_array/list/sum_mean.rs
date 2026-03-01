@@ -11,6 +11,10 @@ use polars_utils::float16::pf16;
 use super::*;
 use crate::chunked_array::sum::sum_slice;
 
+fn product_slice<T: NativeType + std::iter::Product>(values: &[T]) -> T {
+    values.iter().copied().product()
+}
+
 fn sum_between_offsets<T, S>(values: &[T], offset: &[i64]) -> Vec<S>
 where
     T: NativeType + ToPrimitive,
@@ -150,6 +154,128 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
         .unwrap()
         .into_series()
         .cast(dt)?,
+    };
+    out.rename(ca.name().clone());
+    Ok(out)
+}
+
+fn product_between_offsets<T, S>(values: &[T], offset: &[i64]) -> Vec<S>
+where
+    T: NativeType + ToPrimitive,
+    S: NumCast + std::iter::Product,
+{
+    offset
+        .windows(2)
+        .map(|w| {
+            values
+                .get(w[0] as usize..w[1] as usize)
+                .map(|sl| {
+                    sl.iter()
+                        .copied()
+                        .map(|v| S::from(v).unwrap())
+                        .product::<S>()
+                })
+                .unwrap_or_else(|| S::from(1u8).unwrap())
+        })
+        .collect()
+}
+
+fn dispatch_product<T, S>(arr: &dyn Array, offsets: &[i64], validity: Option<&Bitmap>) -> ArrayRef
+where
+    T: NativeType + ToPrimitive,
+    S: NativeType + NumCast + std::iter::Product,
+{
+    let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
+    let values = values.values().as_slice();
+    Box::new(PrimitiveArray::from_data_default(
+        product_between_offsets::<_, S>(values, offsets).into(),
+        validity.cloned(),
+    )) as ArrayRef
+}
+
+pub(super) fn product_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
+    use DataType::*;
+    let chunks = ca
+        .downcast_iter()
+        .map(|arr| {
+            let offsets = arr.offsets().as_slice();
+            let values = arr.values().as_ref();
+
+            match inner_type {
+                Int8 => dispatch_product::<i8, i64>(values, offsets, arr.validity()),
+                Int16 => dispatch_product::<i16, i64>(values, offsets, arr.validity()),
+                Int32 => dispatch_product::<i32, i32>(values, offsets, arr.validity()),
+                Int64 => dispatch_product::<i64, i64>(values, offsets, arr.validity()),
+                UInt8 => dispatch_product::<u8, i64>(values, offsets, arr.validity()),
+                UInt16 => dispatch_product::<u16, i64>(values, offsets, arr.validity()),
+                UInt32 => dispatch_product::<u32, u32>(values, offsets, arr.validity()),
+                UInt64 => dispatch_product::<u64, u64>(values, offsets, arr.validity()),
+                Float32 => dispatch_product::<f32, f32>(values, offsets, arr.validity()),
+                Float64 => dispatch_product::<f64, f64>(values, offsets, arr.validity()),
+                _ => unimplemented!(),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    Series::try_from((ca.name().clone(), chunks)).unwrap()
+}
+
+pub(super) fn product_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> PolarsResult<Series> {
+    use DataType::*;
+    let mut out = match inner_dtype {
+        // Small int types are widened to i64 to prevent overflow, matching sum behaviour.
+        UInt8 | Int8 | UInt16 | Int16 => {
+            let out: Int64Chunked = ca.apply_amortized_generic(|s| {
+                s.map(|s| {
+                    s.as_ref()
+                        .cast(&Int64)
+                        .unwrap()
+                        .i64()
+                        .unwrap()
+                        .into_iter()
+                        .flatten()
+                        .product::<i64>()
+                })
+            });
+            out.into_series()
+        },
+        UInt32 => {
+            let out: UInt32Chunked = ca.apply_amortized_generic(|s| {
+                s.map(|s| s.as_ref().u32().unwrap().into_iter().flatten().product::<u32>())
+            });
+            out.into_series()
+        },
+        UInt64 => {
+            let out: UInt64Chunked = ca.apply_amortized_generic(|s| {
+                s.map(|s| s.as_ref().u64().unwrap().into_iter().flatten().product::<u64>())
+            });
+            out.into_series()
+        },
+        Int32 => {
+            let out: Int32Chunked = ca.apply_amortized_generic(|s| {
+                s.map(|s| s.as_ref().i32().unwrap().into_iter().flatten().product::<i32>())
+            });
+            out.into_series()
+        },
+        Int64 => {
+            let out: Int64Chunked = ca.apply_amortized_generic(|s| {
+                s.map(|s| s.as_ref().i64().unwrap().into_iter().flatten().product::<i64>())
+            });
+            out.into_series()
+        },
+        Float32 => {
+            let out: Float32Chunked = ca.apply_amortized_generic(|s| {
+                s.map(|s| s.as_ref().f32().unwrap().into_iter().flatten().product::<f32>())
+            });
+            out.into_series()
+        },
+        Float64 => {
+            let out: Float64Chunked = ca.apply_amortized_generic(|s| {
+                s.map(|s| s.as_ref().f64().unwrap().into_iter().flatten().product::<f64>())
+            });
+            out.into_series()
+        },
+        dt => polars_bail!(InvalidOperation: "list.product not supported for dtype {dt}"),
     };
     out.rename(ca.name().clone());
     Ok(out)

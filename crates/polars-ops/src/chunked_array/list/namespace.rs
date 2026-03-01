@@ -206,6 +206,19 @@ pub trait ListNameSpaceImpl: AsList {
         }
     }
 
+    fn lst_product(&self) -> PolarsResult<Series> {
+        let ca = self.as_list();
+
+        if has_inner_nulls(ca) {
+            return sum_mean::product_with_nulls(ca, ca.inner_dtype());
+        };
+
+        match ca.inner_dtype() {
+            dt if dt.is_primitive_numeric() => Ok(sum_mean::product_list_numerical(ca, dt)),
+            dt => sum_mean::product_with_nulls(ca, dt),
+        }
+    }
+
     fn lst_mean(&self) -> Series {
         let ca = self.as_list();
 

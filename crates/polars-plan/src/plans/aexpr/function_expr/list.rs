@@ -29,6 +29,7 @@ pub enum IRListFunction {
     #[cfg(feature = "list_count")]
     CountMatches,
     Sum,
+    Product,
     Length,
     Max,
     Min,
@@ -94,6 +95,7 @@ impl IRListFunction {
             #[cfg(feature = "list_count")]
             CountMatches => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
             Sum => mapper.nested_sum_type(),
+            Product => mapper.nested_sum_type(),
             Min => mapper.ensure_is_list()?.map_to_list_and_array_inner_dtype(),
             Max => mapper.ensure_is_list()?.map_to_list_and_array_inner_dtype(),
             Mean => mapper.nested_mean_median_type(),
@@ -196,6 +198,7 @@ impl IRListFunction {
             #[cfg(feature = "list_count")]
             L::CountMatches => FunctionOptions::elementwise(),
             L::Sum
+            | L::Product
             | L::Slice
             | L::Shift
             | L::Get(_)
@@ -260,6 +263,7 @@ impl Display for IRListFunction {
             #[cfg(feature = "list_count")]
             CountMatches => "count_matches",
             Sum => "sum",
+            Product => "product",
             Min => "min",
             Max => "max",
             Mean => "mean",
