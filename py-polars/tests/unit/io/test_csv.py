@@ -3137,3 +3137,23 @@ def test_provided_schema_mismatch_truncate(chunk_override: None, read_fn: str) -
 def test_read_batch_csv_deprecations_26479(foods_file_path: Path) -> None:
     with pytest.warns(DeprecationWarning, match=r"`read_csv_batched` is deprecated"):
         pl.read_csv_batched(foods_file_path)
+
+
+def test_read_csv_include_file_paths(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    csv_path = tmp_path / "data.csv"
+    csv_path.write_text("a,b\n1,2\n3,4")
+
+    df = pl.read_csv(csv_path, include_file_paths="source")
+    assert "source" in df.columns
+    assert df["source"].dtype == pl.String
+    assert (df["source"] == str(csv_path)).all()
+
+    # bytes and file-like sources should raise
+    with pytest.raises(ValueError, match="`include_file_paths` is not supported"):
+        pl.read_csv(b"a,b\n1,2", include_file_paths="source")
+
+    from io import BytesIO
+
+    with pytest.raises(ValueError, match="`include_file_paths` is not supported"):
+        pl.read_csv(BytesIO(b"a,b\n1,2"), include_file_paths="source")

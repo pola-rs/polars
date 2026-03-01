@@ -93,6 +93,7 @@ def read_csv(
     truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
     glob: bool = True,
+    include_file_paths: str | None = None,
 ) -> DataFrame:
     r"""
     Read a CSV file into a DataFrame.
@@ -240,6 +241,9 @@ def read_csv(
         Parse floats using a comma as the decimal separator instead of a period.
     glob
         Expand path given via globbing rules.
+    include_file_paths
+        Include the path of the source file(s) as a column with this name. Cannot be
+        used with bytes or file-like sources.
 
     Returns
     -------
@@ -290,6 +294,10 @@ def read_csv(
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
     _check_arg_is_1byte("eol_char", eol_char, can_be_empty=False)
+
+    if include_file_paths is not None and not isinstance(source, (str, Path)):
+        msg = "`include_file_paths` is not supported for bytes or file-like sources"
+        raise ValueError(msg)
 
     projection, columns = parse_columns_arg(columns)
     storage_options = storage_options or {}
@@ -540,6 +548,47 @@ def read_csv(
             truncate_ragged_lines=truncate_ragged_lines,
             decimal_comma=decimal_comma,
             glob=glob,
+            include_file_paths=include_file_paths,
+        )
+
+        if columns:
+            lf = lf.select(columns)
+        elif projection:
+            lf = lf.select(F.nth(projection))
+
+        df = lf.collect()
+
+    elif include_file_paths is not None:
+        # include_file_paths requires the lazy path; route through _scan_csv_impl
+        source_norm = normalize_filepath(source, check_not_directory=False)  # type: ignore[arg-type]
+        lf = _scan_csv_impl(
+            source_norm,
+            has_header=has_header,
+            separator=separator,
+            comment_prefix=comment_prefix,
+            quote_char=quote_char,
+            skip_rows=skip_rows,
+            skip_lines=skip_lines,
+            schema_overrides=schema_overrides,  # type: ignore[arg-type]
+            schema=schema,
+            null_values=null_values,
+            missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+            ignore_errors=ignore_errors,
+            try_parse_dates=try_parse_dates,
+            infer_schema_length=infer_schema_length,
+            n_rows=n_rows,
+            encoding=encoding,  # type: ignore[arg-type]
+            low_memory=low_memory,
+            rechunk=rechunk,
+            skip_rows_after_header=skip_rows_after_header,
+            row_index_name=row_index_name,
+            row_index_offset=row_index_offset,
+            eol_char=eol_char,
+            raise_if_empty=raise_if_empty,
+            truncate_ragged_lines=truncate_ragged_lines,
+            decimal_comma=decimal_comma,
+            glob=glob,
+            include_file_paths=include_file_paths,
         )
 
         if columns:
