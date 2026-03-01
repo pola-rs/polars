@@ -573,6 +573,15 @@ def test_group_by_next_without_iter() -> None:
         next(df.group_by("a"))
 
 
+def test_group_by_iter_stopiteration() -> None:
+    # GroupIter must raise StopIteration once all groups are consumed
+    df = pl.DataFrame({"a": ["x"], "b": [1]})
+    it = iter(df.group_by("a"))
+    next(it)  # consume the single group
+    with pytest.raises(StopIteration):
+        next(it)
+
+
 def test_group_by_iteration_selector() -> None:
     df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
     result = dict(df.group_by(cs.string()))
