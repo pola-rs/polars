@@ -219,6 +219,17 @@ def test_df_describe_quantile_precision() -> None:
         assert m in result_metrics
 
 
+# https://github.com/pola-rs/polars/issues/25946
+def test_df_describe_thousands_separator() -> None:
+    df = pl.DataFrame({"s": ["a"] * 1001, "n": list(range(1001))})
+    with pl.Config(thousands_separator=","):
+        result = df.describe()
+
+    s_col = result["s"].to_list()
+    assert s_col[0] == "1,001"  # count row — separator applied
+    assert s_col[1] == "0"  # null_count row — no grouping needed
+
+
 # https://github.com/pola-rs/polars/issues/9830
 @pytest.mark.may_fail_cloud
 def test_df_describe_object() -> None:
