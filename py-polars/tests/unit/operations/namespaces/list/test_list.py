@@ -1113,11 +1113,11 @@ def test_list_sample_fraction_validation_22024() -> None:
     s = pl.Series("a", [[1, 2, 3], [4, 5]])
 
     # fraction > 1.0 without replacement should raise
-    with pytest.raises(ValueError, match="fraction.*1.0"):
+    with pytest.raises(ValueError, match=r"fraction.*1\.0"):
         s.list.sample(fraction=1.5)
 
     # fraction < 0 should always raise
-    with pytest.raises(ValueError, match="fraction.*0"):
+    with pytest.raises(ValueError, match=r"fraction.*0"):
         s.list.sample(fraction=-0.1)
 
     # fraction > 1.0 is allowed with replacement
