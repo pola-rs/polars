@@ -62,7 +62,7 @@ def _check_not_parquet(source: str | Path | IO[str] | IO[bytes] | bytes) -> None
         src = str(source)
         if "://" not in src and not is_glob_pattern(src):
             try:
-                with open(src, "rb") as f:
+                with Path(src).open("rb") as f:
                     magic = f.read(4)
             except OSError:
                 pass

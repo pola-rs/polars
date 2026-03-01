@@ -3144,11 +3144,11 @@ def test_read_csv_parquet_file_hint(tmp_path: Path) -> None:
     parquet_file = tmp_path / "data.parquet"
     pl.DataFrame({"a": [1, 2, 3]}).write_parquet(parquet_file)
 
-    with pytest.raises(ValueError, match="Parquet file.*read_parquet"):
+    with pytest.raises(ValueError, match=r"Parquet file.*read_parquet"):
         pl.read_csv(parquet_file)
 
-    with pytest.raises(ValueError, match="Parquet file.*read_parquet"):
+    with pytest.raises(ValueError, match=r"Parquet file.*read_parquet"):
         pl.read_csv(str(parquet_file))
 
-    with pytest.raises(ValueError, match="Parquet file.*read_parquet"):
+    with pytest.raises(ValueError, match=r"Parquet file.*read_parquet"):
         pl.read_csv(parquet_file.read_bytes())
