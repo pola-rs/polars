@@ -1109,6 +1109,26 @@ def test_list_sample_fraction_self_broadcast() -> None:
     )
 
 
+def test_list_sample_fraction_validation_22024() -> None:
+    s = pl.Series("a", [[1, 2, 3], [4, 5]])
+
+    # fraction > 1.0 without replacement should raise
+    with pytest.raises(ValueError, match="fraction.*1.0"):
+        s.list.sample(fraction=1.5)
+
+    # fraction < 0 should always raise
+    with pytest.raises(ValueError, match="fraction.*0"):
+        s.list.sample(fraction=-0.1)
+
+    # fraction > 1.0 is allowed with replacement
+    result = s.list.sample(fraction=1.5, with_replacement=True, seed=0)
+    assert result[0].len() == 4  # 3 * 1.5 = 4 (floor)
+
+    # fraction == 1.0 without replacement is valid
+    result = s.list.sample(fraction=1.0, seed=0)
+    assert result[0].len() == 3
+
+
 def test_list_shift_unequal_lengths_22018() -> None:
     with pytest.raises(pl.exceptions.ShapeError):
         pl.Series("a", [[1, 2], [1, 2]]).list.shift(pl.Series([1, 2, 3]))
