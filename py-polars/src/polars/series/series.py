@@ -1514,10 +1514,11 @@ class Series:
         if isinstance(key, Series):
             if key.dtype == Boolean:
                 self._s = self.set(key, value)._s
-            elif key.dtype == UInt64:
+            elif key.dtype.is_integer():
                 self._s = self.scatter(key.cast(UInt32), value)._s
-            elif key.dtype == UInt32:
-                self._s = self.scatter(key, value)._s
+            else:
+                msg = f"cannot use Series of dtype {key.dtype!r} for indexing; expected integer or boolean dtype"
+                raise TypeError(msg)
 
         # TODO: implement for these types without casting to series
         elif _check_for_numpy(key) and isinstance(key, np.ndarray):
@@ -1529,6 +1530,10 @@ class Series:
                     PySeries.new_u32("", np.array(key, np.uint32), _strict=True)
                 )
                 self.__setitem__(s, value)
+        elif isinstance(key, range):
+            self.__setitem__(list(range(len(self))[key]), value)
+        elif isinstance(key, slice):
+            self.__setitem__(list(range(len(self))[key]), value)
         elif isinstance(key, (list, tuple)):
             s = self._from_pyseries(sequence_to_pyseries("", key, dtype=UInt32))
             self.__setitem__(s, value)

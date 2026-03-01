@@ -141,3 +141,27 @@ def test_scatter_decimal_25869() -> None:
 
     with pytest.raises(InvalidOperationError):
         s.scatter(1, "test")
+
+
+def test_setitem_integer_series_index_26358() -> None:
+    # All integer dtypes should work as index in __setitem__, not just UInt32/UInt64
+    s = pl.Series([-1, 2, 5])
+
+    s[pl.Series([0, 1])] = 99  # Int64
+    assert s.to_list() == [99, 99, 5]
+
+    s[pl.Series([2], dtype=pl.Int32)] = 0  # Int32
+    assert s.to_list() == [99, 99, 0]
+
+    # range and slice should also work
+    s2 = pl.Series([1, 2, 3, 4])
+    s2[range(2)] = 0
+    assert s2.to_list() == [0, 0, 3, 4]
+
+    s3 = pl.Series([1, 2, 3, 4])
+    s3[:2] = 0
+    assert s3.to_list() == [0, 0, 3, 4]
+
+    # non-integer Series should raise TypeError
+    with pytest.raises(TypeError, match="integer or boolean dtype"):
+        s[pl.Series(["a", "b"])] = 0
