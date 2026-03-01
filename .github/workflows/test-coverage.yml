@@ -79,7 +79,7 @@ jobs:
         run: cargo llvm-cov report --lcov --output-path coverage-rust.lcov
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-rust
           path: coverage-rust.lcov
@@ -189,7 +189,7 @@ jobs:
         run: cargo llvm-cov report --lcov --output-path coverage-python.lcov
 
       - name: Upload coverage reports
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-python
           path: |
@@ -208,7 +208,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Download coverage reports
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           merge-multiple: true
 

@@ -86,7 +86,7 @@ jobs:
           uv build py-polars --out-dir dist
 
       - name: Upload base package
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           path: dist
 
@@ -105,7 +105,7 @@ jobs:
           ref: ${{ inputs.sha }}
 
       - name: Download base package
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -142,7 +142,7 @@ jobs:
           python -c 'import polars; polars.show_versions()'
 
       - name: Upload sdist
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: sdist-${{ matrix.package }}
           path: dist/*.tar.gz
@@ -251,7 +251,7 @@ jobs:
           ref: ${{ inputs.sha }}
 
       - name: Download base package
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -355,7 +355,7 @@ jobs:
           python -c 'import polars; polars.show_versions()'
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: wheel-${{ matrix.package }}-${{ matrix.job_config }}
           path: dist/*.whl
@@ -371,7 +371,7 @@ jobs:
 
     steps:
       - name: Download sdists and wheels
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
