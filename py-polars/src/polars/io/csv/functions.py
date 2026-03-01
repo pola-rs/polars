@@ -51,6 +51,28 @@ if TYPE_CHECKING:
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
 
+_PARQUET_MAGIC = b"PAR1"
+
+
+def _check_not_parquet(source: str | Path | IO[str] | IO[bytes] | bytes) -> None:
+    magic: bytes | None = None
+    if isinstance(source, bytes):
+        magic = source[:4]
+    elif isinstance(source, (str, Path)):
+        src = str(source)
+        if "://" not in src and not is_glob_pattern(src):
+            try:
+                with open(src, "rb") as f:
+                    magic = f.read(4)
+            except OSError:
+                pass
+    if magic == _PARQUET_MAGIC:
+        msg = (
+            f"{source!r} appears to be a Parquet file;"
+            " use `read_parquet` instead of `read_csv`"
+        )
+        raise ValueError(msg)
+
 
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -290,6 +312,7 @@ def read_csv(
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
     _check_arg_is_1byte("eol_char", eol_char, can_be_empty=False)
+    _check_not_parquet(source)
 
     projection, columns = parse_columns_arg(columns)
     storage_options = storage_options or {}

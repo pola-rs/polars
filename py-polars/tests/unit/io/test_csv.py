@@ -3137,3 +3137,18 @@ def test_provided_schema_mismatch_truncate(chunk_override: None, read_fn: str) -
 def test_read_batch_csv_deprecations_26479(foods_file_path: Path) -> None:
     with pytest.warns(DeprecationWarning, match=r"`read_csv_batched` is deprecated"):
         pl.read_csv_batched(foods_file_path)
+
+
+def test_read_csv_parquet_file_hint(tmp_path: Path) -> None:
+    # Reading a parquet file with read_csv should give a clear error, not garbled output
+    parquet_file = tmp_path / "data.parquet"
+    pl.DataFrame({"a": [1, 2, 3]}).write_parquet(parquet_file)
+
+    with pytest.raises(ValueError, match="Parquet file.*read_parquet"):
+        pl.read_csv(parquet_file)
+
+    with pytest.raises(ValueError, match="Parquet file.*read_parquet"):
+        pl.read_csv(str(parquet_file))
+
+    with pytest.raises(ValueError, match="Parquet file.*read_parquet"):
+        pl.read_csv(parquet_file.read_bytes())
