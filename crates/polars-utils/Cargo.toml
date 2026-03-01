@@ -41,7 +41,7 @@ serde_json = { workspace = true, optional = true }
 serde_stacker = { workspace = true, optional = true }
 slotmap = { workspace = true }
 stacker = { workspace = true }
-sysinfo = { version = "0.37", default-features = false, features = ["system"], optional = true }
+sysinfo = { version = "0.38", default-features = false, features = ["system"], optional = true }
 tokio = { workspace = true, optional = true, features = ["rt", "sync"] }
 uuid = { workspace = true }
 
