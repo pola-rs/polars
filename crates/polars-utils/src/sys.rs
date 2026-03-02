@@ -56,7 +56,7 @@ pub static MEMINFO: LazyLock<MemInfo> = LazyLock::new(|| MemInfo {
 
 /// Check whether a process with the given PID is currently alive.
 ///
-/// Used by [`polars_ooc::spiller::cleanup_stale_dirs`] to remove spill
+/// Used by `polars_ooc::cleaner::cleanup_stale_dirs` to remove spill
 /// directories left behind by dead processes on startup.
 pub fn is_process_alive(pid: u32) -> bool {
     use sysinfo::{Pid, ProcessRefreshKind, System, UpdateKind};
