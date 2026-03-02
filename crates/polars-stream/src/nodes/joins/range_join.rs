@@ -4,7 +4,7 @@ use arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_ops::frame::{_finish_join, IEJoinOptions, InequalityOperator, JoinArgs};
+use polars_ops::frame::{_finish_join, IEJoinOptions, InequalityOperator, JoinArgs, JoinBuildSide};
 use polars_ops::series::{SearchSortedSide, search_sorted};
 
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
@@ -16,14 +16,19 @@ use crate::nodes::ComputeNode;
 use crate::nodes::in_memory_sink::InMemorySinkNode;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
-pub fn left_is_point(left_on: &[PlSmallStr], _right_on: &[PlSmallStr], _args: &JoinArgs) -> bool {
-    // TODO: [amber] Implement build-side configuration
-    left_on.len() == 1
-}
-
 // TODO: [amber]
-//   * Support build-side configuration
-//   * And when it is sorted but descending
+//   * Merge IR lowering arms
+//   * Add support for when the point side is sorted but descending
+
+pub fn left_is_point(left_on: &[PlSmallStr], right_on: &[PlSmallStr], args: &JoinArgs) -> bool {
+    let left_can_be_point = left_on.len() == 1;
+    let right_can_be_point = right_on.len() == 1;
+    match args.build_side {
+        None | Some(JoinBuildSide::PreferLeft) => left_can_be_point,
+        Some(JoinBuildSide::PreferRight) => !right_can_be_point,
+        Some(JoinBuildSide::ForceLeft | JoinBuildSide::ForceRight) => unreachable!(),
+    }
+}
 
 #[derive(Debug)]
 enum RangeJoinState {
