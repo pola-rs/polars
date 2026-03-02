@@ -23,7 +23,7 @@ use crate::prelude::{
     PlSmallStr, PrimitiveArray, Series,
 };
 
-pub(super) fn unhandled_arrow_conversion_dtype_pair_err(
+fn unhandled_arrow_conversion_dtype_pair_err(
     input_pl_dtype: &DataType,
     output_arrow_field: &ArrowField,
 ) -> PolarsError {
@@ -42,7 +42,7 @@ macro_rules! primitive_to_boxed_with_logical {
     }};
 }
 
-pub(super) fn ensure_no_nulls(array: &dyn Array) -> PolarsResult<()> {
+fn ensure_no_nulls(array: &dyn Array) -> PolarsResult<()> {
     polars_ensure!(
         !array.has_nulls(),
         SchemaMismatch:
@@ -465,7 +465,7 @@ impl ToArrowConverter {
     }
 }
 
-pub(super) fn to_owned_dtype(field: Cow<ArrowField>) -> ArrowDataType {
+fn to_owned_dtype(field: Cow<ArrowField>) -> ArrowDataType {
     match field {
         Cow::Borrowed(f) => f.dtype().clone(),
         Cow::Owned(f) => f.dtype,
