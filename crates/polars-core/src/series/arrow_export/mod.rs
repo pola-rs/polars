@@ -54,7 +54,8 @@ fn ensure_no_nulls(array: &dyn Array) -> PolarsResult<()> {
 }
 
 impl Series {
-    /// Export a Series to an arrow array.
+    /// Export this Series to an arrow array. The dtype of the returned array will be chosen
+    /// according to the provided `compat_level`.
     pub fn to_arrow(&self, chunk_idx: usize, compat_level: CompatLevel) -> ArrayRef {
         self.to_arrow_with_field(
             chunk_idx,
@@ -67,6 +68,8 @@ impl Series {
         .unwrap()
     }
 
+    /// Export this Series to an arrow array. The dtype of the returned array will match the
+    /// provided arrow field. Returns an error if this Series cannot be exported to the arrow field.
     pub fn to_arrow_with_field<'a>(
         &self,
         chunk_idx: usize,
