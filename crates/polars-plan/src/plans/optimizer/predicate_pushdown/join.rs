@@ -194,7 +194,7 @@ pub(super) fn process_join(
             Right => false,
 
             #[cfg(feature = "iejoin")]
-            IEJoin | Range => false, // TODO: [amber] Double check this for range join
+            IEJoin | Range => false,
 
             Cross => unreachable!(), // Cross left/right_on should be empty
         } {
@@ -313,7 +313,6 @@ pub(super) fn process_join(
 
             // Same as inner-join.
             #[cfg(feature = "iejoin")]
-            // TODO: [amber] Double-check if this is correct for range-join
             JoinType::IEJoin | JoinType::Range => !(push_left || push_right),
         };
 

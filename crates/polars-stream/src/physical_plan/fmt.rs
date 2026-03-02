@@ -733,11 +733,19 @@ fn visualize_plan_rec(
             args,
             ..
         } => {
-            // TODO: [amber] fmt this without using Debug
+            let mut tmp_arena: Arena<AExpr> = Arena::with_capacity(3);
+            let left_on_exprs = left_on
+                .iter()
+                .map(|on| ExprIR::from_column_name(on.clone(), &mut tmp_arena))
+                .collect_vec();
+            let right_on_exprs = right_on
+                .iter()
+                .map(|on| ExprIR::from_column_name(on.clone(), &mut tmp_arena))
+                .collect_vec();
             let label = fmt_join_label(
                 "range-join",
-                &escape_graphviz(&format!("{:?}", left_on)),
-                &escape_graphviz(&format!("{:?}", right_on)),
+                &fmt_exprs_to_label(&left_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
+                &fmt_exprs_to_label(&right_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
                 args,
             );
             (label, &[*input_left, *input_right][..])
