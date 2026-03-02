@@ -5,14 +5,14 @@ from typing import TYPE_CHECKING, Any
 
 import hypothesis.strategies as st
 import numpy as np
-from polars.testing.parametric.strategies.core import dataframes
 import pytest
 from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_frame_equal
 from polars.testing.parametric.strategies import series
-from tests.unit.conftest import DURATION_DTYPES, NUMERIC_DTYPES, TEMPORAL_DTYPES
+from polars.testing.parametric.strategies.core import dataframes
+from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
@@ -703,7 +703,7 @@ def range_join_frames(draw: DrawFn) -> tuple[pl.DataFrame, pl.DataFrame]:
 
     lo_vals = draw(st.lists(st.integers(0, 20), min_size=n_right, max_size=n_right))
     widths = draw(st.lists(st.integers(0, 10), min_size=n_right, max_size=n_right))
-    hi_vals = [lo + w for lo, w in zip(lo_vals, widths)]
+    hi_vals = [lo + w for lo, w in zip(lo_vals, widths, strict=True)]
 
     left = pl.DataFrame(
         [
@@ -734,8 +734,8 @@ def range_join_frames(draw: DrawFn) -> tuple[pl.DataFrame, pl.DataFrame]:
 def test_range_join_parametric(
     point: pl.DataFrame,
     interval: pl.DataFrame,
-    lower_op: str,
-    upper_op: str,
+    lower_op: str | None,
+    upper_op: str | None,
 ) -> None:
     if lower_op is None and upper_op is None:
         pytest.skip("at least one of lower_op or upper_op must be set")
@@ -753,7 +753,7 @@ def test_range_join_parametric(
     q = point_lf.join_where(interval_lf, *predicates).sort("index", "index_right")
 
     dot = q.show_graph(plan_stage="physical", engine="streaming", raw_output=True)
-    assert "range-join" in dot
+    assert "range-join" in str(dot)
 
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
@@ -773,8 +773,8 @@ def test_range_join_parametric(
     ],
 )
 def test_range_join_dtypes(
-    lower_op: str,
-    upper_op: str,
+    lower_op: str | None,
+    upper_op: str | None,
     s: pl.DataType,
 ) -> None:
     point_df = pl.DataFrame(s)
@@ -792,7 +792,7 @@ def test_range_join_dtypes(
     q = point_lf.join_where(interval_lf, *predicates).sort("index", "index_right")
 
     dot = q.show_graph(plan_stage="physical", engine="streaming", raw_output=True)
-    assert "range-join" in dot
+    assert "range-join" in str(dot)
 
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")

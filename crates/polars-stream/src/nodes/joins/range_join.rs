@@ -1,4 +1,5 @@
 use std::mem;
+use std::ops::BitAnd;
 
 use arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
@@ -78,6 +79,7 @@ impl RangeJoinParams {
 }
 
 impl RangeJoinNode {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         left_schema: SchemaRef,
         right_schema: SchemaRef,
@@ -251,13 +253,11 @@ impl ComputeNode for RangeJoinNode {
                 let probe_state = &*probe_state;
                 let recv = recv_ports[interval_idx].take().unwrap().parallel();
                 let send = send_ports[0].take().unwrap().parallel();
-                join_handles.extend(Iterator::zip(recv.into_iter(), send.into_iter()).map(
-                    |(recv, send)| {
-                        scope.spawn_task(TaskPriority::High, async move {
-                            compute_and_emit_task(recv, send, probe_state, params).await
-                        })
-                    },
-                ));
+                join_handles.extend(Iterator::zip(recv.into_iter(), send).map(|(recv, send)| {
+                    scope.spawn_task(TaskPriority::High, async move {
+                        compute_and_emit_task(recv, send, probe_state, params).await
+                    })
+                }));
             },
             RangeJoinState::Done => unreachable!(),
         }
@@ -328,6 +328,19 @@ async fn compute_and_emit_task(
             return Ok(());
         };
 
+        let mut acc: Option<BooleanChunked> = None;
+        for c in [params.lower_key_col(), params.upper_key_col()]
+            .into_iter()
+            .flatten()
+        {
+            let mask = interval_df.column(c)?.is_not_null();
+            acc = Some(match acc {
+                Some(om) => om.bitand(mask),
+                None => mask,
+            });
+        }
+        let interval_df = interval_df.filter(&acc.unwrap())?;
+
         let starts = params
             .lower_key_col()
             .map(|c| {
@@ -361,7 +374,7 @@ async fn compute_and_emit_task(
         for (row_idx, (start, end)) in
             Iterator::zip(starts.into_no_null_iter(), ends.into_no_null_iter()).enumerate()
         {
-            if !(start <= end) {
+            if start > end {
                 continue;
             }
 

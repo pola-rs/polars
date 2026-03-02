@@ -1117,13 +1117,13 @@ pub fn lower_ir(
                 input_left
             };
             if left_is_point
-                && !expr_is_sorted(
+                && expr_is_sorted(
                     left_df_sortedness.as_ref(),
                     &left_on[0],
                     expr_arena,
                     &input_left_schema,
                 )
-                .map_or(false, |s| s.descending == Some(false))
+                .is_none_or(|s| s.descending != Some(false))
             {
                 use polars_core::prelude::SortMultipleOptions;
 
@@ -1165,13 +1165,13 @@ pub fn lower_ir(
                 input_right
             };
             if !left_is_point
-                && !expr_is_sorted(
+                && expr_is_sorted(
                     right_df_sortedness.as_ref(),
                     &right_on[0],
                     expr_arena,
                     &input_right_schema,
                 )
-                .map_or(false, |s| s.descending == Some(false))
+                .is_none_or(|s| s.descending != Some(false))
             {
                 use polars_core::prelude::SortMultipleOptions;
 

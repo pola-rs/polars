@@ -75,11 +75,9 @@ impl IEJoinOptions {
             InequalityOperator::Gt | InequalityOperator::GtEq
         )
     }
-    pub fn l2_descending(&self) -> bool {
-        matches!(
-            self.operator2.unwrap(),
-            InequalityOperator::Lt | InequalityOperator::LtEq
-        )
+    pub fn l2_descending(&self) -> Option<bool> {
+        self.operator2
+            .map(|op| matches!(op, InequalityOperator::Lt | InequalityOperator::LtEq))
     }
 }
 
@@ -248,7 +246,7 @@ pub fn iejoin_par_partition(
 ) -> PolarsResult<Option<(IdxCa, IdxCa)>> {
     let sorted_flag = options
         .l1_descending()
-        .then(|| IsSorted::Descending)
+        .then_some(IsSorted::Descending)
         .unwrap_or_else(|| IsSorted::Ascending);
 
     let sl = &selected_left[0];
@@ -467,7 +465,7 @@ fn iejoin_tuples(
     let l2_sort_options = SortOptions::default()
         .with_maintain_order(true)
         .with_nulls_last(false)
-        .with_order_descending(options.l2_descending());
+        .with_order_descending(options.l2_descending().unwrap());
     // Get the indexes into l1, ordered by y values.
     // l2_order is the same as "p" from Khayyat et al.
     let l2_order = y_ordered_by_x.arg_sort(l2_sort_options).slice(

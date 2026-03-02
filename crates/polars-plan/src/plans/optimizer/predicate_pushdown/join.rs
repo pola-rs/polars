@@ -466,7 +466,7 @@ fn try_rewrite_join_type(
                 output_schema,
                 &suffix,
             )?;
-            if let Some((bound_lower, bound_upper, left_is_bounded)) = range_predicate {
+            if let Some((bound_lower, bound_upper, left_is_point)) = range_predicate {
                 let join_options = Arc::make_mut(options);
                 join_options.args.how = JoinType::Range;
                 let JoinTypeOptionsIR::IEJoin(ie_options) = join_options
@@ -481,7 +481,7 @@ fn try_rewrite_join_type(
                 };
                 left_on.push(ExprIR::from_node(bound_lower.input_lhs, expr_arena));
                 right_on.push(ExprIR::from_node(bound_lower.input_rhs, expr_arena));
-                if left_is_bounded {
+                if left_is_point {
                     debug_assert!(expr_eq(bound_upper.input_lhs, bound_lower.input_lhs));
                     right_on.push(ExprIR::from_node(bound_upper.input_rhs, expr_arena));
                 } else {
