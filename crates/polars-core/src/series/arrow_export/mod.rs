@@ -129,7 +129,7 @@ impl ToArrowConverter {
         polars_dtype: &DataType,
         arrow_field: Cow<'a, ArrowField>,
     ) -> PolarsResult<Box<dyn Array>> {
-        // We extract the underlying `dyn Array` and perform additional steps where necessary:
+        // We perform additional steps where necessary. E.g.
         // * If we are exporting a logical type, set the array dtype to the corresponding arrow logical type.
         // * Attach field metadata where necessary (e.g. for categorical and extension types).
         Ok(match (polars_dtype, arrow_field.dtype()) {
