@@ -12,6 +12,7 @@ from hypothesis import given
 import polars as pl
 from polars.testing import assert_frame_equal
 from polars.testing.parametric.strategies import series
+from tests.unit.conftest import DURATION_DTYPES, NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
@@ -730,7 +731,7 @@ def range_join_frames(draw: DrawFn) -> tuple[pl.DataFrame, pl.DataFrame]:
         min_cols=2, max_cols=2, allowed_dtypes=[pl.Int16], allow_null=False
     ),
 )
-def test_ie_join_streaming_range(
+def test_range_join_parametric(
     point: pl.DataFrame,
     interval: pl.DataFrame,
     lower_op: str,
@@ -743,12 +744,11 @@ def test_ie_join_streaming_range(
     interval_lf = pl.LazyFrame(
         interval.rename({"col0": "lo", "col1": "hi"})
     ).with_row_index()
-
-    predicates = []
-    if lower_op:
-        predicates.append(_inequality_expression("point", lower_op, "lo"))
-    if upper_op:
-        predicates.append(_inequality_expression("point", upper_op, "hi"))
+    predicates = [
+        _inequality_expression("point", op, col)
+        for op, col in [(lower_op, "lo"), (upper_op, "hi")]
+        if op is not None
+    ]
 
     q = point_lf.join_where(interval_lf, *predicates)
 
@@ -757,4 +757,44 @@ def test_ie_join_streaming_range(
 
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
+    assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
+
+
+@pytest.mark.parametrize("lower_op", [None, ">"])
+@pytest.mark.parametrize("upper_op", ["<"])
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series("point", [1, 2, 3], dtype=dtype)
+        for dtype in NUMERIC_DTYPES + TEMPORAL_DTYPES
+    ]
+    + [
+        pl.Series("point", [1, 2, 3], dtype=pl.Decimal(10, 2)),
+    ],
+)
+def test_range_join_dtypes(
+    lower_op: str,
+    upper_op: str,
+    s: pl.DataType,
+) -> None:
+    point_df = pl.DataFrame(s)
+    # 50 samples should ensure that this join will have plenty of matches
+    lo_df = point_df.sample(50, with_replacement=True, seed=0).rename({"point": "lo"})
+    hi_df = point_df.sample(50, with_replacement=True, seed=1).rename({"point": "hi"})
+    interval_lf = pl.concat([lo_df, hi_df], how="horizontal").with_row_index().lazy()
+    point_lf = point_df.with_row_index().lazy()
+    predicates = [
+        _inequality_expression("point", op, col)
+        for op, col in [(lower_op, "lo"), (upper_op, "hi")]
+        if op is not None
+    ]
+
+    q = point_lf.join_where(interval_lf, *predicates)
+
+    dot = q.show_graph(plan_stage="physical", engine="streaming", raw_output=True)
+    assert "range-join" in dot
+
+    expected = q.collect(engine="in-memory")
+    actual = q.collect(engine="streaming")
+    assert expected.height > 0
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)

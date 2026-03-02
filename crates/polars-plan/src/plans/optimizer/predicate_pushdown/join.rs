@@ -194,7 +194,7 @@ pub(super) fn process_join(
             Right => false,
 
             #[cfg(feature = "iejoin")]
-            IEJoin | Range => false, // TODO: [amber] Double check this
+            IEJoin | Range => false, // TODO: [amber] Double check this for range join
 
             Cross => unreachable!(), // Cross left/right_on should be empty
         } {

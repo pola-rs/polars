@@ -445,13 +445,6 @@ fn iejoin_tuples(
     let mut x = selected_left[0].to_physical_repr().into_owned();
     let left_height = x.len();
 
-    // [amber] Why are X and Y extended with right? Why are they not a separate Series?
-    // Khayyat has them seperately.
-    //
-    // Maybe to add even more data locality?
-    //
-    // Yes. Khayyat describe this later in their paper.
-
     x.extend(&selected_right[0].to_physical_repr())?;
     // Rechunk because we will gather.
     let x = x.rechunk();

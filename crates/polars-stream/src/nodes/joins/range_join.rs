@@ -339,7 +339,7 @@ async fn compute_and_emit_task(
                 continue;
             }
 
-            let sliced = point_df.slice(start as i64, end.saturating_sub(start) as usize);
+            let sliced = point_df.slice(start as i64, (end - start) as usize);
             accumulator_point.vstack_mut_owned_unchecked(sliced);
 
             for gather_chunk in iter::repeat_n(
