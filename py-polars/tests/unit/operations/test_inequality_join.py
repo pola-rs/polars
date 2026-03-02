@@ -750,14 +750,14 @@ def test_range_join_parametric(
         if op is not None
     ]
 
-    q = point_lf.join_where(interval_lf, *predicates)
+    q = point_lf.join_where(interval_lf, *predicates).sort("index", "index_right")
 
     dot = q.show_graph(plan_stage="physical", engine="streaming", raw_output=True)
     assert "range-join" in dot
 
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
-    assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
+    assert_frame_equal(actual, expected, check_exact=True)
 
 
 @pytest.mark.parametrize("lower_op", [None, ">"])
@@ -789,7 +789,7 @@ def test_range_join_dtypes(
         if op is not None
     ]
 
-    q = point_lf.join_where(interval_lf, *predicates)
+    q = point_lf.join_where(interval_lf, *predicates).sort("index", "index_right")
 
     dot = q.show_graph(plan_stage="physical", engine="streaming", raw_output=True)
     assert "range-join" in dot
@@ -797,4 +797,4 @@ def test_range_join_dtypes(
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
     assert expected.height > 0
-    assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
+    assert_frame_equal(actual, expected, check_exact=True)

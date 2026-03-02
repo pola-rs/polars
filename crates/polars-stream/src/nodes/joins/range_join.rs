@@ -1,16 +1,24 @@
-use std::{iter, mem};
+use std::mem;
 
+use arrow::array::builder::ShareStrategy;
+use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_ops::frame::{_finish_join, IEJoinOptions, InequalityOperator, JoinArgs};
 use polars_ops::series::{SearchSortedSide, search_sorted};
 
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
+use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
-use crate::morsel::Morsel;
+use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::ComputeNode;
 use crate::nodes::in_memory_sink::InMemorySinkNode;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
+
+// TODO: [amber]
+//   * Move sort into lowering
+//   * Support build-side configuration
+//   * Deal with multiple inequality predicates that are incompatible
 
 #[derive(Debug)]
 enum RangeJoinState {
@@ -44,7 +52,6 @@ struct RangeJoinParams {
     interval_schema: SchemaRef,
     output_schema: SchemaRef,
     args: JoinArgs,
-    options: IEJoinOptions,
     left_is_point: bool,
 }
 
@@ -57,17 +64,6 @@ impl RangeJoinParams {
     }
     fn upper_key_col(&self) -> Option<&PlSmallStr> {
         self.upper_tmp_key_col.as_ref().or(self.upper_on.as_ref())
-    }
-    fn operator<const IDX: usize>(&self) -> InequalityOperator {
-        let left_right_op = match IDX {
-            0 => self.options.operator1,
-            1 => self.options.operator2.unwrap(),
-            _ => unreachable!(),
-        };
-        match self.left_is_point {
-            true => left_right_op,
-            false => !left_right_op,
-        }
     }
 }
 
@@ -157,7 +153,6 @@ impl RangeJoinNode {
             interval_schema,
             output_schema,
             args,
-            options,
             left_is_point,
         };
         RangeJoinNode {
@@ -275,29 +270,49 @@ async fn compute_and_emit_task(
     probe_state: &ProbeState,
     params: &RangeJoinParams,
 ) -> PolarsResult<()> {
-    let ProbeState { point_df } = probe_state;
-    let point_key = point_df
-        .column(params.point_key_col())?
-        .as_materialized_series();
-
     let sss_lower = match params.lower_op {
         Some(InequalityOperator::GtEq) => Some(SearchSortedSide::Left),
         Some(InequalityOperator::Gt) => Some(SearchSortedSide::Right),
-        Some(_) => unreachable!(),
+        Some(_) => unreachable!("lower_op is not a lower-bound operator"),
         _ => None,
     };
     let sss_upper = match params.upper_op {
         Some(InequalityOperator::LtEq) => Some(SearchSortedSide::Right),
         Some(InequalityOperator::Lt) => Some(SearchSortedSide::Left),
-        Some(_) => unreachable!(),
+        Some(_) => unreachable!("upper_op is not an upper-bound operator"),
         _ => None,
     };
 
+    let ProbeState { point_df } = probe_state;
+    let point_key = point_df
+        .column(params.point_key_col())?
+        .as_materialized_series();
+
+    let mut seq = MorselSeq::default();
+    let mut st = SourceToken::default();
+    let wait_group = WaitGroup::default();
+    let mut builder_point = DataFrameBuilder::new(params.point_schema.clone());
+    let mut builder_interval = DataFrameBuilder::new(params.interval_schema.clone());
+
     loop {
-        let Ok(morsel) = recv.recv().await else {
+        let interval_df;
+        if let Ok(morsel) = recv.recv().await {
+            (interval_df, seq, st, _) = morsel.into_inner();
+        } else {
+            if !builder_point.is_empty() {
+                freeze_builders_and_emit(
+                    &mut send,
+                    &mut builder_point,
+                    &mut builder_interval,
+                    params,
+                    seq,
+                    st.clone(),
+                    None,
+                )
+                .await?;
+            }
             return Ok(());
         };
-        let (interval_df, seq, st, _) = morsel.into_inner();
 
         let starts = params
             .lower_key_col()
@@ -329,9 +344,6 @@ async fn compute_and_emit_task(
             ),
         };
 
-        let mut accumulator_point = DataFrame::empty_with_arc_schema(params.point_schema.clone());
-        let mut accumulator_interval =
-            DataFrame::empty_with_arc_schema(params.interval_schema.clone());
         for (row_idx, (start, end)) in
             Iterator::zip(starts.into_no_null_iter(), ends.into_no_null_iter()).enumerate()
         {
@@ -339,38 +351,67 @@ async fn compute_and_emit_task(
                 continue;
             }
 
-            let sliced = point_df.slice(start as i64, (end - start) as usize);
-            accumulator_point.vstack_mut_owned_unchecked(sliced);
+            let match_len = (end - start) as usize;
+            builder_point.subslice_extend(
+                point_df,
+                start as usize,
+                match_len,
+                ShareStrategy::Never,
+            );
+            builder_interval.subslice_extend_repeated(
+                &interval_df,
+                row_idx,
+                1,
+                match_len,
+                ShareStrategy::Never,
+            );
+            debug_assert!(builder_point.len() == builder_interval.len());
 
-            for gather_chunk in iter::repeat_n(
-                interval_df.slice(row_idx as i64, 1),
-                end.saturating_sub(start) as usize,
-            ) {
-                accumulator_interval.vstack_mut_owned_unchecked(gather_chunk);
+            if builder_point.len() >= get_ideal_morsel_size() {
+                freeze_builders_and_emit(
+                    &mut send,
+                    &mut builder_point,
+                    &mut builder_interval,
+                    params,
+                    seq,
+                    st.clone(),
+                    Some(wait_group.token()),
+                )
+                .await?;
+                wait_group.wait().await;
             }
-            debug_assert!(accumulator_point.height() == accumulator_interval.height());
-        }
-
-        let mut output = if params.left_is_point {
-            _finish_join(
-                accumulator_point,
-                accumulator_interval,
-                params.args.suffix.clone(),
-            )?
-        } else {
-            _finish_join(
-                accumulator_interval,
-                accumulator_point,
-                params.args.suffix.clone(),
-            )?
-        };
-
-        drop_key_columns(&mut output, params);
-        let morsel = Morsel::new(output, seq, st.clone());
-        if send.send(morsel).await.is_err() {
-            return Ok(());
         }
     }
+}
+
+async fn freeze_builders_and_emit(
+    send: &mut PortSender,
+    builder_point: &mut DataFrameBuilder,
+    builder_interval: &mut DataFrameBuilder,
+    params: &RangeJoinParams,
+    seq: MorselSeq,
+    st: SourceToken,
+    wt: Option<WaitToken>,
+) -> PolarsResult<()> {
+    let results_point = builder_point.freeze_reset();
+    let results_interval = builder_interval.freeze_reset();
+
+    let mut output = if params.left_is_point {
+        _finish_join(results_point, results_interval, params.args.suffix.clone())?
+    } else {
+        _finish_join(results_interval, results_point, params.args.suffix.clone())?
+    };
+
+    drop_key_columns(&mut output, params);
+    debug_assert!(*output.schema() == params.output_schema);
+    let mut morsel = Morsel::new(output, seq, st);
+    if let Some(wt) = wt {
+        morsel.set_consume_token(wt);
+    }
+    if send.send(morsel).await.is_err() {
+        return Ok(());
+    }
+    Ok(())
 }
 
 fn drop_key_columns(df: &mut DataFrame, params: &RangeJoinParams) {
