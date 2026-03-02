@@ -1184,34 +1184,6 @@ fn take_iejoin_compatible_filters(
 }
 
 #[cfg(feature = "iejoin")]
-fn take_first_iejoin_compatible_filter(
-    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
-    expr_arena: &mut Arena<AExpr>,
-    schema_left: &Schema,
-    schema_right: &Schema,
-    output_schema: &Schema,
-    suffix: &str,
-) -> PolarsResult<Option<IEJoinCompatiblePredicate>> {
-    let mut all_filters = take_iejoin_compatible_filters(
-        acc_predicates,
-        expr_arena,
-        schema_left,
-        schema_right,
-        output_schema,
-        suffix,
-    )?;
-    let first = all_filters.next();
-    for pred in all_filters {
-        insert_predicate_dedup(
-            acc_predicates,
-            &ExprIR::from_node(pred.source_node, expr_arena),
-            expr_arena,
-        );
-    }
-    Ok(first)
-}
-
-#[cfg(feature = "iejoin")]
 fn take_double_bounded_range_join_filter(
     acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,

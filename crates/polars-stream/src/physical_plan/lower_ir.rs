@@ -1064,6 +1064,8 @@ pub fn lower_ir(
             // TODO: [amber] This code is still very crude and should be merged
             // into the big join arm anyway.
 
+            use crate::nodes::joins::range_join;
+
             let input_left = *input_left;
             let input_right = *input_right;
             let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);
@@ -1075,106 +1077,99 @@ pub fn lower_ir(
             let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
             let args = options.args.clone();
             let options = options.options.clone();
-
-            let phys_left = lower_ir!(input_left)?;
-            let phys_right = lower_ir!(input_right)?;
-
-            // When lowering the expressions for the keys we need to ensure we keep around the
-            // payload columns, otherwise the input nodes can get replaced by input-independent
-            // nodes since the lowering code does not see we access any non-literal expressions.
-            // So we add dummy expressions before lowering and remove them afterwards.
-
-            let mut aug_left_on = left_on.clone();
-            for name in phys_sm[phys_left.node].output_schema.iter_names() {
-                let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-                aug_left_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
-            }
-            let mut aug_right_on = right_on.clone();
-            for name in phys_sm[phys_right.node].output_schema.iter_names() {
-                let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-                aug_right_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
-            }
-
-            let (trans_input_left, mut trans_left_on) = lower_exprs(
-                phys_left,
-                &aug_left_on,
-                expr_arena,
-                phys_sm,
-                expr_cache,
-                ctx,
-            )?;
-            let (trans_input_right, mut trans_right_on) = lower_exprs(
-                phys_right,
-                &aug_right_on,
-                expr_arena,
-                phys_sm,
-                expr_cache,
-                ctx,
-            )?;
-
-            trans_left_on.drain(left_on.len()..);
-            trans_right_on.drain(right_on.len()..);
+            let left_is_point = range_join::left_is_point(&left_on_names, &right_on_names, &args);
 
             let Some(JoinTypeOptionsIR::IEJoin(range_options)) = options else {
                 unreachable!()
             };
 
+            // For each non-trivial key expression, assign a temp column name and collect it
+            // for an IR::HStack node. lower_ir! on that node handles all the complexity of
+            // materialising non-elementwise expressions, just as it does for a regular HStack.
             let key_expr_is_trivial =
                 |c: &ExprIR, ea: &mut Arena<AExpr>| matches!(ea.get(c.node()), AExpr::Column(_));
-            let mut prepare_key_col = |expr: &ExprIR, schema: &Schema| -> PolarsResult<_> {
-                if !key_expr_is_trivial(&expr, expr_arena) {
-                    let tmp_col_name = unique_column_name();
-                    let tmp_col_expr = expr.with_alias(tmp_col_name.clone());
-                    Ok((tmp_col_expr, Some(tmp_col_name)))
-                } else {
-                    Ok((expr.clone(), None))
-                }
-            };
-
-            let left_key_exprs: Vec<(ExprIR, Option<PlSmallStr>)> = trans_left_on
-                .iter()
-                .map(|on| prepare_key_col(on, &input_left_schema))
-                .try_collect_vec()?;
-            let right_key_exprs: Vec<(ExprIR, Option<PlSmallStr>)> = trans_right_on
-                .iter()
-                .map(|on| prepare_key_col(on, &input_right_schema))
-                .try_collect_vec()?;
 
             let mut left_tmp_col_names = [const { None }; 2];
-            for (i, (_, name)) in left_key_exprs.iter().enumerate() {
-                left_tmp_col_names[i] = name.clone();
+            let mut left_hstack_schema = input_left_schema.as_ref().clone();
+            let mut left_hstack_exprs: Vec<ExprIR> = Vec::new();
+            for (i, on_expr) in left_on.iter().enumerate() {
+                if !key_expr_is_trivial(on_expr, expr_arena) {
+                    let tmp_name = unique_column_name();
+                    left_tmp_col_names[i] = Some(tmp_name.clone());
+                    let dtype = on_expr
+                        .dtype(&input_left_schema, expr_arena)?
+                        .clone()
+                        .materialize_unknown(true)?;
+                    left_hstack_schema.with_column(tmp_name.clone(), dtype);
+                    left_hstack_exprs.push(on_expr.with_alias(tmp_name));
+                }
             }
+            let mut left_ir = if !left_hstack_exprs.is_empty() {
+                ir_arena.add(IR::HStack {
+                    input: input_left,
+                    exprs: left_hstack_exprs,
+                    schema: Arc::new(left_hstack_schema),
+                    options: ProjectionOptions::default(),
+                })
+            } else {
+                input_left
+            };
+            if left_is_point {
+                use polars_core::prelude::SortMultipleOptions;
+
+                let by = left_tmp_col_names[0].as_ref().unwrap_or(&left_on_names[0]);
+                left_ir = ir_arena.add(IR::Sort {
+                    input: left_ir,
+                    by_column: vec![
+                        AExprBuilder::col(by.clone(), expr_arena).expr_ir_retain_name(expr_arena),
+                    ],
+                    slice: None,
+                    sort_options: SortMultipleOptions::default(),
+                });
+            }
+            let trans_input_left = lower_ir!(left_ir)?;
 
             let mut right_tmp_col_names = [const { None }; 2];
-            for (i, (_, name)) in right_key_exprs.iter().enumerate() {
-                right_tmp_col_names[i] = name.clone();
+            let mut right_hstack_schema = input_right_schema.as_ref().clone();
+            let mut right_hstack_exprs: Vec<ExprIR> = Vec::new();
+            for (i, on_expr) in right_on.iter().enumerate() {
+                if !key_expr_is_trivial(on_expr, expr_arena) {
+                    let tmp_name = unique_column_name();
+                    right_tmp_col_names[i] = Some(tmp_name.clone());
+                    let dtype = on_expr
+                        .dtype(&input_right_schema, expr_arena)?
+                        .clone()
+                        .materialize_unknown(true)?;
+                    right_hstack_schema.with_column(tmp_name.clone(), dtype);
+                    right_hstack_exprs.push(on_expr.with_alias(tmp_name));
+                }
             }
+            let mut right_ir = if !right_hstack_exprs.is_empty() {
+                ir_arena.add(IR::HStack {
+                    input: input_right,
+                    exprs: right_hstack_exprs,
+                    schema: Arc::new(right_hstack_schema),
+                    options: ProjectionOptions::default(),
+                })
+            } else {
+                input_right
+            };
+            if !left_is_point {
+                use polars_core::prelude::SortMultipleOptions;
 
-            let left_hstack_exprs = left_key_exprs
-                .into_iter()
-                .map(|(expr, _)| expr)
-                .collect_vec();
-            let right_hstack_exprs = right_key_exprs
-                .into_iter()
-                .map(|(expr, _)| expr)
-                .collect_vec();
-
-            let mut trans_input_left = build_hstack_stream(
-                trans_input_left,
-                &left_hstack_exprs,
-                expr_arena,
-                phys_sm,
-                expr_cache,
-                ctx,
-            )?;
-            let mut trans_input_right = build_hstack_stream(
-                trans_input_right,
-                &right_hstack_exprs,
-                expr_arena,
-                phys_sm,
-                expr_cache,
-                ctx,
-            )?;
+                let by = right_tmp_col_names[0]
+                    .as_ref()
+                    .unwrap_or(&right_on_names[0]);
+                right_ir = ir_arena.add(IR::Sort {
+                    input: right_ir,
+                    by_column: vec![
+                        AExprBuilder::col(by.clone(), expr_arena).expr_ir_retain_name(expr_arena),
+                    ],
+                    slice: None,
+                    sort_options: SortMultipleOptions::default(),
+                });
+            }
+            let trans_input_right = lower_ir!(right_ir)?;
 
             let node: PhysNodeKey = {
                 phys_sm.insert(PhysNode::new(

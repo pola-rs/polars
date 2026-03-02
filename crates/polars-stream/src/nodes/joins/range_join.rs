@@ -15,6 +15,11 @@ use crate::nodes::ComputeNode;
 use crate::nodes::in_memory_sink::InMemorySinkNode;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
+pub fn left_is_point(left_on: &[PlSmallStr], _right_on: &[PlSmallStr], _args: &JoinArgs) -> bool {
+    // TODO: [amber] Implement build-side configuration
+    left_on.len() == 1
+}
+
 // TODO: [amber]
 //   * Move sort into lowering
 //   * Support build-side configuration
@@ -78,7 +83,7 @@ impl RangeJoinNode {
         args: JoinArgs,
         options: IEJoinOptions,
     ) -> Self {
-        let left_is_point = left_on.len() == 1;
+        let left_is_point = left_is_point(&left_on, &right_on, &args);
         let ops_n = if options.operator2.is_some() { 2 } else { 1 };
         let op1_is_lower_bound = match (left_is_point, options.operator1) {
             (true, InequalityOperator::Gt | InequalityOperator::GtEq) => true,
@@ -187,7 +192,7 @@ impl ComputeNode for RangeJoinNode {
         if let RangeJoinState::Build(sink_node) = &mut self.state
             && point[0] == PortState::Done
         {
-            self.state = RangeJoinState::Probe(transition_to_probe(sink_node, &self.params)?);
+            self.state = RangeJoinState::Probe(transition_to_probe(sink_node)?);
         }
 
         if let RangeJoinState::Probe(_) = &self.state
@@ -253,13 +258,9 @@ impl ComputeNode for RangeJoinNode {
     }
 }
 
-fn transition_to_probe(
-    sink_node: &mut InMemorySinkNode,
-    params: &RangeJoinParams,
-) -> PolarsResult<ProbeState> {
-    let sort_options = SortMultipleOptions::default().with_multithreaded(true);
+fn transition_to_probe(sink_node: &mut InMemorySinkNode) -> PolarsResult<ProbeState> {
     let mut point_df = sink_node.get_output()?.unwrap();
-    point_df.sort_in_place([params.point_key_col()], sort_options)?;
+    point_df.rechunk_mut_par();
     Ok(ProbeState { point_df })
 }
 
