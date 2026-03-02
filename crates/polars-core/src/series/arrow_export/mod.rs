@@ -1,8 +1,27 @@
+macro_rules! bail_unhandled_arrow_conversion_dtype_pair {
+    ($input_pl_dtype:expr, $output_arrow_field:expr) => {{
+        return Err(
+            $crate::series::arrow_export::unhandled_arrow_conversion_dtype_pair_err(
+                $input_pl_dtype,
+                $output_arrow_field,
+            ),
+        );
+    }};
+}
+
+#[cfg(feature = "dtype-categorical")]
+pub mod categorical;
+
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use polars_compute::cast::cast_unchecked;
+use polars_error::{PolarsError, PolarsResult, polars_ensure, polars_err};
 
-use crate::prelude::*;
+use crate::prelude::{
+    Array, ArrayRef, ArrowDataType, ArrowField, BinaryViewArray, CompatLevel, DataType, ListArray,
+    PlSmallStr, PrimitiveArray, Series,
+};
 
 pub(super) fn unhandled_arrow_conversion_dtype_pair_err(
     input_pl_dtype: &DataType,
@@ -13,17 +32,6 @@ pub(super) fn unhandled_arrow_conversion_dtype_pair_err(
         "to_arrow() conversion failed: cannot convert \
         ({input_pl_dtype:?}) to ({output_arrow_field:?})",
     )
-}
-
-macro_rules! bail_unhandled_arrow_conversion_dtype_pair {
-    ($input_pl_dtype:expr, $output_arrow_field:expr) => {{
-        return Err(
-            $crate::series::into::unhandled_arrow_conversion_dtype_pair_err(
-                $input_pl_dtype,
-                $output_arrow_field,
-            ),
-        );
-    }};
 }
 
 /// Downcasts to a primitive array, boxes it, then sets its dtype.
@@ -78,7 +86,7 @@ impl Series {
             #[cfg(feature = "dtype-categorical")]
             categorical_converter: {
                 let mut categorical_converter =
-                    crate::series::categorical_to_arrow::CategoricalToArrowConverter {
+                    crate::series::arrow_export::categorical::CategoricalToArrowConverter {
                         converters: Default::default(),
                         persist_remap: false,
                     };
@@ -101,7 +109,8 @@ pub struct ToArrowConverter {
     /// it will already have polars metadata.
     pub skip_attach_pl_metadata: bool,
     #[cfg(feature = "dtype-categorical")]
-    pub categorical_converter: crate::series::categorical_to_arrow::CategoricalToArrowConverter,
+    pub categorical_converter:
+        crate::series::arrow_export::categorical::CategoricalToArrowConverter,
 }
 
 impl ToArrowConverter {
@@ -258,6 +267,8 @@ impl ToArrowConverter {
             },
             #[cfg(feature = "dtype-datetime")]
             (DataType::Datetime(tu, tz), ArrowDataType::Timestamp(atu, atz)) => {
+                use crate::prelude::TimeZone;
+
                 let matching = atu == &tu.to_arrow()
                     && TimeZone::eq_none_as_utc(
                         TimeZone::opt_try_new(atz.clone())?.as_ref(),
@@ -281,11 +292,11 @@ impl ToArrowConverter {
                 primitive_to_boxed_with_logical!(array, i64, to_owned_dtype(arrow_field))
             },
             #[cfg(feature = "dtype-time")]
-            (DataType::Time, ArrowDataType::Time64(ArrowTimeUnit::Nanosecond)) => {
+            (DataType::Time, ArrowDataType::Time64(crate::prelude::ArrowTimeUnit::Nanosecond)) => {
                 primitive_to_boxed_with_logical!(array, i64, to_owned_dtype(arrow_field))
             },
             #[cfg(feature = "dtype-time")]
-            (DataType::Time, ArrowDataType::Time64(ArrowTimeUnit::Microsecond)) => {
+            (DataType::Time, ArrowDataType::Time64(crate::prelude::ArrowTimeUnit::Microsecond)) => {
                 use polars_compute::cast::time64ns_to_time64us;
 
                 let array: &PrimitiveArray<i64> = array.as_any().downcast_ref().unwrap();
