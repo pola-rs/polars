@@ -54,15 +54,7 @@ pub(super) fn ensure_no_nulls(array: &dyn Array) -> PolarsResult<()> {
 }
 
 impl Series {
-    /// Returns a reference to the Arrow ArrayRef
-    #[inline]
-    pub fn array_ref(&self, chunk_idx: usize) -> &ArrayRef {
-        &self.chunks()[chunk_idx] as &ArrayRef
-    }
-
-    /// Convert a chunk in the Series to the correct Arrow type.
-    /// This conversion is needed because polars doesn't use a
-    /// 1 on 1 mapping for logical/categoricals, etc.
+    /// Export a Series to an arrow array.
     pub fn to_arrow(&self, chunk_idx: usize, compat_level: CompatLevel) -> ArrayRef {
         self.to_arrow_with_field(
             chunk_idx,
@@ -137,6 +129,9 @@ impl ToArrowConverter {
         polars_dtype: &DataType,
         arrow_field: Cow<'a, ArrowField>,
     ) -> PolarsResult<Box<dyn Array>> {
+        // We extract the underlying `dyn Array` and perform additional steps where necessary:
+        // * If we are exporting a logical type, set the array dtype to the corresponding arrow logical type.
+        // * Attach field metadata where necessary (e.g. for categorical and extension types).
         Ok(match (polars_dtype, arrow_field.dtype()) {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(struct_fields), ArrowDataType::Struct(arrow_struct_fields)) => {

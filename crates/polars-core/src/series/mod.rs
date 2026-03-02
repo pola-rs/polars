@@ -214,6 +214,12 @@ impl Series {
         }
     }
 
+    /// Returns a reference to the Arrow ArrayRef
+    #[inline]
+    pub fn array_ref(&self, chunk_idx: usize) -> &ArrayRef {
+        &self.chunks()[chunk_idx] as &ArrayRef
+    }
+
     /// # Safety
     /// The caller must ensure the length and the data types of `ArrayRef` does not change.
     /// And that the null_count is updated (e.g. with a `compute_len()`)
