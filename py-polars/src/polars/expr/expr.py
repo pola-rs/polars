@@ -5169,6 +5169,10 @@ Consider using {self}.implode() instead"""
         ... ).sort("key")  # doctest: +IGNORE_RESULT
 
         """
+        if returns_scalar:
+            msg = "the `returns_scalar` parameter was deprecated in 1.32.0"
+            issue_deprecation_warning(msg)
+
         if strategy == "threading":
             issue_unstable_warning(
                 "the 'threading' strategy for `map_elements` is considered unstable."

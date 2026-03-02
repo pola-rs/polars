@@ -2054,16 +2054,16 @@ def collect_all(
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
-    type_coercion: bool = True,
-    predicate_pushdown: bool = True,
-    projection_pushdown: bool = True,
-    simplify_expression: bool = True,
-    no_optimization: bool = False,
-    slice_pushdown: bool = True,
-    comm_subplan_elim: bool = True,
-    comm_subexpr_elim: bool = True,
-    cluster_with_columns: bool = True,
-    collapse_joins: bool = True,
+    type_coercion: bool = True,  # noqa: ARG001
+    predicate_pushdown: bool = True,  # noqa: ARG001
+    projection_pushdown: bool = True,  # noqa: ARG001
+    simplify_expression: bool = True,  # noqa: ARG001
+    no_optimization: bool = False,  # noqa: ARG001
+    slice_pushdown: bool = True,  # noqa: ARG001
+    comm_subplan_elim: bool = True,  # noqa: ARG001
+    comm_subexpr_elim: bool = True,  # noqa: ARG001
+    cluster_with_columns: bool = True,  # noqa: ARG001
+    collapse_joins: bool = True,  # noqa: ARG001
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     engine: EngineType = "auto",
     lazy: bool = False,

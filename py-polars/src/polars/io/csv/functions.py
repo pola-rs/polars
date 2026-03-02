@@ -287,6 +287,10 @@ def read_csv(
     │ 3   ┆ Charlie ┆ 2002-03-08 │
     └─────┴─────────┴────────────┘
     """
+    if sample_size != 1024:
+        msg = "the `sample_size` parameter was deprecated in 1.10.0, it doesn't do anything anymore"
+        issue_deprecation_warning(msg)
+
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
     _check_arg_is_1byte("eol_char", eol_char, can_be_empty=False)
@@ -627,6 +631,10 @@ def _read_csv_impl(
     decimal_comma: bool = False,
     glob: bool = True,
 ) -> DataFrame:
+    if sample_size != 1024:
+        msg = "the `sample_size` parameter was deprecated in 1.10.0, it doesn't do anything anymore"
+        issue_deprecation_warning(msg)
+
     path: str | None
     if isinstance(source, (str, Path)):
         path = normalize_filepath(source, check_not_directory=False)
@@ -942,6 +950,10 @@ def read_csv_batched(
     ...
     ...     batches = reader.next_batches(100)
     """
+    if sample_size != 1024:
+        msg = "the `sample_size` parameter was deprecated in 1.10.0, it doesn't do anything anymore"
+        issue_deprecation_warning(msg)
+
     projection, columns = parse_columns_arg(columns)
 
     if columns and not has_header:
