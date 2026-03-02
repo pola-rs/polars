@@ -51,7 +51,7 @@ impl PhysicalExpr for GatherExpr {
             let idx = idx.flat_naive();
             let idx = idx.cast(&DataType::Int64)?;
             let idx = idx.i64().unwrap();
-            let taken = lst_get(ac_list.as_ref(), idx, true)?;
+            let taken = lst_get(ac_list.as_ref(), idx, self.null_on_oob)?;
 
             ac.with_values_and_args(taken, true, Some(&self.expr), false, true)?;
             ac.with_update_groups(UpdateGroups::No);
