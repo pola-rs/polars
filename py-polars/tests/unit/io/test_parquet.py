@@ -3901,10 +3901,14 @@ def test_parquet_dict_and_data_page_offset_26531(tmp_path: Path) -> None:
         lambda v: pl.Series("col", [v]).to_frame(),
         lambda v: pl.Series("col", [v.encode()], dtype=pl.Binary).to_frame(),
         lambda v: pl.from_arrow(pa.table({"col": pa.array([v], type=pa.large_utf8())})),
-        lambda v: pl.from_arrow(pa.table({"col": pa.array([v.encode()], type=pa.large_binary())})),
+        lambda v: pl.from_arrow(
+            pa.table({"col": pa.array([v.encode()], type=pa.large_binary())})
+        ),
     ],
 )
-def test_parquet_statistics_truncation_file_size_23498(to_df: Callable[[str], pl.DataFrame]) -> None:
+def test_parquet_statistics_truncation_file_size_23498(
+    to_df: Callable[[str], pl.DataFrame],
+) -> None:
     """Large values must not bloat the file via untruncated statistics."""
     f = io.BytesIO()
     to_df("A" * 1_000_000).write_parquet(f)
@@ -3953,7 +3957,9 @@ def test_parquet_statistics_truncation_string_23498(
     "to_df",
     [
         lambda v: pl.Series("col", [v], dtype=pl.Binary).to_frame(),
-        lambda v: pl.from_arrow(pa.table({"col": pa.array([v], type=pa.large_binary())})),
+        lambda v: pl.from_arrow(
+            pa.table({"col": pa.array([v], type=pa.large_binary())})
+        ),
     ],
 )
 @pytest.mark.parametrize(
@@ -3962,7 +3968,11 @@ def test_parquet_statistics_truncation_string_23498(
         # ASCII truncation
         (b"A" * 100, b"A" * 64, b"A" * 63 + b"B"),
         # raw byte truncation ignores UTF-8 char boundaries
-        (("A" * 63 + "\u00e9" + "z" * 3).encode(), b"A" * 63 + b"\xc3", b"A" * 63 + b"\xc4"),
+        (
+            ("A" * 63 + "\u00e9" + "z" * 3).encode(),
+            b"A" * 63 + b"\xc3",
+            b"A" * 63 + b"\xc4",
+        ),
     ],
 )
 def test_parquet_statistics_truncation_binary_23498(
