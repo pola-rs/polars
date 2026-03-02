@@ -1,3 +1,5 @@
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_core::utils::materialize_dyn_int;
 
 use super::*;
@@ -161,6 +163,8 @@ impl IRFunctionExpr {
                     T::UInt64 => T::UInt64,
                     #[cfg(feature = "dtype-i128")]
                     T::Int128 => T::Int128,
+                    #[cfg(feature = "dtype-decimal")]
+                    T::Decimal(_p, s) => T::Decimal(DEC128_MAX_PREC, *s),
                     _ => T::Int64,
                 }
             }),
@@ -262,9 +266,7 @@ impl IRFunctionExpr {
                 DataType::UInt16 => DataType::Int32,
                 DataType::UInt8 => DataType::Int16,
                 #[cfg(feature = "dtype-decimal")]
-                DataType::Decimal(_, scale) => {
-                    DataType::Decimal(polars_compute::decimal::DEC128_MAX_PREC, *scale)
-                },
+                DataType::Decimal(_, scale) => DataType::Decimal(DEC128_MAX_PREC, *scale),
                 dt => dt.clone(),
             }),
             #[cfg(feature = "pct_change")]

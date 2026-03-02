@@ -852,6 +852,8 @@ impl Series {
                 Float16 => Ok(self.f16().unwrap().prod_reduce()),
                 Float32 => Ok(self.f32().unwrap().prod_reduce()),
                 Float64 => Ok(self.f64().unwrap().prod_reduce()),
+                #[cfg(feature = "dtype-decimal")]
+                Decimal(..) => Ok(self.decimal().unwrap().prod_reduce()),
                 dt => {
                     polars_bail!(InvalidOperation: "`product` operation not supported for dtype `{dt}`")
                 },
