@@ -3351,6 +3351,7 @@ dependencies = [
  "parking_lot",
  "polars-config",
  "polars-core",
+ "polars-io",
  "polars-utils",
  "slotmap",
 ]

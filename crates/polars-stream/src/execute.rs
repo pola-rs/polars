@@ -308,6 +308,7 @@ pub fn execute_graph(
     // Get the number of threads from the rayon thread-pool as that respects our config.
     let num_pipelines = POOL.current_num_threads();
     async_executor::set_num_threads(num_pipelines);
+    let _query_guard = polars_ooc::qm().begin_query();
 
     let (query_tasks_send, query_tasks_recv) = crossbeam_channel::unbounded();
     let (subphase_tasks_send, subphase_tasks_recv) = crossbeam_channel::unbounded();
