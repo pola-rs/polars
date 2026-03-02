@@ -1,7 +1,7 @@
+use std::borrow::Cow;
+
 use arrow::Either;
-use arrow::array::{
-    Array, ListArray, MutableListArray, MutablePrimitiveArray, PrimitiveArray, TryPush,
-};
+use arrow::array::{Array, ListArray, PrimitiveArray};
 #[cfg(feature = "dtype-date")]
 use chrono::DateTime;
 use polars_core::prelude::arity::{binary_elementwise, try_binary_elementwise, unary_elementwise};
@@ -46,8 +46,8 @@ pub fn business_day_count(
         ShapeMismatch: "number of holiday lists must be either 1 or the number of dates"
     );
 
-    let holidays = prep_holidays(holidays, week_mask)?;
-    let mut holidays_lists = holidays_lists_iter(&holidays);
+    let holidays = prep_holidays(holidays)?;
+    let mut holidays_lists = holidays_lists_iter(&holidays, week_mask)?;
     let start_dates = start.date()?;
     let end_dates = end.date()?;
     let n_business_days_in_week_mask = week_mask.iter().filter(|&x| *x).count() as i32;
@@ -225,8 +225,8 @@ pub fn add_business_days(
         _ => polars_bail!(InvalidOperation: "expected date or datetime, got {}", start.dtype()),
     }
 
-    let holidays = prep_holidays(holidays, week_mask)?;
-    let mut holidays_lists = holidays_lists_iter(&holidays);
+    let holidays = prep_holidays(holidays)?;
+    let mut holidays_lists = holidays_lists_iter(&holidays, week_mask)?;
 
     let start_dates = start.date()?;
     let n = match &n.dtype() {
@@ -400,8 +400,8 @@ pub fn is_business_day(
         _ => polars_bail!(InvalidOperation: "expected date or datetime, got {}", dates.dtype()),
     }
 
-    let holidays = prep_holidays(holidays, week_mask)?;
-    let mut holidays_lists = holidays_lists_iter(&holidays);
+    let holidays = prep_holidays(holidays)?;
+    let mut holidays_lists = holidays_lists_iter(&holidays, week_mask)?;
 
     let dates = dates.date()?;
     let out: BooleanChunked = unary_elementwise(dates.physical(), |date| {
@@ -478,62 +478,37 @@ fn normalise_holidays(holidays: &mut Vec<i32>, week_mask: &[bool; 7]) {
     });
 }
 
-/// Convert from lists of dates's physical representation, to normalized
-/// representation (see `normalize_holidays`), trying to minimize allocations
-/// along the way.
-///
-/// If a list contains a null, that is considered an error.
-fn prep_holidays_array(
-    holidays_arr: &ListArray<i64>,
-    week_mask: [bool; 7],
-) -> PolarsResult<ListArray<i64>> {
-    let mut result = MutableListArray::new_with_capacity(
-        MutablePrimitiveArray::with_capacity(holidays_arr.values().len()),
-        holidays_arr.len(),
-    );
-    let mut staging = vec![];
-
-    for maybe_list in holidays_arr.iter() {
-        let normalized_list = match maybe_list {
-            Some(list) => {
-                staging.clear();
-                let array = list.as_any().downcast_ref::<PrimitiveArray<i32>>().unwrap();
-                polars_ensure!(
-                    array.validity().is_none(),
-                    ComputeError: "list of holidays contained a null: {:?}", list.as_ref()
-                );
-                let holidays_list = array.as_slice().unwrap();
-                staging.extend_from_slice(holidays_list);
-                normalise_holidays(&mut staging, &week_mask);
-                Some(staging.iter().map(|v| Some(*v)))
-            },
-            None => None,
-        };
-        result.try_push(normalized_list)?;
-    }
-    Ok(result.into())
-}
-
-/// Convert from List of Date to normalized representation (see
-/// `normalize_holidays`), trying to minimize allocations along the way.
-///
-/// If a list contains a null, that is considered an error.
-fn prep_holidays(holidays: &Series, week_mask: [bool; 7]) -> PolarsResult<ListChunked> {
+/// Validate and get access to the physical representation of dates, hopefully
+/// without copying.
+fn prep_holidays(holidays: &Series) -> PolarsResult<Cow<'_, ListChunked>> {
     polars_ensure!(
         holidays.dtype().is_list() && holidays.dtype().inner_dtype() == Some(&DataType::Date),
         ComputeError: "holidays list had wrong data type {}, expected List of Date", holidays.dtype()
     );
     let holidays = holidays.list()?.to_physical_repr();
-    let results = holidays.chunks().iter().map(|arr| {
-        prep_holidays_array(
-            arr.as_any().downcast_ref::<ListArray<i64>>().unwrap(),
-            week_mask,
-        )
-    });
-    ListChunked::try_from_chunk_iter(holidays.name().clone(), results)
+    for chunk in holidays.chunks().iter() {
+        holidays_lists_chunk_validate(chunk.as_any().downcast_ref::<ListArray<i64>>().unwrap())?;
+    }
+    Ok(holidays)
 }
 
-/// Turn output of `prep_holidays_array` into an iterator.
+/// Ensure there are no nulls in lists.
+fn holidays_lists_chunk_validate(chunk: &ListArray<i64>) -> PolarsResult<()> {
+    let values_validity = chunk.values().validity();
+    for i in 0..(chunk.len()) {
+        if chunk.is_null(i) {
+            continue;
+        }
+        // SAFETY: we're iterating only up to length
+        let (start, end) = unsafe { chunk.offsets().start_end_unchecked(i) };
+        if values_validity.is_some_and(|x| x.null_count_range(start, end - start) > 0) {
+            polars_bail!(ComputeError: "list of holidays contained a null: {:?}", chunk);
+        }
+    }
+    Ok(())
+}
+
+/// Turn an array of holiday lists into an iterator.
 fn holidays_lists_chunk_iter(chunk: &ListArray<i64>) -> impl Iterator<Item = Option<&[i32]>> {
     let slice = chunk
         .values()
@@ -546,25 +521,67 @@ fn holidays_lists_chunk_iter(chunk: &ListArray<i64>) -> impl Iterator<Item = Opt
         if chunk.is_null(i) {
             return None;
         }
-        // SAFETY: we're iterating only up to length.
         let (start, end) = unsafe { chunk.offsets().start_end_unchecked(i) };
+        // SAFETY: we're iterating only up to length, and we've ensured in
+        // prep_holidays() that there are no nulls in the list.
         Some(&slice[start..end])
     })
 }
 
-/// Turn the output of `prep_holidays()` into an iterator.
-fn holidays_lists_iter(holidays: &ListChunked) -> impl Iterator<Item = Option<&[i32]>> {
+/// An iterator-like object, yielding normalized holiday lists.
+struct HolidayListsIterable<'a, I>
+where
+    I: Iterator<Item = Option<&'a [i32]>>,
+{
+    /// Temporarily keep normalized list of holidays.
+    normalized_staging: Vec<i32>,
+    /// Iterate over unnormalized lists from a ListChunked.
+    unnormalized_iter: I,
+    /// Allowed days of week.
+    week_mask: [bool; 7],
+}
+
+impl<'a, I> HolidayListsIterable<'a, I>
+where
+    I: Iterator<Item = Option<&'a [i32]>>,
+{
+    /// Like Iterator::next(), but with more flexiblity of lifetimes given lack
+    /// of lending iterators.
+    fn next(&mut self) -> Option<Option<&[i32]>> {
+        let result = self.unnormalized_iter.next();
+        if let Some(Some(unnormalized_holidays)) = result {
+            self.normalized_staging.clear();
+            self.normalized_staging
+                .extend_from_slice(unnormalized_holidays);
+            normalise_holidays(&mut self.normalized_staging, &self.week_mask);
+            return Some(Some(&self.normalized_staging));
+        }
+        result
+    }
+}
+
+/// Convert result of `prep_holidays()` into an iterator-like of normalized
+/// holiday lists.
+fn holidays_lists_iter<'a>(
+    holidays: &'a ListChunked,
+    week_mask: [bool; 7],
+) -> PolarsResult<HolidayListsIterable<'a, impl Iterator<Item = Option<&'a [i32]>>>> {
     let mut iterator = holidays.chunks().iter().flat_map(|chunk| {
         let chunk = chunk.as_any().downcast_ref::<ListArray<i64>>().unwrap();
         holidays_lists_chunk_iter(chunk)
     });
-    if holidays.len() == 1 {
+    let iterator = if holidays.len() == 1 {
         // A single list of holidays gets used for all rows:
         let arr = iterator.next().unwrap();
         Either::Left(std::iter::repeat(arr))
     } else {
         Either::Right(iterator)
-    }
+    };
+    Ok(HolidayListsIterable {
+        week_mask,
+        normalized_staging: vec![],
+        unnormalized_iter: iterator,
+    })
 }
 
 fn get_day_of_week(x: i32) -> usize {
