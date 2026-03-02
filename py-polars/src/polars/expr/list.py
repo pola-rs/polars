@@ -191,6 +191,9 @@ class ExprListNameSpace:
             raise ValueError(msg)
 
         if fraction is not None:
+            if isinstance(fraction, (float, int)) and not (0.0 <= fraction <= 1.0):
+                msg = f"`fraction` must be between 0.0 and 1.0, got {fraction}"
+                raise ValueError(msg)
             fraction_pyexpr = parse_into_expression(fraction)
             return wrap_expr(
                 self._pyexpr.list_sample_fraction(
@@ -200,6 +203,9 @@ class ExprListNameSpace:
 
         if n is None:
             n = 1
+        if isinstance(n, int) and n < 0:
+            msg = f"`n` must be non-negative, got {n}"
+            raise ValueError(msg)
         n_pyexpr = parse_into_expression(n)
         return wrap_expr(
             self._pyexpr.list_sample_n(n_pyexpr, with_replacement, shuffle, seed)

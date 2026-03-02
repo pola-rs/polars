@@ -445,6 +445,22 @@ def test_list_sample() -> None:
     assert_frame_equal(df, expected_df)
 
 
+def test_list_sample_validation() -> None:
+    s = pl.Series("values", [[1, 2, 3]])
+
+    with pytest.raises(ValueError, match="cannot specify both `n` and `fraction`"):
+        s.list.sample(n=1, fraction=0.5)
+
+    with pytest.raises(ValueError, match="`fraction` must be between 0.0 and 1.0, got 1.2"):
+        s.list.sample(fraction=1.2)
+
+    with pytest.raises(ValueError, match="`fraction` must be between 0.0 and 1.0, got -0.1"):
+        s.list.sample(fraction=-0.1)
+
+    with pytest.raises(ValueError, match="`n` must be non-negative, got -1"):
+        s.list.sample(n=-1)
+
+
 def test_list_diff() -> None:
     s = pl.Series("a", [[1, 2], [10, 2, 1]])
     expected = pl.Series("a", [[None, 1], [None, -8, -1]])
