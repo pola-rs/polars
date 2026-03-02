@@ -308,9 +308,17 @@ in the Polars repository. Please adhere to the following guidelines:
     - Clearly state in your pull request's description which parts of the code were AI-generated.
     - Explicitly state that you yourself have reviewed *all* changes in your pull request, and believe
       that they are relevant and correct.
+    - Not try to solve an issue marked as "good first issue".
     - Adhere to the rest of our [AI policy](/AI_POLICY.md).
   If you fail either requirement the maintainer may simply close your pull request.
 <!-- dprint-ignore-end -->
+
+We unfortunately are overwhelmed by the amount of low-quality contributions, so for first-time
+contributors there are some more rules:
+
+- You must post a screenshot of you successfully running the test suite (`make test`), locally on
+  your machine (not the CI).
+- You may not have more than one open PR at a time.
 
 After you have opened your pull request, a maintainer will review it and possibly leave some
 comments. Once all issues are resolved, the maintainer will merge your pull request, and your work
