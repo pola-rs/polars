@@ -1078,6 +1078,8 @@ pub fn lower_ir(
             let args = options.args.clone();
             let options = options.options.clone();
             let left_is_point = range_join::left_is_point(&left_on_names, &right_on_names, &args);
+            let left_df_sortedness = is_sorted(input_left, ir_arena, expr_arena);
+            let right_df_sortedness = is_sorted(input_right, ir_arena, expr_arena);
 
             let Some(JoinTypeOptionsIR::IEJoin(range_options)) = options else {
                 unreachable!()
@@ -1114,7 +1116,15 @@ pub fn lower_ir(
             } else {
                 input_left
             };
-            if left_is_point {
+            if left_is_point
+                && !expr_is_sorted(
+                    left_df_sortedness.as_ref(),
+                    &left_on[0],
+                    expr_arena,
+                    &input_left_schema,
+                )
+                .map_or(false, |s| s.descending == Some(false))
+            {
                 use polars_core::prelude::SortMultipleOptions;
 
                 let by = left_tmp_col_names[0].as_ref().unwrap_or(&left_on_names[0]);
@@ -1154,7 +1164,15 @@ pub fn lower_ir(
             } else {
                 input_right
             };
-            if !left_is_point {
+            if !left_is_point
+                && !expr_is_sorted(
+                    right_df_sortedness.as_ref(),
+                    &right_on[0],
+                    expr_arena,
+                    &input_right_schema,
+                )
+                .map_or(false, |s| s.descending == Some(false))
+            {
                 use polars_core::prelude::SortMultipleOptions;
 
                 let by = right_tmp_col_names[0]

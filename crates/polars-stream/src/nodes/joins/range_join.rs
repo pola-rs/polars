@@ -3,6 +3,7 @@ use std::mem;
 use arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 use polars_ops::frame::{_finish_join, IEJoinOptions, InequalityOperator, JoinArgs};
 use polars_ops::series::{SearchSortedSide, search_sorted};
 
@@ -21,8 +22,8 @@ pub fn left_is_point(left_on: &[PlSmallStr], _right_on: &[PlSmallStr], _args: &J
 }
 
 // TODO: [amber]
-//   * Move sort into lowering
 //   * Support build-side configuration
+//   * And when it is sorted but descending
 
 #[derive(Debug)]
 enum RangeJoinState {
@@ -192,7 +193,7 @@ impl ComputeNode for RangeJoinNode {
         if let RangeJoinState::Build(sink_node) = &mut self.state
             && point[0] == PortState::Done
         {
-            self.state = RangeJoinState::Probe(transition_to_probe(sink_node)?);
+            self.state = RangeJoinState::Probe(transition_to_probe(sink_node, &self.params)?);
         }
 
         if let RangeJoinState::Probe(_) = &self.state
@@ -258,8 +259,16 @@ impl ComputeNode for RangeJoinNode {
     }
 }
 
-fn transition_to_probe(sink_node: &mut InMemorySinkNode) -> PolarsResult<ProbeState> {
-    let mut point_df = sink_node.get_output()?.unwrap();
+fn transition_to_probe(
+    sink_node: &mut InMemorySinkNode,
+    params: &RangeJoinParams,
+) -> PolarsResult<ProbeState> {
+    let point_df = sink_node.get_output()?.unwrap();
+    let key_col = point_df.column(params.point_key_col())?;
+    if key_col.is_sorted_flag() != IsSorted::Ascending {
+        panic!("input to range_join node is not sorted");
+    }
+    let mut point_df = point_df.filter(&key_col.is_not_null())?;
     point_df.rechunk_mut_par();
     Ok(ProbeState { point_df })
 }
