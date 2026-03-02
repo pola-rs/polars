@@ -18,7 +18,6 @@ use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 // TODO: [amber]
 //   * Move sort into lowering
 //   * Support build-side configuration
-//   * Deal with multiple inequality predicates that are incompatible
 
 #[derive(Debug)]
 enum RangeJoinState {

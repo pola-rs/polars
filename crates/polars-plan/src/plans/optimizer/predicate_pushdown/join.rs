@@ -494,40 +494,13 @@ fn try_rewrite_join_type(
             }
         }
 
-        // Try converting cross join to single-bounded RangeJoin
-        #[cfg(feature = "iejoin")]
-        if streaming
-            && matches!(options.args.maintain_order, MaintainOrderJoin::None)
-            && left_on.is_empty()
-            && let Some(pred) = take_first_iejoin_compatible_filter(
-                acc_predicates,
-                expr_arena,
-                schema_left,
-                schema_right,
-                output_schema,
-                &suffix,
-            )?
-        {
-            let join_options = Arc::make_mut(options);
-            join_options.args.how = JoinType::Range;
-            let JoinTypeOptionsIR::IEJoin(ie_options) = join_options
-                .options
-                .get_or_insert(JoinTypeOptionsIR::IEJoin(IEJoinOptions::default()))
-            else {
-                unreachable!()
-            };
-            left_on.push(ExprIR::from_node(pred.input_lhs, expr_arena));
-            right_on.push(ExprIR::from_node(pred.input_rhs, expr_arena));
-            ie_options.operator1 = pred.ie_op;
-            return Ok(());
-        }
-
         // Try converting cross join to IEJoin
         #[cfg(feature = "iejoin")]
-        if !streaming
-            && matches!(options.args.maintain_order, MaintainOrderJoin::None)
+        if matches!(options.args.maintain_order, MaintainOrderJoin::None)
             && left_on.len() < IEJOIN_MAX_PREDICATES
         {
+            use polars_utils::itertools::Itertools;
+
             let ie_conditions = take_iejoin_compatible_filters(
                 acc_predicates,
                 expr_arena,
@@ -535,7 +508,25 @@ fn try_rewrite_join_type(
                 schema_right,
                 output_schema,
                 &suffix,
-            )?;
+            )?
+            .collect_vec();
+
+            // If there is only one predicate, prefer lowering to a single-bounded range-join
+            if ie_conditions.len() == 1 && streaming {
+                let join_options = Arc::make_mut(options);
+                join_options.args.how = JoinType::Range;
+                let JoinTypeOptionsIR::IEJoin(ie_options) = join_options
+                    .options
+                    .get_or_insert(JoinTypeOptionsIR::IEJoin(IEJoinOptions::default()))
+                else {
+                    unreachable!()
+                };
+                let pred = ie_conditions.into_iter().next().unwrap();
+                left_on.push(ExprIR::from_node(pred.input_lhs, expr_arena));
+                right_on.push(ExprIR::from_node(pred.input_rhs, expr_arena));
+                ie_options.operator1 = pred.ie_op;
+                return Ok(());
+            }
 
             for IEJoinCompatiblePredicate {
                 input_lhs,
