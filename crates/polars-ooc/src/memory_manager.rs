@@ -32,7 +32,7 @@ thread_local! {
 /// Describes how an operator accesses its buffered data.
 ///
 /// The eviction algorithm uses this to pick the best spill candidate:
-/// - [`NoPattern`](AccessPattern::NoPattern):
+/// - [`NoPattern`](AccessPattern::NoPattern): evict all entries above `ooc_spill_min_bytes`.
 /// - [`Fifo`](AccessPattern::Fifo): evict the **newest** (last-in) entry.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum AccessPattern {
@@ -41,18 +41,19 @@ pub enum AccessPattern {
     Fifo,
 }
 
-#[allow(dead_code)]
 struct Entry {
     df: DataFrame,
     size_bytes: usize,
     height: usize,
     is_spilled: bool,
+    is_pinned: bool,
     access_pattern: AccessPattern,
 }
 
 #[derive(Default)]
 struct ThreadLocalData {
     slots: SlotMap<DfKey, Entry>,
+    contexts: Vec<SpillContext>,
     total_local_bytes: usize,
     last_sync_total_bytes: usize,
 }
@@ -103,7 +104,20 @@ impl ThreadLocalData {
 #[derive(Default)]
 struct ThreadLocalMemoryManager(Mutex<ThreadLocalData>);
 
-const MEMORY_BUDGET_FRACTION: f64 = 0.7;
+/// Operator-level context shared with the memory manager.
+///
+/// Operators register these via [`MemoryManager::register_context`] to
+/// share metadata about their buffering behaviour. The memory manager
+/// can consult them during spill decisions (e.g. prioritize spilling
+/// operators that buffer the most, or prefer operators with cheaper
+/// reload cost).
+///
+/// Currently a placeholder. Fields will be added as the spill heuristics
+/// evolve.
+#[derive(Debug, Clone, Default)]
+pub struct SpillContext {
+    // TODO: operator name, expected buffer size, spill priority, etc.
+}
 
 /// Global memory manager that tracks [`DataFrame`]s behind opaque [`Token`]s.
 ///
@@ -112,31 +126,39 @@ const MEMORY_BUDGET_FRACTION: f64 = 0.7;
 /// atomic contention on every store/take. When the budget is exceeded the manager
 /// can spill frames to disk and reload them transparently.
 pub struct MemoryManager {
-    policy: SpillPolicy,
-    spiller: Spiller,
+    pub(crate) spiller: Spiller,
     stores: boxcar::Vec<ThreadLocalMemoryManager>,
     total_bytes: AtomicUsize,
-    budget: usize,
 }
 
 impl Default for MemoryManager {
     fn default() -> Self {
-        let cfg = polars_config::config();
-        Self::new(cfg.ooc_spill_policy(), cfg.ooc_spill_format())
+        Self::new(polars_config::config().ooc_spill_format())
     }
 }
 
 impl MemoryManager {
-    /// Create a new [`MemoryManager`] with the given spill policy and format.
-    pub fn new(policy: SpillPolicy, format: SpillFormat) -> Self {
-        let budget = (polars_utils::sys::total_memory() as f64 * MEMORY_BUDGET_FRACTION) as usize;
+    /// Create a new [`MemoryManager`] with the given spill format.
+    pub fn new(format: SpillFormat) -> Self {
         Self {
-            policy,
             spiller: Spiller::new(format),
             stores: boxcar::Vec::new(),
             total_bytes: AtomicUsize::new(0),
-            budget,
         }
+    }
+
+    fn budget(&self) -> usize {
+        let fraction = polars_config::config().ooc_memory_budget_fraction();
+        (polars_utils::sys::total_memory() as f64 * fraction) as usize
+    }
+
+    /// Register operator-level context for spill analysis.
+    ///
+    /// Stored in the calling thread's local data and consulted during
+    /// spill decisions.
+    pub fn register_context(&self, ctx: SpillContext) {
+        let idx = self.thread_idx();
+        self.stores[idx as usize].0.lock().contexts.push(ctx);
     }
 
     /// Return the index of the calling thread, registering it on first call.
@@ -170,6 +192,20 @@ impl MemoryManager {
         tl.get(token.key).height
     }
 
+    /// Pin the entry so it has lower priority during spill collection.
+    /// Unpinned entries are always spilled first; pinned entries are only
+    /// spilled if freeing unpinned entries alone is not enough.
+    pub fn pin(&self, token: &Token) {
+        let mut tl = self.lock(token);
+        tl.get_mut(token.key).is_pinned = true;
+    }
+
+    /// Unpin the entry so it has higher priority during spill collection.
+    pub fn unpin(&self, token: &Token) {
+        let mut tl = self.lock(token);
+        tl.get_mut(token.key).is_pinned = false;
+    }
+
     /// Remove the entry for this [`Token`], update memory accounting, and
     /// delete the spill file if the frame was spilled. Called by [`Token::drop`].
     pub(crate) fn drop_token(&self, token: &Token) {
@@ -180,7 +216,7 @@ impl MemoryManager {
         tl.total_local_bytes -= entry.size_bytes;
         tl.try_sync(&self.total_bytes);
         if entry.is_spilled {
-            self.spiller.delete(token);
+            self.spiller.delete_spill_file(token);
         }
     }
 
@@ -199,6 +235,7 @@ impl MemoryManager {
                 size_bytes,
                 height,
                 is_spilled: false,
+                is_pinned: false,
                 access_pattern,
             });
             (key, self.should_spill(&mut tl))
@@ -210,9 +247,11 @@ impl MemoryManager {
     /// Check whether the global memory budget is exceeded. Syncs the local
     /// drift first; returns `false` without checking if the drift is too small.
     fn should_spill(&self, tl: &mut ThreadLocalData) -> bool {
-        matches!(self.policy, SpillPolicy::Spill)
-            && tl.try_sync(&self.total_bytes)
-            && self.total_bytes.load(Ordering::Relaxed) > self.budget
+        matches!(
+            polars_config::config().ooc_spill_policy(),
+            SpillPolicy::Spill
+        ) && tl.try_sync(&self.total_bytes)
+            && self.total_bytes.load(Ordering::Relaxed) > self.budget()
     }
 
     /// Store a [`DataFrame`] and return a [`Token`] that can retrieve it later.
@@ -244,10 +283,17 @@ impl MemoryManager {
                 return std::mem::take(&mut entry.df);
             }
         }
-        self.spiller.load(&token)
+        if polars_config::config().verbose() {
+            eprintln!("[ooc] reload thread={} op=take_df", token.thread_idx());
+        }
+        self.spiller.load(&token).await
     }
 
     /// Clone the stored [`DataFrame`] without consuming the [`Token`].
+    /// Loads from disk and deletes the spill file if spilled, but does not
+    /// cache the result back or update memory accounting. The returned
+    /// DataFrame is in-flight data owned by the caller, not tracked by
+    /// the memory manager.
     pub async fn df(&self, token: &Token) -> DataFrame {
         {
             let tl = self.lock(token);
@@ -256,7 +302,7 @@ impl MemoryManager {
                 return entry.df.clone();
             }
         }
-        self.spiller.load(token)
+        self.spiller.load(token).await
     }
 
     /// Blocking variant of [`df`](Self::df).
@@ -290,7 +336,7 @@ impl MemoryManager {
             }
         }
         // Reload from disk without holding the lock.
-        let df = self.spiller.load(token);
+        let df = self.spiller.load(token).await;
         let mut tl = self.lock(token);
         let entry = tl.get_mut(token.key);
         entry.df = df;
@@ -300,14 +346,199 @@ impl MemoryManager {
         r
     }
 
-    /// Spill frames from the given thread's store to disk to free memory.
-    async fn spill(&self, _thread_idx: u64) {
-        unimplemented!("spilling to disk")
+    /// Currently delegates to [`spill_blocking`](Self::spill_blocking)
+    /// because async disk I/O is not yet implemented.
+    async fn spill(&self, trigger_thread: u64) {
+        self.spill_blocking(trigger_thread);
     }
 
-    /// Blocking variant of [`spill`](Self::spill).
-    fn spill_blocking(&self, _thread_idx: u64) {
-        unimplemented!("spilling to disk")
+    /// Spill frames to disk to free memory. Collects entries via
+    /// [`collect_spill_entries`](Self::collect_spill_entries), then writes
+    /// them to disk with no locks held.
+    fn spill_blocking(&self, trigger_thread: u64) {
+        if polars_config::config().verbose() {
+            let total = self.total_bytes.load(Ordering::Relaxed);
+            eprintln!(
+                "[ooc] spill_trigger thread={trigger_thread} total_bytes={total} budget={}",
+                self.budget()
+            );
+        }
+        let (pending, freed) = self.collect_spill_entries(trigger_thread);
+
+        // All locks released — write to disk.
+        for (store_idx, key, df) in pending {
+            if polars_config::config().verbose() {
+                eprintln!(
+                    "[ooc] spill store={store_idx} size={} rows={}",
+                    df.estimated_size(),
+                    df.height()
+                );
+            }
+            self.spiller.spill(store_idx, key, df);
+        }
+
+        if polars_config::config().verbose() {
+            let after = self.total_bytes.load(Ordering::Relaxed);
+            eprintln!("[ooc] spill_end freed={freed} total_after={after}");
+        }
+    }
+
+    /// Collect entries to spill across all stores. Returns the collected
+    /// `(Token, DataFrame)` pairs and total bytes freed.
+    ///
+    /// The trigger thread's store is always visited first (local-first),
+    /// then the remaining stores. Within that ordering the priority is:
+    ///
+    /// 1. **FIFO** — newest first (highest slot key), unpinned only.
+    /// 2. **NoPattern** — all entries above `ooc_spill_min_bytes` (unpinned first, then pinned).
+    ///
+    /// Entries are taken out under locks; the caller writes to disk after
+    /// all locks are released.
+    ///
+    /// Escalates the target amount on repeated calls: 1/8 → 1/4 → 1/2
+    /// of budget.
+    fn collect_spill_entries(&self, trigger_thread: u64) -> (Vec<(u64, DfKey, DataFrame)>, usize) {
+        let fraction = self.spiller.spill_fraction_and_escalate();
+        let must_free = (self.budget() as f64 * fraction) as usize;
+
+        let current = self.total_bytes.load(Ordering::Relaxed);
+
+        if polars_config::config().verbose() {
+            eprintln!(
+                "[ooc] spill total_bytes={current} budget={} must_free={must_free} fraction={fraction}",
+                self.budget(),
+            );
+        }
+
+        let mut freed = 0usize;
+        let mut pending: Vec<(u64, DfKey, DataFrame)> = Vec::new();
+        let num_stores = self.stores.count();
+
+        // Local store first, then the rest.
+        let local = trigger_thread as usize;
+        let store_order: Vec<usize> = std::iter::once(local)
+            .chain((0..num_stores).filter(|&i| i != local))
+            .collect();
+
+        // Phase 1: FIFO entries (newest first).
+        for &store_idx in &store_order {
+            if freed >= must_free {
+                break;
+            }
+            freed += self.collect_fifo_from_store(store_idx, must_free - freed, &mut pending);
+        }
+
+        // Phase 2: NoPattern entries above min_spill_size (unpinned first, then pinned).
+        for pinned in [false, true] {
+            if freed >= must_free {
+                break;
+            }
+            for &store_idx in &store_order {
+                if freed >= must_free {
+                    break;
+                }
+                freed += self.collect_no_pattern_from_store(
+                    store_idx,
+                    must_free - freed,
+                    pinned,
+                    &mut pending,
+                );
+            }
+        }
+
+        (pending, freed)
+    }
+
+    /// Collect FIFO entries to spill (newest first). When `pinned` is false,
+    /// FIFO entries are never pinned, so this always collects unpinned entries.
+    fn collect_fifo_from_store(
+        &self,
+        store_idx: usize,
+        remaining: usize,
+        pending: &mut Vec<(u64, DfKey, DataFrame)>,
+    ) -> usize {
+        let mut tl = self.stores[store_idx].0.lock();
+        let mut freed = 0usize;
+
+        let mut fifo_keys: Vec<DfKey> = tl
+            .slots
+            .keys()
+            .filter(|&k| {
+                let e = tl.get(k);
+                matches!(e.access_pattern, AccessPattern::Fifo) && !e.is_spilled
+            })
+            .collect();
+        fifo_keys.reverse();
+
+        for key in fifo_keys {
+            if freed >= remaining {
+                break;
+            }
+            freed += self.take_entry_for_spill(&mut tl, key, store_idx as u64, pending);
+        }
+
+        tl.try_sync(&self.total_bytes);
+        freed
+    }
+
+    /// Collect NoPattern entries to spill. Evicts all entries whose size
+    /// exceeds `ooc_spill_min_bytes` in a single pass. When `pinned` is
+    /// false, only collects unpinned entries; when true, only collects pinned.
+    fn collect_no_pattern_from_store(
+        &self,
+        store_idx: usize,
+        remaining: usize,
+        pinned: bool,
+        pending: &mut Vec<(u64, DfKey, DataFrame)>,
+    ) -> usize {
+        let mut tl = self.stores[store_idx].0.lock();
+        let min_size = polars_config::config().ooc_spill_min_bytes() as usize;
+        let mut freed = 0usize;
+
+        let keys: Vec<DfKey> = tl
+            .slots
+            .iter()
+            .filter(|(_, entry)| {
+                matches!(entry.access_pattern, AccessPattern::NoPattern)
+                    && !entry.is_spilled
+                    && entry.is_pinned == pinned
+                    && entry.size_bytes >= min_size
+            })
+            .map(|(key, _)| key)
+            .collect();
+
+        for key in keys {
+            if freed >= remaining {
+                break;
+            }
+            freed += self.take_entry_for_spill(&mut tl, key, store_idx as u64, pending);
+        }
+
+        tl.try_sync(&self.total_bytes);
+        freed
+    }
+
+    /// Take a single entry's DataFrame for spilling. Marks the entry as
+    /// spilled and pushes `(store_idx, key, DataFrame)` to `pending`. Returns bytes freed.
+    fn take_entry_for_spill(
+        &self,
+        tl: &mut ThreadLocalData,
+        key: DfKey,
+        store_idx: u64,
+        pending: &mut Vec<(u64, DfKey, DataFrame)>,
+    ) -> usize {
+        let entry = tl.get_mut(key);
+        assert!(
+            !entry.is_spilled,
+            "attempted to spill an already-spilled entry"
+        );
+        let df = std::mem::take(&mut entry.df);
+        let size = entry.size_bytes;
+        entry.size_bytes = 0;
+        entry.is_spilled = true;
+        tl.total_local_bytes -= size;
+        pending.push((store_idx, key, df));
+        size
     }
 
     /// Approximate total bytes tracked across all threads.
@@ -323,9 +554,9 @@ impl MemoryManager {
 impl std::fmt::Debug for MemoryManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MemoryManager")
-            .field("policy", &self.policy)
+            .field("policy", &polars_config::config().ooc_spill_policy())
             .field("total_bytes", &self.total_bytes.load(Ordering::Relaxed))
-            .field("budget", &self.budget)
+            .field("budget", &self.budget())
             .field("num_stores", &self.stores.count())
             .finish_non_exhaustive()
     }

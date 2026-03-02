@@ -229,7 +229,7 @@ impl GroupBySinkState {
                             local
                                 .morsel_idxs_offsets_per_p
                                 .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
-                            let token = mm().store(cold_df, NoPattern).await;
+                            let token = mm().store(cold_df, NoPattern).await.pin();
                             local.cold_morsels.push((input_idx, seq, cold_keys, token));
                         }
                     }

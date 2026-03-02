@@ -13,6 +13,7 @@ boxcar = { workspace = true }
 parking_lot = { workspace = true }
 polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by"] }
+polars-io = { workspace = true, features = ["ipc"] }
 polars-utils = { workspace = true, features = ["sysinfo"] }
 slotmap = { workspace = true }
 

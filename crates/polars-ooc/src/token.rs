@@ -36,6 +36,20 @@ impl Token {
         mm().height(self)
     }
 
+    /// Pin the entry so it has lower priority during spill collection.
+    /// Unpinned entries are always spilled first; pinned entries are only
+    /// spilled if freeing unpinned entries alone is not enough.
+    pub fn pin(self) -> Self {
+        mm().pin(&self);
+        self
+    }
+
+    /// Unpin the entry so it has higher priority during spill collection.
+    pub fn unpin(self) -> Self {
+        mm().unpin(&self);
+        self
+    }
+
     /// Clone the stored [`DataFrame`] without consuming the token.
     pub async fn df(&self) -> DataFrame {
         mm().df(self).await
