@@ -1043,7 +1043,42 @@ pub(super) fn convert_functions(
         },
         F::GatherEvery { n, offset } => I::GatherEvery { n, offset },
         #[cfg(feature = "reinterpret")]
-        F::Reinterpret(signed, dtype) => I::Reinterpret(signed, dtype),
+        F::Reinterpret(signed, dtype) => {
+            let input_dtype = e[0].dtype(&ctx.schema, &ctx.arena)?;
+            let final_dtype;
+
+            if let Some(signed) = signed
+                && dtype.is_none()
+            {
+                final_dtype = if signed {
+                    match input_dtype {
+                        DataType::UInt8 => DataType::Int8,
+                        DataType::UInt16 => DataType::Int16,
+                        DataType::UInt32 => DataType::Int32,
+                        DataType::UInt64 => DataType::Int64,
+                        DataType::UInt128 => DataType::Int128,
+                        _ => input_dtype.clone(),
+                    }
+                } else {
+                    match input_dtype {
+                        DataType::Int8 => DataType::UInt8,
+                        DataType::Int16 => DataType::UInt16,
+                        DataType::Int32 => DataType::UInt32,
+                        DataType::Int64 => DataType::UInt64,
+                        DataType::Int128 => DataType::UInt128,
+                        _ => input_dtype.clone(),
+                    }
+                };
+            } else if let Some(dt) = dtype
+                && signed.is_none()
+            {
+                final_dtype = dt.clone();
+            } else {
+                polars_bail!(InvalidOperation: "reinterpret can only be called with either `signed` or `dtype` specified")
+            }
+
+            I::Reinterpret(final_dtype)
+        },
         F::ExtendConstant => {
             polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'value' must be a scalar value");
             polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
