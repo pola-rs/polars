@@ -713,7 +713,7 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
-        self.collect_with_engine(Engine::InMemory).map(|r| match r {
+        self.collect_with_engine(Engine::Auto).map(|r| match r {
             QueryResult::Single(df) => df,
             // TODO: Should return query results
             QueryResult::Multiple(_) => DataFrame::empty(),
