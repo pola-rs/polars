@@ -12,7 +12,7 @@ pub use dispatch::build_streaming_query_executor;
 pub(crate) mod expression;
 mod graph;
 pub use graph::{GraphNodeKey, LogicalPipe, LogicalPipeKey};
-pub use skeleton::{QueryResult, StreamingQuery};
+pub use skeleton::StreamingQuery;
 mod metrics;
 pub use metrics::{GraphMetrics, NodeMetrics};
 mod morsel;
