@@ -298,7 +298,7 @@ pub enum FunctionExpr {
         method: random::RandomMethod,
         seed: Option<u64>,
     },
-    SetSortedFlag(AExprSorted), // TODO: [amber] Change this to smth that has nulls_last
+    SetSortedFlag(AExprSorted),
     #[cfg(feature = "ffi_plugin")]
     /// Creating this node is unsafe
     /// This will lead to calls over FFI.

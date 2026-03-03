@@ -8,6 +8,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[cfg(all(feature = "strings", feature = "concat_str"))]
