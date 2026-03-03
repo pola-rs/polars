@@ -633,13 +633,13 @@ def _sequence_of_sequence_to_pydf(
 
 
 def _sequence_of_series_to_pydf(
-    first_element: Series,
+    first_element: Series,  # noqa: ARG001
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     *,
     schema_overrides: SchemaDict | None,
     strict: bool,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     series_names = [s.name for s in data]
     column_names, schema_overrides = _unpack_schema(
@@ -701,14 +701,14 @@ def _sequence_of_tuple_to_pydf(
 @_sequence_to_pydf_dispatcher.register(Mapping)
 @_sequence_to_pydf_dispatcher.register(dict)
 def _sequence_of_dict_to_pydf(
-    first_element: dict[str, Any],
+    first_element: dict[str, Any],  # noqa: ARG001
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     *,
     schema_overrides: SchemaDict | None,
     strict: bool,
     infer_schema_length: int | None,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     column_names, schema_overrides = _unpack_schema(
         schema, schema_overrides=schema_overrides
@@ -731,13 +731,13 @@ def _sequence_of_dict_to_pydf(
 
 @_sequence_to_pydf_dispatcher.register(str)
 def _sequence_of_elements_to_pydf(
-    first_element: Any,
+    first_element: Any,  # noqa: ARG001
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     schema_overrides: SchemaDict | None,
     *,
     strict: bool,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     column_names, schema_overrides = _unpack_schema(
         schema, schema_overrides=schema_overrides, n_expected=1
@@ -765,13 +765,13 @@ def _sequence_of_numpy_to_pydf(
 
 
 def _sequence_of_pandas_to_pydf(
-    first_element: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
+    first_element: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,  # noqa: ARG001
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     schema_overrides: SchemaDict | None,
     *,
     strict: bool,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     if schema is None:
         column_names: list[str] = []
@@ -801,7 +801,7 @@ def _sequence_of_dataclasses_to_pydf(
     infer_schema_length: int | None,
     *,
     strict: bool = True,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     """Initialize DataFrame from Python dataclasses."""
     from dataclasses import asdict, astuple
@@ -848,7 +848,7 @@ def _sequence_of_pydantic_models_to_pydf(
     infer_schema_length: int | None,
     *,
     strict: bool,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     """Initialise DataFrame from pydantic model objects."""
     import pydantic  # note: must already be available in the env here

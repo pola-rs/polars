@@ -18,28 +18,86 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str, ignore_nulls: bool) -
 
 #[cfg(all(feature = "concat_str", feature = "strings"))]
 /// Format the results of an array of expressions using a format string
-pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr> {
-    let input = args.as_ref().to_vec();
+pub fn format_str(format: &str, args: &[Expr]) -> PolarsResult<Expr> {
+    let mut positional_input = std::collections::VecDeque::from_iter(args);
+    let mut input = Vec::new();
+    let mut automatic_used = false;
+    let mut index_used = false;
 
-    let mut s = String::with_capacity(format.len());
+    // Parse format string into constant literal plus insertion locations per
+    // input expression.
+    let bytes = format.as_bytes();
+    let mut s = Vec::with_capacity(format.len());
     let mut insertions = Vec::with_capacity(input.len());
-    let mut offset = 0;
-    while let Some(j) = format[offset..].find("{}") {
-        s.push_str(&format[offset..][..j]);
-        insertions.push(s.len());
-        offset += j + 2;
+    let mut i = 0;
+    while i < format.len() {
+        match bytes[i] {
+            b'{' => {
+                let escaped = bytes.get(i + 1) == Some(&b'{');
+                if escaped {
+                    s.push(b'{');
+                    i += 2;
+                    continue;
+                }
+
+                let Some(close_offset) = bytes[i..].iter().position(|b| *b == b'}') else {
+                    polars_bail!(InvalidOperation: "unmatched '{{' in format string:\n{format}\n\nYou can escape '{{' by writing '{{{{'.");
+                };
+
+                let col_name = &bytes[i + 1..i + close_offset];
+                let col_name_str = std::str::from_utf8(col_name).unwrap();
+                if col_name.is_empty() {
+                    polars_ensure!(!index_used, InvalidOperation: "cannot switch from manual specification to automatic field numbering");
+                    let Some(expr) = positional_input.pop_front() else {
+                        polars_bail!(ShapeMismatch: "too few arguments given for format string:\n{format}");
+                    };
+                    input.push(expr.clone());
+                    automatic_used = true;
+                } else if col_name.iter().all(|b| b.is_ascii_digit()) {
+                    polars_ensure!(!automatic_used, InvalidOperation: "cannot switch from automatic field numbering to manual specification");
+                    let Some(index) = col_name_str
+                        .parse::<usize>()
+                        .ok()
+                        .filter(|idx| *idx < positional_input.len())
+                    else {
+                        polars_bail!(InvalidOperation: "out of bounds argument index in format string:\n{format}");
+                    };
+                    input.push(positional_input[index].clone());
+                    index_used = true;
+                } else {
+                    // [a-zA-Z_][a-zA-Z0-9_]*
+                    let valid_col_name = (col_name[0].is_ascii_alphabetic() || col_name[0] == b'_')
+                        && col_name[1..]
+                            .iter()
+                            .all(|b| b.is_ascii_alphanumeric() || *b == b'_');
+                    polars_ensure!(valid_col_name, InvalidOperation: "unacceptable column name '{col_name_str}' in format string, must be ASCII identifier\n{format}");
+                    input.push(Expr::Column(PlSmallStr::from_str(col_name_str)))
+                }
+                insertions.push(s.len());
+                i += close_offset + 1;
+            },
+            b'}' => {
+                let escaped = bytes.get(i + 1) == Some(&b'}');
+                polars_ensure!(escaped, InvalidOperation: "unmatched '}}' in format string:\n{format}\n\nYou can escape '}}' by writing '}}}}'.");
+                s.push(b'}');
+                i += 2;
+            },
+            _ => {
+                s.push(bytes[i]);
+                i += 1;
+            },
+        }
     }
-    s.push_str(&format[offset..]);
 
     polars_ensure!(
-        insertions.len() == input.len(),
-        ShapeMismatch: "number of placeholders should equal the number of arguments"
+        index_used || positional_input.is_empty(),
+        ShapeMismatch: "number of automatic placeholders should equal the number of arguments"
     );
 
     Ok(Expr::Function {
         input,
         function: StringFunction::Format {
-            format: s.into(),
+            format: PlSmallStr::from(std::str::from_utf8(&s).unwrap()),
             insertions: insertions.into(),
         }
         .into(),

@@ -54,7 +54,7 @@ impl BooleanChunked {
                     })
                     .sum::<IdxSize>()
                     % 2
-                    == 0
+                    == 1
             },
             |_, _, _| unreachable!(),
             |values, start, length| {

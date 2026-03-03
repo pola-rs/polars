@@ -417,7 +417,7 @@ pub fn int64_to_time64us(from: &PrimitiveArray<i64>) -> PrimitiveArray<i64> {
         primitive_map_is_valid(
             from,
             |v| (0..MICROSECONDS_IN_DAY).contains(&v),
-            ArrowDataType::Time32(TimeUnit::Microsecond),
+            ArrowDataType::Time64(TimeUnit::Microsecond),
         )
     }
 }

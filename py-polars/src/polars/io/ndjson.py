@@ -157,6 +157,10 @@ def read_ndjson(
     │ 3   ┆ 8   │
     └─────┴─────┘
     """
+    if file_cache_ttl is not None:
+        msg = "the `file_cache_ttl` parameter was deprecated in 1.39.0"
+        issue_deprecation_warning(msg)
+
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "read_ndjson"
     )
