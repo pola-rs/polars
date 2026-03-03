@@ -579,7 +579,7 @@ impl PyLazyFrame {
             } else {
                 ldf.collect_with_engine(engine.0).map(|r| match r {
                     QueryResult::Single(df) => df,
-                    // Match legacy behavior
+                    // TODO: Should return query results
                     QueryResult::Multiple(_) => DataFrame::empty(),
                 })
             }
@@ -604,7 +604,7 @@ impl PyLazyFrame {
                     .collect_with_engine(engine.0)
                     .map(|r| match r {
                         QueryResult::Single(df) => df,
-                        // Match legacy behavior
+                        // TODO: Should return query results
                         QueryResult::Multiple(_) => DataFrame::empty(),
                     })
                     .map(PyDataFrame::new)
