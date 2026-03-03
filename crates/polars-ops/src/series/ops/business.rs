@@ -545,7 +545,7 @@ impl<'a, I> HolidayListsIterable<'a, I>
 where
     I: Iterator<Item = Option<&'a [i32]>>,
 {
-    /// Like Iterator::next(), but with more flexiblity of lifetimes given lack
+    /// Like Iterator::next(), but with more flexibility of lifetimes given lack
     /// of lending iterators.
     fn next(&mut self) -> Option<Option<&[i32]>> {
         let result = self.unnormalized_iter.next();
