@@ -112,7 +112,7 @@
   "ParquetWriteOptions": "04196fdf5e136dc18278b5d0ef1054fa398a0a1a60147e40085ecd0180e89637",
   "PartitionStrategy": "0e4535031aa9acf22fdf96ab10483f76e2f6ae6d5e5cd756be9adca490e0d05b",
   "PartitionedSinkOptions": "bc7885b2bb87dc5fad4c5cf96c5a9b381403f8f9db6edefc81899dc9b9227934",
-  "PivotColumnNaming": "fce80d657431144c442d1ea35acdf58a1e2dd69133180d1825c67c90c848bc0f",
+  "PivotColumnNaming": "8bd7dfb879cf09ee95b306f20ceddbfe0d00320918b40378ebd5f3b6a0b4ea48",
   "PlCredentialProvider": "5bbddd4f899afa592c318b20bb8d0bdfe2877fa5bf1a63d9cd0da908ac3aec0e",
   "PlRefPath": "0faaddc3196c89bd9dcf872bbc4304471855dff7f9d24107ef279bc06ef7cbb4",
   "PlanCallback": "5bbddd4f899afa592c318b20bb8d0bdfe2877fa5bf1a63d9cd0da908ac3aec0e",

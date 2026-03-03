@@ -37,7 +37,7 @@ def test_pivot() -> None:
 
     # Next, with column naming that combines value column with on columns:
     result = df.pivot(
-        "bar", values="N", aggregate_function=None, column_naming="combine"
+        "bar", values="N", aggregate_function=None, column_naming="always_combine"
     )
 
     expected = pl.DataFrame(
@@ -52,8 +52,8 @@ def test_pivot() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.parametrize("column_naming", ["auto", "combine"])
-def test_pivot_no_values(column_naming: Literal["auto", "combine"]) -> None:
+@pytest.mark.parametrize("column_naming", ["auto", "always_combine"])
+def test_pivot_no_values(column_naming: Literal["auto", "always_combine"]) -> None:
     df = pl.DataFrame(
         {
             "foo": ["A", "A", "B", "B", "C"],

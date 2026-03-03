@@ -1274,7 +1274,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PivotColumnNaming> {
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "auto" => PivotColumnNaming::Auto,
-            "combine" => PivotColumnNaming::Combine,
+            "always_combine" => PivotColumnNaming::AlwaysCombine,
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`column_naming` must be one of {{'auto', 'combine'}}, got {v}",
