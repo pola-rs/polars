@@ -628,7 +628,7 @@ impl LazyFrame {
 
         let mut ir_plan = self.to_alp_optimized()?;
 
-        ir_plan.ensure_top_is_sink();
+        ir_plan.ensure_root_node_is_sink();
 
         match engine {
             Engine::Streaming => feature_gated!("new_streaming", {
@@ -836,7 +836,7 @@ impl LazyFrame {
                 Err(e) => return Some(Err(e)),
             };
 
-            ir_plan.ensure_top_is_sink();
+            ir_plan.ensure_root_node_is_sink();
 
             let f = || {
                 polars_stream::run_query(

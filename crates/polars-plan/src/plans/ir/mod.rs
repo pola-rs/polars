@@ -173,7 +173,7 @@ impl IRPlan {
     }
 
     /// If `lp_top` is not a `Sink`, it will be set to an in-memory sink.
-    pub fn ensure_top_is_sink(&mut self) {
+    pub fn ensure_root_node_is_sink(&mut self) {
         match self.root() {
             IR::Sink { .. } | IR::SinkMultiple { .. } => {},
             _ => {
