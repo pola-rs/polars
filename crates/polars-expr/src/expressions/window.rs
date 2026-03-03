@@ -237,7 +237,7 @@ impl WindowExpr {
                 let mut finishes_list = false;
                 for e in &**function {
                     match e {
-                        Expr::Agg(AggExpr::Implode(_)) => {
+                        Expr::Agg(AggExpr::Implode { .. }) => {
                             finishes_list = true;
                         },
                         Expr::Alias(_, _) => {},

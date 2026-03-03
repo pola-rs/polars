@@ -71,7 +71,7 @@ pub fn into_reduction(
             IRAggExpr::Quantile { .. } => todo!(),
             IRAggExpr::Median(_) => todo!(),
             IRAggExpr::NUnique(_) => todo!(),
-            IRAggExpr::Implode(_) => todo!(),
+            IRAggExpr::Implode { .. } => todo!(),
             IRAggExpr::AggGroups(_) => todo!(),
         },
         AExpr::Len => {

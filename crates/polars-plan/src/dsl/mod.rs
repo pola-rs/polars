@@ -198,8 +198,12 @@ impl Expr {
     }
 
     /// Implode into a list scalar.
-    pub fn implode(self) -> Self {
-        AggExpr::Implode(Arc::new(self)).into()
+    pub fn implode(self, maintain_order: bool) -> Self {
+        AggExpr::Implode {
+            input: Arc::new(self),
+            maintain_order,
+        }
+        .into()
     }
 
     /// Compute the quantile per group.

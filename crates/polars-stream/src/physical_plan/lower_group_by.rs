@@ -241,7 +241,10 @@ fn try_lower_elementwise_scalar_agg_expr(
         if expr_arena.get(expr).is_scalar(expr_arena) {
             return Some(expr);
         } else {
-            let agg = IRAggExpr::Implode(expr);
+            let agg = IRAggExpr::Implode {
+                input: expr,
+                maintain_order: true,
+            };
             return Some(expr_arena.add(AExpr::Agg(agg)));
         }
     }
@@ -445,7 +448,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                     Some(replace_agg_uniq!(count_node))
                 },
                 IRAggExpr::Median(..)
-                | IRAggExpr::Implode(..)
+                | IRAggExpr::Implode { .. }
                 | IRAggExpr::Quantile { .. }
                 | IRAggExpr::AggGroups(..) => None, // TODO: allow all aggregates,
             }

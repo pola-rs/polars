@@ -739,10 +739,13 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 arguments: vec![n.0],
                 options: py.None(),
             },
-            IRAggExpr::Implode(n) => Agg {
+            IRAggExpr::Implode {
+                input: n,
+                maintain_order,
+            } => Agg {
                 name: "implode".into_py_any(py)?,
                 arguments: vec![n.0],
-                options: py.None(),
+                options: maintain_order.into_py_any(py)?,
             },
             IRAggExpr::Quantile {
                 expr,

@@ -5360,11 +5360,17 @@ Consider using {self}.implode() instead"""
             self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )
 
-    def implode(self) -> Expr:
+    def implode(self, *, maintain_order: bool = False) -> Expr:
         """
         Aggregate values into a list.
 
         The returned list itself is a scalar value of `list` dtype.
+
+        Parameters
+        ----------
+        maintain_order
+            Whether to preserve the order of elements in the list. Setting this
+            to `False` can improve performance, especially within `group_by`.
 
         Examples
         --------
@@ -5384,7 +5390,7 @@ Consider using {self}.implode() instead"""
         │ [1, 2, 3] ┆ [4, 5, 6] │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.implode())
+        return wrap_expr(self._pyexpr.implode(maintain_order))
 
     def gather_every(self, n: int, offset: int = 0) -> Expr:
         """
