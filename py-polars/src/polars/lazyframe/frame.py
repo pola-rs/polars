@@ -2107,7 +2107,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
          └─────────────────────────┴───────┴──────┘)
         """
         for k in _kwargs:
-            if k not in ("post_opt_callback",):  # except "private" kwargs
+            if k not in (  # except "private" kwargs
+                "post_opt_callback",
+            ):
                 error_msg = f"profile() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
         engine = _select_engine(engine)
@@ -2126,7 +2128,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Only for testing
             callback = _kwargs.get("post_opt_callback")
         df_py, timings_py = ldf.profile(callback)
-        df, timings = wrap_df(df_py), wrap_df(timings_py)
+        (df, timings) = wrap_df(df_py), wrap_df(timings_py)
 
         if show_plot:
             import_optional(
@@ -2608,9 +2610,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         data_page_size: int | None = None,
         maintain_order: bool = True,
         storage_options: StorageOptionsDict | None = None,
-        credential_provider: (
-            CredentialProviderFunction | Literal["auto"] | None
-        ) = "auto",
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
         retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -2633,9 +2635,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         data_page_size: int | None = None,
         maintain_order: bool = True,
         storage_options: StorageOptionsDict | None = None,
-        credential_provider: (
-            CredentialProviderFunction | Literal["auto"] | None
-        ) = "auto",
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
         retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -2657,9 +2659,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         data_page_size: int | None = None,
         maintain_order: bool = True,
         storage_options: StorageOptionsDict | None = None,
-        credential_provider: (
-            CredentialProviderFunction | Literal["auto"] | None
-        ) = "auto",
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
         retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         metadata: ParquetMetadata | None = None,
@@ -2939,9 +2941,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
         storage_options: StorageOptionsDict | None = None,
-        credential_provider: (
-            CredentialProviderFunction | Literal["auto"] | None
-        ) = "auto",
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
         delta_write_options: dict[str, Any] | None = None,
         delta_merge_options: dict[str, Any] | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
@@ -3221,9 +3223,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         record_batch_size: int | None = None,
         maintain_order: bool = True,
         storage_options: StorageOptionsDict | None = None,
-        credential_provider: (
-            CredentialProviderFunction | Literal["auto"] | None
-        ) = "auto",
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
         retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -3243,9 +3245,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         record_batch_size: int | None = None,
         maintain_order: bool = True,
         storage_options: StorageOptionsDict | None = None,
-        credential_provider: (
-            CredentialProviderFunction | Literal["auto"] | None
-        ) = "auto",
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
         retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -3264,9 +3266,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         record_batch_size: int | None = None,
         maintain_order: bool = True,
         storage_options: StorageOptionsDict | None = None,
-        credential_provider: (
-            CredentialProviderFunction | Literal["auto"] | None
-        ) = "auto",
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
         retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -3479,9 +3481,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
         storage_options: StorageOptionsDict | None = None,
-        credential_provider: (
-            CredentialProviderFunction | Literal["auto"] | None
-        ) = "auto",
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
         retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -3514,9 +3516,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
         storage_options: StorageOptionsDict | None = None,
-        credential_provider: (
-            CredentialProviderFunction | Literal["auto"] | None
-        ) = "auto",
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
         retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -3548,9 +3550,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
         storage_options: StorageOptionsDict | None = None,
-        credential_provider: (
-            CredentialProviderFunction | Literal["auto"] | None
-        ) = "auto",
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
         retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -3817,9 +3819,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         check_extension: bool = True,
         maintain_order: bool = True,
         storage_options: StorageOptionsDict | None = None,
-        credential_provider: (
-            CredentialProviderFunction | Literal["auto"] | None
-        ) = "auto",
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
         retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -3838,9 +3840,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         check_extension: bool = True,
         maintain_order: bool = True,
         storage_options: StorageOptionsDict | None = None,
-        credential_provider: (
-            CredentialProviderFunction | Literal["auto"] | None
-        ) = "auto",
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
         retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -3858,9 +3860,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         check_extension: bool = True,
         maintain_order: bool = True,
         storage_options: StorageOptionsDict | None = None,
-        credential_provider: (
-            CredentialProviderFunction | Literal["auto"] | None
-        ) = "auto",
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
         retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -9153,22 +9155,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         schema: SchemaDict | Schema,
         *,
-        missing_columns: (
-            Literal["insert", "raise"] | Mapping[str, Literal["insert", "raise"] | Expr]
-        ) = "raise",
-        missing_struct_fields: (
-            Literal["insert", "raise"] | Mapping[str, Literal["insert", "raise"]]
-        ) = "raise",
+        missing_columns: Literal["insert", "raise"]
+        | Mapping[str, Literal["insert", "raise"] | Expr] = "raise",
+        missing_struct_fields: Literal["insert", "raise"]
+        | Mapping[str, Literal["insert", "raise"]] = "raise",
         extra_columns: Literal["ignore", "raise"] = "raise",
-        extra_struct_fields: (
-            Literal["ignore", "raise"] | Mapping[str, Literal["ignore", "raise"]]
-        ) = "raise",
-        integer_cast: (
-            Literal["upcast", "forbid"] | Mapping[str, Literal["upcast", "forbid"]]
-        ) = "forbid",
-        float_cast: (
-            Literal["upcast", "forbid"] | Mapping[str, Literal["upcast", "forbid"]]
-        ) = "forbid",
+        extra_struct_fields: Literal["ignore", "raise"]
+        | Mapping[str, Literal["ignore", "raise"]] = "raise",
+        integer_cast: Literal["upcast", "forbid"]
+        | Mapping[str, Literal["upcast", "forbid"]] = "forbid",
+        float_cast: Literal["upcast", "forbid"]
+        | Mapping[str, Literal["upcast", "forbid"]] = "forbid",
     ) -> LazyFrame:
         """
         Match or evolve the schema of a LazyFrame into a specific schema.
