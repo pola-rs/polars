@@ -24,7 +24,7 @@ pub(crate) struct RollingExpr {
 }
 
 impl PhysicalExpr for RollingExpr {
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let groups = if let Some(index_column_name) = self.index_column.as_column() {
             let options = RollingGroupOptions {
                 index_column: index_column_name.clone(),
@@ -74,7 +74,7 @@ impl PhysicalExpr for RollingExpr {
         Ok(out.into_column())
     }
 
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
