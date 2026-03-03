@@ -6038,7 +6038,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                  - Many-to-one. Check if join keys are unique in right dataset.
 
             .. note::
-                This is currently not supported by the streaming engine.
+                When validation is enabled (any value other than ``m:m``), the
+                streaming engine falls back to the in-memory engine to perform
+                the validation check. This means memory usage may be
+                significantly higher than a pure streaming execution.
         nulls_equal
             Join on null values. By default null values will never produce matches.
         coalesce
