@@ -21,7 +21,7 @@ use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 //   * Merge IR lowering arms
 //   * Add support for when the point side is sorted but descending
 
-pub fn left_is_point(left_on: &[PlSmallStr], right_on: &[PlSmallStr], args: &JoinArgs) -> bool {
+pub fn left_is_point<T>(left_on: &[T], right_on: &[T], args: &JoinArgs) -> bool {
     let left_can_be_point = left_on.len() == 1;
     let right_can_be_point = right_on.len() == 1;
     match args.build_side {
@@ -61,7 +61,6 @@ struct RangeJoinParams {
     upper_tmp_key_col: Option<PlSmallStr>,
     point_schema: SchemaRef,
     interval_schema: SchemaRef,
-    output_schema: SchemaRef,
     args: JoinArgs,
     left_is_point: bool,
 }
@@ -85,9 +84,8 @@ impl RangeJoinNode {
         right_schema: SchemaRef,
         left_on: Vec<PlSmallStr>,
         right_on: Vec<PlSmallStr>,
-        tmp_left_key_cols: [Option<PlSmallStr>; 2],
-        tmp_right_key_cols: [Option<PlSmallStr>; 2],
-        output_schema: SchemaRef,
+        tmp_left_key_cols: Vec<Option<PlSmallStr>>,
+        tmp_right_key_cols: Vec<Option<PlSmallStr>>,
         args: JoinArgs,
         options: IEJoinOptions,
     ) -> Self {
@@ -107,6 +105,7 @@ impl RangeJoinNode {
         let interval_schema;
         if left_is_point {
             assert!(left_on.len() == 1 && right_on.len() == ops_n);
+            assert!(tmp_left_key_cols.len() == 1 && tmp_right_key_cols.len() == ops_n);
             point_on = left_on;
             point_tmp_key_cols = tmp_left_key_cols;
             point_schema = left_schema;
@@ -115,6 +114,7 @@ impl RangeJoinNode {
             interval_schema = right_schema;
         } else {
             assert!(right_on.len() == 1 && left_on.len() == ops_n);
+            assert!(tmp_right_key_cols.len() == 1 && tmp_left_key_cols.len() == ops_n);
             point_on = right_on;
             point_tmp_key_cols = tmp_right_key_cols;
             point_schema = right_schema;
@@ -163,7 +163,6 @@ impl RangeJoinNode {
             upper_op,
             point_schema: point_schema.clone(),
             interval_schema,
-            output_schema,
             args,
             left_is_point,
         };
@@ -430,7 +429,6 @@ async fn freeze_builders_and_emit(
     };
 
     drop_key_columns(&mut output, params);
-    debug_assert!(*output.schema() == params.output_schema);
     let mut morsel = Morsel::new(output, seq, st);
     if let Some(wt) = wt {
         morsel.set_consume_token(wt);

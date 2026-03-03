@@ -330,6 +330,17 @@ impl JoinType {
             false
         }
     }
+
+    pub fn is_range(&self) -> bool {
+        #[cfg(feature = "iejoin")]
+        {
+            matches!(self, JoinType::Range)
+        }
+        #[cfg(not(feature = "iejoin"))]
+        {
+            false
+        }
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Default, Hash)]

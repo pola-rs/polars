@@ -2047,7 +2047,9 @@ def test_join_where_dtype_upcast() -> None:
     df2 = pl.DataFrame({"c": [10]})
 
     predicate = (pl.col("a") + (pl.col("b") > 0)) < pl.col("c")
-    result = df1.join_where(df2, predicate)
+    q = df1.lazy().join_where(df2.lazy(), predicate)
+    q.show_graph(plan_stage="physical", engine="streaming")
+    result = q.collect()
     expected = pl.DataFrame(
         {
             "a": pl.Series([1], dtype=pl.Int8),

@@ -368,6 +368,7 @@ pub enum PhysNodeKind {
         args: JoinArgs,
     },
 
+    #[cfg(feature = "semi_anti_join")]
     SemiAntiJoin {
         input_left: PhysStream,
         input_right: PhysStream,
@@ -383,6 +384,7 @@ pub enum PhysNodeKind {
         args: JoinArgs,
     },
 
+    #[cfg(feature = "asof_join")]
     AsOfJoin {
         input_left: PhysStream,
         input_right: PhysStream,
@@ -399,9 +401,8 @@ pub enum PhysNodeKind {
         input_right: PhysStream,
         left_on: Vec<PlSmallStr>,
         right_on: Vec<PlSmallStr>,
-        tmp_left_key_cols: [Option<PlSmallStr>; 2],
-        tmp_right_key_cols: [Option<PlSmallStr>; 2],
-        output_schema: SchemaRef,
+        tmp_left_key_cols: Vec<Option<PlSmallStr>>,
+        tmp_right_key_cols: Vec<Option<PlSmallStr>>,
         args: JoinArgs,
         options: polars_ops::frame::IEJoinOptions,
     },

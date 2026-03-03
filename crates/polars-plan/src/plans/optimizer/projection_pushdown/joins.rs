@@ -55,6 +55,7 @@ pub(super) fn process_join(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<IR> {
+    dbg!(&join_ir);
     let IR::Join {
         input_left,
         input_right,

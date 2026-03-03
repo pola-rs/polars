@@ -326,11 +326,11 @@ pub trait DataFrameJoinOps: IntoDf {
                     },
                 },
                 #[cfg(feature = "iejoin")]
-                JoinType::IEJoin | JoinType::Range => {
-                    unreachable!()
+                jt @ (JoinType::IEJoin | JoinType::Range) => {
+                    unreachable!("{:?}", jt)
                 },
-                JoinType::Cross => {
-                    unreachable!()
+                jt @ JoinType::Cross => {
+                    unreachable!("{:?}", jt)
                 },
             };
         }
