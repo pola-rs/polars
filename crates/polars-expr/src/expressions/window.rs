@@ -353,7 +353,7 @@ impl PhysicalExpr for WindowExpr {
 
     // This first cached the group_by and the join tuples, but rayon under a mutex leads to deadlocks:
     // https://github.com/rayon-rs/rayon/issues/592
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         // This method does the following:
         // 1. determine group_by tuples based on the group_column
         // 2. apply an aggregation function
@@ -640,7 +640,7 @@ impl PhysicalExpr for WindowExpr {
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,

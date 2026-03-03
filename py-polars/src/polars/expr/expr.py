@@ -3863,6 +3863,7 @@ class Expr:
         Traceback (most recent call last):
         ...
         polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
+        ...
         >>> df.head(0).select(pl.col("a").item(allow_empty=True))
         shape: (1, 1)
         ┌──────┐
