@@ -1253,16 +1253,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         format: ExplainFormat = "plain",
         optimized: bool = True,
-        type_coercion: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
-        streaming: bool = False,
+        type_coercion: bool = True,  # noqa: ARG002
+        predicate_pushdown: bool = True,  # noqa: ARG002
+        projection_pushdown: bool = True,  # noqa: ARG002
+        simplify_expression: bool = True,  # noqa: ARG002
+        slice_pushdown: bool = True,  # noqa: ARG002
+        comm_subplan_elim: bool = True,  # noqa: ARG002
+        comm_subexpr_elim: bool = True,  # noqa: ARG002
+        cluster_with_columns: bool = True,  # noqa: ARG002
+        collapse_joins: bool = True,  # noqa: ARG002
+        streaming: bool = False,  # noqa: ARG002
         engine: EngineType = "auto",
         tree_format: bool | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
@@ -1417,16 +1417,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         output_path: str | Path | None = None,
         raw_output: bool = False,
         figsize: tuple[float, float] = (16.0, 12.0),
-        type_coercion: bool = True,
+        type_coercion: bool = True,  # noqa: ARG002
         _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
+        predicate_pushdown: bool = True,  # noqa: ARG002
+        projection_pushdown: bool = True,  # noqa: ARG002
+        simplify_expression: bool = True,  # noqa: ARG002
+        slice_pushdown: bool = True,  # noqa: ARG002
+        comm_subplan_elim: bool = True,  # noqa: ARG002
+        comm_subexpr_elim: bool = True,  # noqa: ARG002
+        cluster_with_columns: bool = True,  # noqa: ARG002
+        collapse_joins: bool = True,  # noqa: ARG002
         engine: EngineType = "auto",
         plan_stage: PlanStage = "ir",
         _check_order: bool = True,
@@ -1957,16 +1957,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def profile(
         self,
         *,
-        type_coercion: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        no_optimization: bool = False,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
+        type_coercion: bool = True,  # noqa: ARG002
+        predicate_pushdown: bool = True,  # noqa: ARG002
+        projection_pushdown: bool = True,  # noqa: ARG002
+        simplify_expression: bool = True,  # noqa: ARG002
+        no_optimization: bool = False,  # noqa: ARG002
+        slice_pushdown: bool = True,  # noqa: ARG002
+        comm_subplan_elim: bool = True,  # noqa: ARG002
+        comm_subexpr_elim: bool = True,  # noqa: ARG002
+        cluster_with_columns: bool = True,  # noqa: ARG002
+        collapse_joins: bool = True,  # noqa: ARG002
         show_plot: bool = False,
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
@@ -2212,16 +2212,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def collect(
         self,
         *,
-        type_coercion: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
-        no_optimization: bool = False,
+        type_coercion: bool = True,  # noqa: ARG002
+        predicate_pushdown: bool = True,  # noqa: ARG002
+        projection_pushdown: bool = True,  # noqa: ARG002
+        simplify_expression: bool = True,  # noqa: ARG002
+        slice_pushdown: bool = True,  # noqa: ARG002
+        comm_subplan_elim: bool = True,  # noqa: ARG002
+        comm_subexpr_elim: bool = True,  # noqa: ARG002
+        cluster_with_columns: bool = True,  # noqa: ARG002
+        collapse_joins: bool = True,  # noqa: ARG002
+        no_optimization: bool = False,  # noqa: ARG002
         engine: EngineType = "auto",
         background: bool = False,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
@@ -9132,7 +9132,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────────┘
 
         """
-        return pc.LazyFrameRemote(lf=self, context=context, plan_type=plan_type)
+        return pc.LazyFrameRemote(
+            lf=self,
+            context=context,
+            plan_type=plan_type,
+            n_retries=n_retries,
+            engine=engine,
+            scaling_mode=scaling_mode,
+        )
 
     @unstable()
     def match_to_schema(

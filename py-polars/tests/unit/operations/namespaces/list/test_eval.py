@@ -473,7 +473,12 @@ def test_list_eval_parametric_rank(df: pl.DataFrame, expr: pl.Expr) -> None:
     ],
 )
 @pytest.mark.parametrize(
-    "expr", [pl.element().first(), pl.element().get(0), pl.element().reverse().last()]
+    "expr",
+    [
+        pl.element().first(),
+        pl.element().get(0, null_on_oob=True),
+        pl.element().reverse().last(),
+    ],
 )
 def test_list_eval_parametric_first_scalar(
     df: pl.DataFrame, expected: pl.DataFrame, expr: pl.Expr

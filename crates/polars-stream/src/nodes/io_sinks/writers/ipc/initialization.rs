@@ -7,8 +7,8 @@ use polars_core::prelude::{
     CategoricalMapping, CategoricalPhysicalDtypeExt, CompatLevel, DataType,
 };
 use polars_core::schema::Schema;
-use polars_core::series::ToArrowConverter;
-use polars_core::series::categorical_to_arrow::CategoricalToArrowConverter;
+use polars_core::series::arrow_export::ToArrowConverter;
+use polars_core::series::arrow_export::categorical::CategoricalToArrowConverter;
 use polars_core::utils::arrow;
 use polars_utils::pl_str::PlSmallStr;
 
