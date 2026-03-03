@@ -356,7 +356,13 @@ fn is_sorted_rec(
 
 #[derive(Debug, PartialEq)]
 pub struct AExprSorted {
+    /// None: either way / unsure
+    /// Some(false): ascending
+    /// Some(true): descending
     pub descending: Option<bool>,
+    /// None: either way / unsure
+    /// Some(false): nulls (if any) at start
+    /// Some(true): nulls (if any) at end
     pub nulls_last: Option<bool>,
 }
 
