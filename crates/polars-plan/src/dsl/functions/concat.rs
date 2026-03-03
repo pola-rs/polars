@@ -18,8 +18,8 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str, ignore_nulls: bool) -
 
 #[cfg(all(feature = "concat_str", feature = "strings"))]
 /// Format the results of an array of expressions using a format string
-pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr> {
-    let mut positional_input = std::collections::VecDeque::from_iter(args.as_ref());
+pub fn format_str(format: &str, args: &[Expr]) -> PolarsResult<Expr> {
+    let mut positional_input = std::collections::VecDeque::from_iter(args);
     let mut input = Vec::new();
     let mut automatic_used = false;
     let mut index_used = false;
