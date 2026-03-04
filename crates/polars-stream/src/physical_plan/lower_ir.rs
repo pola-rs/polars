@@ -23,7 +23,7 @@ use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "csv", feature = "json"))]
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
@@ -190,7 +190,10 @@ pub fn lower_ir(
     let node_kind = match ir_node {
         IR::SimpleProjection { input, columns } => {
             disable_morsel_split.get_or_insert(true);
-            let columns = columns.iter_names_cloned().collect::<Vec<_>>();
+            let columns = columns
+                .iter_names_cloned()
+                .map(|c| (c.clone(), c))
+                .collect();
             let phys_input = lower_ir!(*input)?;
             PhysNodeKind::SimpleProjection {
                 input: phys_input,
@@ -256,9 +259,13 @@ pub fn lower_ir(
                         .any(|(l, r)| l != r)
                 {
                     let phys_input = phys_sm.insert(PhysNode::new(schema, node_kind));
+                    let columns = projection_schema
+                        .iter_names_cloned()
+                        .map(|c| (c.clone(), c))
+                        .collect();
                     node_kind = PhysNodeKind::SimpleProjection {
                         input: PhysStream::first(phys_input),
-                        columns: projection_schema.iter_names_cloned().collect::<Vec<_>>(),
+                        columns,
                     };
                 }
             }
@@ -881,9 +888,13 @@ pub fn lower_ir(
                         stream = PhysStream::first(node_key);
 
                         if reorder_after_row_index_post {
+                            let columns = output_schema
+                                .iter_names_cloned()
+                                .map(|c| (c.clone(), c))
+                                .collect();
                             let node = PhysNodeKind::SimpleProjection {
                                 input: stream,
-                                columns: output_schema.iter_names_cloned().collect(),
+                                columns,
                             };
 
                             let node_key = phys_sm.insert(PhysNode {
@@ -910,9 +921,13 @@ pub fn lower_ir(
                         stream = PhysStream::first(node_key);
 
                         if reorder_after_row_index_post {
+                            let columns = output_schema
+                                .iter_names_cloned()
+                                .map(|c| (c.clone(), c))
+                                .collect();
                             let node = PhysNodeKind::SimpleProjection {
                                 input: stream,
-                                columns: output_schema.iter_names_cloned().collect(),
+                                columns,
                             };
 
                             let node_key = phys_sm.insert(PhysNode {
@@ -1073,7 +1088,18 @@ pub fn lower_ir(
             let join_keys_sorted_together =
                 Option::zip(left_on_sorted.as_ref(), right_on_sorted.as_ref())
                     .is_some_and(|(ls, rs)| ls == rs);
-            let use_streaming_merge_join = args.how.is_equi() && join_keys_sorted_together;
+            let mut key_descending = left_on_sorted
+                .as_ref()
+                .and_then(|v| v.first())
+                .and_then(|s| s.descending);
+            let key_nulls_last = left_on_sorted
+                .as_ref()
+                .and_then(|v| v.first())
+                .and_then(|s| s.nulls_last);
+            let use_streaming_merge_join = args.how.is_equi()
+                && join_keys_sorted_together
+                && key_descending.is_some()
+                && key_nulls_last.is_some();
             #[cfg(feature = "asof_join")]
             let use_streaming_asof_join = if let JoinType::AsOf(ref asof_options) = args.how {
                 // Grouped asof-join is not yet supported in the streaming engine.
@@ -1126,8 +1152,6 @@ pub fn lower_ir(
                 trans_left_on.drain(left_on.len()..);
                 trans_right_on.drain(right_on.len()..);
 
-                let mut key_descending = left_on_sorted.as_ref().and_then(|v| v[0].descending);
-                let key_nulls_last = left_on_sorted.as_ref().and_then(|v| v[0].nulls_last);
                 let mut tmp_left_key_col = None;
                 let mut tmp_right_key_col = None;
                 if use_streaming_merge_join || use_streaming_asof_join {

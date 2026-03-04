@@ -18,14 +18,12 @@ macro_rules! invalid_operation_panic {
 pub mod amortized_iter;
 mod any_value;
 pub mod arithmetic;
+pub mod arrow_export;
 pub mod builder;
-#[cfg(feature = "dtype-categorical")]
-pub mod categorical_to_arrow;
+
 mod comparison;
 mod from;
 pub mod implementations;
-mod into;
-pub use into::ToArrowConverter;
 pub(crate) mod iterator;
 pub mod ops;
 #[cfg(feature = "proptest")]
@@ -214,6 +212,12 @@ impl Series {
             Ok(ca) => ca.0,
             Err(ca) => ca.as_ref().as_ref().clone(),
         }
+    }
+
+    /// Returns a reference to the Arrow ArrayRef
+    #[inline]
+    pub fn array_ref(&self, chunk_idx: usize) -> &ArrayRef {
+        &self.chunks()[chunk_idx] as &ArrayRef
     }
 
     /// # Safety
@@ -850,6 +854,8 @@ impl Series {
                 Float16 => Ok(self.f16().unwrap().prod_reduce()),
                 Float32 => Ok(self.f32().unwrap().prod_reduce()),
                 Float64 => Ok(self.f64().unwrap().prod_reduce()),
+                #[cfg(feature = "dtype-decimal")]
+                Decimal(..) => Ok(self.decimal().unwrap().prod_reduce()),
                 dt => {
                     polars_bail!(InvalidOperation: "`product` operation not supported for dtype `{dt}`")
                 },

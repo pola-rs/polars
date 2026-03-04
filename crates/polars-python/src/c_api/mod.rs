@@ -92,6 +92,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<Slice>().unwrap();
     m.add_class::<Len>().unwrap();
     m.add_class::<Window>().unwrap();
+    m.add_class::<Rolling>().unwrap();
     m.add_class::<PyOperator>().unwrap();
     m.add_class::<PyStringFunction>().unwrap();
     m.add_class::<PyBooleanFunction>().unwrap();

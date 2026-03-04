@@ -8,6 +8,7 @@ use parking_lot::Mutex;
 use polars::io::RowIndex;
 use polars::time::*;
 use polars_core::prelude::*;
+use polars_core::query_result::QueryResult;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
@@ -576,7 +577,11 @@ impl PyLazyFrame {
                     post_opt_callback(&lambda, root, lp_arena, expr_arena, None)
                 })
             } else {
-                ldf.collect_with_engine(engine.0)
+                ldf.collect_with_engine(engine.0).map(|r| match r {
+                    QueryResult::Single(df) => df,
+                    // TODO: Should return query results
+                    QueryResult::Multiple(_) => DataFrame::empty(),
+                })
             }
         })
     }
@@ -597,6 +602,11 @@ impl PyLazyFrame {
             polars_io::pl_async::get_runtime().spawn_blocking(move || {
                 let result = ldf
                     .collect_with_engine(engine.0)
+                    .map(|r| match r {
+                        QueryResult::Single(df) => df,
+                        // TODO: Should return query results
+                        QueryResult::Multiple(_) => DataFrame::empty(),
+                    })
                     .map(PyDataFrame::new)
                     .map_err(PyPolarsErr::from);
 

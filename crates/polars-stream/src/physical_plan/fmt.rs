@@ -9,6 +9,7 @@ use polars_time::ClosedWindow;
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::DynamicGroupOptions;
 use polars_utils::arena::Arena;
+use polars_utils::itertools::Itertools;
 use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
@@ -280,10 +281,22 @@ fn visualize_plan_rec(
             ),
             from_ref(input),
         ),
-        PhysNodeKind::SimpleProjection { input, columns } => (
-            format!("select\\ncols: {}", columns.join(", ")),
-            from_ref(input),
-        ),
+        PhysNodeKind::SimpleProjection { input, columns } => {
+            let mut label = "select".to_string();
+            let mut f = EscapeLabel(&mut label);
+            if columns.iter().all(|(out, col)| out == col) {
+                write!(f, "\n{}", &columns.values().join(", ")).unwrap();
+            } else {
+                for (out, col) in columns {
+                    if out == col {
+                        write!(f, "\n{col}").unwrap();
+                    } else {
+                        write!(f, "\n{out} = {col}").unwrap();
+                    }
+                }
+            };
+            (label, from_ref(input))
+        },
         PhysNodeKind::InMemorySink { input } => ("in-memory-sink".to_string(), from_ref(input)),
         PhysNodeKind::CallbackSink { input, .. } => ("callback-sink".to_string(), from_ref(input)),
         PhysNodeKind::FileSink { input, options } => match options.file_format {
