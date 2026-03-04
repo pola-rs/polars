@@ -475,16 +475,20 @@ fn try_rewrite_join_type(
                     unreachable!()
                 };
 
+                left_on.push(ExprIR::from_node(bound_lower.input_lhs, expr_arena));
+                let mut rexpr_lower = ExprIR::from_node(bound_lower.input_rhs, expr_arena);
+                remove_suffix(&mut rexpr_lower, expr_arena, schema_right, &suffix);
+                right_on.push(rexpr_lower);
                 let expr_eq = |e1, e2| {
                     AExpr::is_expr_equal_to(expr_arena.get(e1), expr_arena.get(e2), expr_arena)
                 };
-                left_on.push(ExprIR::from_node(bound_lower.input_lhs, expr_arena));
-                right_on.push(ExprIR::from_node(bound_lower.input_rhs, expr_arena));
                 if left_is_point {
-                    debug_assert!(expr_eq(bound_upper.input_lhs, bound_lower.input_lhs));
-                    right_on.push(ExprIR::from_node(bound_upper.input_rhs, expr_arena));
+                    debug_assert!(expr_eq(bound_lower.input_lhs, bound_upper.input_lhs));
+                    let mut rexpr_upper = ExprIR::from_node(bound_upper.input_rhs, expr_arena);
+                    remove_suffix(&mut rexpr_upper, expr_arena, schema_right, &suffix);
+                    right_on.push(rexpr_upper);
                 } else {
-                    debug_assert!(expr_eq(bound_upper.input_rhs, bound_lower.input_rhs));
+                    debug_assert!(expr_eq(bound_lower.input_rhs, bound_upper.input_rhs));
                     left_on.push(ExprIR::from_node(bound_upper.input_lhs, expr_arena));
                 }
                 ie_options.operator1 = bound_lower.ie_op;
@@ -522,7 +526,9 @@ fn try_rewrite_join_type(
                 };
                 let pred = ie_conditions.into_iter().next().unwrap();
                 left_on.push(ExprIR::from_node(pred.input_lhs, expr_arena));
-                right_on.push(ExprIR::from_node(pred.input_rhs, expr_arena));
+                let mut rexpr = ExprIR::from_node(pred.input_rhs, expr_arena);
+                remove_suffix(&mut rexpr, expr_arena, schema_right, &suffix);
+                right_on.push(rexpr);
                 ie_options.operator1 = pred.ie_op;
                 return Ok(());
             }
