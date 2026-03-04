@@ -422,9 +422,9 @@ impl PhysicalExpr for EvalExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
-        match self.variant {
+        let out = match self.variant {
             EvalVariant::List => {
                 let lst = input.list()?;
                 self.evaluate_on_list_chunked(lst, state, false)
@@ -444,10 +444,11 @@ impl PhysicalExpr for EvalExpr {
             EvalVariant::Cumulative { min_samples } => {
                 self.evaluate_cumulative_eval(input.as_materialized_series(), min_samples, state)
             },
-        }
+        }?;
+        Ok(out.with_name(self.output_field.name().clone()))
     }
 
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
@@ -498,6 +499,8 @@ impl PhysicalExpr for EvalExpr {
                 input.with_values(builder.finish().into_column(), true, Some(&self.expr))?;
             },
         }
+
+        input.rename(self.output_field.name().clone());
         Ok(input)
     }
 

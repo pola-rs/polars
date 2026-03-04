@@ -1649,6 +1649,27 @@ def test_sink_parquet_arrow_schema_view_types() -> None:
     assert_frame_equal(pl.scan_parquet(f).collect(), df)
 
 
+def test_sink_parquet_arrow_schema_fixed_size_binary() -> None:
+    with pytest.raises(ComputeError, match="bytes at index 1 had mismatching length 2"):
+        pl.DataFrame({"binary": [b"A", b"BB"]}).select("binary").lazy().sink_parquet(
+            io.BytesIO(), arrow_schema=pa.schema([pa.field("binary", pa.binary(1))])
+        )
+
+    df = pl.DataFrame({"binary": [b"A", b"B", None]})
+
+    arrow_schema = pa.schema([pa.field("binary", pa.binary(1))])
+
+    f = io.BytesIO()
+
+    df.select("binary").lazy().sink_parquet(f, arrow_schema=arrow_schema)
+
+    f.seek(0)
+
+    assert pq.read_schema(f) == arrow_schema
+
+    assert_frame_equal(pl.scan_parquet(f).collect(), df)
+
+
 @pytest.mark.xfail(
     reason="""
 unimplemented: NULLs in list values array corresponding to masked out rows.
