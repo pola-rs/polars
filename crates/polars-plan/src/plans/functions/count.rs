@@ -40,6 +40,7 @@ fn count_all_rows_csv(
                 options.skip_lines,
                 options.skip_rows,
                 options.skip_rows_after_header,
+                options.raise_if_empty,
             ),
             _ => {
                 let memslice = source.to_memslice()?;
@@ -53,6 +54,7 @@ fn count_all_rows_csv(
                     options.skip_lines,
                     options.skip_rows,
                     options.skip_rows_after_header,
+                    options.raise_if_empty,
                 )
             },
         })

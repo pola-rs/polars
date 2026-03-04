@@ -18,7 +18,7 @@ use super::reader::prepare_csv_schema;
 #[cfg(feature = "decompress")]
 use super::utils::decompress;
 use crate::RowIndex;
-use crate::csv::read::{CsvReadOptions, read_until_start_and_infer_schema};
+use crate::csv::read::{CsvReadOptions, read_until_start_and_infer_schema_from_compressed_reader};
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::compression::{CompressedReader, SupportedCompression};
@@ -216,8 +216,12 @@ impl<'a> CoreReader<'a> {
         };
 
         // Since this is also used to skip to the start, always call it.
-        let (inferred_schema, leftover) =
-            read_until_start_and_infer_schema(&read_options, None, None, &mut compressed_reader)?;
+        let (inferred_schema, leftover) = read_until_start_and_infer_schema_from_compressed_reader(
+            &read_options,
+            None,
+            None,
+            &mut compressed_reader,
+        )?;
 
         let mut schema = match schema {
             Some(schema) => schema,

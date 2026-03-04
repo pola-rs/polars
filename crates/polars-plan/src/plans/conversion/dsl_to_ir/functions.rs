@@ -879,6 +879,8 @@ pub(super) fn convert_functions(
         #[cfg(feature = "round_series")]
         F::RoundSF { digits } => I::RoundSF { digits },
         #[cfg(feature = "round_series")]
+        F::Truncate { decimals } => I::Truncate { decimals },
+        #[cfg(feature = "round_series")]
         F::Floor => I::Floor,
         #[cfg(feature = "round_series")]
         F::Ceil => I::Ceil,

@@ -7,8 +7,8 @@ use super::*;
 #[cfg(feature = "python")]
 use crate::plans::PythonOptions;
 use crate::plans::{AExpr, IR};
-use crate::prelude::ExprIR;
 use crate::prelude::aexpr::traverse_and_hash_aexpr;
+use crate::prelude::{ExprIR, PlanCallback};
 
 impl IRNode {
     pub(crate) fn hashable_and_cmp<'a>(
@@ -187,6 +187,20 @@ impl Hash for IRHashWrap<'_> {
             } => {
                 hash_exprs(keys, self.expr_arena, state);
                 hash_exprs(aggs, self.expr_arena, state);
+
+                if let Some(function) = apply {
+                    true.hash(state);
+                    match function {
+                        PlanCallback::Rust(f) => {
+                            f.hash(state);
+                        },
+                        #[cfg(feature = "python")]
+                        PlanCallback::Python(f) => {
+                            f.hash(state);
+                        },
+                    }
+                }
+
                 apply.is_none().hash(state);
                 maintain_order.hash(state);
                 options.hash(state);

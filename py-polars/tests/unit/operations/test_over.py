@@ -153,3 +153,31 @@ def test_first_last_over() -> None:
     result = df.select(pl.col("b").last(ignore_nulls=True).over("a"))
     expected = pl.DataFrame({"b": pl.Series([3, 3, 3, 3, 6, 6, 6, 6], dtype=pl.Int32)})
     assert_frame_equal(result, expected)
+
+
+def test_nulls_last_over_24989() -> None:
+    lf = pl.LazyFrame(
+        {"a": [1, 1, 2], "b": [4, 5, 6], "c": [None, 7, 8], "i": [1, None, 2]}
+    )
+    out = (
+        lf.with_columns(
+            pl.col("b", "c")
+            .first()
+            .over("a", order_by="i", nulls_last=True)
+            .name.suffix("_first")
+        )
+        .sort("i")
+        .collect()
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [1, 1, 2],
+            "b": [5, 4, 6],
+            "c": [7, None, 8],
+            "i": [None, 1, 2],
+            "b_first": [4, 4, 6],
+            "c_first": [None, None, 8],
+        }
+    )
+
+    assert_frame_equal(out, expected)

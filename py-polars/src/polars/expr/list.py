@@ -721,6 +721,7 @@ class ExprListNameSpace:
         Traceback (most recent call last):
         ...
         polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
+        ...
         >>> df = pl.DataFrame({"a": [[], [1], [2]]})
         >>> df.select(pl.col("a").list.item(allow_empty=True))
         shape: (3, 1)

@@ -70,7 +70,7 @@ def _scan_pyarrow_dataset_impl(
     iceberg_table_filter: Any | None = None,
     n_rows: int | None = None,
     snapshot_id: int | None = None,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> DataFrame | Series:
     """
     Take the projected columns and materialize an arrow table.

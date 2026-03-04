@@ -1,7 +1,10 @@
 use std::borrow::Cow;
 
 use arrow::bitmap::Bitmap;
-use polars_compute::decimal::{dec128_fits, dec128_rescale, dec128_verify_prec_scale};
+use polars_compute::decimal::{
+    DEC128_MAX_PREC, dec128_fits, dec128_mul, dec128_rescale, dec128_verify_prec_scale,
+    i128_to_dec128,
+};
 
 use super::*;
 use crate::chunked_array::cast::cast_chunks;
@@ -187,5 +190,26 @@ impl DecimalChunked {
         unary_elementwise(&self.phys, |x| {
             Some(dec128_rescale(x?, old_s, prec, scale).unwrap_or(sentinel))
         })
+    }
+
+    pub fn prod_reduce(&self) -> Scalar {
+        let prec = DEC128_MAX_PREC;
+        let scale = self.scale();
+
+        let mut prod = i128_to_dec128(1, prec, scale).unwrap();
+        for arr in self.phys.downcast_iter() {
+            for v in arr.non_null_values_iter() {
+                if let Some(p) = dec128_mul(prod, v, prec, scale) {
+                    prod = p;
+                } else {
+                    return Scalar::null(DataType::Decimal(prec, scale));
+                }
+            }
+        }
+
+        Scalar::new(
+            DataType::Decimal(prec, scale),
+            AnyValue::Decimal(prod, prec, scale),
+        )
     }
 }

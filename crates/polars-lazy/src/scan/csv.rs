@@ -4,10 +4,8 @@ use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
     CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
-    read_until_start_and_infer_schema,
 };
 use polars_io::path_utils::expand_paths;
-use polars_io::utils::compression::CompressedReader;
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_path::PlRefPath;
@@ -253,13 +251,29 @@ impl LazyCsvReader {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
+        const ASSUMED_COMPRESSION_RATIO: usize = 4;
         let n_threads = self.read_options.n_threads;
 
         let infer_schema = |bytes: Buffer<u8>| {
-            let mut reader = CompressedReader::try_new(bytes)?;
+            use polars_io::prelude::streaming::read_until_start_and_infer_schema;
+            use polars_io::utils::compression::ByteSourceReader;
 
-            let (inferred_schema, _) =
-                read_until_start_and_infer_schema(&self.read_options, None, None, &mut reader)?;
+            let bytes_len = bytes.len();
+            let mut reader = ByteSourceReader::from_memory(bytes)?;
+            let decompressed_size_hint = Some(
+                bytes_len
+                    * reader
+                        .compression()
+                        .map_or(1, |_| ASSUMED_COMPRESSION_RATIO),
+            );
+
+            let (inferred_schema, _) = read_until_start_and_infer_schema(
+                &self.read_options,
+                None,
+                decompressed_size_hint,
+                None,
+                &mut reader,
+            )?;
 
             PolarsResult::Ok(inferred_schema)
         };

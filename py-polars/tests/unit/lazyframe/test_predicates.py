@@ -1273,3 +1273,23 @@ def test_replace_strict_predicate_merging() -> None:
         df.filter(pl.col("x")).filter(pl.col("x").replace_strict(True, True)).collect()
     )
     assert out.height == 3
+
+
+def test_pred_pd_before_proj_pd_26611() -> None:
+    a = pl.LazyFrame({"x": [1, 2, 3], "y": [4, 5, 6]})
+    b = pl.LazyFrame({"x": [1, 2, 3]})
+
+    q = a.join(b, on="x").filter(pl.col("y") > 0).select("x")
+    assert q.explain().startswith("INNER JOIN")
+
+    q = a.filter(pl.col.y > 0).group_by("x").agg([])
+    assert q.explain().startswith("AGGREGATE")
+
+
+def test_projection_pushed_past_join_26693() -> None:
+    a = pl.LazyFrame({"x": [1, 2, 3], "y": [1, 2, 3]})
+    b = pl.LazyFrame({"x": [1, 2, 3], "y": [1, 2, 3]})
+
+    plan = a.filter(pl.col.y > 0).join(b, on="x").group_by("x").agg([]).explain()
+
+    assert plan.index("simple π") > plan.index("INNER JOIN")

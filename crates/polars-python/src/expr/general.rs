@@ -362,6 +362,7 @@ impl PyExpr {
     fn get(&self, idx: Self, null_on_oob: bool) -> Self {
         self.inner.clone().get(idx.inner, null_on_oob).into()
     }
+
     fn sort_by(
         &self,
         by: Vec<Self>,
@@ -496,6 +497,10 @@ impl PyExpr {
 
     fn round_sig_figs(&self, digits: i32) -> Self {
         self.clone().inner.round_sig_figs(digits).into()
+    }
+
+    fn truncate(&self, decimals: u32) -> Self {
+        self.inner.clone().truncate(decimals).into()
     }
 
     fn floor(&self) -> Self {

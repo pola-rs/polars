@@ -3,6 +3,8 @@ use std::sync::LazyLock;
 use crossbeam_queue::ArrayQueue;
 use polars_core::POOL;
 use polars_error::PolarsResult;
+use polars_ooc::AccessPattern::Fifo;
+use polars_ooc::{Token, mm};
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -33,7 +35,7 @@ const LOPSIDED_SAMPLE_FACTOR: usize = 10;
 
 // TODO: improve, generalize this, and move it away from here.
 struct BufferedStream {
-    morsels: ArrayQueue<Morsel>,
+    morsels: ArrayQueue<(Token, MorselSeq)>,
     post_buffer_offset: MorselSeq,
 }
 
@@ -42,9 +44,9 @@ impl BufferedStream {
         // Relabel so we can insert into parallel streams later.
         let mut seq = start_offset;
         let queue = ArrayQueue::new(morsels.len().max(1));
-        for mut morsel in morsels {
-            morsel.set_seq(seq);
-            queue.push(morsel).unwrap();
+        for morsel in morsels {
+            let token = mm().store_blocking(morsel.into_df(), Fifo);
+            queue.push((token, seq)).unwrap();
             seq = seq.successor();
         }
 
@@ -82,10 +84,11 @@ impl BufferedStream {
                 // Act like an InMemorySource node until cached morsels are consumed.
                 let wait_group = WaitGroup::default();
                 loop {
-                    let Some(mut morsel) = self.morsels.pop() else {
+                    let Some((token, seq)) = self.morsels.pop() else {
                         break;
                     };
-                    morsel.replace_source_token(source_token.clone());
+                    let df = token.into_df().await;
+                    let mut morsel = Morsel::new(df, seq, source_token.clone());
                     morsel.set_consume_token(wait_group.token());
                     if new_send.send(morsel).await.is_err() {
                         return Ok(());
@@ -129,9 +132,9 @@ impl Drop for BufferedStream {
     fn drop(&mut self) {
         POOL.install(|| {
             // Parallel drop as the state might be quite big.
-            (0..self.morsels.len())
-                .into_par_iter()
-                .for_each(|_| drop(self.morsels.pop()));
+            (0..self.morsels.len()).into_par_iter().for_each(|_| {
+                drop(self.morsels.pop());
+            });
         })
     }
 }
