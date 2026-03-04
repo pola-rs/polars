@@ -1046,7 +1046,7 @@ pub(super) fn convert_functions(
         F::GatherEvery { n, offset } => I::GatherEvery { n, offset },
         #[cfg(feature = "reinterpret")]
         F::Reinterpret(signed, dtype) => {
-            let input_dtype = e[0].dtype(&ctx.schema, &ctx.arena)?;
+            let input_dtype = e[0].dtype(ctx.schema, ctx.arena)?;
             let final_dtype;
 
             if let Some(signed) = signed
