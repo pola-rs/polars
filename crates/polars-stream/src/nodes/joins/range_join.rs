@@ -4,7 +4,6 @@ use std::ops::BitAnd;
 use arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
-use polars_core::series::IsSorted;
 use polars_ops::frame::{_finish_join, IEJoinOptions, InequalityOperator, JoinArgs, JoinBuildSide};
 use polars_ops::series::{SearchSortedSide, search_sorted};
 
@@ -51,6 +50,8 @@ pub struct RangeJoinNode {
 
 #[derive(Debug)]
 struct RangeJoinParams {
+    point_schema: SchemaRef,
+    interval_schema: SchemaRef,
     point_on: PlSmallStr,
     point_tmp_key_col: Option<PlSmallStr>,
     lower_on: Option<PlSmallStr>,
@@ -59,10 +60,9 @@ struct RangeJoinParams {
     upper_on: Option<PlSmallStr>,
     upper_op: Option<InequalityOperator>,
     upper_tmp_key_col: Option<PlSmallStr>,
-    point_schema: SchemaRef,
-    interval_schema: SchemaRef,
-    args: JoinArgs,
     left_is_point: bool,
+    descending: bool,
+    args: JoinArgs,
 }
 
 impl RangeJoinParams {
@@ -86,6 +86,7 @@ impl RangeJoinNode {
         right_on: Vec<PlSmallStr>,
         tmp_left_key_cols: Vec<Option<PlSmallStr>>,
         tmp_right_key_cols: Vec<Option<PlSmallStr>>,
+        descending: bool,
         args: JoinArgs,
         options: IEJoinOptions,
     ) -> Self {
@@ -153,6 +154,8 @@ impl RangeJoinNode {
                 _ => unreachable!(),
             };
         let params = RangeJoinParams {
+            point_schema: point_schema.clone(),
+            interval_schema,
             point_on,
             point_tmp_key_col,
             lower_on,
@@ -161,10 +164,9 @@ impl RangeJoinNode {
             upper_on,
             upper_tmp_key_col,
             upper_op,
-            point_schema: point_schema.clone(),
-            interval_schema,
-            args,
             left_is_point,
+            descending,
+            args,
         };
         RangeJoinNode {
             state: RangeJoinState::Build(InMemorySinkNode::new(point_schema)),
@@ -269,10 +271,17 @@ fn transition_to_probe(
 ) -> PolarsResult<ProbeState> {
     let point_df = sink_node.get_output()?.unwrap();
     let key_col = point_df.column(params.point_key_col())?;
-    if key_col.is_sorted_flag() != IsSorted::Ascending {
-        panic!("input to range_join node is not sorted");
-    }
     let mut point_df = point_df.filter(&key_col.is_not_null())?;
+    debug_assert!(
+        {
+            let key_col = point_df.column(params.point_key_col())?;
+            let expected = key_col
+                .sort(SortOptions::default().with_order_descending(params.descending))
+                .unwrap();
+            *key_col == expected
+        },
+        "point input to range-join node is not sorted correctly"
+    );
     point_df.rechunk_mut_par();
     Ok(ProbeState { point_df })
 }
@@ -283,6 +292,8 @@ async fn compute_and_emit_task(
     probe_state: &ProbeState,
     params: &RangeJoinParams,
 ) -> PolarsResult<()> {
+    let ideal_morsel_size = get_ideal_morsel_size();
+    let ProbeState { point_df } = probe_state;
     let sss_lower = match params.lower_op {
         Some(InequalityOperator::GtEq) => Some(SearchSortedSide::Left),
         Some(InequalityOperator::Gt) => Some(SearchSortedSide::Right),
@@ -295,8 +306,20 @@ async fn compute_and_emit_task(
         Some(_) => unreachable!("upper_op is not an upper-bound operator"),
         _ => None,
     };
+    let (start_key_col, end_key_col);
+    let (sss_start, sss_end);
+    if params.descending {
+        start_key_col = params.upper_key_col();
+        end_key_col = params.lower_key_col();
+        sss_start = sss_upper.map(|s| s.flip());
+        sss_end = sss_lower.map(|s| s.flip());
+    } else {
+        start_key_col = params.lower_key_col();
+        end_key_col = params.upper_key_col();
+        sss_start = sss_lower;
+        sss_end = sss_upper;
+    }
 
-    let ProbeState { point_df } = probe_state;
     let point_key = point_df
         .column(params.point_key_col())?
         .as_materialized_series();
@@ -327,6 +350,7 @@ async fn compute_and_emit_task(
             return Ok(());
         };
 
+        // range join is always an INNER join, so remove nulls first
         let mut acc: Option<BooleanChunked> = None;
         for c in [params.lower_key_col(), params.upper_key_col()]
             .into_iter()
@@ -340,18 +364,26 @@ async fn compute_and_emit_task(
         }
         let interval_df = interval_df.filter(&acc.unwrap())?;
 
-        let starts = params
-            .lower_key_col()
+        let starts = start_key_col
             .map(|c| {
                 let search_values = interval_df.column(c)?.as_materialized_series();
-                search_sorted(point_key, search_values, sss_lower.unwrap(), false)
+                search_sorted(
+                    point_key,
+                    search_values,
+                    sss_start.unwrap(),
+                    params.descending,
+                )
             })
             .transpose()?;
-        let ends = params
-            .upper_key_col()
+        let ends = end_key_col
             .map(|c| {
                 let search_values = interval_df.column(c)?.as_materialized_series();
-                search_sorted(point_key, search_values, sss_upper.unwrap(), false)
+                search_sorted(
+                    point_key,
+                    search_values,
+                    sss_end.unwrap(),
+                    params.descending,
+                )
             })
             .transpose()?;
 
@@ -393,7 +425,7 @@ async fn compute_and_emit_task(
             );
             debug_assert!(builder_point.len() == builder_interval.len());
 
-            if builder_point.len() >= get_ideal_morsel_size() {
+            if builder_point.len() >= ideal_morsel_size {
                 freeze_builders_and_emit(
                     &mut send,
                     &mut builder_point,

@@ -1215,6 +1215,7 @@ fn to_graph_rec<'a>(
             right_on,
             tmp_left_key_cols,
             tmp_right_key_cols,
+            descending,
             args,
             options,
         } => {
@@ -1232,6 +1233,7 @@ fn to_graph_rec<'a>(
                     right_on.clone(),
                     tmp_left_key_cols.clone(),
                     tmp_right_key_cols.clone(),
+                    *descending,
                     args,
                     options,
                 ),

@@ -401,6 +401,7 @@ pub enum PhysNodeKind {
         right_on: Vec<PlSmallStr>,
         tmp_left_key_cols: Vec<Option<PlSmallStr>>,
         tmp_right_key_cols: Vec<Option<PlSmallStr>>,
+        descending: bool,
         args: JoinArgs,
         options: polars_ops::frame::IEJoinOptions,
     },

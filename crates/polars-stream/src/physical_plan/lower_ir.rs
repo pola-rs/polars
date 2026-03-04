@@ -1270,9 +1270,18 @@ pub fn lower_ir(
                     }
                     #[cfg(feature = "iejoin")]
                     if args.how.is_range() {
+                        use crate::nodes::joins::range_join::left_is_point;
+
                         let Some(JoinTypeOptionsIR::IEJoin(range_options)) = options else {
                             unreachable!()
                         };
+                        let descending = match left_is_point(&left_on, &right_on, &args) {
+                            true => left_on_sorted,
+                            false => right_on_sorted,
+                        }
+                        .expect("should be sorted")[0]
+                            .descending
+                            .expect("sortedness should be known");
                         return phys_sm.insert(PhysNode::new(
                             output_schema,
                             PhysNodeKind::RangeJoin {
@@ -1282,6 +1291,7 @@ pub fn lower_ir(
                                 right_on: right_on_names,
                                 tmp_left_key_cols: tmp_left_col_names,
                                 tmp_right_key_cols: tmp_right_col_names,
+                                descending,
                                 args: args.clone(),
                                 options: range_options,
                             },
@@ -1543,7 +1553,8 @@ fn insert_sort_node_if_not_sorted(
     let input_schema = IR::schema_with_cache(input, ir_arena, schema_cache);
     let df_sortedness = is_sorted(input, ir_arena, expr_arena);
     if expr_is_sorted(df_sortedness.as_ref(), on, expr_arena, &input_schema)
-        .is_none_or(|s| s.descending != Some(false))
+        .and_then(|s| s.descending)
+        .is_none()
     {
         ir_arena.add(IR::Sort {
             input,

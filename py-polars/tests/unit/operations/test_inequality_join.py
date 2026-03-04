@@ -307,18 +307,22 @@ def test_join_where_predicates(range_constraint: list[pl.Expr]) -> None:
     }
 
 
-def _inequality_expression(col1: str, op: str, col2: str) -> pl.Expr:
+def _inequality_expression(expr1: pl.Expr, op: str, expr2: pl.Expr) -> pl.Expr:
     if op == "<":
-        return pl.col(col1) < pl.col(col2)
+        return expr1 < expr2
     elif op == "<=":
-        return pl.col(col1) <= pl.col(col2)
+        return expr1 <= expr2
     elif op == ">":
-        return pl.col(col1) > pl.col(col2)
+        return expr1 > expr2
     elif op == ">=":
-        return pl.col(col1) >= pl.col(col2)
+        return expr1 >= expr2
     else:
         message = f"Invalid operator '{op}'"
         raise ValueError(message)
+
+
+def _inequality_expression_col(col1: str, op: str, col2: str) -> pl.Expr:
+    return _inequality_expression(pl.col(col1), op, pl.col(col2))
 
 
 def operators() -> SearchStrategy[str]:
@@ -409,8 +413,8 @@ def west_df(
     op2=operators(),
 )
 def test_ie_join(east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str) -> None:
-    expr0 = _inequality_expression("dur", op1, "time")
-    expr1 = _inequality_expression("rev", op2, "cost")
+    expr0 = _inequality_expression_col("dur", op1, "time")
+    expr1 = _inequality_expression_col("rev", op2, "cost")
 
     actual = east.join_where(west, expr0 & expr1)
 
@@ -427,8 +431,8 @@ def test_ie_join(east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str) -> 
 def test_ie_join_with_nulls(
     east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str
 ) -> None:
-    expr0 = _inequality_expression("dur", op1, "time")
-    expr1 = _inequality_expression("rev", op2, "cost")
+    expr0 = _inequality_expression_col("dur", op1, "time")
+    expr1 = _inequality_expression_col("rev", op2, "cost")
 
     actual = east.join_where(west, expr0 & expr1)
 
@@ -445,8 +449,8 @@ def test_ie_join_with_nulls(
 def test_ie_join_with_floats(
     east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str
 ) -> None:
-    expr0 = _inequality_expression("dur", op1, "time")
-    expr1 = _inequality_expression("rev", op2, "cost")
+    expr0 = _inequality_expression_col("dur", op1, "time")
+    expr1 = _inequality_expression_col("rev", op2, "cost")
 
     actual = east.join_where(west, expr0, expr1)
 
@@ -493,7 +497,7 @@ def test_ie_join_use_keys_multiple() -> None:
     op=operators(),
 )
 def test_single_inequality(left: pl.Series, right: pl.Series, op: str) -> None:
-    expr = _inequality_expression("x", op, "y")
+    expr = _inequality_expression_col("x", op, "y")
 
     left_df = pl.DataFrame(
         {
@@ -694,33 +698,6 @@ def test_boolean_predicate_join_where() -> None:
     assert_frame_equal(q.collect(), expect)
 
 
-@st.composite
-def range_join_frames(draw: DrawFn) -> tuple[pl.DataFrame, pl.DataFrame]:
-    n_left = draw(st.integers(0, 20))
-    n_right = draw(st.integers(0, 20))
-
-    values = draw(st.lists(st.integers(0, 20), min_size=n_left, max_size=n_left))
-
-    lo_vals = draw(st.lists(st.integers(0, 20), min_size=n_right, max_size=n_right))
-    widths = draw(st.lists(st.integers(0, 10), min_size=n_right, max_size=n_right))
-    hi_vals = [lo + w for lo, w in zip(lo_vals, widths, strict=True)]
-
-    left = pl.DataFrame(
-        [
-            pl.Series("id", list(range(n_left)), dtype=pl.Int64),
-            pl.Series("value", values, dtype=pl.Int64),
-        ]
-    )
-    right = pl.DataFrame(
-        [
-            pl.Series("id", list(range(n_right)), dtype=pl.Int64),
-            pl.Series("lo", lo_vals, dtype=pl.Int64),
-            pl.Series("hi", hi_vals, dtype=pl.Int64),
-        ]
-    )
-    return left, right
-
-
 @pytest.mark.parametrize("lower_op", [None, ">", ">="])
 @pytest.mark.parametrize("upper_op", [None, "<", "<="])
 @given(
@@ -745,7 +722,7 @@ def test_range_join_parametric(
         interval.rename({"col0": "lo", "col1": "hi"})
     ).with_row_index()
     predicates = [
-        _inequality_expression("point", op, col)
+        _inequality_expression_col("point", op, col)
         for op, col in [(lower_op, "lo"), (upper_op, "hi")]
         if op is not None
     ]
@@ -760,8 +737,8 @@ def test_range_join_parametric(
     assert_frame_equal(actual, expected, check_exact=True)
 
 
-@pytest.mark.parametrize("lower_op", [None, ">"])
-@pytest.mark.parametrize("upper_op", ["<"])
+@pytest.mark.parametrize("lower_op", [None, ">", ">="])
+@pytest.mark.parametrize("upper_op", [None, "<", "<="])
 @pytest.mark.parametrize(
     "s",
     [
@@ -773,10 +750,13 @@ def test_range_join_parametric(
     ],
 )
 def test_range_join_dtypes(
+    s: pl.DataType,
     lower_op: str | None,
     upper_op: str | None,
-    s: pl.DataType,
 ) -> None:
+    if lower_op is None and upper_op is None:
+        pytest.skip("at least one of lower_op or upper_op must be set")
+
     point_df = pl.DataFrame(s)
     # 50 samples should ensure that this join will have plenty of matches
     lo_df = point_df.sample(50, with_replacement=True, seed=0).rename({"point": "lo"})
@@ -784,7 +764,7 @@ def test_range_join_dtypes(
     interval_lf = pl.concat([lo_df, hi_df], how="horizontal").with_row_index().lazy()
     point_lf = point_df.with_row_index().lazy()
     predicates = [
-        _inequality_expression("point", op, col)
+        _inequality_expression_col("point", op, col)
         for op, col in [(lower_op, "lo"), (upper_op, "hi")]
         if op is not None
     ]
@@ -798,3 +778,71 @@ def test_range_join_dtypes(
     actual = q.collect(engine="streaming")
     assert expected.height > 0
     assert_frame_equal(actual, expected, check_exact=True)
+
+
+@pytest.mark.parametrize("lower_op", [None, ">", ">="])
+@pytest.mark.parametrize("upper_op", [None, "<", "<="])
+@given(
+    point=dataframes(
+        min_cols=1, max_cols=1, allowed_dtypes=[pl.Int16], allow_null=False
+    ),
+    interval=dataframes(
+        min_cols=2, max_cols=2, allowed_dtypes=[pl.Int16], allow_null=False
+    ),
+)
+def test_range_join_already_sorted(
+    point: pl.DataFrame,
+    interval: pl.DataFrame,
+    lower_op: str | None,
+    upper_op: str | None,
+) -> None:
+    if lower_op is None and upper_op is None:
+        pytest.skip("at least one of lower_op or upper_op must be set")
+
+    point_lf_asc, point_lf_desc = [
+        (
+            pl.DataFrame(point.rename({"col0": "point"}))
+            .with_row_index()
+            .sort("point", descending=desc)
+            .lazy()
+        )
+        for desc in [False, True]
+    ]
+    interval_lf = (
+        pl.DataFrame(interval.rename({"col0": "lo", "col1": "hi"}))
+        .with_row_index()
+        .lazy()
+    )
+
+    def predicates(*, descending: bool) -> list[pl.Expr]:
+        return [
+            _inequality_expression(
+                pl.col("point").set_sorted(descending=descending), op, pl.col(col)
+            )
+            for op, col in [(lower_op, "lo"), (upper_op, "hi")]
+            if op is not None
+        ]
+
+    q_asc = point_lf_asc.join_where(interval_lf, *predicates(descending=False))
+    q_desc = point_lf_desc.join_where(interval_lf, *predicates(descending=True))
+
+    # In both cases, the join input is already sorted, so the IR lowering
+    # should not add an additional sort node.
+    dot_asc = q_asc.show_graph(
+        plan_stage="physical", engine="streaming", raw_output=True
+    )
+    dot_desc = q_desc.show_graph(
+        plan_stage="physical", engine="streaming", raw_output=True
+    )
+
+    assert r"range-join\n" in str(dot_asc)
+    assert r"range-join\n" in str(dot_desc)
+    assert r"sort\n" not in str(dot_asc)
+    assert r"sort\n" not in str(dot_desc)
+
+    expected = q_asc.collect(engine="in-memory").sort("index", "index_right")
+    actual_asc = q_asc.collect(engine="streaming").sort("index", "index_right")
+    actual_desc = q_desc.collect(engine="streaming").sort("index", "index_right")
+
+    assert_frame_equal(actual_asc, expected, check_exact=True)
+    assert_frame_equal(actual_desc, expected, check_exact=True)
