@@ -1416,7 +1416,7 @@ def test_min_max_by_series_length_mismatch_26049(
 
     with pytest.raises(
         pl.exceptions.ShapeError,
-        match=r"^'by' column in (min|max)_by expression has incorrect length: expected \d+, got \d+$",
+        match=r"'by' column in (min|max)_by expression has incorrect length: expected \d+, got \d+",
     ):
         q.collect(engine="in-memory")
     with pytest.raises(
@@ -1453,7 +1453,7 @@ def test_min_max_by_series_length_mismatch_26049(
     )
     with pytest.raises(
         pl.exceptions.ShapeError,
-        match=r"^expressions must have matching group lengths$",
+        match=r"expressions must have matching group lengths",
     ):
         q.collect(engine="in-memory")
 

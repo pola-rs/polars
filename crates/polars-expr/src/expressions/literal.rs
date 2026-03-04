@@ -89,12 +89,12 @@ impl PhysicalExpr for LiteralExpr {
         Some(&self.1)
     }
 
-    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column> {
         self.as_column()
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,

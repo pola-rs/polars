@@ -15,6 +15,7 @@ import polars.selectors as cs
 from polars import Expr
 from polars.exceptions import (
     ColumnNotFoundError,
+    ComputeError,
     InvalidOperationError,
 )
 from polars.meta import get_index_type
@@ -2965,3 +2966,10 @@ def test_group_by_cse_alias_26423() -> None:
         },
     )
     assert_frame_equal(result, expected, check_row_order=False)
+
+
+def test_group_by_agg_get_oob_error_26747() -> None:
+    df = pl.DataFrame({"x": [1, 1, 2, 3]})
+
+    with pytest.raises(ComputeError, match="get index is out of bounds"):
+        df.group_by("x").agg(y=pl.col.x.get(100))

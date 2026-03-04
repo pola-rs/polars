@@ -366,6 +366,20 @@ def test_bitwise_boolean_evict_path(plmonkeypatch: PlMonkeyPatch) -> None:
     assert_frame_equal(out, expected)
 
 
+def test_bool_xor_group_by_with_nulls() -> None:
+    df = pl.DataFrame(
+        {
+            "g": ["a", "a", "b", "b", "b"],
+            "v": [True, None, True, True, None],
+        }
+    )
+    assert_frame_equal(
+        df.group_by("g").agg(XOR=pl.col.v.bitwise_xor()),
+        pl.DataFrame({"g": ["a", "b"], "XOR": [True, False]}),
+        check_row_order=False,
+    )
+
+
 def test_bitwise_in_group_by() -> None:
     df = pl.DataFrame(
         {
