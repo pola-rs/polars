@@ -244,10 +244,11 @@ pub fn iejoin_par_partition(
     selected_right: &[Series],
     options: &IEJoinOptions,
 ) -> PolarsResult<Option<(IdxCa, IdxCa)>> {
-    let sorted_flag = options
-        .l1_descending()
-        .then_some(IsSorted::Descending)
-        .unwrap_or_else(|| IsSorted::Ascending);
+    let sorted_flag = if options.l1_descending() {
+        IsSorted::Descending
+    } else {
+        IsSorted::Ascending
+    };
 
     let sl = &selected_left[0];
     let sr = &selected_right[0];
