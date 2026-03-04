@@ -422,8 +422,18 @@ def test_concat_with_empty_dataframes_nonstrict_25727() -> None:
 
 
 @pytest.mark.slow
-def test_concat_stack_overflow_26788() -> None:
-    depth = 1000  # must be >= 875 per issue
+@pytest.mark.parametrize(
+    "depth",
+    [
+        1,
+        31,
+        32,
+        33,
+        875,  # per the original issue, we observe segfault at 875
+        2000,
+    ],
+)
+def test_concat_stack_overflow_26788(depth: int) -> None:
     dfs = [pl.DataFrame({"foo": [0], f"c{i}": [1.0]}) for i in range(depth)]
     out = pl.concat(dfs, how="align")
 

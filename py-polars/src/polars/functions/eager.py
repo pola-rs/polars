@@ -17,7 +17,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars._plr as plr
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._typing import FrameType, JoinStrategy, PolarsType
@@ -206,7 +206,8 @@ def concat(
             "full" if how == "align" else how.removeprefix("align_")  # type: ignore[assignment]
         )
         lf: LazyFrame = (
-            reduce(
+            _balanced_reduce(
+                [df.lazy() for df in elems],
                 lambda x, y: x.join(
                     y,
                     on=common_cols,
@@ -214,7 +215,6 @@ def concat(
                     maintain_order="right_left",
                     coalesce=True,
                 ),
-                [df.lazy() for df in elems],
             )
             .sort(by=common_cols, maintain_order=True)
             .select(*output_column_order)
@@ -807,3 +807,18 @@ def align_frames(
         aligned_frames.append(f)
 
     return F.collect_all(aligned_frames) if eager else aligned_frames  # type: ignore[return-value]
+
+
+def _balanced_reduce(
+    frames: list[LazyFrame], join_fn: Callable[[LazyFrame, LazyFrame], LazyFrame]
+) -> LazyFrame:
+    """Reduce a list of frames into a single frame using a balanced binary tree."""
+    while len(frames) > 1:
+        next_level = []
+        for i in range(0, len(frames), 2):
+            if i + 1 < len(frames):
+                next_level.append(join_fn(frames[i], frames[i + 1]))
+            else:
+                next_level.append(frames[i])
+        frames = next_level
+    return frames[0]
