@@ -698,47 +698,67 @@ def test_boolean_predicate_join_where() -> None:
     assert_frame_equal(q.collect(), expect)
 
 
-@pytest.mark.parametrize("lower_op", [None, ">", ">="])
-@pytest.mark.parametrize("upper_op", [None, "<", "<="])
+@pytest.mark.parametrize("lower_op", [">", ">="])
+@pytest.mark.parametrize("upper_op", ["<", "<="])
+@pytest.mark.parametrize("swap_sides", [False, True])
 @given(
-    point=dataframes(
-        min_cols=1, max_cols=1, allowed_dtypes=[pl.Int16], allow_null=False
-    ),
-    interval=dataframes(
-        min_cols=2, max_cols=2, allowed_dtypes=[pl.Int16], allow_null=False
-    ),
+    point=dataframes(min_cols=1, max_cols=1, allowed_dtypes=[pl.Int16]),
+    interval=dataframes(min_cols=2, max_cols=2, allowed_dtypes=[pl.Int16]),
 )
-def test_range_join_parametric(
+def test_range_join_double_parametric(
     point: pl.DataFrame,
     interval: pl.DataFrame,
     lower_op: str | None,
     upper_op: str | None,
+    swap_sides: bool,
 ) -> None:
-    if lower_op is None and upper_op is None:
-        pytest.skip("at least one of lower_op or upper_op must be set")
-
     point_lf = pl.LazyFrame(point.rename({"col0": "point"})).with_row_index()
     interval_lf = pl.LazyFrame(
         interval.rename({"col0": "lo", "col1": "hi"})
     ).with_row_index()
-    predicates = [
-        _inequality_expression_col("point", op, col)
-        for op, col in [(lower_op, "lo"), (upper_op, "hi")]
-        if op is not None
-    ]
 
-    q = point_lf.join_where(interval_lf, *predicates).sort("index", "index_right")
+    left_lf, right_lf = (
+        (point_lf, interval_lf) if not swap_sides else (interval_lf, point_lf)
+    )
+    q = left_lf.join_where(
+        right_lf,
+        _inequality_expression_col("point", lower_op, "lo"),
+        _inequality_expression_col("point", upper_op, "hi"),
+    )
 
-    dot = q.show_graph(plan_stage="physical", engine="streaming", raw_output=True)
-    assert "range-join" in str(dot)
+    plan = q.explain(engine="streaming")
+    assert "RANGE" in plan
 
-    expected = q.collect(engine="in-memory")
-    actual = q.collect(engine="streaming")
+    expected = q.collect(engine="in-memory").sort("index", "index_right")
+    actual = q.collect(engine="streaming").sort("index", "index_right")
+    assert_frame_equal(actual, expected, check_exact=True)
+
+
+@pytest.mark.parametrize("op", [">", ">=", "<", "<="])
+@given(
+    df1=dataframes(min_cols=1, max_cols=1, allowed_dtypes=[pl.Int16]),
+    df2=dataframes(min_cols=1, max_cols=1, allowed_dtypes=[pl.Int16]),
+)
+def test_range_join_single_parametric(
+    df1: pl.DataFrame,
+    df2: pl.DataFrame,
+    op: str,
+) -> None:
+    lf1 = pl.LazyFrame(df1.rename({"col0": "a"})).with_row_index()
+    lf2 = pl.LazyFrame(df2.rename({"col0": "a"})).with_row_index()
+
+    q = lf1.join_where(lf2, _inequality_expression_col("a", op, "a_right"))
+
+    plan = q.explain(engine="streaming")
+    assert "RANGE" in plan
+
+    expected = q.collect(engine="in-memory").sort("index", "index_right")
+    actual = q.collect(engine="streaming").sort("index", "index_right")
     assert_frame_equal(actual, expected, check_exact=True)
 
 
 @pytest.mark.parametrize("lower_op", [None, ">", ">="])
-@pytest.mark.parametrize("upper_op", [None, "<", "<="])
+@pytest.mark.parametrize("upper_op", ["<", "<="])
 @pytest.mark.parametrize(
     "s",
     [
@@ -754,10 +774,8 @@ def test_range_join_dtypes(
     lower_op: str | None,
     upper_op: str | None,
 ) -> None:
-    if lower_op is None and upper_op is None:
-        pytest.skip("at least one of lower_op or upper_op must be set")
-
     point_df = pl.DataFrame(s)
+
     # 50 samples should ensure that this join will have plenty of matches
     lo_df = point_df.sample(50, with_replacement=True, seed=0).rename({"point": "lo"})
     hi_df = point_df.sample(50, with_replacement=True, seed=1).rename({"point": "hi"})
@@ -769,26 +787,22 @@ def test_range_join_dtypes(
         if op is not None
     ]
 
-    q = point_lf.join_where(interval_lf, *predicates).sort("index", "index_right")
+    q = point_lf.join_where(interval_lf, *predicates)
 
-    dot = q.show_graph(plan_stage="physical", engine="streaming", raw_output=True)
-    assert "range-join" in str(dot)
+    plan = q.explain(engine="streaming")
+    assert "RANGE" in plan
 
-    expected = q.collect(engine="in-memory")
-    actual = q.collect(engine="streaming")
+    expected = q.collect(engine="in-memory").sort("index", "index_right")
+    actual = q.collect(engine="streaming").sort("index", "index_right")
     assert expected.height > 0
     assert_frame_equal(actual, expected, check_exact=True)
 
 
 @pytest.mark.parametrize("lower_op", [None, ">", ">="])
-@pytest.mark.parametrize("upper_op", [None, "<", "<="])
+@pytest.mark.parametrize("upper_op", ["<", "<="])
 @given(
-    point=dataframes(
-        min_cols=1, max_cols=1, allowed_dtypes=[pl.Int16], allow_null=False
-    ),
-    interval=dataframes(
-        min_cols=2, max_cols=2, allowed_dtypes=[pl.Int16], allow_null=False
-    ),
+    point=dataframes(min_cols=1, max_cols=1, allowed_dtypes=[pl.Int16]),
+    interval=dataframes(min_cols=2, max_cols=2, allowed_dtypes=[pl.Int16]),
 )
 def test_range_join_already_sorted(
     point: pl.DataFrame,
@@ -796,8 +810,14 @@ def test_range_join_already_sorted(
     lower_op: str | None,
     upper_op: str | None,
 ) -> None:
-    if lower_op is None and upper_op is None:
-        pytest.skip("at least one of lower_op or upper_op must be set")
+    def predicates(*, descending: bool) -> list[pl.Expr]:
+        return [
+            _inequality_expression(
+                pl.col("point").set_sorted(descending=descending), op, pl.col(col)
+            )
+            for op, col in [(lower_op, "lo"), (upper_op, "hi")]
+            if op is not None
+        ]
 
     point_lf_asc, point_lf_desc = [
         (
@@ -814,15 +834,6 @@ def test_range_join_already_sorted(
         .lazy()
     )
 
-    def predicates(*, descending: bool) -> list[pl.Expr]:
-        return [
-            _inequality_expression(
-                pl.col("point").set_sorted(descending=descending), op, pl.col(col)
-            )
-            for op, col in [(lower_op, "lo"), (upper_op, "hi")]
-            if op is not None
-        ]
-
     q_asc = point_lf_asc.join_where(interval_lf, *predicates(descending=False))
     q_desc = point_lf_desc.join_where(interval_lf, *predicates(descending=True))
 
@@ -834,7 +845,6 @@ def test_range_join_already_sorted(
     dot_desc = q_desc.show_graph(
         plan_stage="physical", engine="streaming", raw_output=True
     )
-
     assert r"range-join\n" in str(dot_asc)
     assert r"range-join\n" in str(dot_desc)
     assert r"sort\n" not in str(dot_asc)
