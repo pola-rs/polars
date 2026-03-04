@@ -368,7 +368,6 @@ pub enum PhysNodeKind {
         args: JoinArgs,
     },
 
-    #[cfg(feature = "semi_anti_join")]
     SemiAntiJoin {
         input_left: PhysStream,
         input_right: PhysStream,
@@ -384,7 +383,6 @@ pub enum PhysNodeKind {
         args: JoinArgs,
     },
 
-    #[cfg(feature = "asof_join")]
     AsOfJoin {
         input_left: PhysStream,
         input_right: PhysStream,
