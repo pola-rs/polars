@@ -419,3 +419,17 @@ def test_concat_with_empty_dataframes_nonstrict_25727() -> None:
         schema={"c": pl.Int64, "a": pl.Int64, "b": pl.String},
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.slow
+def test_concat_stack_overflow_26788() -> None:
+    depth = 1000  # must be >= 875 per issue
+    dfs = [pl.DataFrame({"foo": [0], f"c{i}": [1.0]}) for i in range(depth)]
+    out = pl.concat(dfs, how="align")
+
+    dfs_alt = [pl.DataFrame({"foo": [0]})] + [
+        pl.DataFrame({f"c{i}": [1.0]}) for i in range(depth)
+    ]
+    expected = pl.concat(dfs_alt, how="horizontal")
+
+    assert_frame_equal(out, expected)
