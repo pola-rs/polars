@@ -615,12 +615,13 @@ impl LazyFrame {
     ///
     /// The query is optimized prior to execution.
     pub fn collect_with_engine(mut self, engine: Engine) -> PolarsResult<QueryResult> {
-        let engine = if std::env::var("POLARS_FORCE_NEW_STREAMING").as_deref() == Ok("1") {
-            Engine::Streaming
-        } else if let Engine::Auto = engine {
-            Engine::InMemory
-        } else {
-            engine
+        let engine = match engine {
+            Engine::Streaming => Engine::Streaming,
+            _ if std::env::var("POLARS_FORCE_NEW_STREAMING").as_deref() == Ok("1") => {
+                Engine::Streaming
+            },
+            Engine::Auto => Engine::InMemory,
+            v => v,
         };
 
         if engine != Engine::Streaming
