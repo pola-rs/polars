@@ -50,10 +50,6 @@ impl AExprSorted {
         self
     }
 
-    pub fn is_sorted(&self) -> bool {
-        self.descending.is_some()
-    }
-
     pub fn is_asc(&self) -> bool {
         matches!(self.descending, Some(false))
     }
