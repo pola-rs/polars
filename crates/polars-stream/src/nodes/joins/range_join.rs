@@ -16,10 +16,6 @@ use crate::nodes::ComputeNode;
 use crate::nodes::in_memory_sink::InMemorySinkNode;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
-// TODO: [amber]
-//   * Merge IR lowering arms
-//   * Add support for when the point side is sorted but descending
-
 pub fn left_is_point<T>(left_on: &[T], right_on: &[T], args: &JoinArgs) -> bool {
     let left_can_be_point = left_on.len() == 1;
     let right_can_be_point = right_on.len() == 1;
