@@ -171,7 +171,6 @@ fn is_sorted(
         Some(n) => vec![n],
         None => vec![false, true],
     };
-    let mut result = false;
     for d in &desc_values {
         for n in &nulls_last_values {
             if series.is_sorted(SortOptions {
@@ -179,15 +178,11 @@ fn is_sorted(
                 nulls_last: *n,
                 ..Default::default()
             })? {
-                result = true;
-                break;
+                return Ok(Column::new(s.name().clone(), [true]));
             }
         }
-        if result {
-            break;
-        }
     }
-    Ok(Column::new(s.name().clone(), [result]))
+    Ok(Column::new(s.name().clone(), [false]))
 }
 
 fn not(s: &Column) -> PolarsResult<Column> {
