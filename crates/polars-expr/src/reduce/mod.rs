@@ -8,6 +8,7 @@ mod convert;
 mod count;
 mod first_last;
 mod first_last_nonnull;
+mod implode;
 mod len;
 mod mean;
 mod min_max;

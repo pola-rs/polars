@@ -19,6 +19,7 @@ use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
 use crate::reduce::min_max_by::{new_max_by_reduction, new_min_by_reduction};
 use crate::reduce::sum::new_sum_reduction;
 use crate::reduce::var_std::new_var_std_reduction;
+use crate::reduce::implode::new_unordered_implode_reduction;
 
 /// Converts a node into a reduction + its associated selector expression.
 pub fn into_reduction(
@@ -67,6 +68,9 @@ pub fn into_reduction(
             } => {
                 let count = Box::new(CountReduce::new(*include_nulls)) as Box<_>;
                 (count, *input)
+            },
+            IRAggExpr::Implode { input, maintain_order: false } => {
+                (new_unordered_implode_reduction(get_dt(*input)?), *input)
             },
             IRAggExpr::Quantile { .. } => todo!(),
             IRAggExpr::Median(_) => todo!(),
