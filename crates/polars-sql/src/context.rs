@@ -1586,7 +1586,7 @@ impl SQLContext {
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
-            lf = self.process_subqueries(lf, vec![&mut filter_expression]);
+            lf = self.process_subqueries(lf, vec![&mut filter_expression])?;
             lf = if invert_filter {
                 lf.remove(filter_expression)
             } else {
@@ -1646,17 +1646,21 @@ impl SQLContext {
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
-            lf = self.process_subqueries(lf, vec![&mut filter_expression]);
+            lf = self.process_subqueries(lf, vec![&mut filter_expression])?;
             lf = lf.filter(filter_expression);
         }
         Ok(lf)
     }
 
-    fn process_subqueries(&self, lf: LazyFrame, exprs: Vec<&mut Expr>) -> LazyFrame {
+    fn process_subqueries(
+        &mut self,
+        lf: LazyFrame,
+        exprs: Vec<&mut Expr>,
+    ) -> PolarsResult<LazyFrame> {
         let mut subplans = vec![];
 
         for e in exprs {
-            *e = e.clone().map_expr(|e| {
+            *e = e.clone().try_map_expr(|e| {
                 if let Expr::SubPlan(lp, names) = e {
                     assert_eq!(
                         names.len(),
@@ -1665,22 +1669,21 @@ impl SQLContext {
                     );
 
                     let select_expr = names[0].1.clone();
-                    let cb =
-                        PlanCallback::new(move |(plans, schemas): (Vec<DslPlan>, Vec<SchemaRef>)| {
-                            let schema = &schemas[0];
-                            polars_ensure!(schema.len() == 1,  SQLSyntax: "SQL subquery returns more than one column");
-                            Ok(LazyFrame::from(plans.into_iter().next().unwrap()).select([select_expr.clone()]).logical_plan)
-                        });
-                    subplans.push(LazyFrame::from((**lp).clone()).pipe_with_schema(cb));
-                    Expr::Column(names[0].0.clone()).first()
+                    let mut lf = LazyFrame::from((**lp).clone());
+                    let schema = self.get_frame_schema(&mut lf)?;
+                    polars_ensure!(schema.len() == 1,  SQLSyntax: "SQL subquery returns more than one column");
+                    let lf = lf.select([select_expr.clone()]);
+
+                    subplans.push(lf);
+                    Ok(Expr::Column(names[0].0.clone()).first())
                 } else {
-                    e
+                    Ok(e)
                 }
-            });
+            })?;
         }
 
         if subplans.is_empty() {
-            lf
+            Ok(lf)
         } else {
             subplans.insert(0, lf);
             concat_lf_horizontal(
@@ -1690,7 +1693,6 @@ impl SQLContext {
                     ..Default::default()
                 },
             )
-            .unwrap()
         }
     }
 

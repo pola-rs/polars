@@ -336,17 +336,43 @@ fn transform_date(val: &str, fmt: &str) -> Option<i32> {
         .map(naive_date_to_date)
 }
 
+pub(crate) fn parse_datetime(val: &str, fmt: &str) -> Option<NaiveDateTime> {
+    NaiveDateTime::parse_from_str(val, fmt)
+        .or_else(|parse_error| match parse_error.kind() {
+            ParseErrorKind::NotEnough => {
+                NaiveDate::parse_from_str(val, fmt).map(|nd| nd.and_hms_opt(0, 0, 0).unwrap())
+            },
+            _ => Err(parse_error),
+        })
+        .ok()
+}
+
+pub(crate) fn parse_datetime_and_remainder<'a>(
+    val: &'a str,
+    fmt: &str,
+) -> Option<(NaiveDateTime, &'a str)> {
+    NaiveDateTime::parse_and_remainder(val, fmt)
+        .or_else(|parse_error| match parse_error.kind() {
+            ParseErrorKind::NotEnough => NaiveDate::parse_and_remainder(val, fmt)
+                .map(|(nd, r)| (nd.and_hms_opt(0, 0, 0).unwrap(), r)),
+            _ => Err(parse_error),
+        })
+        .ok()
+}
+
 #[cfg(feature = "dtype-datetime")]
 pub(crate) fn transform_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
-    match NaiveDateTime::parse_from_str(val, fmt) {
-        Ok(ndt) => Some(datetime_to_timestamp_ns(ndt)),
-        Err(parse_error) => match parse_error.kind() {
-            ParseErrorKind::NotEnough => NaiveDate::parse_from_str(val, fmt)
-                .ok()
-                .map(|nd| datetime_to_timestamp_ns(nd.and_hms_opt(0, 0, 0).unwrap())),
-            _ => None,
-        },
-    }
+    parse_datetime(val, fmt).map(datetime_to_timestamp_ns)
+}
+
+#[cfg(feature = "dtype-datetime")]
+pub(crate) fn transform_datetime_us(val: &str, fmt: &str) -> Option<i64> {
+    parse_datetime(val, fmt).map(datetime_to_timestamp_us)
+}
+
+#[cfg(feature = "dtype-datetime")]
+pub(crate) fn transform_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
+    parse_datetime(val, fmt).map(datetime_to_timestamp_ms)
 }
 
 fn transform_tzaware_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
@@ -354,35 +380,9 @@ fn transform_tzaware_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
     dt.ok().map(|dt| datetime_to_timestamp_ns(dt.naive_utc()))
 }
 
-#[cfg(feature = "dtype-datetime")]
-pub(crate) fn transform_datetime_us(val: &str, fmt: &str) -> Option<i64> {
-    match NaiveDateTime::parse_from_str(val, fmt) {
-        Ok(ndt) => Some(datetime_to_timestamp_us(ndt)),
-        Err(parse_error) => match parse_error.kind() {
-            ParseErrorKind::NotEnough => NaiveDate::parse_from_str(val, fmt)
-                .ok()
-                .map(|nd| datetime_to_timestamp_us(nd.and_hms_opt(0, 0, 0).unwrap())),
-            _ => None,
-        },
-    }
-}
-
 fn transform_tzaware_datetime_us(val: &str, fmt: &str) -> Option<i64> {
     let dt = DateTime::parse_from_str(val, fmt);
     dt.ok().map(|dt| datetime_to_timestamp_us(dt.naive_utc()))
-}
-
-#[cfg(feature = "dtype-datetime")]
-pub(crate) fn transform_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
-    match NaiveDateTime::parse_from_str(val, fmt) {
-        Ok(ndt) => Some(datetime_to_timestamp_ms(ndt)),
-        Err(parse_error) => match parse_error.kind() {
-            ParseErrorKind::NotEnough => NaiveDate::parse_from_str(val, fmt)
-                .ok()
-                .map(|nd| datetime_to_timestamp_ms(nd.and_hms_opt(0, 0, 0).unwrap())),
-            _ => None,
-        },
-    }
 }
 
 fn transform_tzaware_datetime_ms(val: &str, fmt: &str) -> Option<i64> {

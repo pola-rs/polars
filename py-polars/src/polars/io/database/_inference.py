@@ -207,7 +207,6 @@ def dtype_from_database_typename(
 
 
 def dtype_from_cursor_description(
-    cursor: Any,
     description: tuple[Any, ...],
 ) -> PolarsDataType | None:
     """Attempt to infer Polars dtype from database cursor description `type_code`."""

@@ -362,6 +362,7 @@ impl PyExpr {
     fn get(&self, idx: Self, null_on_oob: bool) -> Self {
         self.inner.clone().get(idx.inner, null_on_oob).into()
     }
+
     fn sort_by(
         &self,
         by: Vec<Self>,

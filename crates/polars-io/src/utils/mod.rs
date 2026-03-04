@@ -7,7 +7,6 @@ pub mod byte_source;
 pub mod file;
 pub mod mkdir;
 pub mod slice;
-#[cfg(feature = "async")]
 pub mod stream_buf_reader;
 pub mod sync_on_close;
 

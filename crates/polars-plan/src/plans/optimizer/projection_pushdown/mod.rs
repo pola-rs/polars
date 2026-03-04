@@ -413,27 +413,44 @@ impl ProjectionPushDown {
                     ctx.process_count_star_at_scan(&options.schema, expr_arena);
                 }
 
-                let normalize_order_schema = Some(&*options.schema);
-
-                options.with_columns = get_scan_columns(
-                    &ctx.acc_projections,
-                    expr_arena,
-                    None,
-                    None,
-                    normalize_order_schema,
-                );
-
-                options.output_schema = if options.with_columns.is_none() {
-                    None
+                let pred = if let PythonPredicate::Polars(pred) = &options.predicate {
+                    Some(pred.clone())
                 } else {
-                    Some(Arc::new(update_scan_schema(
-                        &ctx.acc_projections,
-                        expr_arena,
-                        &options.schema,
-                        true,
-                    )?))
+                    None
                 };
-                Ok(PythonScan { options })
+
+                pre_post_predicate(
+                    pred,
+                    ctx,
+                    expr_arena,
+                    lp_arena,
+                    move |ctx,
+                          expr_arena: &mut Arena<AExpr>,
+                          _lp_arena: &mut Arena<IR>,
+                          _predicate| {
+                        let normalize_order_schema = Some(&*options.schema);
+
+                        options.with_columns = get_scan_columns(
+                            &ctx.acc_projections,
+                            expr_arena,
+                            None,
+                            None,
+                            normalize_order_schema,
+                        );
+
+                        options.output_schema = if options.with_columns.is_none() {
+                            None
+                        } else {
+                            Some(Arc::new(update_scan_schema(
+                                &ctx.acc_projections,
+                                expr_arena,
+                                &options.schema,
+                                true,
+                            )?))
+                        };
+                        Ok(PythonScan { options })
+                    },
+                )
             },
             Scan {
                 sources,
@@ -445,138 +462,153 @@ impl ProjectionPushDown {
                 mut unified_scan_args,
                 mut output_schema,
             } => {
-                let do_optimization = match &*scan_type {
-                    FileScanIR::Anonymous { function, .. } => function.allows_projection_pushdown(),
-                    #[cfg(feature = "json")]
-                    FileScanIR::NDJson { .. } => true,
-                    #[cfg(feature = "ipc")]
-                    FileScanIR::Ipc { .. } => true,
-                    #[cfg(feature = "csv")]
-                    FileScanIR::Csv { .. } => true,
-                    #[cfg(feature = "parquet")]
-                    FileScanIR::Parquet { .. } => true,
-                    #[cfg(feature = "scan_lines")]
-                    FileScanIR::Lines { .. } => true,
-                    // MultiScan will handle it if the PythonDataset cannot do projections.
-                    #[cfg(feature = "python")]
-                    FileScanIR::PythonDataset { .. } => true,
-                };
+                pre_post_predicate(
+                    predicate,
+                    ctx,
+                    expr_arena,
+                    lp_arena,
+                    |mut ctx,
+                     expr_arena: &mut Arena<AExpr>,
+                     _lp_arena: &mut Arena<IR>,
+                     predicate| {
+                        let do_optimization = match &*scan_type {
+                            FileScanIR::Anonymous { function, .. } => {
+                                function.allows_projection_pushdown()
+                            },
+                            #[cfg(feature = "json")]
+                            FileScanIR::NDJson { .. } => true,
+                            #[cfg(feature = "ipc")]
+                            FileScanIR::Ipc { .. } => true,
+                            #[cfg(feature = "csv")]
+                            FileScanIR::Csv { .. } => true,
+                            #[cfg(feature = "parquet")]
+                            FileScanIR::Parquet { .. } => true,
+                            #[cfg(feature = "scan_lines")]
+                            FileScanIR::Lines { .. } => true,
+                            // MultiScan will handle it if the PythonDataset cannot do projections.
+                            #[cfg(feature = "python")]
+                            FileScanIR::PythonDataset { .. } => true,
+                        };
 
-                #[expect(clippy::never_loop)]
-                loop {
-                    if !do_optimization {
-                        break;
-                    }
-
-                    if self.is_count_star {
-                        if let FileScanIR::Anonymous { .. } = &*scan_type {
-                            // Anonymous scan is not controlled by us, we don't know if it can support
-                            // 0-column projections, so we always project one.
-                            use either::Either;
-
-                            let projection: Arc<[PlSmallStr]> = match &file_info.reader_schema {
-                                Some(Either::Left(s)) => s.iter_names().next(),
-                                Some(Either::Right(s)) => s.iter_names().next(),
-                                None => None,
-                            }
-                            .into_iter()
-                            .cloned()
-                            .collect();
-
-                            unified_scan_args.projection = Some(projection.clone());
-
-                            if projection.is_empty() {
-                                output_schema = Some(Default::default());
+                        #[expect(clippy::never_loop)]
+                        loop {
+                            if !do_optimization {
                                 break;
                             }
 
-                            ctx.acc_projections.push(ColumnNode(
-                                expr_arena.add(AExpr::Column(projection[0].clone())),
-                            ));
+                            if self.is_count_star {
+                                if let FileScanIR::Anonymous { .. } = &*scan_type {
+                                    // Anonymous scan is not controlled by us, we don't know if it can support
+                                    // 0-column projections, so we always project one.
+                                    use either::Either;
 
-                            unified_scan_args.projection = Some(projection)
-                        } else {
-                            // All nodes in new-streaming support projecting empty morsels with the correct height
-                            // from the file.
-                            unified_scan_args.projection = Some(Arc::from([]));
-                            output_schema = Some(Default::default());
-                            break;
-                        };
-                    }
+                                    let projection: Arc<[PlSmallStr]> =
+                                        match &file_info.reader_schema {
+                                            Some(Either::Left(s)) => s.iter_names().next(),
+                                            Some(Either::Right(s)) => s.iter_names().next(),
+                                            None => None,
+                                        }
+                                        .into_iter()
+                                        .cloned()
+                                        .collect();
 
-                    unified_scan_args.projection = get_scan_columns(
-                        &ctx.acc_projections,
-                        expr_arena,
-                        unified_scan_args.row_index.as_ref(),
-                        unified_scan_args.include_file_paths.as_deref(),
-                        None,
-                    );
+                                    unified_scan_args.projection = Some(projection.clone());
 
-                    output_schema = if unified_scan_args.projection.is_some() {
-                        let mut schema = update_scan_schema(
-                            &ctx.acc_projections,
-                            expr_arena,
-                            &file_info.schema,
-                            scan_type.sort_projection(unified_scan_args.row_index.is_some()),
-                        )?;
+                                    if projection.is_empty() {
+                                        output_schema = Some(Default::default());
+                                        break;
+                                    }
 
-                        if let Some(ref file_path_col) = unified_scan_args.include_file_paths {
-                            if let Some(i) = schema.index_of(file_path_col) {
-                                let (name, dtype) = schema.shift_remove_index(i).unwrap();
-                                schema.insert_at_index(schema.len(), name, dtype)?;
+                                    ctx.acc_projections.push(ColumnNode(
+                                        expr_arena.add(AExpr::Column(projection[0].clone())),
+                                    ));
+
+                                    unified_scan_args.projection = Some(projection)
+                                } else if ctx.acc_projections.is_empty() {
+                                    // All nodes in new-streaming support projecting empty morsels with the correct height
+                                    // from the file.
+                                    unified_scan_args.projection = Some(Arc::from([]));
+                                    output_schema = Some(Default::default());
+                                    break;
+                                };
                             }
+
+                            unified_scan_args.projection = get_scan_columns(
+                                &ctx.acc_projections,
+                                expr_arena,
+                                unified_scan_args.row_index.as_ref(),
+                                unified_scan_args.include_file_paths.as_deref(),
+                                None,
+                            );
+
+                            output_schema = if unified_scan_args.projection.is_some() {
+                                let mut schema = update_scan_schema(
+                                    &ctx.acc_projections,
+                                    expr_arena,
+                                    &file_info.schema,
+                                    scan_type
+                                        .sort_projection(unified_scan_args.row_index.is_some()),
+                                )?;
+
+                                if let Some(ref file_path_col) =
+                                    unified_scan_args.include_file_paths
+                                {
+                                    if let Some(i) = schema.index_of(file_path_col) {
+                                        let (name, dtype) = schema.shift_remove_index(i).unwrap();
+                                        schema.insert_at_index(schema.len(), name, dtype)?;
+                                    }
+                                }
+
+                                Some(Arc::new(schema))
+                            } else {
+                                None
+                            };
+
+                            break;
                         }
 
-                        Some(Arc::new(schema))
-                    } else {
-                        None
-                    };
+                        // File builder has a row index, but projected columns
+                        // do not include it, so cull.
+                        if let Some(RowIndex { ref name, .. }) = unified_scan_args.row_index {
+                            if output_schema
+                                .as_ref()
+                                .is_some_and(|schema| !schema.contains(name))
+                            {
+                                // Need to remove it from the input schema so
+                                // that projection indices are correct.
+                                let mut file_schema = Arc::unwrap_or_clone(file_info.schema);
+                                file_schema.shift_remove(name);
+                                file_info.schema = Arc::new(file_schema);
+                                unified_scan_args.row_index = None;
+                            }
+                        };
 
-                    break;
-                }
+                        if let Some(col_name) = &unified_scan_args.include_file_paths {
+                            if output_schema
+                                .as_ref()
+                                .is_some_and(|schema| !schema.contains(col_name))
+                            {
+                                // Need to remove it from the input schema so
+                                // that projection indices are correct.
+                                let mut file_schema = Arc::unwrap_or_clone(file_info.schema);
+                                file_schema.shift_remove(col_name);
+                                file_info.schema = Arc::new(file_schema);
+                                unified_scan_args.include_file_paths = None;
+                            }
+                        };
 
-                // File builder has a row index, but projected columns
-                // do not include it, so cull.
-                if let Some(RowIndex { ref name, .. }) = unified_scan_args.row_index {
-                    if output_schema
-                        .as_ref()
-                        .is_some_and(|schema| !schema.contains(name))
-                    {
-                        // Need to remove it from the input schema so
-                        // that projection indices are correct.
-                        let mut file_schema = Arc::unwrap_or_clone(file_info.schema);
-                        file_schema.shift_remove(name);
-                        file_info.schema = Arc::new(file_schema);
-                        unified_scan_args.row_index = None;
-                    }
-                };
-
-                if let Some(col_name) = &unified_scan_args.include_file_paths {
-                    if output_schema
-                        .as_ref()
-                        .is_some_and(|schema| !schema.contains(col_name))
-                    {
-                        // Need to remove it from the input schema so
-                        // that projection indices are correct.
-                        let mut file_schema = Arc::unwrap_or_clone(file_info.schema);
-                        file_schema.shift_remove(col_name);
-                        file_info.schema = Arc::new(file_schema);
-                        unified_scan_args.include_file_paths = None;
-                    }
-                };
-
-                let lp = Scan {
-                    sources,
-                    file_info,
-                    hive_parts,
-                    output_schema,
-                    scan_type,
-                    predicate,
-                    predicate_file_skip_applied,
-                    unified_scan_args,
-                };
-
-                Ok(lp)
+                        Ok(Scan {
+                            sources,
+                            file_info,
+                            hive_parts,
+                            output_schema,
+                            scan_type,
+                            predicate,
+                            predicate_file_skip_applied,
+                            unified_scan_args,
+                        })
+                    },
+                )
             },
             Sort {
                 input,
@@ -623,19 +655,19 @@ impl ProjectionPushDown {
                 self.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
                 Ok(Distinct { input, options })
             },
-            Filter { predicate, input } => {
-                if ctx.has_pushed_down() {
-                    // make sure that the filter column is projected
-                    add_expr_to_accumulated(
-                        predicate.node(),
-                        &mut ctx.acc_projections,
-                        &mut ctx.projected_names,
-                        expr_arena,
-                    );
-                };
-                self.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
-                Ok(Filter { predicate, input })
-            },
+            Filter { predicate, input } => pre_post_predicate(
+                Some(predicate),
+                ctx,
+                expr_arena,
+                lp_arena,
+                |ctx, expr_arena: &mut Arena<AExpr>, lp_arena: &mut Arena<IR>, predicate| {
+                    self.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
+                    Ok(Filter {
+                        predicate: predicate.unwrap(),
+                        input,
+                    })
+                },
+            ),
             GroupBy {
                 input,
                 keys,
@@ -754,5 +786,54 @@ impl ProjectionPushDown {
     ) -> PolarsResult<IR> {
         let ctx = ProjectionContext::default();
         self.push_down(logical_plan, ctx, lp_arena, expr_arena)
+    }
+}
+
+// Push down predicate in the node, but don't keep the predicate columns if it isn't needed.
+fn pre_post_predicate<
+    F: FnOnce(
+        ProjectionContext,
+        &mut Arena<AExpr>,
+        &mut Arena<IR>,
+        Option<ExprIR>,
+    ) -> PolarsResult<IR>,
+>(
+    predicate: Option<ExprIR>,
+    mut ctx: ProjectionContext,
+    expr_arena: &mut Arena<AExpr>,
+    lp_arena: &mut Arena<IR>,
+    func: F,
+) -> PolarsResult<IR> {
+    // If we have a predicate, load those columns, but drop
+    // them after loading the file.
+    let post_project = if let Some(pred) = &predicate
+        && ctx.has_pushed_down()
+    {
+        let post_project = ctx.acc_projections.clone();
+
+        add_expr_to_accumulated(
+            pred.node(),
+            &mut ctx.acc_projections,
+            &mut ctx.projected_names,
+            expr_arena,
+        );
+        if post_project.len() != ctx.projected_names.len() {
+            Some(post_project)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let lp = func(ctx, expr_arena, lp_arena, predicate)?;
+
+    if let Some(post_project) = post_project {
+        let root = lp_arena.add(lp);
+        Ok(IRBuilder::new(root, expr_arena, lp_arena)
+            .project_simple_nodes(post_project)?
+            .build())
+    } else {
+        Ok(lp)
     }
 }

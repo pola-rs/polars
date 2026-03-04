@@ -2,11 +2,15 @@ use std::io::{BufRead, Cursor};
 
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
+#[cfg(feature = "async")]
 use polars_utils::async_utils::tokio_handle_ext;
+#[cfg(feature = "async")]
 use tokio::sync::OwnedSemaphorePermit;
 
+#[cfg(feature = "async")]
 use crate::pl_async;
 
+#[cfg(feature = "async")]
 pub struct OpenReaderState {
     receiver: tokio::sync::mpsc::Receiver<(
         tokio_handle_ext::AbortOnDropHandle<PolarsResult<Buffer<u8>>>,
@@ -17,11 +21,13 @@ pub struct OpenReaderState {
 }
 
 /// `BufRead` interface for a channel that is receiving `Buffer<u8>` bytes.
+#[cfg(feature = "async")]
 pub enum StreamBufReader {
     Open(OpenReaderState),
     Finished,
 }
 
+#[cfg(feature = "async")]
 impl StreamBufReader {
     pub fn new(
         receiver: tokio::sync::mpsc::Receiver<(
@@ -55,6 +61,7 @@ impl StreamBufReader {
     }
 }
 
+#[cfg(feature = "async")]
 impl std::io::Read for StreamBufReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let remaining = self.fill_buf()?;
@@ -68,6 +75,7 @@ impl std::io::Read for StreamBufReader {
     }
 }
 
+#[cfg(feature = "async")]
 impl std::io::BufRead for StreamBufReader {
     fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
         let Some(state) = self.get_open_state() else {
@@ -105,6 +113,7 @@ impl std::io::BufRead for StreamBufReader {
 // Supported reader sources for respectively from_memory and streaming.
 pub enum ReaderSource {
     Memory(Cursor<Buffer<u8>>),
+    #[cfg(feature = "async")]
     Streaming(StreamBufReader),
 }
 
@@ -112,6 +121,7 @@ impl std::io::Read for ReaderSource {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
             Self::Memory(r) => r.read(buf),
+            #[cfg(feature = "async")]
             Self::Streaming(r) => r.read(buf),
         }
     }
@@ -121,6 +131,7 @@ impl std::io::BufRead for ReaderSource {
     fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
         match self {
             Self::Memory(r) => r.fill_buf(),
+            #[cfg(feature = "async")]
             Self::Streaming(r) => r.fill_buf(),
         }
     }
@@ -128,6 +139,7 @@ impl std::io::BufRead for ReaderSource {
     fn consume(&mut self, amt: usize) {
         match self {
             Self::Memory(r) => r.consume(amt),
+            #[cfg(feature = "async")]
             Self::Streaming(r) => r.consume(amt),
         }
     }

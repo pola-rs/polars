@@ -6,7 +6,8 @@ use polars_buffer::Buffer;
 use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
 use polars_io::prelude::*;
 use polars_io::utils::byte_source::{ByteSource, DynByteSourceBuilder};
-use polars_io::utils::compression::CompressedReader;
+use polars_io::utils::compression::{ByteSourceReader, CompressedReader, SupportedCompression};
+use polars_io::utils::stream_buf_reader::ReaderSource;
 use polars_io::{RowIndex, pl_async};
 
 use super::*;
@@ -355,7 +356,6 @@ pub async fn csv_file_info(
 
     // TODO:
     // * See if we can do better than scanning all files if there is a row limit
-    // * See if we can do this without downloading the entire file
 
     // prints the error message if paths is empty.
     let run_async =
@@ -381,23 +381,155 @@ pub async fn csv_file_info(
         }
     };
 
+    let infer_schema_length = csv_options.infer_schema_length;
     let infer_schema_func = |i| {
+        const ASSUMED_COMPRESSION_RATIO: usize = 4;
         let source = sources.at(i);
-        let mem_slice = source.to_buffer_possibly_async(run_async, cache_entries.as_ref(), i)?;
-        let mut reader = CompressedReader::try_new(mem_slice)?;
+
+        let (mem_slice_raw, file_size, decompressed_slice_size_hint) = if run_async
+            && let Some(infer_schema_length) = infer_schema_length
+        {
+            // Only download what we need for schema inference.
+            // To do so, we use an iterative two-way progressive trial-and-error download strategy
+            // until we either have enough rows, or reached EOF. In every iteration, we either
+            // increase fetch_size (download progressively more), or try_read_size (try and
+            // decompress more of what we have, in the case of compressed).
+            const INITIAL_FETCH: usize = 64 * 1024;
+
+            // Collect metadata.
+            let byte_source = pl_async::get_runtime().block_on(async move {
+                source
+                    .to_dyn_byte_source(&DynByteSourceBuilder::ObjectStore, cloud_options, None)
+                    .await
+            })?;
+            let byte_source = Arc::new(byte_source);
+
+            let file_size = {
+                let byte_source = byte_source.clone();
+                pl_async::get_runtime().block_on(async move { byte_source.get_size().await })?
+            };
+
+            let compression = if file_size >= 4 {
+                let byte_source = byte_source.clone();
+                let magic_range = 0..4;
+                let magic_bytes = pl_async::get_runtime()
+                    .block_on(async move { byte_source.get_range(magic_range).await })?;
+                SupportedCompression::check(&magic_bytes)
+            } else {
+                None
+            };
+
+            let mut offset = 0;
+            let mut fetch_size = INITIAL_FETCH;
+            let mut try_read_size = INITIAL_FETCH * ASSUMED_COMPRESSION_RATIO;
+            let mut truncated_bytes: Vec<u8> = Vec::with_capacity(INITIAL_FETCH);
+            let mut reached_eof = false;
+
+            // Collect enough rows to satisfy infer_schema_length.
+            let (mem_slice_raw, decompressed_slice_size_hint) = loop {
+                let range = offset..std::cmp::min(file_size, offset + fetch_size);
+
+                if range.is_empty() {
+                    reached_eof = true
+                } else {
+                    let byte_source = byte_source.clone();
+                    let fetch_bytes = pl_async::get_runtime()
+                        .block_on(async move { byte_source.get_range(range).await })?;
+                    offset += fetch_bytes.len();
+                    truncated_bytes.extend_from_slice(fetch_bytes.as_ref());
+                }
+
+                let decompressed_size_hint =
+                    Some(offset * compression.map_or(1, |_| ASSUMED_COMPRESSION_RATIO));
+                let mut reader = ByteSourceReader::<ReaderSource>::from_memory(
+                    Buffer::from_owner(truncated_bytes.clone()),
+                )?;
+
+                let read_size = if compression.is_none() {
+                    offset
+                } else if reached_eof {
+                    usize::MAX
+                } else {
+                    try_read_size
+                };
+
+                // Note: if `count_rows_from_reader_par` and therefore also `read_next_slice` were to
+                // handle truncated compressed bytes gracefully, we could avoid the following EoF check
+                // and remove `try_read_size` from the loop.
+                let (slice, bytes_read) =
+                    match reader.read_next_slice(&Buffer::new(), read_size, decompressed_size_hint)
+                    {
+                        Ok(v) => v,
+                        // We assume that unexpected EOF indicates that we lack sufficient data.
+                        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                            fetch_size *= 2;
+                            continue;
+                        },
+                        Err(e) => Err(e)?,
+                    };
+
+                let row_count = polars_io::csv::read::count_rows_from_slice_par(
+                    slice.clone(),
+                    csv_options.parse_options.quote_char,
+                    csv_options.parse_options.comment_prefix.as_ref(),
+                    csv_options.parse_options.eol_char,
+                    csv_options.has_header,
+                    csv_options.skip_lines,
+                    csv_options.skip_rows,
+                    csv_options.skip_rows_after_header,
+                    csv_options.raise_if_empty,
+                )?;
+
+                if row_count < infer_schema_length && !reached_eof {
+                    if compression.is_some() && bytes_read == read_size {
+                        // Decompressor had more to give — read_size too small
+                        try_read_size *= 2;
+                    } else {
+                        // Decompressor exhausted input — need more compressed bytes
+                        // Or, no compression
+                        fetch_size *= 2;
+                    }
+                    continue;
+                }
+
+                break (Buffer::from_owner(truncated_bytes), Some(bytes_read));
+            };
+            (mem_slice_raw, file_size, decompressed_slice_size_hint)
+        } else {
+            let mem_slice_raw =
+                source.to_buffer_possibly_async(run_async, cache_entries.as_ref(), i)?;
+            let file_size = mem_slice_raw.len();
+            let compression = SupportedCompression::check(&mem_slice_raw);
+            let decompressed_slice_size_hint = Some(match compression {
+                None => file_size,
+                Some(_) => file_size * ASSUMED_COMPRESSION_RATIO,
+            });
+            (mem_slice_raw, file_size, decompressed_slice_size_hint)
+        };
+
+        let mut reader = ByteSourceReader::from_memory(mem_slice_raw)?;
+        let compression = reader.compression();
 
         let mut first_row_len = 0;
         let (schema, _) = read_until_start_and_infer_schema(
             csv_options,
             None,
+            decompressed_slice_size_hint,
             Some(Box::new(|line| {
                 first_row_len = line.len() + 1;
             })),
             &mut reader,
         )?;
 
+        let decompressed_file_size_hint = match compression {
+            None => file_size,
+            Some(_) => file_size * ASSUMED_COMPRESSION_RATIO,
+        };
+
+        // TODO. We can do (much) better by collect statistics as part of row count and/or schema
+        // inference, including observed average row_length and compression ratio.
         let estimated_rows =
-            (reader.total_len_estimate() as f64 / first_row_len as f64).round() as usize;
+            (decompressed_file_size_hint as f64 / first_row_len as f64).round() as usize;
 
         Ok((schema, estimated_rows))
     };
@@ -550,10 +682,9 @@ pub async fn ndjson_file_info(
             }
 
             let compression = SupportedCompression::check(&truncated_bytes);
-            let mut reader = ByteSourceReader::<ReaderSource>::from_memory(
-                Buffer::from_owner(truncated_bytes.clone()),
-                compression,
-            )?;
+            let mut reader = ByteSourceReader::<ReaderSource>::from_memory(Buffer::from_owner(
+                truncated_bytes.clone(),
+            ))?;
             let read_size = if compression.is_none() {
                 offset
             } else if reached_eof {

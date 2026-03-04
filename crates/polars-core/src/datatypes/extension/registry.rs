@@ -7,7 +7,7 @@ use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{ExtensionTypeFactory, ExtensionTypeInstance};
-use crate::prelude::{DataType, POLARS_OBJECT_EXTENSION_NAME};
+use crate::prelude::{ARROW_UUID_EXTENSION_NAME, DataType, POLARS_OBJECT_EXTENSION_NAME};
 
 #[repr(u8)]
 pub enum UnknownExtensionTypeBehavior {
@@ -89,6 +89,7 @@ static REGISTRY: LazyLock<RwLock<PlHashMap<PlSmallStr, Option<Arc<dyn ExtensionT
     LazyLock::new(|| {
         let mut m = PlHashMap::new();
         m.insert(PlSmallStr::from_static(POLARS_OBJECT_EXTENSION_NAME), None);
+        m.insert(PlSmallStr::from_static(ARROW_UUID_EXTENSION_NAME), None);
         RwLock::new(m)
     });
 

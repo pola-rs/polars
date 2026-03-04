@@ -2344,7 +2344,7 @@ def test_series_from_numpy_with_dtype() -> None:
 
 
 def test_raise_invalid_is_between() -> None:
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(pl.exceptions.ComputeError):
         pl.select(pl.lit(2).is_between(pl.lit("11"), pl.lit("33")))
 
 
