@@ -888,6 +888,13 @@ class PyLazyFrame:
         scan_options: ScanOptions,
     ) -> PyLazyFrame: ...
     @staticmethod
+    def new_from_expand_paths(
+        sources: Any,
+        *,
+        name: str,
+        scan_options: ScanOptions,
+    ) -> PyLazyFrame: ...
+    @staticmethod
     def new_from_dataset_object(dataset_object: Any) -> PyLazyFrame: ...
     @staticmethod
     def scan_from_python_function_arrow_schema(

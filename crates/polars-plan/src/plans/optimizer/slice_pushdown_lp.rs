@@ -237,9 +237,11 @@ impl SlicePushDown {
                 #[cfg(feature = "scan_lines")]
                 FileScanIR::Lines { .. } => true,
 
+                FileScanIR::ExpandedPaths { .. } => false,
+
                 // TODO: This can be `true` after Anonymous scan dispatches to new-streaming.
                 FileScanIR::Anonymous { .. } => state.offset == 0,
-            }  =>  {
+            } => {
                 if let Some(sl) = &unified_scan_args.pre_slice {
                     // Already existing slice, dispatch to slice-slice pushdown.
                     let mut unified_scan_args = unified_scan_args.clone();
