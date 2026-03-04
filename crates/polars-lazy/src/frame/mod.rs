@@ -623,15 +623,18 @@ impl LazyFrame {
             engine
         };
 
-        if let Engine::Streaming = engine {
-            feature_gated!("new_streaming", self = self.with_new_streaming(true))
-        }
-
         if engine != Engine::Streaming
             && std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1")
-            && let Some(r) = self.clone()._collect_with_streaming_suppress_todo_panic()
         {
-            return r;
+            feature_gated!("new_streaming", {
+                if let Some(r) = self.clone()._collect_with_streaming_suppress_todo_panic() {
+                    return r;
+                }
+            })
+        }
+
+        if let Engine::Streaming = engine {
+            feature_gated!("new_streaming", self = self.with_new_streaming(true))
         }
 
         let mut ir_plan = self.to_alp_optimized()?;
