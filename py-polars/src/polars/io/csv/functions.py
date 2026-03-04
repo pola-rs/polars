@@ -1130,6 +1130,7 @@ def scan_csv(
     retries: int | None = None,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
+    missing_columns: Literal["insert", "raise"] = "raise",
 ) -> LazyFrame:
     r"""
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -1286,6 +1287,12 @@ def scan_csv(
             File cache is no longer supported.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
+    missing_columns
+        Configuration for behavior when columns defined in the schema are
+        missing from the data:
+
+        * ``"insert"``: Insert the missing columns with NULL values.
+        * ``"raise"``: Raise an error.
 
     Returns
     -------
@@ -1438,6 +1445,7 @@ def scan_csv(
         storage_options=storage_options,
         credential_provider=credential_provider_builder,
         include_file_paths=include_file_paths,
+        missing_columns=missing_columns,
     )
 
 
@@ -1482,6 +1490,7 @@ def _scan_csv_impl(
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderBuilder | None = None,
     include_file_paths: str | None = None,
+    missing_columns: Literal["insert", "raise"] = "raise",
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
     if schema_overrides is not None:
@@ -1531,5 +1540,6 @@ def _scan_csv_impl(
         cloud_options=storage_options,
         credential_provider=credential_provider,
         include_file_paths=include_file_paths,
+        missing_columns=missing_columns,
     )
     return wrap_ldf(pylf)

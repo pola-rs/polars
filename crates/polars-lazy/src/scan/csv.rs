@@ -22,6 +22,7 @@ pub struct LazyCsvReader {
     read_options: CsvReadOptions,
     cloud_options: Option<CloudOptions>,
     include_file_paths: Option<PlSmallStr>,
+    missing_columns_policy: MissingColumnsPolicy,
 }
 
 #[cfg(feature = "csv")]
@@ -47,6 +48,7 @@ impl LazyCsvReader {
             read_options: Default::default(),
             cloud_options: Default::default(),
             include_file_paths: None,
+            missing_columns_policy: MissingColumnsPolicy::Raise,
         }
     }
 
@@ -334,6 +336,12 @@ impl LazyCsvReader {
         self.include_file_paths = include_file_paths;
         self
     }
+
+    #[must_use]
+    pub fn with_missing_columns_policy(mut self, policy: MissingColumnsPolicy) -> Self {
+        self.missing_columns_policy = policy;
+        self
+    }
 }
 
 impl LazyFileListReader for LazyCsvReader {
@@ -360,8 +368,11 @@ impl LazyFileListReader for LazyCsvReader {
                 row_index,
                 pre_slice,
                 cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
-                missing_columns_policy: MissingColumnsPolicy::Raise,
-                extra_columns_policy: ExtraColumnsPolicy::Raise,
+                missing_columns_policy: self.missing_columns_policy,
+                extra_columns_policy: match self.missing_columns_policy {
+                    MissingColumnsPolicy::Insert => ExtraColumnsPolicy::Ignore,
+                    MissingColumnsPolicy::Raise => ExtraColumnsPolicy::Raise,
+                },
                 include_file_paths: self.include_file_paths,
                 deletion_files: None,
                 table_statistics: None,

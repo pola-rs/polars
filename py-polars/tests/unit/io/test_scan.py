@@ -992,7 +992,7 @@ def test_only_project_include_file_paths(scan_type: tuple[Any, Any]) -> None:
         pytest.param(
             (pl.DataFrame.write_csv, pl.scan_csv),
             marks=pytest.mark.xfail(
-                reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
+                reason="CSV cannot preserve dtype for empty columns; inferred as String instead of Int32"
             ),
         ),
         pytest.param(

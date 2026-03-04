@@ -346,6 +346,7 @@ pub async fn csv_file_info(
     row_index: Option<&RowIndex>,
     csv_options: &mut CsvReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
+    missing_columns_policy: MissingColumnsPolicy,
 ) -> PolarsResult<FileInfo> {
     use polars_core::POOL;
     use polars_core::error::feature_gated;
@@ -541,9 +542,28 @@ pub async fn csv_file_info(
                 match (schema_a.is_empty(), schema_b.is_empty()) {
                     (true, _) => Ok((schema_b, row_estimate_b)),
                     (_, true) => Ok((schema_a, row_estimate_a)),
-                    _ => {
-                        schema_a.to_supertype(&schema_b)?;
-                        Ok((schema_a, row_estimate_a.saturating_add(row_estimate_b)))
+                    _ => match missing_columns_policy {
+                        MissingColumnsPolicy::Raise => {
+                            schema_a.to_supertype(&schema_b)?;
+                            Ok((schema_a, row_estimate_a.saturating_add(row_estimate_b)))
+                        },
+                        MissingColumnsPolicy::Insert => {
+                            // Union merge: keep all columns from both schemas,
+                            // supertype columns that exist in both.
+                            use polars_core::utils::try_get_supertype;
+                            for (name, dtype) in schema_b.iter() {
+                                match schema_a.get(name) {
+                                    Some(existing_dtype) => {
+                                        let st = try_get_supertype(existing_dtype, dtype)?;
+                                        schema_a.with_column(name.clone(), st);
+                                    },
+                                    None => {
+                                        schema_a.with_column(name.clone(), dtype.clone());
+                                    },
+                                }
+                            }
+                            Ok((schema_a, row_estimate_a.saturating_add(row_estimate_b)))
+                        },
                     },
                 }
             },
@@ -922,6 +942,7 @@ this scan to succeed with an empty DataFrame.",
                             unified_scan_args.row_index.as_ref(),
                             Arc::make_mut(&mut options),
                             cloud_options,
+                            unified_scan_args.missing_columns_policy,
                         )
                         .await?
                     };
