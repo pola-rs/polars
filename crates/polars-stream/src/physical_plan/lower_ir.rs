@@ -1115,18 +1115,10 @@ pub fn lower_ir(
                 }
 
                 // The streaming range join node needs its point side to be sorted
-                let sort_by_expr =
-                    |col_name: Option<&PlSmallStr>,
-                     on_expr: &ExprIR,
-                     expr_arena: &mut Arena<AExpr>| {
-                        col_name
-                            .map(|n| ExprIR::from_column_name(n.clone(), expr_arena))
-                            .unwrap_or(on_expr.clone())
-                    };
                 if range_join::left_is_point(&left_on, &right_on, &args) {
                     input_left = insert_sort_node_if_not_sorted(
                         input_left,
-                        sort_by_expr(tmp_left_col_names[0].as_ref(), &left_on[0], expr_arena),
+                        &left_on[0],
                         ir_arena,
                         expr_arena,
                         schema_cache,
@@ -1134,7 +1126,7 @@ pub fn lower_ir(
                 } else {
                     input_right = insert_sort_node_if_not_sorted(
                         input_right,
-                        sort_by_expr(tmp_right_col_names[0].as_ref(), &right_on[0], expr_arena),
+                        &right_on[0],
                         ir_arena,
                         expr_arena,
                         schema_cache,
@@ -1541,7 +1533,7 @@ pub fn lower_ir(
 #[cfg(feature = "iejoin")]
 fn insert_sort_node_if_not_sorted(
     input: Node,
-    on: ExprIR,
+    on: &ExprIR,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
@@ -1550,7 +1542,7 @@ fn insert_sort_node_if_not_sorted(
 
     let input_schema = IR::schema_with_cache(input, ir_arena, schema_cache);
     let df_sortedness = is_sorted(input, ir_arena, expr_arena);
-    if expr_is_sorted(df_sortedness.as_ref(), &on, expr_arena, &input_schema)
+    if expr_is_sorted(df_sortedness.as_ref(), on, expr_arena, &input_schema)
         .is_none_or(|s| s.descending != Some(false))
     {
         ir_arena.add(IR::Sort {
