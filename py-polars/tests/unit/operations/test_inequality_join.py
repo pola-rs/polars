@@ -698,7 +698,7 @@ def test_boolean_predicate_join_where() -> None:
     assert_frame_equal(q.collect(), expect)
 
 
-@pytest.mark.parametrize("lower_op", [">", ">="])
+@pytest.mark.parametrize("lower_op", [">=", ">"])
 @pytest.mark.parametrize("upper_op", ["<", "<="])
 @pytest.mark.parametrize("swap_sides", [False, True])
 @given(
@@ -708,8 +708,8 @@ def test_boolean_predicate_join_where() -> None:
 def test_range_join_double_parametric(
     point: pl.DataFrame,
     interval: pl.DataFrame,
-    lower_op: str | None,
-    upper_op: str | None,
+    lower_op: str,
+    upper_op: str,
     swap_sides: bool,
 ) -> None:
     point_lf = pl.LazyFrame(point.rename({"col0": "point"})).with_row_index()
@@ -734,7 +734,7 @@ def test_range_join_double_parametric(
     assert_frame_equal(actual, expected, check_exact=True)
 
 
-@pytest.mark.parametrize("op", [">", ">=", "<", "<="])
+@pytest.mark.parametrize("op", [">=", ">", "<=", "<"])
 @given(
     df1=dataframes(min_cols=1, max_cols=1, allowed_dtypes=[pl.Int16]),
     df2=dataframes(min_cols=1, max_cols=1, allowed_dtypes=[pl.Int16]),
@@ -757,8 +757,8 @@ def test_range_join_single_parametric(
     assert_frame_equal(actual, expected, check_exact=True)
 
 
-@pytest.mark.parametrize("lower_op", [None, ">", ">="])
-@pytest.mark.parametrize("upper_op", ["<", "<="])
+@pytest.mark.parametrize("lower_op", [None, ">=", ">"])
+@pytest.mark.parametrize("upper_op", ["<=", "<"])
 @pytest.mark.parametrize(
     "s",
     [
@@ -798,8 +798,8 @@ def test_range_join_dtypes(
     assert_frame_equal(actual, expected, check_exact=True)
 
 
-@pytest.mark.parametrize("lower_op", [None, ">", ">="])
-@pytest.mark.parametrize("upper_op", ["<", "<="])
+@pytest.mark.parametrize("lower_op", [None, ">=", ">"])
+@pytest.mark.parametrize("upper_op", ["<=", "<"])
 @given(
     point=dataframes(min_cols=1, max_cols=1, allowed_dtypes=[pl.Int16]),
     interval=dataframes(min_cols=2, max_cols=2, allowed_dtypes=[pl.Int16]),

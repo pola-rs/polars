@@ -123,7 +123,7 @@ impl RangeJoinNode {
         let point_tmp_key_col = mem::take(&mut point_tmp_key_cols[0]);
         let (lower_on, lower_tmp_key_col, lower_op, upper_on, upper_tmp_key_col, upper_op) =
             match (ops_n, op1_is_lower_bound) {
-                (2, _) => (
+                (2, true) => (
                     interval_on_vec.get_mut(0).map(mem::take),
                     mem::take(&mut interval_tmp_key_cols[0]),
                     Some(options.operator1),
@@ -188,7 +188,11 @@ impl ComputeNode for RangeJoinNode {
     ) -> PolarsResult<()> {
         assert!(recv.len() == 2 && send.len() == 1);
 
-        let (point, interval) = recv.split_at_mut(1);
+        let (recv0, recv1) = recv.split_at_mut(1);
+        let (point, interval) = match self.params.left_is_point {
+            true => (recv0, recv1),
+            false => (recv1, recv0),
+        };
 
         if send[0] == PortState::Done {
             self.state = RangeJoinState::Done;
@@ -290,17 +294,21 @@ async fn compute_and_emit_task(
 ) -> PolarsResult<()> {
     let ideal_morsel_size = get_ideal_morsel_size();
     let ProbeState { point_df } = probe_state;
-    let sss_lower = match params.lower_op {
-        Some(InequalityOperator::GtEq) => Some(SearchSortedSide::Left),
-        Some(InequalityOperator::Gt) => Some(SearchSortedSide::Right),
-        Some(_) => unreachable!("lower_op is not a lower-bound operator"),
-        _ => None,
+    let sss_lower = match (params.left_is_point, params.lower_op) {
+        (true, Some(InequalityOperator::GtEq)) => Some(SearchSortedSide::Left),
+        (true, Some(InequalityOperator::Gt)) => Some(SearchSortedSide::Right),
+        (false, Some(InequalityOperator::LtEq)) => Some(SearchSortedSide::Left),
+        (false, Some(InequalityOperator::Lt)) => Some(SearchSortedSide::Right),
+        (_, Some(_)) => unreachable!("lower_op is not a lower-bound operator"),
+        (_, None) => None,
     };
-    let sss_upper = match params.upper_op {
-        Some(InequalityOperator::LtEq) => Some(SearchSortedSide::Right),
-        Some(InequalityOperator::Lt) => Some(SearchSortedSide::Left),
-        Some(_) => unreachable!("upper_op is not an upper-bound operator"),
-        _ => None,
+    let sss_upper = match (params.left_is_point, params.upper_op) {
+        (true, Some(InequalityOperator::LtEq)) => Some(SearchSortedSide::Right),
+        (true, Some(InequalityOperator::Lt)) => Some(SearchSortedSide::Left),
+        (false, Some(InequalityOperator::GtEq)) => Some(SearchSortedSide::Right),
+        (false, Some(InequalityOperator::Gt)) => Some(SearchSortedSide::Left),
+        (_, Some(_)) => unreachable!("upper_op is not an upper-bound operator"),
+        (_, None) => None,
     };
     let (start_key_col, end_key_col);
     let (sss_start, sss_end);

@@ -1200,8 +1200,6 @@ fn take_double_bounded_range_join_filter(
     use InequalityOperator::*;
     use polars_utils::itertools::Itertools;
 
-    let mut l_stack = Vec::new();
-    let mut r_stack = Vec::new();
     let ie_join_filters = take_iejoin_compatible_filters(
         acc_predicates,
         expr_arena,
@@ -1213,26 +1211,33 @@ fn take_double_bounded_range_join_filter(
     .collect_vec();
 
     let (lower_idx, upper_idx, left_is_bounded_side) = 'bound_preds: {
+        let mut l_stack = Vec::new();
+        let mut r_stack = Vec::new();
+        let mut exprs_eq = |e1, e2| {
+            AExpr::is_expr_equal_to_amortized(e1, e2, expr_arena, &mut l_stack, &mut r_stack)
+        };
         for (idx1, pred1) in ie_join_filters.iter().enumerate() {
-            for (idx2, pred2) in ie_join_filters.iter().enumerate() {
-                if idx1 == idx2 {
-                    continue;
-                }
+            for (idx2, pred2) in ie_join_filters
+                .iter()
+                .enumerate()
+                .take_while(|(idx2, _)| *idx2 < idx1)
+            {
                 let lhs_expr1 = expr_arena.get(pred1.input_lhs);
                 let lhs_expr2 = expr_arena.get(pred2.input_lhs);
-                let op1_is_less = matches!(pred1.ie_op, Lt | LtEq);
-                let op2_is_less = matches!(pred2.ie_op, Lt | LtEq);
-                let lhs_exprs_eq = AExpr::is_expr_equal_to_amortized(
-                    lhs_expr1,
-                    lhs_expr2,
-                    expr_arena,
-                    &mut l_stack,
-                    &mut r_stack,
-                );
+                let rhs_expr1 = expr_arena.get(pred1.input_rhs);
+                let rhs_expr2 = expr_arena.get(pred2.input_rhs);
+                let op1_is_less = matches!(pred1.ie_op, LtEq | Lt);
+                let op2_is_less = matches!(pred2.ie_op, LtEq | Lt);
+                let lhs_exprs_eq = exprs_eq(lhs_expr1, lhs_expr2);
+                let rhs_exprs_eq = exprs_eq(rhs_expr1, rhs_expr2);
                 if lhs_exprs_eq && !op1_is_less && op2_is_less {
                     break 'bound_preds (idx1, idx2, true);
                 } else if lhs_exprs_eq && op1_is_less && !op2_is_less {
                     break 'bound_preds (idx2, idx1, true);
+                } else if rhs_exprs_eq && op1_is_less && !op2_is_less {
+                    break 'bound_preds (idx1, idx2, false);
+                } else if rhs_exprs_eq && !op1_is_less && op2_is_less {
+                    break 'bound_preds (idx2, idx1, false);
                 }
             }
         }
