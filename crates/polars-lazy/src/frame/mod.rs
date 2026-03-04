@@ -615,15 +615,23 @@ impl LazyFrame {
     ///
     /// The query is optimized prior to execution.
     pub fn collect_with_engine(mut self, engine: Engine) -> PolarsResult<QueryResult> {
-        #[cfg(feature = "new_streaming")]
-        {
-            if let Some(result) = self.try_new_streaming_if_requested() {
-                return result;
-            }
-        }
+        let engine = if std::env::var("POLARS_FORCE_NEW_STREAMING").as_deref() == Ok("1") {
+            Engine::Streaming
+        } else if let Engine::Auto = engine {
+            Engine::InMemory
+        } else {
+            engine
+        };
 
         if let Engine::Streaming = engine {
             feature_gated!("new_streaming", self = self.with_new_streaming(true))
+        }
+
+        if engine != Engine::Streaming
+            && std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1")
+            && let Some(r) = self.clone()._collect_with_streaming_suppress_todo_panic()
+        {
+            return r;
         }
 
         let mut ir_plan = self.to_alp_optimized()?;
@@ -638,7 +646,7 @@ impl LazyFrame {
                     &mut ir_plan.expr_arena,
                 )
             }),
-            Engine::Auto | Engine::InMemory | Engine::Gpu => {
+            Engine::InMemory | Engine::Gpu => {
                 if let IR::SinkMultiple { inputs } = ir_plan.root() {
                     polars_ensure!(
                         engine != Engine::Gpu,
@@ -665,6 +673,7 @@ impl LazyFrame {
                 let mut state = ExecutionState::new();
                 physical_plan.execute(&mut state).map(QueryResult::Single)
             },
+            Engine::Auto => unreachable!(),
         }
     }
 
@@ -819,57 +828,46 @@ impl LazyFrame {
         Ok(self)
     }
 
+    /// Collect with the streaming engine. Returns `None` if the streaming engine panics with a todo!.
     #[cfg(feature = "new_streaming")]
-    pub fn try_new_streaming_if_requested(
-        &mut self,
+    fn _collect_with_streaming_suppress_todo_panic(
+        mut self,
     ) -> Option<PolarsResult<polars_core::query_result::QueryResult>> {
-        let auto_new_streaming = std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1");
-        let force_new_streaming = std::env::var("POLARS_FORCE_NEW_STREAMING").as_deref() == Ok("1");
+        self.opt_state |= OptFlags::NEW_STREAMING;
+        let mut ir_plan = match self.to_alp_optimized() {
+            Ok(v) => v,
+            Err(e) => return Some(Err(e)),
+        };
 
-        if auto_new_streaming || force_new_streaming {
-            // Try to run using the new streaming engine, falling back
-            // if it fails in a todo!() error if auto_new_streaming is set.
-            let mut new_stream_lazy = self.clone();
-            new_stream_lazy.opt_state |= OptFlags::NEW_STREAMING;
-            let mut ir_plan = match new_stream_lazy.to_alp_optimized() {
-                Ok(v) => v,
-                Err(e) => return Some(Err(e)),
-            };
+        ir_plan.ensure_root_node_is_sink();
 
-            ir_plan.ensure_root_node_is_sink();
+        let f = || {
+            polars_stream::run_query(
+                ir_plan.lp_top,
+                &mut ir_plan.lp_arena,
+                &mut ir_plan.expr_arena,
+            )
+        };
 
-            let f = || {
-                polars_stream::run_query(
-                    ir_plan.lp_top,
-                    &mut ir_plan.lp_arena,
-                    &mut ir_plan.expr_arena,
-                )
-            };
-
-            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
-                Ok(v) => return Some(v),
-                Err(e) => {
-                    // Fallback to normal engine if error is due to not being implemented
-                    // and auto_new_streaming is set, otherwise propagate error.
-                    if !force_new_streaming
-                        && auto_new_streaming
-                        && e.downcast_ref::<&str>()
-                            .map(|s| s.starts_with("not yet implemented"))
-                            .unwrap_or(false)
-                    {
-                        if polars_core::config::verbose() {
-                            eprintln!(
-                                "caught unimplemented error in new streaming engine, falling back to normal engine"
-                            );
-                        }
-                    } else {
-                        std::panic::resume_unwind(e);
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                // Fallback to normal engine if error is due to not being implemented
+                // and auto_new_streaming is set, otherwise propagate error.
+                if e.downcast_ref::<&str>()
+                    .is_some_and(|s| s.starts_with("not yet implemented"))
+                {
+                    if polars_core::config::verbose() {
+                        eprintln!(
+                            "caught unimplemented error in new streaming engine, falling back to normal engine"
+                        );
                     }
-                },
-            }
+                    None
+                } else {
+                    std::panic::resume_unwind(e)
+                }
+            },
         }
-
-        None
     }
 
     pub fn sink(
