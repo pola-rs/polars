@@ -430,8 +430,10 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::Var(..)
                 | IRAggExpr::Std(..)
                 | IRAggExpr::Count { .. }
-                | IRAggExpr::Implode { maintain_order: false, .. }
-                 => Some(replace_agg_uniq!(expr)),
+                | IRAggExpr::Implode {
+                    maintain_order: false,
+                    ..
+                } => Some(replace_agg_uniq!(expr)),
                 IRAggExpr::NUnique(uniq_input) => {
                     let function = IRFunctionExpr::Unique(false);
                     let uniq_input_expr = ExprIR::from_node(*uniq_input, expr_arena);
@@ -450,7 +452,10 @@ fn try_lower_elementwise_scalar_agg_expr(
                     Some(replace_agg_uniq!(count_node))
                 },
                 IRAggExpr::Median(..)
-                | IRAggExpr::Implode { maintain_order: true, .. }
+                | IRAggExpr::Implode {
+                    maintain_order: true,
+                    ..
+                }
                 | IRAggExpr::Quantile { .. }
                 | IRAggExpr::AggGroups(..) => None, // TODO: allow all aggregates,
             }

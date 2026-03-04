@@ -211,9 +211,7 @@ impl MutableBooleanArray {
                     validity.extend_constant(additional, true);
                 }
             },
-            None => {
-                self.extend_null(additional)
-            },
+            None => self.extend_null(additional),
         };
     }
 

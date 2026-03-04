@@ -2,12 +2,11 @@
 use std::marker::PhantomData;
 
 use arrow::array::{
-    BinaryViewArray, ListArray, MutableBinaryViewArray,
-    MutableBooleanArray, MutablePrimitiveArray,
+    BinaryViewArray, ListArray, MutableBinaryViewArray, MutableBooleanArray, MutablePrimitiveArray,
 };
 use arrow::offset::Offsets;
 use arrow::pushable::Pushable;
-use polars_core::chunked_array::builder::AnonymousListBuilder;
+use polars_core::chunked_array::builder::AnonymousOwnedListBuilder;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::UnitVec;
 use polars_utils::idx_vec::IdxVec;
@@ -288,7 +287,8 @@ impl GroupedReduction for GenericImplodeGroupedReduction {
         self.values.resize_with(num_groups as usize, || {
             Series::new_empty(PlSmallStr::EMPTY, &self.in_dtype)
         });
-        self.gather_indices.resize_with(num_groups as usize, IdxVec::new);
+        self.gather_indices
+            .resize_with(num_groups as usize, IdxVec::new);
     }
 
     fn update_group(
@@ -358,7 +358,9 @@ impl GroupedReduction for GenericImplodeGroupedReduction {
         assert!(subset.len() == group_idxs.len());
         for (i, g) in group_idxs.iter().enumerate() {
             let si = *subset.get_unchecked(i) as usize;
-            self.values.get_unchecked_mut(*g as usize).append(other.values.get_unchecked(si))?;
+            self.values
+                .get_unchecked_mut(*g as usize)
+                .append(other.values.get_unchecked(si))?;
         }
         Ok(())
     }
@@ -374,16 +376,15 @@ impl GroupedReduction for GenericImplodeGroupedReduction {
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
-        let mut builder = AnonymousListBuilder::new(
+        let mut builder = AnonymousOwnedListBuilder::new(
             PlSmallStr::EMPTY,
             self.values.len(),
             Some(self.in_dtype.clone()),
         );
-        for v in &self.values {
-            builder.append_series(v)?;
+        for v in self.values.drain(..) {
+            builder.append_owned_series(v)?;
         }
         let out = builder.finish().into_series();
-        self.values.clear();
         Ok(out)
     }
 
