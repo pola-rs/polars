@@ -44,7 +44,7 @@ def test_implode_unordered() -> None:
     df = pl.DataFrame({"x": [1, 2, 5], "y": [3, 4, 3]})
     out = (
         df.group_by("y")
-        .agg(pl.struct(pl.col.x, pl.col.y).implode())
+        .agg(pl.struct(pl.col.x, pl.col.y).implode(maintain_order=False))
         .sort("y")
         .to_dict(as_series=False)
     )

@@ -5360,7 +5360,7 @@ Consider using {self}.implode() instead"""
             self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )
 
-    def implode(self, *, maintain_order: bool = False) -> Expr:
+    def implode(self, *, maintain_order: bool = True) -> Expr:
         """
         Aggregate values into a list.
 
