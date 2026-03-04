@@ -492,7 +492,8 @@ def union(
             "full" if how == "align" else how.removeprefix("align_")  # type: ignore[assignment]
         )
         lf: LazyFrame = (
-            reduce(
+            _balanced_reduce(
+                [df.lazy() for df in elems],
                 lambda x, y: x.join(
                     y,
                     on=common_cols,
@@ -500,7 +501,6 @@ def union(
                     maintain_order="none",
                     coalesce=True,
                 ),
-                [df.lazy() for df in elems],
             )
             .sort(by=common_cols, maintain_order=False)
             .select(*output_column_order)

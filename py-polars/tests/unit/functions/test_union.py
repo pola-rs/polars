@@ -213,3 +213,27 @@ def test_union_with_empty_dataframes() -> None:
 
     result2 = pl.union([df_with_data, empty_df])
     assert_frame_equal(result2, df_with_data, check_row_order=False)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "depth",
+    [
+        1,
+        31,
+        32,
+        33,
+        875,  # per the original issue, we observe segfault at 875
+        2000,
+    ],
+)
+def test_union_stack_overflow_26788(depth: int) -> None:
+    dfs = [pl.DataFrame({"foo": [0], f"c{i}": [1.0]}) for i in range(depth)]
+    out = pl.union(dfs, how="align")
+
+    dfs_alt = [pl.DataFrame({"foo": [0]})] + [
+        pl.DataFrame({f"c{i}": [1.0]}) for i in range(depth)
+    ]
+    expected = pl.concat(dfs_alt, how="horizontal")
+
+    assert_frame_equal(out, expected, check_row_order=False)
