@@ -137,7 +137,7 @@ fn dtype_and_data_to_encoded_item_len(
             let mut data = &data[1..];
             let mut item_len = 1; // validity byte
 
-            let field_dict = |idx: usize| -> Option<&RowEncodingContext> {
+            let field_dict_at = |idx: usize| -> Option<&RowEncodingContext> {
                 match dict {
                     None => None,
                     Some(RowEncodingContext::Struct(dicts)) => dicts[idx].as_ref(),
@@ -149,7 +149,7 @@ fn dtype_and_data_to_encoded_item_len(
                     struct_field.dtype(),
                     data,
                     opt.into_nested(),
-                    field_dict(idx),
+                    field_dict_at(idx),
                 );
                 data = &data[len..];
                 item_len += len;
