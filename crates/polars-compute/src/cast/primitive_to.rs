@@ -7,7 +7,6 @@ use arrow::datatypes::{ArrowDataType, TimeUnit};
 use arrow::offset::{Offset, Offsets};
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
-use crate::comparisons::TotalEqKernel;
 #[cfg(feature = "dtype-decimal")]
 use num_traits::{Float, ToPrimitive};
 use polars_error::PolarsResult;
@@ -17,6 +16,7 @@ use polars_utils::vec::PushUnchecked;
 
 use super::CastOptionsImpl;
 use super::temporal::*;
+use crate::comparisons::TotalEqKernel;
 #[cfg(feature = "dtype-decimal")]
 use crate::decimal::{dec128_verify_prec_scale, f64_to_dec128, i128_to_dec128};
 
