@@ -911,39 +911,37 @@ this scan to succeed with an empty DataFrame.",
             .map_err(|e| e.context(failed_here!(ipc scan)))?,
             #[cfg(feature = "csv")]
             FileScanDsl::Csv { mut options } => {
-                {
-                    let file_info = if let Some(schema) = options.schema.clone() {
-                        FileInfo {
-                            schema: schema.clone(),
-                            reader_schema: Some(either::Either::Right(schema)),
-                            row_estimation: (None, usize::MAX),
-                        }
-                    } else {
-                        let first_scan_source =
-                            require_first_source("failed to retrieve file schemas (csv)", "")?;
+                let file_info = if let Some(schema) = options.schema.clone() {
+                    FileInfo {
+                        schema: schema.clone(),
+                        reader_schema: Some(either::Either::Right(schema)),
+                        row_estimation: (None, usize::MAX),
+                    }
+                } else {
+                    let first_scan_source =
+                        require_first_source("failed to retrieve file schemas (csv)", "")?;
 
-                        if verbose() {
-                            eprintln!(
-                                "sourcing csv scan file schema from: '{}'",
-                                first_scan_source.to_include_path_name()
-                            )
-                        }
-
-                        scans::csv_file_info(
-                            sources,
-                            first_scan_source,
-                            unified_scan_args.row_index.as_ref(),
-                            Arc::make_mut(&mut options),
-                            cloud_options,
-                            unified_scan_args.missing_columns_policy,
+                    if verbose() {
+                        eprintln!(
+                            "sourcing csv scan file schema from: '{}'",
+                            first_scan_source.to_include_path_name()
                         )
-                        .await?
-                    };
+                    }
 
-                    PolarsResult::Ok((file_info, FileScanIR::Csv { options }))
-                }
-                .map_err(|e| e.context(failed_here!(csv scan)))?
-            },
+                    scans::csv_file_info(
+                        sources,
+                        first_scan_source,
+                        unified_scan_args.row_index.as_ref(),
+                        Arc::make_mut(&mut options),
+                        cloud_options,
+                        unified_scan_args.missing_columns_policy,
+                    )
+                    .await?
+                };
+
+                PolarsResult::Ok((file_info, FileScanIR::Csv { options }))
+            }
+            .map_err(|e| e.context(failed_here!(csv scan)))?,
             #[cfg(feature = "json")]
             FileScanDsl::NDJson { options } => {
                 let file_info = if let Some(schema) = options.schema.clone() {
