@@ -2,7 +2,6 @@
 use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
 use polars_core::chunked_array::ops::FillNullStrategy;
-use polars_core::series::IsSorted;
 #[cfg(feature = "string_normalize")]
 use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::prelude::RankMethod;
@@ -1370,15 +1369,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Random { .. } => {
                     return Err(PyNotImplementedError::new_err("random"));
                 },
-                IRFunctionExpr::SetSortedFlag(sorted) => (
-                    "set_sorted",
-                    match sorted {
-                        IsSorted::Ascending => "ascending",
-                        IsSorted::Descending => "descending",
-                        IsSorted::Not => "not",
-                    },
-                )
-                    .into_py_any(py),
+                IRFunctionExpr::SetSortedFlag(sorted) => {
+                    ("set_sorted", sorted.descending, sorted.nulls_last).into_py_any(py)
+                },
                 #[cfg(feature = "ffi_plugin")]
                 IRFunctionExpr::FfiPlugin { .. } => {
                     return Err(PyNotImplementedError::new_err("ffi plugin"));

@@ -2,8 +2,8 @@ use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use polars_core::prelude::*;
 use polars_core::scalar::Scalar;
+use polars_core::series::Series;
 use polars_core::series::ops::NullBehavior;
-use polars_core::series::{IsSorted, Series};
 use polars_core::utils::try_get_supertype;
 #[cfg(feature = "interpolate")]
 use polars_ops::series::InterpolationMethod;
@@ -16,7 +16,7 @@ use polars_plan::dsl::ReshapeDimension;
 use polars_plan::plans::FusedOperator;
 #[cfg(feature = "cov")]
 use polars_plan::plans::IRCorrelationMethod;
-use polars_plan::plans::{DynamicPred, RowEncodingVariant};
+use polars_plan::plans::{AExprSorted, DynamicPred, RowEncodingVariant};
 use polars_row::RowEncodingOptions;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -76,9 +76,9 @@ pub(super) fn to_physical(s: &Column) -> PolarsResult<Column> {
     Ok(s.to_physical_repr())
 }
 
-pub(super) fn set_sorted_flag(s: &Column, sorted: IsSorted) -> PolarsResult<Column> {
+pub(super) fn set_sorted_flag(s: &Column, sorted: AExprSorted) -> PolarsResult<Column> {
     let mut s = s.clone();
-    s.set_sorted_flag(sorted);
+    s.set_sorted_flag(sorted.into());
     Ok(s)
 }
 
