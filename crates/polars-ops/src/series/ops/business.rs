@@ -1,9 +1,7 @@
-use arrow::Either;
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 #[cfg(feature = "dtype-date")]
 use chrono::DateTime;
-use polars_core::prelude::arity::{try_binary_elementwise, unary_elementwise};
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-date")]
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
