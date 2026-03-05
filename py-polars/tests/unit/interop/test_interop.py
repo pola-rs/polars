@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -782,6 +783,90 @@ def test_dataframe_from_repr_custom_separators() -> None:
     )
 
 
+@pl.Config(tbl_formatting="ASCII_FULL_CONDENSED", apply_on_context_enter=True)
+def test_dataframe_from_repr_ascii_condensed() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [1.5, 2.5, 3.5],
+            "c": ["x", "y", "z"],
+            "d": [date(2024, 1, 1), date(2024, 6, 15), date(2024, 12, 31)],
+        }
+    )
+    res = cast("pl.DataFrame", pl.from_repr(repr(df)))
+    assert_frame_equal(res, df)
+
+    # empty frame with schema
+    df_empty = pl.DataFrame(schema={"x": pl.Int64, "y": pl.String})
+    res = cast("pl.DataFrame", pl.from_repr(repr(df_empty)))
+    assert_frame_equal(res, df_empty)
+
+    # frame with null values
+    df_nulls = pl.DataFrame(
+        {"a": [1, None, 3], "b": [None, "hello", None]},
+        schema={"a": pl.Int64, "b": pl.String},
+    )
+    res = cast("pl.DataFrame", pl.from_repr(repr(df_nulls)))
+    assert_frame_equal(res, df_nulls)
+
+    # frame with truncated rows
+    df_trunc = pl.DataFrame({"a": list(range(20)), "b": [float(x) for x in range(20)]})
+    with pl.Config(tbl_rows=6):
+        res = cast("pl.DataFrame", pl.from_repr(repr(df_trunc)))
+    assert res.shape == (6, 2)
+    assert res["a"].to_list() == [0, 1, 2, 17, 18, 19]
+
+    # frame with truncated columns
+    df_wide = pl.DataFrame({f"col_{i}": [i] for i in range(20)})
+    with pl.Config(tbl_cols=4):
+        res = cast("pl.DataFrame", pl.from_repr(repr(df_wide)))
+    assert res.shape == (1, 4)
+    assert res.columns == ["col_0", "col_1", "col_18", "col_19"]
+
+
+def test_dataframe_from_repr_ascii_full() -> None:
+    res = cast(
+        "pl.DataFrame",
+        pl.from_repr(
+            """
+            shape: (3, 5)
+            +-----+-----+-----+--------------------------------+---------------+
+            | a   | b   | c   | dt                             | dec           |
+            | --- | --- | --- | ---                            | ---           |
+            | i16 | f32 | str | datetime[μs, Asia/Tokyo]       | decimal[10,5] |
+            +==================================================================+
+            | 1   | 1.5 | x   | 2023-03-25 19:56:59.663053 JST | 1.23456       |
+            |-----+-----+-----+--------------------------------+---------------|
+            | 2   | 2.5 | y   | 2023-06-15 21:00:00 JST        | -99.99000     |
+            |-----+-----+-----+--------------------------------+---------------|
+            | 3   | 3.5 | z   | 2024-01-01 08:59:59.999 JST    | 0.00001       |
+            +-----+-----+-----+--------------------------------+---------------+
+            """
+        ),
+    )
+    df_expected = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [1.5, 2.5, 3.5],
+            "c": ["x", "y", "z"],
+            "dt": [
+                datetime(2023, 3, 25, 10, 56, 59, 663053),
+                datetime(2023, 6, 15, 12, 0, 0),
+                datetime(2023, 12, 31, 23, 59, 59, 999000),
+            ],
+            "dec": [Decimal("1.23456"), Decimal("-99.99000"), Decimal("0.00001")],
+        },
+        schema={
+            "a": pl.Int16,
+            "b": pl.Float32,
+            "c": pl.String,
+            "dt": pl.Datetime("us", "Asia/Tokyo"),
+            "dec": pl.Decimal(precision=10, scale=5),
+        },
+    )
+    assert_frame_equal(res, df_expected)
+
+
 def test_sliced_struct_from_arrow() -> None:
     # Create a dataset with 3 rows
     tbl = pa.Table.from_arrays(
@@ -1091,9 +1176,6 @@ def test_to_arrow_24142() -> None:
 
 def test_pycapsule_stream_interface_all_types() -> None:
     """Test all data types via Arrow C Stream PyCapsule interface."""
-    import datetime
-    from decimal import Decimal
-
     df = pl.DataFrame(
         [
             pl.Series("bool", [True, False, None], dtype=pl.Boolean),
@@ -1120,38 +1202,38 @@ def test_pycapsule_stream_interface_all_types() -> None:
             ),
             pl.Series(
                 "date",
-                [datetime.date(2023, 1, 1), datetime.date(2023, 1, 2), None],
+                [date(2023, 1, 1), date(2023, 1, 2), None],
                 dtype=pl.Date,
             ),
             pl.Series(
                 "datetime",
                 [
-                    datetime.datetime(2023, 1, 1, 12, 0),
-                    datetime.datetime(2023, 1, 2, 13, 30),
+                    datetime(2023, 1, 1, 12, 0),
+                    datetime(2023, 1, 2, 13, 30),
                     None,
                 ],
                 dtype=pl.Datetime(time_unit="us", time_zone=None),
             ),
             pl.Series(
                 "time",
-                [datetime.time(12, 0), datetime.time(13, 30), None],
+                [time(12, 0), time(13, 30), None],
                 dtype=pl.Time,
             ),
             pl.Series(
                 "duration_us",
-                [datetime.timedelta(days=1), datetime.timedelta(seconds=7200), None],
+                [timedelta(days=1), timedelta(seconds=7200), None],
                 dtype=pl.Duration(time_unit="us"),
             ),
             pl.Series(
                 "duration_ms",
-                [datetime.timedelta(microseconds=100000), datetime.timedelta(0), None],
+                [timedelta(microseconds=100000), timedelta(0), None],
                 dtype=pl.Duration(time_unit="ms"),
             ),
             pl.Series(
                 "duration_ns",
                 [
-                    datetime.timedelta(seconds=1),
-                    datetime.timedelta(microseconds=1000),
+                    timedelta(seconds=1),
+                    timedelta(microseconds=1000),
                     None,
                 ],
                 dtype=pl.Duration(time_unit="ns"),
@@ -1233,7 +1315,6 @@ def pyarrow_table_to_ipc_bytes(tbl: pa.Table) -> bytes:
 
 @pytest.mark.write_disk
 def test_month_day_nano_from_ffi_15969(plmonkeypatch: PlMonkeyPatch) -> None:
-    import datetime
 
     def new_interval_scalar(months: int, days: int, nanoseconds: int) -> pa.Scalar:
         return pa.scalar((months, days, nanoseconds), type=pa.month_day_nano_interval())
@@ -1290,42 +1371,40 @@ def test_month_day_nano_from_ffi_15969(plmonkeypatch: PlMonkeyPatch) -> None:
             pl.Series(
                 "interval",
                 [
-                    {"months": 1, "days": 0, "nanoseconds": datetime.timedelta(0)},
-                    {"months": 0, "days": 1, "nanoseconds": datetime.timedelta(0)},
+                    {"months": 1, "days": 0, "nanoseconds": timedelta(0)},
+                    {"months": 0, "days": 1, "nanoseconds": timedelta(0)},
                     {
                         "months": 0,
                         "days": 0,
-                        "nanoseconds": datetime.timedelta(microseconds=1),
+                        "nanoseconds": timedelta(microseconds=1),
                     },
                     {
                         "months": 1,
                         "days": 1,
-                        "nanoseconds": datetime.timedelta(seconds=1, microseconds=1),
+                        "nanoseconds": timedelta(seconds=1, microseconds=1),
                     },
-                    {"months": -1, "days": 0, "nanoseconds": datetime.timedelta(0)},
-                    {"months": 0, "days": -1, "nanoseconds": datetime.timedelta(0)},
+                    {"months": -1, "days": 0, "nanoseconds": timedelta(0)},
+                    {"months": 0, "days": -1, "nanoseconds": timedelta(0)},
                     {
                         "months": 0,
                         "days": 0,
-                        "nanoseconds": datetime.timedelta(
+                        "nanoseconds": timedelta(
                             days=-1, seconds=86399, microseconds=999999
                         ),
                     },
                     {
                         "months": -1,
                         "days": -1,
-                        "nanoseconds": datetime.timedelta(
+                        "nanoseconds": timedelta(
                             days=-1, seconds=86398, microseconds=999999
                         ),
                     },
-                    {"months": 3558, "days": 0, "nanoseconds": datetime.timedelta(0)},
-                    {"months": -3558, "days": 0, "nanoseconds": datetime.timedelta(0)},
+                    {"months": 3558, "days": 0, "nanoseconds": timedelta(0)},
+                    {"months": -3558, "days": 0, "nanoseconds": timedelta(0)},
                     {
                         "months": 1,
                         "days": -1,
-                        "nanoseconds": datetime.timedelta(
-                            seconds=1, microseconds=999999
-                        ),
+                        "nanoseconds": timedelta(seconds=1, microseconds=999999),
                     },
                 ],
                 dtype=pl.Struct(
