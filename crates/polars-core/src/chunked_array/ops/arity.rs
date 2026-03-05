@@ -12,6 +12,24 @@ use crate::prelude::{ChunkedArray, CompatLevel, PolarsDataType, Series, StringCh
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned, align_chunks_ternary};
 
 #[macro_export]
+macro_rules! binary_output_height {
+    ($a:expr, $b:expr, op = $op:expr) => {
+        match ($a.len(), $b.len()) {
+            (l, 1) | (1, l) => Ok(l),
+            (a, b) if a == b => Ok(a),
+            (a, b) => Err(polars_err!(
+                ShapeMismatch:
+                "{} got differing lengths \
+                ({}: {}, {}: {})",
+                $op,
+                stringify!($a.len()), $a.len(),
+                stringify!($b.len()), $b.len(),
+            )),
+        }
+    }
+}
+
+#[macro_export]
 macro_rules! ternary_output_height {
     ($a:expr, $b:expr, $c:expr, op = $op:expr) => {
         match ($a.len(), $b.len(), $c.len()) {
