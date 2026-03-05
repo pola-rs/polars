@@ -11,6 +11,26 @@ use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter};
 use crate::prelude::{ChunkedArray, CompatLevel, PolarsDataType, Series, StringChunked};
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned, align_chunks_ternary};
 
+#[macro_export]
+macro_rules! ternary_output_height {
+    ($a:expr, $b:expr, $c:expr, op = $op:expr) => {
+        match ($a.len(), $b.len(), $c.len()) {
+            (l, 1, 1) | (1, l, 1) | (1, 1, l) => Ok(l),
+            (a, b, 1) | (a, 1, b) | (1, a, b) if a == b => Ok(a),
+            (a, b, c) if a == b && b == c => Ok(a),
+            (a, b, c) => Err(polars_err!(
+                ShapeMismatch:
+                "{} got differing lengths \
+                ({}: {}, {}: {}, {}: {})",
+                $op,
+                stringify!($a.len()), $a.len(),
+                stringify!($b.len()), $b.len(),
+                stringify!($c.len()), $c.len(),
+            )),
+        }
+    }
+}
+
 // We need this helper because for<'a> notation can't yet be applied properly
 // on the return type.
 pub trait UnaryFnMut<A1>: FnMut(A1) -> Self::Ret {
