@@ -419,7 +419,7 @@ fn try_rewrite_join_type(
             },
 
             #[cfg(feature = "iejoin")]
-            Some(JoinTypeOptionsIR::IEJoin(_) | JoinTypeOptionsIR::Range(_)) => {},
+            Some(JoinTypeOptionsIR::IEJoin(_)) => {},
             None => {},
         }
 

@@ -147,7 +147,9 @@ impl RangeJoinNode {
                     mem::take(&mut interval_tmp_key_cols[0]),
                     Some(options.operator1),
                 ),
-                _ => unreachable!(),
+                _ => {
+                    unreachable!("range-join operator1 bound must be lower bound ")
+                },
             };
         let params = RangeJoinParams {
             point_schema: point_schema.clone(),
@@ -286,6 +288,15 @@ fn transition_to_probe(
     Ok(ProbeState { point_df })
 }
 
+fn op_to_sss<const IS_LOWER: bool>(op: InequalityOperator) -> SearchSortedSide {
+    let is_inclusive = matches!(op, InequalityOperator::GtEq | InequalityOperator::LtEq);
+    if IS_LOWER == is_inclusive {
+        SearchSortedSide::Left
+    } else {
+        SearchSortedSide::Right
+    }
+}
+
 async fn compute_and_emit_task(
     mut recv: PortReceiver,
     mut send: PortSender,
@@ -294,22 +305,9 @@ async fn compute_and_emit_task(
 ) -> PolarsResult<()> {
     let ideal_morsel_size = get_ideal_morsel_size();
     let ProbeState { point_df } = probe_state;
-    let sss_lower = match (params.left_is_point, params.lower_op) {
-        (true, Some(InequalityOperator::GtEq)) => Some(SearchSortedSide::Left),
-        (true, Some(InequalityOperator::Gt)) => Some(SearchSortedSide::Right),
-        (false, Some(InequalityOperator::LtEq)) => Some(SearchSortedSide::Left),
-        (false, Some(InequalityOperator::Lt)) => Some(SearchSortedSide::Right),
-        (_, Some(_)) => unreachable!("lower_op is not a lower-bound operator"),
-        (_, None) => None,
-    };
-    let sss_upper = match (params.left_is_point, params.upper_op) {
-        (true, Some(InequalityOperator::LtEq)) => Some(SearchSortedSide::Right),
-        (true, Some(InequalityOperator::Lt)) => Some(SearchSortedSide::Left),
-        (false, Some(InequalityOperator::GtEq)) => Some(SearchSortedSide::Right),
-        (false, Some(InequalityOperator::Gt)) => Some(SearchSortedSide::Left),
-        (_, Some(_)) => unreachable!("upper_op is not an upper-bound operator"),
-        (_, None) => None,
-    };
+
+    let sss_lower = params.lower_op.map(op_to_sss::<true>);
+    let sss_upper = params.upper_op.map(op_to_sss::<false>);
     let (start_key_col, end_key_col);
     let (sss_start, sss_end);
     if params.descending {
@@ -409,7 +407,7 @@ async fn compute_and_emit_task(
         for (row_idx, (start, end)) in
             Iterator::zip(starts.into_no_null_iter(), ends.into_no_null_iter()).enumerate()
         {
-            if start > end {
+            if start >= end {
                 continue;
             }
 

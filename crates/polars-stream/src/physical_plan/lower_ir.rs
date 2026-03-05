@@ -1292,7 +1292,7 @@ pub fn lower_ir(
                                 right_df_sortedness.as_ref(),
                                 &right_on[0],
                                 expr_arena,
-                                &input_left_schema,
+                                &input_right_schema,
                             ),
                         }
                         .and_then(|s| s.descending)
