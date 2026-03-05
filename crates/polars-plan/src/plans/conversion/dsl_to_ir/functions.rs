@@ -953,7 +953,7 @@ pub(super) fn convert_functions(
                 seed,
             }
         },
-        F::SetSortedFlag(is_sorted) => I::SetSortedFlag(is_sorted),
+        F::SetSortedFlag(sorted) => I::SetSortedFlag(sorted),
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags,

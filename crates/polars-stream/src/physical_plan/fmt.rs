@@ -308,8 +308,6 @@ fn visualize_plan_rec(
             FileWriteFormat::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
             #[cfg(feature = "json")]
             FileWriteFormat::NDJson(_) => ("ndjson-sink".to_string(), from_ref(input)),
-            #[allow(unreachable_patterns)]
-            _ => todo!(),
         },
         PhysNodeKind::PartitionedSink { input, options } => {
             let variant = match options.partition_strategy {
@@ -326,8 +324,6 @@ fn visualize_plan_rec(
                 FileWriteFormat::Csv(_) => (format!("{variant}[csv]"), from_ref(input)),
                 #[cfg(feature = "json")]
                 FileWriteFormat::NDJson(_) => (format!("{variant}[ndjson]"), from_ref(input)),
-                #[allow(unreachable_patterns)]
-                _ => todo!(),
             }
         },
         PhysNodeKind::InMemoryMap {
