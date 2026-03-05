@@ -352,7 +352,7 @@ async fn compute_and_emit_task(
             return Ok(());
         };
 
-        // range join is always an INNER join, so remove nulls first
+        // Range join is always an INNER join, so remove nulls first
         let mut acc: Option<BooleanChunked> = None;
         for c in [params.lower_key_col(), params.upper_key_col()]
             .into_iter()
@@ -360,43 +360,30 @@ async fn compute_and_emit_task(
         {
             let mask = interval_df.column(c)?.is_not_null();
             acc = Some(match acc {
-                Some(om) => om.bitand(mask),
+                Some(ca) => ca.bitand(mask),
                 None => mask,
             });
         }
         let interval_df = interval_df.filter(&acc.unwrap())?;
 
-        let starts = start_key_col
-            .map(|c| {
-                let search_values = interval_df.column(c)?.as_materialized_series();
-                search_sorted(
-                    point_key,
-                    search_values,
-                    sss_start.unwrap(),
-                    params.descending,
-                )
-            })
-            .transpose()?;
-        let ends = end_key_col
-            .map(|c| {
-                let search_values = interval_df.column(c)?.as_materialized_series();
-                search_sorted(
-                    point_key,
-                    search_values,
-                    sss_end.unwrap(),
-                    params.descending,
-                )
-            })
-            .transpose()?;
-
-        let starts = match starts {
+        let find_bounds = |bound_key_col: Option<&PlSmallStr>, sss: Option<SearchSortedSide>| {
+            bound_key_col
+                .map(|c| {
+                    let search_values = interval_df.column(c)?.as_materialized_series();
+                    search_sorted(point_key, search_values, sss.unwrap(), params.descending)
+                })
+                .transpose()
+        };
+        let starts_opt = find_bounds(start_key_col, sss_start)?;
+        let ends_opt = find_bounds(end_key_col, sss_end)?;
+        let starts = match starts_opt {
             Some(v) => v,
             None => IdxCa::new_vec(
                 PlSmallStr::EMPTY,
-                vec![0 as IdxSize; ends.as_ref().unwrap().len()],
+                vec![0 as IdxSize; ends_opt.as_ref().unwrap().len()],
             ),
         };
-        let ends = match ends {
+        let ends = match ends_opt {
             Some(v) => v,
             None => IdxCa::new_vec(
                 PlSmallStr::EMPTY,
