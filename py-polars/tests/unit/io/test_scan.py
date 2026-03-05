@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import sys
 import zlib
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
+from polars.io._expand_paths import _expand_paths
 from polars.testing.asserts.frame import assert_frame_equal
 from tests.unit.io.conftest import format_file_uri, normalize_path_separator_pl
 
@@ -1335,13 +1337,29 @@ def test_scan_file_uri_hostname_component() -> None:
 @pytest.mark.write_disk
 @pytest.mark.parametrize("polars_force_async", ["0", "1"])
 @pytest.mark.parametrize("n_repeats", [1, 2])
+@pytest.mark.parametrize("use_expand_paths_pyfn", [True, False])
 def test_scan_path_expansion_sorting_24528(
     tmp_path: Path,
     polars_force_async: str,
     n_repeats: int,
+    use_expand_paths_pyfn: bool,
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_ASYNC", polars_force_async)
+
+    def scan_fn(paths: list[Path] | list[str]) -> pl.LazyFrame:
+        return (
+            _expand_paths(paths).select(
+                pl.col("path")
+                .map_elements(
+                    lambda x: pl.scan_parquet(x).collect().item(),
+                    return_dtype=pl.String,
+                )
+                .alias("relpath")
+            )
+            if use_expand_paths_pyfn
+            else pl.scan_parquet(paths)
+        )
 
     relpaths = ["a.parquet", "a/a.parquet", "ab.parquet"]
 
@@ -1350,23 +1368,58 @@ def test_scan_path_expansion_sorting_24528(
         pl.DataFrame({"relpath": p}).write_parquet(tmp_path / p)
 
     assert_frame_equal(
-        pl.scan_parquet(n_repeats * [tmp_path]).collect(),
+        scan_fn(n_repeats * [tmp_path]).collect(),
         pl.DataFrame({"relpath": n_repeats * relpaths}),
     )
 
     assert_frame_equal(
-        pl.scan_parquet(n_repeats * [f"{tmp_path}/**/*"]).collect(),
+        scan_fn(n_repeats * [f"{tmp_path}/**/*"]).collect(),
         pl.DataFrame({"relpath": n_repeats * relpaths}),
     )
 
     assert_frame_equal(
-        pl.scan_parquet(n_repeats * [format_file_uri(tmp_path) + "/"]).collect(),
+        scan_fn(n_repeats * [format_file_uri(tmp_path) + "/"]).collect(),
         pl.DataFrame({"relpath": n_repeats * relpaths}),
     )
 
     assert_frame_equal(
-        pl.scan_parquet(n_repeats * [format_file_uri(f"{tmp_path}/**/*")]).collect(),
+        scan_fn(n_repeats * [format_file_uri(f"{tmp_path}/**/*")]).collect(),
         pl.DataFrame({"relpath": n_repeats * relpaths}),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_expand_paths_no_glob(tmp_path: Path) -> None:
+    pl.DataFrame(height=1).write_parquet(tmp_path / "data.parquet")
+    pl.DataFrame(height=1).write_parquet(tmp_path / "_HIDDEN_F.parquet")
+
+    assert not (
+        _expand_paths(tmp_path / "*")
+        .select(pl.col("path").str.ends_with("*").any())
+        .collect()
+        .item()
+    )
+
+    if "POLARS_FORCE_ASYNC" not in os.environ:
+        assert (
+            _expand_paths(tmp_path / "*", glob=False)
+            .select(pl.col("path").str.ends_with("*"))
+            .collect()
+            .item()
+        )
+
+    assert (
+        _expand_paths(tmp_path / "*")
+        .select(pl.col("path").str.contains("HIDDEN_F", literal=True).any())
+        .collect()
+        .item()
+    )
+
+    assert not (
+        _expand_paths(tmp_path / "*", hidden_file_prefix="_")
+        .select(pl.col("path").str.contains("HIDDEN_F", literal=True).any())
+        .collect()
+        .item()
     )
 
 
@@ -1391,3 +1444,76 @@ def test_scan_sink_error_captures_path() -> None:
             storage_options=storage_options,
             credential_provider=None,
         )
+
+
+@pytest.mark.parametrize(
+    "file_format",
+    [
+        "parquet",
+        "ipc",
+        "csv",
+        "ndjson",
+    ],
+)
+@pytest.mark.parametrize("partitioned", [True, False])
+@pytest.mark.write_disk
+def test_scan_metrics(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    file_format: str,
+    tmp_path: Path,
+    partitioned: bool,
+) -> None:
+    path = tmp_path / "a"
+
+    df = pl.DataFrame({"a": 1})
+
+    getattr(pl.LazyFrame, f"sink_{file_format}")(
+        df.lazy(),
+        path
+        if not partitioned
+        else pl.PartitionBy("", file_path_provider=(lambda _: path), key="a"),
+    )
+
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_LOG_METRICS", "1")
+        cx.setenv("POLARS_FORCE_ASYNC", "1")
+        capfd.readouterr()
+        out = getattr(pl, f"scan_{file_format}")(
+            path,
+        ).collect()
+        capture = capfd.readouterr().err
+
+    [line] = (x for x in capture.splitlines() if x.startswith("multi-scan"))
+
+    logged_bytes_requested = int(
+        pl.select(pl.lit(line).str.extract(r"total_bytes_requested=(\d+)")).item()
+    )
+
+    logged_bytes_received = int(
+        pl.select(pl.lit(line).str.extract(r"total_bytes_received=(\d+)")).item()
+    )
+
+    # because of how metadata is accounted for, the bytes_requested may deviate
+    # from the actual file_size
+    file_size = path.stat().st_size
+    # for parquet, ipc: 131_072 is the maximum metadata size estimate
+    # for ndjson, csv: + 5 is the additional overhead (implementation detail)
+    upper_limit = {
+        "parquet": min(2 * file_size, file_size + 131072),
+        "ipc": min(2 * file_size, file_size + 131072),
+        "ndjson": file_size + 5,
+        "csv": file_size + 5,
+    }
+    lower_limit = {
+        "parquet": 2,
+        "ipc": 2,
+        "ndjson": file_size,
+        "csv": file_size,
+    }
+
+    assert logged_bytes_requested <= upper_limit[file_format]
+    assert logged_bytes_requested >= lower_limit[file_format]
+    assert logged_bytes_received == logged_bytes_requested
+
+    assert_frame_equal(out, df)

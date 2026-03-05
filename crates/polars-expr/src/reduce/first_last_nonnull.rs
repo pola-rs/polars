@@ -26,7 +26,8 @@ fn new_nonnull_reduction_with_policy<P: NonNullPolicy + 'static>(
         _ if dtype.is_primitive_numeric()
             || dtype.is_temporal()
             || dtype.is_decimal()
-            || dtype.is_categorical() =>
+            || dtype.is_categorical()
+            || dtype.is_enum() =>
         {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
                 Box::new(VGR::new(dtype, NumFirstLastNonNullReducer::<_, $T>(policy, PhantomData)))

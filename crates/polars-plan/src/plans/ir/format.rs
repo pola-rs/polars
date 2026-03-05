@@ -851,8 +851,12 @@ pub fn write_ir_non_recursive(
                 f.write_char('[')?;
 
                 let mut comma = false;
-                if let Some((o, l)) = slice {
-                    write!(f, "slice: ({o}, {l})")?;
+                if let Some((o, l, dyn_pred)) = slice {
+                    if let Some(dyn_pred) = &dyn_pred {
+                        write!(f, "slice: ({o}, {l}, {dyn_pred:?})")?;
+                    } else {
+                        write!(f, "slice: ({o}, {l})")?;
+                    }
                     comma = true;
                 }
                 if sort_options.maintain_order {

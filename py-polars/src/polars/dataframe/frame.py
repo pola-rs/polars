@@ -142,6 +142,7 @@ if TYPE_CHECKING:
 
     from polars import DataType, Expr, LazyFrame, Series
     from polars._typing import (
+        Alignment,
         ArrowSchemaExportable,
         AsofJoinStrategy,
         AvroCompression,
@@ -12351,21 +12352,24 @@ class DataFrame:
             .collect(optimizations=QueryOptFlags._eager())
         )
 
-    def corr(self, **kwargs: Any) -> DataFrame:
+    def corr(self, *, label: str | None = None, **kwargs: Any) -> DataFrame:
         """
         Return pairwise Pearson product-moment correlation coefficients between columns.
 
         See numpy `corrcoef` for more information:
         https://numpy.org/doc/stable/reference/generated/numpy.corrcoef.html
 
-        Notes
-        -----
-        This functionality requires numpy to be installed.
-
         Parameters
         ----------
+        label
+            If given, a new column that contains the labels (column names)
+            associated with each row is added, with this name.
         **kwargs
-            Keyword arguments are passed to numpy `corrcoef`.
+            Keyword arguments that are passed to `numpy.corrcoef`.
+
+        Notes
+        -----
+        This functionality requires `numpy` to be installed.
 
         Examples
         --------
@@ -12381,11 +12385,27 @@ class DataFrame:
         │ -1.0 ┆ 1.0  ┆ -1.0 │
         │ 1.0  ┆ -1.0 ┆ 1.0  │
         └──────┴──────┴──────┘
+        >>> df.corr(label="cols")
+        shape: (3, 4)
+        ┌──────┬──────┬──────┬──────┐
+        │ cols ┆ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  ┆ ---  │
+        │ str  ┆ f64  ┆ f64  ┆ f64  │
+        ╞══════╪══════╪══════╪══════╡
+        │ foo  ┆ 1.0  ┆ -1.0 ┆ 1.0  │
+        │ bar  ┆ -1.0 ┆ 1.0  ┆ -1.0 │
+        │ ham  ┆ 1.0  ┆ -1.0 ┆ 1.0  │
+        └──────┴──────┴──────┴──────┘
         """
         correlation_matrix = np.corrcoef(self.to_numpy(), rowvar=False, **kwargs)
         if self.width == 1:
             correlation_matrix = np.array([correlation_matrix])
-        return DataFrame(correlation_matrix, schema=self.columns)
+
+        df = DataFrame(correlation_matrix, schema=self.columns)
+        if label is not None:
+            cols = pl.Series(name=label, values=self.columns)
+            df.insert_column(0, cols)
+        return df
 
     def merge_sorted(self, other: DataFrame, key: str) -> DataFrame:
         """
@@ -12474,6 +12494,7 @@ class DataFrame:
         column: str,
         *,
         descending: bool = False,
+        nulls_last: bool = False,
     ) -> DataFrame:
         """
         Flag a column as sorted.
@@ -12486,6 +12507,8 @@ class DataFrame:
             Column that is sorted
         descending
             Whether the column is sorted in descending order.
+        nulls_last
+            Whether the nulls are at the end.
 
         Warnings
         --------
@@ -12499,7 +12522,7 @@ class DataFrame:
 
         return (
             self.lazy()
-            .set_sorted(column, descending=descending)
+            .set_sorted(column, descending=descending, nulls_last=nulls_last)
             .collect(optimizations=QueryOptFlags._eager())
         )
 
@@ -12738,8 +12761,8 @@ class DataFrame:
         fmt_float: FloatFmt | None = None,
         fmt_str_lengths: int | None = None,
         fmt_table_cell_list_len: int | None = None,
-        tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
-        tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
+        tbl_cell_alignment: Alignment | None = None,
+        tbl_cell_numeric_alignment: Alignment | None = None,
         tbl_cols: int | None = None,
         tbl_column_data_type_inline: bool | None = None,
         tbl_dataframe_shape_below: bool | None = None,

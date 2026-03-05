@@ -34,7 +34,7 @@ pub use cse::NaiveExprMerger;
 use delay_rechunk::DelayRechunk;
 pub use expand_datasets::ExpandedDataset;
 use polars_core::config::verbose;
-pub use predicate_pushdown::PredicatePushDown;
+pub use predicate_pushdown::{DynamicPred, PredicateExpr, PredicatePushDown, TrivialPredicateExpr};
 pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
@@ -73,7 +73,16 @@ pub(super) fn run_projection_predicate_pushdown(
     pushdown_maintain_errors: bool,
     opt_flags: &OptFlags,
 ) -> PolarsResult<()> {
-    // Should be run before predicate pushdown.
+    // Should be run before projection pushdown.
+    // This allows columns only needed for filters to be dropped early.
+    if opt_flags.predicate_pushdown() {
+        let mut predicate_pushdown_opt =
+            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
+        let ir = ir_arena.take(root);
+        let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
+        ir_arena.replace(root, ir);
+    }
+
     if opt_flags.projection_pushdown() {
         let mut projection_pushdown_opt = ProjectionPushDown::new();
         let ir = ir_arena.take(root);
@@ -84,14 +93,6 @@ pub(super) fn run_projection_predicate_pushdown(
             let mut count_star_opt = CountStar::new();
             count_star_opt.optimize_plan(ir_arena, expr_arena, root)?;
         }
-    }
-
-    if opt_flags.predicate_pushdown() {
-        let mut predicate_pushdown_opt =
-            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
-        let ir = ir_arena.take(root);
-        let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
-        ir_arena.replace(root, ir);
     }
 
     Ok(())
@@ -196,16 +197,6 @@ pub fn optimize(
         true
     };
 
-    if run_pushdowns {
-        run_projection_predicate_pushdown(
-            root,
-            ir_arena,
-            expr_arena,
-            pushdown_maintain_errors,
-            &opt_flags,
-        )?;
-    }
-
     if opt_flags.slice_pushdown() {
         let mut slice_pushdown_opt = SlicePushDown::new(
             // We don't maintain errors on slice as the behavior is much more predictable that way.
@@ -221,6 +212,16 @@ pub fn optimize(
 
         // Expressions use the stack optimizer.
         rules.push(Box::new(slice_pushdown_opt));
+    }
+
+    if run_pushdowns {
+        run_projection_predicate_pushdown(
+            root,
+            ir_arena,
+            expr_arena,
+            pushdown_maintain_errors,
+            &opt_flags,
+        )?;
     }
 
     if opt_flags.fast_projection() {

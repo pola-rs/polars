@@ -162,8 +162,13 @@ pub struct NaiveExprMerger {
 
 impl NaiveExprMerger {
     pub fn add_expr(&mut self, node: Node, arena: &Arena<AExpr>) {
-        let node = AexprNode::new(node);
-        node.visit(self, arena).unwrap();
+        AexprNode::new(node).visit(self, arena).unwrap();
+    }
+
+    pub fn add_and_get_uniq_id(&mut self, node: Node, arena: &Arena<AExpr>) -> u32 {
+        let aexpr_node = AexprNode::new(node);
+        aexpr_node.visit(self, arena).unwrap();
+        *self.node_to_uniq_id.get(&node).unwrap()
     }
 
     pub fn get_uniq_id(&self, node: Node) -> Option<u32> {

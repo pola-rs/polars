@@ -2150,7 +2150,7 @@ class Series:
         stats.columns = ["statistic", "value"]
         return stats.filter(F.col("value").is_not_null())
 
-    def sum(self) -> int | float:
+    def sum(self) -> int | float | PyDecimal:
         """
         Reduce this Series to the sum value.
 
@@ -5174,10 +5174,16 @@ class Series:
                     else ""
                 )
 
-        pa_arr = self.to_arrow()
-        # pandas does not support unsigned dictionary indices
-        if pa.types.is_dictionary(pa_arr.type):
-            pa_arr = pa_arr.cast(pa.dictionary(pa.int64(), pa.large_string()))
+        if isinstance(self.dtype, (Categorical, Enum)):
+            return (
+                self.to_frame()
+                .to_pandas(
+                    use_pyarrow_extension_array=use_pyarrow_extension_array, **kwargs
+                )
+                .iloc[:, 0]
+            )
+        else:
+            pa_arr = self.to_arrow()
 
         if use_pyarrow_extension_array:
             pd_series = pa_arr.to_pandas(
@@ -5634,18 +5640,88 @@ class Series:
         ]
         """
 
+    def truncate(self, decimals: int = 0) -> Series:
+        """
+        Truncate numeric data toward zero to `decimals` number of decimal places.
+
+        Parameters
+        ----------
+        decimals
+            Number of decimal places to truncate to.
+
+        Notes
+        -----
+        * Truncation discards the fractional part beyond the given number of decimals.
+          For example, when rounding to 0 decimals 0.25, -0.25, 0.99, and -0.99 will
+          all round to 0. When rounding to 1 decimal 1.9999 rounds to 1.9 and -1.9999
+          rounds to -1.9. There is no tiebreak behaviour at midpoint values as there
+          is with :meth:`round` so 0.5 and -0.5 will also round to 0 when decimals=1.
+
+        * This method performs numeric truncation. For truncating temporal
+          data (dates/datetimes), use :func:`Series.dt.truncate` instead.
+
+        See Also
+        --------
+        round : Round to a given number of decimals.
+        floor : Round down to the nearest integer.
+        ceil : Round up to the nearest integer.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.12345, 2.56789, 3.991234])
+        >>> s.truncate(2)
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+                1.12
+                2.56
+                3.99
+        ]
+
+        >>> s = pl.Series("a", [-1.78, 2.56, -3.99])
+        >>> s.truncate(0)
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+                -1.0
+                2.0
+                -3.0
+        ]
+        """
+
     def round(self, decimals: int = 0, mode: RoundMode = "half_to_even") -> Series:
         """
         Round underlying floating point data by `decimals` digits.
-
-        The default rounding mode is "half to even" (also known as "bankers' rounding").
 
         Parameters
         ----------
         decimals
             Number of decimals to round by.
-        mode : {'half_to_even', 'half_away_from_zero'}
-            Rounding mode.
+        mode : {'half_to_even', 'half_away_from_zero', 'to_zero'}
+            The rounding strategy used. A "rounded value" is a value with at most
+            `decimals` decimal places (e.g. integers when ``decimals=0``, multiples
+            of 0.1 when ``decimals=1``, 0.01 when ``decimals=2``, and so on).
+
+            Strategies that start with ``half_`` round all values to the *nearest*
+            rounded value, only using the strategy to break ties when a value falls
+            exactly between two rounded values (e.g. 0.5 when ``decimals=0``, 0.05
+            when ``decimals=1``). Other rounding strategies specify explicitly
+            which rounded value is chosen and always apply (not just for tiebreaks).
+
+            * *half_to_even* (default)
+                Round to the nearest value; break ties by choosing the nearest
+                **even** value. For example, 0.5 rounds to 0, 1.5 rounds to 2,
+                2.5 rounds to 2. Also known as "banker's rounding"; this is the
+                default because it tends to minimise cumulative rounding bias.
+            * *half_away_from_zero*
+                Round to the nearest value; break ties by rounding **away from
+                zero**. For example, 0.5 rounds to 1, -0.5 rounds to -1, 2.5
+                rounds to 3. Also known as "commercial rounding".
+            * *to_zero*
+                Always round (truncate) **towards zero**, discarding the fractional
+                part beyond `decimals`. For example, 0.9 rounds to 0, -0.9 rounds
+                to 0, 1.29 rounds to 1.2 (with ``decimals=1``). Equivalent to the
+                :meth:`truncate` method.
 
         Examples
         --------

@@ -11,3 +11,4 @@ pub mod lines;
 pub mod ndjson;
 #[cfg(feature = "parquet")]
 pub mod parquet;
+pub mod shared;

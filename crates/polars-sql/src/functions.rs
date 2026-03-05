@@ -167,12 +167,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     Cbrt,
     /// SQL 'round' function.
-    /// Round a number to `x` decimals (default: 0) away from zero.
+    /// Round a number to `n` decimals (default: 0) away from zero.
     ///   .5 is rounded away from zero.
     /// ```sql
     /// SELECT ROUND(col1, 3) FROM df;
     /// ```
     Round,
+    /// SQL 'truncate' function.
+    /// Truncate a number toward zero to `n` decimals (default: 0).
+    /// ```sql
+    /// SELECT TRUNCATE(col1, 2) FROM df;
+    /// ```
+    Truncate,
     /// SQL 'sign' function.
     /// Returns the sign of the argument as -1, 0, or +1.
     /// ```sql
@@ -360,6 +366,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT LEFT(col1, 3) FROM df;
     /// ```
     Left,
+    /// SQL 'lpad' function.
+    /// Pads a string on the left to a specified length, using an optional fill character.
+    /// ```sql
+    /// SELECT LPAD(col1, 10, 'x') FROM df;
+    /// ```
+    LeftPad,
+    /// SQL 'ltrim' function.
+    /// Strip whitespaces from the left.
+    /// ```sql
+    /// SELECT LTRIM(col1) FROM df;
+    /// ```
+    LeftTrim,
     /// SQL 'length' function (characters.
     /// Returns the character length of the string.
     /// ```sql
@@ -372,12 +390,6 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT LOWER(col1) FROM df;
     /// ```
     Lower,
-    /// SQL 'ltrim' function.
-    /// Strip whitespaces from the left.
-    /// ```sql
-    /// SELECT LTRIM(col1) FROM df;
-    /// ```
-    LTrim,
     /// SQL 'normalize' function.
     /// Convert string to Unicode normalization form
     /// (one of NFC, NFKC, NFD, or NFKD - unquoted).
@@ -415,12 +427,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT RIGHT(col1, 3) FROM df;
     /// ```
     Right,
+    /// SQL 'rpad' function.
+    /// Pads a string on the right to a specified length, using an optional fill character.
+    /// ```sql
+    /// SELECT RPAD(col1, 10, 'x') FROM df;
+    /// ```
+    RightPad,
     /// SQL 'rtrim' function.
     /// Strip whitespaces from the right.
     /// ```sql
     /// SELECT RTRIM(col1) FROM df;
     /// ```
-    RTrim,
+    RightTrim,
     /// SQL 'split_part' function.
     /// Splits a string into an array of strings using the given delimiter
     /// and returns the `n`-th part (1-indexed).
@@ -839,6 +857,7 @@ impl PolarsSQLFunctions {
             "log1p",
             "log2",
             "lower",
+            "lpad",
             "ltrim",
             "max",
             "median",
@@ -860,6 +879,7 @@ impl PolarsSQLFunctions {
             "right",
             "round",
             "row_number",
+            "rpad",
             "rtrim",
             "sign",
             "sin",
@@ -918,6 +938,7 @@ impl PolarsSQLFunctions {
             "pi" => Self::Pi,
             "pow" | "power" => Self::Pow,
             "round" => Self::Round,
+            "trunc" | "truncate" => Self::Truncate,
             "sign" => Self::Sign,
             "sqrt" => Self::Sqrt,
 
@@ -954,10 +975,12 @@ impl PolarsSQLFunctions {
             "nullif" => Self::NullIf,
 
             // ----
-            // Date functions
+            // Temporal functions
             // ----
+            "date" => Self::Date,
             "date_part" => Self::DatePart,
             "strftime" => Self::Strftime,
+            "timestamp" | "datetime" => Self::Timestamp,
 
             // ----
             // String functions
@@ -965,26 +988,26 @@ impl PolarsSQLFunctions {
             "bit_length" => Self::BitLength,
             "concat" => Self::Concat,
             "concat_ws" => Self::ConcatWS,
-            "date" => Self::Date,
-            "timestamp" | "datetime" => Self::Timestamp,
             "ends_with" => Self::EndsWith,
             #[cfg(feature = "nightly")]
             "initcap" => Self::InitCap,
-            "length" | "char_length" | "character_length" => Self::Length,
             "left" => Self::Left,
+            "length" | "char_length" | "character_length" => Self::Length,
             "lower" => Self::Lower,
-            "ltrim" => Self::LTrim,
+            "lpad" => Self::LeftPad,
+            "ltrim" => Self::LeftTrim,
             "normalize" => Self::Normalize,
             "octet_length" => Self::OctetLength,
-            "strpos" => Self::StrPos,
             "regexp_like" => Self::RegexpLike,
             "replace" => Self::Replace,
             "reverse" => Self::Reverse,
             "right" => Self::Right,
-            "rtrim" => Self::RTrim,
+            "rpad" => Self::RightPad,
+            "rtrim" => Self::RightTrim,
             "split_part" => Self::SplitPart,
             "starts_with" => Self::StartsWith,
             "string_to_array" => Self::StringToArray,
+            "strpos" => Self::StrPos,
             "strptime" => Self::Strptime,
             "substr" => Self::Substring,
             "time" => Self::Time,
@@ -997,14 +1020,14 @@ impl PolarsSQLFunctions {
             "corr" => Self::Corr,
             "count" => Self::Count,
             "covar_pop" => Self::CovarPop,
-            "covar" | "covar_samp" => Self::CovarSamp,
+            "covar_samp" | "covar" => Self::CovarSamp,
             "first" => Self::First,
             "last" => Self::Last,
             "max" => Self::Max,
             "median" => Self::Median,
+            "min" => Self::Min,
             "quantile_cont" => Self::QuantileCont,
             "quantile_disc" => Self::QuantileDisc,
-            "min" => Self::Min,
             "stdev" | "stddev" | "stdev_samp" | "stddev_samp" => Self::StdDev,
             "sum" => Self::Sum,
             "var" | "variance" | "var_samp" => Self::Variance,
@@ -1112,13 +1135,30 @@ impl SQLFunctionVisitor<'_> {
                         Ok(e.round(match decimals {
                             Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
                                 if n >= 0 { n as u32 } else {
-                                    polars_bail!(SQLInterface: "ROUND does not currently support negative decimals value ({})", args[1])
+                                    polars_bail!(SQLInterface: "ROUND does not support negative decimals value ({})", args[1])
                                 }
                             },
                             _ => polars_bail!(SQLSyntax: "invalid value for ROUND decimals ({})", args[1]),
                         }, RoundMode::default()))
                     }),
                     _ => polars_bail!(SQLSyntax: "ROUND expects 1-2 arguments (found {})", args.len()),
+                }
+            },
+            Truncate => {
+                let args = extract_args(function)?;
+                match args.len() {
+                    1 => self.visit_unary(|e| e.truncate(0)),
+                    2 => self.try_visit_binary(|e, decimals| {
+                        Ok(e.truncate(match decimals {
+                            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
+                                if n >= 0 { n as u32 } else {
+                                    polars_bail!(SQLInterface: "TRUNCATE does not support negative decimals value ({})", args[1])
+                                }
+                            },
+                            _ => polars_bail!(SQLSyntax: "invalid value for TRUNCATE decimals ({})", args[1]),
+                        }))
+                    }),
+                    _ => polars_bail!(SQLSyntax: "TRUNCATE expects 1-2 arguments (found {})", args.len()),
                 }
             },
             Sign => self.visit_unary(Expr::sign),
@@ -1281,20 +1321,53 @@ impl SQLFunctionVisitor<'_> {
                         )),
                 })
             }),
-            Length => self.visit_unary(|e| e.str().len_chars()),
-            Lower => self.visit_unary(|e| e.str().to_lowercase()),
-            LTrim => {
+            LeftPad | RightPad => {
+                let is_lpad = matches!(function_name, LeftPad);
+                let fname = if is_lpad { "LPAD" } else { "RPAD" };
+                let args = extract_args(function)?;
+                let pad = |e: Expr, length: Expr, fill_char: char| {
+                    let padded = if is_lpad {
+                        e.str().pad_start(length.clone(), fill_char)
+                    } else {
+                        e.str().pad_end(length.clone(), fill_char)
+                    };
+                    Ok(padded.str().slice(lit(0), length))
+                };
+                match args.len() {
+                    2 => self.try_visit_binary(|e, length| pad(e, length, ' ')),
+                    3 => self.try_visit_ternary(|e: Expr, length: Expr, fill: Expr| match fill {
+                        Expr::Literal(lv) if lv.extract_str().is_some() => {
+                            let s = lv.extract_str().unwrap();
+                            let mut chars = s.chars();
+                            match (chars.next(), chars.next()) {
+                                (Some(c), None) => pad(e, length, c),
+                                _ => polars_bail!(SQLSyntax: "{} fill value must be a single character (found '{}')", fname, s),
+                            }
+                        },
+                        _ => polars_bail!(SQLSyntax: "{} fill value must be a string literal", fname),
+                    }),
+                    _ => polars_bail!(SQLSyntax: "{} expects 2-3 arguments (found {})", fname, args.len()),
+                }
+            },
+            LeftTrim | RightTrim => {
+                let is_ltrim = matches!(function_name, LeftTrim);
+                let fname = if is_ltrim { "LTRIM" } else { "RTRIM" };
+                let strip: fn(Expr, Expr) -> Expr = if is_ltrim {
+                    |e, s| e.str().strip_chars_start(s)
+                } else {
+                    |e, s| e.str().strip_chars_end(s)
+                };
                 let args = extract_args(function)?;
                 match args.len() {
-                    1 => self.visit_unary(|e| {
-                        e.str().strip_chars_start(lit(LiteralValue::untyped_null()))
-                    }),
-                    2 => self.visit_binary(|e, s| e.str().strip_chars_start(s)),
+                    1 => self.visit_unary(|e| strip(e, lit(LiteralValue::untyped_null()))),
+                    2 => self.visit_binary(strip),
                     _ => {
-                        polars_bail!(SQLSyntax: "LTRIM expects 1-2 arguments (found {})", args.len())
+                        polars_bail!(SQLSyntax: "{} expects 1-2 arguments (found {})", fname, args.len())
                     },
                 }
             },
+            Length => self.visit_unary(|e| e.str().len_chars()),
+            Lower => self.visit_unary(|e| e.str().to_lowercase()),
             Normalize => {
                 let args = extract_args(function)?;
                 match args.len() {
@@ -1395,18 +1468,6 @@ impl SQLFunctionVisitor<'_> {
                         )),
                 })
             }),
-            RTrim => {
-                let args = extract_args(function)?;
-                match args.len() {
-                    1 => self.visit_unary(|e| {
-                        e.str().strip_chars_end(lit(LiteralValue::untyped_null()))
-                    }),
-                    2 => self.visit_binary(|e, s| e.str().strip_chars_end(s)),
-                    _ => {
-                        polars_bail!(SQLSyntax: "RTRIM expects 1-2 arguments (found {})", args.len())
-                    },
-                }
-            },
             SplitPart => {
                 let args = extract_args(function)?;
                 match args.len() {
@@ -1532,7 +1593,12 @@ impl SQLFunctionVisitor<'_> {
             Last => self.visit_unary(Expr::last),
             Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cum_max),
             Median => self.visit_unary(Expr::median),
-            QuantileCont => {
+            QuantileCont | QuantileDisc => {
+                let (fname, method) = if matches!(function_name, QuantileCont) {
+                    ("QUANTILE_CONT", QuantileMethod::Linear)
+                } else {
+                    ("QUANTILE_DISC", QuantileMethod::Equiprobable)
+                };
                 let args = extract_args(function)?;
                 match args.len() {
                     2 => self.try_visit_binary(|e, q| {
@@ -1541,47 +1607,21 @@ impl SQLFunctionVisitor<'_> {
                                 if (0.0..=1.0).contains(&f) {
                                     Expr::from(f)
                                 } else {
-                                    polars_bail!(SQLSyntax: "QUANTILE_CONT value must be between 0 and 1 ({})", args[1])
+                                    polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, args[1])
                                 }
                             },
                             Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
                                 if (0..=1).contains(&n) {
                                     Expr::from(n as f64)
                                 } else {
-                                    polars_bail!(SQLSyntax: "QUANTILE_CONT value must be between 0 and 1 ({})", args[1])
+                                    polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, args[1])
                                 }
                             },
-                            _ => polars_bail!(SQLSyntax: "invalid value for QUANTILE_CONT ({})", args[1])
+                            _ => polars_bail!(SQLSyntax: "invalid value for {} ({})", fname, args[1])
                         };
-                        Ok(e.quantile(value, QuantileMethod::Linear))
+                        Ok(e.quantile(value, method))
                     }),
-                    _ => polars_bail!(SQLSyntax: "QUANTILE_CONT expects 2 arguments (found {})", args.len()),
-                }
-            },
-            QuantileDisc => {
-                let args = extract_args(function)?;
-                match args.len() {
-                    2 => self.try_visit_binary(|e, q| {
-                        let value = match q {
-                            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(f))) => {
-                                if (0.0..=1.0).contains(&f) {
-                                    Expr::from(f)
-                                } else {
-                                    polars_bail!(SQLSyntax: "QUANTILE_DISC value must be between 0 and 1 ({})", args[1])
-                                }
-                            },
-                            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
-                                if (0..=1).contains(&n) {
-                                    Expr::from(n as f64)
-                                } else {
-                                    polars_bail!(SQLSyntax: "QUANTILE_DISC value must be between 0 and 1 ({})", args[1])
-                                }
-                            },
-                            _ => polars_bail!(SQLSyntax: "invalid value for QUANTILE_DISC ({})", args[1])
-                        };
-                        Ok(e.quantile(value, QuantileMethod::Equiprobable))
-                    }),
-                    _ => polars_bail!(SQLSyntax: "QUANTILE_DISC expects 2 arguments (found {})", args.len()),
+                    _ => polars_bail!(SQLSyntax: "{} expects 2 arguments (found {})", fname, args.len()),
                 }
             },
             Min => self.visit_unary_with_opt_cumulative(Expr::min, Expr::cum_min),

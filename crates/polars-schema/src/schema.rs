@@ -165,14 +165,14 @@ impl<Field, Metadata> Schema<Field, Metadata> {
     /// Get a reference to the dtype of the field named `name`, or `Err(PolarsErr)` if the field doesn't exist.
     pub fn try_get(&self, name: &str) -> PolarsResult<&Field> {
         self.get(name)
-            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
+            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{name}"))
     }
 
     /// Get a mutable reference to the dtype of the field named `name`, or `Err(PolarsErr)` if the field doesn't exist.
     pub fn try_get_mut(&mut self, name: &str) -> PolarsResult<&mut Field> {
         self.fields
             .get_mut(name)
-            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
+            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{name}"))
     }
 
     /// Return all data about the field named `name`: its index in the schema, its name, and its dtype.
@@ -188,7 +188,7 @@ impl<Field, Metadata> Schema<Field, Metadata> {
     pub fn try_get_full(&self, name: &str) -> PolarsResult<(usize, &PlSmallStr, &Field)> {
         self.fields
             .get_full(name)
-            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
+            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{name}"))
     }
 
     /// Get references to the name and dtype of the field at `index`.
@@ -350,7 +350,7 @@ impl<Field, Metadata> Schema<Field, Metadata> {
 
     /// Iterates over references to the names in this schema.
     pub fn iter_names(&self) -> impl '_ + ExactSizeIterator<Item = &PlSmallStr> {
-        self.fields.iter().map(|(name, _dtype)| name)
+        self.fields.keys()
     }
 
     pub fn iter_names_cloned(&self) -> impl '_ + ExactSizeIterator<Item = PlSmallStr> {
@@ -359,7 +359,7 @@ impl<Field, Metadata> Schema<Field, Metadata> {
 
     /// Iterates over references to the dtypes in this schema.
     pub fn iter_values(&self) -> impl '_ + ExactSizeIterator<Item = &Field> {
-        self.fields.iter().map(|(_name, dtype)| dtype)
+        self.fields.values()
     }
 
     pub fn into_iter_values(self) -> impl ExactSizeIterator<Item = Field> {
@@ -490,6 +490,32 @@ where
         })
     }
 
+    pub fn try_project_with_alias<I, O, C>(&self, columns: I) -> PolarsResult<Self>
+    where
+        I: IntoIterator<Item = (O, C)>,
+        O: AsRef<str>,
+        C: AsRef<str>,
+    {
+        let mut fields = PlIndexMap::new();
+        for (out_name, col) in columns {
+            let (out_name, col) = (out_name.as_ref(), col.as_ref());
+            let dtype = self
+                .fields
+                .get(col)
+                .ok_or_else(|| polars_err!(col_not_found = col))?;
+            if fields
+                .insert(PlSmallStr::from(out_name), dtype.clone())
+                .is_some()
+            {
+                polars_bail!(duplicate = out_name);
+            }
+        }
+        Ok(Self {
+            fields,
+            metadata: self.metadata().clone(),
+        })
+    }
+
     pub fn try_project_indices(&self, indices: &[usize]) -> PolarsResult<Self> {
         let fields = indices
             .iter()
@@ -612,6 +638,54 @@ impl<Field, Metadata> IntoIterator for Schema<Field, Metadata> {
     }
 }
 
+pub use display::{NamesDisplay, ValuesDisplay};
+
+mod display {
+    use std::fmt::{self, Debug, Display, Formatter};
+
+    use super::Schema;
+
+    impl<Field, Metadata> Schema<Field, Metadata> {
+        pub fn names_display(&self) -> impl Display + Debug + '_ {
+            NamesDisplay(self)
+        }
+    }
+
+    impl<Field: Debug, Metadata> Schema<Field, Metadata> {
+        pub fn values_display(&self) -> impl Display + Debug + '_ {
+            ValuesDisplay(self)
+        }
+    }
+
+    pub struct NamesDisplay<'a, Field, Metadata>(&'a Schema<Field, Metadata>);
+
+    impl<'a, Field, Metadata> Display for NamesDisplay<'a, Field, Metadata> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            Debug::fmt(&self, f)
+        }
+    }
+
+    impl<'a, Field, Metadata> Debug for NamesDisplay<'a, Field, Metadata> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            Debug::fmt(&self.0.fields.keys(), f)
+        }
+    }
+
+    pub struct ValuesDisplay<'a, Field, Metadata>(&'a Schema<Field, Metadata>);
+
+    impl<'a, Field: Debug, Metadata> Display for ValuesDisplay<'a, Field, Metadata> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            Debug::fmt(&self, f)
+        }
+    }
+
+    impl<'a, Field: Debug, Metadata> Debug for ValuesDisplay<'a, Field, Metadata> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            Debug::fmt(&self.0.fields.values(), f)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Schema;
@@ -622,5 +696,23 @@ mod tests {
         let rhs: Schema<(), ()> = Schema::from_iter([("b".into(), ()), ("a".into(), ())]);
 
         assert_ne!(lhs, rhs);
+    }
+
+    #[test]
+    fn test_names_values_display() {
+        let schema: Schema<&str, ()> =
+            Schema::from_iter([("name1".into(), "value1"), ("name2".into(), "value2")]);
+
+        let names_display = schema.names_display();
+        let values_display = schema.values_display();
+
+        assert_eq!(
+            format!("{} {:?}", names_display, names_display),
+            r#"["name1", "name2"] ["name1", "name2"]"#,
+        );
+        assert_eq!(
+            format!("{} {:?}", values_display, values_display),
+            r#"["value1", "value2"] ["value1", "value2"]"#,
+        );
     }
 }

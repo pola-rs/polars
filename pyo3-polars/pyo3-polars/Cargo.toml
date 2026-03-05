@@ -14,6 +14,7 @@ arrow = { workspace = true, default-features = false }
 libc = "0.2" # pyo3 depends on libc already, so this does not introduce an extra dependence.
 once_cell = "1"
 polars = { workspace = true, default-features = false }
+polars-config = { workspace = true }
 polars-core = { workspace = true, default-features = false, features = ["allow_unused"] }
 polars-error = { workspace = true, features = ["python"] }
 polars-ffi = { workspace = true }

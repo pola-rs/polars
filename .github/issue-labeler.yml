@@ -3,7 +3,7 @@
 documentation:
   - '/\bdocs\b|documentation/i'
 performance:
-  - '/performance/i'
+  - '/performance|\bslow/i'
 regression:
   - '/regression/i'
 A-dtype-categorical:

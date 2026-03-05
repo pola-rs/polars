@@ -141,11 +141,11 @@ check:  ## Run cargo check with all features
 
 .PHONY: clippy
 clippy:  ## Run clippy with all features
-	cargo clippy --workspace --all-targets --all-features --locked -- -D warnings -D clippy::dbg_macro
+	python3 tools/cargo-fail-warning.py clippy --workspace --all-targets --all-features --locked -- -W clippy::dbg_macro
 
 .PHONY: clippy-default
 clippy-default:  ## Run clippy with default features
-	cargo clippy --all-targets --locked -- -D warnings -D clippy::dbg_macro
+	python3 tools/cargo-fail-warning.py clippy --all-targets --locked -- -W clippy::dbg_macro
 
 .PHONY: fmt
 fmt:  ## Run autoformatting and linting

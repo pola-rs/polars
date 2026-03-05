@@ -1,3 +1,5 @@
+use polars_utils::format_pl_smallstr;
+
 use super::*;
 
 /// converts a node from the AExpr arena to Expr
@@ -1008,6 +1010,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "round_series")]
         IF::RoundSF { digits } => F::RoundSF { digits },
         #[cfg(feature = "round_series")]
+        IF::Truncate { decimals } => F::Truncate { decimals },
+        #[cfg(feature = "round_series")]
         IF::Floor => F::Floor,
         #[cfg(feature = "round_series")]
         IF::Ceil => F::Ceil,
@@ -1175,6 +1179,12 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             fs.into_iter().map(|f| (f.name, f.dtype.into())).collect(),
             v,
         ),
+        IF::DynamicPred { pred } => {
+            return Expr::Display {
+                inputs: input,
+                fmt_str: Box::new(format_pl_smallstr!("{pred:?}")),
+            };
+        },
     };
 
     Expr::Function { input, function }

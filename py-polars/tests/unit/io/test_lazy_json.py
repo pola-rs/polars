@@ -11,6 +11,9 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from polars._typing import NdjsonCompression
+    from tests.conftest import PlMonkeyPatch
+
 
 @pytest.fixture
 def foods_ndjson_path(io_files_path: Path) -> Path:
@@ -296,7 +299,7 @@ def test_scan_ndjson_raises_on_parse_error_nested() -> None:
 
 def test_scan_ndjson_nested_as_string() -> None:
     buf = b"""\
-{"a": {"x": 1}, "b": [1,2,3], "c": {"y": null}, "d": [{"k": "abc"}, {"j": "123"}, {"l": 7}]}
+{"a": {"x": 1}, "b": [1,2,3], "c": {"y": null}, "d": [{"k": "abc"}, {"j": "123"}, {"l": 7, "m": 8}]}
 """
 
     df = pl.scan_ndjson(
@@ -311,9 +314,39 @@ def test_scan_ndjson_nested_as_string() -> None:
                 "a": '{"x": 1}',
                 "b": "[1, 2, 3]",
                 "c": '{"y": null}',
-                "d": '[{"k": "abc"}, {"j": "123"}, {"l": 7}]',
+                "d": '[{"k": "abc"}, {"j": "123"}, {"l": 7, "m": 8}]',
             }
         ),
+    )
+
+
+def test_scan_ndjson_nested_as_string_escape_chars() -> None:
+    buf = b"""\
+{"a": {"x": "\\"\\r\\n"}}
+"""
+
+    df = pl.scan_ndjson(
+        buf,
+        schema={"a": pl.String},
+    ).collect()
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "a": '{"x": "\\"\\r\\n"}',
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        pl.scan_ndjson(
+            buf,
+            schema={"a": pl.String},
+        )
+        .collect()
+        .with_columns(pl.col("a").str.json_decode(pl.Struct({"x": pl.String}))),
+        pl.scan_ndjson(buf, schema={"a": pl.Struct({"x": pl.String})}).collect(),
     )
 
 
@@ -331,3 +364,28 @@ def test_scan_ndjson_schema_overwrite_22514() -> None:
     q = pl.scan_ndjson(buf, schema_overrides={"a": pl.String})
     assert q.collect_schema() == {"a": pl.String}
     assert_frame_equal(q.collect(), pl.DataFrame({"a": "1"}))
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize("compression", ["uncompressed", "zstd", "gzip"])
+def test_scan_ndjson_progressive_infer_schema_length(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, compression: NdjsonCompression
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.ndjson"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    n_rows = 60_000
+    df = (
+        pl.DataFrame()
+        .with_columns(pl.int_range(n_rows).alias("a"))
+        .with_columns(pl.col.a.cast(pl.String).alias("b"))
+    )
+
+    df.lazy().sink_ndjson(file_path, compression=compression, check_extension=False)
+
+    for infer_len in [1, 2, 100, n_rows - 1, n_rows, n_rows + 1, None]:
+        out = pl.scan_ndjson(file_path, infer_schema_length=infer_len).collect()
+        assert df.schema == out.schema

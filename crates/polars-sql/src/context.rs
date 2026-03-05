@@ -4,19 +4,19 @@ use std::sync::RwLock;
 use polars_core::frame::row::Row;
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
-use polars_ops::frame::JoinCoalesce;
+use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
-    BinaryOperator, CreateTable, CreateTableLikeKind, Delete, Distinct, ExcludeSelectItem,
-    Expr as SQLExpr, Fetch, FromTable, FunctionArg, GroupByExpr, Ident, JoinConstraint,
-    JoinOperator, LimitClause, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectType,
-    OrderBy, OrderByKind, Query, RenameSelectItem, Select, SelectItem,
+    BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, Delete, Distinct,
+    ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg, GroupByExpr, Ident,
+    JoinConstraint, JoinOperator, LimitClause, NamedWindowDefinition, NamedWindowExpr, ObjectName,
+    ObjectType, OrderBy, OrderByKind, Query, RenameSelectItem, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias,
-    TableFactor, TableWithJoins, Truncate, UnaryOperator, Value as SQLValue, ValueWithSpan, Values,
-    Visit, WildcardAdditionalOptions, WindowSpec,
+    TableFactor, TableWithJoins, Truncate, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
+    ValueWithSpan, Values, Visit, WildcardAdditionalOptions, WindowSpec,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -376,7 +376,7 @@ impl SQLContext {
     ) -> PolarsResult<Expr> {
         match e {
             SQLExpr::UnaryOp {
-                op: UnaryOperator::Minus,
+                op: SQLUnaryOperator::Minus,
                 expr,
             } if matches!(
                 **expr,
@@ -756,22 +756,24 @@ impl SQLContext {
             delete_token: _,
         }) = stmt
         {
-            if !tables.is_empty()
-                || using.is_some()
-                || returning.is_some()
-                || limit.is_some()
-                || !order_by.is_empty()
-            {
-                let error_message = match () {
-                    _ if !tables.is_empty() => "DELETE expects exactly one table name",
-                    _ if using.is_some() => "DELETE does not support the USING clause",
-                    _ if returning.is_some() => "DELETE does not support the RETURNING clause",
-                    _ if limit.is_some() => "DELETE does not support the LIMIT clause",
-                    _ if !order_by.is_empty() => "DELETE does not support the ORDER BY clause",
-                    _ => unreachable!(),
-                };
-                polars_bail!(SQLInterface: error_message);
+            let error_message: Option<&'static str> = if !tables.is_empty() {
+                Some("DELETE expects exactly one table name")
+            } else if using.is_some() {
+                Some("DELETE does not support the USING clause")
+            } else if returning.is_some() {
+                Some("DELETE does not support the RETURNING clause")
+            } else if limit.is_some() {
+                Some("DELETE does not support the LIMIT clause")
+            } else if !order_by.is_empty() {
+                Some("DELETE does not support the ORDER BY clause")
+            } else {
+                None
+            };
+
+            if let Some(msg) = error_message {
+                polars_bail!(SQLInterface: msg);
             }
+
             let from_tables = match &from {
                 FromTable::WithFromKeyword(from) => from,
                 FromTable::WithoutKeyword(from) => from,
@@ -1369,7 +1371,7 @@ impl SQLContext {
                                 slice: None,
                                 nulls_equal: false,
                                 coalesce: Default::default(),
-                                maintain_order: polars_ops::frame::MaintainOrderJoin::Left,
+                                maintain_order: MaintainOrderJoin::Left,
                                 build_side: None,
                             },
                         );
@@ -1463,6 +1465,12 @@ impl SQLContext {
         schema: &SchemaRef,
         select_modifiers: &mut SelectModifiers,
     ) -> PolarsResult<Vec<Expr>> {
+        if select_stmt.projection.is_empty()
+            && select_stmt.flavor == SelectFlavor::FromFirstNoSelect
+        {
+            // eg: bare "FROM tbl" is equivalent to "SELECT * FROM tbl".
+            return Ok(schema.iter_names().map(|name| col(name.clone())).collect());
+        }
         let mut items: Vec<ProjectionItem> = Vec::with_capacity(select_stmt.projection.len());
         let mut has_qualified_wildcard = false;
 
@@ -1503,11 +1511,7 @@ impl SQLContext {
                     },
                 },
                 SelectItem::Wildcard(wildcard_options) => {
-                    let cols = schema
-                        .iter_names()
-                        .map(|name| col(name.clone()))
-                        .collect::<Vec<_>>();
-
+                    let cols = schema.iter_names().map(|name| col(name.clone())).collect();
                     items.push(ProjectionItem::Exprs(
                         self.process_wildcard_additional_options(
                             cols,
@@ -1561,10 +1565,10 @@ impl SQLContext {
                     ..
                 }) => (*b, !*b),
                 SQLExpr::BinaryOp { left, op, right } => match (&**left, &**right, op) {
-                    (SQLExpr::Value(a), SQLExpr::Value(b), BinaryOperator::Eq) => {
+                    (SQLExpr::Value(a), SQLExpr::Value(b), SQLBinaryOperator::Eq) => {
                         (a.value == b.value, a.value != b.value)
                     },
-                    (SQLExpr::Value(a), SQLExpr::Value(b), BinaryOperator::NotEq) => {
+                    (SQLExpr::Value(a), SQLExpr::Value(b), SQLBinaryOperator::NotEq) => {
                         (a.value != b.value, a.value == b.value)
                     },
                     _ => (false, false),
@@ -1582,7 +1586,7 @@ impl SQLContext {
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
-            lf = self.process_subqueries(lf, vec![&mut filter_expression]);
+            lf = self.process_subqueries(lf, vec![&mut filter_expression])?;
             lf = if invert_filter {
                 lf.remove(filter_expression)
             } else {
@@ -1642,17 +1646,21 @@ impl SQLContext {
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
-            lf = self.process_subqueries(lf, vec![&mut filter_expression]);
+            lf = self.process_subqueries(lf, vec![&mut filter_expression])?;
             lf = lf.filter(filter_expression);
         }
         Ok(lf)
     }
 
-    fn process_subqueries(&self, lf: LazyFrame, exprs: Vec<&mut Expr>) -> LazyFrame {
+    fn process_subqueries(
+        &mut self,
+        lf: LazyFrame,
+        exprs: Vec<&mut Expr>,
+    ) -> PolarsResult<LazyFrame> {
         let mut subplans = vec![];
 
         for e in exprs {
-            *e = e.clone().map_expr(|e| {
+            *e = e.clone().try_map_expr(|e| {
                 if let Expr::SubPlan(lp, names) = e {
                     assert_eq!(
                         names.len(),
@@ -1661,22 +1669,21 @@ impl SQLContext {
                     );
 
                     let select_expr = names[0].1.clone();
-                    let cb =
-                        PlanCallback::new(move |(plans, schemas): (Vec<DslPlan>, Vec<SchemaRef>)| {
-                            let schema = &schemas[0];
-                            polars_ensure!(schema.len() == 1,  SQLSyntax: "SQL subquery returns more than one column");
-                            Ok(LazyFrame::from(plans.into_iter().next().unwrap()).select([select_expr.clone()]).logical_plan)
-                        });
-                    subplans.push(LazyFrame::from((**lp).clone()).pipe_with_schema(cb));
-                    Expr::Column(names[0].0.clone()).first()
+                    let mut lf = LazyFrame::from((**lp).clone());
+                    let schema = self.get_frame_schema(&mut lf)?;
+                    polars_ensure!(schema.len() == 1,  SQLSyntax: "SQL subquery returns more than one column");
+                    let lf = lf.select([select_expr.clone()]);
+
+                    subplans.push(lf);
+                    Ok(Expr::Column(names[0].0.clone()).first())
                 } else {
-                    e
+                    Ok(e)
                 }
-            });
+            })?;
         }
 
         if subplans.is_empty() {
-            lf
+            Ok(lf)
         } else {
             subplans.insert(0, lf);
             concat_lf_horizontal(
@@ -1686,7 +1693,6 @@ impl SQLContext {
                     ..Default::default()
                 },
             )
-            .unwrap()
         }
     }
 
@@ -2630,14 +2636,14 @@ fn process_join_on(
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     match sql_expr {
         SQLExpr::BinaryOp { left, op, right } => match op {
-            BinaryOperator::And => {
+            SQLBinaryOperator::And => {
                 let (mut left_i, mut right_i) = process_join_on(ctx, left, tbl_left, tbl_right)?;
                 let (mut left_j, mut right_j) = process_join_on(ctx, right, tbl_left, tbl_right)?;
                 left_i.append(&mut left_j);
                 right_i.append(&mut right_j);
                 Ok((left_i, right_i))
             },
-            BinaryOperator::Eq => {
+            SQLBinaryOperator::Eq => {
                 // establish unified schema with cols from both tables; needed for multi/chained
                 // joins where suffixed intermediary/joined cols aren't in an existing schema.
                 let mut join_schema =
