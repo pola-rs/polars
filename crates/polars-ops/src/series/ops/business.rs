@@ -1,13 +1,9 @@
-use std::borrow::Cow;
-
 use arrow::Either;
-use arrow::array::{Array, ListArray, PrimitiveArray};
+use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
-use arrow::bitmap::bitmask::BitMask;
-use arrow::offset::OffsetsBuffer;
 #[cfg(feature = "dtype-date")]
 use chrono::DateTime;
-use polars_core::prelude::arity::{binary_elementwise, try_binary_elementwise, unary_elementwise};
+use polars_core::prelude::arity::{try_binary_elementwise, unary_elementwise};
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-date")]
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
@@ -241,35 +237,53 @@ pub fn add_business_days(
     let mut holidays_getter = HolidayListsGetter::new(holidays_list, week_mask);
 
     let start_dates = start_dates.physical().rechunk();
-    let n = n.rechunk();
 
     let start_dates: &PrimitiveArray<i32> =
         start_dates.chunks()[0].as_any().downcast_ref().unwrap();
-    let n: &PrimitiveArray<i32> = n.chunks()[0].as_any().downcast_ref().unwrap();
 
     let n_business_days_in_week_mask = week_mask.iter().filter(|&x| *x).count() as i32;
 
-    let out: Int32Chunked = (0..output_height)
-        .map(|i| {
-            let start = unsafe { start_dates.get_unchecked(i % start_dates.len()) }?;
-            let n = unsafe { n.get_unchecked(i % n.len()) }?;
-            let holidays_list = holidays_getter.holiday_at_idx_broadcast(i)?;
+    let out: Int32Chunked = if start.len() == 1 && holidays.len() == 1 {
+        let holidays_list = holidays_getter.holiday_at_idx_broadcast(0).unwrap();
+        let (start, day_of_week) =
+            roll_start_date(start_dates.get(0).unwrap(), roll, &week_mask, holidays_list)?;
 
-            Some(roll_start_date(start, roll, &week_mask, holidays_list).map(
-                |(start, day_of_week)| {
-                    add_business_days_impl(
-                        start,
-                        day_of_week,
-                        n,
-                        &week_mask,
-                        n_business_days_in_week_mask,
-                        holidays_list,
-                    )
-                },
-            ))
+        n.apply_values(|n| {
+            add_business_days_impl(
+                start,
+                day_of_week,
+                n,
+                &week_mask,
+                n_business_days_in_week_mask,
+                holidays_list,
+            )
         })
-        .map(Option::transpose)
-        .collect::<PolarsResult<_>>()?;
+    } else {
+        let n = n.rechunk();
+        let n: &PrimitiveArray<i32> = n.chunks()[0].as_any().downcast_ref().unwrap();
+
+        (0..output_height)
+            .map(|i| {
+                let start = unsafe { start_dates.get_unchecked(i % start_dates.len()) }?;
+                let n = unsafe { n.get_unchecked(i % n.len()) }?;
+                let holidays_list = holidays_getter.holiday_at_idx_broadcast(i)?;
+
+                Some(roll_start_date(start, roll, &week_mask, holidays_list).map(
+                    |(start, day_of_week)| {
+                        add_business_days_impl(
+                            start,
+                            day_of_week,
+                            n,
+                            &week_mask,
+                            n_business_days_in_week_mask,
+                            holidays_list,
+                        )
+                    },
+                ))
+            })
+            .map(Option::transpose)
+            .collect::<PolarsResult<_>>()?
+    };
 
     holidays_getter.ensure_no_nulls_seen_in_values()?;
 
@@ -519,7 +533,7 @@ impl<'a> HolidayListsGetter<'a> {
 
     /// If `idx` exceeds the length of holidays_list, the last returned row value is returned.
     fn holiday_at_idx_broadcast(&mut self, idx: usize) -> Option<&[i32]> {
-        if idx > self.holidays_list.len() {
+        if idx >= self.holidays_list.len() {
             return Some(&self.current_row_values);
         }
 
@@ -538,11 +552,13 @@ impl<'a> HolidayListsGetter<'a> {
             .extend_from_slice(&self.holidays_list_values[start..end]);
         normalize_holidays(&mut self.current_row_values, &self.week_mask);
 
-        self.null_seen_in_values |= self
+        let null_in_values = self
             .holidays_list_values_validity
             .is_some_and(|m| m.null_count_range(start, end - start) > 0);
 
-        Some(&self.current_row_values)
+        self.null_seen_in_values |= null_in_values;
+
+        (!null_in_values).then_some(&self.current_row_values)
     }
 
     fn ensure_no_nulls_seen_in_values(&self) -> PolarsResult<()> {

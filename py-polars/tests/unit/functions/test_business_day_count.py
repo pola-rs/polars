@@ -211,7 +211,7 @@ def test_business_day_count_bad_holidays() -> None:
         }
     )
     # null in list of holidays
-    with pytest.raises(ComputeError, match="contained a null"):
+    with pytest.raises(ComputeError, match="null"):
         df.select(
             result=pl.business_day_count(
                 "start", "end", holidays=pl.Series([[date(2020, 1, 3)], [None], []])
@@ -225,14 +225,14 @@ def test_business_day_count_bad_holidays() -> None:
             )
         )
     # holidays are not List
-    with pytest.raises(ComputeError, match="wrong data type"):
+    with pytest.raises(ComputeError, match="dtype"):
         df.select(
             result=pl.business_day_count(
                 "start", "end", holidays=pl.Series(["abc", "xx", "def"])
             )
         )
     # holidays are not List of Date
-    with pytest.raises(ComputeError, match="wrong data type"):
+    with pytest.raises(ComputeError, match="dtype"):
         df.select(
             result=pl.business_day_count(
                 "start", "end", holidays=pl.Series([["abc"], [], ["def"]])
