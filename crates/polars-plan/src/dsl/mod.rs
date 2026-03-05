@@ -71,7 +71,6 @@ use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
-use polars_core::series::IsSorted;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 #[cfg(feature = "is_close")]
@@ -1587,7 +1586,7 @@ impl Expr {
     /// # Warning
     /// This can lead to incorrect results if this `Series` is not sorted!!
     /// Use with care!
-    pub fn set_sorted_flag(self, sorted: IsSorted) -> Expr {
+    pub fn set_sorted_flag(self, sorted: AExprSorted) -> Expr {
         // This is `map`. If a column is sorted. Chunks of that column are also sorted.
         self.map_unary(FunctionExpr::SetSortedFlag(sorted))
     }

@@ -11119,16 +11119,20 @@ Consider using {self}.implode() instead"""
         """
         return wrap_expr(self._pyexpr.cumulative_eval(expr._pyexpr, min_samples))
 
-    def set_sorted(self, *, descending: bool = False) -> Expr:
+    def set_sorted(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
         Flags the expression as 'sorted'.
 
-        Enables downstream code to user fast paths for sorted arrays.
+        Enables downstream code to user fast paths for sorted arrays. It is
+        recommended to also set whether `nulls_last` is `True` or `False`, as
+        this enables many internal optimizations.
 
         Parameters
         ----------
         descending
             Whether the `Series` order is descending.
+        nulls_last
+            Whether the nulls are at the end.
 
         Warnings
         --------
@@ -11148,7 +11152,7 @@ Consider using {self}.implode() instead"""
         │ 3      │
         └────────┘
         """
-        return wrap_expr(self._pyexpr.set_sorted_flag(descending))
+        return wrap_expr(self._pyexpr.set_sorted_flag(descending, nulls_last))
 
     @deprecated(
         "`Expr.shrink_dtype` is deprecated and is a no-op; use `Series.shrink_dtype` instead."

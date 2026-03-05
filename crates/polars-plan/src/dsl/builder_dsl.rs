@@ -96,6 +96,20 @@ impl DslBuilder {
         .into())
     }
 
+    pub fn expand_paths(
+        sources: ScanSources,
+        unified_scan_args: UnifiedScanArgs,
+        name: PlSmallStr,
+    ) -> PolarsResult<Self> {
+        Ok(DslPlan::Scan {
+            sources,
+            unified_scan_args: Box::new(unified_scan_args),
+            scan_type: Box::new(FileScanDsl::ExpandedPaths { name }),
+            cached_ir: Default::default(),
+        }
+        .into())
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
     pub fn scan_csv(

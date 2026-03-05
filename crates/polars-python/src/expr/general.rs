@@ -5,9 +5,10 @@ use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::series::IsSorted;
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
-use polars_plan::plans::{ExprToIRContext, RowEncodingVariant, node_to_expr, to_expr_ir};
+use polars_plan::plans::{
+    AExprSorted, ExprToIRContext, RowEncodingVariant, node_to_expr, to_expr_ir,
+};
 use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
@@ -902,13 +903,11 @@ impl PyExpr {
     fn hash(&self, seed: u64, seed_1: u64, seed_2: u64, seed_3: u64) -> Self {
         self.inner.clone().hash(seed, seed_1, seed_2, seed_3).into()
     }
-    fn set_sorted_flag(&self, descending: bool) -> Self {
-        let is_sorted = if descending {
-            IsSorted::Descending
-        } else {
-            IsSorted::Ascending
-        };
-        self.inner.clone().set_sorted_flag(is_sorted).into()
+    fn set_sorted_flag(&self, descending: bool, nulls_last: bool) -> Self {
+        let sortedness = AExprSorted::default()
+            .with_desc(Some(descending))
+            .with_nulls_last(Some(nulls_last));
+        self.inner.clone().set_sorted_flag(sortedness).into()
     }
 
     fn replace(&self, old: PyExpr, new: PyExpr) -> Self {
