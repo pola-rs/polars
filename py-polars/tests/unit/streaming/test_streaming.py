@@ -397,3 +397,10 @@ def test_i128_sum_reduction() -> None:
         .item()
         == 6
     )
+
+
+def test_streaming_str_replace_dynamic_pattern_26789() -> None:
+    lf = pl.LazyFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"], "value": ["A", "B"]})
+    q = lf.select([pl.col("foo").str.replace(pl.col("foo").first(), pl.col("value"))])
+    out = q.collect(engine="streaming")
+    assert out.to_dict(as_series=False) == {"foo": ["A", "xyz 678 910t"]}
