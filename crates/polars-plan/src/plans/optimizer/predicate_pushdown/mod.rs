@@ -196,12 +196,7 @@ impl PredicatePushDown {
         let new_inputs = inputs
             .map(|node| {
                 let alp = lp_arena.take(node);
-                let alp = self.push_down(
-                    alp,
-                    init_hashmap(Some(acc_predicates.len())),
-                    lp_arena,
-                    expr_arena,
-                )?;
+                let alp = self.push_down(alp, init_hashmap(None), lp_arena, expr_arena)?;
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
@@ -584,7 +579,7 @@ impl PredicatePushDown {
                 let mut local_predicates = Vec::new();
                 if slice.is_some() && !acc_predicates.is_empty() {
                     local_predicates = acc_predicates.into_values().collect();
-                    acc_predicates = init_hashmap(Some(1));
+                    acc_predicates = init_hashmap(None);
                 }
 
                 if let Some((offset, len, None)) = slice
