@@ -1293,3 +1293,31 @@ def test_projection_pushed_past_join_26693() -> None:
     plan = a.filter(pl.col.y > 0).join(b, on="x").group_by("x").agg([]).explain()
 
     assert plan.index("simple π") > plan.index("INNER JOIN")
+
+
+def test_predicate_pushdown_sort_slice_26803() -> None:
+    df = pl.DataFrame({"rank": [1, 2, 3, 4, 5], "score": [10, 4, 6, 2, 8]})
+
+    for lazy, eager in [
+        (
+            df.lazy().sort("rank").head(3).filter(pl.col("rank") > 2),
+            df.sort("rank").head(3).filter(pl.col("rank") > 2),
+        ),
+        (
+            df.lazy().sort("rank").tail(3).filter(pl.col("rank") < 4),
+            df.sort("rank").tail(3).filter(pl.col("rank") < 4),
+        ),
+        (
+            df.lazy().sort("rank", descending=True).head(3).filter(pl.col("rank") < 4),
+            df.sort("rank", descending=True).head(3).filter(pl.col("rank") < 4),
+        ),
+        (
+            df.lazy().top_k(3, by="rank").filter(pl.col("rank") < 5),
+            df.top_k(3, by="rank").filter(pl.col("rank") < 5),
+        ),
+        (
+            df.lazy().bottom_k(3, by="rank").filter(pl.col("rank") > 1),
+            df.bottom_k(3, by="rank").filter(pl.col("rank") > 1),
+        ),
+    ]:
+        assert_frame_equal(lazy.collect(), eager, check_row_order=False)
