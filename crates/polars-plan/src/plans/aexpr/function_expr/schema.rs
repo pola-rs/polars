@@ -81,7 +81,7 @@ impl IRFunctionExpr {
                         _ => unreachable!("should be Some(RollingFnParams::Rank)"),
                     },
                     #[cfg(feature = "cov")]
-                    CorrCov { .. } => mapper.map_to_float_dtype(),
+                    CorrCov { .. } => mapper.with_dtype(DataType::Float64),
                     #[cfg(feature = "moment")]
                     Skew | Kurtosis => mapper.map_to_float_dtype(),
                     Map(_) => mapper.try_map_field(|field| {
