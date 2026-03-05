@@ -1251,13 +1251,13 @@ pub fn lower_ir(
                     tmp_right_col_names.push(tmp_right_key_col);
                 }
 
-                let node = (|| {
-                    if use_streaming_merge_join {
+                let node = match () {
+                    _ if use_streaming_merge_join => {
                         let keys_are_row_encoded = left_on_names.len() > 1;
                         if keys_are_row_encoded {
                             key_descending = Some(false);
                         }
-                        return phys_sm.insert(PhysNode::new(
+                        phys_sm.insert(PhysNode::new(
                             output_schema,
                             PhysNodeKind::MergeJoin {
                                 input_left: trans_input_left,
@@ -1271,10 +1271,10 @@ pub fn lower_ir(
                                 nulls_last: key_nulls_last.unwrap(),
                                 args: args.clone(),
                             },
-                        ));
-                    }
+                        ))
+                    },
                     #[cfg(feature = "iejoin")]
-                    if args.how.is_range() {
+                    _ if args.how.is_range() => {
                         use crate::nodes::joins::range_join::left_is_point;
 
                         let Some(JoinTypeOptionsIR::IEJoin(range_options)) = options else {
@@ -1298,7 +1298,7 @@ pub fn lower_ir(
                         .and_then(|s| s.descending)
                         // If the join key is not sorted, then we added a Sort IR node to sort it
                         .unwrap_or(RANGE_JOIN_PREFER_DESCENDING);
-                        return phys_sm.insert(PhysNode::new(
+                        phys_sm.insert(PhysNode::new(
                             output_schema,
                             PhysNodeKind::RangeJoin {
                                 input_left: trans_input_left,
@@ -1311,12 +1311,12 @@ pub fn lower_ir(
                                 args: args.clone(),
                                 options: range_options,
                             },
-                        ));
-                    }
+                        ))
+                    },
                     #[cfg(feature = "asof_join")]
-                    if use_streaming_asof_join {
+                    _ if use_streaming_asof_join => {
                         assert!(left_on_names.len() == 1 && right_on_names.len() == 1);
-                        return phys_sm.insert(PhysNode::new(
+                        phys_sm.insert(PhysNode::new(
                             output_schema,
                             PhysNodeKind::AsOfJoin {
                                 input_left: trans_input_left,
@@ -1327,46 +1327,40 @@ pub fn lower_ir(
                                 tmp_right_key_col: tmp_right_col_names.pop().unwrap(),
                                 args: args.clone(),
                             },
-                        ));
-                    }
+                        ))
+                    },
                     #[cfg(feature = "semi_anti_join")]
-                    if args.how.is_semi_anti() {
-                        return phys_sm.insert(PhysNode::new(
-                            output_schema,
-                            PhysNodeKind::SemiAntiJoin {
-                                input_left: trans_input_left,
-                                input_right: trans_input_right,
-                                left_on: trans_left_on,
-                                right_on: trans_right_on,
-                                args: args.clone(),
-                                output_bool: false,
-                            },
-                        ));
-                    }
-                    if args.how.is_equi() {
-                        return phys_sm.insert(PhysNode::new(
-                            output_schema,
-                            PhysNodeKind::EquiJoin {
-                                input_left: trans_input_left,
-                                input_right: trans_input_right,
-                                left_on: trans_left_on,
-                                right_on: trans_right_on,
-                                args: args.clone(),
-                            },
-                        ));
-                    }
-                    if args.how.is_cross() {
-                        return phys_sm.insert(PhysNode::new(
-                            output_schema,
-                            PhysNodeKind::CrossJoin {
-                                input_left: phys_left,
-                                input_right: phys_right,
-                                args: args.clone(),
-                            },
-                        ));
-                    }
-                    unreachable!();
-                })();
+                    _ if args.how.is_semi_anti() => phys_sm.insert(PhysNode::new(
+                        output_schema,
+                        PhysNodeKind::SemiAntiJoin {
+                            input_left: trans_input_left,
+                            input_right: trans_input_right,
+                            left_on: trans_left_on,
+                            right_on: trans_right_on,
+                            args: args.clone(),
+                            output_bool: false,
+                        },
+                    )),
+                    _ if args.how.is_equi() => phys_sm.insert(PhysNode::new(
+                        output_schema,
+                        PhysNodeKind::EquiJoin {
+                            input_left: trans_input_left,
+                            input_right: trans_input_right,
+                            left_on: trans_left_on,
+                            right_on: trans_right_on,
+                            args: args.clone(),
+                        },
+                    )),
+                    _ if args.how.is_cross() => phys_sm.insert(PhysNode::new(
+                        output_schema,
+                        PhysNodeKind::CrossJoin {
+                            input_left: phys_left,
+                            input_right: phys_right,
+                            args: args.clone(),
+                        },
+                    )),
+                    _ => unreachable!(),
+                };
                 let mut stream = PhysStream::first(node);
                 if let Some((offset, len)) = args.slice {
                     stream = build_slice_stream(stream, offset, len, phys_sm);
