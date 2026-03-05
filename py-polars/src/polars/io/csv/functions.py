@@ -14,6 +14,7 @@ from polars._utils.deprecation import (
     deprecated,
     issue_deprecation_warning,
 )
+from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import (
     _process_null_values,
     is_path_or_str_sequence,
@@ -1130,7 +1131,7 @@ def scan_csv(
     retries: int | None = None,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
-    missing_columns: Literal["insert", "raise"] = "raise",
+    missing_columns: Literal["insert", "raise"] | None = None,
 ) -> LazyFrame:
     r"""
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -1294,6 +1295,10 @@ def scan_csv(
         * ``"insert"``: Insert the missing columns with NULL values.
         * ``"raise"``: Raise an error.
 
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
     Returns
     -------
     LazyFrame
@@ -1408,6 +1413,10 @@ def scan_csv(
 
     cache_deprecated = False
 
+    if missing_columns is not None:
+        msg = "The `missing_columns` parameter of `scan_csv` is considered unstable."
+        issue_unstable_warning(msg)
+
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "scan_csv"
     )
@@ -1490,7 +1499,7 @@ def _scan_csv_impl(
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderBuilder | None = None,
     include_file_paths: str | None = None,
-    missing_columns: Literal["insert", "raise"] = "raise",
+    missing_columns: Literal["insert", "raise"] | None = None,
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
     if schema_overrides is not None:

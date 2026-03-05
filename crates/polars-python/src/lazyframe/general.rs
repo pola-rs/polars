@@ -187,7 +187,7 @@ impl PyLazyFrame {
         cloud_options: OptPyCloudOptions,
         credential_provider: Option<Py<PyAny>>,
         include_file_paths: Option<String>,
-        missing_columns: Wrap<MissingColumnsPolicy>,
+        missing_columns: Option<Wrap<MissingColumnsPolicy>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let quote_char = quote_char.and_then(|s| s.as_bytes().first()).copied();
@@ -259,7 +259,7 @@ impl PyLazyFrame {
             .with_glob(glob)
             .with_raise_if_empty(raise_if_empty)
             .with_include_file_paths(include_file_paths.map(|x| x.into()))
-            .with_missing_columns_policy(missing_columns.0);
+            .with_missing_columns_policy(missing_columns.map(|x| x.0));
 
         if let Some(lambda) = with_schema_modify {
             let f = |schema: Schema| {

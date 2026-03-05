@@ -22,7 +22,7 @@ pub struct LazyCsvReader {
     read_options: CsvReadOptions,
     cloud_options: Option<CloudOptions>,
     include_file_paths: Option<PlSmallStr>,
-    missing_columns_policy: MissingColumnsPolicy,
+    missing_columns_policy: Option<MissingColumnsPolicy>,
 }
 
 #[cfg(feature = "csv")]
@@ -48,7 +48,7 @@ impl LazyCsvReader {
             read_options: Default::default(),
             cloud_options: Default::default(),
             include_file_paths: None,
-            missing_columns_policy: MissingColumnsPolicy::Raise,
+            missing_columns_policy: None,
         }
     }
 
@@ -338,7 +338,7 @@ impl LazyCsvReader {
     }
 
     #[must_use]
-    pub fn with_missing_columns_policy(mut self, policy: MissingColumnsPolicy) -> Self {
+    pub fn with_missing_columns_policy(mut self, policy: Option<MissingColumnsPolicy>) -> Self {
         self.missing_columns_policy = policy;
         self
     }
@@ -350,6 +350,23 @@ impl LazyFileListReader for LazyCsvReader {
         let rechunk = self.rechunk();
         let row_index = self.row_index().cloned();
         let pre_slice = self.n_rows().map(|len| Slice::Positive { offset: 0, len });
+
+        // Resolve missing_columns_policy:
+        // - If explicitly set by user, use that value.
+        // - If None, auto-enable Insert when user provides a schema (backward compat).
+        // - Otherwise default to Raise.
+        let missing_columns_policy = self.missing_columns_policy.unwrap_or_else(|| {
+            if self.read_options.schema.is_some() && self.read_options.has_header {
+                MissingColumnsPolicy::Insert
+            } else {
+                MissingColumnsPolicy::Raise
+            }
+        });
+
+        let extra_columns_policy = match missing_columns_policy {
+            MissingColumnsPolicy::Insert => ExtraColumnsPolicy::Ignore,
+            MissingColumnsPolicy::Raise => ExtraColumnsPolicy::Raise,
+        };
 
         let lf: LazyFrame = DslBuilder::scan_csv(
             self.sources,
@@ -368,11 +385,8 @@ impl LazyFileListReader for LazyCsvReader {
                 row_index,
                 pre_slice,
                 cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
-                missing_columns_policy: self.missing_columns_policy,
-                extra_columns_policy: match self.missing_columns_policy {
-                    MissingColumnsPolicy::Insert => ExtraColumnsPolicy::Ignore,
-                    MissingColumnsPolicy::Raise => ExtraColumnsPolicy::Raise,
-                },
+                missing_columns_policy,
+                extra_columns_policy,
                 include_file_paths: self.include_file_paths,
                 deletion_files: None,
                 table_statistics: None,

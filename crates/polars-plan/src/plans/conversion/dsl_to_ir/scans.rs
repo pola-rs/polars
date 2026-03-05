@@ -912,13 +912,6 @@ this scan to succeed with an empty DataFrame.",
             #[cfg(feature = "csv")]
             FileScanDsl::Csv { mut options } => {
                 {
-                    // TODO: This is a hack. We conditionally set `allow_missing_columns` to
-                    // mimic existing behavior, but this should be taken from a user provided
-                    // parameter instead.
-                    if options.schema.is_some() && options.has_header {
-                        unified_scan_args.missing_columns_policy = MissingColumnsPolicy::Insert;
-                    }
-
                     let file_info = if let Some(schema) = options.schema.clone() {
                         FileInfo {
                             schema: schema.clone(),
