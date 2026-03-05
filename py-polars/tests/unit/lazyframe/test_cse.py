@@ -1238,6 +1238,50 @@ def test_csee_python_function() -> None:
     )
 
 
+def test_cse_map_batches_distinct_functions() -> None:
+    # Regression test for https://github.com/pola-rs/polars/issues/26808.
+    # Two map_batches with *different* functions on the same source should not be
+    # incorrectly merged by common subplan elimination.
+    src = pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    lf1 = src.map_batches(
+        lambda df: df.select(pl.col("a").alias("x")),
+        schema=pl.Schema({"x": pl.Int64}),
+    )
+    lf2 = src.map_batches(
+        lambda df: df.select(pl.col("b").alias("y")),
+        schema=pl.Schema({"y": pl.Int64}),
+    )
+    result = pl.concat([lf1, lf2], how="horizontal").collect(
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
+    )
+    assert result.columns == ["x", "y"]
+    assert result["x"].to_list() == [1, 2, 3]
+    assert result["y"].to_list() == [4, 5, 6]
+
+
+def test_cse_map_batches_same_function() -> None:
+    # The *same* function object used twice on the same source should still be
+    # eligible for common subplan elimination (i.e. executed only once).
+    src = pl.LazyFrame({"a": [1, 2, 3]})
+    call_count = 0
+
+    def fn(df: pl.DataFrame) -> pl.DataFrame:
+        nonlocal call_count
+        call_count += 1
+        return df.with_columns(pl.col("a") * 2)
+
+    lf1 = src.map_batches(fn, schema=pl.Schema({"a": pl.Int64}))
+    lf2 = src.map_batches(fn, schema=pl.Schema({"a": pl.Int64}))
+    # Vertical concat (union) works with identical schemas and lets CSE share
+    # the single cached execution across both branches.
+    result = pl.concat([lf1, lf2]).collect(
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
+    )
+    assert result["a"].to_list() == [2, 4, 6, 2, 4, 6]
+    # CSE should have executed fn only once.
+    assert call_count == 1
+
+
 def test_csee_streaming() -> None:
     lf = pl.LazyFrame({"a": [10], "b": [10]})
 
