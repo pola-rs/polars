@@ -16,6 +16,7 @@ use polars_utils::vec::PushUnchecked;
 
 use super::CastOptionsImpl;
 use super::temporal::*;
+use crate::comparisons::TotalEqKernel;
 #[cfg(feature = "dtype-decimal")]
 use crate::decimal::{dec128_verify_prec_scale, f64_to_dec128, i128_to_dec128};
 
@@ -164,10 +165,11 @@ fn primitive_to_values_and_offsets<T: NativeType + SerPrimitive, O: Offset>(
 pub fn primitive_to_boolean<T: NativeType>(
     from: &PrimitiveArray<T>,
     to_type: ArrowDataType,
-) -> BooleanArray {
-    let iter = from.values().iter().map(|v| *v != T::default());
-    let values = Bitmap::from_trusted_len_iter(iter);
-
+) -> BooleanArray
+where
+    PrimitiveArray<T>: TotalEqKernel<Scalar = T>,
+{
+    let values = from.tot_ne_kernel_broadcast(&T::default());
     BooleanArray::new(to_type, values, from.validity().cloned())
 }
 
@@ -177,6 +179,7 @@ pub(super) fn primitive_to_boolean_dyn<T>(
 ) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType,
+    PrimitiveArray<T>: TotalEqKernel<Scalar = T>,
 {
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(primitive_to_boolean::<T>(from, to_type)))
