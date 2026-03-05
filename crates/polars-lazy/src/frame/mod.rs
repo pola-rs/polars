@@ -1882,7 +1882,10 @@ impl LazyFrame {
                 unified_scan_args,
                 ..
             } if unified_scan_args.row_index.is_none()
-                && !matches!(&**scan_type, FileScanDsl::Anonymous { .. }) =>
+                && !matches!(
+                    &**scan_type,
+                    FileScanDsl::Anonymous { .. } | FileScanDsl::ExpandedPaths { .. }
+                ) =>
             {
                 let DslPlan::Scan {
                     sources,
