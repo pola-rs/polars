@@ -351,17 +351,7 @@ impl LazyFileListReader for LazyCsvReader {
         let row_index = self.row_index().cloned();
         let pre_slice = self.n_rows().map(|len| Slice::Positive { offset: 0, len });
 
-        // Resolve missing_columns_policy:
-        // - If explicitly set by user, use that value.
-        // - If None, auto-enable Insert when user provides a schema (backward compat).
-        // - Otherwise default to Raise.
-        let missing_columns_policy = self.missing_columns_policy.unwrap_or_else(|| {
-            if self.read_options.schema.is_some() && self.read_options.has_header {
-                MissingColumnsPolicy::Insert
-            } else {
-                MissingColumnsPolicy::Raise
-            }
-        });
+        let missing_columns_policy = self.missing_columns_policy.unwrap_or_default();
 
         let extra_columns_policy = match missing_columns_policy {
             MissingColumnsPolicy::Insert => ExtraColumnsPolicy::Ignore,
