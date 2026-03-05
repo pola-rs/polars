@@ -1060,6 +1060,9 @@ pub fn lower_ir(
             right_on,
             options,
         } => {
+            #[cfg(feature = "iejoin")]
+            const RANGE_JOIN_PREFER_DESCENDING: bool = false;
+
             #[allow(unused_mut)]
             let (mut input_left, mut input_right) = (*input_left, *input_right);
             let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);
@@ -1119,6 +1122,7 @@ pub fn lower_ir(
                     input_left = insert_sort_node_if_not_sorted(
                         input_left,
                         &left_on[0],
+                        RANGE_JOIN_PREFER_DESCENDING,
                         ir_arena,
                         expr_arena,
                         schema_cache,
@@ -1127,12 +1131,16 @@ pub fn lower_ir(
                     input_right = insert_sort_node_if_not_sorted(
                         input_right,
                         &right_on[0],
+                        RANGE_JOIN_PREFER_DESCENDING,
                         ir_arena,
                         expr_arena,
                         schema_cache,
                     );
                 }
             }
+
+            let phys_left = lower_ir!(input_left)?;
+            let phys_right = lower_ir!(input_right)?;
 
             let left_df_sortedness = is_sorted(input_left, ir_arena, expr_arena);
             let left_on_sorted = are_keys_sorted_any(
@@ -1172,9 +1180,6 @@ pub fn lower_ir(
             };
             #[cfg(not(feature = "asof_join"))]
             let use_streaming_asof_join = false;
-
-            let phys_left = lower_ir!(input_left)?;
-            let phys_right = lower_ir!(input_right)?;
 
             if (args.how.is_equi()
                 || args.how.is_semi_anti()
@@ -1275,13 +1280,24 @@ pub fn lower_ir(
                         let Some(JoinTypeOptionsIR::IEJoin(range_options)) = options else {
                             unreachable!()
                         };
+
                         let descending = match left_is_point(&left_on, &right_on, &args) {
-                            true => left_on_sorted,
-                            false => right_on_sorted,
+                            true => expr_is_sorted(
+                                left_df_sortedness.as_ref(),
+                                &left_on[0],
+                                expr_arena,
+                                &input_left_schema,
+                            ),
+                            false => expr_is_sorted(
+                                right_df_sortedness.as_ref(),
+                                &right_on[0],
+                                expr_arena,
+                                &input_left_schema,
+                            ),
                         }
-                        .expect("should be sorted")[0]
-                            .descending
-                            .expect("sortedness should be known");
+                        .and_then(|s| s.descending)
+                        // If the join key is not sorted, then we added a Sort IR node to sort it
+                        .unwrap_or(RANGE_JOIN_PREFER_DESCENDING);
                         return phys_sm.insert(PhysNode::new(
                             output_schema,
                             PhysNodeKind::RangeJoin {
@@ -1544,6 +1560,7 @@ pub fn lower_ir(
 fn insert_sort_node_if_not_sorted(
     input: Node,
     on: &ExprIR,
+    descending: bool,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
@@ -1560,7 +1577,7 @@ fn insert_sort_node_if_not_sorted(
             input,
             by_column: vec![on.clone()],
             slice: None,
-            sort_options: SortMultipleOptions::default(),
+            sort_options: SortMultipleOptions::default().with_order_descending(descending),
         })
     } else {
         input
