@@ -353,11 +353,6 @@ impl LazyFileListReader for LazyCsvReader {
 
         let missing_columns_policy = self.missing_columns_policy.unwrap_or_default();
 
-        let extra_columns_policy = match missing_columns_policy {
-            MissingColumnsPolicy::Insert => ExtraColumnsPolicy::Ignore,
-            MissingColumnsPolicy::Raise => ExtraColumnsPolicy::Raise,
-        };
-
         let lf: LazyFrame = DslBuilder::scan_csv(
             self.sources,
             self.read_options,
@@ -376,7 +371,7 @@ impl LazyFileListReader for LazyCsvReader {
                 pre_slice,
                 cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
                 missing_columns_policy,
-                extra_columns_policy,
+                extra_columns_policy: ExtraColumnsPolicy::Raise,
                 include_file_paths: self.include_file_paths,
                 deletion_files: None,
                 table_statistics: None,

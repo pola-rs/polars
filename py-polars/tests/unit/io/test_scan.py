@@ -988,19 +988,14 @@ def test_only_project_include_file_paths(scan_type: tuple[Any, Any]) -> None:
         pytest.param(
             (pl.DataFrame.write_ipc, pl.scan_ipc),
             marks=pytest.mark.xfail(
-                reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
+                reason="IPC scan does not support the missing_columns parameter"
             ),
         ),
-        pytest.param(
-            (pl.DataFrame.write_csv, pl.scan_csv),
-            marks=pytest.mark.xfail(
-                reason="CSV cannot preserve dtype for empty columns; inferred as String instead of Int32"
-            ),
-        ),
+        (pl.DataFrame.write_csv, partial(pl.scan_csv, schema={"a": pl.UInt32, "missing": pl.Int32})),
         pytest.param(
             (pl.DataFrame.write_ndjson, pl.scan_ndjson),
             marks=pytest.mark.xfail(
-                reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
+                reason="NDJSON scan does not support the missing_columns parameter"
             ),
         ),
     ],
