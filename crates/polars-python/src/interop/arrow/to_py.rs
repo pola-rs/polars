@@ -120,6 +120,7 @@ pub struct DataFrameStreamIterator {
     dtype: ArrowDataType,
     idx: usize,
     n_chunks: usize,
+    height: usize,
 }
 
 impl DataFrameStreamIterator {
@@ -135,7 +136,8 @@ impl DataFrameStreamIterator {
                 .collect(),
             dtype,
             idx: 0,
-            n_chunks: df.first_col_n_chunks(),
+            n_chunks: usize::max(1, df.first_col_n_chunks()),
+            height: df.height(),
         }
     }
 
@@ -151,17 +153,17 @@ impl Iterator for DataFrameStreamIterator {
         if self.idx >= self.n_chunks {
             None
         } else {
-            // create a batch of the columns with the same chunk no.
-            let batch_cols = self
+            let batch_cols: Vec<ArrayRef> = self
                 .columns
                 .iter()
                 .map(|s| s.to_arrow(self.idx, CompatLevel::newest()))
-                .collect::<Vec<_>>();
+                .collect();
             self.idx += 1;
 
+            let len = batch_cols.first().map_or(self.height, |c| c.len());
             let array = arrow::array::StructArray::new(
                 self.dtype.clone(),
-                batch_cols[0].len(),
+                len,
                 batch_cols,
                 None,
             );

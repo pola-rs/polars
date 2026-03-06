@@ -70,6 +70,17 @@ def test_arrow_empty_dataframe() -> None:
     assert df2.shape == (0, 1)
 
 
+
+def test_arrow_zero_column_dataframe_preserves_rows() -> None:
+    df = pl.DataFrame(height=5)
+    assert df.shape == (5, 0)
+
+    tbl = pa.table(df)
+    assert tbl.shape == (5, 0)
+
+    tbl2 = df.to_arrow()
+    assert tbl2.shape == (5, 0)
+
 def test_arrow_dict_to_polars() -> None:
     pa_dict = pa.DictionaryArray.from_arrays(
         indices=np.array([0, 1, 2, 3, 1, 0, 2, 3, 3, 2]),
