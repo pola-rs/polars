@@ -354,6 +354,25 @@ def _cast_repr_strings_with_schema(
         if tp is not None:
             if tp.base_type() == Datetime:
                 tp_base = Datetime(tp.time_unit)  # type: ignore[union-attr]
+                # Extract the trailing timezone abbreviation (e.g. "CEST", "CET")
+                # before stripping it.  Polars repr strings include the abbreviation
+                # that was in effect at serialisation time; we use it to resolve
+                # any DST ambiguity so that from_repr round-trips correctly.
+                #
+                # DST / summer-time abbreviations indicate the *earlier* (summer)
+                # instant when a wall-clock time occurs twice during a DST transition,
+                # so we map them to ambiguous='earliest'.  All other abbreviations
+                # (standard-time offsets) are mapped to ambiguous='latest'.
+                _dst_abbrevs = [
+                    "AEDT", "ADT", "AKDT", "BST", "CDT", "CEST", "EDT",
+                    "EEST", "MDT", "NDT", "NZDT", "PDT", "WADT", "WEDT",
+                ]
+                tz_abbr = F.col(c).str.extract(r"([A-Z]+)\s*$")
+                ambiguous_expr = (
+                    pl.when(tz_abbr.is_in(_dst_abbrevs))
+                    .then(pl.lit("earliest"))
+                    .otherwise(pl.lit("latest"))
+                )
                 d = F.col(c).str.replace(r"[A-Z ]+$", "")
                 cast_cols[c] = (
                     F.when(d.str.len_bytes() == 19)
@@ -363,7 +382,9 @@ def _cast_repr_strings_with_schema(
                     .str.strptime(tp_base, "%Y-%m-%d %H:%M:%S.%9f")
                 )
                 if getattr(tp, "time_zone", None) is not None:
-                    cast_cols[c] = cast_cols[c].dt.replace_time_zone(tp.time_zone)  # type: ignore[union-attr]
+                    cast_cols[c] = cast_cols[c].dt.replace_time_zone(  # type: ignore[union-attr]
+                        tp.time_zone, ambiguous=ambiguous_expr
+                    )
             elif tp == Date:
                 cast_cols[c] = F.col(c).str.strptime(tp, "%Y-%m-%d")  # type: ignore[arg-type]
             elif tp == Time:
