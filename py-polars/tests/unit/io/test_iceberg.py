@@ -433,18 +433,10 @@ class _TableDataAllTypes:
 def test_iceberg_sink_parquet_arrow_schema_roundtrip_all_iceberg_types(
     tmp_path: Path,
 ) -> None:
-    catalog = SqlCatalog(
-        "default",
-        uri="sqlite:///:memory:",
-        warehouse=format_file_uri_iceberg(tmp_path / "catalog"),
-    )
-
-    catalog.create_namespace("namespace")
-
     table_data = _TableDataAllTypes.new()
     iceberg_schema = table_data.iceberg_schema
 
-    tbl = catalog.create_table("namespace.table", iceberg_schema)
+    tbl, _ = new_iceberg_table(tmp_path, schema=iceberg_schema)
 
     data_file_path = str(tmp_path / "data.parquet")
 
@@ -789,6 +781,40 @@ def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
                 "file_path": pl.String,
             },
         ),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_table_name(tmp_path: Path) -> None:
+    tbl, catalog = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()),
+        ),
+    )
+
+    pl.DataFrame({"a": 1}).lazy().sink_iceberg(tbl, mode="append")
+    pl.DataFrame({"a": 2}).lazy().sink_iceberg(
+        ".".join(tbl.name()),
+        mode="append",
+        catalog=catalog,
+    )
+
+    tbl = catalog.load_table(tbl.name())
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect(),
+        pl.DataFrame({"a": [2, 1]}),
+    )
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl.metadata_location).collect(),
+        pl.DataFrame({"a": [2, 1]}),
+    )
+
+    assert_frame_equal(
+        pl.scan_iceberg(".".join(tbl.name()), catalog=catalog).collect(),
+        pl.DataFrame({"a": [2, 1]}),
     )
 
 

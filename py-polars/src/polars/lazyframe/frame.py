@@ -3237,13 +3237,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         target
-            Name of the table or the Table object representing an Iceberg table.
-
-            If a table name is provided, `catalog` must also be specified.
-
-            Note: For Local filesystem, absolute and relative paths are supported but
-            for the supported object storages - GCS, Azure and S3 full URI must be
-            provided.
+            A PyIceberg Table object, or a 'namespace.table_name' identifier string.
         mode : {'append', 'overwrite'}
             How to handle existing data.
 
@@ -3251,7 +3245,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - If 'overwrite', will replace table with new data.
         catalog
             PyIceberg catalog to load the table from if the provided `target`
-            was a table name.
+            was a table identifier.
         storage_options
             Extra options for the storage backends supported by `pyiceberg`.
             For cloud storages, this may include configurations for authentication etc.
