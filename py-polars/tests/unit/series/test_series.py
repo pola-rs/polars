@@ -2419,3 +2419,28 @@ def test_comparisons_structs_raise() -> None:
             match=r"Series of type Struct\(\{'x': Int64\}\) does not have eq operator",
         ):
             s == rhs  # noqa: B015
+
+
+def test_multiply_series_by_timedelta_26205() -> None:
+    result = pl.Series([1.0, 2.0, 3.0]) * timedelta(seconds=5)
+    expected = pl.Series(
+        [timedelta(seconds=5), timedelta(seconds=10), timedelta(seconds=15)]
+    )
+
+    assert_series_equal(expected, result)
+
+
+def test_multiply_timedelta_by_series_26205() -> None:
+    result = timedelta(seconds=5) * pl.Series([1.0, 2.0, 3.0])
+    expected = pl.Series(
+        [timedelta(seconds=5), timedelta(seconds=10), timedelta(seconds=15)]
+    )
+    assert_series_equal(expected, result)
+
+
+def test_multiply_int_series_by_timedelta_26205() -> None:
+    result = pl.Series([1, 2, 3]) * timedelta(seconds=5)
+    expected = pl.Series(
+        [timedelta(seconds=5), timedelta(seconds=10), timedelta(seconds=15)]
+    )
+    assert_series_equal(expected, result)
