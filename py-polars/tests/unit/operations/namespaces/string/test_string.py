@@ -2228,8 +2228,6 @@ def test_str_replace_dynamic_pattern_26789() -> None:
     assert out.to_dict(as_series=False) == {"src": ["X bbb X bbb aaa", "Y ddd Y ddd"]}
 
 
-
-
 def test_str_json_decode_25237() -> None:
     s = pl.Series(['[{"a": 0, "b": 1}, {"b": 2}]'])
 
