@@ -1339,3 +1339,39 @@ def test_predicate_pushdown_sort_slice_26803() -> None:
         ),
     ]:
         assert_frame_equal(lazy.collect(), eager, check_row_order=False)
+
+
+def test_predicate_slice_pushdown_26816() -> None:
+    q = (
+        pl.LazyFrame({"a": [0, 1, 2, 3, 4, 5]})
+        .with_columns(s=pl.sum_horizontal("*", "*"))
+        .filter(pl.col("a") > 1)
+        .head(3)
+    )
+
+    plan = q.explain()
+
+    assert plan.index("SLICE") > plan.index("WITH_COLUMNS")
+    assert plan.index("FILTER") > plan.index("SLICE")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": [2, 3, 4], "s": [4, 6, 8]}),
+    )
+
+
+def test_repeated_slice_pushdown_26815() -> None:
+    q = (
+        pl.concat(
+            [
+                pl.LazyFrame({"a": [0, 1, 2, 3, 4]}),
+                pl.LazyFrame({"a": [5, 6, 7, 8, 9]}),
+            ]
+        )
+        .slice(3, 5)
+        .tail(3)
+    )
+
+    plan = q.explain()
+    assert plan.index("SLICED UNION: (3, 5)") > plan.index("SLICE[offset: -3, len: 3]")
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [5, 6, 7]}))

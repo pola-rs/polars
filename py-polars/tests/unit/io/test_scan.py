@@ -1517,3 +1517,18 @@ def test_scan_metrics(
     assert logged_bytes_received == logged_bytes_requested
 
     assert_frame_equal(out, df)
+
+
+def test_scan_slice_filter_pushdown_22790() -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame({"a": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]})
+    df.write_parquet(f)
+
+    q = pl.scan_parquet(f).tail(5).filter((pl.col("a") % 5).is_between(2, 3))
+
+    plan = q.explain()
+    assert not plan.startswith("FILTER")
+    assert plan.index("SELECTION") > plan.index("SCAN")
+    assert plan.index("SLICE") > plan.index("SCAN")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [7, 8]}))
