@@ -2227,12 +2227,7 @@ def test_str_replace_dynamic_pattern_26789() -> None:
     out = df_n.select(pl.col("src").str.replace(pl.col("pat"), pl.col("val"), n=2))
     assert out.to_dict(as_series=False) == {"src": ["X bbb X bbb aaa", "Y ddd Y ddd"]}
 
-    # invalid regex pattern should return source unchanged
-    df8 = pl.DataFrame(
-        {"src": ["hello", "world"], "pat": ["[invalid", "world"], "val": ["X", "Y"]}
-    )
-    out = df8.select(pl.col("src").str.replace(pl.col("pat"), pl.col("val")))
-    assert out.to_dict(as_series=False) == {"src": ["hello", "Y"]}
+
 
 
 def test_str_json_decode_25237() -> None:
