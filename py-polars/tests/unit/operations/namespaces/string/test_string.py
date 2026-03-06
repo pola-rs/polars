@@ -2216,9 +2216,18 @@ def test_str_replace_dynamic_pattern_26789() -> None:
     out = df7.select(pl.col("src").str.replace(pl.col("pat"), pl.col("val")))
     assert out.to_dict(as_series=False) == {"src": ["abcNUM", "ALPHA456"]}
 
-    # n > 1 with dynamic pattern should raise
-    with pytest.raises(pl.exceptions.ComputeError, match="n > 1"):
-        df.select(pl.col("src").str.replace(pl.col("pat"), pl.col("val"), n=2))
+    # n > 1 with dynamic pattern should work (replacen)
+    df_n = pl.DataFrame(
+        {
+            "src": ["aaa bbb aaa bbb aaa", "ccc ddd ccc ddd"],
+            "pat": ["aaa", "ccc"],
+            "val": ["X", "Y"],
+        }
+    )
+    out = df_n.select(pl.col("src").str.replace(pl.col("pat"), pl.col("val"), n=2))
+    assert out.to_dict(as_series=False) == {
+        "src": ["X bbb X bbb aaa", "Y ddd Y ddd"]
+    }
 
     # invalid regex pattern should return source unchanged
     df8 = pl.DataFrame(

@@ -685,10 +685,6 @@ fn replace_n<'a>(
                 len_val, ca.len(),
             );
 
-            if n > 1 {
-                polars_bail!(ComputeError: "multivalue pattern replacement with 'n > 1' not yet supported")
-            }
-
             if n == 0 {
                 return Ok(ca.clone());
             }
@@ -711,9 +707,9 @@ fn replace_n<'a>(
                             match polars_utils::regex_cache::compile_regex(&pat_escaped) {
                                 Ok(reg) => {
                                     let result = if literal {
-                                        reg.replace(src, NoExpand(val_str))
+                                        reg.replacen(src, n, NoExpand(val_str))
                                     } else {
-                                        reg.replace(src, val_str)
+                                        reg.replacen(src, n, val_str)
                                     };
                                     Some(result.into_owned())
                                 },
