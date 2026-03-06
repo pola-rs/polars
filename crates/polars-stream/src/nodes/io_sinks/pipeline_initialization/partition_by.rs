@@ -55,7 +55,7 @@ pub fn start_partition_sink_pipeline(
 
     let PartitionedTarget {
         base_path,
-        file_path_provider,
+        mut file_path_provider,
         partitioner,
         hstack_keys,
         include_keys_in_file,
@@ -67,6 +67,13 @@ pub fn start_partition_sink_pipeline(
     let verbose = polars_core::config::verbose();
     let in_memory_exec_state = Arc::new(execution_state.in_memory_exec_state.clone());
     let io_metrics_is_some = io_metrics.is_some();
+
+    if let Some(file_part_prefix) = file_path_provider.file_part_prefix_mut() {
+        use std::fmt::Write as _;
+        let uuid = uuid::Uuid::new_v4();
+        let uuid = uuid.as_simple();
+        write!(file_part_prefix, "{uuid}").unwrap();
+    }
 
     let file_provider = Arc::new(FileProvider {
         base_path,

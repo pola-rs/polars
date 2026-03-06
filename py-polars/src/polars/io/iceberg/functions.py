@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING, Literal
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_ldf
 from polars.io.cloud._utils import NoPickleOption
-from polars.io.iceberg._dataset import IcebergDataset
+from polars.io.iceberg._dataset import (
+    IcebergScanResolver,
+    IcebergScanTableSerializer,
+    IcebergTableWrap,
+)
 
 if TYPE_CHECKING:
     from pyiceberg.table import Table
@@ -179,11 +183,14 @@ def scan_iceberg(
         if isinstance(source, Table):
             table = source
 
-    dataset = IcebergDataset(
-        table_=NoPickleOption(table),
-        metadata_path_=str(source) if table is None else None,
+    dataset = IcebergScanResolver(
+        table=IcebergTableWrap(
+            table_=NoPickleOption(table),
+            table_descriptor_=str(source) if table is None else None,
+            serializer=IcebergScanTableSerializer(),
+            iceberg_storage_properties=storage_options,
+        ),
         snapshot_id=snapshot_id,
-        iceberg_storage_properties=storage_options,
         reader_override=reader_override,
         use_metadata_statistics=use_metadata_statistics,
         fast_deletion_count=fast_deletion_count,
