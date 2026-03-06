@@ -1010,6 +1010,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "round_series")]
         IF::RoundSF { digits } => F::RoundSF { digits },
         #[cfg(feature = "round_series")]
+        IF::Truncate { decimals } => F::Truncate { decimals },
+        #[cfg(feature = "round_series")]
         IF::Floor => F::Floor,
         #[cfg(feature = "round_series")]
         IF::Ceil => F::Ceil,

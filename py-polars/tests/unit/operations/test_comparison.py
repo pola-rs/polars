@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import math
 from contextlib import nullcontext
+from datetime import datetime, timedelta
+from itertools import combinations
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
+from polars.datatypes.group import INTEGER_DTYPES
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -519,3 +522,595 @@ def test_date_duration_comparison_error_25517() -> None:
 
     with pytest.raises(ComputeError, match="cannot compare date with duration"):
         _ = date == duration
+
+
+@pytest.mark.parametrize(
+    ("dtype_lhs", "dtype_rhs"),
+    combinations(sorted(INTEGER_DTYPES, key=lambda v: str(v)), 2),
+)
+@pytest.mark.parametrize("swap", [True, False])
+def test_comparison_literal_behavior_matches_nonliteral_behavior(
+    dtype_lhs: PolarsDataType,
+    dtype_rhs: PolarsDataType,
+    swap: bool,
+) -> None:
+    if swap:
+        dtype_lhs, dtype_rhs = dtype_rhs, dtype_lhs
+
+    int_boundaries = [
+        -(1 << 127),
+        -(1 << 63),
+        -(1 << 31),
+        -(1 << 15),
+        -(1 << 7),
+        0,
+        (1 << 7) - 1,
+        (1 << 8) - 1,
+        (1 << 15) - 1,
+        (1 << 16) - 1,
+        (1 << 31) - 1,
+        (1 << 32) - 1,
+        (1 << 63) - 1,
+        (1 << 64) - 1,
+        (1 << 127) - 1,
+        (1 << 128) - 1,
+        None,
+    ]
+
+    lhs_s = pl.Series("l", int_boundaries, dtype=dtype_lhs, strict=False)
+    rhs_s = pl.Series("r", int_boundaries, dtype=dtype_rhs, strict=False)
+
+    rmin: Any = rhs_s.min()
+    rmax: Any = rhs_s.max()
+
+    lmin: Any = lhs_s.min()
+    lmax: Any = lhs_s.max()
+
+    assert rmin is not None
+    assert rmax is not None
+    assert lmin is not None
+    assert lmax is not None
+
+    df = pl.DataFrame([lhs_s, rhs_s])
+
+    def build_comparison_query(
+        lf: pl.LazyFrame,
+        l: pl.Expr,  # noqa: E741
+        r: pl.Expr,
+    ) -> pl.LazyFrame:
+        return lf.select(
+            **dict(ne=l != r, lt=l < r, lteq=l <= r, eq=l == r, gteq=l >= r, gt=l > r),  # noqa: C408
+            **dict(  # noqa: C408
+                rne=r != l, rlt=r < l, rlteq=r <= l, req=r == l, rgteq=r >= l, rgt=r > l
+            ),
+            eq_missing=l.eq_missing(r),
+            ne_missing=l.ne_missing(r),
+            req_missing=r.eq_missing(l),
+            rne_missing=r.ne_missing(l),
+        )
+
+    def test(lit_val: pl.Expr, col_expr: pl.Expr) -> None:
+        lf = df.lazy()
+        q = build_comparison_query(lf, col_expr, lit_val)
+        q_use_rcol = build_comparison_query(
+            lf.with_columns(lit_val=lit_val), col_expr, pl.col("lit_val")
+        )
+
+        assert_frame_equal(q.collect(), q_use_rcol.collect())
+
+    if rmax > lmax:
+        test(pl.lit(lmax + 1, dtype=dtype_rhs), pl.col("l"))
+        test(pl.lit(None, dtype=dtype_rhs), pl.col("l"))
+    elif lmax > rmax:
+        test(pl.lit(rmax + 1, dtype=dtype_lhs), pl.col("r"))
+        test(pl.lit(None, dtype=dtype_lhs), pl.col("r"))
+
+    if rmin < lmin:
+        test(pl.lit(lmin - 1, dtype=dtype_rhs), pl.col("l"))
+        test(pl.lit(None, dtype=dtype_rhs), pl.col("l"))
+    elif lmin < rmin:
+        test(pl.lit(rmin - 1, dtype=dtype_lhs), pl.col("r"))
+        test(pl.lit(None, dtype=dtype_lhs), pl.col("r"))
+
+
+def test_comparison_literal_downcast_flooring_datetime_ns() -> None:
+    dt = datetime(2026, 1, 1)
+    unit_phys_s = pl.Series("datetime[ns]", [dt], dtype=pl.Datetime("ns")).to_physical()
+
+    adjust_s = pl.Series(
+        [
+            1_000,
+            1_000_000,
+            1_000_000_000,
+            86_400_000_000_000,  # NS_IN_DAY
+        ]
+    )
+
+    df = (
+        pl.concat(
+            [
+                unit_phys_s - 1,
+                unit_phys_s,
+                unit_phys_s + (adjust_s - 1),
+                unit_phys_s + adjust_s,
+            ]
+        )
+        .sort()
+        .cast(pl.Datetime("ns"))
+        .to_frame()
+        .with_row_index()
+    )
+
+    result_vs_col = df.with_columns(
+        us=pl.lit(dt, dtype=pl.Datetime("us")),
+        ms=pl.lit(dt, dtype=pl.Datetime("ms")),
+        date=pl.lit(dt.date(), dtype=pl.Date),
+    ).select(
+        pl.col("datetime[ns]").cast(pl.String),
+        eq_us=pl.col("datetime[ns]") == pl.col("us"),
+        eq_ms=pl.col("datetime[ns]") == pl.col("ms"),
+        eq_date=pl.col("datetime[ns]") == pl.col("date"),
+    )
+
+    F = False
+    truth_table = pl.DataFrame(
+        [
+            ("2025-12-31 23:59:59.999999999", F, F, F),
+            ("2026-01-01 00:00:00.000000000", True, True, True),
+            ("2026-01-01 00:00:00.000000999", True, True, F),
+            ("2026-01-01 00:00:00.000001000", F, True, F),
+            ("2026-01-01 00:00:00.000999999", F, True, F),
+            ("2026-01-01 00:00:00.001000000", F, F, F),
+            ("2026-01-01 00:00:00.999999999", F, F, F),
+            ("2026-01-01 00:00:01.000000000", F, F, F),
+            ("2026-01-01 23:59:59.999999999", F, F, F),
+            ("2026-01-02 00:00:00.000000000", F, F, F),
+        ],
+        orient="row",
+        schema=result_vs_col.schema,
+    )
+
+    assert_frame_equal(result_vs_col, truth_table)
+
+    # us -> ns downcast
+    q = df.lazy().with_columns(
+        eq=pl.col("datetime[ns]") == pl.lit(dt, dtype=pl.Datetime("us")),
+        lteq=pl.col("datetime[ns]") <= pl.lit(dt, dtype=pl.Datetime("us")),
+    )
+
+    plan = q.explain()
+    assert plan.count(".000000999") == 2
+
+    assert_frame_equal(
+        q.filter("eq")
+        .select(pl.implode("index"), pl.last("datetime[ns]").cast(pl.String))
+        .collect(),
+        pl.DataFrame(
+            {"index": [[1, 2]], "datetime[ns]": "2026-01-01 00:00:00.000000999"},
+            schema={"index": pl.List(pl.get_index_type()), "datetime[ns]": pl.String},
+        ),
+    )
+
+    assert_frame_equal(
+        q.filter("lteq")
+        .select(pl.implode("index"), pl.last("datetime[ns]").cast(pl.String))
+        .collect(),
+        pl.DataFrame(
+            {"index": [[0, 1, 2]], "datetime[ns]": "2026-01-01 00:00:00.000000999"},
+            schema={"index": pl.List(pl.get_index_type()), "datetime[ns]": pl.String},
+        ),
+    )
+
+    # ms -> ns downcast
+    q = df.lazy().with_columns(
+        eq=pl.col("datetime[ns]") == pl.lit(dt, dtype=pl.Datetime("ms")),
+        lteq=pl.col("datetime[ns]") <= pl.lit(dt, dtype=pl.Datetime("ms")),
+    )
+
+    plan = q.explain()
+    assert plan.count(".000999999") == 2
+
+    assert_frame_equal(
+        q.filter("eq")
+        .select(pl.implode("index"), pl.last("datetime[ns]").cast(pl.String))
+        .collect(),
+        pl.DataFrame(
+            {"index": [[1, 2, 3, 4]], "datetime[ns]": "2026-01-01 00:00:00.000999999"},
+            schema={"index": pl.List(pl.get_index_type()), "datetime[ns]": pl.String},
+        ),
+    )
+
+    assert_frame_equal(
+        q.filter("lteq")
+        .select(pl.implode("index"), pl.last("datetime[ns]").cast(pl.String))
+        .collect(),
+        pl.DataFrame(
+            {
+                "index": [[0, 1, 2, 3, 4]],
+                "datetime[ns]": "2026-01-01 00:00:00.000999999",
+            },
+            schema={"index": pl.List(pl.get_index_type()), "datetime[ns]": pl.String},
+        ),
+    )
+
+
+def test_comparison_literal_downcast_flooring_datetime_us() -> None:
+    dt = datetime(2026, 1, 1)
+    unit_phys_s = pl.Series("datetime[us]", [dt], dtype=pl.Datetime("us")).to_physical()
+
+    adjust_s = pl.Series(
+        [
+            1_000,
+            1_000_000,
+            86_400_000_000,  # US_IN_DAY
+        ]
+    )
+
+    df = (
+        pl.concat(
+            [
+                unit_phys_s - 1,
+                unit_phys_s,
+                unit_phys_s + (adjust_s - 1),
+                unit_phys_s + adjust_s,
+            ]
+        )
+        .sort()
+        .cast(pl.Datetime("us"))
+        .to_frame()
+        .with_row_index()
+    )
+
+    result_vs_col = df.with_columns(
+        ms=pl.lit(dt, dtype=pl.Datetime("ms")),
+        date=pl.lit(dt.date(), dtype=pl.Date),
+    ).select(
+        pl.col("datetime[us]").cast(pl.String),
+        eq_ms=pl.col("datetime[us]") == pl.col("ms"),
+        eq_date=pl.col("datetime[us]") == pl.col("date"),
+    )
+
+    F = False
+    truth_table = pl.DataFrame(
+        [
+            ("2025-12-31 23:59:59.999999", F, F),
+            ("2026-01-01 00:00:00.000000", True, True),
+            ("2026-01-01 00:00:00.000999", True, F),
+            ("2026-01-01 00:00:00.001000", F, F),
+            ("2026-01-01 00:00:00.999999", F, F),
+            ("2026-01-01 00:00:01.000000", F, F),
+            ("2026-01-01 23:59:59.999999", F, F),
+            ("2026-01-02 00:00:00.000000", F, F),
+        ],
+        orient="row",
+        schema=result_vs_col.schema,
+    )
+
+    assert_frame_equal(result_vs_col, truth_table)
+
+    # ms -> us downcast
+    q = df.lazy().with_columns(
+        eq=pl.col("datetime[us]") == pl.lit(dt, dtype=pl.Datetime("ms")),
+        lteq=pl.col("datetime[us]") <= pl.lit(dt, dtype=pl.Datetime("ms")),
+    )
+
+    plan = q.explain()
+    assert plan.count(".000999") == 2
+
+    assert_frame_equal(
+        q.filter("eq")
+        .select(pl.implode("index"), pl.last("datetime[us]").cast(pl.String))
+        .collect(),
+        pl.DataFrame(
+            {"index": [[1, 2]], "datetime[us]": "2026-01-01 00:00:00.000999"},
+            schema={"index": pl.List(pl.get_index_type()), "datetime[us]": pl.String},
+        ),
+    )
+
+    assert_frame_equal(
+        q.filter("lteq")
+        .select(pl.implode("index"), pl.last("datetime[us]").cast(pl.String))
+        .collect(),
+        pl.DataFrame(
+            {"index": [[0, 1, 2]], "datetime[us]": "2026-01-01 00:00:00.000999"},
+            schema={"index": pl.List(pl.get_index_type()), "datetime[us]": pl.String},
+        ),
+    )
+
+
+def test_comparison_literal_downcast_flooring_duration_ns() -> None:
+    dt = timedelta()
+    unit_phys_s = pl.Series("duration[ns]", [0], dtype=pl.Int64)
+
+    adjust_s = pl.Series(
+        [
+            1_000,
+            1_000_000,
+            1_000_000_000,
+            86_400_000_000_000,  # NS_IN_DAY
+        ]
+    )
+
+    df = (
+        pl.concat(
+            [
+                unit_phys_s - 1,
+                unit_phys_s,
+                unit_phys_s + (adjust_s - 1),
+                unit_phys_s + adjust_s,
+            ]
+        )
+        .sort()
+        .cast(pl.Duration("ns"))
+        .to_frame()
+        .with_row_index()
+    )
+
+    result_vs_col = df.with_columns(
+        us=pl.lit(dt, dtype=pl.Duration("us")),
+        ms=pl.lit(dt, dtype=pl.Duration("ms")),
+    ).select(
+        pl.col("duration[ns]").dt.to_string(),
+        eq_us=pl.col("duration[ns]") == pl.col("us"),
+        eq_ms=pl.col("duration[ns]") == pl.col("ms"),
+    )
+
+    F = False
+    truth_table = pl.DataFrame(
+        [
+            ("-PT0.000000001S", True, True),
+            ("PT0S", True, True),
+            ("PT0.000000999S", True, True),
+            ("PT0.000001S", F, True),
+            ("PT0.000999999S", F, True),
+            ("PT0.001S", F, F),
+            ("PT0.999999999S", F, F),
+            ("PT1S", F, F),
+            ("PT23H59M59.999999999S", F, F),
+            ("P1D", F, F),
+        ],
+        orient="row",
+        schema=result_vs_col.schema,
+    )
+
+    assert_frame_equal(result_vs_col, truth_table)
+
+    # us -> ns downcast
+    q = df.lazy().with_columns(
+        eq=pl.col("duration[ns]") == pl.lit(dt, dtype=pl.Datetime("us")),
+        lteq=pl.col("duration[ns]") <= pl.lit(dt, dtype=pl.Datetime("us")),
+    )
+
+    plan = q.explain()
+    assert plan.count("999ns") == 2
+
+    assert_frame_equal(
+        q.filter("eq")
+        .select(pl.implode("index"), pl.last("duration[ns]").dt.to_string())
+        .collect(),
+        pl.DataFrame(
+            {"index": [[1, 2]], "duration[ns]": "PT0.000000999S"},
+            schema={"index": pl.List(pl.get_index_type()), "duration[ns]": pl.String},
+        ),
+    )
+
+    assert_frame_equal(
+        q.filter("lteq")
+        .select(pl.implode("index"), pl.last("duration[ns]").dt.to_string())
+        .collect(),
+        pl.DataFrame(
+            {"index": [[0, 1, 2]], "duration[ns]": "PT0.000000999S"},
+            schema={"index": pl.List(pl.get_index_type()), "duration[ns]": pl.String},
+        ),
+    )
+
+    # ms -> ns downcast
+    q = df.lazy().with_columns(
+        eq=pl.col("duration[ns]") == pl.lit(dt, dtype=pl.Datetime("ms")),
+        lteq=pl.col("duration[ns]") <= pl.lit(dt, dtype=pl.Datetime("ms")),
+    )
+
+    plan = q.explain()
+    assert plan.count("999999ns") == 2
+
+    assert_frame_equal(
+        q.filter("eq")
+        .select(pl.implode("index"), pl.last("duration[ns]").dt.to_string())
+        .collect(),
+        pl.DataFrame(
+            {"index": [[1, 2, 3, 4]], "duration[ns]": "PT0.000999999S"},
+            schema={"index": pl.List(pl.get_index_type()), "duration[ns]": pl.String},
+        ),
+    )
+
+    assert_frame_equal(
+        q.filter("lteq")
+        .select(pl.implode("index"), pl.last("duration[ns]").dt.to_string())
+        .collect(),
+        pl.DataFrame(
+            {
+                "index": [[0, 1, 2, 3, 4]],
+                "duration[ns]": "PT0.000999999S",
+            },
+            schema={"index": pl.List(pl.get_index_type()), "duration[ns]": pl.String},
+        ),
+    )
+
+
+def test_comparison_literal_downcast_flooring_duration_us() -> None:
+    dt = timedelta()
+    unit_phys_s = pl.Series("duration[us]", [0], dtype=pl.Int64)
+
+    adjust_s = pl.Series(
+        [
+            1_000,
+            1_000_000,
+            86_400_000_000,  # US_IN_DAY
+        ]
+    )
+
+    df = (
+        pl.concat(
+            [
+                unit_phys_s - 1,
+                unit_phys_s,
+                unit_phys_s + (adjust_s - 1),
+                unit_phys_s + adjust_s,
+            ]
+        )
+        .sort()
+        .cast(pl.Duration("us"))
+        .to_frame()
+        .with_row_index()
+    )
+
+    result_vs_col = df.with_columns(
+        ms=pl.lit(dt, dtype=pl.Duration("ms")),
+    ).select(
+        pl.col("duration[us]").dt.to_string(),
+        eq_ms=pl.col("duration[us]") == pl.col("ms"),
+    )
+
+    F = False
+    truth_table = pl.DataFrame(
+        [
+            ("-PT0.000001S", True),
+            ("PT0S", True),
+            ("PT0.000999S", True),
+            ("PT0.001S", F),
+            ("PT0.999999S", F),
+            ("PT1S", F),
+            ("PT23H59M59.999999S", F),
+            ("P1D", F),
+        ],
+        orient="row",
+        schema=result_vs_col.schema,
+    )
+
+    assert_frame_equal(result_vs_col, truth_table)
+
+    # ms -> us downcast
+    q = df.lazy().with_columns(
+        eq=pl.col("duration[us]") == pl.lit(dt, dtype=pl.Duration("ms")),
+        lteq=pl.col("duration[us]") <= pl.lit(dt, dtype=pl.Duration("ms")),
+    )
+
+    plan = q.explain()
+    assert plan.count("999µs") == 2
+
+    assert_frame_equal(
+        q.filter("eq")
+        .select(pl.implode("index"), pl.last("duration[us]").dt.to_string())
+        .collect(),
+        pl.DataFrame(
+            {"index": [[1, 2]], "duration[us]": "PT0.000999S"},
+            schema={"index": pl.List(pl.get_index_type()), "duration[us]": pl.String},
+        ),
+    )
+
+    assert_frame_equal(
+        q.filter("lteq")
+        .select(pl.implode("index"), pl.last("duration[us]").dt.to_string())
+        .collect(),
+        pl.DataFrame(
+            {"index": [[0, 1, 2]], "duration[us]": "PT0.000999S"},
+            schema={"index": pl.List(pl.get_index_type()), "duration[us]": pl.String},
+        ),
+    )
+
+
+def test_comparison_literal_downcast_rewrites() -> None:
+    lf = pl.LazyFrame(
+        schema={
+            "i16": pl.Int16,
+            "u16": pl.UInt16,
+            "datetime[ns]": pl.Datetime("ns"),
+            "str": pl.String,
+        }
+    )
+
+    def assert_rewrite(expr: pl.Expr, search_str: str) -> None:
+        plan = lf.select(expr).explain()
+        assert search_str in plan
+
+    # Date<>Datetime casts Date to Datetime, out of range values become NULL.
+    assert_rewrite(
+        pl.col("datetime[ns]") == pl.date(2999, 1, 1),
+        'null.repeat([col("datetime[ns]").len()',
+    )
+
+    assert_rewrite(
+        pl.col("datetime[ns]") == pl.lit(datetime(2026, 1, 1), dtype=pl.Datetime("ms")),
+        "is_between([2026-01-01 00:00:00, 2026-01-01 00:00:00.000999999])",
+    )
+
+    assert_rewrite(
+        pl.col("datetime[ns]")
+        <= pl.lit(datetime(2026, 1, 1, microsecond=1000), dtype=pl.Datetime("ms")),
+        "<= (2026-01-01 00:00:00.001999999)",
+    )
+
+    assert_rewrite(
+        pl.col("i16") == pl.lit(10, dtype=pl.Int32),
+        'col("i16")) == (10)',
+    )
+
+    assert_rewrite(
+        pl.col("i16") < (-(1 << 16) - 1),
+        ".is_not_null()).then(false).otherwise(null)",
+    )
+
+    assert_rewrite(
+        pl.col("i16") >= (-(1 << 16) - 1),
+        ".is_not_null()).then(true).otherwise(null)",
+    )
+
+    assert_rewrite(
+        pl.col("i16") < pl.lit(None, dtype=pl.Int16),
+        'null.repeat([col("i16").len()])',
+    )
+
+    assert_rewrite(
+        pl.col("i16").eq_missing(pl.lit(None, dtype=pl.Int16)),
+        'col("i16").is_null()',
+    )
+
+    assert_rewrite(
+        pl.col("i16").eq_missing(None),
+        'col("i16").is_null()',
+    )
+
+    assert_rewrite(
+        pl.col("str").ne_missing(None),
+        'col("str").is_not_null()',
+    )
+
+    assert_rewrite(
+        pl.col("str").ne_missing(None),
+        'col("str").is_not_null()',
+    )
+
+    assert_rewrite(
+        pl.col("i16").eq_missing(-(1 << 16) - 1),
+        'false.repeat([col("i16").len()])',
+    )
+
+    assert_rewrite(
+        pl.col("i16").ne_missing(1 << 16),
+        'true.repeat([col("i16").len()])',
+    )
+
+    assert_rewrite(
+        pl.col("u16").is_between(-1, 10),
+        'col("u16")) <= (10)',
+    )
+
+    assert_rewrite(
+        pl.col("u16").is_between(10, 1 << 16, closed="right"),
+        'col("u16")) > (10)',
+    )
+
+    assert_rewrite(
+        pl.col("u16").is_between(1 << 16, 1 << 17),
+        'when(col("u16").is_not_null()).then(false).otherwise(null)',
+    )

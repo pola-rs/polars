@@ -879,6 +879,8 @@ pub(super) fn convert_functions(
         #[cfg(feature = "round_series")]
         F::RoundSF { digits } => I::RoundSF { digits },
         #[cfg(feature = "round_series")]
+        F::Truncate { decimals } => I::Truncate { decimals },
+        #[cfg(feature = "round_series")]
         F::Floor => I::Floor,
         #[cfg(feature = "round_series")]
         F::Ceil => I::Ceil,
@@ -965,7 +967,7 @@ pub(super) fn convert_functions(
                 seed,
             }
         },
-        F::SetSortedFlag(is_sorted) => I::SetSortedFlag(is_sorted),
+        F::SetSortedFlag(sorted) => I::SetSortedFlag(sorted),
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags,

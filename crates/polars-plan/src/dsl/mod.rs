@@ -71,7 +71,6 @@ use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
-use polars_core::series::IsSorted;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 #[cfg(feature = "is_close")]
@@ -710,6 +709,12 @@ impl Expr {
     #[cfg(feature = "round_series")]
     pub fn round_sig_figs(self, digits: i32) -> Self {
         self.map_unary(FunctionExpr::RoundSF { digits })
+    }
+
+    /// Truncate underlying floating point array toward zero to given decimal.
+    #[cfg(feature = "round_series")]
+    pub fn truncate(self, decimals: u32) -> Self {
+        self.map_unary(FunctionExpr::Truncate { decimals })
     }
 
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
@@ -1581,7 +1586,7 @@ impl Expr {
     /// # Warning
     /// This can lead to incorrect results if this `Series` is not sorted!!
     /// Use with care!
-    pub fn set_sorted_flag(self, sorted: IsSorted) -> Expr {
+    pub fn set_sorted_flag(self, sorted: AExprSorted) -> Expr {
         // This is `map`. If a column is sorted. Chunks of that column are also sorted.
         self.map_unary(FunctionExpr::SetSortedFlag(sorted))
     }

@@ -594,6 +594,40 @@ def test_decimal_round() -> None:
         assert_series_equal(got_s, expected_s)
 
 
+@pytest.mark.parametrize(
+    ("decimals", "expected_values"),
+    [
+        (0, ["-3", "-2", "-1", "0", "0", "0", "1"]),
+        (1, ["-3.9", "-2.5", "-1.2", "0.0", "0.0", "0.1", "1.9"]),
+        (2, ["-3.99", "-2.50", "-1.23", "0.00", "0.00", "0.12", "1.99"]),
+        (3, ["-3.999", "-2.505", "-1.234", "0.000", "0.000", "0.123", "1.999"]),
+        (4, None),  # eg: `truncate(n)` for n >= scale should return the same value
+        (5, None),
+    ],
+)
+def test_decimal_truncate(decimals: int, expected_values: list[str] | None) -> None:
+    dtype = pl.Decimal(10, 4)
+    s = pl.Series(
+        "srs",
+        values=[
+            D("-3.9999"),
+            D("-2.5050"),
+            D("-1.2345"),
+            D("-0.0001"),
+            D("0.0001"),
+            D("0.1234"),
+            D("1.9999"),
+        ],
+        dtype=dtype,
+    )
+    expected_series = (
+        s
+        if (expected_values is None)
+        else pl.Series("srs", values=[D(v) for v in expected_values], dtype=dtype)
+    )
+    assert_series_equal(expected_series, s.truncate(decimals))
+
+
 def test_decimal_arithmetic_schema() -> None:
     q = pl.LazyFrame({"x": [1.0]}, schema={"x": pl.Decimal(15, 2)})
 
@@ -855,3 +889,12 @@ def test_fallible_decimal_aggregated_with_filter(maintain_order: bool) -> None:
 def test_decimal_fits_too_large() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         s = pl.Series([0, 2**128 - 10], dtype=pl.UInt128).cast(pl.Decimal(38, 0))
+
+
+def test_product_decimal_26721() -> None:
+    df = pl.DataFrame({"x": ["1.1234", "2.2345", "0.5"]}).cast(
+        pl.Decimal(precision=10, scale=5)
+    )
+    out = df.select(pl.col.x.product())
+    expected = pl.DataFrame({"x": ["1.25512"]}).cast(pl.Decimal(precision=38, scale=5))
+    assert_frame_equal(out, expected)

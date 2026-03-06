@@ -9,21 +9,21 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use crate::async_primitives::wait_group::WaitToken;
 use crate::utils::tokio_handle_ext;
 
-pub(super) struct ChunkDataFetcher {
-    pub(super) memory_prefetch_func: fn(&[u8]) -> (),
-    pub(super) byte_source: Arc<DynByteSource>,
-    pub(super) file_size: usize,
-    pub(super) chunk_size: usize,
-    pub(super) prefetch_send: Sender<(
+pub(crate) struct ChunkDataFetcher {
+    pub(crate) memory_prefetch_func: fn(&[u8]) -> (),
+    pub(crate) byte_source: Arc<DynByteSource>,
+    pub(crate) file_size: usize,
+    pub(crate) chunk_size: usize,
+    pub(crate) prefetch_send: Sender<(
         tokio_handle_ext::AbortOnDropHandle<PolarsResult<Buffer<u8>>>,
         OwnedSemaphorePermit,
     )>,
-    pub(super) prefetch_semaphore: Arc<Semaphore>,
-    pub(super) prefetch_current_all_spawned: Option<WaitToken>,
+    pub(crate) prefetch_semaphore: Arc<Semaphore>,
+    pub(crate) prefetch_current_all_spawned: Option<WaitToken>,
 }
 
 impl ChunkDataFetcher {
-    pub(super) async fn run(&mut self) -> PolarsResult<()> {
+    pub(crate) async fn run(&mut self) -> PolarsResult<()> {
         let mut byte_offset = 0;
         let file_size = self.file_size;
 

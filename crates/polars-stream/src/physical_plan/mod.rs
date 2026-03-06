@@ -2,7 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, SortMultipleOptions};
+use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
@@ -172,7 +172,8 @@ pub enum PhysNodeKind {
 
     SimpleProjection {
         input: PhysStream,
-        columns: Vec<PlSmallStr>,
+        // Key: output column, value: input column.
+        columns: PlIndexMap<PlSmallStr, PlSmallStr>,
     },
 
     InMemorySink {

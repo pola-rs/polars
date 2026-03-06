@@ -142,6 +142,7 @@ if TYPE_CHECKING:
 
     from polars import DataType, Expr, LazyFrame, Series
     from polars._typing import (
+        Alignment,
         ArrowSchemaExportable,
         AsofJoinStrategy,
         AvroCompression,
@@ -12493,6 +12494,7 @@ class DataFrame:
         column: str,
         *,
         descending: bool = False,
+        nulls_last: bool = False,
     ) -> DataFrame:
         """
         Flag a column as sorted.
@@ -12505,6 +12507,8 @@ class DataFrame:
             Column that is sorted
         descending
             Whether the column is sorted in descending order.
+        nulls_last
+            Whether the nulls are at the end.
 
         Warnings
         --------
@@ -12518,7 +12522,7 @@ class DataFrame:
 
         return (
             self.lazy()
-            .set_sorted(column, descending=descending)
+            .set_sorted(column, descending=descending, nulls_last=nulls_last)
             .collect(optimizations=QueryOptFlags._eager())
         )
 
@@ -12757,8 +12761,8 @@ class DataFrame:
         fmt_float: FloatFmt | None = None,
         fmt_str_lengths: int | None = None,
         fmt_table_cell_list_len: int | None = None,
-        tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
-        tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
+        tbl_cell_alignment: Alignment | None = None,
+        tbl_cell_numeric_alignment: Alignment | None = None,
         tbl_cols: int | None = None,
         tbl_column_data_type_inline: bool | None = None,
         tbl_dataframe_shape_below: bool | None = None,

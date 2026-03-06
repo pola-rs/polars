@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use polars_ooc::AccessPattern::Fifo;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use super::compute_node_prelude::*;
@@ -8,7 +9,7 @@ use crate::morsel::SourceToken;
 
 // TODO: replace this with an out-of-core buffering solution.
 enum BufferedStream {
-    Open(VecDeque<Morsel>),
+    Open(VecDeque<(Token, MorselSeq)>),
     Closed,
 }
 
@@ -108,7 +109,7 @@ impl ComputeNode for MultiplexerNode {
 
         enum Listener<'a> {
             Active(UnboundedSender<Morsel>),
-            Buffering(&'a mut VecDeque<Morsel>),
+            Buffering(&'a mut VecDeque<(Token, MorselSeq)>),
             Inactive,
         }
 
@@ -156,7 +157,7 @@ impl ComputeNode for MultiplexerNode {
                                 Err(_) => *buf_sender = Listener::Inactive,
                             },
                             Listener::Buffering(b) => {
-                                b.push_front(morsel.clone());
+                                b.push_front((morsel.clone().into_token(Fifo).await, morsel.seq()));
                                 anyone_interested = true;
                             },
                             Listener::Inactive => {},
@@ -187,8 +188,9 @@ impl ComputeNode for MultiplexerNode {
                 let buffered_source_token = buffered_source_token.clone();
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     // First we try to flush all the old buffered data.
-                    while let Some(mut morsel) = buf.pop_back() {
-                        morsel.replace_source_token(buffered_source_token.clone());
+                    while let Some((token, seq)) = buf.pop_back() {
+                        let df = token.into_df().await;
+                        let mut morsel = Morsel::new(df, seq, buffered_source_token.clone());
                         morsel.set_consume_token(wait_group.token());
                         if sender.send(morsel).await.is_err() {
                             return Ok(());
@@ -197,7 +199,8 @@ impl ComputeNode for MultiplexerNode {
                             && let Ok(rx_morsel) = rx.try_recv()
                         {
                             rx_morsel.source_token().stop();
-                            buf.push_front(rx_morsel);
+                            let rx_seq = rx_morsel.seq();
+                            buf.push_front((rx_morsel.into_token(Fifo).await, rx_seq));
                         }
                         wait_group.wait().await;
                     }

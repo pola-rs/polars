@@ -6,7 +6,6 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use chunk_data_fetch::ChunkDataFetcher;
 use line_batch_processor::{LineBatchProcessor, LineBatchProcessorOutputPort};
 use negative_slice_pass::MorselStreamReverser;
 use polars_error::{PolarsResult, polars_bail, polars_err};
@@ -25,6 +24,7 @@ use row_index_limit_pass::ApplyRowIndexOrLimit;
 
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
 use super::multi_scan::reader_interface::{BeginReadArgs, FileReader, FileReaderCallbacks};
+use super::shared::chunk_data_fetch::ChunkDataFetcher;
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
@@ -38,7 +38,6 @@ use crate::nodes::io_sources::ndjson::chunk_reader::ChunkReaderBuilder;
 use crate::nodes::io_sources::ndjson::line_batch_distributor::RowSkipper;
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::tokio_handle_ext;
-pub mod chunk_data_fetch;
 pub(super) mod chunk_reader;
 mod line_batch_distributor;
 mod line_batch_processor;
@@ -475,7 +474,7 @@ impl FileReader for NDJsonFileReader {
                 .as_scan_source_ref()
                 .to_buffer_async_assume_latest(self.scan_source.run_async())?;
 
-            ByteSourceReader::from_memory(memslice, compression)?
+            ByteSourceReader::from_memory(memslice)?
         };
 
         const ASSUMED_COMPRESSION_RATIO: usize = 4;
