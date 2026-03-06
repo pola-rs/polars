@@ -181,8 +181,8 @@ impl PyExpr {
     fn item(&self, allow_empty: bool) -> Self {
         self.inner.clone().item(allow_empty).into()
     }
-    fn implode(&self) -> Self {
-        self.inner.clone().implode().into()
+    fn implode(&self, maintain_order: bool) -> Self {
+        self.inner.clone().implode(maintain_order).into()
     }
     fn quantile(&self, quantile: Self, interpolation: Wrap<QuantileMethod>) -> Self {
         self.inner
