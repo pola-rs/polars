@@ -310,7 +310,7 @@ impl SQLExprVisitor<'_> {
                 // TODO: pass the implode depending on expr.
                 vec![(
                     new_name.clone(),
-                    first().as_expr().implode().alias(new_name.clone()),
+                    first().as_expr().implode(true).alias(new_name.clone()),
                 )],
             ));
         };
