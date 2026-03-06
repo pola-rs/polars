@@ -2426,7 +2426,6 @@ def test_multiply_series_by_timedelta_26205() -> None:
     expected = pl.Series(
         [timedelta(seconds=5), timedelta(seconds=10), timedelta(seconds=15)]
     )
-
     assert_series_equal(expected, result)
 
 
