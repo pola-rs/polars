@@ -256,7 +256,10 @@ fn try_df_to_numpy_numeric_supertype(
 
     let np_array = match st {
         dt if dt.is_primitive_numeric() => with_match_physical_numpy_polars_type!(dt, |$T| {
-            df.to_ndarray::<$T>(order).ok()?.into_pyarray(py).into_py_any(py).ok()?
+            // Release the GIL during parallel computation so that other Python threads
+            // (e.g. map_elements callbacks) can acquire it without deadlocking.
+            let arr = py.detach(|| df.to_ndarray::<$T>(order).ok())?;
+            arr.into_pyarray(py).into_py_any(py).ok()?
         }),
         _ => return None,
     };

@@ -306,3 +306,51 @@ def test_to_numpy_array_shape_23426() -> None:
     )
 
     assert_frame_equal(df, pl.from_numpy(df.to_numpy(structured=True)))
+
+
+def test_to_numpy_no_deadlock_with_concurrent_map_elements_26821() -> None:
+    """Regression test: to_numpy() must not deadlock with concurrent map_elements().
+
+    If the GIL is held during parallel computation inside to_numpy(), a worker thread
+    can be assigned a map_elements callback that needs the GIL, causing a deadlock.
+
+    The fix: release the GIL before the parallel computation in to_numpy().
+    """
+    import threading
+    import warnings
+
+    warnings.filterwarnings("ignore", category=pl.exceptions.PolarsInefficientMapWarning)
+
+    N_ROWS = 100
+    df = pl.DataFrame(
+        {
+            "a": list(range(N_ROWS)),
+            "b": [i % 2 for i in range(N_ROWS)],
+        }
+    )
+    stop = threading.Event()
+
+    def to_numpy_worker() -> None:
+        while not stop.is_set():
+            df.to_numpy()
+
+    def map_elements_worker() -> None:
+        while not stop.is_set():
+            df.with_columns(
+                a_mapped=pl.col("a").map_elements(lambda x: x + 1, return_dtype=pl.Int64),
+                b_mapped=pl.col("b").map_elements(lambda x: x * 2, return_dtype=pl.Int64),
+            )
+
+    threads = [
+        threading.Thread(target=to_numpy_worker),
+        threading.Thread(target=map_elements_worker),
+    ]
+    for t in threads:
+        t.start()
+
+    stop.set()
+
+    for t in threads:
+        t.join(timeout=5.0)
+
+    assert not any(t.is_alive() for t in threads), "Deadlock detected: threads did not finish"
