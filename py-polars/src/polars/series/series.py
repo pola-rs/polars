@@ -5649,6 +5649,17 @@ class Series:
         decimals
             Number of decimal places to truncate to.
 
+        Notes
+        -----
+        * Truncation discards the fractional part beyond the given number of decimals.
+          For example, when rounding to 0 decimals 0.25, -0.25, 0.99, and -0.99 will
+          all round to 0. When rounding to 1 decimal 1.9999 rounds to 1.9 and -1.9999
+          rounds to -1.9. There is no tiebreak behaviour at midpoint values as there
+          is with :meth:`round` so 0.5 and -0.5 will also round to 0 when decimals=1.
+
+        * This method performs numeric truncation. For truncating temporal
+          data (dates/datetimes), use :func:`Series.dt.truncate` instead.
+
         See Also
         --------
         round : Round to a given number of decimals.
@@ -5657,14 +5668,14 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1.12345, 2.56789, 3.901234])
+        >>> s = pl.Series("a", [1.12345, 2.56789, 3.991234])
         >>> s.truncate(2)
         shape: (3,)
         Series: 'a' [f64]
         [
                 1.12
                 2.56
-                3.9
+                3.99
         ]
 
         >>> s = pl.Series("a", [-1.78, 2.56, -3.99])
@@ -5682,14 +5693,35 @@ class Series:
         """
         Round underlying floating point data by `decimals` digits.
 
-        The default rounding mode is "half to even" (also known as "bankers' rounding").
-
         Parameters
         ----------
         decimals
             Number of decimals to round by.
-        mode : {'half_to_even', 'half_away_from_zero'}
-            Rounding mode.
+        mode : {'half_to_even', 'half_away_from_zero', 'to_zero'}
+            The rounding strategy used. A "rounded value" is a value with at most
+            `decimals` decimal places (e.g. integers when ``decimals=0``, multiples
+            of 0.1 when ``decimals=1``, 0.01 when ``decimals=2``, and so on).
+
+            Strategies that start with ``half_`` round all values to the *nearest*
+            rounded value, only using the strategy to break ties when a value falls
+            exactly between two rounded values (e.g. 0.5 when ``decimals=0``, 0.05
+            when ``decimals=1``). Other rounding strategies specify explicitly
+            which rounded value is chosen and always apply (not just for tiebreaks).
+
+            * *half_to_even* (default)
+                Round to the nearest value; break ties by choosing the nearest
+                **even** value. For example, 0.5 rounds to 0, 1.5 rounds to 2,
+                2.5 rounds to 2. Also known as "banker's rounding"; this is the
+                default because it tends to minimise cumulative rounding bias.
+            * *half_away_from_zero*
+                Round to the nearest value; break ties by rounding **away from
+                zero**. For example, 0.5 rounds to 1, -0.5 rounds to -1, 2.5
+                rounds to 3. Also known as "commercial rounding".
+            * *to_zero*
+                Always round (truncate) **towards zero**, discarding the fractional
+                part beyond `decimals`. For example, 0.9 rounds to 0, -0.9 rounds
+                to 0, 1.29 rounds to 1.2 (with ``decimals=1``). Equivalent to the
+                :meth:`truncate` method.
 
         Examples
         --------

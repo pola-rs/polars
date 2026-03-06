@@ -1840,19 +1840,35 @@ class Expr:
         """
         Round underlying floating point data by `decimals` digits.
 
-        The default rounding mode is "half to even" (also known as "bankers' rounding").
-
         Parameters
         ----------
         decimals
             Number of decimals to round by.
-        mode : {'half_to_even', 'half_away_from_zero'}
-            RoundMode.
+        mode : {'half_to_even', 'half_away_from_zero', 'to_zero'}
+            The rounding strategy used. A "rounded value" is a value with at most
+            `decimals` decimal places (e.g. integers when ``decimals=0``, multiples
+            of 0.1 when ``decimals=1``, 0.01 when ``decimals=2``, and so on).
 
-            * *half_to_even*
-                round to the nearest even number
+            Strategies that start with ``half_`` round all values to the *nearest*
+            rounded value, only using the strategy to break ties when a value falls
+            exactly between two rounded values (e.g. 0.5 when ``decimals=0``, 0.05
+            when ``decimals=1``). Other rounding strategies specify explicitly
+            which rounded value is chosen and always apply (not just for tiebreaks).
+
+            * *half_to_even* (default)
+                Round to the nearest value; break ties by choosing the nearest
+                **even** value. For example, 0.5 rounds to 0, 1.5 rounds to 2,
+                2.5 rounds to 2. Also known as "banker's rounding"; this is the
+                default because it tends to minimise cumulative rounding bias.
             * *half_away_from_zero*
-                round to the nearest number away from zero
+                Round to the nearest value; break ties by rounding **away from
+                zero**. For example, 0.5 rounds to 1, -0.5 rounds to -1, 2.5
+                rounds to 3. Also known as "commercial rounding".
+            * *to_zero*
+                Always round (truncate) **towards zero**, discarding the fractional
+                part beyond `decimals`. For example, 0.9 rounds to 0, -0.9 rounds
+                to 0, 1.29 rounds to 1.2 (with ``decimals=1``). Equivalent to the
+                :meth:`truncate` method.
 
         See Also
         --------
@@ -1950,8 +1966,14 @@ class Expr:
 
         Notes
         -----
-        This method performs numeric truncation. For truncating temporal
-        data (dates/datetimes), use :func:`Expr.dt.truncate` instead.
+        * Truncation discards the fractional part beyond the given number of decimals.
+          For example, when rounding to 0 decimals 0.25, -0.25, 0.99, and -0.99 will
+          all round to 0. When rounding to 1 decimal 1.9999 rounds to 1.9 and -1.9999
+          rounds to -1.9. There is no tiebreak behaviour at midpoint values as there
+          is with :meth:`round` so 0.5 and -0.5 will also round to 0 when decimals=1.
+
+        * This method performs numeric truncation. For truncating temporal
+          data (dates/datetimes), use :func:`Expr.dt.truncate` instead.
 
         See Also
         --------
@@ -3841,6 +3863,7 @@ class Expr:
         Traceback (most recent call last):
         ...
         polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
+        ...
         >>> df.head(0).select(pl.col("a").item(allow_empty=True))
         shape: (1, 1)
         ┌──────┐
@@ -4076,7 +4099,7 @@ class Expr:
                 partition_by_pyexprs,
                 order_by=order_by_pyexprs,
                 order_by_descending=descending,
-                order_by_nulls_last=False,  # does not work yet
+                order_by_nulls_last=nulls_last,
                 mapping_strategy=mapping_strategy,
             )
         )
@@ -5147,6 +5170,10 @@ Consider using {self}.implode() instead"""
         ... ).sort("key")  # doctest: +IGNORE_RESULT
 
         """
+        if returns_scalar:
+            msg = "the `returns_scalar` parameter was deprecated in 1.32.0"
+            issue_deprecation_warning(msg)
+
         if strategy == "threading":
             issue_unstable_warning(
                 "the 'threading' strategy for `map_elements` is considered unstable."
@@ -5333,11 +5360,17 @@ Consider using {self}.implode() instead"""
             self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )
 
-    def implode(self) -> Expr:
+    def implode(self, *, maintain_order: bool = True) -> Expr:
         """
         Aggregate values into a list.
 
         The returned list itself is a scalar value of `list` dtype.
+
+        Parameters
+        ----------
+        maintain_order
+            Whether to preserve the order of elements in the list. Setting this
+            to `False` can improve performance, especially within `group_by`.
 
         Examples
         --------
@@ -5357,7 +5390,7 @@ Consider using {self}.implode() instead"""
         │ [1, 2, 3] ┆ [4, 5, 6] │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.implode())
+        return wrap_expr(self._pyexpr.implode(maintain_order))
 
     def gather_every(self, n: int, offset: int = 0) -> Expr:
         """
@@ -11092,16 +11125,20 @@ Consider using {self}.implode() instead"""
         """
         return wrap_expr(self._pyexpr.cumulative_eval(expr._pyexpr, min_samples))
 
-    def set_sorted(self, *, descending: bool = False) -> Expr:
+    def set_sorted(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
         Flags the expression as 'sorted'.
 
-        Enables downstream code to user fast paths for sorted arrays.
+        Enables downstream code to user fast paths for sorted arrays. It is
+        recommended to also set whether `nulls_last` is `True` or `False`, as
+        this enables many internal optimizations.
 
         Parameters
         ----------
         descending
             Whether the `Series` order is descending.
+        nulls_last
+            Whether the nulls are at the end.
 
         Warnings
         --------
@@ -11121,7 +11158,7 @@ Consider using {self}.implode() instead"""
         │ 3      │
         └────────┘
         """
-        return wrap_expr(self._pyexpr.set_sorted_flag(descending))
+        return wrap_expr(self._pyexpr.set_sorted_flag(descending, nulls_last))
 
     @deprecated(
         "`Expr.shrink_dtype` is deprecated and is a no-op; use `Series.shrink_dtype` instead."

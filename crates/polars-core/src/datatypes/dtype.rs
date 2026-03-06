@@ -721,6 +721,23 @@ impl DataType {
         }
     }
 
+    pub fn contains_dtype_recursive(&self, dtype: &DataType) -> bool {
+        if self == dtype {
+            return true;
+        }
+        use DataType as D;
+        match self {
+            D::List(inner) => inner.contains_dtype_recursive(dtype),
+            #[cfg(feature = "dtype-array")]
+            D::Array(inner, _) => inner.contains_dtype_recursive(dtype),
+            #[cfg(feature = "dtype-struct")]
+            D::Struct(fields) => fields
+                .iter()
+                .any(|field| field.dtype.contains_dtype_recursive(dtype)),
+            _ => false,
+        }
+    }
+
     /// Check if type is sortable
     pub fn is_ord(&self) -> bool {
         let phys = self.to_physical();
@@ -829,7 +846,17 @@ impl DataType {
 
     /// Convert to an Arrow Field.
     pub fn to_arrow_field(&self, name: PlSmallStr, compat_level: CompatLevel) -> ArrowField {
-        let metadata = match self {
+        let field = ArrowField::new(name, self.to_arrow(compat_level), true);
+
+        if let Some(metadata) = self.to_arrow_field_metadata() {
+            field.with_metadata(metadata)
+        } else {
+            field
+        }
+    }
+
+    pub fn to_arrow_field_metadata(&self) -> Option<Metadata> {
+        match self {
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(fcats, _map) => {
                 let cats = fcats.categories();
@@ -870,14 +897,6 @@ impl DataType {
                 PlSmallStr::from_static(MAINTAIN_PL_TYPE),
             )])),
             _ => None,
-        };
-
-        let field = ArrowField::new(name, self.to_arrow(compat_level), true);
-
-        if let Some(metadata) = metadata {
-            field.with_metadata(metadata)
-        } else {
-            field
         }
     }
 
@@ -1404,6 +1423,11 @@ impl CompatLevel {
     #[doc(hidden)]
     pub fn get_level(&self) -> u16 {
         self.0
+    }
+
+    /// Whether this compat level uses Utf8View/BinaryView types.
+    pub fn uses_binview_types(&self) -> bool {
+        *self != CompatLevel::oldest()
     }
 }
 

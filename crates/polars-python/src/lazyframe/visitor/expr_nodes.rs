@@ -2,7 +2,6 @@
 use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
 use polars_core::chunked_array::ops::FillNullStrategy;
-use polars_core::series::IsSorted;
 #[cfg(feature = "string_normalize")]
 use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::prelude::RankMethod;
@@ -17,7 +16,7 @@ use polars_plan::prelude::{
     AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, WindowMapping,
 };
 use polars_time::prelude::RollingGroupOptions;
-use polars_time::{Duration, DynamicGroupOptions};
+use polars_time::{ClosedWindow, Duration, DynamicGroupOptions};
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
@@ -413,6 +412,20 @@ pub struct Window {
     options: Py<PyAny>,
 }
 
+#[pyclass(frozen)]
+pub struct Rolling {
+    #[pyo3(get)]
+    function: usize,
+    #[pyo3(get)]
+    index_column: usize,
+    #[pyo3(get)]
+    period: Py<PyAny>,
+    #[pyo3(get)]
+    offset: Py<PyAny>,
+    #[pyo3(get)]
+    closed_window: Py<PyAny>,
+}
+
 #[pyclass(name = "WindowMapping", frozen)]
 pub struct PyWindowMapping {
     inner: WindowMapping,
@@ -441,6 +454,22 @@ impl<'py> IntoPyObject<'py> for Wrap<Duration> {
             self.0.negative(),
         )
             .into_pyobject(py)
+    }
+}
+
+impl<'py> IntoPyObject<'py> for Wrap<ClosedWindow> {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let s = match self.0 {
+            ClosedWindow::Left => "left",
+            ClosedWindow::Right => "right",
+            ClosedWindow::Both => "both",
+            ClosedWindow::None => "none",
+        };
+        Ok(s.into_pyobject(py)?.into_any())
     }
 }
 
@@ -710,10 +739,13 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 arguments: vec![n.0],
                 options: py.None(),
             },
-            IRAggExpr::Implode(n) => Agg {
+            IRAggExpr::Implode {
+                input: n,
+                maintain_order,
+            } => Agg {
                 name: "implode".into_py_any(py)?,
                 arguments: vec![n.0],
-                options: py.None(),
+                options: maintain_order.into_py_any(py)?,
             },
             IRAggExpr::Quantile {
                 expr,
@@ -1340,15 +1372,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Random { .. } => {
                     return Err(PyNotImplementedError::new_err("random"));
                 },
-                IRFunctionExpr::SetSortedFlag(sorted) => (
-                    "set_sorted",
-                    match sorted {
-                        IsSorted::Ascending => "ascending",
-                        IsSorted::Descending => "descending",
-                        IsSorted::Not => "not",
-                    },
-                )
-                    .into_py_any(py),
+                IRFunctionExpr::SetSortedFlag(sorted) => {
+                    ("set_sorted", sorted.descending, sorted.nulls_last).into_py_any(py)
+                },
                 #[cfg(feature = "ffi_plugin")]
                 IRFunctionExpr::FfiPlugin { .. } => {
                     return Err(PyNotImplementedError::new_err("ffi plugin"));
@@ -1437,7 +1463,20 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
             options: py.None(),
         }
         .into_py_any(py),
-        AExpr::Rolling { .. } => Err(PyNotImplementedError::new_err("rolling")),
+        AExpr::Rolling {
+            function,
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } => Rolling {
+            function: function.0,
+            index_column: index_column.0,
+            period: Wrap(*period).into_py_any(py)?,
+            offset: Wrap(*offset).into_py_any(py)?,
+            closed_window: Wrap(*closed_window).into_py_any(py)?,
+        }
+        .into_py_any(py),
         AExpr::Over {
             function,
             partition_by,

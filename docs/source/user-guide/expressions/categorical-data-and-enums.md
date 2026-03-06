@@ -173,7 +173,7 @@ to specify so when creating the column:
 {{code_block('user-guide/expressions/categoricals', 'stringcache-categorical-comparison-lexical',
 ['StringCache', 'Categorical'])}}
 
-```python result="text" session="expressions/categoricals"
+```python exec="on" result="text" session="expressions/categoricals"
 --8<-- "python/user-guide/expressions/categoricals.py:stringcache-categorical-comparison-lexical"
 ```
 
@@ -181,10 +181,6 @@ Otherwise, the order is inferred together with the values:
 
 {{code_block('user-guide/expressions/categoricals', 'stringcache-categorical-comparison-physical',
 ['StringCache', 'Categorical'])}}
-
-```python
---8<-- "python/user-guide/expressions/categoricals.py:stringcache-categorical-comparison-physical"
-```
 
 ```
 shape: (5,)

@@ -1080,7 +1080,10 @@ fn lower_exprs_with_ctx(
                     lower_exprs_with_ctx(input, &[inner_exprs[0].node()], ctx)?;
                 let right_expr_exploded_node = match ctx.expr_arena.get(inner_exprs[1].node()) {
                     // expr.implode().explode() ~= expr (and avoids rechunking)
-                    AExpr::Agg(IRAggExpr::Implode(n)) => *n,
+                    AExpr::Agg(IRAggExpr::Implode {
+                        input: n,
+                        maintain_order: _,
+                    }) => *n,
                     _ => AExprBuilder::new_from_node(inner_exprs[1].node())
                         .explode(
                             ctx.expr_arena,
@@ -1950,7 +1953,7 @@ fn lower_exprs_with_ctx(
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_name)));
                 },
                 IRAggExpr::Median(_)
-                | IRAggExpr::Implode(_)
+                | IRAggExpr::Implode { .. }
                 | IRAggExpr::Quantile { .. }
                 | IRAggExpr::AggGroups(_) => {
                     let out_name = unique_column_name();
@@ -2289,25 +2292,28 @@ fn build_select_stream_with_ctx(
         )?));
     }
 
-    // Are we only selecting simple columns, with the same name?
-    let all_simple_columns: Option<Vec<PlSmallStr>> = exprs
+    // Are we only selecting columns?
+    let only_columns_select: Option<PlIndexMap<PlSmallStr, PlSmallStr>> = exprs
         .iter()
         .map(|e| match ctx.expr_arena.get(e.node()) {
-            AExpr::Column(name) if name == e.output_name() => Some(name.clone()),
+            AExpr::Column(name) => Some((e.output_name().clone(), name.clone())),
             _ => None,
         })
         .collect();
 
-    if let Some(columns) = all_simple_columns {
+    if let Some(columns) = only_columns_select {
         let input_schema = ctx.phys_sm[input.node].output_schema.clone();
         if input_schema.len() == columns.len()
-            && input_schema.iter_names().zip(&columns).all(|(l, r)| l == r)
+            && input_schema
+                .iter_names()
+                .zip(&columns)
+                .all(|(c1, (c2, c3))| c1 == c2 && c2 == c3)
         {
             // Input node already has the correct schema, just pass through.
             return Ok(input);
         }
 
-        let output_schema = Arc::new(input_schema.try_project(&columns)?);
+        let output_schema = Arc::new(input_schema.try_project_with_alias(&columns)?);
         let node_kind = PhysNodeKind::SimpleProjection { input, columns };
         let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
         return Ok(PhysStream::first(node_key));

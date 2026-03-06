@@ -13,6 +13,7 @@ use crate::reduce::bitwise::{
 use crate::reduce::count::{CountReduce, NullCountReduce};
 use crate::reduce::first_last::{new_first_reduction, new_item_reduction, new_last_reduction};
 use crate::reduce::first_last_nonnull::{new_first_nonnull_reduction, new_last_nonnull_reduction};
+use crate::reduce::implode::new_unordered_implode_reduction;
 use crate::reduce::len::LenReduce;
 use crate::reduce::mean::new_mean_reduction;
 use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
@@ -68,10 +69,14 @@ pub fn into_reduction(
                 let count = Box::new(CountReduce::new(*include_nulls)) as Box<_>;
                 (count, *input)
             },
+            IRAggExpr::Implode {
+                input,
+                maintain_order: false,
+            } => (new_unordered_implode_reduction(get_dt(*input)?), *input),
             IRAggExpr::Quantile { .. } => todo!(),
             IRAggExpr::Median(_) => todo!(),
             IRAggExpr::NUnique(_) => todo!(),
-            IRAggExpr::Implode(_) => todo!(),
+            IRAggExpr::Implode { .. } => todo!(),
             IRAggExpr::AggGroups(_) => todo!(),
         },
         AExpr::Len => {
