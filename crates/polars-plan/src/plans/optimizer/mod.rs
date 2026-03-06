@@ -37,7 +37,7 @@ use polars_core::config::verbose;
 pub use predicate_pushdown::{DynamicPred, PredicateExpr, PredicatePushDown, TrivialPredicateExpr};
 pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
-use slice_pushdown_lp::SlicePushDown;
+pub use slice_pushdown_lp::SlicePushDown;
 pub use sortedness::{AExprSorted, IRSorted, are_keys_sorted_any, is_sorted};
 pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
 
@@ -84,7 +84,7 @@ pub(super) fn run_projection_predicate_pushdown(
     }
 
     if opt_flags.projection_pushdown() {
-        let mut projection_pushdown_opt = ProjectionPushDown::new();
+        let mut projection_pushdown_opt = ProjectionPushDown::default();
         let ir = ir_arena.take(root);
         let ir = projection_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
         ir_arena.replace(root, ir);

@@ -210,17 +210,12 @@ fn update_scan_schema(
     Ok(new_schema)
 }
 
+#[derive(Default)]
 pub struct ProjectionPushDown {
     pub is_count_star: bool,
 }
 
 impl ProjectionPushDown {
-    pub(super) fn new() -> Self {
-        Self {
-            is_count_star: false,
-        }
-    }
-
     /// Projection will be done at this node, but we continue optimization
     fn no_pushdown_restart_opt(
         &mut self,

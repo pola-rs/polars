@@ -1,37 +1,39 @@
 use polars_core::prelude::*;
+use polars_utils::arena::Node;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::slice_enum::Slice;
+use polars_utils::unitvec;
 use recursive::recursive;
 
 use crate::prelude::*;
 
-mod inner {
-    use polars_utils::arena::Node;
-    use polars_utils::idx_vec::UnitVec;
-    use polars_utils::unitvec;
+pub struct SlicePushDown {
+    scratch: UnitVec<Node>,
+    pub(super) maintain_errors: bool,
+}
 
-    pub struct SlicePushDown {
-        scratch: UnitVec<Node>,
-        pub(super) maintain_errors: bool,
+impl SlicePushDown {
+    // We typically run with maintain_errors: false.
+    // We don't guarantee errors are not optimized away.
+    pub fn new(maintain_errors: bool) -> Self {
+        Self {
+            scratch: unitvec![],
+            maintain_errors,
+        }
     }
 
-    impl SlicePushDown {
-        pub fn new(maintain_errors: bool) -> Self {
-            Self {
-                scratch: unitvec![],
-                maintain_errors,
-            }
-        }
-
-        /// Returns shared scratch space after clearing.
-        pub fn empty_nodes_scratch_mut(&mut self) -> &mut UnitVec<Node> {
-            self.scratch.clear();
-            &mut self.scratch
-        }
+    /// Returns shared scratch space after clearing.
+    pub fn empty_nodes_scratch_mut(&mut self) -> &mut UnitVec<Node> {
+        self.scratch.clear();
+        &mut self.scratch
     }
 }
 
-pub(super) use inner::SlicePushDown;
+impl Default for SlicePushDown {
+    fn default() -> Self {
+        Self::new(false)
+    }
+}
 
 #[derive(Copy, Clone, Debug)]
 struct State {
