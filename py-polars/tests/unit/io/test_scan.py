@@ -991,7 +991,10 @@ def test_only_project_include_file_paths(scan_type: tuple[Any, Any]) -> None:
                 reason="IPC scan does not support the missing_columns parameter"
             ),
         ),
-        (pl.DataFrame.write_csv, partial(pl.scan_csv, schema={"a": pl.UInt32, "missing": pl.Int32})),
+        (
+            pl.DataFrame.write_csv,
+            partial(pl.scan_csv, schema={"a": pl.UInt32, "missing": pl.Int32}),
+        ),
         pytest.param(
             (pl.DataFrame.write_ndjson, pl.scan_ndjson),
             marks=pytest.mark.xfail(
