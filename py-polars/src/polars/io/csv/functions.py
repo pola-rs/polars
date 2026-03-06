@@ -1517,6 +1517,12 @@ def _scan_csv_impl(
     else:
         sources = []
 
+    # TODO: This is a hack. We conditionally set `missing_columns` to mimic
+    # existing behavior. This should be removed once the workaround is no
+    # longer needed.
+    if missing_columns is None and schema is not None and has_header:
+        missing_columns = "insert"
+
     pylf = PyLazyFrame.new_from_csv(
         source,
         sources,
