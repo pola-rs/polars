@@ -70,12 +70,6 @@ def test_arrow_empty_dataframe() -> None:
     assert df2.shape == (0, 1)
 
 
-def test_arrow_zero_column_dataframe_preserves_row_count_26834() -> None:
-    df = pl.DataFrame(height=5)
-    tbl = pa.table(df)
-    assert tbl.shape == (5, 0)
-
-
 def test_arrow_dict_to_polars() -> None:
     pa_dict = pa.DictionaryArray.from_arrays(
         indices=np.array([0, 1, 2, 3, 1, 0, 2, 3, 3, 2]),
@@ -1494,9 +1488,11 @@ def test_0_width_df_roundtrip() -> None:
     assert pl.DataFrame(height=(1 << 32) - 1).to_numpy().shape == ((1 << 32) - 1, 0)
     assert pl.DataFrame(np.zeros((10, 0))).shape == (10, 0)
 
-    arrow_table = pl.DataFrame(height=(1 << 32) - 1).to_arrow()
+    df = pl.DataFrame(height=(1 << 32) - 1)
+    arrow_table = df.to_arrow()
     assert arrow_table.shape == ((1 << 32) - 1, 0)
     assert pl.DataFrame(arrow_table).shape == ((1 << 32) - 1, 0)
+    assert pa.table(df).shape == ((1 << 32) - 1, 0)
 
     pandas_df = pl.DataFrame(height=(1 << 32) - 1).to_pandas()
     assert pandas_df.shape == ((1 << 32) - 1, 0)
