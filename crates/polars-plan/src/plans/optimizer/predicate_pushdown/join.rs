@@ -1070,20 +1070,17 @@ fn take_iejoin_compatible_filters(
                     None,
                 )?;
 
-                macro_rules! is_supported_type {
-                    ($node:expr) => {{
-                        let node = $node;
-                        let field = expr_arena
-                            .get(node)
-                            .to_field(&ToFieldContext::new(expr_arena, output_schema))?;
-                        let dtype = field.dtype();
-
-                        !dtype.is_nested() && dtype.to_physical().is_primitive_numeric()
-                    }};
-                }
+                let is_supported_type = |node: Node| -> PolarsResult<bool> {
+                    let field = expr_arena
+                        .get(node)
+                        .to_field(&ToFieldContext::new(expr_arena, output_schema))?;
+                    let dtype = field.dtype();
+                    let phys = dtype.to_physical();
+                    Ok(!dtype.is_nested() && phys.is_primitive_numeric())
+                };
 
                 // IEJoin only supports numeric.
-                if !is_supported_type!(*left) || !is_supported_type!(*right) {
+                if !is_supported_type(*left)? || !is_supported_type(*right)? {
                     return Ok(None);
                 }
 
