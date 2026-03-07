@@ -666,3 +666,33 @@ def test_list_eval_groupby_sample_25796() -> None:
     out = df.group_by("g").agg(pl.col("x").sample(n=2).list.eval(pl.element()))
     expected = pl.DataFrame({"g": [10], "x": [[[1, 1], [1, 1]]]})
     assert_frame_equal(out, expected)
+
+
+def test_list_agg_mixed_nulls_and_empty_lists_26237() -> None:
+    # https://github.com/pola-rs/polars/issues/26237
+    # list.agg with scalar aggregation panics when input has both nulls and empty lists.
+    result = pl.DataFrame({"a": [[1], None, []]}).select(
+        pl.all().list.agg(pl.element().first())
+    )
+    expected = pl.DataFrame({"a": [1, None, None]})
+    assert_frame_equal(result, expected)
+
+    # Also test with other scalar aggregations on mixed null + empty lists.
+    result = pl.DataFrame({"a": [[1, 2], None, []]}).select(
+        pl.all().list.agg(pl.element().sum())
+    )
+    expected = pl.DataFrame({"a": [3, None, 0]})
+    assert_frame_equal(result, expected)
+
+    # Test with only nulls and only empty lists (should already work, regression guard).
+    result = pl.DataFrame({"a": [[1], None]}).select(
+        pl.all().list.agg(pl.element().first())
+    )
+    expected = pl.DataFrame({"a": [1, None]})
+    assert_frame_equal(result, expected)
+
+    result = pl.DataFrame({"a": [[1], []]}).select(
+        pl.all().list.agg(pl.element().first())
+    )
+    expected = pl.DataFrame({"a": [1, None]})
+    assert_frame_equal(result, expected)

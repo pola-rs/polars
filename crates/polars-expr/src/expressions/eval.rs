@@ -21,6 +21,34 @@ use polars_utils::pl_str::PlSmallStr;
 use super::{AggregationContext, PhysicalExpr};
 use crate::state::ExecutionState;
 
+/// Deposit values into null positions according to a validity bitmap.
+///
+/// When scalar aggregations produce null results (e.g., `first()` on an empty
+/// group), those nulls must be merged into the outer validity bitmap before
+/// calling `deposit`, which requires its input to have no nulls.
+fn deposit_with_result_nulls(values: Column, validity: &Bitmap) -> PolarsResult<Column> {
+    if values.null_count() == 0 {
+        return Ok(values.deposit(validity));
+    }
+
+    // Merge result nulls into the validity bitmap: outer-null positions stay
+    // null, and valid outer positions that produced null results also become null.
+    let is_valid_result = values.is_not_null();
+    let filtered = values.filter(&is_valid_result)?;
+
+    let mut combined = BitmapBuilder::with_capacity(validity.len());
+    let mut result_iter = is_valid_result.into_no_null_iter();
+    for outer_valid in validity.iter() {
+        if outer_valid {
+            combined.push(result_iter.next().unwrap_or(false));
+        } else {
+            combined.push(false);
+        }
+    }
+
+    Ok(filtered.deposit(&combined.freeze()))
+}
+
 #[derive(Clone)]
 pub struct EvalExpr {
     input: Arc<dyn PhysicalExpr>,
@@ -173,7 +201,7 @@ impl EvalExpr {
 
             // We didn't have any groups for the `null` values so we have to reinsert them.
             if let Some(validity) = validity {
-                values = values.deposit(&validity);
+                values = deposit_with_result_nulls(values, &validity)?;
             }
 
             Ok(values)
@@ -325,7 +353,7 @@ impl EvalExpr {
 
             // We didn't have any groups for the `null` values so we have to reinsert them.
             if let Some(validity) = validity {
-                values = values.deposit(&validity);
+                values = deposit_with_result_nulls(values, &validity)?;
             }
 
             Ok(values)
