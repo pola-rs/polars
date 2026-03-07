@@ -3345,6 +3345,7 @@ class DataFrame:
             | tuple[int, int, int, int]
             | None
         ) = None,
+        use_zip64: bool = False,
     ) -> Workbook:
         """
         Write frame data to a table in an Excel workbook/worksheet.
@@ -3478,6 +3479,10 @@ class DataFrame:
               the `top_row` and `top_col`. Thus, to freeze only the top row and have the
               scrolling region begin at row 10, column D (5th col), supply (1, 0, 9, 4).
               Using cell notation for (row, col), supplying ("A2", 9, 4) is equivalent.
+        use_zip64 : bool
+            Whether to use ZIP64 extensions when writing the Workbook. This allows for
+            writing exceptionally large workbook files (>=4GB when uncompressed), but
+            is less broadly compatible.
 
         Notes
         -----
@@ -3735,7 +3740,7 @@ class DataFrame:
         from xlsxwriter.utility import xl_cell_to_rowcol
 
         # setup workbook/worksheet
-        wb, ws, can_close = _xl_setup_workbook(workbook, worksheet)
+        wb, ws, can_close = _xl_setup_workbook(workbook, worksheet, use_zip64=use_zip64)
         df, is_empty = self, self.is_empty()
 
         # note: `_xl_setup_table_columns` converts nested data (List, Struct, etc.) to
