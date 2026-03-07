@@ -82,8 +82,8 @@ fn cast_literal_series(s: &Series, dtype: &DataType) -> PolarsResult<Series> {
 /// Extract the literal value; returns `(sql_value, optional_op)`.
 fn extract_literal_with_op<'a>(
     expr: &'a SQLExpr,
-    outer_op: Option<&'a UnaryOperator>,
-) -> Option<(&'a SQLValue, Option<&'a UnaryOperator>)> {
+    outer_op: Option<&'a SQLUnaryOperator>,
+) -> Option<(&'a SQLValue, Option<&'a SQLUnaryOperator>)> {
     match expr {
         SQLExpr::Value(ValueWithSpan { value: v, .. }) => Some((v, outer_op)),
         SQLExpr::UnaryOp { op, expr } if outer_op.is_none() => match expr.as_ref() {
