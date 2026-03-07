@@ -464,7 +464,7 @@ def test_list_eval_parametric_rank(df: pl.DataFrame, expr: pl.Expr) -> None:
         ),
         (
             pl.DataFrame({"a": [[1, 2, 3], [], [1]]}),
-            pl.DataFrame({"a": [[1], [None], [1]]}),
+            pl.DataFrame({"a": [[1], [], [1]]}),
         ),
         (
             pl.DataFrame({"a": [[None, None, 1], [1], [1]]}),
@@ -666,3 +666,39 @@ def test_list_eval_groupby_sample_25796() -> None:
     out = df.group_by("g").agg(pl.col("x").sample(n=2).list.eval(pl.element()))
     expected = pl.DataFrame({"g": [10], "x": [[[1, 1], [1, 1]]]})
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("expr", "data", "expected"),
+    [
+        (pl.element().first(), [[1, 2], [], [4]], [[1], [], [4]]),
+        (pl.element().sum(), [[1, 2], [], [4]], [[3], [], [4]]),
+        (pl.element().mean(), [[1, 2], [], [4]], [[1.5], [], [4]]),
+        (pl.element().sum(), [[], [1, 2], [5], []], [[], [3], [5], []]),
+        (pl.element().max(), [[], [1, 2], [5], []], [[], [2], [5], []]),
+        (pl.element().mean(), [[], [1, 2], [5], []], [[], [1.5], [5], []]),
+        (pl.element().sum(), [[], []], [[], []]),
+    ],
+)
+def test_list_eval_scalar_empty_inner_list(
+    expr: pl.Expr, data: list[list[int]], expected: list[list[object]]
+) -> None:
+    assert_frame_equal(
+        pl.DataFrame({"a": data}).select(pl.col("a").list.eval(expr)),
+        pl.DataFrame({"a": expected}),
+    )
+
+
+def test_list_eval_scalar_empty_inner_list_with_outer_nulls() -> None:
+    assert_frame_equal(
+        pl.DataFrame({"a": [[1, 2], None, [], [3]]}).select(
+            pl.col("a").list.eval(pl.element().first())
+        ),
+        pl.DataFrame({"a": [[1], None, [], [3]]}),
+    )
+    assert_frame_equal(
+        pl.DataFrame({"a": [None, [], [], [1, 2, 3]]}).select(
+            pl.col("a").list.eval(pl.element().sum())
+        ),
+        pl.DataFrame({"a": [None, [], [], [6]]}),
+    )

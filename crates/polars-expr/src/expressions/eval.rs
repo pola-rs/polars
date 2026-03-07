@@ -108,21 +108,64 @@ impl EvalExpr {
         // Detect accidental inclusion of sliced-out elements from chunks after the 1st (if present).
         assert_eq!(i64::try_from(flattened_len).unwrap(), *offsets.last());
 
-        // Create groups for all valid array elements.
-        let groups = if ca.has_nulls() {
-            let validity = validity.as_ref().unwrap();
-            offsets
-                .offset_and_length_iter()
-                .zip(validity.iter())
-                .filter_map(|((offset, length), validity)| {
-                    validity.then_some([offset as IdxSize, length as IdxSize])
-                })
-                .collect()
+        // Empty valid inner lists produce phantom scalar results in list.eval; exclude them like
+        // outer nulls and restore afterward. list.agg empty-group handling is tracked separately.
+        let has_empty_valid_lists = !is_agg && self.evaluation_is_scalar && {
+            if let Some(v) = &validity {
+                offsets
+                    .offset_and_length_iter()
+                    .zip(v.iter())
+                    .any(|((_, length), valid)| valid && length == 0)
+            } else {
+                offsets
+                    .offset_and_length_iter()
+                    .any(|(_, length)| length == 0)
+            }
+        };
+
+        let (groups, non_empty_among_valid) = if has_empty_valid_lists {
+            let non_null_count = validity.as_ref().map_or(ca.len(), |v| v.set_bits());
+            let mut non_empty_bits = BitmapBuilder::with_capacity(non_null_count);
+            let groups = if let Some(v) = &validity {
+                offsets
+                    .offset_and_length_iter()
+                    .zip(v.iter())
+                    .filter_map(|((offset, length), valid)| {
+                        if valid {
+                            unsafe { non_empty_bits.push_unchecked(length > 0) };
+                            (length > 0).then_some([offset as IdxSize, length as IdxSize])
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            } else {
+                offsets
+                    .offset_and_length_iter()
+                    .filter_map(|(offset, length)| {
+                        unsafe { non_empty_bits.push_unchecked(length > 0) };
+                        (length > 0).then_some([offset as IdxSize, length as IdxSize])
+                    })
+                    .collect()
+            };
+            (groups, Some(non_empty_bits.freeze()))
         } else {
-            offsets
-                .offset_and_length_iter()
-                .map(|(offset, length)| [offset as IdxSize, length as IdxSize])
-                .collect()
+            let groups = if ca.has_nulls() {
+                let validity = validity.as_ref().unwrap();
+                offsets
+                    .offset_and_length_iter()
+                    .zip(validity.iter())
+                    .filter_map(|((offset, length), validity)| {
+                        validity.then_some([offset as IdxSize, length as IdxSize])
+                    })
+                    .collect()
+            } else {
+                offsets
+                    .offset_and_length_iter()
+                    .map(|(offset, length)| [offset as IdxSize, length as IdxSize])
+                    .collect()
+            };
+            (groups, None)
         };
         let groups = GroupsType::new_slice(groups, false, true);
         let groups = Cow::Owned(groups.into_sliceable());
@@ -140,6 +183,7 @@ impl EvalExpr {
         if flat_naive.len() == flattened_len
             && let Some(output_groups) = ac.groups.as_ref().as_unrolled_slice()
             && !(is_agg && self.evaluation_is_scalar)
+            && !has_empty_valid_lists
         {
             let groups_are_unchanged = if let Some(validity) = &validity {
                 assert_eq!(validity.set_bits(), output_groups.len());
@@ -178,14 +222,33 @@ impl EvalExpr {
 
             Ok(values)
         } else {
-            let mut ca = ac.aggregated_as_list();
+            let mut ca_out = ac.aggregated_as_list();
 
-            // We didn't have any groups for the `null` values so we have to reinsert them.
-            if let Some(validity) = validity {
-                ca = Cow::Owned(ca.deposit(&validity));
+            if let Some(ref non_empty_among_valid) = non_empty_among_valid {
+                debug_assert_eq!(ca_out.len(), non_empty_among_valid.set_bits());
+                debug_assert_eq!(ca_out.null_count(), 0);
+                let mut builder = AnonymousOwnedListBuilder::new(
+                    ca_out.name().clone(),
+                    non_empty_among_valid.len(),
+                    Some(ca_out.inner_dtype().clone()),
+                );
+                let mut src_idx = 0usize;
+                for is_non_empty in non_empty_among_valid.iter() {
+                    if is_non_empty {
+                        builder.append_series(&ca_out.get_as_series(src_idx).unwrap())?;
+                        src_idx += 1;
+                    } else {
+                        builder.append_empty();
+                    }
+                }
+                ca_out = Cow::Owned(builder.finish());
             }
 
-            Ok(ca.into_owned().into_column())
+            if let Some(validity) = validity {
+                ca_out = Cow::Owned(ca_out.deposit(&validity));
+            }
+
+            Ok(ca_out.into_owned().into_column())
         }
     }
 
