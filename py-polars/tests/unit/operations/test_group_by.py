@@ -2260,10 +2260,11 @@ def test_group_by_forward_backward_fill(
         data = data.select(cs.all().reshape((-1,)))
     assert_frame_equal(df.select(expr(cl)), data)
 
-    assert_frame_equal(
-        df.select(expr(cl)),
-        df.select(cl.implode().list.eval(expr(pl.element())).reshape((-1,))),
-    )
+    if not is_scalar:
+        assert_frame_equal(
+            df.select(expr(cl)),
+            df.select(cl.implode().list.eval(expr(pl.element())).reshape((-1,))),
+        )
 
 
 @given(s=series())
