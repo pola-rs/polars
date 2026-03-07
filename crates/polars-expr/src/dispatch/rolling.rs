@@ -9,8 +9,6 @@ use polars_core::prelude::{
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
 #[cfg(feature = "cov")]
-use polars_core::utils::try_get_supertype;
-#[cfg(feature = "cov")]
 use polars_plan::dsl::RollingCovOptions;
 use polars_plan::prelude::PlanCallback;
 use polars_time::prelude::SeriesOpsTime;
@@ -151,9 +149,8 @@ pub(super) fn rolling_corr_cov(
     let mut x = s[0].as_materialized_series().rechunk();
     let mut y = s[1].as_materialized_series().rechunk();
 
-    let st = match try_get_supertype(x.dtype(), y.dtype())? {
-        DataType::Float16 => DataType::Float16,
-        DataType::Float32 => DataType::Float32,
+    let st = match polars_core::utils::try_get_supertype(x.dtype(), y.dtype())? {
+        dt if dt.is_float() => dt,
         _ => DataType::Float64,
     };
 

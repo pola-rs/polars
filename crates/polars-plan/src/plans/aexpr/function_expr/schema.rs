@@ -82,11 +82,8 @@ impl IRFunctionExpr {
                     },
                     #[cfg(feature = "cov")]
                     CorrCov { .. } => mapper.try_map_dtypes(|dtypes| {
-                        let st = try_get_supertype(dtypes[0], dtypes[1])?;
-                        Ok(match st {
-                            #[cfg(feature = "dtype-f16")]
-                            DataType::Float16 => DataType::Float16,
-                            DataType::Float32 => DataType::Float32,
+                        Ok(match try_get_supertype(dtypes[0], dtypes[1])? {
+                            dt if dt.is_float() => dt,
                             _ => DataType::Float64,
                         })
                     }),
