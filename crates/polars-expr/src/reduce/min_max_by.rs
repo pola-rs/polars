@@ -4,7 +4,8 @@ use std::marker::PhantomData;
 
 use num_traits::Bounded;
 use polars_core::chunked_array::arg_min_max::{
-    arg_max_binary, arg_max_bool, arg_max_numeric, arg_min_binary, arg_min_bool, arg_min_numeric,
+    arg_max_binary, arg_max_binary_offset, arg_max_bool, arg_max_numeric, arg_min_binary,
+    arg_min_binary_offset, arg_min_bool, arg_min_numeric,
 };
 use polars_core::with_match_physical_integer_polars_type;
 use polars_utils::arg_min_max::ArgMinMax;
@@ -43,6 +44,7 @@ pub fn new_min_by_reduction(
         )),
         Null => Box::new(NullGroupedReduction::new(Scalar::null(dtype))),
         String | Binary => Box::new(SPGR::new(by_dtype, BinaryMinSelector, payload)),
+        BinaryOffset => Box::new(SPGR::new(by_dtype, BinaryOffsetMinSelector, payload)),
         _ if by_dtype.is_integer() || by_dtype.is_temporal() || by_dtype.is_enum() => {
             with_match_physical_integer_polars_type!(by_dtype.to_physical(), |$T| {
                 Box::new(SPGR::new(by_dtype, MinSelector::<$T>(PhantomData), payload))
@@ -94,6 +96,7 @@ pub fn new_max_by_reduction(
         )),
         Null => Box::new(NullGroupedReduction::new(Scalar::null(dtype))),
         String | Binary => Box::new(SPGR::new(by_dtype, BinaryMaxSelector, payload)),
+        BinaryOffset => Box::new(SPGR::new(by_dtype, BinaryOffsetMaxSelector, payload)),
         _ if by_dtype.is_integer() || by_dtype.is_temporal() || by_dtype.is_enum() => {
             with_match_physical_integer_polars_type!(by_dtype.to_physical(), |$T| {
                 Box::new(SPGR::new(by_dtype, MaxSelector::<$T>(PhantomData), payload))
@@ -336,16 +339,99 @@ impl SelectReducer for BinaryMaxSelector {
 }
 
 #[derive(Clone)]
+struct BinaryOffsetMinSelector;
+#[derive(Clone)]
+struct BinaryOffsetMaxSelector;
+
+impl SelectReducer for BinaryOffsetMinSelector {
+    type Dtype = BinaryOffsetType;
+    type Value = Option<Vec<u8>>;
+
+    fn init(&self) -> Self::Value {
+        // There's no "maximum string" initializer.
+        None
+    }
+
+    fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
+        arg_min_binary_offset(ca).filter(|idx| {
+            let val = unsafe { ca.value_unchecked(*idx) };
+            self.select_one(v, val)
+        })
+    }
+
+    fn select_one(
+        &self,
+        a: &mut Self::Value,
+        b: <Self::Dtype as PolarsDataType>::Physical<'_>,
+    ) -> bool {
+        if let Some(av) = a {
+            if b < av.as_slice() {
+                av.clear();
+                av.extend_from_slice(b);
+                true
+            } else {
+                false
+            }
+        } else {
+            *a = Some(b.to_vec());
+            true
+        }
+    }
+
+    fn select_combine(&self, a: &mut Self::Value, b: &Self::Value) -> bool {
+        if let Some(bv) = b {
+            self.select_one(a, bv)
+        } else {
+            false
+        }
+    }
+}
+
+impl SelectReducer for BinaryOffsetMaxSelector {
+    type Dtype = BinaryOffsetType;
+    type Value = Vec<u8>;
+
+    fn init(&self) -> Self::Value {
+        // Empty string is <= any other string, so can initialize max with it.
+        Vec::new()
+    }
+
+    fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
+        arg_max_binary_offset(ca).filter(|idx| {
+            let val = unsafe { ca.value_unchecked(*idx) };
+            self.select_one(v, val)
+        })
+    }
+
+    fn select_one(
+        &self,
+        a: &mut Self::Value,
+        b: <Self::Dtype as PolarsDataType>::Physical<'_>,
+    ) -> bool {
+        let better = b > a.as_slice();
+        if better {
+            a.clear();
+            a.extend_from_slice(b);
+        }
+        better
+    }
+
+    fn select_combine(&self, a: &mut Self::Value, b: &Self::Value) -> bool {
+        self.select_one(a, b)
+    }
+}
+
+#[derive(Clone)]
 struct BooleanMinSelector;
 #[derive(Clone)]
 struct BooleanMaxSelector;
 
 impl SelectReducer for BooleanMinSelector {
-    type Value = bool;
+    type Value = Option<bool>;
     type Dtype = BooleanType;
 
     fn init(&self) -> Self::Value {
-        true
+        None
     }
 
     fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
@@ -361,24 +447,24 @@ impl SelectReducer for BooleanMinSelector {
         b: <Self::Dtype as PolarsDataType>::Physical<'_>,
     ) -> bool {
         #[allow(clippy::bool_comparison)]
-        let better = b < *a;
+        let better = a.is_none_or(|a| b <= a);
         if better {
-            *a = b;
+            *a = Some(b);
         }
         better
     }
 
     fn select_combine(&self, a: &mut Self::Value, b: &Self::Value) -> bool {
-        self.select_one(a, *b)
+        self.select_one(a, b.unwrap_or(true))
     }
 }
 
 impl SelectReducer for BooleanMaxSelector {
-    type Value = bool;
+    type Value = Option<bool>;
     type Dtype = BooleanType;
 
     fn init(&self) -> Self::Value {
-        false
+        None
     }
 
     fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
@@ -394,15 +480,15 @@ impl SelectReducer for BooleanMaxSelector {
         b: <Self::Dtype as PolarsDataType>::Physical<'_>,
     ) -> bool {
         #[allow(clippy::bool_comparison)]
-        let better = b > *a;
+        let better = a.is_none_or(|a| b > a);
         if better {
-            *a = b;
+            *a = Some(b);
         }
         better
     }
 
     fn select_combine(&self, a: &mut Self::Value, b: &Self::Value) -> bool {
-        self.select_one(a, *b)
+        self.select_one(a, b.unwrap_or(false))
     }
 }
 

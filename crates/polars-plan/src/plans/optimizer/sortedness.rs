@@ -8,6 +8,8 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 #[cfg(all(feature = "strings", feature = "concat_str"))]
 use crate::plans::IRStringFunction;
@@ -15,6 +17,65 @@ use crate::plans::{
     AExpr, ExprIR, FunctionIR, HintIR, IR, IRFunctionExpr, Sorted, ToFieldContext,
     constant_evaluate, into_column,
 };
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Default, PartialEq, Clone, Copy, Hash)]
+pub struct AExprSorted {
+    /// If `Some(true)`, the expression is sorted in descending order.
+    /// If `Some(false)`, the expression is sorted in ascending order.
+    /// If `None`, the sorting order is unknown.
+    pub descending: Option<bool>,
+    /// If `Some(true)`, null values (if any) are at the end of the expression result.
+    /// If `Some(false)`, null values (if any) are at the beginning of the expression result.
+    /// If `None`, the null value position is unknown or there are no nulls.
+    pub nulls_last: Option<bool>,
+}
+
+impl AExprSorted {
+    pub fn reverse(self) -> Self {
+        Self {
+            descending: self.descending.map(|x| !x),
+            nulls_last: self.nulls_last.map(|x| !x),
+        }
+    }
+
+    pub fn with_desc(mut self, desc: Option<bool>) -> Self {
+        self.descending = desc;
+        self
+    }
+
+    pub fn with_nulls_last(mut self, nulls_last: Option<bool>) -> Self {
+        self.nulls_last = nulls_last;
+        self
+    }
+
+    pub fn is_asc(&self) -> bool {
+        matches!(self.descending, Some(false))
+    }
+
+    pub fn is_desc(&self) -> bool {
+        matches!(self.descending, Some(true))
+    }
+
+    pub fn is_nulls_first(&self) -> bool {
+        matches!(self.nulls_last, Some(false))
+    }
+
+    pub fn is_nulls_last(&self) -> bool {
+        matches!(self.nulls_last, Some(true))
+    }
+}
+
+impl From<AExprSorted> for IsSorted {
+    fn from(val: AExprSorted) -> Self {
+        match val.descending {
+            Some(false) => IsSorted::Ascending,
+            Some(true) => IsSorted::Descending,
+            None => IsSorted::Not,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct IRSorted(pub Arc<[Sorted]>);
@@ -354,18 +415,6 @@ fn is_sorted_rec(
     sorted
 }
 
-#[derive(Debug, PartialEq)]
-pub struct AExprSorted {
-    /// None: either way / unsure
-    /// Some(false): ascending
-    /// Some(true): descending
-    pub descending: Option<bool>,
-    /// None: either way / unsure
-    /// Some(false): nulls (if any) at start
-    /// Some(true): nulls (if any) at end
-    pub nulls_last: Option<bool>,
-}
-
 fn first_expr_ir_sorted(
     exprs: &[ExprIR],
     arena: &Arena<AExpr>,
@@ -475,16 +524,16 @@ pub fn function_expr_sortedness(
             descending: Some(false),
             nulls_last: Some(false),
         }),
-        IRFunctionExpr::SetSortedFlag(is_sorted) => match is_sorted {
-            IsSorted::Ascending => Some(AExprSorted {
+        IRFunctionExpr::SetSortedFlag(sortedness) => match sortedness.descending {
+            Some(false) => Some(AExprSorted {
                 descending: Some(false),
                 nulls_last: None,
             }),
-            IsSorted::Descending => Some(AExprSorted {
+            Some(true) => Some(AExprSorted {
                 descending: Some(true),
                 nulls_last: None,
             }),
-            IsSorted::Not => None,
+            None => None,
         },
 
         IRFunctionExpr::Unique(true)

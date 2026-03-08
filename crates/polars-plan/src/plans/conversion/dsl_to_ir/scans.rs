@@ -73,6 +73,7 @@ pub(super) async fn dsl_to_ir(
             },
             #[cfg(feature = "scan_lines")]
             FileScanDsl::Lines { .. } => sources.expand_paths(unified_scan_args).await?,
+            FileScanDsl::ExpandedPaths { .. } => sources.expand_paths(unified_scan_args).await?,
             FileScanDsl::Anonymous { .. } => sources.clone(),
         };
 
@@ -990,8 +991,6 @@ this scan to succeed with an empty DataFrame.",
             .map_err(|e| e.context(failed_here!(python dataset scan)))?,
             #[cfg(feature = "scan_lines")]
             FileScanDsl::Lines { name } => {
-                // We were passed a schema, we don't have to call `parquet_file_info`,
-                // but this does mean we don't have `row_estimation` and `first_metadata`.
                 let schema = Arc::new(Schema::from_iter([(name.clone(), DataType::String)]));
 
                 (
@@ -1001,6 +1000,18 @@ this scan to succeed with an empty DataFrame.",
                         row_estimation: (None, usize::MAX),
                     },
                     FileScanIR::Lines { name },
+                )
+            },
+            FileScanDsl::ExpandedPaths { name } => {
+                let schema = Arc::new(Schema::from_iter([(name.clone(), DataType::String)]));
+
+                (
+                    FileInfo {
+                        schema: schema.clone(),
+                        reader_schema: Some(either::Either::Right(schema.clone())),
+                        row_estimation: (Some(sources.len()), sources.len()),
+                    },
+                    FileScanIR::ExpandedPaths { name },
                 )
             },
             FileScanDsl::Anonymous {

@@ -81,7 +81,12 @@ impl IRFunctionExpr {
                         _ => unreachable!("should be Some(RollingFnParams::Rank)"),
                     },
                     #[cfg(feature = "cov")]
-                    CorrCov { .. } => mapper.map_to_float_dtype(),
+                    CorrCov { .. } => mapper.try_map_dtypes(|dtypes| {
+                        Ok(match try_get_supertype(dtypes[0], dtypes[1])? {
+                            dt if dt.is_float() => dt,
+                            _ => DataType::Float64,
+                        })
+                    }),
                     #[cfg(feature = "moment")]
                     Skew | Kurtosis => mapper.map_to_float_dtype(),
                     Map(_) => mapper.try_map_field(|field| {
@@ -144,15 +149,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "moment")]
             Kurtosis(..) => mapper.with_dtype(DataType::Float64),
             ArgUnique | ArgMin | ArgMax | ArgSort { .. } => mapper.with_dtype(IDX_DTYPE),
-            MinBy | MaxBy => {
-                if fields[1].dtype.is_nested() {
-                    polars_bail!(
-                        InvalidOperation: "cannot use a nested type as `by` argument in `min_by`/`max_by`, got dtype `{}`", fields[1].dtype
-                    )
-                }
-
-                mapper.with_same_dtype()
-            },
+            MinBy | MaxBy => mapper.with_same_dtype(),
             Product => mapper.map_dtype(|dtype| {
                 use DataType as T;
                 match dtype {

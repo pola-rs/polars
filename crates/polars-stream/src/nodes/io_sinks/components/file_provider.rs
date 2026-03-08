@@ -21,7 +21,8 @@ pub struct FileProvider {
 impl FileProvider {
     pub async fn open_file(&self, args: FileProviderArgs) -> PolarsResult<Writeable> {
         let provided_path: String = match &self.provider_type {
-            FileProviderType::Hive(v) => v.get_path(args)?,
+            FileProviderType::Hive(p) => p.get_path(args)?,
+            FileProviderType::Iceberg(p) => p.get_path(args)?,
             FileProviderType::Function(f) => {
                 let f = f.clone();
 
