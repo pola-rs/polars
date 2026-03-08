@@ -205,20 +205,25 @@ def concat(
         join_method: JoinStrategy = (
             "full" if how == "align" else how.removeprefix("align_")  # type: ignore[assignment]
         )
-        lf: LazyFrame = (
-            _balanced_reduce(
-                [df.lazy() for df in elems],
-                lambda x, y: x.join(
-                    y,
-                    on=common_cols,
-                    how=join_method,
-                    maintain_order="right_left",
-                    coalesce=True,
-                ),
+        join_frames = [df.lazy() for df in elems]
+
+        def join_fn(x: pl.LazyFrame, y: pl.LazyFrame) -> pl.LazyFrame:
+            return x.join(
+                y,
+                on=common_cols,
+                how=join_method,
+                maintain_order="right_left",
+                coalesce=True,
             )
-            .sort(by=common_cols, maintain_order=True)
-            .select(*output_column_order)
-        )
+
+        if join_method in ("full", "inner"):
+            # associative => balanced tree, recursion depth is O(log(n))
+            lf = _balanced_reduce(join_frames, join_fn)
+        else:
+            # not associative => linear chain, recursion depth is O(n)
+            lf = reduce(join_fn, join_frames)
+        lf = lf.sort(by=common_cols, maintain_order=True).select(*output_column_order)
+
         eager = isinstance(elems[0], pl.DataFrame)
         return lf.collect() if eager else lf  # type: ignore[return-value]
 
@@ -491,20 +496,25 @@ def union(
         join_method: JoinStrategy = (
             "full" if how == "align" else how.removeprefix("align_")  # type: ignore[assignment]
         )
-        lf: LazyFrame = (
-            _balanced_reduce(
-                [df.lazy() for df in elems],
-                lambda x, y: x.join(
-                    y,
-                    on=common_cols,
-                    how=join_method,
-                    maintain_order="none",
-                    coalesce=True,
-                ),
+        join_frames = [df.lazy() for df in elems]
+
+        def join_fn(x: pl.LazyFrame, y: pl.LazyFrame) -> pl.LazyFrame:
+            return x.join(
+                y,
+                on=common_cols,
+                how=join_method,
+                maintain_order="none",
+                coalesce=True,
             )
-            .sort(by=common_cols, maintain_order=False)
-            .select(*output_column_order)
-        )
+
+        if join_method in ("full", "inner"):
+            # associative => balanced tree, recursion depth is O(log(n))
+            lf = _balanced_reduce(join_frames, join_fn)
+        else:
+            # not associative => linear chain, recursion depth is O(n)
+            lf = reduce(join_fn, join_frames)
+        lf = lf.sort(by=common_cols, maintain_order=False).select(*output_column_order)
+
         eager = isinstance(elems[0], pl.DataFrame)
         return lf.collect() if eager else lf  # type: ignore[return-value]
 

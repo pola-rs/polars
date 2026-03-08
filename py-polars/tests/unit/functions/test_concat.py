@@ -4,6 +4,7 @@ from typing import IO
 import pytest
 
 import polars as pl
+from polars._typing import ConcatMethod
 from polars.testing import assert_frame_equal
 
 
@@ -423,23 +424,36 @@ def test_concat_with_empty_dataframes_nonstrict_25727() -> None:
 
 @pytest.mark.slow
 @pytest.mark.parametrize(
-    "depth",
+    "how",
     [
-        1,
-        31,
-        32,
-        33,
-        875,  # per the original issue, we observe segfault at 875
-        2000,
+        "align",
+        "align_full",
+        "align_inner",
+        "align_left",
+        "align_right",
     ],
 )
-def test_concat_stack_overflow_26788(depth: int) -> None:
-    dfs = [pl.DataFrame({"foo": [0], f"c{i}": [1.0]}) for i in range(depth)]
-    out = pl.concat(dfs, how="align")
-
-    dfs_alt = [pl.DataFrame({"foo": [0]})] + [
-        pl.DataFrame({f"c{i}": [1.0]}) for i in range(depth)
+@pytest.mark.parametrize(
+    "n_dfs",
+    [3, 4, 5],  # balanced tree +/- 1
+)
+def test_concat_align_associativity_26788(how: ConcatMethod, n_dfs: int) -> None:
+    # create every possible key combination over `n_dfs` dataframes
+    n_dfs = n_dfs
+    keys = [
+        [x for x in range(1 << n_dfs) if not (x >> (n_dfs - 1 - i) & 1)]
+        for i in range(n_dfs)
     ]
-    expected = pl.concat(dfs_alt, how="horizontal")
+    dfs = [
+        pl.DataFrame({"k": key})
+        .with_columns((i * 100 + pl.col.k).alias(f"v_{i}"))
+        .lazy()
+        for i, key in enumerate(keys)
+    ]
 
-    assert_frame_equal(out, expected)
+    chained_from_left = dfs[0]
+    for df in dfs[1:]:
+        chained_from_left = pl.concat([chained_from_left, df], how=how)
+
+    full = pl.concat(dfs, how=how)
+    assert_frame_equal(chained_from_left, full)

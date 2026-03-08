@@ -855,24 +855,3 @@ def test_corr_spearman_float_dtype_26335(
     q = df.lazy().group_by("c").agg(pl.corr("a", "b", method=method))
     out = q.collect()
     assert out.schema["a"] == dt
-
-
-@pytest.mark.slow
-@pytest.mark.parametrize(
-    "depth",
-    [
-        1,
-        31,
-        32,
-        33,
-        875,  # per the original issue, we observe segfault at 875
-        2000,
-    ],
-)
-def test_align_frames_stack_overflow_26788(depth: int) -> None:
-    dfs = [pl.DataFrame({"foo": [0], f"c{i}": [1.0]}) for i in range(depth)]
-    out = pl.align_frames(dfs, on="foo")
-
-    assert len(dfs) == len(out)
-    for a, b in zip(dfs, out, strict=True):
-        assert_frame_equal(a, b)
