@@ -1356,12 +1356,37 @@ def test_min_max_by(agg_funcs: Any, by_col: str) -> None:
                 None,
                 datetime(2023, 4, 4),
             ],
+            "array": [
+                [1, 2],
+                [None, 1],
+                [7, 1],
+                [1, 4],
+                None,
+                [7, None],
+            ],
+            "list": [
+                [1],
+                [None, 1],
+                [1, 2],
+                [7],
+                None,
+                [7, None],
+            ],
+            "struct": [
+                {"x": 1, "y": "abc"},
+                {"x": 7, "y": "xyz"},
+                {"x": 7, "y": ""},
+                {"x": 1, "y": None},
+                {"x": None, "y": ""},
+                {"x": 8, "y": "z"},
+            ],
             "g": [1, 1, 1, 2, 2, 2],
         },
         schema_overrides={
             "dec": pl.Decimal(scale=5),
             "cat": pl.Categorical,
             "enum": pl.Enum(["a", "b", "c", "d", "e", "f"]),
+            "array": pl.Array(pl.Int8, 2),
         },
     )
 
@@ -1456,23 +1481,6 @@ def test_min_max_by_series_length_mismatch_26049(
         match=r"expressions must have matching group lengths",
     ):
         q.collect(engine="in-memory")
-
-
-@pytest.mark.parametrize(
-    "by_expr",
-    [
-        pl.struct("b", "c"),
-        pl.concat_list("b", "c"),
-    ],
-)
-def test_min_by_max_by_nested_type_key_26268(by_expr: pl.Expr) -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 6, 5], "c": [7, 5, 2]})
-
-    with pytest.raises(
-        pl.exceptions.InvalidOperationError,
-        match="cannot use a nested type as `by` argument in `min_by`/`max_by`",
-    ):
-        df.select(pl.col("a").min_by(by_expr))
 
 
 def test_max_by_scalar_26548() -> None:
