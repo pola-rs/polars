@@ -427,11 +427,11 @@ struct BooleanMinSelector;
 struct BooleanMaxSelector;
 
 impl SelectReducer for BooleanMinSelector {
-    type Value = bool;
+    type Value = Option<bool>;
     type Dtype = BooleanType;
 
     fn init(&self) -> Self::Value {
-        true
+        None
     }
 
     fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
@@ -447,24 +447,24 @@ impl SelectReducer for BooleanMinSelector {
         b: <Self::Dtype as PolarsDataType>::Physical<'_>,
     ) -> bool {
         #[allow(clippy::bool_comparison)]
-        let better = b < *a;
+        let better = a.is_none_or(|a| b <= a);
         if better {
-            *a = b;
+            *a = Some(b);
         }
         better
     }
 
     fn select_combine(&self, a: &mut Self::Value, b: &Self::Value) -> bool {
-        self.select_one(a, *b)
+        self.select_one(a, b.unwrap_or(true))
     }
 }
 
 impl SelectReducer for BooleanMaxSelector {
-    type Value = bool;
+    type Value = Option<bool>;
     type Dtype = BooleanType;
 
     fn init(&self) -> Self::Value {
-        false
+        None
     }
 
     fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
@@ -480,15 +480,15 @@ impl SelectReducer for BooleanMaxSelector {
         b: <Self::Dtype as PolarsDataType>::Physical<'_>,
     ) -> bool {
         #[allow(clippy::bool_comparison)]
-        let better = b > *a;
+        let better = a.is_none_or(|a| b > a);
         if better {
-            *a = b;
+            *a = Some(b);
         }
         better
     }
 
     fn select_combine(&self, a: &mut Self::Value, b: &Self::Value) -> bool {
-        self.select_one(a, *b)
+        self.select_one(a, b.unwrap_or(false))
     }
 }
 

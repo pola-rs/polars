@@ -1492,3 +1492,23 @@ def test_max_by_scalar_26548() -> None:
     out = df.select(pl.col.x.max_by("y").over("g"))
     expected = pl.DataFrame({"x": 1})
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("agg", "expected"),
+    [
+        (pl.Expr.min_by, 1),
+        (pl.Expr.max_by, 1),
+    ],
+)
+def test_min_max_by_on_boolean_26847(
+    agg: Callable[..., pl.Expr],
+    expected: int,
+) -> None:
+    df = pl.DataFrame({"a": [1], "b": [True]})
+    result = df.select(agg(pl.col("a"), pl.col("b")))
+    assert result.item() == expected
+
+    df = pl.DataFrame({"a": [1] * 10, "b": [True] * 10})
+    result = df.select(agg(pl.col("a"), pl.col("b")))
+    assert result.item() == expected
