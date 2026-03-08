@@ -386,3 +386,60 @@ def test_scalar_i64_overflow() -> None:
         match="-9223372036854775809",
     ):
         pl.select(pl.duration(nanoseconds=-(2**63) - 1))
+
+
+@pytest.mark.parametrize("time_unit", ["ns", "us", "ms"])
+def test_duration_cast_null_to_string(time_unit: TimeUnit) -> None:
+    s = pl.Series([None], dtype=pl.Duration(time_unit))
+    assert s.cast(pl.String)[0] is None
+
+
+@pytest.mark.parametrize(
+    ("value", "time_unit", "expected"),
+    [
+        (0, "ns", "PT0S"),
+        (0, "us", "PT0S"),
+        (0, "ms", "PT0S"),
+        (7 * 86_400_000_000_000, "ns", "P7D"),
+        (3_600_000_000_000, "ns", "PT1H"),
+        (1_000_000, "ns", "PT0.001S"),
+        (1_000, "ns", "PT0.000001S"),
+        (1, "ns", "PT0.000000001S"),
+        (1_001_000, "ns", "PT0.001001S"),
+        (1_000_001, "ns", "PT0.001000001S"),
+        (1_001, "ns", "PT0.000001001S"),
+        (
+            (8 * 86_400 + 3600 + 60 + 1) * 1_000_000_000 + 1_001_000,
+            "ns",
+            "P8DT1H1M1.001001S",
+        ),
+        (
+            (8 * 86_400 + 3600 + 60 + 1) * 1_000_000_000 + 1_001_001,
+            "ns",
+            "P8DT1H1M1.001001001S",
+        ),
+        (-1_000_000_000, "ns", "-PT1S"),
+        (1, "us", "PT0.000001S"),
+        (1_000, "us", "PT0.001S"),
+        (1_001, "us", "PT0.001001S"),
+        (1, "ms", "PT0.001S"),
+        (1_001, "ms", "PT1.001S"),
+    ],
+)
+def test_duration_cast_to_string(
+    value: int, time_unit: TimeUnit, expected: str
+) -> None:
+
+    s = pl.Series([value], dtype=pl.Duration(time_unit))
+    assert s.cast(pl.String)[0] == expected
+
+
+@pytest.mark.parametrize("time_unit", ["ns", "us", "ms"])
+def test_duration_cast_to_string_matches_dt_to_string_iso(
+    time_unit: TimeUnit,
+) -> None:
+    s = pl.Series(
+        [timedelta(days=3, seconds=7, milliseconds=5)],
+        dtype=pl.Duration(time_unit),
+    )
+    assert_series_equal(s.cast(pl.String), s.dt.to_string("iso"))
