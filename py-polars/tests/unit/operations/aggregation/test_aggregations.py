@@ -1369,14 +1369,18 @@ def test_min_max_by(agg_funcs: Any, by_col: str) -> None:
     expected = df.select([agg(pl.col(c)) for c in COLS])
     assert_frame_equal(result, expected)
 
-    # TODO: remove after https://github.com/pola-rs/polars/issues/25906.
-    if by_col != "cat":
-        df = df.drop("cat")
-        cols = [c for c in COLS if c != "cat"]
+    result = df.group_by("g").agg([agg_by(pl.col(c), pl.col(by_col)) for c in COLS])
+    expected = df.group_by("g").agg([agg(pl.col(c)) for c in COLS])
+    assert_frame_equal(result, expected, check_row_order=False)
 
-        result = df.group_by("g").agg([agg_by(pl.col(c), pl.col(by_col)) for c in cols])
-        expected = df.group_by("g").agg([agg(pl.col(c)) for c in cols])
-        assert_frame_equal(result, expected, check_row_order=False)
+
+def test_group_by_categorical_min_max_25906() -> None:
+    df = pl.Series(["a", "b"], dtype=pl.Categorical).to_frame("cat")
+    df = df.with_columns(g=1)
+    result = df.group_by("g").agg(pl.col.cat.min())
+    assert result["cat"].item() == "a"
+    result = df.group_by("g").agg(pl.col.cat.max())
+    assert result["cat"].item() == "b"
 
 
 @pytest.mark.parametrize(("agg", "expected"), [("max", 2), ("min", 0)])
