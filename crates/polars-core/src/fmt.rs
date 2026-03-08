@@ -1050,22 +1050,58 @@ pub fn fmt_duration_string<W: Write>(f: &mut W, v: i64, unit: TimeUnit) -> fmt::
             }
         }
     }
-    // write fractional seconds as integer nano/micro/milliseconds.
-    let (v, units) = match unit {
-        TimeUnit::Nanoseconds => (v % 1_000_000_000, ["ns", "µs", "ms"]),
-        TimeUnit::Microseconds => (v % 1_000_000, ["µs", "ms", ""]),
-        TimeUnit::Milliseconds => (v % 1_000, ["ms", "", ""]),
-    };
-    if v != 0 {
-        let (value, suffix) = if v % 1_000 != 0 {
-            (v, units[0])
-        } else if v % 1_000_000 != 0 {
-            (v / 1_000, units[1])
-        } else {
-            (v / 1_000_000, units[2])
-        };
-        f.write_str(buffer.format(value))?;
-        f.write_str(suffix)?;
+    // write fractional seconds as separate ms/µs/ns components.
+    match unit {
+        TimeUnit::Nanoseconds => {
+            let sub = v % 1_000_000_000;
+            let ms = sub / 1_000_000;
+            let us = (sub % 1_000_000) / 1_000;
+            let ns = sub % 1_000;
+            let mut wrote_sub = false;
+            if ms != 0 {
+                f.write_str(buffer.format(ms))?;
+                f.write_str("ms")?;
+                wrote_sub = true;
+            }
+            if us != 0 {
+                if wrote_sub {
+                    f.write_char(' ')?;
+                }
+                f.write_str(buffer.format(us))?;
+                f.write_str("µs")?;
+                wrote_sub = true;
+            }
+            if ns != 0 {
+                if wrote_sub {
+                    f.write_char(' ')?;
+                }
+                f.write_str(buffer.format(ns))?;
+                f.write_str("ns")?;
+            }
+        },
+        TimeUnit::Microseconds => {
+            let sub = v % 1_000_000;
+            let ms = sub / 1_000;
+            let us = sub % 1_000;
+            if ms != 0 {
+                f.write_str(buffer.format(ms))?;
+                f.write_str("ms")?;
+            }
+            if us != 0 {
+                if ms != 0 {
+                    f.write_char(' ')?;
+                }
+                f.write_str(buffer.format(us))?;
+                f.write_str("µs")?;
+            }
+        },
+        TimeUnit::Milliseconds => {
+            let ms = v % 1_000;
+            if ms != 0 {
+                f.write_str(buffer.format(ms))?;
+                f.write_str("ms")?;
+            }
+        },
     }
     Ok(())
 }

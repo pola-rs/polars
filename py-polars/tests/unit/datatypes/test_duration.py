@@ -90,10 +90,10 @@ def test_duration_to_string() -> None:
                 None,
             ],
             "td_str_pl": [
-                "180d 15h 46m 29s 987654µs",
-                "18h 1m 15s 8884µs",
+                "180d 15h 46m 29s 987ms 654µs",
+                "18h 1m 15s 8ms 884µs",
                 "3d 22m 55s 1ms",
-                "1h 1s 1001µs",
+                "1h 1s 1ms 1µs",
                 "-42s -42ms",
                 None,
             ],
