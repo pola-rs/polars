@@ -465,10 +465,6 @@ pub fn pushdown_eligibility(
 pub(crate) fn ir_removes_rows(ir: &IR) -> bool {
     use IR::*;
 
-    // NOTE
-    // At time of writing predicate pushdown runs before slice pushdown, so
-    // some of the below checks for slice may never be hit.
-
     match ir {
         DataFrameScan { .. }
         | SimpleProjection { .. }
@@ -492,6 +488,8 @@ pub(crate) fn ir_removes_rows(ir: &IR) -> bool {
         Scan {
             unified_scan_args, ..
         } => unified_scan_args.pre_slice.is_some(),
+
+        Union { options, .. } => options.slice.is_some(),
 
         _ => true,
     }

@@ -34,6 +34,7 @@ serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 slotmap = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
+uuid = { workspace = true }
 
 arrow = { workspace = true }
 memchr = { workspace = true }

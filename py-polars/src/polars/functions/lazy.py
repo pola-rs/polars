@@ -268,7 +268,7 @@ def cum_count(*columns: str, reverse: bool = False) -> Expr:
     return F.col(*columns).cum_count(reverse=reverse)
 
 
-def implode(*columns: str) -> Expr:
+def implode(*columns: str, maintain_order: bool = True) -> Expr:
     """
     Aggregate all column values into a list.
 
@@ -278,6 +278,10 @@ def implode(*columns: str) -> Expr:
     ----------
     *columns
         One or more column names.
+
+    maintain_order
+        Whether to preserve the order of elements in the list. Setting this
+        to `False` can improve performance, especially within `group_by`.
 
     Examples
     --------
@@ -308,7 +312,7 @@ def implode(*columns: str) -> Expr:
     └───────────┴───────────────────────┘
 
     """
-    return F.col(*columns).implode()
+    return F.col(*columns).implode(maintain_order=maintain_order)
 
 
 def std(column: str, ddof: int = 1) -> Expr:
