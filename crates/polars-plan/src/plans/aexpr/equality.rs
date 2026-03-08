@@ -122,7 +122,7 @@ impl IRAggExpr {
             A::Last(_) |
             A::LastNonNull(_) |
             A::Mean(_) |
-            A::Implode(_) |
+            A::Implode { .. } |
             A::Sum(_) |
             A::AggGroups(_)  => true,
         };

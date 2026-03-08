@@ -1080,7 +1080,10 @@ fn lower_exprs_with_ctx(
                     lower_exprs_with_ctx(input, &[inner_exprs[0].node()], ctx)?;
                 let right_expr_exploded_node = match ctx.expr_arena.get(inner_exprs[1].node()) {
                     // expr.implode().explode() ~= expr (and avoids rechunking)
-                    AExpr::Agg(IRAggExpr::Implode(n)) => *n,
+                    AExpr::Agg(IRAggExpr::Implode {
+                        input: n,
+                        maintain_order: _,
+                    }) => *n,
                     _ => AExprBuilder::new_from_node(inner_exprs[1].node())
                         .explode(
                             ctx.expr_arena,
@@ -1950,7 +1953,7 @@ fn lower_exprs_with_ctx(
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_name)));
                 },
                 IRAggExpr::Median(_)
-                | IRAggExpr::Implode(_)
+                | IRAggExpr::Implode { .. }
                 | IRAggExpr::Quantile { .. }
                 | IRAggExpr::AggGroups(_) => {
                     let out_name = unique_column_name();

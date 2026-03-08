@@ -58,7 +58,7 @@ fn test_agg_unique_first() -> PolarsResult<()> {
                 .sort(Default::default())
                 .first()
                 .alias("true_first"),
-            col("v").unique().implode(),
+            col("v").unique().implode(true),
         ])
         .collect()?;
 

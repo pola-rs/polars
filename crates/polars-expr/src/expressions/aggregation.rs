@@ -155,7 +155,7 @@ impl PhysicalExpr for AggregationExpr {
 
                 Ok(IdxCa::from_slice(s.name().clone(), &[count as IdxSize]).into_column())
             },
-            GroupByMethod::Implode => s.implode().map(|ca| ca.into_column()),
+            GroupByMethod::Implode { maintain_order: _ } => s.implode().map(|ca| ca.into_column()),
             GroupByMethod::Std(ddof) => s
                 .std_reduce(ddof)
                 .map(|sc| sc.into_column(s.name().clone())),
@@ -414,11 +414,13 @@ impl PhysicalExpr for AggregationExpr {
                     let agg_s = s.agg_n_unique(&groups);
                     AggregatedScalar(agg_s.with_name(keep_name))
                 },
-                GroupByMethod::Implode => AggregatedScalar(match ac.agg_state() {
-                    AggState::LiteralScalar(_) => unreachable!(), // handled above
-                    AggState::AggregatedScalar(c) => c.as_list().into_column(),
-                    AggState::NotAggregated(_) | AggState::AggregatedList(_) => ac.aggregated(),
-                }),
+                GroupByMethod::Implode { maintain_order: _ } => {
+                    AggregatedScalar(match ac.agg_state() {
+                        AggState::LiteralScalar(_) => unreachable!(), // handled above
+                        AggState::AggregatedScalar(c) => c.as_list().into_column(),
+                        AggState::NotAggregated(_) | AggState::AggregatedList(_) => ac.aggregated(),
+                    })
+                },
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();
                     column.rename(keep_name);

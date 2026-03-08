@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
+use arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
+use arrow::datatypes::ArrowDataType;
 use parking_lot::Mutex;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
-use polars_core::prelude::{DataType, PlHashMap, PlHashSet};
+use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
+use polars_core::series::Series;
 use polars_core::{SchemaExtPl, config};
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_ops::frame::JoinType;
@@ -641,6 +644,62 @@ pub fn lower_ir(
                     df: Arc::new(DataFrame::empty_with_height(num_rows)),
                     disable_morsel_split: disable_morsel_split.unwrap_or(true),
                 }
+            } else if let FileScanIR::ExpandedPaths { name: _ } = &*scan_type {
+                let unsupported_parameter = if unified_scan_args.pre_slice.is_some() {
+                    "pre_slice"
+                } else if unified_scan_args.include_file_paths.is_some() {
+                    "include_file_paths"
+                } else if unified_scan_args.row_index.is_some() {
+                    "row_index"
+                } else if predicate.is_some() {
+                    "predicate"
+                } else if hive_parts.is_some() {
+                    "hive_parts"
+                } else {
+                    ""
+                };
+
+                polars_ensure!(
+                    unsupported_parameter.is_empty(),
+                    ComputeError:
+                    "unsupported parameter for ExpandedPaths scan: '{unsupported_parameter}'"
+                );
+
+                assert!(output_schema.len() <= 1);
+
+                let df = if let Some((name, dtype)) = output_schema.get_at_index(0) {
+                    polars_ensure!(
+                        dtype.is_string(),
+                        ComputeError:
+                        "non-string dtype for ExpandedPaths scan"
+                    );
+
+                    let mut builder = MutableBinaryViewArray::with_capacity(
+                        scan_sources.len().wrapping_mul(
+                            scan_sources
+                                .first()
+                                .map_or(0, |x| x.to_include_path_name().len()),
+                        ),
+                    );
+
+                    for source in scan_sources.iter() {
+                        builder.push_value_ignore_validity(source.to_include_path_name());
+                    }
+
+                    let array: Utf8ViewArray = builder.freeze_with_dtype(ArrowDataType::Utf8View);
+                    let c = Series::from_arrow(name.clone(), Box::new(array))
+                        .unwrap()
+                        .into_column();
+
+                    DataFrame::new(scan_sources.len(), vec![c]).unwrap()
+                } else {
+                    DataFrame::empty_with_height(scan_sources.len())
+                };
+
+                PhysNodeKind::InMemorySource {
+                    df: Arc::new(df),
+                    disable_morsel_split: disable_morsel_split.unwrap_or(true),
+                }
             } else {
                 let file_reader_builder: Arc<dyn FileReaderBuilder> = match &*scan_type {
                     #[cfg(feature = "parquet")]
@@ -717,6 +776,8 @@ pub fn lower_ir(
                             io_metrics: std::sync::OnceLock::new(),
                         }) as _
                     },
+
+                    FileScanIR::ExpandedPaths { name: _ } => unreachable!(),
 
                     FileScanIR::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
                 };

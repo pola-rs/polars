@@ -1865,3 +1865,27 @@ def test_scan_parquet_temporal_lit_comparison_skip_batch_24095_25731(
     )
 
     capfd.readouterr()
+
+
+def test_sink_parquet_pipe_with_schema_26777() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    q = df.lazy().pipe_with_schema(lambda lf, _: lf.sink_parquet(f, lazy=True))
+
+    assert q.collect().shape == (0, 0)
+
+    assert_frame_equal(pl.scan_parquet(f).collect(), df)
+
+
+def test_sink_parquet_lazy_and_collect() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    q = df.lazy().sink_parquet(f, lazy=True)
+
+    assert q.collect().shape == (0, 0)
+
+    assert_frame_equal(pl.scan_parquet(f).collect(), df)
