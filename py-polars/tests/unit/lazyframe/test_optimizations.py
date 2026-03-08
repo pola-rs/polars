@@ -3,9 +3,8 @@ import io
 import itertools
 import typing
 
-import pyarrow
+import pyarrow as pa
 import pyarrow.dataset as pad
-
 import pytest
 
 import polars as pl
@@ -616,6 +615,6 @@ def test_scan_select_all_columns_no_projection_parquet() -> None:
 
 
 def test_scan_select_all_columns_no_projection_pyarrow() -> None:
-    ds = pad.dataset(pyarrow.table({"a": [1, 2, 3], "b": [4, 5, 6]}))
+    ds = pad.dataset(pa.table({"a": [1, 2, 3], "b": [4, 5, 6]}))
     plan = pl.scan_pyarrow_dataset(ds).select(pl.col("a"), pl.col("b")).explain()
     assert "PROJECT */2 COLUMNS" in plan
