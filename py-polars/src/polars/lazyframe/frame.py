@@ -8357,8 +8357,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             on_cols = on_columns
         elif isinstance(on_columns, pl.Series):
             on_cols = on_columns.to_frame()
+        elif isinstance(on_columns, str):
+            msg = f"invalid type for `on_columns` argument: {qualified_type_name(on_columns)!r}"
+            raise TypeError(msg)
         else:
-            on_cols = pl.Series(on_columns).to_frame()
+            on_cols = pl.Series(values=on_columns).to_frame()
 
         return self._from_pyldf(
             self._ldf.pivot(
