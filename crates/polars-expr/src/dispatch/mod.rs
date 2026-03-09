@@ -434,7 +434,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
                 },
             }
         },
-        F::SetSortedFlag(sorted) => map!(misc::set_sorted_flag, sorted),
+        F::SetSortedFlag(sortedness) => map!(misc::set_sorted_flag, sortedness),
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags: _,

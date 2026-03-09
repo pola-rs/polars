@@ -144,9 +144,16 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 }
                 .into()
             },
-            IRAggExpr::Implode(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Implode(Arc::new(exp)).into()
+            IRAggExpr::Implode {
+                input,
+                maintain_order,
+            } => {
+                let exp = node_to_expr(input, expr_arena);
+                AggExpr::Implode {
+                    input: Arc::new(exp),
+                    maintain_order,
+                }
+                .into()
             },
             IRAggExpr::Quantile {
                 expr,
