@@ -128,11 +128,13 @@ same region.
 
 ## Takeaways
 
-- The stage graph shows which stages take the longest and how much data is shuffled between them.
-- The physical plan shows which operations within a stage are responsible for the time spent.
+- The [stage graph](glossary.md#stage-graph) shows which [stages](glossary.md#stage) take the
+  longest and how much data is [shuffled](glossary.md#shuffle) between them.
+- The [physical plan](glossary.md#physical-plan) shows which operations within a stage are
+  responsible for the time spent.
 - Indicators on stages and nodes highlight potential bottlenecks: start with the slowest stage and
   drill down to individual operations.
 - I/O-heavy queries benefit from more bandwidth: add nodes or choose a higher-bandwidth instance
   type.
-- Shuffle-heavy queries require data to move between workers; co-locating data and cluster in the
-  same region reduces I/O time.
+- [Shuffle](glossary.md#shuffle)-heavy queries require data to move between workers; co-locating
+  data and cluster in the same region reduces I/O time.
