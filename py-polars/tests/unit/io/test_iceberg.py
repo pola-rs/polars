@@ -27,9 +27,14 @@ import pytest
 from pyiceberg.expressions import literal
 from pyiceberg.partitioning import (
     BucketTransform,
+    DayTransform,
+    HourTransform,
     IdentityTransform,
+    MonthTransform,
     PartitionField,
     PartitionSpec,
+    TruncateTransform,
+    YearTransform,
 )
 from pyiceberg.schema import Schema as IcebergSchema
 from pyiceberg.table import StaticTable
@@ -64,7 +69,11 @@ from polars.io.iceberg._dataset import (
     IcebergTableWrap,
     _NativeIcebergScanData,
 )
-from polars.io.iceberg._sink import IcebergSinkState, PlIcebergPathProviderConfig
+from polars.io.iceberg._sink import (
+    IcebergSinkState,
+    PlIcebergPathProviderConfig,
+    _resolve_partition_key,
+)
 from polars.io.iceberg._utils import (
     _convert_predicate,
     _normalize_windows_iceberg_file_uri,
@@ -141,6 +150,7 @@ def new_iceberg_table(
     tmp_path: Path,
     *,
     schema: IcebergSchema,
+    partition_spec: PartitionSpec | None = None,
     name: str = "table",
 ) -> tuple[pyiceberg.table.Table, SqlCatalog]:
     catalog = SqlCatalog(
@@ -151,7 +161,11 @@ def new_iceberg_table(
     namespace = uuid.uuid4().bytes.hex()
     catalog.create_namespace(namespace)
 
-    return catalog.create_table((namespace, name), schema), catalog
+    return catalog.create_table(
+        (namespace, name),
+        schema,
+        partition_spec=partition_spec or PartitionSpec(),
+    ), catalog
 
 
 # PyIceberg on Windows uses `file://C:/` rather than `file:///C:/`.
@@ -2670,3 +2684,542 @@ def test_scan_iceberg_partial_and_pushdown(
     # Verify: correctness
     assert len(result) == 2
     assert result["a"].to_list() == [2, 3]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_identity(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", StringType()),
+            NestedField(2, "b", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1, field_id=1000, transform=IdentityTransform(), name="a"
+            ),
+        ),
+    )
+
+    df = pl.DataFrame({"a": ["x", "x", "y", "y", "z"], "b": [1, 2, 3, 4, 5]})
+
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    assert sum(1 for _ in tbl.scan().plan_files()) >= 3
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("b"),
+        df,
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_day(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", DateType()),
+            NestedField(2, "b", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1, field_id=1000, transform=DayTransform(), name="a_day"
+            ),
+        ),
+    )
+
+    df = pl.DataFrame(
+        {
+            "a": [date(2024, 1, 1), date(2024, 1, 1), date(2024, 6, 15)],
+            "b": [1, 2, 3],
+        }
+    )
+
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    assert sum(1 for _ in tbl.scan().plan_files()) >= 2
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("b"),
+        df,
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_month(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", DateType()),
+            NestedField(2, "b", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1, field_id=1000, transform=MonthTransform(), name="a_month"
+            ),
+        ),
+    )
+
+    df = pl.DataFrame(
+        {
+            "a": [
+                date(2024, 1, 15),
+                date(2024, 1, 20),
+                date(2024, 3, 10),
+                date(2025, 1, 5),
+            ],
+            "b": [1, 2, 3, 4],
+        }
+    )
+
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    assert sum(1 for _ in tbl.scan().plan_files()) >= 3
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("b"),
+        df,
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_year(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", DateType()),
+            NestedField(2, "b", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1, field_id=1000, transform=YearTransform(), name="a_year"
+            ),
+        ),
+    )
+
+    df = pl.DataFrame(
+        {
+            "a": [date(2023, 6, 1), date(2024, 3, 15), date(2024, 9, 30)],
+            "b": [1, 2, 3],
+        }
+    )
+
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    assert sum(1 for _ in tbl.scan().plan_files()) >= 2
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("b"),
+        df,
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_hour(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", TimestamptzType()),
+            NestedField(2, "b", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1, field_id=1000, transform=HourTransform(), name="a_hour"
+            ),
+        ),
+    )
+
+    df = pl.DataFrame(
+        {
+            "a": [
+                datetime(2024, 1, 1, 10, 0, tzinfo=zoneinfo.ZoneInfo("UTC")),
+                datetime(2024, 1, 1, 10, 30, tzinfo=zoneinfo.ZoneInfo("UTC")),
+                datetime(2024, 1, 1, 14, 0, tzinfo=zoneinfo.ZoneInfo("UTC")),
+            ],
+            "b": [1, 2, 3],
+        }
+    )
+
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    assert sum(1 for _ in tbl.scan().plan_files()) >= 2
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("b"),
+        df,
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_truncate(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()),
+            NestedField(2, "b", StringType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1,
+                field_id=1000,
+                transform=TruncateTransform(width=10),
+                name="a_trunc",
+            ),
+        ),
+    )
+
+    df = pl.DataFrame({"a": [1, 5, 10, 15, 25], "b": ["a", "b", "c", "d", "e"]})
+
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    assert sum(1 for _ in tbl.scan().plan_files()) >= 3
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("a"),
+        df,
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_bucket_raises(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1,
+                field_id=1000,
+                transform=BucketTransform(num_buckets=16),
+                name="a_bucket",
+            ),
+        ),
+    )
+
+    with pytest.raises(NotImplementedError, match="bucket partitioning"):
+        pl.LazyFrame({"a": [1, 2, 3]}).sink_iceberg(tbl, mode="append")
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_overwrite(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", StringType()),
+            NestedField(2, "b", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1, field_id=1000, transform=IdentityTransform(), name="a"
+            ),
+        ),
+    )
+
+    df1 = pl.DataFrame({"a": ["x", "y"], "b": [1, 2]})
+    df2 = pl.DataFrame({"a": ["z", "w"], "b": [3, 4]})
+
+    df1.lazy().sink_iceberg(tbl, mode="append")
+    df2.lazy().sink_iceberg(tbl, mode="overwrite")
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("b"),
+        df2,
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_append_multiple(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", StringType()),
+            NestedField(2, "b", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1, field_id=1000, transform=IdentityTransform(), name="a"
+            ),
+        ),
+    )
+
+    df1 = pl.DataFrame({"a": ["x", "y"], "b": [1, 2]})
+    df2 = pl.DataFrame({"a": ["x", "z"], "b": [3, 4]})
+
+    df1.lazy().sink_iceberg(tbl, mode="append")
+    df2.lazy().sink_iceberg(tbl, mode="append")
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("b"),
+        pl.concat([df1, df2]),
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_multiple_fields(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", StringType()),
+            NestedField(2, "b", DateType()),
+            NestedField(3, "c", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1, field_id=1000, transform=IdentityTransform(), name="a"
+            ),
+            PartitionField(
+                source_id=2, field_id=1001, transform=YearTransform(), name="b_year"
+            ),
+        ),
+    )
+
+    df = pl.DataFrame(
+        {
+            "a": ["x", "x", "y", "y"],
+            "b": [
+                date(2023, 1, 1),
+                date(2024, 6, 15),
+                date(2023, 3, 10),
+                date(2024, 9, 30),
+            ],
+            "c": [1, 2, 3, 4],
+        }
+    )
+
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    assert sum(1 for _ in tbl.scan().plan_files()) >= 4
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("c"),
+        df,
+    )
+
+
+@pytest.mark.write_disk
+def test_resolve_partition_key_unpartitioned(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+    )
+
+    assert _resolve_partition_key(tbl) is None
+
+
+@pytest.mark.write_disk
+def test_resolve_partition_key_identity(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", StringType()),
+            NestedField(2, "b", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1, field_id=1000, transform=IdentityTransform(), name="a"
+            ),
+        ),
+    )
+
+    exprs = _resolve_partition_key(tbl)
+    assert exprs is not None
+    assert len(exprs) == 1
+
+    assert_frame_equal(
+        pl.DataFrame({"a": ["x", "y", "x"], "b": [1, 2, 3]}).select(exprs),
+        pl.DataFrame({"__part_a": ["x", "y", "x"]}),
+    )
+
+
+@pytest.mark.write_disk
+def test_resolve_partition_key_year(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", DateType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1, field_id=1000, transform=YearTransform(), name="a_year"
+            ),
+        ),
+    )
+
+    exprs = _resolve_partition_key(tbl)
+    assert exprs is not None
+
+    assert_frame_equal(
+        pl.DataFrame({"a": [date(2023, 6, 1), date(2024, 3, 15)]}).select(exprs),
+        pl.DataFrame({"__part_a_year": [2023, 2024]}).cast({"__part_a_year": pl.Int32}),
+    )
+
+
+@pytest.mark.write_disk
+def test_resolve_partition_key_month(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", DateType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1, field_id=1000, transform=MonthTransform(), name="a_month"
+            ),
+        ),
+    )
+
+    exprs = _resolve_partition_key(tbl)
+    assert exprs is not None
+
+    assert_frame_equal(
+        pl.DataFrame(
+            {"a": [date(2024, 1, 15), date(2024, 3, 10), date(2025, 1, 5)]}
+        ).select(exprs),
+        pl.DataFrame({"__part_a_month": [202401, 202403, 202501]}).cast(
+            {"__part_a_month": pl.Int32}
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_resolve_partition_key_day(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", DateType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1, field_id=1000, transform=DayTransform(), name="a_day"
+            ),
+        ),
+    )
+
+    exprs = _resolve_partition_key(tbl)
+    assert exprs is not None
+
+    assert_frame_equal(
+        pl.DataFrame({"a": [date(2024, 1, 1), date(2024, 6, 15)]}).select(exprs),
+        pl.DataFrame({"__part_a_day": [date(2024, 1, 1), date(2024, 6, 15)]}),
+    )
+
+
+@pytest.mark.write_disk
+def test_resolve_partition_key_hour(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", TimestamptzType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1, field_id=1000, transform=HourTransform(), name="a_hour"
+            ),
+        ),
+    )
+
+    exprs = _resolve_partition_key(tbl)
+    assert exprs is not None
+
+    utc = zoneinfo.ZoneInfo("UTC")
+
+    assert_frame_equal(
+        pl.DataFrame(
+            {
+                "a": [
+                    datetime(2024, 1, 1, 10, 15, tzinfo=utc),
+                    datetime(2024, 1, 1, 10, 45, tzinfo=utc),
+                    datetime(2024, 1, 1, 14, 0, tzinfo=utc),
+                ],
+            }
+        ).select(exprs),
+        pl.DataFrame(
+            {
+                "__part_a_hour": [
+                    datetime(2024, 1, 1, 10, 0, tzinfo=utc),
+                    datetime(2024, 1, 1, 10, 0, tzinfo=utc),
+                    datetime(2024, 1, 1, 14, 0, tzinfo=utc),
+                ],
+            }
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_resolve_partition_key_truncate(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1,
+                field_id=1000,
+                transform=TruncateTransform(width=10),
+                name="a_trunc",
+            ),
+        ),
+    )
+
+    exprs = _resolve_partition_key(tbl)
+    assert exprs is not None
+
+    assert_frame_equal(
+        pl.DataFrame({"a": [1, 5, 10, 15, 25]}).select(exprs),
+        pl.DataFrame({"__part_a_trunc": [0, 0, 10, 10, 20]}),
+    )
+
+
+@pytest.mark.write_disk
+def test_resolve_partition_key_bucket_raises(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1,
+                field_id=1000,
+                transform=BucketTransform(num_buckets=16),
+                name="a_bucket",
+            ),
+        ),
+    )
+
+    with pytest.raises(NotImplementedError, match="bucket partitioning"):
+        _resolve_partition_key(tbl)
+
+
+@pytest.mark.write_disk
+def test_resolve_partition_key_multiple_fields(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", StringType()),
+            NestedField(2, "b", DateType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=1, field_id=1000, transform=IdentityTransform(), name="a"
+            ),
+            PartitionField(
+                source_id=2, field_id=1001, transform=YearTransform(), name="b_year"
+            ),
+        ),
+    )
+
+    exprs = _resolve_partition_key(tbl)
+    assert exprs is not None
+    assert len(exprs) == 2
+
+    assert_frame_equal(
+        pl.DataFrame(
+            {"a": ["x", "y"], "b": [date(2023, 1, 1), date(2024, 6, 15)]}
+        ).select(exprs),
+        pl.DataFrame({"__part_a": ["x", "y"], "__part_b_year": [2023, 2024]}).cast(
+            {"__part_b_year": pl.Int32}
+        ),
+    )

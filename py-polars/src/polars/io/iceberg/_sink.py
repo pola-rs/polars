@@ -28,6 +28,48 @@ if TYPE_CHECKING:
     from polars.io.iceberg._dataset import SerializedTableState
 
 
+def _resolve_partition_key(table: pyiceberg.table.Table) -> list[pl.Expr] | None:
+    spec = table.spec()
+    if not spec.fields:
+        return None
+
+    import polars as pl
+
+    schema = table.schema()
+    exprs: list[pl.Expr] = []
+
+    for field in spec.fields:
+        source_field = schema.find_field(field.source_id)
+        col = pl.col(source_field.name)
+        transform_str = str(field.transform)
+        alias = f"__part_{field.name}"
+
+        if transform_str == "identity":
+            exprs.append(col.alias(alias))
+        elif transform_str == "year":
+            exprs.append(col.dt.year().alias(alias))
+        elif transform_str == "month":
+            exprs.append((col.dt.year() * 100 + col.dt.month()).alias(alias))
+        elif transform_str == "day":
+            exprs.append(col.cast(pl.Date).alias(alias))
+        elif transform_str == "hour":
+            exprs.append(col.dt.truncate("1h").alias(alias))
+        elif transform_str.startswith("truncate"):
+            from pyiceberg.transforms import TruncateTransform
+
+            assert isinstance(field.transform, TruncateTransform)
+            width = field.transform.width
+            exprs.append(((col.cast(pl.Int64) // width) * width).alias(alias))
+        elif transform_str.startswith("bucket"):
+            msg = "sink to Iceberg table with bucket partitioning"
+            raise NotImplementedError(msg)
+        else:
+            msg = f"sink to Iceberg table with '{transform_str}' partition transform"
+            raise NotImplementedError(msg)
+
+    return exprs
+
+
 def _ensure_table_has_catalog(table: pyiceberg.table.Table) -> None:
     from pyiceberg.catalog.noop import NoopCatalog
 
@@ -130,9 +172,7 @@ class IcebergSinkState:
         table_metadata = table.metadata
         table_properties = table_metadata.properties
 
-        if table.spec().fields:
-            msg = "sink to partitioned Iceberg table"
-            raise NotImplementedError(msg)
+        partition_key = _resolve_partition_key(table)
 
         if table.sort_order().fields:
             msg = "sink to Iceberg table with sort order"
@@ -170,6 +210,8 @@ class IcebergSinkState:
             pl.PartitionBy(
                 _normalize_windows_iceberg_file_uri(self.output_base_path()),
                 file_path_provider=PlIcebergPathProviderConfig(),
+                key=partition_key,
+                include_key=False if partition_key is not None else None,
                 approximate_bytes_per_file=approximate_bytes_per_file,
             ),
             arrow_schema=arrow_schema,
