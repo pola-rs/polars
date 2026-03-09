@@ -1176,8 +1176,14 @@ class Series:
             return self._from_pyseries(getattr(self._s, op_s)(other._s))
         elif _check_for_numpy(other) and isinstance(other, np.ndarray):
             return self._from_pyseries(getattr(self._s, op_s)(Series(other)._s))
+        elif isinstance(other, timedelta):
+            _s = sequence_to_pyseries(self.name, [other])
+            if "rhs" in op_ffi:
+                return self._from_pyseries(getattr(_s, op_s)(self._s))
+            else:
+                return self._from_pyseries(getattr(self._s, op_s)(_s))
         elif (
-            isinstance(other, (float, date, datetime, timedelta, str))
+            isinstance(other, (float, date, datetime, str))
             and not self.dtype.is_float()
         ):
             _s = sequence_to_pyseries(self.name, [other])
