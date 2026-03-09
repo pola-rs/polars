@@ -853,3 +853,13 @@ def test_reinterpret_errors_13659() -> None:
         match="cannot reinterpret non-numeric input dtype 'String'",
     ):
         q.collect_schema()
+
+    q = pl.LazyFrame(schema={"a": pl.Int8}).select(
+        pl.first().reinterpret(dtype=pl.Int16)
+    )
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot reinterpret from Int8 to Int16",
+    ):
+        q.collect_schema()
