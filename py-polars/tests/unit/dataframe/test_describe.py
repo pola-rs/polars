@@ -238,7 +238,7 @@ def test_df_describe_object() -> None:
 
 # https://github.com/pola-rs/polars/issues/25946
 @pytest.mark.parametrize("lazy", [False, True])
-def test_df_describe_thousands_separator_string_columns(lazy: bool) -> None:
+def test_df_describe_thousands_separator_string_columns_25946(lazy: bool) -> None:
     df = pl.DataFrame(
         {
             "numeric": list(range(2000)),
