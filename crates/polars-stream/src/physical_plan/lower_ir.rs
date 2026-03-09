@@ -15,7 +15,7 @@ use polars_mem_engine::create_physical_plan;
 use polars_ops::frame::JoinType;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
-use polars_plan::dsl::deletion::DeletionFilesList;
+use polars_plan::dsl::deletion::{DeletionFilesList, DeltaDeletionVectorCallback};
 use polars_plan::dsl::{CallbackSinkType, ExtraColumnsPolicy, FileScanIR, SinkTypeIR};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{
@@ -834,6 +834,11 @@ pub fn lower_ir(
                     let pre_slice = unified_scan_args.pre_slice.clone();
                     let disable_morsel_split = disable_morsel_split.unwrap_or(true);
 
+                    let deletion_vector_callback =
+                        unified_scan_args.deletion_vector_provider.map(|provider| {
+                            DeltaDeletionVectorCallback(Arc::new(move || provider.call()))
+                        });
+
                     let mut multi_scan_node = PhysNodeKind::MultiScan {
                         scan_sources,
                         file_reader_builder,
@@ -853,6 +858,7 @@ pub fn lower_ir(
                         deletion_files: DeletionFilesList::filter_empty(
                             unified_scan_args.deletion_files,
                         ),
+                        deletion_vector_callback,
                         table_statistics: unified_scan_args.table_statistics,
                         file_schema,
                         disable_morsel_split,

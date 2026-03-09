@@ -316,11 +316,24 @@ async fn finish_initialize_multi_scan_pipeline(
         let sources = config.sources.clone();
         let cloud_options = config.cloud_options.clone();
         let file_reader_builder = config.file_reader_builder.clone();
-        let deletion_files_provider = DeletionFilesProvider::new(
-            config.deletion_files.clone(),
-            &execution_state,
-            config.io_metrics(),
-        );
+
+        let deletion_files_provider = match (
+            config.deletion_files.as_ref(),
+            config.deletion_vector_callback.as_ref(),
+        ) {
+            (Some(_), Some(_)) => unreachable!(
+                "a table cannot have both Iceberg deletion files and Delta deletion vectors"
+            ),
+            (Some(deletion_files), None) => DeletionFilesProvider::from_deletion_files(
+                Some(deletion_files.clone()),
+                &execution_state,
+                config.io_metrics(),
+            ),
+            (None, Some(callback)) => {
+                DeletionFilesProvider::from_delta_callback(Some(callback.clone()))
+            },
+            (None, None) => DeletionFilesProvider::None,
+        };
 
         futures::stream::iter(range)
             .map(move |scan_source_idx| {

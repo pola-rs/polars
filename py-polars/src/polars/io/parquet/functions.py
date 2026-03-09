@@ -33,7 +33,7 @@ with contextlib.suppress(ImportError):
     from polars._plr import read_parquet_metadata as _read_parquet_metadata
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from typing import Literal
 
     from polars import DataFrame, DataType, LazyFrame
@@ -479,6 +479,7 @@ def scan_parquet(
     _column_mapping: ColumnMapping | None = None,
     _default_values: DefaultFieldValues | None = None,
     _deletion_files: DeletionFiles | None = None,
+    _deletion_vector_callback: Callable[[], DataFrame | None] | None = None,
     _table_statistics: DataFrame | None = None,
     _row_count: tuple[int, int] | None = None,
 ) -> LazyFrame:
@@ -721,6 +722,7 @@ def scan_parquet(
             column_mapping=_column_mapping,
             default_values=_default_values,
             deletion_files=_deletion_files,
+            deletion_vector_callback=_deletion_vector_callback,
             table_statistics=_table_statistics,
             row_count=_row_count,
         ),

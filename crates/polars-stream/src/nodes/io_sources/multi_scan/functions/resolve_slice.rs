@@ -73,7 +73,7 @@ async fn resolve_negative_slice(
         });
     }
 
-    let deletion_files_provider = DeletionFilesProvider::new(
+    let deletion_files_provider = DeletionFilesProvider::from_deletion_files(
         config.deletion_files.clone(),
         execution_state,
         config.io_metrics(),

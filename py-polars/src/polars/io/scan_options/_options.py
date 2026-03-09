@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from polars._typing import (
         ColumnMapping,
@@ -55,6 +55,7 @@ class ScanOptions:
     column_mapping: ColumnMapping | None = None
     default_values: DefaultFieldValues | None = None
     deletion_files: DeletionFiles | None = None
+    deletion_vector_callback: Callable[[], DataFrame | None] | None = None
     table_statistics: DataFrame | None = None
     # (physical, deleted)
     row_count: tuple[int, int] | None = None

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from functools import partial
+from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
+import polars as pl
 from polars._utils.logging import eprint
 from polars.io.cloud.credential_provider._providers import (
     _get_credentials_from_provider_expiry_aware,
@@ -146,6 +149,19 @@ class DeltaDataset:
             else None
         )
 
+        reader_features = table.protocol().reader_features
+        has_deletion_vectors = (
+            reader_features is not None and "deletionVectors" in reader_features
+        )
+
+        def _deletion_vector_callback() -> pl.DataFrame | None:
+            result = _build_deletion_vectors(table, paths)
+            return result
+
+        deletion_vector_callback = (
+            _deletion_vector_callback if has_deletion_vectors else None
+        )
+
         return scan_parquet(
             paths,
             hive_schema=hive_schema if len(partition_columns) > 0 else None,
@@ -157,6 +173,7 @@ class DeltaDataset:
             credential_provider=self.credential_provider_builder,  # type: ignore[arg-type]
             rechunk=self.rechunk,
             _table_statistics=table_statistics,
+            _deletion_vector_callback=deletion_vector_callback,
         ), version_key
 
     #
@@ -180,6 +197,10 @@ class DeltaDataset:
                 NOT_SUPPORTED_READER_VERSION,
                 SUPPORTED_READER_FEATURES,
             )
+
+            # The engine (polars) must explicitly manage this:
+            if os.getenv("POLARS_DELTA_READER_FEATURE_DV") == "1":
+                SUPPORTED_READER_FEATURES.add("deletionVectors")
 
             from polars.io.delta._utils import _get_delta_lake_table
 
@@ -238,3 +259,60 @@ class DeltaDataset:
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         self.__dict__ = state
+
+
+def _build_deletion_vectors(
+    table: DeltaTable,
+    paths: list[str],
+) -> pl.DataFrame | None:
+    """
+    Build a mapping of scan_source_idx -> "deletion_vector".
+
+    The selection_vector from deltalake is a keep-mask (True = keep), so
+    the more accurate term would be "selection_vector".
+
+    Returns None if the table has no deletion vectors.
+    """
+    import pyarrow as pa
+
+    import polars._utils.logging
+
+    verbose = polars._utils.logging.verbose()
+
+    def _normalize_path(path: str) -> str:
+        """Normalize a file path to a URI with scheme."""
+        return Path(path).resolve().as_uri() if "://" not in path else path
+
+    dv_table = pa.RecordBatchReader.from_stream(table.deletion_vectors()).read_all()
+
+    if verbose:
+        eprint(f"DeltaDataset: deletion_vectors(): file_count: {len(dv_table)}, ")
+
+    if len(dv_table) == 0:
+        return None
+
+    path_to_idx = {_normalize_path(p): i for i, p in enumerate(paths)}
+
+    idx_list = []
+    mask_list = []
+    for filepath_str, selection_vector in zip(
+        dv_table.column("filepath").to_pylist(),
+        dv_table.column("selection_vector"),
+        strict=True,
+    ):
+        if (idx := path_to_idx.get(filepath_str)) is None:
+            msg = f"Deletion vector references file not found in scan paths for: {filepath_str!r}. "
+            raise ValueError(msg)
+        idx_list.append(idx)
+        mask_list.append(pl.from_arrow(selection_vector.values))
+
+    if not idx_list:
+        return None
+
+    df = pl.DataFrame(
+        {
+            "idx": pl.Series(idx_list, dtype=pl.UInt32),
+            "mask": pl.Series(mask_list),
+        }
+    )
+    return df

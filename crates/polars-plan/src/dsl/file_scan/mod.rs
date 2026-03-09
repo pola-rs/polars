@@ -21,6 +21,7 @@ use strum_macros::IntoStaticStr;
 
 use super::*;
 use crate::dsl::default_values::DefaultFieldValues;
+use crate::dsl::deletion::DeltaDeletionVectorProvider;
 pub mod default_values;
 pub mod deletion;
 
@@ -331,6 +332,7 @@ pub struct UnifiedScanArgs {
     pub include_file_paths: Option<PlSmallStr>,
 
     pub deletion_files: Option<DeletionFilesList>,
+    pub deletion_vector_provider: Option<DeltaDeletionVectorProvider>,
     pub table_statistics: Option<TableStatistics>,
     /// Stores (physical, deleted) row counts of the table if known upfront (e.g. for Iceberg).
     /// This allows for row-count queries to succeed without scanning all files.
@@ -376,6 +378,7 @@ impl Default for UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::default(),
             include_file_paths: None,
             deletion_files: None,
+            deletion_vector_provider: None,
             table_statistics: None,
             row_count: None,
         }

@@ -345,6 +345,8 @@ pub fn apply_scan_predicate_to_scan_ir(
 
     let verbose = config::verbose();
 
+    dbg!(&sources);
+
     let scan_predicate = create_scan_predicate(
         predicate,
         expr_arena,
@@ -362,6 +364,7 @@ pub fn apply_scan_predicate_to_scan_ir(
         unified_scan_args.table_statistics.as_ref(),
         verbose,
     )?;
+    dbg!(&skip_files_mask);
 
     if let Some(skip_files_mask) = skip_files_mask {
         assert_eq!(skip_files_mask.len(), sources.len());
@@ -445,8 +448,9 @@ where
         missing_columns_policy: _,
         extra_columns_policy: _,
         include_file_paths: _,
-        table_statistics,
         deletion_files,
+        deletion_vector_provider,
+        table_statistics,
         row_count,
     } = unified_scan_args.as_mut()
     else {
@@ -520,6 +524,12 @@ where
             out.map(|x| DeletionFilesList::IcebergPositionDelete(Arc::new(x)))
         },
     });
+
+    // The list of files is not known at this stage. Capture the selected_path_indices
+    // for lazy execution.
+    *deletion_vector_provider = deletion_vector_provider
+        .take()
+        .map(|provider| provider.with_selected_indices(selected_path_indices.clone()));
 
     *table_statistics = table_statistics.as_ref().map(|x| {
         let df_height = IdxSize::try_from(x.0.height()).unwrap();

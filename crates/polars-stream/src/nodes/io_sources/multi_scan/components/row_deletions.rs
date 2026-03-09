@@ -1,14 +1,17 @@
 use std::sync::{Arc, OnceLock};
 
+use arrow::array::BooleanArray;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{BooleanChunked, ChunkAgg, DataType, PlIndexMap};
+use polars_core::prelude::{
+    BooleanChunked, ChunkAgg, DataType, InitHashMaps, NamedFrom, PlIndexMap,
+};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_error::{PolarsResult, feature_gated};
+use polars_error::{PolarsResult, feature_gated, polars_err};
 use polars_io::cloud::CloudOptions;
-use polars_plan::dsl::deletion::DeletionFilesList;
+use polars_plan::dsl::deletion::{DeletionFilesList, DeltaDeletionVectorCallback};
 use polars_plan::dsl::{CastColumnsPolicy, ScanSource};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_path::PlRefPath;
@@ -34,10 +37,15 @@ pub enum DeletionFilesProvider {
         reader_builder: ParquetReaderBuilder,
         projected_schema: SchemaRef,
     },
+    #[cfg(feature = "python")]
+    DeltaDeletionVector {
+        callback: DeltaDeletionVectorCallback,
+        cache: Arc<tokio::sync::OnceCell<PlIndexMap<usize, ExternalFilterMask>>>,
+    },
 }
 
 impl DeletionFilesProvider {
-    pub fn new(
+    pub fn from_deletion_files(
         deletion_files: Option<DeletionFilesList>,
         execution_state: &crate::execute::StreamingExecutionState,
         io_metrics: Option<Arc<IOMetrics>>,
@@ -77,6 +85,16 @@ impl DeletionFilesProvider {
                     ])),
                 }
             }),
+        }
+    }
+
+    pub fn from_delta_callback(callback: Option<DeltaDeletionVectorCallback>) -> Self {
+        match callback {
+            Some(callback) => Self::DeltaDeletionVector {
+                callback,
+                cache: Arc::new(tokio::sync::OnceCell::new()),
+            },
+            None => Self::None,
         }
     }
 
@@ -258,6 +276,40 @@ impl DeletionFilesProvider {
 
                 Some(RowDeletionsInit::Initializing(handle))
             },
+
+            // @TODO: Replace with tokio::sync::OnceCell to avoid thundering herd.
+            Self::DeltaDeletionVector { callback, cache } => {
+                let cache = cache.clone();
+                let callback = callback.clone();
+
+                let handle = AbortOnDropHandle::new(async_executor::spawn(
+                    TaskPriority::Low,
+                    async move {
+                        let map = cache
+                            .get_or_try_init(|| async {
+                                let df = (callback.0)().map_err(|e| {
+                                    polars_err!(ComputeError: "delta deletion vector callback error: {e:?}")
+                                })?;
+                                match df {
+                                    Some(df) => build_delta_mask_map(&df),
+                                    None => Ok(PlIndexMap::new()),
+                                }
+                            })
+                            .await?;
+
+                        let mask = map.get(&scan_source_idx).cloned();
+
+                        Ok(match mask {
+                            Some(mask) => mask,
+                            None => ExternalFilterMask::DeltaDeletionVector {
+                                mask: BooleanChunked::new(PlSmallStr::EMPTY, [] as [bool; 0]),
+                            },
+                        })
+                    },
+                ));
+
+                Some(RowDeletionsInit::Initializing(handle))
+            },
         }
     }
 }
@@ -285,6 +337,9 @@ impl RowDeletionsInit {
 pub enum ExternalFilterMask {
     /// Note: Iceberg positional deletes can have a mask length shorter than the actual data.
     IcebergPositionDelete { mask: BooleanChunked },
+    /// Delta deletion vector.
+    /// Note: technically this is a selection vector, i.e. true = keep, false = drop.
+    DeltaDeletionVector { mask: BooleanChunked },
 }
 
 impl ExternalFilterMask {
@@ -292,6 +347,7 @@ impl ExternalFilterMask {
         use ExternalFilterMask::*;
         match self {
             IcebergPositionDelete { .. } => "IcebergPositionDelete",
+            DeltaDeletionVector { .. } => "DeltaDeletionVector",
         }
     }
 
@@ -322,6 +378,18 @@ impl ExternalFilterMask {
                     }
                 }
             },
+            Self::DeltaDeletionVector { mask } => {
+                if !mask.is_empty() {
+                    *df = if mask.len() < df.height() {
+                        accumulate_dataframes_vertical_unchecked([
+                            df.slice(0, mask.len()).filter_seq(mask)?,
+                            df.slice(i64::try_from(mask.len()).unwrap(), df.height() - mask.len()),
+                        ])
+                    } else {
+                        df.filter_seq(mask)?
+                    }
+                }
+            },
         }
 
         Ok(())
@@ -339,12 +407,28 @@ impl ExternalFilterMask {
 
                 Self::IcebergPositionDelete { mask }
             },
+            Self::DeltaDeletionVector { mask } => {
+                // This is not a valid offset, it's also a sentinel value from `RowCounter::MAX`.
+                assert_ne!(offset, usize::MAX);
+                let offset = offset.min(mask.len());
+                let len = len.min(mask.len() - offset);
+
+                let mask = mask.slice(i64::try_from(offset).unwrap(), len);
+
+                Self::DeltaDeletionVector { mask }
+            },
         }
     }
 
     pub fn num_deleted_rows(&self) -> usize {
         match self {
             Self::IcebergPositionDelete { mask } => mask
+                .rechunk()
+                .downcast_get(0)
+                .unwrap()
+                .values()
+                .unset_bits(),
+            Self::DeltaDeletionVector { mask } => mask
                 .rechunk()
                 .downcast_get(0)
                 .unwrap()
@@ -404,12 +488,16 @@ impl ExternalFilterMask {
             Self::IcebergPositionDelete { mask } => {
                 mask.rechunk().downcast_get(0).unwrap().values().clone()
             },
+            Self::DeltaDeletionVector { mask } => {
+                mask.rechunk().downcast_get(0).unwrap().values().clone()
+            },
         }
     }
 
     pub fn len(&self) -> usize {
         match self {
             Self::IcebergPositionDelete { mask } => mask.len(),
+            Self::DeltaDeletionVector { mask } => mask.len(),
         }
     }
 }
@@ -421,6 +509,31 @@ fn nth_set_bit_extend(mask: &Bitmap, n: usize) -> usize {
     } else {
         BitMask::from_bitmap(mask).nth_set_bit_idx(n, 0).unwrap()
     }
+}
+
+fn build_delta_mask_map(df: &DataFrame) -> PolarsResult<PlIndexMap<usize, ExternalFilterMask>> {
+    let idx_col = df.column("idx")?.cast(&DataType::UInt64)?;
+    let idx_col = idx_col.u64()?;
+    let mask_col = df.column("mask")?.list()?;
+    assert!(idx_col.len() == mask_col.len());
+
+    let mut map = PlIndexMap::new();
+    for (idx, mask) in idx_col.iter().zip(mask_col.iter()) {
+        let idx = idx.unwrap() as usize;
+        let mask_array = mask.unwrap();
+        let mask_bool = mask_array
+            .as_any()
+            .downcast_ref::<BooleanArray>()
+            .ok_or_else(|| polars_err!(ComputeError: "expected BooleanArray in Delta deletion vector mask column"))?;
+        let chunked = unsafe {
+            BooleanChunked::from_chunks(PlSmallStr::EMPTY, vec![Box::new(mask_bool.clone())])
+        };
+        map.insert(
+            idx,
+            ExternalFilterMask::DeltaDeletionVector { mask: chunked },
+        );
+    }
+    Ok(map)
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars::prelude::default_values::DefaultFieldValues;
-use polars::prelude::deletion::DeletionFilesList;
+use polars::prelude::deletion::{DeletionFilesList, DeltaDeletionVectorProvider};
 use polars::prelude::{
     CastColumnsPolicy, CloudScheme, ColumnMapping, ExtraColumnsPolicy, MissingColumnsPolicy,
     PlSmallStr, Schema, TableStatistics, UnifiedScanArgs,
@@ -65,6 +65,7 @@ impl PyScanOptions<'_> {
             storage_options: OptPyCloudOptions<'a>,
             credential_provider: Option<Py<PyAny>>,
             deletion_files: Option<Wrap<DeletionFilesList>>,
+            deletion_vector_callback: Option<Py<PyAny>>,
             table_statistics: Option<Wrap<TableStatistics>>,
             row_count: Option<(u64, u64)>,
         }
@@ -88,6 +89,7 @@ impl PyScanOptions<'_> {
             storage_options,
             credential_provider,
             deletion_files,
+            deletion_vector_callback,
             table_statistics,
             row_count,
         } = self.0.extract()?;
@@ -108,6 +110,9 @@ impl PyScanOptions<'_> {
             schema: hive_schema,
             try_parse_dates: try_parse_hive_dates,
         };
+
+        let deletion_vector_provider =
+            deletion_vector_callback.map(|obj| DeltaDeletionVectorProvider::new(obj.into()));
 
         let unified_scan_args = UnifiedScanArgs {
             // Schema is currently still stored inside the options per scan type, but we do eventually
@@ -132,6 +137,7 @@ impl PyScanOptions<'_> {
             extra_columns_policy: extra_columns.0,
             include_file_paths: include_file_paths.map(|x| x.0),
             deletion_files: DeletionFilesList::filter_empty(deletion_files.map(|x| x.0)),
+            deletion_vector_provider,
             table_statistics: table_statistics.map(|x| x.0),
             row_count,
         };

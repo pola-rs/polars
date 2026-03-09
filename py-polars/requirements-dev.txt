@@ -44,7 +44,7 @@ openpyxl
 xlsx2csv
 xlsxwriter>=3.2.9
 # Other I/O
-deltalake>=1.1.4
+deltalake>=1.4.2
 # Csv
 zstandard
 # Plotting
