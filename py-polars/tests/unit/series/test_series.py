@@ -1011,7 +1011,7 @@ def test_apply_list_out() -> None:
     assert out[2].to_list() == [2, 2]
 
 
-def test_reinterpret() -> None:
+def test_reinterpret_signed() -> None:
     s = pl.Series("a", [1, 1, 2], dtype=pl.UInt64)
     assert s.reinterpret(signed=True).dtype == pl.Int64
     df = pl.DataFrame([s])

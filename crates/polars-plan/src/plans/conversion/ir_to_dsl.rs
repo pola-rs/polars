@@ -1177,7 +1177,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         IF::GatherEvery { n, offset } => F::GatherEvery { n, offset },
         #[cfg(feature = "reinterpret")]
-        IF::Reinterpret(v) => F::Reinterpret(v),
+        IF::Reinterpret(dtype) => F::Reinterpret(None, Some(dtype)),
         IF::ExtendConstant => F::ExtendConstant,
 
         IF::RowEncode(_, v) => F::RowEncode(v),
