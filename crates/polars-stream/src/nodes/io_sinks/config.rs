@@ -53,40 +53,19 @@ impl IOSinkNodeConfig {
     }
 
     pub fn cloud_upload_chunk_size(&self) -> usize {
-        polars_io::get_upload_chunk_size()
+        polars_io::configs::upload_chunk_size()
     }
 
-    pub fn partitioned_cloud_upload_chunk_size(&self) -> usize {
-        if let Ok(v) = std::env::var("POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE").map(|x| {
-            x.parse::<NonZeroUsize>()
-                .unwrap_or_else(|_| {
-                    panic!("invalid value for POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE: {x}")
-                })
-                .get()
-        }) {
-            return v;
-        }
-
-        6 * 1024 * 1024
+    pub fn partitioned_upload_chunk_size(&self) -> usize {
+        polars_io::configs::partitioned_upload_chunk_size()
     }
 
-    pub fn upload_concurrency(&self) -> usize {
-        polars_io::get_upload_concurrency()
+    pub fn upload_concurrency(&self) -> NonZeroUsize {
+        polars_io::configs::upload_concurrency()
     }
 
-    pub fn partitioned_upload_concurrency(&self) -> usize {
-        if let Ok(v) = std::env::var("POLARS_PARTITIONED_UPLOAD_CONCURRENCY").map(|x| {
-            x.parse::<NonZeroUsize>()
-                .unwrap_or_else(|_| {
-                    panic!("invalid value for POLARS_PARTITIONED_UPLOAD_CONCURRENCY: {x}")
-                })
-                .get()
-        }) {
-            return v;
-        }
-
-        // For now, same default as the underlying object_store::BufWriter default.
-        8
+    pub fn partitioned_upload_concurrency(&self) -> NonZeroUsize {
+        polars_io::configs::partitioned_upload_concurrency()
     }
 }
 

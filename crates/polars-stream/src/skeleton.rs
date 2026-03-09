@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::query_result::QueryResult;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_expr_depth_limit};
 use polars_plan::plans::{IR, IRPlan};
 use polars_plan::prelude::AExpr;
@@ -192,6 +193,7 @@ impl StreamingQuery {
                 let io_total_active_time = Duration::from_nanos(node_metrics.io_total_active_ns);
                 let io_total_bytes_requested = node_metrics.io_total_bytes_requested;
                 let io_total_bytes_received = node_metrics.io_total_bytes_received;
+                let io_total_bytes_sent = node_metrics.io_total_bytes_sent;
 
                 lines.push(
                     (total_time, format!(
@@ -203,7 +205,8 @@ impl StreamingQuery {
                                  io(\
                                     total_active_time={io_total_active_time:.2?}, \
                                     total_bytes_requested={io_total_bytes_requested}, \
-                                    total_bytes_received={io_total_bytes_received})"))
+                                    total_bytes_received={io_total_bytes_received}, \
+                                    total_bytes_sent={io_total_bytes_sent})"))
                 );
 
                 total_query_ns += total_ns;
@@ -243,30 +246,6 @@ impl StreamingQuery {
                     .remove(phys_to_graph[root_phys_node])
                     .unwrap_or_else(DataFrame::empty),
             )),
-        }
-    }
-}
-
-pub enum QueryResult {
-    Single(DataFrame),
-    /// Collected to multiple in-memory sinks
-    Multiple(Vec<DataFrame>),
-}
-
-impl QueryResult {
-    pub fn unwrap_single(self) -> DataFrame {
-        use QueryResult::*;
-        match self {
-            Single(df) => df,
-            Multiple(_) => panic!(),
-        }
-    }
-
-    pub fn unwrap_multiple(self) -> Vec<DataFrame> {
-        use QueryResult::*;
-        match self {
-            Single(_) => panic!(),
-            Multiple(dfs) => dfs,
         }
     }
 }

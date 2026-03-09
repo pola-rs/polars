@@ -24,10 +24,10 @@ impl IRStructFunction {
                     let fld = fields
                         .iter()
                         .find(|fld| fld.name() == name)
-                        .ok_or_else(|| polars_err!(StructFieldNotFound: "{}", name))?;
+                        .ok_or_else(|| polars_err!(StructFieldNotFound: "{name}"))?;
                     Ok(fld.clone())
                 } else {
-                    polars_bail!(StructFieldNotFound: "{}", name);
+                    polars_bail!(StructFieldNotFound: "{name}");
                 }
             }),
             RenameFields(names) => mapper.map_dtype(|dt| match dt {

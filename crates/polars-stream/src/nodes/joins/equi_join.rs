@@ -11,6 +11,8 @@ use polars_core::{POOL, config};
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_io::pl_async::get_runtime;
+use polars_ooc::AccessPattern::NoPattern;
+use polars_ooc::mm;
 use polars_ops::frame::{JoinArgs, JoinBuildSide, JoinType, MaintainOrderJoin};
 use polars_ops::series::coalesce_columns;
 use polars_utils::cardinality_sketch::CardinalitySketch;
@@ -412,8 +414,8 @@ impl SampleState {
 
 #[derive(Default)]
 struct LocalBuilder {
-    // The complete list of morsels and their computed hashes seen by this builder.
-    morsels: Vec<(MorselSeq, DataFrame, HashKeys)>,
+    // The complete list of tokens to morsels and their computed hashes seen by this builder.
+    morsels: Vec<(MorselSeq, Token, HashKeys)>,
 
     // A cardinality sketch per partition for the keys seen by this builder.
     sketch_per_p: Vec<CardinalitySketch>,
@@ -491,7 +493,8 @@ impl BuildState {
             local
                 .morsel_idxs_offsets_per_p
                 .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
-            local.morsels.push((morsel.seq(), payload, hash_keys));
+            let token = mm().store(payload, NoPattern).await;
+            local.morsels.push((morsel.seq(), token, hash_keys));
         }
         Ok(())
     }
@@ -554,7 +557,8 @@ impl BuildState {
                                 kmerge.push(Priority(Reverse(next_seq), l_idx));
                             }
 
-                            let (_mseq, payload, keys) = l.morsels.get_unchecked(idx_in_l);
+                            let (_mseq, token, keys) = l.morsels.get_unchecked(idx_in_l);
+                            let payload = mm().df_blocking(token);
                             let p_morsel_idxs_start =
                                 l.morsel_idxs_offsets_per_p[idx_in_l * num_partitions + p];
                             let p_morsel_idxs_stop =
@@ -562,7 +566,7 @@ impl BuildState {
                             let p_morsel_idxs = &l.morsel_idxs_values_per_p[p]
                                 [p_morsel_idxs_start..p_morsel_idxs_stop];
                             p_table.insert_keys_subset(keys, p_morsel_idxs, track_unmatchable);
-                            p_payload.gather_extend(payload, p_morsel_idxs, ShareStrategy::Never);
+                            p_payload.gather_extend(&payload, p_morsel_idxs, ShareStrategy::Never);
 
                             if track_unmatchable {
                                 p_seq_ids.resize(p_payload.len(), norm_seq_id);
@@ -658,7 +662,8 @@ impl BuildState {
                         }
 
                         for (i, morsel) in l_morsels.iter().enumerate() {
-                            let (_mseq, payload, keys) = morsel;
+                            let (_mseq, token, keys) = morsel;
+                            let payload = mm().df_blocking(token);
                             unsafe {
                                 let p_morsel_idxs_start =
                                     l.morsel_idxs_offsets_per_p[i * num_partitions + p];
@@ -668,7 +673,7 @@ impl BuildState {
                                     [p_morsel_idxs_start..p_morsel_idxs_stop];
                                 p_table.insert_keys_subset(keys, p_morsel_idxs, track_unmatchable);
                                 p_payload.gather_extend(
-                                    payload,
+                                    &payload,
                                     p_morsel_idxs,
                                     ShareStrategy::Never,
                                 );

@@ -124,7 +124,17 @@ pub(super) fn expand_datasets(
                     .has_row_index_or_slice()
                     && let Some(predicate) = &predicate
                 {
-                    predicate_to_pa(predicate.node(), expr_arena, Default::default())
+                    use crate::plans::aexpr::MintermIter;
+
+                    // Convert minterms independently, can allow conversion to partially succeed if there are unsupported expressions
+                    let parts: Vec<String> = MintermIter::new(predicate.node(), expr_arena)
+                        .filter_map(|node| predicate_to_pa(node, expr_arena, Default::default()))
+                        .collect();
+                    match parts.len() {
+                        0 => None,
+                        1 => Some(parts.into_iter().next().unwrap()),
+                        _ => Some(format!("({})", parts.join(" & "))),
+                    }
                 } else {
                     None
                 };
@@ -299,6 +309,10 @@ pub(super) fn expand_datasets(
                             #[cfg(feature = "scan_lines")]
                             FileScanDsl::Lines { name } => FileScanIR::Lines { name },
 
+                            FileScanDsl::ExpandedPaths { name } => {
+                                FileScanIR::ExpandedPaths { name }
+                            },
+
                             FileScanDsl::Anonymous {
                                 options,
                                 function,
@@ -440,8 +454,8 @@ impl Debug for ExpandedDataset {
 
             use polars_utils::pl_str::PlSmallStr;
 
+            #[allow(dead_code)]
             #[derive(Debug)]
-            #[expect(unused)]
             pub struct ExpandedDataset<'a> {
                 pub version: &'a str,
                 pub limit: &'a Option<usize>,

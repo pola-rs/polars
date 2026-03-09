@@ -146,24 +146,48 @@ def test_class_namespaces_are_registered(pcls: Any) -> None:
                     )
 
 
-def test_namespace_cannot_override_builtin() -> None:
+@pytest.mark.parametrize(
+    "registration_func",
+    [
+        pl.api.register_lazyframe_namespace,
+        pl.api.register_dataframe_namespace,
+        pl.api.register_series_namespace,
+        pl.api.register_expr_namespace,
+    ],
+)
+def test_namespace_cannot_override_builtin_namespace(registration_func: Any) -> None:
     with pytest.raises(AttributeError):
 
-        @pl.api.register_dataframe_namespace("dt")
-        class CustomDt:
-            def __init__(self, df: pl.DataFrame) -> None:
-                self._df = df
+        @registration_func("dt")
+        class CustomNamespace: ...
+
+
+def test_namespace_cannot_override_method_or_property() -> None:
+    # methods
+    with pytest.raises(AttributeError):
+
+        @pl.api.register_dataframe_namespace("head")
+        class CustomNamespace1: ...
+
+    # properties
+    with pytest.raises(AttributeError):
+
+        @pl.api.register_series_namespace("dtype")
+        class CustomNamespace2: ...
+
+    # dunder methods
+    with pytest.raises(AttributeError):
+
+        @pl.api.register_expr_namespace("__or__")
+        class CustomNamespace3: ...
 
 
 def test_namespace_warning_on_override() -> None:
     @pl.api.register_dataframe_namespace("math")
-    class CustomMath:
-        def __init__(self, df: pl.DataFrame) -> None:
-            self._df = df
+    class CustomMath1: ...
 
+    # expect a warning when overriding an existing custom namespace
     with pytest.raises(UserWarning):
 
         @pl.api.register_dataframe_namespace("math")
-        class CustomMath2:
-            def __init__(self, df: pl.DataFrame) -> None:
-                self._df = df
+        class CustomMath2: ...

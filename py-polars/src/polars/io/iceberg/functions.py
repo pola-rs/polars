@@ -1,25 +1,37 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 from typing import TYPE_CHECKING, Literal
 
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_ldf
 from polars.io.cloud._utils import NoPickleOption
-from polars.io.iceberg._dataset import IcebergDataset
+from polars.io.iceberg._dataset import (
+    IcebergCatalogConfig,
+    IcebergCatalogTableDescriptor,
+    IcebergScanResolver,
+    IcebergScanTableSerializer,
+    IcebergTableWrap,
+)
 
 if TYPE_CHECKING:
-    from pyiceberg.table import Table
+    import pyiceberg.catalog
+    import pyiceberg.table
 
+    import polars.io.iceberg
     from polars._typing import StorageOptionsDict
     from polars.lazyframe.frame import LazyFrame
 
 
 def scan_iceberg(
-    source: str | Table,
+    source: str | pyiceberg.table.Table,
     *,
     snapshot_id: int | None = None,
     storage_options: StorageOptionsDict | None = None,
+    catalog: pyiceberg.catalog.Catalog
+    | polars.io.iceberg.IcebergCatalogConfig
+    | None = None,
     reader_override: Literal["native", "pyiceberg"] | None = None,
     use_metadata_statistics: bool = True,
     fast_deletion_count: bool | None = None,
@@ -31,10 +43,8 @@ def scan_iceberg(
     Parameters
     ----------
     source
-        A PyIceberg table, or a direct path to the metadata.
-
-        Note: For Local filesystem, absolute and relative paths are supported but
-        for the supported object storages - GCS, Azure and S3 full URI must be provided.
+        A PyIceberg table, or a 'namespace.table_name' identifier string,
+        or an absolute path to the metadata.
     snapshot_id
         The snapshot ID to scan from.
     storage_options
@@ -42,6 +52,9 @@ def scan_iceberg(
         For cloud storages, this may include configurations for authentication etc.
 
         More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
+    catalog
+        PyIceberg catalog to load the table from if the provided `target`
+        was a table name.
     reader_override
         Overrides the reader used to read the data.
 
@@ -170,19 +183,38 @@ def scan_iceberg(
     else:
         fast_deletion_count = False
 
-    table: Table | None = None
+    table: pyiceberg.table.Table | None = None
 
     if importlib.util.find_spec("pyiceberg.table") is not None:
-        from pyiceberg.table import Table
+        import pyiceberg.table
 
-        if isinstance(source, Table):
+        if isinstance(source, pyiceberg.table.Table):
             table = source
 
-    dataset = IcebergDataset(
-        table_=NoPickleOption(table),
-        metadata_path_=str(source) if table is None else None,
+    table_descriptor_ = None
+
+    if table is None:
+        source = str(source)
+        table_descriptor_ = (
+            source  # Inferred as static metadata path
+            if "/" in source or "\\" in source
+            else IcebergCatalogTableDescriptor(
+                table_identifier=source,
+                catalog_config=IcebergCatalogConfig._from_api_parameter_or_environment_default(
+                    catalog,
+                    fn_name="scan_iceberg",
+                ),
+            )
+        )
+
+    dataset = IcebergScanResolver(
+        table=IcebergTableWrap(
+            table_=NoPickleOption(table),
+            table_descriptor_=table_descriptor_,
+            serializer=IcebergScanTableSerializer(),
+            iceberg_storage_properties=storage_options,
+        ),
         snapshot_id=snapshot_id,
-        iceberg_storage_properties=storage_options,
         reader_override=reader_override,
         use_metadata_statistics=use_metadata_statistics,
         fast_deletion_count=fast_deletion_count,

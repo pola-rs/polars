@@ -11,13 +11,18 @@ import pytest
 from hypothesis import given, settings
 
 import polars as pl
+from polars._typing import AsofJoinStrategy
+from polars.datatypes.group import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric.strategies.core import dataframes
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import JoinStrategy, MaintainOrderJoin
+    from polars._typing import AsofJoinStrategy, JoinStrategy, MaintainOrderJoin
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -575,24 +580,87 @@ def test_merge_join_exprs() -> None:
 
 @pytest.mark.parametrize("left_descending", [False, True])
 @pytest.mark.parametrize("right_descending", [False, True])
-@pytest.mark.parametrize("left_nulls_last", [False, True])
-@pytest.mark.parametrize("right_nulls_last", [False, True])
+@pytest.mark.parametrize("left_nulls_last", [False, True, None])
+@pytest.mark.parametrize("right_nulls_last", [False, True, None])
 def test_merge_join_applicable(
     left_descending: bool,
     right_descending: bool,
-    left_nulls_last: bool,
-    right_nulls_last: bool,
+    left_nulls_last: bool | None,
+    right_nulls_last: bool | None,
 ) -> None:
-    left = pl.LazyFrame({"key": [1]}).set_sorted(
-        "key", descending=left_descending, nulls_last=left_nulls_last
-    )
-    right = pl.LazyFrame({"key": [2]}).set_sorted(
-        "key", descending=right_descending, nulls_last=right_nulls_last
-    )
+    def make_set_sorted_lf(descending: bool, nulls_last: bool | None) -> pl.LazyFrame:
+        lf = pl.LazyFrame({"key": [1]})
+        if nulls_last is None:
+            return lf.with_columns(pl.col("key").set_sorted(descending=descending))
+        else:
+            return lf.set_sorted("key", descending=descending, nulls_last=nulls_last)
+
+    left = make_set_sorted_lf(left_descending, left_nulls_last)
+    right = make_set_sorted_lf(right_descending, right_nulls_last)
     q = left.join(right, on="key", how="full", maintain_order="left_right")
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
-    if (left_descending, left_nulls_last) == (right_descending, right_nulls_last):
+    if (
+        left_descending == right_descending
+        and left_nulls_last == right_nulls_last is not None
+    ):
         assert "merge-join" in typing.cast("str", dot)
     else:
         assert "merge-join" not in typing.cast("str", dot)
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+@pytest.mark.parametrize("allow_exact_matches", [False, True])
+@pytest.mark.parametrize("coalesce", [False, True])
+@pytest.mark.parametrize(
+    "dtypes",
+    [
+        FLOAT_DTYPES,
+        INTEGER_DTYPES,
+        {pl.String, pl.Binary},
+        {pl.Date},
+        {
+            pl.Datetime("ms"),
+            pl.Datetime("us"),
+            pl.Datetime("ns"),
+        },
+        {
+            pl.Datetime("ms", time_zone="Europe/Amsterdam"),
+            pl.Datetime("us", time_zone="Europe/Amsterdam"),
+            pl.Datetime("ns", time_zone="Europe/Amsterdam"),
+        },
+        {pl.Time},
+        {pl.Duration("ms"), pl.Duration("us"), pl.Duration("ns")},
+    ],
+)
+@given(data=st.data())
+def test_streaming_asof_join(
+    data: st.DataObject,
+    strategy: AsofJoinStrategy,
+    allow_exact_matches: bool,
+    coalesce: bool,
+    dtypes: set[pl.DataType],
+) -> None:
+    if dtypes & {pl.String, pl.Binary} and strategy == "nearest":
+        pytest.skip("asof join with string/binary does not support 'nearest' strategy")
+
+    dtype = data.draw(st.sampled_from(list(dtypes)))
+    df_st = dataframes(
+        min_cols=1, max_cols=1, allowed_dtypes=[dtype], allow_time_zones=False
+    )
+    left_df = data.draw(df_st)
+    right_df = data.draw(df_st)
+
+    left = left_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
+    right = right_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
+
+    q = left.join_asof(
+        right,
+        on="key",
+        strategy=strategy,
+        allow_exact_matches=allow_exact_matches,
+        coalesce=coalesce,
+    )
+    expected = q.collect(engine="in-memory")
+    actual = q.collect(engine="streaming")
+    assert_frame_equal(actual, expected)

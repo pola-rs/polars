@@ -211,18 +211,20 @@ impl MutableBooleanArray {
                     validity.extend_constant(additional, true);
                 }
             },
-            None => {
-                self.values.extend_constant(additional, false);
-                if let Some(validity) = self.validity.as_mut() {
-                    validity.extend_constant(additional, false)
-                } else {
-                    self.init_validity();
-                    self.validity
-                        .as_mut()
-                        .unwrap()
-                        .extend_constant(additional, false)
-                };
-            },
+            None => self.extend_null(additional),
+        };
+    }
+
+    pub fn extend_null(&mut self, additional: usize) {
+        self.values.extend_constant(additional, false);
+        if let Some(validity) = self.validity.as_mut() {
+            validity.extend_constant(additional, false)
+        } else {
+            self.init_validity();
+            self.validity
+                .as_mut()
+                .unwrap()
+                .extend_constant(additional, false)
         };
     }
 

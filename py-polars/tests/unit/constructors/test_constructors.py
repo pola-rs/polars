@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from polars._typing import PolarsDataType
+    from tests.conftest import PlMonkeyPatch
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -665,8 +666,8 @@ def test_init_ndarray_square() -> None:
     assert_frame_equal(df_f, pl.DataFrame({"x": [1, 2], "y": [3, 4]}))
 
 
-def test_init_numpy_unavailable(monkeypatch: Any) -> None:
-    monkeypatch.setattr(pl.dataframe.frame, "_check_for_numpy", lambda x: False)
+def test_init_numpy_unavailable(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setattr(pl.dataframe.frame, "_check_for_numpy", lambda x: False)
     with pytest.raises(TypeError):
         pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
 
@@ -950,7 +951,7 @@ def test_init_1d_sequence() -> None:
     assert df.schema == {"ts": pl.Datetime("ms", "Asia/Kathmandu")}
 
 
-def test_init_pandas(monkeypatch: Any) -> None:
+def test_init_pandas(plmonkeypatch: PlMonkeyPatch) -> None:
     pandas_df = pd.DataFrame([[1, 2], [3, 4]], columns=[1, 2])
 
     # integer column names
@@ -995,7 +996,7 @@ def test_init_pandas(monkeypatch: Any) -> None:
     assert df.rows() == [(datetime(2022, 10, 31, 10, 30, 45, 123456),)]
 
     # pandas is not available
-    monkeypatch.setattr(pl.dataframe.frame, "_check_for_pandas", lambda x: False)
+    plmonkeypatch.setattr(pl.dataframe.frame, "_check_for_pandas", lambda x: False)
 
     # pandas 2.2 and higher implement the Arrow PyCapsule Interface, so the constructor
     # will still work even without using pandas APIs

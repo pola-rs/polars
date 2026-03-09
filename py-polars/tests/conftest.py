@@ -9,7 +9,7 @@ import pytest
 import polars as pl
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Generator
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -23,7 +23,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 @pytest.fixture(autouse=True)
 def _patched_cloud(
-    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+    request: pytest.FixtureRequest, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     if request.config.getoption("--cloud-distributed"):
         import signal
@@ -226,12 +226,36 @@ def _patched_cloud(
         # fix: these need to become supported somehow
         BASE_UNSUPPORTED = ["engine", "optimizations", "mkdir", "retries"]
         for ext in ["parquet", "csv", "ipc", "ndjson"]:
-            monkeypatch.setattr(f"polars.scan_{ext}", create_cloud_scan(ext))
-            monkeypatch.setattr(f"polars.read_{ext}", create_read(ext))
-            monkeypatch.setattr(
+            plmonkeypatch.setattr(f"polars.scan_{ext}", create_cloud_scan(ext))
+            plmonkeypatch.setattr(f"polars.read_{ext}", create_read(ext))
+            plmonkeypatch.setattr(
                 f"polars.LazyFrame.sink_{ext}",
                 create_cloud_sink(ext, BASE_UNSUPPORTED),
             )
 
-        monkeypatch.setattr("polars.LazyFrame.collect", cloud_collect)
-        monkeypatch.setenv("POLARS_SKIP_CLIENT_CHECK", "1")
+        plmonkeypatch.setattr("polars.LazyFrame.collect", cloud_collect)
+        plmonkeypatch.setenv("POLARS_SKIP_CLIENT_CHECK", "1")
+
+
+class PlMonkeyPatch(pytest.MonkeyPatch):  # type: ignore[misc]
+    """A wrapper of pytest.MonkeyPatch that updates Polars when an env var changes."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+
+    def setenv(self, name: str, value: str, prepend: str | None = None) -> None:
+        super().setenv(name, value, prepend)
+        if name.startswith("POLARS_"):
+            pl.Config.reload_env_vars()
+
+    def undo(self) -> None:
+        super().undo()
+        pl.Config.reload_env_vars()
+
+
+@pytest.fixture
+def plmonkeypatch() -> Generator[PlMonkeyPatch, None, None]:
+    """A wrapper of pytest.plmonkeypatch that updates Polars when an env var changes."""
+    mpatch = PlMonkeyPatch()
+    yield mpatch
+    mpatch.undo()

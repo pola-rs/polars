@@ -1,9 +1,14 @@
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_format_expr() -> None:
@@ -79,8 +84,8 @@ def test_format_group_by_23858() -> None:
 
 # Flaky - requires POLARS_MAX_THREADS=1 to trigger multiple chunks
 # Only valid when run in isolation, see also GH issue #22070
-def test_format_on_multiple_chunks_25159(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
+def test_format_on_multiple_chunks_25159(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "1")
     df = pl.DataFrame({"group": ["A", "B"]})
     df = df.with_columns(
         pl.date_ranges(pl.date(2025, 1, 1), pl.date(2025, 1, 3))
@@ -112,4 +117,54 @@ def test_format_with_nulls_25347() -> None:
         .select(a=pl.format("prefix: {} {}", pl.col.a, pl.col.b))
         .to_series(),
         pl.Series("a", [None, "prefix: y b", None]),
+    )
+
+
+def test_format_arg_passing() -> None:
+    df = pl.DataFrame({"x": [1, 2], "y": [3, 4]})
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="cannot switch"):
+        df.select(pl.format("{} {0}", 1))
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="cannot switch"):
+        df.select(pl.format("{0} {}", 1))
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="unmatched"):
+        df.select(pl.format("test{", 1))
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="unmatched"):
+        df.select(pl.format("test}", 1))
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="out of bounds"):
+        df.select(pl.format("{2}", 1))
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError, match="unacceptable column name"
+    ):
+        df.select(pl.format("{0a}", 1))
+    with pytest.raises(pl.exceptions.ShapeError, match="too few arguments"):
+        df.select(pl.format("{} {}", 1))
+    with pytest.raises(
+        pl.exceptions.ShapeError, match="automatic placeholders should equal"
+    ):
+        df.select(pl.format("{} {}", 1, 2, 3))
+    with pytest.raises(
+        pl.exceptions.ShapeError, match="automatic placeholders should equal"
+    ):
+        df.select(pl.format("{x} {y}", 1))
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        df.select(pl.format("{abc}"))
+
+    assert_frame_equal(
+        df.select(pl.format("{0} {0} {0}", 1, 2)), pl.DataFrame({"literal": ["1 1 1"]})
+    )
+    assert_frame_equal(
+        df.select(pl.format("{0}", 1, 2)), pl.DataFrame({"literal": ["1"]})
+    )
+    assert_frame_equal(
+        df.select(pl.format("{y} {1}", 1, 2)), pl.DataFrame({"y": ["3 2", "4 2"]})
+    )
+    assert_frame_equal(
+        df.select(pl.format("{1} {y}", 1, 2)), pl.DataFrame({"literal": ["2 3", "2 4"]})
+    )
+    assert_frame_equal(
+        df.select(pl.format("{x} {}", pl.lit("test"))),
+        pl.DataFrame({"x": ["1 test", "2 test"]}),
+    )
+    assert_frame_equal(
+        df.select(pl.format("{y} {y}")), pl.DataFrame({"y": ["3 3", "4 4"]})
     )

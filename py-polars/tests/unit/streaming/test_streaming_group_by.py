@@ -14,6 +14,8 @@ from tests.unit.conftest import INTEGER_DTYPES
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tests.conftest import PlMonkeyPatch
+
 pytestmark = pytest.mark.xdist_group("streaming")
 
 
@@ -204,11 +206,11 @@ def random_integers() -> pl.Series:
 def test_streaming_group_by_ooc_q1(
     random_integers: pl.Series,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
-    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    plmonkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
+    plmonkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
     lf = random_integers.to_frame().lazy()
     result = (
@@ -232,11 +234,11 @@ def test_streaming_group_by_ooc_q1(
 def test_streaming_group_by_ooc_q2(
     random_integers: pl.Series,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
-    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    plmonkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
+    plmonkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
     lf = random_integers.cast(str).to_frame().lazy()
     result = (
@@ -260,11 +262,11 @@ def test_streaming_group_by_ooc_q2(
 def test_streaming_group_by_ooc_q3(
     random_integers: pl.Series,
     tmp_path: Path,
-    monkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
-    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    plmonkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
+    plmonkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
     lf = pl.LazyFrame({"a": random_integers, "b": random_integers})
     result = (
@@ -505,3 +507,26 @@ def test_streaming_group_by_all_null_21593() -> None:
 
     out = df.lazy().group_by(pl.all()).min().collect(engine="streaming")
     assert_frame_equal(df, out, check_row_order=False)
+
+
+def test_streaming_group_by_nested_agg_fallback() -> None:
+    n = 1001
+    df = pl.DataFrame(
+        {
+            "id": range(n),
+            "key": ["aaa" if i < n // 3 else "bbb" for i in range(n)],
+        }
+    )
+
+    # nested agg `col.len().sum()` maps to `Sum(Count(col))` in IR, which the streaming
+    # engine cannot (currently) lower; fallback should have used in-memory engine but
+    # was re-entering the streaming engine, causing infinite recursion and SIGSEGV.
+    res = (
+        df.lazy()
+        .group_by("key")
+        .agg(pl.col("id").len().sum())
+        .sort("key")
+        .collect(engine="streaming")
+    )
+    expected = {("aaa", n // 3), ("bbb", n - n // 3)}
+    assert expected == set(res.rows())

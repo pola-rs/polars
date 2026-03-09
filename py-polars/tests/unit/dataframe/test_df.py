@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 
     from polars import Expr
     from polars._typing import JoinStrategy, UniqueKeepStrategy
+    from tests.conftest import PlMonkeyPatch
 
 
 class MappingObject(Mapping[str, Any]):  # noqa: D101
@@ -174,7 +175,7 @@ def test_mixed_sequence_selection() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_from_arrow(monkeypatch: Any) -> None:
+def test_from_arrow(plmonkeypatch: PlMonkeyPatch) -> None:
     tbl = pa.table(
         {
             "a": pa.array([1, 2], pa.timestamp("s")),
@@ -628,6 +629,17 @@ def test_pipe() -> None:
     result = df.pipe(_multiply, mul=3)
 
     assert_frame_equal(result, df * 3)
+
+
+def test_map_columns() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8]})
+
+    def _mul_add(s: pl.Series, mul: int, add: int = 0) -> pl.Series:
+        return s * mul + add
+
+    result = df.map_columns(["foo", "bar"], _mul_add, 3, add=1)
+
+    assert_frame_equal(result, df * 3 + 1)
 
 
 def test_explode() -> None:
@@ -3332,3 +3344,13 @@ def test_with_columns_generator_alias() -> None:
     df = pl.select(a=1).with_columns(expr.alias(name) for name, expr in data.items())
     expected = pl.DataFrame({"a": [2]})
     assert df.equals(expected)
+
+
+def test_sort_errors_with_object_dtype_24677() -> None:
+    df = pl.DataFrame({"a": [object(), object()], "b": [1, 2]})
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match=r"column '.*' has a dtype of '.*', which does not support sorting",
+    ):
+        df.sort("a")

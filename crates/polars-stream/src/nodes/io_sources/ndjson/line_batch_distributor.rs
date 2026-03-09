@@ -4,7 +4,8 @@ use std::num::NonZeroUsize;
 use polars_buffer::Buffer;
 use polars_core::config;
 use polars_error::PolarsResult;
-use polars_io::utils::compression::CompressedReader;
+use polars_io::utils::compression::ByteSourceReader;
+use polars_io::utils::stream_buf_reader::ReaderSource;
 use polars_utils::mem::prefetch::prefetch_l2;
 
 use super::line_batch_processor::LineBatch;
@@ -13,10 +14,11 @@ use crate::async_primitives::distributor_channel;
 const LF: u8 = b'\n';
 
 pub(super) struct LineBatchDistributor {
-    pub(super) reader: CompressedReader,
+    pub(super) reader: ByteSourceReader<ReaderSource>,
     pub(super) reverse: bool,
     pub(super) row_skipper: RowSkipper,
     pub(super) line_batch_distribute_tx: distributor_channel::Sender<LineBatch>,
+    pub(super) uncompressed_file_size_hint: Option<usize>,
 }
 
 impl LineBatchDistributor {
@@ -27,14 +29,15 @@ impl LineBatchDistributor {
             reverse,
             mut row_skipper,
             mut line_batch_distribute_tx,
+            uncompressed_file_size_hint,
         } = self;
 
         let verbose = config::verbose();
 
-        let fixed_read_size = std::env::var("POLARS_FORCE_NDJSON_CHUNK_SIZE")
+        let fixed_read_size = std::env::var("POLARS_FORCE_NDJSON_READ_SIZE")
             .map(|x| {
-                x.parse::<NonZeroUsize>().unwrap_or_else(|_| {
-                    panic!("invalid value for POLARS_FORCE_NDJSON_CHUNK_SIZE: {x}")
+                x.parse::<NonZeroUsize>().ok().unwrap_or_else(|| {
+                    panic!("invalid value for POLARS_FORCE_NDJSON_READ_SIZE: {x}")
                 })
             })
             .ok();
@@ -59,7 +62,8 @@ impl LineBatchDistributor {
                 !reader.is_compressed(),
                 "Negative slicing and decompression risk OOM, should be handled on higher level."
             );
-            let (full_input, _) = reader.read_next_slice(&Buffer::new(), usize::MAX)?;
+            let (full_input, _) =
+                reader.read_next_slice(&Buffer::new(), usize::MAX, uncompressed_file_size_hint)?;
             let offset = full_input.len();
             Some((full_input, offset))
         } else {
@@ -68,7 +72,7 @@ impl LineBatchDistributor {
 
         let mut read_size = fixed_read_size
             .map(NonZeroUsize::get)
-            .unwrap_or_else(CompressedReader::initial_read_size);
+            .unwrap_or_else(ByteSourceReader::<ReaderSource>::initial_read_size);
         let mut prev_leftover = Buffer::new();
         let mut chunk_idx = 0;
 
@@ -83,7 +87,11 @@ impl LineBatchDistributor {
                 *offset = new_offset;
                 (new_slice, bytes_read)
             } else {
-                reader.read_next_slice(&prev_leftover, read_size)?
+                reader.read_next_slice(
+                    &prev_leftover,
+                    read_size,
+                    Some(prev_leftover.len() + read_size),
+                )?
             };
 
             if mem_slice.is_empty() {
@@ -122,7 +130,9 @@ impl LineBatchDistributor {
                 continue;
             }
 
-            if read_size < CompressedReader::ideal_read_size() && fixed_read_size.is_none() {
+            if read_size < ByteSourceReader::<ReaderSource>::ideal_read_size()
+                && fixed_read_size.is_none()
+            {
                 read_size *= 4;
             }
         }

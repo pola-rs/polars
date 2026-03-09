@@ -234,6 +234,34 @@ impl<T> Buffer<T> {
         }
     }
 
+    /// Divides one buffer into two at an index.
+    ///
+    /// The first will contain all indices from `[0, mid)` (excluding
+    /// the index `mid` itself) and the second will contain all
+    /// indices from `[mid, len)` (excluding the index `len` itself).
+    ///
+    /// # Panics
+    /// Panics if `mid > len`.
+    #[must_use]
+    pub fn split_at(self, mid: usize) -> (Self, Self) {
+        (self.clone().sliced(..mid), self.sliced(mid..))
+    }
+
+    /// Splits the buffer into two at the given index.
+    ///
+    /// Returns a buffer containing the elements in the range
+    /// `[at, len)`. After the call, self will be left containing
+    /// the elements `[0, at)`.
+    ///
+    /// # Panics
+    /// Panics if `at > len`.
+    #[must_use]
+    pub fn split_off(&mut self, at: usize) -> Self {
+        let out = self.clone().sliced(at..);
+        self.slice_in_place(..at);
+        out
+    }
+
     /// Returns a pointer to the start of the storage underlying this buffer.
     #[inline]
     pub fn storage_ptr(&self) -> *const T {

@@ -47,8 +47,7 @@ static INIT: AtomicBool = AtomicBool::new(false);
 fn start_up_init() {
     // Set a custom panic hook that only shows output if verbose.
     std::panic::set_hook(Box::new(|info| {
-        let show_message = std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("") == "1";
-        if show_message {
+        if polars_config::config().verbose() {
             eprintln!("{info}")
         }
     }));

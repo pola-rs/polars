@@ -233,7 +233,13 @@ is_between = ["polars-expr/is_between"]
 is_close = ["polars-expr/is_close"]
 is_unique = ["polars-expr/is_unique"]
 cross_join = ["polars-plan/cross_join", "polars-ops/cross_join"]
-asof_join = ["polars-plan/asof_join", "polars-time", "polars-ops/asof_join", "polars-mem-engine/asof_join"]
+asof_join = [
+  "polars-plan/asof_join",
+  "polars-stream/asof_join",
+  "polars-time",
+  "polars-ops/asof_join",
+  "polars-mem-engine/asof_join",
+]
 iejoin = ["polars-plan/iejoin"]
 business = ["polars-expr/business"]
 concat_str = ["polars-expr/concat_str"]

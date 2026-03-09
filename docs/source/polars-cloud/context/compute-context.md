@@ -56,24 +56,32 @@ cloud portal interface.
 
 Once defined, you can apply your compute context to queries in three ways:
 
+<!-- dprint-ignore -->
 1. By directly passing the context to the remote query:
 
-   ```python
-   query.remote(context=ctx).sink_parquet(...)
-   ```
+    ```python
+    query.remote(context=ctx).sink_parquet(...)
+    ```
 
 2. By globally setting the compute context. This way you set it once and don't need to provide it to
    every `remote` call:
 
-   ```python
-   pc.set_compute_context(ctx)
+    ```python
+    pc.set_compute_context(ctx)
 
-   query.remote().sink_parquet(...)
-   ```
+    query.remote().sink_parquet(...)
+    ```
 
 3. When a default compute context is set via the Polars Cloud dashboard. It is no longer required to
    define a compute context.
 
-   ```python
-   query.remote().sink_parquet(...)
-   ```
+    ```python
+    query.remote().sink_parquet(...)
+    ```
+
+<!-- dprint-ignore -->
+!!! note "Ephemeral compute"
+    Each `ComputeContext` creates a new, ephemeral compute cluster. If you re-run your script,
+    a new cluster will be started instead of reusing an existing one. To reuse a running cluster,
+    either [reference it by name](reconnect.md#reconnect-with-a-manifest-recommended) using a
+    manifest, or [reconnect to an existing cluster](reconnect.md).

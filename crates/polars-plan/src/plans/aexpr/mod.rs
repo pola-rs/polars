@@ -57,7 +57,10 @@ pub enum IRAggExpr {
     Last(Node),
     LastNonNull(Node),
     Mean(Node),
-    Implode(Node),
+    Implode {
+        input: Node,
+        maintain_order: bool,
+    },
     Quantile {
         expr: Node,
         quantile: Node,
@@ -158,7 +161,7 @@ impl From<IRAggExpr> for GroupByMethod {
             LastNonNull(_) => GroupByMethod::LastNonNull,
             Item { allow_empty, .. } => GroupByMethod::Item { allow_empty },
             Mean(_) => GroupByMethod::Mean,
-            Implode(_) => GroupByMethod::Implode,
+            Implode { maintain_order, .. } => GroupByMethod::Implode { maintain_order },
             Sum(_) => GroupByMethod::Sum,
             Count {
                 input: _,
