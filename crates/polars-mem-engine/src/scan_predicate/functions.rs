@@ -345,8 +345,6 @@ pub fn apply_scan_predicate_to_scan_ir(
 
     let verbose = config::verbose();
 
-    dbg!(&sources);
-
     let scan_predicate = create_scan_predicate(
         predicate,
         expr_arena,
@@ -364,7 +362,6 @@ pub fn apply_scan_predicate_to_scan_ir(
         unified_scan_args.table_statistics.as_ref(),
         verbose,
     )?;
-    dbg!(&skip_files_mask);
 
     if let Some(skip_files_mask) = skip_files_mask {
         assert_eq!(skip_files_mask.len(), sources.len());

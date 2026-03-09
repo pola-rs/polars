@@ -24,9 +24,7 @@ pub fn call(callback: &PythonObject) -> PolarsResult<Option<DataFrame>> {
         })?;
 
         // Downcast to Rust
-        let pydf = py_pydf
-            .extract::<PyDataFrame>(py)
-            .map_err(|e| PyErr::from(e))?;
+        let pydf = py_pydf.extract::<PyDataFrame>(py).map_err(PyErr::from)?;
         Ok(Some(pydf.df.into_inner()))
     })
 }

@@ -5,7 +5,6 @@ use polars_core::prelude::{
     BooleanChunked, DataType, IntoColumn, PlHashMap, PlIndexMap, UInt64Chunked,
 };
 use polars_error::PolarsResult;
-#[cfg(feature = "python")]
 use polars_utils::python_function::PythonObject;
 
 // Note, there are a lot of single variant enums here, but the intention is that we'll support
