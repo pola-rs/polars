@@ -67,7 +67,7 @@ implementations, and data flow chosen at runtime.
 
 ![Physical plan](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/physical_plan.png)
 
-### Problem indicators
+### Indicators
 
 Each node in the physical plan can show indicators to help identify bottlenecks:
 
