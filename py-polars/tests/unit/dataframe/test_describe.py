@@ -59,11 +59,11 @@ def test_df_describe(lazy: bool) -> None:
             ],
             "b": [2.0, 1.0, 4.5, 0.7071067811865476, 4.0, 4.0, 5.0, 5.0, 5.0],
             "c": [3.0, 0.0, 2 / 3, None, False, None, None, None, True],
-            "d": ["2", "1", None, None, "b", None, None, None, "c"],
-            "e": ["2", "1", None, None, None, None, None, None, None],
+            "d": [2.0, 1.0, None, None, "b", None, None, None, "c"],
+            "e": [2.0, 1.0, None, None, None, None, None, None, None],
             "f": [
-                "3",
-                "0",
+                3.0,
+                0.0,
                 "2021-07-03 07:20:00",
                 None,
                 "2020-01-01 10:30:00",
@@ -73,8 +73,8 @@ def test_df_describe(lazy: bool) -> None:
                 "2022-12-31 20:30:00",
             ],
             "g": [
-                "3",
-                "0",
+                3.0,
+                0.0,
                 "2021-07-02 16:00:00",
                 None,
                 "2020-01-01",
@@ -84,8 +84,8 @@ def test_df_describe(lazy: bool) -> None:
                 "2022-12-31",
             ],
             "h": [
-                "3",
-                "0",
+                3.0,
+                0.0,
                 "15:20:00",
                 None,
                 "10:30:00",
@@ -95,8 +95,8 @@ def test_df_describe(lazy: bool) -> None:
                 "20:30:00",
             ],
             "i": [
-                "3",
-                "0",
+                3.0,
+                0.0,
                 "0:00:02",
                 None,
                 "0:00:01",
@@ -231,6 +231,18 @@ def test_df_describe_object() -> None:
     result = df.describe(percentiles=(0.05, 0.25, 0.5, 0.75, 0.95))
 
     expected = pl.DataFrame(
-        {"statistic": ["count", "null_count"], "object": ["3", "0"]}
+        {"statistic": ["count", "null_count"], "object": [3.0, 0.0]}
     )
     assert_frame_equal(result.head(2), expected)
+
+
+# https://github.com/pola-rs/polars/issues/25946
+def test_describe_count_is_float_for_string_cols() -> None:
+    df = pl.DataFrame({"nums": range(1500), "strs": [f"v{i}" for i in range(1500)]})
+    result = df.describe()
+    cr = result.filter(pl.col("statistic") == "count")
+    assert cr["strs"][0] == 1500.0
+    assert isinstance(cr["strs"][0], float)
+    nr = result.filter(pl.col("statistic") == "null_count")
+    assert nr["strs"][0] == 0.0
+    assert isinstance(nr["strs"][0], float)

@@ -1239,9 +1239,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 (
                     None
                     if (v is None or isinstance(v, dict))
-                    else (float(v) if (c in has_numeric_result) else str(v))
+                    else (
+                        float(v)
+                        if (c in has_numeric_result or i < 2)
+                        else str(v)
+                    )
                 )
-                for v in summary[c]
+                for i, v in enumerate(summary[c])
             ]
 
         # return results as a DataFrame
