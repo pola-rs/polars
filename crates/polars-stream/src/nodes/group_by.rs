@@ -231,8 +231,8 @@ impl GroupBySinkState {
                                 .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
                             let token = mm()
                                 .store(cold_df, spill_ctx, AccessPattern::NoPattern)
-                                .await
-                                .pin();
+                                .await;
+                            token.pin();
                             local.cold_morsels.push((input_idx, seq, cold_keys, token));
                         }
                     }
