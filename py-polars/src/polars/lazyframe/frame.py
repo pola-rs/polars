@@ -8186,6 +8186,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * 'always_combine': Always combine the `values` columns' names with
                       the `on_columns` names.
 
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
         Returns
         -------
         DataFrame
