@@ -6,8 +6,7 @@ use polars_core::prelude::{Column, IntoColumn};
 use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_error::polars_ensure;
-use polars_ooc::AccessPattern::Fifo;
-use polars_ooc::mm;
+use polars_ooc::{AccessPattern, SpillContext, mm};
 use polars_utils::itertools::Itertools;
 
 use super::compute_node_prelude::*;
@@ -46,7 +45,7 @@ impl InputHead {
         }
     }
 
-    async fn add_morsel(&mut self, mut morsel: Morsel) {
+    async fn add_morsel(&mut self, mut morsel: Morsel, ctx: &SpillContext) {
         self.total_len += morsel.df().height();
 
         if self.is_broadcast.is_none() {
@@ -63,7 +62,9 @@ impl InputHead {
             // Zip is the exception: we keep the consume token alive until
             // the drain loop rather than dropping it before buffering.
             let consume_token = morsel.take_consume_token();
-            let (token, source_token) = morsel.store_into_token_and_source(Fifo).await;
+            let (token, source_token) = morsel
+                .store_into_token_and_source(ctx, AccessPattern::Fifo)
+                .await;
             self.morsels.push_back((token, source_token, consume_token));
         }
     }
@@ -140,6 +141,7 @@ pub struct ZipNode {
     zip_behavior: ZipBehavior,
     out_seq: MorselSeq,
     input_heads: Vec<InputHead>,
+    spill_ctx: Arc<SpillContext>,
 }
 
 impl ZipNode {
@@ -152,6 +154,7 @@ impl ZipNode {
             zip_behavior,
             out_seq: MorselSeq::new(0),
             input_heads,
+            spill_ctx: mm().register_context(),
         }
     }
 }
@@ -296,7 +299,9 @@ impl ComputeNode for ZipNode {
                     if let Some(recv) = opt_recv {
                         while !self.input_heads[recv_idx].ready_to_send() {
                             if let Some(morsel) = recv.recv().await {
-                                self.input_heads[recv_idx].add_morsel(morsel).await;
+                                self.input_heads[recv_idx]
+                                    .add_morsel(morsel, &self.spill_ctx)
+                                    .await;
                             } else {
                                 break;
                             }
@@ -354,7 +359,9 @@ impl ComputeNode for ZipNode {
                     while let Some(mut morsel) = recv.recv().await {
                         morsel.source_token().stop();
                         drop(morsel.take_consume_token());
-                        self.input_heads[recv_idx].add_morsel(morsel).await;
+                        self.input_heads[recv_idx]
+                            .add_morsel(morsel, &self.spill_ctx)
+                            .await;
                     }
                 }
             }
