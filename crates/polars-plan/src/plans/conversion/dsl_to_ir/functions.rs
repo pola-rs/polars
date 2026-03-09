@@ -1056,7 +1056,7 @@ pub(super) fn convert_functions(
 
             polars_ensure!(
                 input_dtype.is_numeric(),
-                ComputeError:
+                InvalidOperationError:
                 "cannot reinterpret non-numeric input dtype '{input_dtype:?}'. \
                 Consider casting instead."
             );

@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars._plr import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import (
     DATETIME_DTYPES,
@@ -805,13 +806,7 @@ def test_concat_deprecation() -> None:
         [pl.UInt128, pl.Int128],
     ],
 )
-def test_reinterpret_numeric_dtype(compatible_set: list[pl.DataType]) -> None:
-    with pytest.raises(
-        ValueError,
-        match="reinterpret requires exactly one of `signed` or `dtype` to be specified",
-    ):
-        pl.element().reinterpret()
-
+def test_reinterpret_numeric_dtype_13659(compatible_set: list[pl.DataType]) -> None:
     try:
         for source_dtype, target_dtype in permutations(compatible_set, 2):
             q = (
@@ -840,3 +835,21 @@ def test_reinterpret_numeric_dtype(compatible_set: list[pl.DataType]) -> None:
     except Exception as e:
         msg = f"{e}; {(source_dtype, target_dtype) = }"
         raise type(e)(msg) from e
+
+
+def test_reinterpret_errors_13659() -> None:
+    with pytest.raises(
+        ValueError,
+        match="reinterpret requires exactly one of `signed` or `dtype` to be specified",
+    ):
+        pl.element().reinterpret()
+
+    q = pl.LazyFrame(schema={"a": pl.String}).select(
+        pl.first().reinterpret(dtype=pl.Int8)
+    )
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot reinterpret non-numeric input dtype 'String'",
+    ):
+        q.collect_schema()
