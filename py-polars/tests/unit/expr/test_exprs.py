@@ -806,6 +806,12 @@ def test_concat_deprecation() -> None:
     ],
 )
 def test_reinterpret_numeric_dtype(compatible_set: list[pl.DataType]) -> None:
+    with pytest.raises(
+        ValueError,
+        match="reinterpret requires exactly one of `signed` or `dtype` to be specified",
+    ):
+        pl.element().reinterpret()
+
     try:
         for source_dtype, target_dtype in permutations(compatible_set, 2):
             q = (

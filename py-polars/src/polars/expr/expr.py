@@ -6692,13 +6692,11 @@ Consider using {self}.implode() instead"""
         │ 2             ┆ 2        │
         └───────────────┴──────────┘
         """
-        if signed is not None and dtype is not None:
-            msg = "cannot specify both `signed` and `dtype`"
+        if (signed is None) == (dtype is None):
+            msg = "reinterpret requires exactly one of `signed` or `dtype` to be specified"
             raise ValueError(msg)
-        elif signed is None and dtype is None:
-            return wrap_expr(self._pyexpr.reinterpret(True, dtype))
-        else:
-            return wrap_expr(self._pyexpr.reinterpret(signed, dtype))
+
+        return wrap_expr(self._pyexpr.reinterpret(signed, dtype))
 
     def inspect(self, fmt: str_ = "{}") -> Expr:
         """
