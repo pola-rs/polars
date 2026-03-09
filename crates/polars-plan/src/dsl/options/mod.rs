@@ -1,11 +1,11 @@
 use std::hash::Hash;
 #[cfg(feature = "json")]
 use std::num::NonZeroUsize;
-use std::str::FromStr;
 use std::sync::Arc;
 
 pub mod file_provider;
 pub mod sink;
+pub use polars_config::Engine;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
@@ -191,44 +191,6 @@ pub struct UnpivotArgsDSL {
     pub index: Selector,
     pub variable_name: Option<PlSmallStr>,
     pub value_name: Option<PlSmallStr>,
-}
-
-#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum Engine {
-    Auto,
-    Streaming,
-    InMemory,
-    Gpu,
-}
-
-impl FromStr for Engine {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            // "cpu" for backwards compatibility
-            "auto" => Ok(Engine::Auto),
-            "cpu" | "in-memory" => Ok(Engine::InMemory),
-            "streaming" => Ok(Engine::Streaming),
-            "gpu" => Ok(Engine::Gpu),
-            "old-streaming" => Err("the 'old-streaming' engine has been removed".to_owned()),
-            v => Err(format!(
-                "`engine` must be one of {{'auto', 'in-memory', 'streaming', 'gpu'}}, got {v}",
-            )),
-        }
-    }
-}
-
-impl Engine {
-    pub fn into_static_str(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Streaming => "streaming",
-            Self::InMemory => "in-memory",
-            Self::Gpu => "gpu",
-        }
-    }
 }
 
 #[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]

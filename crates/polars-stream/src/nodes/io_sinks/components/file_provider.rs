@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
+use polars_io::metrics::IOMetrics;
 use polars_io::pl_async;
 use polars_io::utils::file::Writeable;
 use polars_plan::dsl::file_provider::{FileProviderReturn, FileProviderType};
@@ -14,12 +15,14 @@ pub struct FileProvider {
     pub provider_type: FileProviderType,
     pub upload_chunk_size: usize,
     pub upload_max_concurrency: usize,
+    pub io_metrics: Option<Arc<IOMetrics>>,
 }
 
 impl FileProvider {
     pub async fn open_file(&self, args: FileProviderArgs) -> PolarsResult<Writeable> {
         let provided_path: String = match &self.provider_type {
-            FileProviderType::Hive(v) => v.get_path(args)?,
+            FileProviderType::Hive(p) => p.get_path(args)?,
+            FileProviderType::Iceberg(p) => p.get_path(args)?,
             FileProviderType::Function(f) => {
                 let f = f.clone();
 
@@ -53,6 +56,7 @@ impl FileProvider {
             self.cloud_options.as_deref(),
             self.upload_chunk_size,
             self.upload_max_concurrency,
+            self.io_metrics.clone(),
         )
     }
 }

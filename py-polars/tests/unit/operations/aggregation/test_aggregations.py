@@ -1356,12 +1356,37 @@ def test_min_max_by(agg_funcs: Any, by_col: str) -> None:
                 None,
                 datetime(2023, 4, 4),
             ],
+            "array": [
+                [1, 2],
+                [None, 1],
+                [7, 1],
+                [1, 4],
+                None,
+                [7, None],
+            ],
+            "list": [
+                [1],
+                [None, 1],
+                [1, 2],
+                [7],
+                None,
+                [7, None],
+            ],
+            "struct": [
+                {"x": 1, "y": "abc"},
+                {"x": 7, "y": "xyz"},
+                {"x": 7, "y": ""},
+                {"x": 1, "y": None},
+                {"x": None, "y": ""},
+                {"x": 8, "y": "z"},
+            ],
             "g": [1, 1, 1, 2, 2, 2],
         },
         schema_overrides={
             "dec": pl.Decimal(scale=5),
             "cat": pl.Categorical,
             "enum": pl.Enum(["a", "b", "c", "d", "e", "f"]),
+            "array": pl.Array(pl.Int8, 2),
         },
     )
 
@@ -1369,14 +1394,18 @@ def test_min_max_by(agg_funcs: Any, by_col: str) -> None:
     expected = df.select([agg(pl.col(c)) for c in COLS])
     assert_frame_equal(result, expected)
 
-    # TODO: remove after https://github.com/pola-rs/polars/issues/25906.
-    if by_col != "cat":
-        df = df.drop("cat")
-        cols = [c for c in COLS if c != "cat"]
+    result = df.group_by("g").agg([agg_by(pl.col(c), pl.col(by_col)) for c in COLS])
+    expected = df.group_by("g").agg([agg(pl.col(c)) for c in COLS])
+    assert_frame_equal(result, expected, check_row_order=False)
 
-        result = df.group_by("g").agg([agg_by(pl.col(c), pl.col(by_col)) for c in cols])
-        expected = df.group_by("g").agg([agg(pl.col(c)) for c in cols])
-        assert_frame_equal(result, expected, check_row_order=False)
+
+def test_group_by_categorical_min_max_25906() -> None:
+    df = pl.Series(["a", "b"], dtype=pl.Categorical).to_frame("cat")
+    df = df.with_columns(g=1)
+    result = df.group_by("g").agg(pl.col.cat.min())
+    assert result["cat"].item() == "a"
+    result = df.group_by("g").agg(pl.col.cat.max())
+    assert result["cat"].item() == "b"
 
 
 @pytest.mark.parametrize(("agg", "expected"), [("max", 2), ("min", 0)])
@@ -1398,21 +1427,25 @@ def test_grouped_minmax_after_reverse_on_sorted_column_26141(
 
 
 @pytest.mark.may_fail_auto_streaming
-@pytest.mark.xfail(reason="#26049")
 @pytest.mark.parametrize("agg_by", [pl.Expr.min_by, pl.Expr.max_by])
-def test_min_max_by_series_length_mismatch(
+def test_min_max_by_series_length_mismatch_26049(
     agg_by: Callable[[pl.Expr, pl.Expr], pl.Expr],
 ) -> None:
     lf = pl.LazyFrame(
-        {"value": [1, 2, 3], "group": ["A", "B", "C"], "filter": [False, True, True]}
+        {
+            "a": [0, 10, 20, 30, 40, 50, 60, 70, 80, 90],
+            "b": [18, 5, 8, 8, 4, 5, 6, 8, 1, -10],
+            "group": ["A", "A", "A", "A", "A", "B", "B", "C", "C", "C"],
+        }
     )
+
     q = lf.with_columns(
-        agg_by(pl.col("group").filter(pl.col("filter")), pl.col("value"))
+        agg_by(pl.col("group").filter(pl.col("b") % 2 == 0), pl.col("a"))
     )
 
     with pytest.raises(
         pl.exceptions.ShapeError,
-        match=r"^'by' column in `(min|max)_by` operation has incorrect length",
+        match=r"'by' column in (min|max)_by expression has incorrect length: expected \d+, got \d+",
     ):
         q.collect(engine="in-memory")
     with pytest.raises(
@@ -1420,3 +1453,62 @@ def test_min_max_by_series_length_mismatch(
         match=r"^zip node received non-equal length inputs$",
     ):
         q.collect(engine="streaming")
+
+    actual = (
+        lf.group_by("group")
+        .agg(
+            pl.col("a")
+            .max_by(pl.col("b").filter(pl.col("b") < 20).abs())
+            .alias("max_by")
+        )
+        .sort("group")
+    ).collect()
+    expected = pl.DataFrame(
+        {
+            "group": ["A", "B", "C"],
+            "max_by": [0, 60, 90],
+        }
+    )
+    assert_frame_equal(actual, expected)
+
+    q = (
+        lf.group_by("group")
+        .agg(
+            pl.col("a")
+            .max_by(pl.col("b").filter(pl.col("b") < 7).abs())
+            .alias("group_length_mismatch")
+        )
+        .sort("group")
+    )
+    with pytest.raises(
+        pl.exceptions.ShapeError,
+        match=r"expressions must have matching group lengths",
+    ):
+        q.collect(engine="in-memory")
+
+
+def test_max_by_scalar_26548() -> None:
+    df = pl.DataFrame({"x": 1, "y": 2, "g": 3})
+    out = df.select(pl.col.x.max_by("y").over("g"))
+    expected = pl.DataFrame({"x": 1})
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("agg", "expected"),
+    [
+        (pl.Expr.min_by, 1),
+        (pl.Expr.max_by, 1),
+    ],
+)
+def test_min_max_by_on_boolean_26847(
+    agg: Callable[..., pl.Expr],
+    expected: int,
+) -> None:
+    df = pl.DataFrame({"a": [1], "b": [True]})
+    result = df.select(agg(pl.col("a"), pl.col("b")))
+    assert result.item() == expected
+
+    df = pl.DataFrame({"a": [1] * 10, "b": [True] * 10})
+    result = df.select(agg(pl.col("a"), pl.col("b")))
+    assert result.item() == expected

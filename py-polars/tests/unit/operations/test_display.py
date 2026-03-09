@@ -526,5 +526,5 @@ def test_format_25625() -> None:
     )
     assert_frame_equal(
         pl.DataFrame({}).select(pl.format("x A + {{and here }}")),
-        pl.DataFrame({"literal": "x A + {{and here }}"}),
+        pl.DataFrame({"literal": "x A + {and here }"}),
     )

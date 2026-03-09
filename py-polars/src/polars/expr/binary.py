@@ -488,7 +488,8 @@ class ExprBinaryNameSpace:
 
         For example, index `0` would return the first byte of every binary value
         and index `-1` would return the last byte of every binary value.
-        If an index is out of bounds, it will return a `None`.
+        The behavior if an index is out of bounds is determined by the argument
+        `null_on_oob`.
 
         Parameters
         ----------

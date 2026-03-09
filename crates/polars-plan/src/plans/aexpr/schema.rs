@@ -213,8 +213,11 @@ impl AExpr {
                         let mapper = FieldsMapper::new(&field);
                         mapper.moment_dtype()
                     },
-                    Implode(expr) => {
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
+                    Implode {
+                        input,
+                        maintain_order: _,
+                    } => {
+                        let mut field = ctx.arena.get(*input).to_field_impl(ctx)?;
                         field.coerce(DataType::List(field.dtype().clone().into()));
                         Ok(field)
                     },
@@ -429,7 +432,7 @@ impl AExpr {
             | Agg(Sum(expr))
             | Agg(Median(expr))
             | Agg(Mean(expr))
-            | Agg(Implode(expr))
+            | Agg(Implode { input: expr, .. })
             | Agg(Std(expr, _))
             | Agg(Var(expr, _))
             | Agg(NUnique(expr))

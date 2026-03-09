@@ -3179,7 +3179,11 @@ def test_join_filter_pushdown_asof_join() -> None:
         {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
     )
     rhs = pl.LazyFrame(
-        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, None, 5], "c": ["A", "B", "C", "D", "E"]}
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": [1, 2, 3, None, None],
+            "c": ["A", "B", "C", "D", "E"],
+        }
     )
 
     q = lhs.join_asof(
@@ -3697,8 +3701,6 @@ def test_join_rewrite_panic_23307() -> None:
         (pl.lit(None, dtype=pl.Int64), lambda col: ~col.is_in([1])),
         #
         (pl.lit(None, dtype=pl.Int64), lambda col: col.is_between(1, 1)),
-        (1, lambda col: col.is_between(None, 1)),
-        (1, lambda col: col.is_between(1, None)),
         #
         (pl.lit(None, dtype=pl.Int64), lambda col: col.is_close(1)),
         (1, lambda col: col.is_close(pl.lit(None, dtype=pl.Int64))),

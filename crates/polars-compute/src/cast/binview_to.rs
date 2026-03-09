@@ -8,7 +8,7 @@ use arrow::types::NativeType;
 use bytemuck::cast_slice_mut;
 use chrono::Datelike;
 use num_traits::FromBytes;
-use polars_error::{PolarsResult, polars_err};
+use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 
 use super::CastOptionsImpl;
 use super::binary_to::Parse;
@@ -318,4 +318,49 @@ where
         try_binview_to_fixed_size_list::<T, false>(from, array_width)
     }?;
     Ok(Box::new(result))
+}
+
+/// Returns an error if a non-NULL row has a byte length != `row_width`.
+pub fn binview_to_fixed_binary(
+    from: &BinaryViewArray,
+    row_width: usize,
+) -> PolarsResult<FixedSizeBinaryArray> {
+    polars_ensure!(
+        row_width != 0,
+        ComputeError:
+        "not implemented: FixedSizeBinary with row size of 0"
+    );
+
+    let mut out = MutableFixedSizeBinaryArray::with_capacity(row_width, from.len());
+
+    let mut length_mismatch_idx = usize::MAX;
+
+    for (i, bytes) in from.iter().enumerate() {
+        if let Some(bytes) = bytes
+            && bytes.len() == row_width
+        {
+            out.push(Some(bytes));
+        } else {
+            length_mismatch_idx = usize::min(
+                if bytes.is_some() { i } else { usize::MAX },
+                length_mismatch_idx,
+            );
+
+            out.push_null()
+        }
+    }
+
+    let out: FixedSizeBinaryArray = out.freeze();
+
+    if length_mismatch_idx != usize::MAX {
+        let length = from.get(length_mismatch_idx).unwrap().len();
+
+        polars_bail!(
+            ComputeError:
+            "could not cast BinaryView to FixedSizeBinary({row_width}): \
+            bytes at index {length_mismatch_idx} had mismatching length {length}."
+        )
+    }
+
+    Ok(out)
 }

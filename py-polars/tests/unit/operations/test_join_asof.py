@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import math
 import random
 import warnings
 from datetime import date, datetime, timedelta
@@ -1637,3 +1638,32 @@ def test_join_asof_nearest_no_exact_matches_25468(
         df_right, on="a", strategy="nearest", coalesce=False, allow_exact_matches=False
     )
     assert_frame_equal(result, expected_df)
+
+
+@pytest.mark.parametrize("strategy", ["backward", "nearest"])
+def test_join_asof_nans(strategy: AsofJoinStrategy) -> None:
+    df_left = pl.LazyFrame(
+        {
+            "time": [0.0, 6.0, math.nan, math.nan],
+            "value": [100, 101, 102, 103],
+        }
+    )
+    df_right = pl.LazyFrame(
+        {
+            "time": [0.0, 5.0, 10.0, 42.0],
+            "value": [100, 200, 300, 400],
+        }
+    )
+    actual = df_left.join_asof(
+        df_right,
+        on="time",
+        strategy=strategy,
+    ).collect()
+    expected = pl.DataFrame(
+        {
+            "time": [0.0, 6.0, math.nan, math.nan],
+            "value": [100, 101, 102, 103],
+            "value_right": [100, 200, 400, 400],
+        }
+    )
+    assert_frame_equal(actual, expected)

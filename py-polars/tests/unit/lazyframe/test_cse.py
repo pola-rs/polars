@@ -17,6 +17,8 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from tests.conftest import PlMonkeyPatch
+
 
 def num_cse_occurrences(explanation: str) -> int:
     """The number of unique CSE columns in an explain string."""
@@ -734,9 +736,9 @@ def test_cse_and_schema_update_projection_pd() -> None:
 @pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize("use_custom_io_source", [True, False])
 def test_cse_predicate_self_join(
-    capfd: Any, monkeypatch: Any, use_custom_io_source: bool
+    capfd: Any, plmonkeypatch: PlMonkeyPatch, use_custom_io_source: bool
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     y = pl.LazyFrame({"a": [1], "b": [2], "y": [3]})
     if use_custom_io_source:
         y = create_dataframe_source(y.collect(), is_pure=True)
@@ -1236,6 +1238,50 @@ def test_csee_python_function() -> None:
     )
 
 
+def test_cse_map_batches_distinct_functions() -> None:
+    # Regression test for https://github.com/pola-rs/polars/issues/26808.
+    # Two map_batches with *different* functions on the same source should not be
+    # incorrectly merged by common subplan elimination.
+    src = pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    lf1 = src.map_batches(
+        lambda df: df.select(pl.col("a").alias("x")),
+        schema=pl.Schema({"x": pl.Int64}),
+    )
+    lf2 = src.map_batches(
+        lambda df: df.select(pl.col("b").alias("y")),
+        schema=pl.Schema({"y": pl.Int64}),
+    )
+    result = pl.concat([lf1, lf2], how="horizontal").collect(
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
+    )
+    assert result.columns == ["x", "y"]
+    assert result["x"].to_list() == [1, 2, 3]
+    assert result["y"].to_list() == [4, 5, 6]
+
+
+def test_cse_map_batches_same_function() -> None:
+    # The *same* function object used twice on the same source should still be
+    # eligible for common subplan elimination (i.e. executed only once).
+    src = pl.LazyFrame({"a": [1, 2, 3]})
+    call_count = 0
+
+    def fn(df: pl.DataFrame) -> pl.DataFrame:
+        nonlocal call_count
+        call_count += 1
+        return df.with_columns(pl.col("a") * 2)
+
+    lf1 = src.map_batches(fn, schema=pl.Schema({"a": pl.Int64}))
+    lf2 = src.map_batches(fn, schema=pl.Schema({"a": pl.Int64}))
+    # Vertical concat (union) works with identical schemas and lets CSE share
+    # the single cached execution across both branches.
+    result = pl.concat([lf1, lf2]).collect(
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
+    )
+    assert result["a"].to_list() == [2, 4, 6, 2, 4, 6]
+    # CSE should have executed fn only once.
+    assert call_count == 1
+
+
 def test_csee_streaming() -> None:
     lf = pl.LazyFrame({"a": [10], "b": [10]})
 
@@ -1254,3 +1300,33 @@ def test_csee_streaming() -> None:
         b=expr * 100,
     )
     assert "__POLARS_CSER" not in q.explain(engine="streaming")
+
+
+def test_cspe_map_groups_26547() -> None:
+    X = pl.LazyFrame(
+        {"X": [0, 0], "PART": [0, 1]},
+        schema={"X": pl.Int32, "PART": pl.Int32},
+    )
+
+    def f_a(df: pl.DataFrame) -> pl.DataFrame:
+        return pl.DataFrame({"A": [1]}, schema={"A": pl.Int32})
+
+    def f_b(df: pl.DataFrame) -> pl.DataFrame:
+        return pl.DataFrame({"B": [2]}, schema={"B": pl.Int32})
+
+    df_a = X.group_by("PART").map_groups(
+        lambda df: f_a(df).with_columns(pl.lit(df["PART"][0]).alias("PART")),
+        schema={"A": pl.Int32, "PART": pl.Int32},
+    )
+
+    df_b = X.group_by("PART").map_groups(
+        lambda df: f_b(df).with_columns(pl.lit(df["PART"][0]).alias("PART")),
+        schema={"B": pl.Int32, "PART": pl.Int32},
+    )
+
+    out = df_a.join(df_b, on="PART").collect().sort("PART")
+    expected = pl.DataFrame(
+        {"A": [1, 1], "PART": [0, 1], "B": [2, 2]},
+        schema={"A": pl.Int32, "PART": pl.Int32, "B": pl.Int32},
+    )
+    assert_frame_equal(out, expected)

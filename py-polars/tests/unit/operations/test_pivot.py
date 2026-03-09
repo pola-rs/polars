@@ -689,3 +689,21 @@ def test_pivot_obj_25527() -> None:
     assert out["foo"].dtype == pl.Object
     assert out["bar"].to_list() == ["obj 0 bar", "obj 1 bar"]
     assert out["bar"].dtype == pl.Object
+
+
+def test_pivot_dup_name_rename_26605() -> None:
+    lf = pl.LazyFrame({"variable": [], "a": []}).unpivot(["a"], variable_name="other")
+    expected = pl.DataFrame(schema={"other": pl.String, "value": pl.Null})
+    assert_frame_equal(lf.collect(), expected)
+
+
+def test_pivot_on_columns_str_25862() -> None:
+    df = pl.DataFrame(
+        {
+            "index": ["A", "A", "B", "B"],
+            "data": ["bar", "baz", "bar", "baz"],
+            "value": [1, 2, 3, 4],
+        }
+    )
+    with pytest.raises(TypeError, match="on_columns"):
+        result = df.pivot("data", index="index", values="value", on_columns="bar")

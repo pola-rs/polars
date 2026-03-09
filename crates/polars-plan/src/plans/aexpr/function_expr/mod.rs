@@ -51,7 +51,6 @@ pub use fused::FusedOperator;
 pub use list::IRListFunction;
 pub use polars_core::datatypes::ReshapeDimension;
 use polars_core::prelude::*;
-use polars_core::series::IsSorted;
 use polars_core::series::ops::NullBehavior;
 use polars_core::utils::SuperTypeFlags;
 #[cfg(feature = "random")]
@@ -87,6 +86,7 @@ pub use self::struct_::IRStructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::IRTrigonometricFunction;
 use super::*;
+use crate::plans::optimizer::DynamicPred;
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
@@ -269,6 +269,10 @@ pub enum IRFunctionExpr {
         digits: i32,
     },
     #[cfg(feature = "round_series")]
+    Truncate {
+        decimals: u32,
+    },
+    #[cfg(feature = "round_series")]
     Floor,
     #[cfg(feature = "round_series")]
     Ceil,
@@ -308,7 +312,7 @@ pub enum IRFunctionExpr {
         method: IRRandomMethod,
         seed: Option<u64>,
     },
-    SetSortedFlag(IsSorted),
+    SetSortedFlag(AExprSorted),
     #[cfg(feature = "ffi_plugin")]
     /// Creating this node is unsafe
     /// This will lead to calls over FFI.
@@ -387,6 +391,9 @@ pub enum IRFunctionExpr {
     RowEncode(Vec<DataType>, RowEncodingVariant),
     #[cfg(feature = "dtype-struct")]
     RowDecode(Vec<Field>, RowEncodingVariant),
+    DynamicPred {
+        pred: DynamicPred,
+    },
 }
 
 impl Hash for IRFunctionExpr {
@@ -605,6 +612,8 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "round_series")]
             IRFunctionExpr::RoundSF { digits } => digits.hash(state),
             #[cfg(feature = "round_series")]
+            Truncate { decimals } => decimals.hash(state),
+            #[cfg(feature = "round_series")]
             IRFunctionExpr::Floor => {},
             #[cfg(feature = "round_series")]
             Ceil => {},
@@ -689,6 +698,9 @@ impl Hash for IRFunctionExpr {
             RowDecode(fs, variants) => {
                 fs.hash(state);
                 variants.hash(state);
+            },
+            DynamicPred { pred } => {
+                pred.id().hash(state);
             },
         }
     }
@@ -839,6 +851,8 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "round_series")]
             RoundSF { .. } => "round_sig_figs",
             #[cfg(feature = "round_series")]
+            Truncate { .. } => "truncate",
+            #[cfg(feature = "round_series")]
             Floor => "floor",
             #[cfg(feature = "round_series")]
             Ceil => "ceil",
@@ -904,6 +918,7 @@ impl Display for IRFunctionExpr {
             RowEncode(..) => "row_encode",
             #[cfg(feature = "dtype-struct")]
             RowDecode(..) => "row_decode",
+            DynamicPred { .. } => "dynamic_predicate",
         };
         write!(f, "{s}")
     }
@@ -1089,7 +1104,8 @@ impl IRFunctionExpr {
             F::ArgMin | F::ArgMax => FunctionOptions::aggregation(),
             F::ArgSort { .. } => FunctionOptions::length_preserving(),
             F::MinBy | F::MaxBy => FunctionOptions::aggregation(),
-            F::Product => FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING),
+            // TODO: Only decimal product is order-observing, we should get schema here to indicate `NON_ORDER_OBSERVING` for other dtypes.
+            F::Product => FunctionOptions::aggregation(),
             #[cfg(feature = "rank")]
             F::Rank { .. } => FunctionOptions::length_preserving(),
             F::Repeat => {
@@ -1155,7 +1171,7 @@ impl IRFunctionExpr {
                 }
             }),
             #[cfg(feature = "round_series")]
-            F::Round { .. } | F::RoundSF { .. } | F::Floor | F::Ceil => {
+            F::Round { .. } | F::RoundSF { .. } | F::Truncate { .. } | F::Floor | F::Ceil => {
                 FunctionOptions::elementwise()
             },
             #[cfg(feature = "fused")]
@@ -1233,6 +1249,7 @@ impl IRFunctionExpr {
             F::RowEncode(..) => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-struct")]
             F::RowDecode(..) => FunctionOptions::elementwise(),
+            F::DynamicPred { .. } => FunctionOptions::elementwise(),
         }
     }
 }

@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from polars._typing import EpochTimeUnit, PolarsDataType, TimeUnit
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_cum_agg() -> None:
@@ -79,7 +80,7 @@ def test_cum_min_max_bool() -> None:
     )
 
 
-def test_init_inputs(monkeypatch: Any) -> None:
+def test_init_inputs(plmonkeypatch: PlMonkeyPatch) -> None:
     nan = float("nan")
     # Good inputs
     pl.Series("a", [1, 2])
@@ -196,7 +197,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
         pl.Series("bigint", [2**128])
 
     # numpy not available
-    monkeypatch.setattr(pl.series.series, "_check_for_numpy", lambda x: False)
+    plmonkeypatch.setattr(pl.series.series, "_check_for_numpy", lambda x: False)
     with pytest.raises(TypeError):
         pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
 
@@ -909,8 +910,10 @@ def test_shape() -> None:
 
 
 @pytest.mark.parametrize("arrow_available", [True, False])
-def test_create_list_series(arrow_available: bool, monkeypatch: Any) -> None:
-    monkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", arrow_available)
+def test_create_list_series(
+    arrow_available: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", arrow_available)
     a = [[1, 2], None, [None, 3]]
     s = pl.Series("", a)
     assert s.to_list() == a
@@ -1224,7 +1227,7 @@ def test_from_generator_or_iterable() -> None:
     assert_series_equal(pl.Series("s", []), pl.Series("s", values=gen(0)))
 
 
-def test_from_sequences(monkeypatch: Any) -> None:
+def test_from_sequences(plmonkeypatch: PlMonkeyPatch) -> None:
     # test int, str, bool, flt
     values = [
         [[1], [None, 3]],
@@ -1234,9 +1237,9 @@ def test_from_sequences(monkeypatch: Any) -> None:
     ]
 
     for vals in values:
-        monkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", False)
+        plmonkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", False)
         a = pl.Series("a", vals)
-        monkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", True)
+        plmonkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", True)
         b = pl.Series("a", vals)
         assert_series_equal(a, b)
         assert a.to_list() == vals
@@ -1846,6 +1849,51 @@ def test_ceil() -> None:
     assert_series_equal(s.ceil(), expected)
 
 
+def test_truncate() -> None:
+    a = pl.Series("f", [1.003, 2.003])
+    b = a.truncate(2)
+    assert b.to_list() == [1.00, 2.00]
+
+    b = a.truncate()
+    assert b.to_list() == [1.0, 2.0]
+
+
+def test_truncate_negative() -> None:
+    s = pl.Series("f", [-1.78, -2.56, -3.99])
+    assert s.truncate(1).to_list() == [-1.7, -2.5, -3.9]
+    assert s.truncate(0).to_list() == [-1.0, -2.0, -3.0]
+
+
+def test_truncate_int() -> None:
+    s = pl.Series([1, 2, 3])
+    assert_series_equal(s, s.truncate())
+
+
+def test_truncate_special_values() -> None:
+    # NaN values should remain NaN
+    s = pl.Series([1.5, float("nan"), 2.5])
+    result = s.truncate(1)
+    assert result[0] == 1.5
+    assert math.isnan(result[1])
+    assert result[2] == 2.5
+
+    # Inf values should remain inf
+    s = pl.Series([float("inf"), float("-inf"), 1.234])
+    result = s.truncate(2)
+    assert result[0] == float("inf")
+    assert result[1] == float("-inf")
+    assert result[2] == 1.23
+
+    # Null values should remain null
+    s = pl.Series("a", [1.234, None, 3.456], dtype=pl.Float64)
+    result = s.truncate(1)
+    assert result.to_list() == [1.2, None, 3.4]
+
+    # Empty series
+    s = pl.Series(dtype=pl.Float64)
+    assert_series_equal(s.truncate(2), s)
+
+
 def test_duration_arithmetic() -> None:
     # apply some basic duration math to series
     s = pl.Series([datetime(2022, 1, 1, 10, 20, 30), datetime(2022, 1, 2, 20, 40, 50)])
@@ -1971,9 +2019,24 @@ def test_repr_html(df: pl.DataFrame) -> None:
 @pytest.mark.parametrize(
     ("value", "time_unit", "exp", "exp_type"),
     [
-        (13285, "d", date(2006, 5, 17), pl.Date),
-        (1147880044, "s", datetime(2006, 5, 17, 15, 34, 4), pl.Datetime),
-        (1147880044 * 1_000, "ms", datetime(2006, 5, 17, 15, 34, 4), pl.Datetime("ms")),
+        (
+            13285,
+            "d",
+            date(2006, 5, 17),
+            pl.Date,
+        ),
+        (
+            1147880044,
+            "s",
+            datetime(2006, 5, 17, 15, 34, 4),
+            pl.Datetime("us"),
+        ),
+        (
+            1147880044 * 1_000,
+            "ms",
+            datetime(2006, 5, 17, 15, 34, 4),
+            pl.Datetime("us"),
+        ),
         (
             1147880044 * 1_000_000,
             "us",
@@ -2281,7 +2344,7 @@ def test_series_from_numpy_with_dtype() -> None:
 
 
 def test_raise_invalid_is_between() -> None:
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(pl.exceptions.ComputeError):
         pl.select(pl.lit(2).is_between(pl.lit("11"), pl.lit("33")))
 
 

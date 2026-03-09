@@ -13,23 +13,6 @@ pub struct IOMetrics {
     pub bytes_sent: RelaxedCell<u64>,
 }
 
-impl IOMetrics {
-    pub async fn record_download<F, O>(&self, num_bytes: u64, fut: F) -> O
-    where
-        F: Future<Output = O>,
-    {
-        self.bytes_requested.fetch_add(num_bytes);
-
-        let session_guard = self.io_timer.start_session();
-        let out = fut.await;
-        drop(session_guard);
-
-        self.bytes_received.fetch_add(num_bytes);
-
-        out
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct OptIOMetrics(pub Option<Arc<IOMetrics>>);
 
@@ -67,6 +50,21 @@ impl OptIOMetrics {
         drop(io_session);
 
         self.add_bytes_received(num_bytes);
+
+        out
+    }
+
+    pub async fn record_bytes_tx<F, O>(&self, num_bytes: u64, fut: F) -> O
+    where
+        F: Future<Output = O>,
+    {
+        let io_session = self.start_io_session();
+
+        let out = fut.await;
+
+        drop(io_session);
+
+        self.add_bytes_sent(num_bytes);
 
         out
     }

@@ -3,6 +3,7 @@ from __future__ import annotations
 import decimal
 import functools
 import io
+import math
 import subprocess
 import sys
 import warnings
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
         ParquetMetadataContext,
         TimeUnit,
     )
+    from tests.conftest import PlMonkeyPatch
     from tests.unit.conftest import MemoryUsage
 
 
@@ -2146,7 +2148,9 @@ def test_decimal_precision_nested_roundtrip(
 @pytest.mark.may_fail_cloud  # reason: sortedness flag
 @pytest.mark.parametrize("parallel", ["prefiltered", "columns", "row_groups", "auto"])
 def test_conserve_sortedness(
-    monkeypatch: Any, capfd: pytest.CaptureFixture[str], parallel: ParallelStrategy
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    parallel: ParallelStrategy,
 ) -> None:
     f = io.BytesIO()
 
@@ -2174,7 +2178,7 @@ def test_conserve_sortedness(
         f.truncate()
         f.seek(0)
 
-        monkeypatch.setenv("POLARS_VERBOSE", "1")
+        plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
         df = pl.scan_parquet(f, parallel=parallel).filter(pl.col.f > 1).collect()
 
@@ -2812,7 +2816,7 @@ def test_struct_list_statistics_20510() -> None:
     assert_frame_equal(result, df.filter(pl.col("name") == "b"))
 
 
-def test_required_masked_skip_values_20809(monkeypatch: Any) -> None:
+def test_required_masked_skip_values_20809(plmonkeypatch: PlMonkeyPatch) -> None:
     df = pl.DataFrame(
         [pl.Series("a", list(range(20)) + [42] * 15), pl.Series("b", range(35))]
     )
@@ -2822,7 +2826,7 @@ def test_required_masked_skip_values_20809(monkeypatch: Any) -> None:
     df.write_parquet(f)
 
     f.seek(0)
-    monkeypatch.setenv("POLARS_PQ_PREFILTERED_MASK", "pre")
+    plmonkeypatch.setenv("POLARS_PQ_PREFILTERED_MASK", "pre")
     df1 = (
         pl.scan_parquet(f, parallel="prefiltered")
         .filter(pl.col.b.is_in(needle))
@@ -3356,8 +3360,8 @@ def test_read_parquet_duplicate_range_start_fetch_23139(tmp_path: Path) -> None:
     ("value", "scan_dtype", "filter_expr"),
     [
         (pl.lit(1, dtype=pl.Int8), pl.Int16, pl.col("x") > 1),
-        (pl.lit(1.0, dtype=pl.Float64), pl.Float32, pl.col("x") > 1.0),
-        (pl.lit(1.0, dtype=pl.Float32), pl.Float64, pl.col("x") > 1.0),
+        (pl.lit(1.0, dtype=pl.Float64), pl.Float32, pl.col("x") < 0.0),
+        (pl.lit(1.0, dtype=pl.Float32), pl.Float64, pl.col("x") < 0.0),
         (
             pl.lit(
                 datetime(2025, 1, 1),
@@ -3382,7 +3386,7 @@ def test_scan_parquet_skip_row_groups_with_cast(
     value: Any,
     scan_dtype: pl.DataType,
     filter_expr: pl.Expr,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     f = io.BytesIO()
@@ -3402,7 +3406,7 @@ def test_scan_parquet_skip_row_groups_with_cast(
         ),
     ).filter(filter_expr)
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
     out = q.collect()
     assert "reading 0 / 1 row groups" in capfd.readouterr().err
@@ -3440,7 +3444,7 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
     value: Any,
     scan_dtype: pl.DataType,
     filter_expr: pl.Expr,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     f = io.BytesIO()
@@ -3459,7 +3463,7 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
         ),
     ).filter(filter_expr)
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
     out = q.collect()
     assert "reading 1 / 1 row groups" in capfd.readouterr().err
@@ -3555,8 +3559,8 @@ def test_binary_offset_roundtrip() -> None:
         ),
     ],
 )
-def test_empty_struct_roundtrip(df: pl.DataFrame, monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_ALLOW_PQ_EMPTY_STRUCT", "1")
+def test_empty_struct_roundtrip(df: pl.DataFrame, plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_ALLOW_PQ_EMPTY_STRUCT", "1")
 
     f = io.BytesIO()
     df.write_parquet(f)
@@ -3773,7 +3777,8 @@ def test_parquet_is_in_pushdown_large_26007() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_parquet_ordered_cat_26174() -> None:
+@pytest.mark.write_disk
+def test_parquet_ordered_cat_26174(tmp_path: Path) -> None:
     df_pandas = pd.DataFrame(
         {
             "dummy": pd.Categorical(
@@ -3782,9 +3787,9 @@ def test_parquet_ordered_cat_26174() -> None:
             )
         }
     )
-    df_pandas.to_parquet(r"test.parquet", index=False)
+    df_pandas.to_parquet(tmp_path / "test.parquet", index=False)
 
-    df = pl.scan_parquet(r"test.parquet").collect()
+    df = pl.scan_parquet(tmp_path / "test.parquet").collect()
     assert_frame_equal(
         df,
         pl.DataFrame(
@@ -3867,3 +3872,57 @@ def test_parquet_nested_dictionary_multipage(tmp_path: Path) -> None:
 
     assert dict_pages == 1, f"Expected 1 dict page, got {dict_pages}"
     assert data_pages == 2, f"Expected 2 data pages, got {data_pages}"
+
+
+def test_parquet_dict_and_data_page_offset_26531(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "empty_dict_col": pl.Series(
+                [None, None, None, None, None], dtype=pl.Categorical
+            ),
+        }
+    )
+
+    filename = tmp_path / "file_native.parquet"
+    df.write_parquet(filename, use_pyarrow=False)
+
+    meta = pq.read_metadata(filename)
+    rg = meta.row_group(0)
+    col = rg.column(1)  # empty_dict_col
+
+    assert "RLE_DICTIONARY" in str(col.encodings)
+    assert col.dictionary_page_offset is not None
+    assert col.data_page_offset > col.dictionary_page_offset
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        # Min zero must be -0.0 per Parquet spec.
+        [0.0, 1.0],
+        [-0.0, 1.0],
+        [0.0, -0.0, 1.0],
+        [-0.0, 0.0, 1.0],
+        # Max zero must be +0.0 per Parquet spec.
+        [-1.0, 0.0],
+        [-1.0, -0.0],
+        [-1.0, 0.0, -0.0],
+        [-1.0, -0.0, 0.0],
+    ],
+)
+def test_parquet_float_zero_normalization_26733(values: list[float]) -> None:
+    df = pl.DataFrame({"x": values})
+    f = io.BytesIO()
+    df.write_parquet(f, statistics=True)
+    f.seek(0)
+
+    stats = pq.read_metadata(f).row_group(0).column(0).statistics
+    result = pl.DataFrame(
+        {
+            "min_sign": [math.copysign(1.0, stats.min)],
+            "max_sign": [math.copysign(1.0, stats.max)],
+        }
+    )
+    expected = pl.DataFrame({"min_sign": [-1.0], "max_sign": [1.0]})
+    assert_frame_equal(result, expected)

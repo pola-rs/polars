@@ -499,7 +499,7 @@ impl ScanSourceRef<'_> {
     }
 
     pub fn run_async(&self) -> bool {
-        matches!(self, Self::Path(p) if p.has_scheme() || polars_core::config::force_async())
+        matches!(self, Self::Path(p) if p.has_scheme() || polars_config::config().force_async())
     }
 }
 

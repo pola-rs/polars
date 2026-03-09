@@ -12,6 +12,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import ClosedInterval, PolarsIntegerType
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_rolling() -> None:
@@ -69,8 +70,10 @@ def test_rolling_group_by_overlapping_groups(dtype: PolarsIntegerType) -> None:
 # the thread pool, which implies prior to import. The test is only valid when
 # run in isolation, and invalid otherwise because of xdist import caching.
 # See GH issue #22070
-def test_rolling_group_by_overlapping_groups_21859_a(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
+def test_rolling_group_by_overlapping_groups_21859_a(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "1")
     # assert pl.thread_pool_size() == 1 # pending resolution, see TODO
     df = pl.select(
         pl.date_range(pl.date(2023, 1, 1), pl.date(2023, 1, 5))
@@ -92,8 +95,10 @@ def test_rolling_group_by_overlapping_groups_21859_a(monkeypatch: Any) -> None:
 # the thread pool, which implies prior to import. The test is only valid when
 # run in isolation, and invalid otherwise because of xdist import caching.
 # See GH issue #22070
-def test_rolling_group_by_overlapping_groups_21859_b(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
+def test_rolling_group_by_overlapping_groups_21859_b(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "1")
     # assert pl.thread_pool_size() == 1 # pending resolution, see TODO
     df = pl.DataFrame({"a": [20, 30, 40]})
     out = (
@@ -880,3 +885,32 @@ def test_rolling_with_slice() -> None:
     assert_frame_equal(lf.slice(5, 1).collect(), expected.slice(5, 1))
     assert_frame_equal(lf.slice(5, 0).collect(), expected.slice(5, 0))
     assert_frame_equal(lf.slice(2, 1).collect(), expected.slice(2, 1))
+
+
+@pytest.mark.parametrize("offset", [-3, -2, -1, 0, 1, 2, 3])
+@pytest.mark.parametrize("period", [1, 2, 3])
+def test_rolling_positive_offset_window_26717(period: int, offset: int) -> None:
+    df = pl.DataFrame(
+        {
+            "idx": [1, 2, 3, 4, 5, 6, 11, 12, 13, 21],
+            "a": [1 for _ in range(10)],
+            "g": [0 for _ in range(10)],
+        }
+    )
+
+    period_str = str(period) + "i"
+    offset_str = str(offset) + "i"
+
+    out_base = df.select(
+        sum=pl.sum("a").rolling(
+            index_column="idx", period=period_str, offset=offset_str
+        )
+    )
+
+    out_over = df.select(
+        sum=pl.sum("a")
+        .rolling(index_column="idx", period=period_str, offset=offset_str)
+        .over("g")
+    )
+
+    assert_frame_equal(out_base, out_over)

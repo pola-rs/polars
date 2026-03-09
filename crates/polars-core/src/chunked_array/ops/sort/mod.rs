@@ -823,6 +823,14 @@ pub fn _broadcast_bools(n_cols: usize, values: &mut Vec<bool>) {
 pub fn arg_sort(columns: &[Column], mut sort_options: SortMultipleOptions) -> PolarsResult<IdxCa> {
     assert!(!columns.is_empty());
 
+    for column in columns {
+        if column.dtype().is_object() {
+            polars_bail!(
+                InvalidOperation: "column '{}' has a dtype of '{}', which does not support sorting", column.name(), column.dtype()
+            )
+        }
+    }
+
     if let [c] = columns {
         Ok(c.arg_sort(SortOptions {
             descending: sort_options.descending[0],

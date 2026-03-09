@@ -266,10 +266,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     out.pop().unwrap()
                 },
                 0 => {
-                    let msg = "The predicate expanded to zero expressions. \
-                            This may for example be caused by a regex not matching column names or \
-                            a column dtype match not hitting any dtypes in the DataFrame";
-                    polars_bail!(ComputeError: msg);
+                    polars_bail!(
+                        ComputeError:
+                        "The predicate expanded to zero expressions. \
+                        This may for example be caused by a regex not matching column names or \
+                        a column dtype match not hitting any dtypes in the DataFrame"
+                    );
                 },
                 _ => {
                     let mut expanded = String::new();
@@ -282,18 +284,19 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         expanded.push_str("\t...\n")
                     }
 
-                    let msg = if cfg!(feature = "python") {
-                        format!(
+                    if cfg!(feature = "python") {
+                        polars_bail!(
+                            ComputeError:
                             "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
                                 This is ambiguous. Try to combine the predicates with the 'all' or `any' expression."
                         )
                     } else {
-                        format!(
+                        polars_bail!(
+                            ComputeError:
                             "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
                                 This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression."
                         )
                     };
-                    polars_bail!(ComputeError: msg)
                 },
             };
             let predicate_ae = to_expr_ir(
@@ -349,7 +352,23 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::Slice { input, offset, len } => {
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(slice)))?;
-            IR::Slice { input, offset, len }
+
+            if len == 0 {
+                let input_schema = ctxt
+                    .lp_arena
+                    .get(input)
+                    .schema(ctxt.lp_arena)
+                    .as_ref()
+                    .clone();
+
+                IR::DataFrameScan {
+                    df: Arc::new(DataFrame::empty_with_schema(&input_schema)),
+                    schema: input_schema.clone(),
+                    output_schema: None,
+                }
+            } else {
+                IR::Slice { input, offset, len }
+            }
         },
         DslPlan::DataFrameScan { df, schema } => IR::DataFrameScan {
             df,
@@ -490,7 +509,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let lp = IR::Sort {
                 input,
                 by_column,
-                slice,
+                slice: slice.map(|t| (t.0, t.1, None)),
                 sort_options,
             };
 
@@ -1309,18 +1328,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let payload = match payload {
                 SinkType::Memory => SinkTypeIR::Memory,
                 SinkType::Callback(f) => SinkTypeIR::Callback(f),
-                SinkType::File(options) => {
+                SinkType::File(mut options) => {
                     let mut compression_opt = None::<ExternalCompression>;
 
                     #[cfg(feature = "parquet")]
-                    if let FileWriteFormat::Parquet(options) = &options.file_format
-                        && let Some(arrow_schema) = &options.arrow_schema
+                    if let FileWriteFormat::Parquet(options) = &mut options.file_format
+                        && let Some(arrow_schema) = &mut Arc::make_mut(options).arrow_schema
                     {
-                        validate_arrow_schema_conversion(
-                            input_schema.as_ref(),
-                            arrow_schema,
-                            options.compat_level(),
-                        )?;
+                        let new_schema =
+                            validate_arrow_schema_conversion(input_schema.as_ref(), arrow_schema)?;
+
+                        *Arc::make_mut(arrow_schema) = new_schema;
                     }
 
                     #[cfg(feature = "csv")]
@@ -1339,17 +1357,16 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
                     if let Some(compression) = compression_opt {
                         if let SinkTarget::Path(path) = &options.target {
-                            let path_str = path.as_str();
+                            let extension = path.extension();
 
                             if let Some(suffix) = compression.file_suffix() {
                                 polars_ensure!(
-                                    path_str.ends_with(suffix) || !path_str.contains('.'),
+                                    extension.is_none_or(|extension| extension == suffix.strip_prefix(".").unwrap_or(suffix)),
                                     InvalidOperation: "the path ({}) does not conform to standard naming, expected suffix: ({}), set `check_extension` to `False` if you don't want this behavior", path, suffix
                                 );
-                            } else if [".gz", ".zst", ".zstd"]
-                                .iter()
-                                .any(|extension| path_str.ends_with(extension))
-                            {
+                            } else if ["gz", "zst", "zstd"].iter().any(|compression_extension| {
+                                extension == Some(compression_extension)
+                            }) {
                                 polars_bail!(
                                     InvalidOperation: "use the compression parameter to control compression, or set `check_extension` to `False` if you want to suffix an uncompressed filename with an ending intended for compression"
                                 );
@@ -1397,7 +1414,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         PartitionStrategy::FileSize => PartitionStrategyIR::FileSize,
                     };
 
-                    let options = PartitionedSinkOptionsIR {
+                    let mut options = PartitionedSinkOptionsIR {
                         base_path,
                         file_path_provider: file_path_provider.unwrap_or_else(|| {
                             FileProviderType::Hive(HivePathProvider {
@@ -1412,17 +1429,22 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     };
 
                     #[cfg(feature = "parquet")]
-                    if let FileWriteFormat::Parquet(parquet_options) = &options.file_format
-                        && let Some(arrow_schema) = &parquet_options.arrow_schema
                     {
+                        let input_schema = input_schema.into_owned();
                         let file_schema =
                             options.file_output_schema(&input_schema, ctxt.expr_arena)?;
 
-                        validate_arrow_schema_conversion(
-                            file_schema.as_ref(),
-                            arrow_schema,
-                            parquet_options.compat_level(),
-                        )?;
+                        if let FileWriteFormat::Parquet(parquet_options) = &mut options.file_format
+                            && let Some(arrow_schema) =
+                                &mut Arc::make_mut(parquet_options).arrow_schema
+                        {
+                            let new_schema = validate_arrow_schema_conversion(
+                                file_schema.as_ref(),
+                                arrow_schema,
+                            )?;
+
+                            *Arc::make_mut(arrow_schema) = new_schema;
+                        }
                     }
 
                     ctxt.conversion_optimizer
@@ -1506,14 +1528,14 @@ fn resolve_with_columns(
         let field = eir.field(&input_schema, expr_arena)?;
 
         if !output_names.insert(field.name().clone()) {
-            let msg = format!(
+            polars_bail!(
+                ComputeError:
                 "the name '{}' passed to `LazyFrame.with_columns` is duplicate\n\n\
-                    It's possible that multiple expressions are returning the same default column name. \
-                    If this is the case, try renaming the columns with `.alias(\"new_name\")` to avoid \
-                    duplicate column names.",
+                It's possible that multiple expressions are returning the same default column name. \
+                If this is the case, try renaming the columns with `.alias(\"new_name\")` to avoid \
+                duplicate column names.",
                 field.name()
-            );
-            polars_bail!(ComputeError: msg)
+            )
         }
         output_schema.with_column(field.name, field.dtype.materialize_unknown(true)?);
     }

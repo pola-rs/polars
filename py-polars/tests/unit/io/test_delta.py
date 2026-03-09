@@ -6,7 +6,7 @@ import warnings
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 import pytest
@@ -22,6 +22,9 @@ from polars.io.cloud.credential_provider._builder import (
 from polars.io.delta._dataset import DeltaDataset
 from polars.io.delta._utils import _extract_table_statistics_from_delta_add_actions
 from polars.testing import assert_frame_equal, assert_frame_not_equal
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
@@ -94,10 +97,10 @@ def test_scan_delta_columns(delta_table_path: Path) -> None:
 
 def test_scan_delta_polars_storage_options_keys(
     delta_table_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
     lf = pl.scan_delta(
         delta_table_path,
         version=0,
@@ -674,7 +677,7 @@ def test_read_delta_arrow_map_type(tmp_path: Path) -> None:
 @pytest.mark.write_disk
 def test_scan_delta_nanosecond_timestamp(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     df = pl.DataFrame(
@@ -724,7 +727,7 @@ def test_scan_delta_nanosecond_timestamp(
         pl.col("timestamp")
         < pl.lit(datetime(2025, 1, 1), dtype=pl.Datetime("us", time_zone="UTC"))
     )
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
 
     assert_frame_equal(q.collect(), df.clear())
@@ -823,7 +826,7 @@ def test_scan_delta_schema_evolution_nested_struct_field_19915(tmp_path: Path) -
 
 @pytest.mark.write_disk
 def test_scan_delta_storage_options_from_delta_table(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     import polars.io.delta._dataset
 
@@ -844,7 +847,7 @@ def test_scan_delta_storage_options_from_delta_table(
 
         return pl.scan_parquet(*a, **kw)
 
-    monkeypatch.setattr(
+    plmonkeypatch.setattr(
         polars.io.delta._dataset, "scan_parquet", assert_scan_parquet_storage_options
     )
 
@@ -880,7 +883,7 @@ def test_scan_delta_storage_options_from_delta_table(
 
 def test_scan_delta_loads_aws_profile_endpoint_url(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -893,8 +896,8 @@ aws_secret_access_key=A
 endpoint_url = http://127.0.0.1:54321
 """)
 
-    monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
-    monkeypatch.setenv("AWS_PROFILE", "endpoint_333")
+    plmonkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
+    plmonkeypatch.setenv("AWS_PROFILE", "endpoint_333")
 
     assert (
         builder := _init_credential_provider_builder(
@@ -991,7 +994,7 @@ def _df_many_types() -> pl.DataFrame:
 @pytest.mark.write_disk
 def test_scan_delta_filter_delta_log_statistics_23780(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
     expr: pl.Expr,
 ) -> None:
@@ -999,7 +1002,7 @@ def test_scan_delta_filter_delta_log_statistics_23780(
     root = tmp_path / "delta"
     df.write_delta(root, delta_write_options={"partition_by": "p"})
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
 
     assert_frame_equal(
@@ -1081,7 +1084,7 @@ def test_scan_delta_extract_table_statistics_df(tmp_path: Path) -> None:
 @pytest.mark.write_disk
 def test_scan_delta_filter_delta_log_statistics_partial_23780(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
     expr: pl.Expr,
     n_cols: str,
@@ -1100,7 +1103,7 @@ def test_scan_delta_filter_delta_log_statistics_partial_23780(
         },
     )
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
 
     assert_frame_equal(
@@ -1115,7 +1118,7 @@ def test_scan_delta_filter_delta_log_statistics_partial_23780(
 @pytest.mark.write_disk
 def test_scan_delta_filter_delta_log_statistics_delete_partition_23780(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     df = pl.DataFrame(
@@ -1128,7 +1131,7 @@ def test_scan_delta_filter_delta_log_statistics_delete_partition_23780(
 
     df.write_delta(root, delta_write_options={"partition_by": "p"})
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
 
     expr = pl.col.a == 2
@@ -1255,7 +1258,7 @@ def test_delta_partition_filter(tmp_path: Path, use_pyarrow: bool) -> None:
 def test_scan_delta_collect_without_version_scans_latest(
     tmp_path: Path,
     use_pyarrow: bool,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     pl.DataFrame({"a": [0]}).write_delta(tmp_path)
@@ -1279,7 +1282,7 @@ def test_scan_delta_collect_without_version_scans_latest(
 
     assert_frame_equal(q.collect().sort("*"), pl.DataFrame({"a": [0, 1, 2]}))
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
 
     assert_frame_equal(q_with_id.collect().sort("*"), pl.DataFrame({"a": [0, 1]}))

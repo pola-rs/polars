@@ -86,7 +86,7 @@ impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<RecordBatchT
     ) -> PolarsResult<Self> {
         if encodings.len() != schema.len() {
             polars_bail!(InvalidOperation:
-                "The number of encodings must equal the number of fields".to_string(),
+                "The number of encodings must equal the number of fields",
             )
         }
         let parquet_schema = to_parquet_schema(schema)?;

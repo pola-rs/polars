@@ -1,6 +1,6 @@
 from collections import OrderedDict
 import os
-from typing import Any, List, Optional, Set
+from typing import List, Optional, Set
 import yaml
 import logging
 
@@ -59,7 +59,7 @@ def create_feature_flag_links(language: str, api_functions: List[str]) -> List[s
     feature_flags: Set[str] = {
         flag
         for info in api_functions_info
-        if type(info) == dict and info.get("feature_flags")
+        if isinstance(info, dict) and info.get("feature_flags")
         for flag in info.get("feature_flags")
     }
 
@@ -83,7 +83,7 @@ def create_api_function_link(language: str, function_key: str) -> Optional[str]:
         return None
     else:
         # Either be a direct link
-        if type(info) == str:
+        if isinstance(info, str):
             return f"[:material-api:  `{function_key}`]({info})"
         else:
             function_name = info["name"]

@@ -87,7 +87,7 @@ def test_except_intersect_all_unsupported(op: str, op_subtype: str) -> None:
         SQLInterfaceError,
         match=f"'{op} {op_subtype}' is not supported",
     ):
-        pl.sql(f"SELECT * FROM df1 {op} {op_subtype} SELECT * FROM df2")
+        pl.sql(f"SELECT * FROM df1 {op} {op_subtype} SELECT * FROM df2", eager=True)
 
 
 def test_update_statement_error() -> None:

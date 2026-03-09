@@ -15,6 +15,7 @@ import polars.selectors as cs
 from polars import Expr
 from polars.exceptions import (
     ColumnNotFoundError,
+    ComputeError,
     InvalidOperationError,
 )
 from polars.meta import get_index_type
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from polars._typing import PolarsDataType, TimeUnit
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_group_by() -> None:
@@ -965,8 +967,8 @@ def test_perfect_hash_table_null_values() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_group_by_partitioned_ending_cast(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
+def test_group_by_partitioned_ending_cast(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
     df = pl.DataFrame({"a": [1] * 5, "b": [1] * 5})
     out = df.group_by(["a", "b"]).agg(pl.len().cast(pl.Int64).alias("num"))
     expected = pl.DataFrame({"a": [1], "b": [1], "num": [5]})
@@ -1088,8 +1090,8 @@ def test_group_by_with_null() -> None:
     assert_frame_equal(expected, output)
 
 
-def test_partitioned_group_by_14954(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
+def test_partitioned_group_by_14954(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
     assert (
         pl.DataFrame({"a": range(20)})
         .select(pl.col("a") % 2)
@@ -1411,8 +1413,8 @@ def test_group_by_map_groups_slice_pushdown_20002() -> None:
 
 
 @typing.no_type_check
-def test_group_by_lit_series(capfd: Any, monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+def test_group_by_lit_series(capfd: Any, plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     n = 10
     df = pl.DataFrame({"x": np.ones(2 * n), "y": n * list(range(2))})
     a = np.ones(n, dtype=float)
@@ -2964,3 +2966,10 @@ def test_group_by_cse_alias_26423() -> None:
         },
     )
     assert_frame_equal(result, expected, check_row_order=False)
+
+
+def test_group_by_agg_get_oob_error_26747() -> None:
+    df = pl.DataFrame({"x": [1, 1, 2, 3]})
+
+    with pytest.raises(ComputeError, match="get index is out of bounds"):
+        df.group_by("x").agg(y=pl.col.x.get(100))
