@@ -8,6 +8,7 @@ extend-exclude = [
   "**/py-polars/src/polars/_utils/nest_asyncio.py",
   "*.nix",
   "**/crates/polars-plan/dsl-schema-hashes.json",
+  "**/_polars_runtime*/",
 ]
 ignore-hidden = false
 

@@ -488,6 +488,7 @@ where
 
             #[cfg(feature = "scan_lines")]
             FileScanIR::Lines { name: _ } => {},
+            FileScanIR::ExpandedPaths { name: _ } => {},
 
             FileScanIR::Anonymous {
                 options: _,

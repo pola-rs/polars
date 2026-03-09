@@ -10,6 +10,7 @@ use polars::frame::PivotColumnNaming;
 use polars::io::RowIndex;
 use polars::time::*;
 use polars_core::prelude::*;
+use polars_core::query_result::QueryResult;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
@@ -370,6 +371,28 @@ impl PyLazyFrame {
         Ok(lf.into())
     }
 
+    #[cfg(feature = "scan_lines")]
+    #[staticmethod]
+    #[pyo3(signature = (sources, scan_options, name))]
+    fn new_from_expand_paths(
+        sources: Wrap<ScanSources>,
+        scan_options: PyScanOptions,
+        name: PyBackedStr,
+    ) -> PyResult<Self> {
+        let sources = sources.0;
+        let first_path = sources.first_path();
+
+        let unified_scan_args =
+            scan_options.extract_unified_scan_args(first_path.and_then(|x| x.scheme()))?;
+
+        let dsl: DslPlan = DslBuilder::expand_paths(sources, unified_scan_args, (&*name).into())
+            .map_err(to_py_err)?
+            .build();
+        let lf: LazyFrame = dsl.into();
+
+        Ok(lf.into())
+    }
+
     #[staticmethod]
     #[pyo3(signature = (
         dataset_object
@@ -578,7 +601,11 @@ impl PyLazyFrame {
                     post_opt_callback(&lambda, root, lp_arena, expr_arena, None)
                 })
             } else {
-                ldf.collect_with_engine(engine.0)
+                ldf.collect_with_engine(engine.0).map(|r| match r {
+                    QueryResult::Single(df) => df,
+                    // TODO: Should return query results
+                    QueryResult::Multiple(_) => DataFrame::empty(),
+                })
             }
         })
     }
@@ -599,6 +626,11 @@ impl PyLazyFrame {
             polars_io::pl_async::get_runtime().spawn_blocking(move || {
                 let result = ldf
                     .collect_with_engine(engine.0)
+                    .map(|r| match r {
+                        QueryResult::Single(df) => df,
+                        // TODO: Should return query results
+                        QueryResult::Multiple(_) => DataFrame::empty(),
+                    })
                     .map(PyDataFrame::new)
                     .map_err(PyPolarsErr::from);
 

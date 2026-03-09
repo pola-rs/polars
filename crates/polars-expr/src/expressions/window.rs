@@ -237,7 +237,7 @@ impl WindowExpr {
                 let mut finishes_list = false;
                 for e in &**function {
                     match e {
-                        Expr::Agg(AggExpr::Implode(_)) => {
+                        Expr::Agg(AggExpr::Implode { .. }) => {
                             finishes_list = true;
                         },
                         Expr::Alias(_, _) => {},
@@ -1044,7 +1044,13 @@ fn set_by_groups(
     len: usize,
     update_groups: bool,
 ) -> Option<Column> {
-    if update_groups || !ac.original_len {
+    if update_groups
+        || !ac.original_len
+        || matches!(
+            ac.agg_state(),
+            AggState::AggregatedScalar(_) | AggState::LiteralScalar(_)
+        )
+    {
         return None;
     }
     if s.dtype().to_physical().is_primitive_numeric() {

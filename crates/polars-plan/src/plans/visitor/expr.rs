@@ -69,7 +69,7 @@ impl TreeWalker for Expr {
                 LastNonNull(x) => LastNonNull(am(x, f)?),
                 Item { input, allow_empty } => Item { input: am(input, f)?, allow_empty },
                 Mean(x) => Mean(am(x, f)?),
-                Implode(x) => Implode(am(x, f)?),
+                Implode { input, maintain_order } => Implode { input: am(input, f)?, maintain_order },
                 Count { input, include_nulls } => Count { input: am(input, f)?, include_nulls },
                 Quantile { expr, quantile, method: interpol } => Quantile { expr: am(expr, &mut f)?, quantile: am(quantile, f)?, method: interpol },
                 Sum(x) => Sum(am(x, f)?),

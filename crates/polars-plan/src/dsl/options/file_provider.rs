@@ -2,7 +2,7 @@ use std::hash::Hash;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::Column;
+use polars_core::prelude::{Column, DataType};
 use polars_error::PolarsResult;
 use polars_io::hive::HivePathFormatter;
 use polars_io::utils::file::Writeable;
@@ -29,6 +29,7 @@ pub type FileProviderFunction = PlanCallback<FileProviderArgs, FileProviderRetur
 #[derive(Clone, Debug, Hash, PartialEq)]
 pub enum FileProviderType {
     Hive(HivePathProvider),
+    Iceberg(IcebergPathProvider),
     Function(FileProviderFunction),
 }
 
@@ -40,10 +41,28 @@ pub struct HivePathProvider {
 }
 
 impl FileProviderType {
-    pub fn get_path_or_file(&self, args: FileProviderArgs) -> PolarsResult<FileProviderReturn> {
+    /// Get a mutable reference to the file part prefix for this file provider.
+    ///
+    /// File part prefixes are inserted after the partition prefix, before the file part number.
+    ///
+    /// # Returns
+    /// Returns `None` if this file provider does not support attaching file part prefixes.
+    pub fn file_part_prefix_mut(&mut self) -> Option<&mut String> {
+        use FileProviderType::*;
+
         match self {
-            Self::Hive(v) => v.get_path(args).map(FileProviderReturn::Path),
-            Self::Function(v) => v.get_path_or_file(args),
+            Iceberg(p) => Some(p.file_part_prefix_mut()),
+            Hive(_) | Function(_) => None,
+        }
+    }
+
+    pub fn get_path_or_file(&self, args: FileProviderArgs) -> PolarsResult<FileProviderReturn> {
+        use FileProviderType::*;
+
+        match self {
+            Hive(p) => p.get_path(args).map(FileProviderReturn::Path),
+            Iceberg(p) => p.get_path(args).map(FileProviderReturn::Path),
+            Function(p) => p.get_path_or_file(args),
         }
     }
 }
@@ -59,22 +78,82 @@ impl HivePathProvider {
             partition_keys,
         } = args;
 
-        let mut partition_parts = String::new();
+        let mut path = String::new();
 
         let partition_keys: &[Column] = partition_keys.columns();
 
-        write!(
-            &mut partition_parts,
-            "{}",
-            HivePathFormatter::new(partition_keys)
-        )
-        .unwrap();
+        write!(&mut path, "{}", HivePathFormatter::new(partition_keys)).unwrap();
 
         assert!(index_in_partition <= 0xffff_ffff);
 
-        write!(&mut partition_parts, "{index_in_partition:08x}.{extension}").unwrap();
+        write!(&mut path, "{index_in_partition:08x}.{extension}").unwrap();
 
-        Ok(partition_parts)
+        Ok(path)
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Hash, PartialEq)]
+pub struct IcebergPathProvider {
+    pub extension: PlSmallStr,
+    pub file_part_prefix: String,
+}
+
+impl IcebergPathProvider {
+    pub fn file_part_prefix_mut(&mut self) -> &mut String {
+        &mut self.file_part_prefix
+    }
+
+    /// # Panics
+    /// Panics if `self.file_part_prefix` is `None`.
+    pub fn get_path(&self, args: FileProviderArgs) -> PolarsResult<String> {
+        use std::fmt::Write;
+
+        let IcebergPathProvider {
+            extension,
+            file_part_prefix,
+        } = self;
+
+        assert!(!file_part_prefix.is_empty());
+
+        let FileProviderArgs {
+            index_in_partition,
+            partition_keys,
+        } = args;
+
+        let mut partition_keys_hash = None;
+
+        if partition_keys.width() != 0 {
+            let mut hasher = blake3::Hasher::new();
+
+            for column in partition_keys.columns() {
+                let column = column.cast(&DataType::String).unwrap();
+
+                let value = column.str().unwrap().get(0);
+
+                hasher.update(&[value.is_some() as u8]);
+                hasher.update(value.unwrap_or_default().as_bytes());
+            }
+
+            partition_keys_hash = Some(hasher.finalize().to_hex());
+        }
+
+        let partition_key_prefix: &str = partition_keys_hash.as_ref().map_or("", |x| &x[..32]);
+
+        let mut path = String::with_capacity(
+            partition_key_prefix.len() + file_part_prefix.len() + 8 + 1 + extension.len(),
+        );
+
+        assert!(index_in_partition <= 0xffff_ffff);
+
+        write!(
+            &mut path,
+            "{partition_key_prefix}{file_part_prefix}{index_in_partition:08x}.{extension}"
+        )
+        .unwrap();
+
+        Ok(path)
     }
 }
 

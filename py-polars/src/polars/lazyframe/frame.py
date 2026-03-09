@@ -114,7 +114,10 @@ if TYPE_CHECKING:
     from typing import IO, Concatenate, Literal, ParamSpec
 
     import deltalake
+    import pyiceberg.catalog
+    import pyiceberg.table
 
+    import polars.io.iceberg
     from polars.io.partition import PartitionBy
     from polars.lazyframe.opt_flags import QueryOptFlags
 
@@ -3213,6 +3216,60 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
             return None
 
+    @unstable()
+    def sink_iceberg(
+        self,
+        target: str | pyiceberg.table.Table,
+        *,
+        mode: Literal["append", "overwrite"],
+        catalog: pyiceberg.catalog.Catalog
+        | polars.io.iceberg.IcebergCatalogConfig
+        | None = None,
+        storage_options: StorageOptionsDict | None = None,
+    ) -> pl.DataFrame:
+        """
+        Sink a LazyFrame to an Iceberg table.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        target
+            A PyIceberg Table object, or a 'namespace.table_name' identifier string.
+        mode : {'append', 'overwrite'}
+            How to handle existing data.
+
+            - If 'append', will add new data.
+            - If 'overwrite', will replace table with new data.
+        catalog
+            PyIceberg catalog to load the table from if the provided `target`
+            was a table identifier.
+        storage_options
+            Extra options for the storage backends supported by `pyiceberg`.
+            For cloud storages, this may include configurations for authentication etc.
+
+            More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
+
+        Returns
+        -------
+        DataFrame
+            Contains the new metadata path.
+        """
+        from polars.io.iceberg._sink import IcebergSinkState
+
+        sink_state = IcebergSinkState(
+            target=target,
+            catalog=catalog,
+            mode=mode,
+            storage_options=storage_options,
+        )
+
+        sink_state.attach_sink(self).collect(engine="streaming")
+
+        return sink_state.commit()
+
     @overload
     def sink_ipc(
         self,
@@ -6036,9 +6093,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                  - One-to-many. Checks if join keys are unique in left dataset.
                * - **m:1**
                  - Many-to-one. Check if join keys are unique in right dataset.
-
-            .. note::
-                This is currently not supported by the streaming engine.
         nulls_equal
             Join on null values. By default null values will never produce matches.
         coalesce
@@ -8311,8 +8365,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             on_cols = on_columns
         elif isinstance(on_columns, pl.Series):
             on_cols = on_columns.to_frame()
+        elif isinstance(on_columns, str):
+            msg = f"invalid type for `on_columns` argument: {qualified_type_name(on_columns)!r}"
+            raise TypeError(msg)
         else:
-            on_cols = pl.Series(on_columns).to_frame()
+            on_cols = pl.Series(values=on_columns).to_frame()
 
         return self._from_pyldf(
             self._ldf.pivot(
