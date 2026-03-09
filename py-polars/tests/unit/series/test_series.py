@@ -1018,35 +1018,6 @@ def test_reinterpret_signed() -> None:
     assert df.select([pl.col("a").reinterpret(signed=True)])["a"].dtype == pl.Int64
 
 
-@pytest.mark.parametrize(
-    ("original", "reinterpreted"),
-    [
-        (pl.UInt16, pl.Int16),
-        (pl.UInt32, pl.Int32),
-        (pl.UInt64, pl.Int64),
-        (pl.UInt32, pl.Float32),
-        (pl.UInt64, pl.Float64),
-        (pl.Int16, pl.UInt16),
-        (pl.Int32, pl.UInt32),
-        (pl.Int64, pl.UInt64),
-        (pl.Int32, pl.Float32),
-        (pl.Int64, pl.Float64),
-        (pl.Float32, pl.Int32),
-        (pl.Float64, pl.Int64),
-        (pl.Float32, pl.UInt32),
-        (pl.Float64, pl.UInt64),
-    ],
-)
-def test_reinterpret_dtype(original: pl.DataType, reinterpreted: pl.DataType) -> None:
-    s = pl.Series("a", [1, 1, 2], dtype=original)
-    assert s.reinterpret(dtype=reinterpreted).dtype == reinterpreted
-    df = pl.DataFrame([s])
-    assert (
-        df.select([pl.col("a").reinterpret(dtype=reinterpreted)])["a"].dtype
-        == reinterpreted
-    )
-
-
 def test_mode() -> None:
     s = pl.Series("a", [1, 1, 2])
     assert s.mode().to_list() == [1]

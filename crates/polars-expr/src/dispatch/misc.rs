@@ -342,7 +342,7 @@ pub(super) fn gather_every(s: &Column, n: usize, offset: usize) -> PolarsResult<
 }
 
 #[cfg(feature = "reinterpret")]
-pub(super) fn reinterpret(s: &Column, dtype: DataType) -> PolarsResult<Column> {
+pub(super) fn reinterpret(s: &Column, dtype: &DataType) -> PolarsResult<Column> {
     polars_core::chunked_array::ops::reinterpret(s.as_materialized_series(), dtype)
         .map(Column::from)
 }

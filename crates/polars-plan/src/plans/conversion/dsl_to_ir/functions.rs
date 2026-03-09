@@ -1047,12 +1047,22 @@ pub(super) fn convert_functions(
         #[cfg(feature = "reinterpret")]
         F::Reinterpret(signed, dtype) => {
             let input_dtype = e[0].dtype(ctx.schema, ctx.arena)?;
-            let final_dtype;
 
-            if let Some(signed) = signed
-                && dtype.is_none()
-            {
-                final_dtype = if signed {
+            polars_ensure!(
+                signed.is_some() != dtype.is_some(),
+                ComputeError:
+                "reinterpret requires exactly one of `signed` or `dtype` to be specified"
+            );
+
+            polars_ensure!(
+                input_dtype.is_numeric(),
+                ComputeError:
+                "cannot reinterpret non-numeric input dtype '{input_dtype:?}'. \
+                Consider casting instead."
+            );
+
+            let target_dtype = if let Some(signed) = signed {
+                if signed {
                     match input_dtype {
                         DataType::UInt8 => DataType::Int8,
                         DataType::UInt16 => DataType::Int16,
@@ -1070,16 +1080,25 @@ pub(super) fn convert_functions(
                         DataType::Int128 => DataType::UInt128,
                         _ => input_dtype.clone(),
                     }
+                }
+            } else if let Some(target_dtype) = dtype {
+                match (
+                    input_dtype.numeric_to_unsigned_bit_repr(),
+                    target_dtype.numeric_to_unsigned_bit_repr(),
+                ) {
+                    (Some(l), Some(r)) if l == r => {},
+                    _ => polars_bail!(
+                        ComputeError:
+                        "cannot reinterpret from {input_dtype:?} to {target_dtype:?}"
+                    ),
                 };
-            } else if let Some(dt) = dtype
-                && signed.is_none()
-            {
-                final_dtype = dt.clone();
-            } else {
-                polars_bail!(InvalidOperation: "reinterpret can only be called with either `signed` or `dtype` specified")
-            }
 
-            I::Reinterpret(final_dtype)
+                target_dtype
+            } else {
+                unreachable!();
+            };
+
+            I::Reinterpret(target_dtype)
         },
         F::ExtendConstant => {
             polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'value' must be a scalar value");

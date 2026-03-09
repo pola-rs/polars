@@ -79,24 +79,12 @@ where
     }
 }
 
-pub fn reinterpret(s: &Series, dtype: DataType) -> PolarsResult<Series> {
+pub fn reinterpret(s: &Series, dtype: &DataType) -> PolarsResult<Series> {
+    if s.dtype().is_numeric() && s.dtype() == dtype {
+        return Ok(s.clone());
+    }
+
     Ok(match (s.dtype(), dtype) {
-        (DataType::UInt8, DataType::UInt8) => s.clone(),
-        (DataType::UInt16, DataType::UInt16) => s.clone(),
-        (DataType::UInt32, DataType::UInt32) => s.clone(),
-        (DataType::UInt64, DataType::UInt64) => s.clone(),
-        (DataType::UInt128, DataType::UInt128) => s.clone(),
-
-        (DataType::Int8, DataType::Int8) => s.clone(),
-        (DataType::Int16, DataType::Int16) => s.clone(),
-        (DataType::Int32, DataType::Int32) => s.clone(),
-        (DataType::Int64, DataType::Int64) => s.clone(),
-        (DataType::Int128, DataType::Int128) => s.clone(),
-
-        (DataType::Float16, DataType::Float16) => s.clone(),
-        (DataType::Float32, DataType::Float32) => s.clone(),
-        (DataType::Float64, DataType::Float64) => s.clone(),
-
         #[cfg(all(feature = "dtype-u8", feature = "dtype-i8"))]
         (DataType::UInt8, DataType::Int8) => {
             reinterpret_chunked_array::<_, Int8Type>(s.u8().unwrap()).into_series()
@@ -159,7 +147,7 @@ pub fn reinterpret(s: &Series, dtype: DataType) -> PolarsResult<Series> {
 
         #[cfg(all(feature = "dtype-f16", feature = "dtype-u16"))]
         (DataType::Float16, DataType::UInt16) => {
-            reinterpret_chunked_array::<_, Float16Type>(s.f16().unwrap()).into_series()
+            reinterpret_chunked_array::<_, UInt16Type>(s.f16().unwrap()).into_series()
         },
         (DataType::Float32, DataType::UInt32) => {
             reinterpret_chunked_array::<_, UInt32Type>(s.f32().unwrap()).into_series()
@@ -179,9 +167,9 @@ pub fn reinterpret(s: &Series, dtype: DataType) -> PolarsResult<Series> {
             reinterpret_chunked_array::<_, Int64Type>(s.f64().unwrap()).into_series()
         },
 
-        _ => polars_bail!(
+        (source_dtype, target_dtype) => polars_bail!(
             ComputeError:
-            "reinterpret is only allowed for numeric types of the same size (for example: 32-bits integer to 32-bits float), use cast otherwise"
+            "cannot reinterpret from {source_dtype:?} to {target_dtype:?}"
         ),
     })
 }
