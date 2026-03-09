@@ -10,7 +10,7 @@ fn test_schema_update_after_projection_pd() -> PolarsResult<()> {
 
     let q = df
         .lazy()
-        .with_column(col("a").implode())
+        .with_column(col("a").implode(true))
         .explode(
             by_name(["a"], true, false),
             ExplodeOptions {

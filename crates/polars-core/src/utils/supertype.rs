@@ -24,11 +24,12 @@ pub fn try_get_supertype_with_options(
     )
 }
 
-/// Returns a numeric supertype that `l` and `r` can be safely upcasted to if it exists.
+/// Returns the smallest numeric dtype that `l` and `r` can both be casted to without loss of data.
+/// If no such dtype exists, or `l` and `r` are already matching, returns `None`.
 pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Option<DataType> {
     use DataType::*;
 
-    if l == r || matches!(l, Unknown(_)) || matches!(r, Unknown(_)) {
+    if l.is_unknown() || r.is_unknown() || l.is_nested() || r.is_nested() || l == r {
         None
     } else if l.is_float() && r.is_float() {
         match (l, r) {

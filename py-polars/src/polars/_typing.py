@@ -91,6 +91,7 @@ IntoExprColumn: TypeAlias = Union["Expr", "Series", str]
 IntoExpr: TypeAlias = PythonLiteral | IntoExprColumn | None
 
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
+Alignment: TypeAlias = Literal["left", "center", "right", "LEFT", "CENTER", "RIGHT"]
 
 # selector type, and related collection/sequence
 SelectorType: TypeAlias = "Selector"
@@ -102,6 +103,7 @@ Ambiguous: TypeAlias = Literal["earliest", "latest", "raise", "null"]
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric", "never"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
+CsvCompression: TypeAlias = Literal["uncompressed", "gzip", "zstd"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 ColumnMapping: TypeAlias = tuple[
     Literal["iceberg-column-mapping"],
@@ -126,6 +128,7 @@ Label: TypeAlias = Literal["left", "right", "datapoint"]
 MaintainOrderJoin: TypeAlias = Literal[
     "none", "left", "right", "left_right", "right_left"
 ]
+NdjsonCompression: TypeAlias = Literal["uncompressed", "gzip", "zstd"]
 NonExistent: TypeAlias = Literal["raise", "null"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
 ParallelStrategy: TypeAlias = Literal[
@@ -142,7 +145,7 @@ QuantileMethod: TypeAlias = Literal[
 ]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 Roll: TypeAlias = Literal["raise", "forward", "backward"]
-RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero"]
+RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero", "to_zero"]
 SerializationFormat: TypeAlias = Literal["binary", "json"]
 Endianness: TypeAlias = Literal["little", "big"]
 SizeUnit: TypeAlias = Literal[
@@ -350,6 +353,7 @@ DeprecationType: TypeAlias = Literal[
 
 
 __all__ = [
+    "Alignment",
     "Ambiguous",
     "ArrowArrayExportable",
     "ArrowStreamExportable",
@@ -401,6 +405,7 @@ __all__ = [
     "MultiColSelector",
     "MultiIndexSelector",
     "MultiNameSelector",
+    "NdjsonCompression",
     "NonExistent",
     "NonNestedLiteral",
     "NullBehavior",

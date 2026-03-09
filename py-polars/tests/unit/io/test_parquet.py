@@ -3,6 +3,7 @@ from __future__ import annotations
 import decimal
 import functools
 import io
+import math
 import subprocess
 import sys
 import warnings
@@ -3359,8 +3360,8 @@ def test_read_parquet_duplicate_range_start_fetch_23139(tmp_path: Path) -> None:
     ("value", "scan_dtype", "filter_expr"),
     [
         (pl.lit(1, dtype=pl.Int8), pl.Int16, pl.col("x") > 1),
-        (pl.lit(1.0, dtype=pl.Float64), pl.Float32, pl.col("x") > 1.0),
-        (pl.lit(1.0, dtype=pl.Float32), pl.Float64, pl.col("x") > 1.0),
+        (pl.lit(1.0, dtype=pl.Float64), pl.Float32, pl.col("x") < 0.0),
+        (pl.lit(1.0, dtype=pl.Float32), pl.Float64, pl.col("x") < 0.0),
         (
             pl.lit(
                 datetime(2025, 1, 1),
@@ -3893,3 +3894,35 @@ def test_parquet_dict_and_data_page_offset_26531(tmp_path: Path) -> None:
     assert "RLE_DICTIONARY" in str(col.encodings)
     assert col.dictionary_page_offset is not None
     assert col.data_page_offset > col.dictionary_page_offset
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        # Min zero must be -0.0 per Parquet spec.
+        [0.0, 1.0],
+        [-0.0, 1.0],
+        [0.0, -0.0, 1.0],
+        [-0.0, 0.0, 1.0],
+        # Max zero must be +0.0 per Parquet spec.
+        [-1.0, 0.0],
+        [-1.0, -0.0],
+        [-1.0, 0.0, -0.0],
+        [-1.0, -0.0, 0.0],
+    ],
+)
+def test_parquet_float_zero_normalization_26733(values: list[float]) -> None:
+    df = pl.DataFrame({"x": values})
+    f = io.BytesIO()
+    df.write_parquet(f, statistics=True)
+    f.seek(0)
+
+    stats = pq.read_metadata(f).row_group(0).column(0).statistics
+    result = pl.DataFrame(
+        {
+            "min_sign": [math.copysign(1.0, stats.min)],
+            "max_sign": [math.copysign(1.0, stats.max)],
+        }
+    )
+    expected = pl.DataFrame({"min_sign": [-1.0], "max_sign": [1.0]})
+    assert_frame_equal(result, expected)

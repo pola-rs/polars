@@ -45,7 +45,7 @@ def test_scan_lines(
         assert last_bytes == b"\r\n\r\n"
 
     if force_unit_chunk_size:
-        plmonkeypatch.setenv("POLARS_FORCE_NDJSON_CHUNK_SIZE", "1")
+        plmonkeypatch.setenv("POLARS_FORCE_NDJSON_READ_SIZE", "1")
 
         with plmonkeypatch.context() as cx:
             capfd.readouterr()
@@ -197,7 +197,7 @@ EEE
 def test_scan_lines_negative_slice_reversed_read(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    plmonkeypatch.setenv("POLARS_FORCE_NDJSON_CHUNK_SIZE", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_NDJSON_READ_SIZE", "1")
     q = pl.scan_lines(b"\xff" + 5000 * b"abc\n")
 
     with pytest.raises(ComputeError, match="invalid utf8"):

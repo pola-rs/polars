@@ -279,21 +279,6 @@ pub(crate) fn check_input_column_node(
     }
 }
 
-pub(crate) fn aexprs_to_schema<I: IntoIterator<Item = K>, K: Into<Node>>(
-    expr: I,
-    schema: &Schema,
-    arena: &Arena<AExpr>,
-) -> Schema {
-    expr.into_iter()
-        .map(|node| {
-            arena
-                .get(node.into())
-                .to_field(&ToFieldContext::new(arena, schema))
-                .unwrap()
-        })
-        .collect()
-}
-
 pub(crate) fn expr_irs_to_schema<I: IntoIterator<Item = K>, K: AsRef<ExprIR>>(
     expr: I,
     schema: &Schema,

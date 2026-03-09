@@ -48,7 +48,7 @@ impl PhysicalExpr for AggregationExpr {
         None
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let s = self.input.evaluate(df, state)?;
 
         let AggregationType {
@@ -155,7 +155,7 @@ impl PhysicalExpr for AggregationExpr {
 
                 Ok(IdxCa::from_slice(s.name().clone(), &[count as IdxSize]).into_column())
             },
-            GroupByMethod::Implode => s.implode().map(|ca| ca.into_column()),
+            GroupByMethod::Implode { maintain_order: _ } => s.implode().map(|ca| ca.into_column()),
             GroupByMethod::Std(ddof) => s
                 .std_reduce(ddof)
                 .map(|sc| sc.into_column(s.name().clone())),
@@ -193,7 +193,7 @@ impl PhysicalExpr for AggregationExpr {
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
@@ -414,11 +414,13 @@ impl PhysicalExpr for AggregationExpr {
                     let agg_s = s.agg_n_unique(&groups);
                     AggregatedScalar(agg_s.with_name(keep_name))
                 },
-                GroupByMethod::Implode => AggregatedScalar(match ac.agg_state() {
-                    AggState::LiteralScalar(_) => unreachable!(), // handled above
-                    AggState::AggregatedScalar(c) => c.as_list().into_column(),
-                    AggState::NotAggregated(_) | AggState::AggregatedList(_) => ac.aggregated(),
-                }),
+                GroupByMethod::Implode { maintain_order: _ } => {
+                    AggregatedScalar(match ac.agg_state() {
+                        AggState::LiteralScalar(_) => unreachable!(), // handled above
+                        AggState::AggregatedScalar(c) => c.as_list().into_column(),
+                        AggState::NotAggregated(_) | AggState::AggregatedList(_) => ac.aggregated(),
+                    })
+                },
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();
                     column.rename(keep_name);
@@ -521,7 +523,7 @@ impl PhysicalExpr for AggQuantileExpr {
         None
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
 
         let quantile = self.quantile.evaluate(df, state)?;
@@ -561,7 +563,7 @@ impl PhysicalExpr for AggQuantileExpr {
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
@@ -661,7 +663,7 @@ impl PhysicalExpr for AggMinMaxByExpr {
         None
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
         let by = self.by.evaluate(df, state)?;
         let name = if self.is_max_by { "max_by" } else { "min_by" };
@@ -685,7 +687,7 @@ impl PhysicalExpr for AggMinMaxByExpr {
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
@@ -766,7 +768,7 @@ impl PhysicalExpr for AnonymousAggregationExpr {
         None
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         polars_ensure!(
             self.inputs.len() == 1,
             ComputeError: "AnonymousAggregationExpr with more than one input is not supported"
@@ -781,7 +783,7 @@ impl PhysicalExpr for AnonymousAggregationExpr {
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,

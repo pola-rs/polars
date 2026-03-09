@@ -199,7 +199,7 @@ class ConnectionExecutor:
         batch_size: int | None,
         iter_batches: bool,
         schema_overrides: SchemaDict | None,
-        infer_schema_length: int | None,
+        infer_schema_length: int | None,  # noqa: ARG002
     ) -> DataFrame | Iterator[DataFrame] | None:
         """Return resultset data in Arrow format for frame init."""
         from polars import DataFrame
@@ -345,7 +345,7 @@ class ConnectionExecutor:
                 msg = f"column {nm!r} appears more than once in the query/result cursor"
                 raise DuplicateError(msg)
             elif desc is not None and nm not in schema_overrides:
-                dtype = dtype_from_cursor_description(self.cursor, desc)
+                dtype = dtype_from_cursor_description(desc)
                 if dtype is not None:
                     schema_overrides[nm] = dtype  # type: ignore[index]
             dupe_check.add(nm)

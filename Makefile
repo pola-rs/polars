@@ -83,8 +83,9 @@ FILTER_PIP_WARNINGS=| grep -v "don't match your environment"; test $${PIPESTATUS
 .PHONY: requirements
 requirements:  ## Install/refresh Python project requirements
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/python -m venv $(VENV) --clear \
+	&& python3 -m venv $(VENV) --clear \
 	&& $(VENV_BIN)/python -m pip install --upgrade uv \
+	$(if $(EXTRA_REQUIREMENTS),&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode -r $(EXTRA_REQUIREMENTS)) \
 	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode --no-build \
 	   -r py-polars/requirements-dev.txt \
 	   -r py-polars/requirements-lint.txt \
@@ -96,8 +97,7 @@ requirements:  ## Install/refresh Python project requirements
 
 .PHONY: requirements-all
 requirements-all:  ## Install/refresh all Python requirements (including those needed for CI tests)
-	$(VENV_BIN)/uv pip install --upgrade --compile-bytecode -r py-polars/requirements-ci.txt
-	$(MAKE) requirements
+	$(MAKE) requirements EXTRA_REQUIREMENTS=py-polars/requirements-ci.txt
 
 .PHONY: build
 build: .venv  ## Compile and install Python Polars for development
@@ -141,11 +141,11 @@ check:  ## Run cargo check with all features
 
 .PHONY: clippy
 clippy:  ## Run clippy with all features
-	cargo clippy --workspace --all-targets --all-features --locked -- -D warnings -D clippy::dbg_macro
+	python3 tools/cargo-fail-warning.py clippy --workspace --all-targets --all-features --locked -- -W clippy::dbg_macro
 
 .PHONY: clippy-default
 clippy-default:  ## Run clippy with default features
-	cargo clippy --all-targets --locked -- -D warnings -D clippy::dbg_macro
+	python3 tools/cargo-fail-warning.py clippy --all-targets --locked -- -W clippy::dbg_macro
 
 .PHONY: fmt
 fmt:  ## Run autoformatting and linting
@@ -181,6 +181,9 @@ update-dsl-schema-hashes:  ## Update the DSL schema hashes file
 
 .PHONY: pre-commit
 pre-commit: fmt py-lint clippy clippy-default  ## Run all code quality checks
+
+.PHONY: fresh
+fresh: clean requirements-all build  ## Clean everything, install all requirements, and rebuild Python Polars for development
 
 .PHONY: clean
 clean:  ## Clean up caches, build artifacts, and the venv

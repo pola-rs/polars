@@ -212,6 +212,24 @@ def test_predicate_pushdown_group_by_keys() -> None:
     ).startswith("FILTER")
 
 
+def test_predicate_pushdown_group_by_aliased_keys() -> None:
+    df = pl.LazyFrame(
+        {"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]}
+    ).lazy()
+    # When a group_by key is a simple column reference with an alias,
+    # the predicate on the aliased name should still be pushed down
+    # (rewritten to reference the original column).
+    q = (
+        df.group_by(pl.col("group").alias("grp"))
+        .agg([pl.len().alias("str_list")])
+        .filter(pl.col("grp") == 1)
+    )
+    assert not q.explain().startswith("FILTER")
+    assert q.explain(
+        optimizations=pl.QueryOptFlags(predicate_pushdown=False)
+    ).startswith("FILTER")
+
+
 def test_no_predicate_push_down_with_cast_and_alias_11883() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     out = (
@@ -1273,3 +1291,166 @@ def test_replace_strict_predicate_merging() -> None:
         df.filter(pl.col("x")).filter(pl.col("x").replace_strict(True, True)).collect()
     )
     assert out.height == 3
+
+
+def test_pred_pd_before_proj_pd_26611() -> None:
+    a = pl.LazyFrame({"x": [1, 2, 3], "y": [4, 5, 6]})
+    b = pl.LazyFrame({"x": [1, 2, 3]})
+
+    q = a.join(b, on="x").filter(pl.col("y") > 0).select("x")
+    assert q.explain().startswith("INNER JOIN")
+
+    q = a.filter(pl.col.y > 0).group_by("x").agg([])
+    assert q.explain().startswith("AGGREGATE")
+
+
+def test_projection_pushed_past_join_26693() -> None:
+    a = pl.LazyFrame({"x": [1, 2, 3], "y": [1, 2, 3]})
+    b = pl.LazyFrame({"x": [1, 2, 3], "y": [1, 2, 3]})
+
+    plan = a.filter(pl.col.y > 0).join(b, on="x").group_by("x").agg([]).explain()
+
+    assert plan.index("simple π") > plan.index("INNER JOIN")
+
+
+def test_predicate_pushdown_sort_slice_26803() -> None:
+    df = pl.DataFrame({"rank": [1, 2, 3, 4, 5], "score": [10, 4, 6, 2, 8]})
+
+    for lazy, eager in [
+        (
+            df.lazy().sort("rank").head(3).filter(pl.col("rank") > 2),
+            df.sort("rank").head(3).filter(pl.col("rank") > 2),
+        ),
+        (
+            df.lazy().sort("rank").tail(3).filter(pl.col("rank") < 4),
+            df.sort("rank").tail(3).filter(pl.col("rank") < 4),
+        ),
+        (
+            df.lazy().sort("rank", descending=True).head(3).filter(pl.col("rank") < 4),
+            df.sort("rank", descending=True).head(3).filter(pl.col("rank") < 4),
+        ),
+        (
+            df.lazy().top_k(3, by="rank").filter(pl.col("rank") < 5),
+            df.top_k(3, by="rank").filter(pl.col("rank") < 5),
+        ),
+        (
+            df.lazy().bottom_k(3, by="rank").filter(pl.col("rank") > 1),
+            df.bottom_k(3, by="rank").filter(pl.col("rank") > 1),
+        ),
+    ]:
+        assert_frame_equal(lazy.collect(), eager, check_row_order=False)
+
+
+def test_predicate_slice_pushdown_26816() -> None:
+    q = (
+        pl.LazyFrame({"a": [0, 1, 2, 3, 4, 5]})
+        .with_columns(s=pl.sum_horizontal("*", "*"))
+        .filter(pl.col("a") > 1)
+        .head(3)
+    )
+
+    plan = q.explain()
+
+    assert plan.index("WITH_COLUMNS") < plan.index("SLICE") < plan.index("FILTER")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": [2, 3, 4], "s": [4, 6, 8]}),
+    )
+
+
+def test_repeated_slice_pushdown_26815() -> None:
+    q = (
+        pl.concat(
+            [
+                pl.LazyFrame({"a": [0, 1, 2, 3, 4]}),
+                pl.LazyFrame({"a": [5, 6, 7, 8, 9]}),
+            ]
+        )
+        .slice(3, 5)
+        .tail(3)
+    )
+
+    plan = q.explain()
+    assert plan.index("SLICED UNION: (3, 5)") > plan.index("SLICE[offset: -3, len: 3]")
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [5, 6, 7]}))
+
+
+def test_predicate_pushdown_block_at_embedded_slice_union_26824() -> None:
+    q = (
+        pl.concat(
+            [
+                pl.LazyFrame({"a": [0, 1, 2, 3, 4]}),
+                pl.LazyFrame({"a": [5, 6, 7, 8, 9]}),
+            ]
+        )
+        .head(3)
+        .filter(pl.col("a") > 1)
+    )
+
+    plan = q.explain()
+    assert plan.index("FILTER") < plan.index("SLICED UNION")
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 2}))
+
+
+def test_predicate_pushdown_block_at_embedded_slice_distinct_26824() -> None:
+    q = (
+        pl.LazyFrame({"a": [0, 1, 1]})
+        .unique(maintain_order=True)
+        .head(1)
+        .filter(pl.col("a") >= 1)
+    )
+
+    plan = q.explain()
+    assert plan.index("FILTER") < plan.index("UNIQUE")
+    assert q.collect().height == 0
+
+
+def test_predicate_pushdown_block_at_embedded_slice_join_26824() -> None:
+    q = (
+        pl.LazyFrame({"a": [0, 1, 2], "b": [0, 1, 2]})
+        .join(
+            pl.LazyFrame({"a": [0, 1, 2, 3, 4], "b": [9, 8, 7, 6, 5]}),
+            on="a",
+            how="full",
+            maintain_order="left_right",
+        )
+        .slice(1, 2)
+        .filter(pl.col("b") >= 1)
+    )
+
+    plan = q.explain()
+    assert plan.index("FILTER") < plan.index("JOIN")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "a": [1, 2],
+                "b": [1, 2],
+                "a_right": [1, 2],
+                "b_right": [8, 7],
+            }
+        ),
+    )
+
+
+def test_predicate_pushdown_block_at_embedded_slice_groupby_26824() -> None:
+    q = (
+        pl.LazyFrame({"a": [0, 1, 2], "b": [0, 1, 2]})
+        .group_by("a", maintain_order=True)
+        .agg(pl.len())
+        .head(2)
+        .filter(pl.col("a") >= 1)
+    )
+
+    plan = q.explain()
+    assert plan.index("FILTER") < plan.index("AGGREGATE")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {"a": 1, "len": 1},
+            schema_overrides={"len": pl.get_index_type()},
+        ),
+    )

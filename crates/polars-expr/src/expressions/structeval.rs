@@ -213,7 +213,7 @@ impl PhysicalExpr for StructEvalExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
 
         // Set ExecutionState.
@@ -246,16 +246,14 @@ impl PhysicalExpr for StructEvalExpr {
                 .iter()
                 .map(f)
                 .collect::<PolarsResult<Vec<_>>>()
-        };
-        for col in cols? {
-            eval.push(col);
-        }
+        }?;
+        eval.extend(cols);
 
         // Apply with_fields.
         with_fields(&eval)
     }
 
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
@@ -291,10 +289,8 @@ impl PhysicalExpr for StructEvalExpr {
                 .iter()
                 .map(f)
                 .collect::<PolarsResult<Vec<_>>>()
-        };
-        for ac in acs_eval? {
-            acs.push(ac)
-        }
+        }?;
+        acs.extend(acs_eval);
 
         // Revert ExecutionState.
         state.with_fields_ac = None;

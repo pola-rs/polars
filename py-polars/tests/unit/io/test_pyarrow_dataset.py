@@ -212,6 +212,43 @@ def test_pyarrow_dataset_source(df: pl.DataFrame, tmp_path: Path) -> None:
     )
 
 
+def test_pyarrow_dataset_partial_predicate_pushdown(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [10.0, 20.0, 30.0]})
+    file_path = tmp_path / "0"
+    df.write_parquet(file_path)
+    dset = ds.dataset(file_path, format="parquet")
+
+    # col("a") > 1 is convertible; col("a") * col("b") > 25 is not (arithmetic
+    # on two columns cannot be expressed as a pyarrow compute expression).
+    # The optimizer pushes both terms into the scan's SELECTION, so our
+    # MintermIter-based partial conversion should push the convertible part.
+    q = pl.scan_pyarrow_dataset(dset).filter(
+        (pl.col("a") > 1) & (pl.col("a") * pl.col("b") > 25)
+    )
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    # Verify: partial predicate was pushed to pyarrow
+    assert "(pa.compute.field('a') > 1)" in capture
+    assert (
+        'residual predicate: Some([([(col("a").cast(Float64)) * (col("b"))]) > (25.0)])'
+        in capture
+    )
+    # Verify: correctness
+    expected = (
+        df.lazy().filter((pl.col("a") > 1) & (pl.col("a") * pl.col("b") > 25)).collect()
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_pyarrow_dataset_comm_subplan_elim(tmp_path: Path) -> None:
     df0 = pl.DataFrame({"a": [1, 2, 3]})
 
@@ -258,7 +295,8 @@ def test_pyarrow_dataset_predicate_verbose_log(
     assert (
         "[SENSITIVE]: python_scan_predicate: "
         'predicate node: [(col("a")) < (3)], '
-        "converted pyarrow predicate: (pa.compute.field('a') < 3)"
+        "converted pyarrow predicate: (pa.compute.field('a') < 3), "
+        "residual predicate: None"
     ) in capture
 
     q = pl.scan_pyarrow_dataset(dset).filter(pl.col("a").cast(pl.String) < "3")
@@ -270,7 +308,8 @@ def test_pyarrow_dataset_predicate_verbose_log(
     assert (
         "[SENSITIVE]: python_scan_predicate: "
         'predicate node: [(col("a").strict_cast(String)) < ("3")], '
-        "converted pyarrow predicate: <conversion failed>\n"
+        "converted pyarrow predicate: <conversion failed>, "
+        'residual predicate: Some([(col("a").strict_cast(String)) < ("3")])'
     ) in capture
 
 

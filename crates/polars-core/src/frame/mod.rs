@@ -3,7 +3,6 @@
 use arrow::datatypes::ArrowSchemaRef;
 use polars_row::ArrayRef;
 use polars_utils::UnitVec;
-use polars_utils::ideal_morsel_size::get_ideal_morsel_size;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -36,8 +35,6 @@ mod from;
 #[cfg(feature = "algorithm_group_by")]
 pub mod group_by;
 pub(crate) mod horizontal;
-#[cfg(feature = "proptest")]
-pub mod proptest;
 #[cfg(any(feature = "rows", feature = "object"))]
 pub mod row;
 mod top_k;
@@ -1158,6 +1155,12 @@ impl DataFrame {
     pub fn filter(&self, mask: &BooleanChunked) -> PolarsResult<Self> {
         if self.width() == 0 {
             filter_zero_width(self.height(), mask)
+        } else if mask.len() == 1 && self.len() >= 1 {
+            if mask.all() && mask.null_count() == 0 {
+                Ok(self.clone())
+            } else {
+                Ok(self.clear())
+            }
         } else {
             let new_columns: Vec<Column> = self.try_apply_columns_par(|s| s.filter(mask))?;
             let out = unsafe {
@@ -1172,6 +1175,12 @@ impl DataFrame {
     pub fn filter_seq(&self, mask: &BooleanChunked) -> PolarsResult<Self> {
         if self.width() == 0 {
             filter_zero_width(self.height(), mask)
+        } else if mask.len() == 1 && mask.null_count() == 0 && self.len() >= 1 {
+            if mask.all() && mask.null_count() == 0 {
+                Ok(self.clone())
+            } else {
+                Ok(self.clear())
+            }
         } else {
             let new_columns: Vec<Column> = self.try_apply_columns(|s| s.filter(mask))?;
             let out = unsafe {
@@ -1414,6 +1423,14 @@ impl DataFrame {
             } else {
                 Ok(self.clone())
             };
+        }
+
+        for column in &by_column {
+            if column.dtype().is_object() {
+                polars_bail!(
+                    InvalidOperation: "column '{}' has a dtype of '{}', which does not support sorting", column.name(), column.dtype()
+                )
+            }
         }
 
         // note that the by_column argument also contains evaluated expression from
@@ -2745,7 +2762,7 @@ impl<'a> RecordBatchIterWrap<'a> {
     fn new_zero_width(height: usize) -> Self {
         Self::ZeroWidth {
             remaining_height: height,
-            chunk_size: get_ideal_morsel_size().get(),
+            chunk_size: polars_config::config().ideal_morsel_size() as usize,
         }
     }
 }
