@@ -287,6 +287,12 @@ def test_map_groups_with_slice_25805() -> None:
     assert_frame_equal(df, pl.DataFrame({"a": [1], "b": [1]}, schema=schema))
 
 
+def test_map_groups_group_by_list_26672() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2], "b": [4, 4, 5], "x": [1, 2, 3], "y": [4, 5, 6]})
+    result = df.group_by(["a", "b"]).map_groups(lambda df: df)
+    assert_frame_equal(result, df, check_row_order=False)
+
+
 def test_map_groups_udf_error_does_not_panic_26647() -> None:
     with pytest.raises(ComputeError, match="UDF failed"):
         pl.select(x=1).group_by("x").map_groups(lambda x, y: x)  # type: ignore[arg-type, misc]
