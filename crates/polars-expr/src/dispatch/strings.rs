@@ -671,9 +671,59 @@ fn replace_n<'a>(
 
             Ok(iter_and_replace(ca, val, f))
         },
-        _ => polars_bail!(
-            ComputeError: "dynamic pattern length in 'str.replace' expressions is not supported yet"
-        ),
+        (len_pat, len_val) => {
+            if n > 1 {
+                polars_bail!(ComputeError: "multivalue replacement with 'n > 1' not yet supported")
+            }
+
+            if n == 0 {
+                return Ok(ca.clone());
+            };
+
+            polars_ensure!(
+                len_pat == ca.len(),
+                ComputeError:
+                "pattern length ({}) does not match string column length ({})",
+                len_pat, ca.len(),
+            );
+            polars_ensure!(
+                len_val == ca.len(),
+                ComputeError:
+                "replacement value length ({}) does not match string column length ({})",
+                len_val, ca.len(),
+            );
+
+            let mut out: StringChunked = ca
+                .into_iter()
+                .zip(pat.into_iter())
+                .zip(val.into_iter())
+                .map(|((opt_src, opt_pat), opt_val)| match (opt_src, opt_pat, opt_val) {
+                    (Some(src), Some(pat_str), Some(val_str)) => {
+                        let actual_pat = if literal || is_literal_pat(pat_str) {
+                            Cow::Owned(escape(pat_str))
+                        } else {
+                            Cow::Borrowed(pat_str)
+                        };
+                        match polars_utils::regex_cache::compile_regex(&actual_pat) {
+                            Ok(reg) => {
+                                let replaced = if literal {
+                                    reg.replace(src, NoExpand(val_str))
+                                } else {
+                                    reg.replace(src, val_str)
+                                };
+                                Some(replaced.into_owned())
+                            },
+                            Err(_) => Some(src.to_owned()),
+                        }
+                    },
+                    (Some(src), _, _) => Some(src.to_owned()),
+                    _ => None,
+                })
+                .collect_trusted();
+
+            out.rename(ca.name().clone());
+            Ok(out)
+        },
     }
 }
 
@@ -726,9 +776,51 @@ fn replace_all<'a>(
 
             Ok(iter_and_replace(ca, val, f))
         },
-        _ => polars_bail!(
-            ComputeError: "dynamic pattern length in 'str.replace' expressions is not supported yet"
-        ),
+        (len_pat, len_val) => {
+            polars_ensure!(
+                len_pat == ca.len(),
+                ComputeError:
+                "pattern length ({}) does not match string column length ({})",
+                len_pat, ca.len(),
+            );
+            polars_ensure!(
+                len_val == ca.len(),
+                ComputeError:
+                "replacement value length ({}) does not match string column length ({})",
+                len_val, ca.len(),
+            );
+
+            let mut out: StringChunked = ca
+                .into_iter()
+                .zip(pat.into_iter())
+                .zip(val.into_iter())
+                .map(|((opt_src, opt_pat), opt_val)| match (opt_src, opt_pat, opt_val) {
+                    (Some(src), Some(pat_str), Some(val_str)) => {
+                        let actual_pat = if literal || is_literal_pat(pat_str) {
+                            Cow::Owned(escape(pat_str))
+                        } else {
+                            Cow::Borrowed(pat_str)
+                        };
+                        match polars_utils::regex_cache::compile_regex(&actual_pat) {
+                            Ok(reg) => {
+                                let replaced = if literal {
+                                    reg.replace_all(src, NoExpand(val_str))
+                                } else {
+                                    reg.replace_all(src, val_str)
+                                };
+                                Some(replaced.into_owned())
+                            },
+                            Err(_) => Some(src.to_owned()),
+                        }
+                    },
+                    (Some(src), _, _) => Some(src.to_owned()),
+                    _ => None,
+                })
+                .collect_trusted();
+
+            out.rename(ca.name().clone());
+            Ok(out)
+        },
     }
 }
 
