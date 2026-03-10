@@ -1,5 +1,6 @@
 use arrow::array::builder::{ArrayBuilder, ShareStrategy};
 use arrow::bitmap::BitmapBuilder;
+use arrow::datatypes::ExtensionType;
 use polars_utils::vec::PushUnchecked;
 
 use super::*;
@@ -178,7 +179,23 @@ pub(crate) fn object_series_to_arrow_array(s: &Series) -> ArrayRef {
     };
     let arr = &list_s.chunks()[0];
     let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
-    arr.values().to_boxed()
+
+    let mut arr: Box<dyn Array> = arr.values().clone();
+
+    if let ArrowDataType::Extension(ext_type) = arr.dtype()
+        && let ExtensionType {
+            name,
+            inner: ArrowDataType::FixedSizeBinary(8),
+            metadata: Some(_),
+        } = ext_type.as_ref()
+        && name == POLARS_OBJECT_EXTENSION_NAME
+    {
+        *arr.dtype_mut() = ArrowDataType::FixedSizeBinary(8);
+    } else {
+        panic!()
+    }
+
+    arr
 }
 
 impl<T: PolarsObject> ArrayBuilder for ObjectChunkedBuilder<T> {

@@ -2126,7 +2126,7 @@ impl SQLFunctionVisitor<'_> {
                         },
                     };
                 }
-                Ok(base.implode())
+                Ok(base.implode(true))
             },
             _ => {
                 polars_bail!(SQLSyntax: "ARRAY_AGG must have exactly one argument; found {}", args.len())

@@ -3657,6 +3657,7 @@ dependencies = [
  "serde_json",
  "slotmap",
  "tokio",
+ "uuid",
  "version_check",
 ]
 

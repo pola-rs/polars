@@ -1,3 +1,5 @@
+use core::f64;
+
 use num_traits::AsPrimitive;
 use polars_compute::moment::{CovState, PearsonState};
 use polars_core::prelude::*;
@@ -10,6 +12,9 @@ where
     T::Native: AsPrimitive<f64>,
     ChunkedArray<T>: ChunkVar,
 {
+    if a.len() == 1 || b.len() == 1 {
+        return Some(f64::NAN);
+    }
     let (a, b) = align_chunks_binary(a, b);
     let mut out = CovState::default();
     for (a, b) in a.downcast_iter().zip(b.downcast_iter()) {
@@ -25,6 +30,9 @@ where
     T::Native: AsPrimitive<f64>,
     ChunkedArray<T>: ChunkVar,
 {
+    if a.len() == 1 || b.len() == 1 {
+        return Some(f64::NAN);
+    }
     let (a, b) = align_chunks_binary(a, b);
     let mut out = PearsonState::default();
     for (a, b) in a.downcast_iter().zip(b.downcast_iter()) {

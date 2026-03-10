@@ -1,4 +1,4 @@
-use polars_error::polars_err;
+use polars_mem_engine::column_to_mask;
 
 use super::compute_node_prelude::*;
 use crate::expression::StreamExpr;
@@ -45,18 +45,18 @@ impl ComputeNode for FilterNode {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Ok(morsel) = recv.recv().await {
+                    let morsel = morsel
+                        .async_try_map(|df| async move {
+                            let mask = slf
+                                .predicate
+                                .evaluate(&df, &state.in_memory_exec_state)
+                                .await?;
+                            let mask = column_to_mask(&mask, df.height())?;
 
-                    let morsel = morsel.async_try_map(|df| async move {
-                        let mask = slf.predicate.evaluate(&df, &state.in_memory_exec_state).await?;
-                        let mask = mask.bool().map_err(|_| {
-                            polars_err!(
-                                ComputeError: "filter predicate must be of type `Boolean`, got `{}`", mask.dtype()
-                            )
-                        })?;
-
-                        // We already parallelize, call the sequential filter.
-                        df.filter_seq(mask)
-                    }).await?;
+                            // We already parallelize, call the sequential filter.
+                            df.filter_seq(mask.as_ref())
+                        })
+                        .await?;
 
                     if morsel.df().height() == 0 {
                         continue;

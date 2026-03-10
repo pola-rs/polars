@@ -145,7 +145,7 @@ QuantileMethod: TypeAlias = Literal[
 ]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 Roll: TypeAlias = Literal["raise", "forward", "backward"]
-RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero"]
+RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero", "to_zero"]
 SerializationFormat: TypeAlias = Literal["binary", "json"]
 Endianness: TypeAlias = Literal["little", "big"]
 SizeUnit: TypeAlias = Literal[

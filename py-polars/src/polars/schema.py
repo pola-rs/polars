@@ -9,6 +9,7 @@ from polars._typing import PythonDataType
 from polars._utils.unstable import unstable
 from polars.datatypes import DataType, DataTypeClass, is_polars_dtype
 from polars.datatypes._parse import parse_into_dtype
+from polars.datatypes.convert import unpack_dtypes
 from polars.exceptions import DuplicateError
 from polars.interchange.protocol import CompatLevel
 
@@ -286,3 +287,30 @@ class Schema(BaseSchema):
         {'x': <class 'int'>, 'y':  <class 'str'>, 'z': <class 'datetime.timedelta'>}
         """
         return {name: tp.to_python() for name, tp in self.items()}
+
+    def contains_dtype(self, dtype: DataType, *, recursive: bool) -> bool:
+        """
+        Check if the schema contains the given data type.
+
+        Parameters
+        ----------
+        dtype
+            The data type to search for.
+        recursive
+            If False, only check top-level column dtypes.
+            If True, also search within nested types (List, Array, Struct).
+
+        Examples
+        --------
+        >>> s = pl.Schema({"x": pl.Int64(), "y": pl.List(pl.Float64)})
+        >>> s.contains_dtype(pl.Int64, recursive=False)
+        True
+        >>> s.contains_dtype(pl.Float64, recursive=False)
+        False
+        >>> s.contains_dtype(pl.Float64, recursive=True)
+        True
+        """
+        if not recursive:
+            return any(dt == dtype for dt in self.values())
+        else:
+            return dtype in unpack_dtypes(*self.values())

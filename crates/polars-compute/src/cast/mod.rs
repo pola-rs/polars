@@ -14,7 +14,7 @@ pub use binary_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use binview_to::binview_to_decimal;
 use binview_to::utf8view_to_primitive_dyn;
-pub use binview_to::utf8view_to_utf8;
+pub use binview_to::{binview_to_fixed_binary, utf8view_to_utf8};
 pub use boolean_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use decimal_to::*;
@@ -471,6 +471,11 @@ pub fn cast(
             LargeBinary => Ok(binview_to::view_to_binary::<i64>(
                 array.as_any().downcast_ref().unwrap(),
             )
+            .boxed()),
+            FixedSizeBinary(row_width) => Ok(binview_to_fixed_binary(
+                array.as_any().downcast_ref().unwrap(),
+                *row_width,
+            )?
             .boxed()),
             LargeList(inner) if matches!(inner.dtype, ArrowDataType::UInt8) => {
                 let bin_array = view_to_binary::<i64>(array.as_any().downcast_ref().unwrap());

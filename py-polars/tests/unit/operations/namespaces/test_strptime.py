@@ -943,3 +943,16 @@ def test_strptime_in_group_by(maintain_order: bool) -> None:
         ),
         check_row_order=maintain_order,
     )
+
+
+def test_strptime_inexact_datetime_date_only_26713() -> None:
+    df = pl.DataFrame({"date_str": ["2024-01-01", "2025-06-03"]})
+    result = df.with_columns(
+        pl.col("date_str").str.strptime(
+            pl.Datetime(time_unit="ns"), "%Y-%m-%d", exact=False, strict=False
+        )
+    )
+    expected = df.with_columns(
+        pl.col("date_str").str.strptime(pl.Datetime(time_unit="ns"), "%Y-%m-%d")
+    )
+    assert_frame_equal(result, expected)
