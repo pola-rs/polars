@@ -292,6 +292,7 @@ def test_map_groups_group_by_list_26672() -> None:
     result = df.group_by(["a", "b"]).map_groups(lambda df: df)
     assert_frame_equal(result, df, check_row_order=False)
 
+
 def test_map_groups_udf_error_does_not_panic_26647() -> None:
     with pytest.raises(ComputeError, match="UDF failed"):
         pl.select(x=1).group_by("x").map_groups(lambda x, y: x)  # type: ignore[arg-type, misc]
