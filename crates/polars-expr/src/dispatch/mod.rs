@@ -434,7 +434,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
                 },
             }
         },
-        F::SetSortedFlag(sorted) => map!(misc::set_sorted_flag, sorted),
+        F::SetSortedFlag(sortedness) => map!(misc::set_sorted_flag, sortedness),
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags: _,
@@ -519,7 +519,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::FillNullWithStrategy(strategy) => map!(misc::fill_null_with_strategy, strategy),
         F::GatherEvery { n, offset } => map!(misc::gather_every, n, offset),
         #[cfg(feature = "reinterpret")]
-        F::Reinterpret(signed) => map!(misc::reinterpret, signed),
+        F::Reinterpret(dtype) => map!(misc::reinterpret, &dtype),
         F::ExtendConstant => map_as_slice!(misc::extend_constant),
 
         F::RowEncode(dts, variants) => {

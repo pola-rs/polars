@@ -5360,11 +5360,17 @@ Consider using {self}.implode() instead"""
             self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )
 
-    def implode(self) -> Expr:
+    def implode(self, *, maintain_order: bool = True) -> Expr:
         """
         Aggregate values into a list.
 
         The returned list itself is a scalar value of `list` dtype.
+
+        Parameters
+        ----------
+        maintain_order
+            Whether to preserve the order of elements in the list. Setting this
+            to `False` can improve performance, especially within `group_by`.
 
         Examples
         --------
@@ -5384,7 +5390,7 @@ Consider using {self}.implode() instead"""
         │ [1, 2, 3] ┆ [4, 5, 6] │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.implode())
+        return wrap_expr(self._pyexpr.implode(maintain_order))
 
     def gather_every(self, n: int, offset: int = 0) -> Expr:
         """
@@ -6642,17 +6648,28 @@ Consider using {self}.implode() instead"""
         k3 = seed_3 if seed_3 is not None else seed
         return wrap_expr(self._pyexpr.hash(k0, k1, k2, k3))
 
-    def reinterpret(self, *, signed: bool = True) -> Expr:
+    def reinterpret(
+        self,
+        *,
+        signed: bool | None = None,
+        dtype: PolarsDataType | None = None,
+    ) -> Expr:
         """
-        Reinterpret the underlying bits as a signed/unsigned integer.
+        Reinterpret the underlying bits as a signed/unsigned integer or float.
 
-        This operation is only allowed for 64bit integers. For lower bits integers,
-        you can safely use that cast operation.
+        This operation is only allowed for numeric types of the same size.
+        For lower bits numbers, you can safely use the cast operation.
+
+        Either `signed` or `dtype` can be specified.
+        Defaults to `signed=True` otherwise.
 
         Parameters
         ----------
         signed
-            If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
+            If True, reinterpret as signed integer. Otherwise, reinterpret
+            as unsigned integer.
+        dtype
+            DataType to reinterpret to.
 
         Examples
         --------
@@ -6660,7 +6677,7 @@ Consider using {self}.implode() instead"""
         >>> df = pl.DataFrame([s])
         >>> df.select(
         ...     [
-        ...         pl.col("a").reinterpret(signed=True).alias("reinterpreted"),
+        ...         pl.col("a").reinterpret(dtype=pl.Int64).alias("reinterpreted"),
         ...         pl.col("a").alias("original"),
         ...     ]
         ... )
@@ -6675,7 +6692,11 @@ Consider using {self}.implode() instead"""
         │ 2             ┆ 2        │
         └───────────────┴──────────┘
         """
-        return wrap_expr(self._pyexpr.reinterpret(signed))
+        if (signed is None) == (dtype is None):
+            msg = "reinterpret requires exactly one of `signed` or `dtype` to be specified"
+            raise ValueError(msg)
+
+        return wrap_expr(self._pyexpr.reinterpret(signed, dtype))
 
     def inspect(self, fmt: str_ = "{}") -> Expr:
         """
@@ -11119,16 +11140,20 @@ Consider using {self}.implode() instead"""
         """
         return wrap_expr(self._pyexpr.cumulative_eval(expr._pyexpr, min_samples))
 
-    def set_sorted(self, *, descending: bool = False) -> Expr:
+    def set_sorted(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
         Flags the expression as 'sorted'.
 
-        Enables downstream code to user fast paths for sorted arrays.
+        Enables downstream code to user fast paths for sorted arrays. It is
+        recommended to also set whether `nulls_last` is `True` or `False`, as
+        this enables many internal optimizations.
 
         Parameters
         ----------
         descending
             Whether the `Series` order is descending.
+        nulls_last
+            Whether the nulls are at the end.
 
         Warnings
         --------
@@ -11148,7 +11173,7 @@ Consider using {self}.implode() instead"""
         │ 3      │
         └────────┘
         """
-        return wrap_expr(self._pyexpr.set_sorted_flag(descending))
+        return wrap_expr(self._pyexpr.set_sorted_flag(descending, nulls_last))
 
     @deprecated(
         "`Expr.shrink_dtype` is deprecated and is a no-op; use `Series.shrink_dtype` instead."

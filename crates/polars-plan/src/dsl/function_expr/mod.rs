@@ -298,7 +298,7 @@ pub enum FunctionExpr {
         method: random::RandomMethod,
         seed: Option<u64>,
     },
-    SetSortedFlag(IsSorted),
+    SetSortedFlag(AExprSorted),
     #[cfg(feature = "ffi_plugin")]
     /// Creating this node is unsafe
     /// This will lead to calls over FFI.
@@ -371,7 +371,7 @@ pub enum FunctionExpr {
         offset: usize,
     },
     #[cfg(feature = "reinterpret")]
-    Reinterpret(bool),
+    Reinterpret(Option<bool>, Option<DataType>),
     ExtendConstant,
 
     RowEncode(RowEncodingVariant),
@@ -663,7 +663,10 @@ impl Hash for FunctionExpr {
             FillNullWithStrategy(strategy) => strategy.hash(state),
             GatherEvery { n, offset } => (n, offset).hash(state),
             #[cfg(feature = "reinterpret")]
-            Reinterpret(signed) => signed.hash(state),
+            Reinterpret(signed, dtype) => {
+                signed.hash(state);
+                dtype.hash(state);
+            },
             ExtendConstant => {},
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
@@ -882,7 +885,7 @@ impl Display for FunctionExpr {
             FillNullWithStrategy(_) => "fill_null_with_strategy",
             GatherEvery { .. } => "gather_every",
             #[cfg(feature = "reinterpret")]
-            Reinterpret(_) => "reinterpret",
+            Reinterpret(_, _) => "reinterpret",
             ExtendConstant => "extend_constant",
 
             RowEncode(..) => "row_encode",

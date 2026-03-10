@@ -82,7 +82,14 @@ impl Hash for FunctionIR {
         std::mem::discriminant(self).hash(state);
         match self {
             #[cfg(feature = "python")]
-            FunctionIR::OpaquePython { .. } => {},
+            FunctionIR::OpaquePython(OpaquePythonUdf { function, .. }) => {
+                // Use the Python object pointer as its identity (equivalent to Python's id()).
+                // This ensures two different Python functions are never treated as identical
+                // by common subplan elimination, while the same function object used twice
+                // on the same input is correctly recognised as a common subplan.
+                let ptr_addr = function.0.as_ptr() as usize;
+                ptr_addr.hash(state);
+            },
             FunctionIR::Opaque { fmt_str, .. } => fmt_str.hash(state),
             FunctionIR::FastCount {
                 sources,

@@ -3360,8 +3360,8 @@ def test_read_parquet_duplicate_range_start_fetch_23139(tmp_path: Path) -> None:
     ("value", "scan_dtype", "filter_expr"),
     [
         (pl.lit(1, dtype=pl.Int8), pl.Int16, pl.col("x") > 1),
-        (pl.lit(1.0, dtype=pl.Float64), pl.Float32, pl.col("x") > 1.0),
-        (pl.lit(1.0, dtype=pl.Float32), pl.Float64, pl.col("x") > 1.0),
+        (pl.lit(1.0, dtype=pl.Float64), pl.Float32, pl.col("x") < 0.0),
+        (pl.lit(1.0, dtype=pl.Float32), pl.Float64, pl.col("x") < 0.0),
         (
             pl.lit(
                 datetime(2025, 1, 1),

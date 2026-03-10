@@ -79,14 +79,6 @@ impl InputHead {
         self.is_broadcast.is_some() && (self.total_len > 0 || self.stream_exhausted)
     }
 
-    fn min_len(&self) -> Option<usize> {
-        if self.is_broadcast == Some(false) {
-            self.morsels.front().map(|(token, _, _)| token.height())
-        } else {
-            None
-        }
-    }
-
     async fn take(&mut self, len: usize) -> DataFrame {
         let columns: Vec<Column> = if self.is_broadcast.unwrap() {
             mm().df(&self.morsels[0].0)
@@ -313,13 +305,38 @@ impl ComputeNode for ZipNode {
                 // TODO: recombine morsels to make sure the concatenation is
                 // close to the ideal morsel size.
 
+                let mut should_break = false;
+
                 // Compute common size and send a combined morsel.
-                let Some(common_size) = self.input_heads.iter().flat_map(|h| h.min_len()).min()
+                let Some(common_size) = self
+                    .input_heads
+                    .iter()
+                    .filter_map(|h| {
+                        if h.is_broadcast == Some(false) {
+                            if let Some((token, ..)) = h.morsels.front() {
+                                Some(token.height())
+                            } else {
+                                should_break |= match self.zip_behavior {
+                                    ZipBehavior::Strict => !h.null_shape(),
+                                    ZipBehavior::NullExtend => false,
+                                    ZipBehavior::Broadcast => true,
+                                };
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
+                    .min()
                 else {
                     // If all input heads are broadcasts we don't get a common size,
                     // we handle this below.
                     break;
                 };
+
+                if should_break {
+                    break;
+                }
 
                 for input_head in &mut self.input_heads {
                     out.push(input_head.take(common_size).await);

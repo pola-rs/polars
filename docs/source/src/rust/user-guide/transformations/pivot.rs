@@ -1,4 +1,5 @@
 // --8<-- [start:setup]
+use polars::frame::PivotColumnNaming;
 use polars::prelude::*;
 // --8<-- [end:setup]
 
@@ -36,6 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }),
             false,
             "_".into(),
+            PivotColumnNaming::Auto,
         )
         .collect()?;
     println!("{}", &out);
@@ -63,6 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
         false,
         "_".into(),
+        PivotColumnNaming::Auto,
     );
     let out = q2.collect()?;
     println!("{}", &out);

@@ -213,8 +213,11 @@ impl AExpr {
                         let mapper = FieldsMapper::new(&field);
                         mapper.moment_dtype()
                     },
-                    Implode(expr) => {
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
+                    Implode {
+                        input,
+                        maintain_order: _,
+                    } => {
+                        let mut field = ctx.arena.get(*input).to_field_impl(ctx)?;
                         field.coerce(DataType::List(field.dtype().clone().into()));
                         Ok(field)
                     },
@@ -372,6 +375,18 @@ impl AExpr {
 
                 let fields = func_args_to_fields(input, ctx)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
+
+                #[cfg(feature = "dtype-array")]
+                if let IRFunctionExpr::ArrayExpr(IRArrayFunction::Get(false)) = function
+                    && let DataType::Array(_, width) = fields[0].dtype()
+                    && let AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(index))) =
+                        ctx.arena.get(input[1].node())
+                {
+                    polars_ensure!(*index < *width as i128 && *index >= -(*width as i128),
+                        ComputeError: "get index {index:?} is out of bounds for array of width {width:?}"
+                    )
+                }
+
                 let out = function.get_field(ctx.schema, &fields)?;
 
                 Ok(out)
@@ -429,7 +444,7 @@ impl AExpr {
             | Agg(Sum(expr))
             | Agg(Median(expr))
             | Agg(Mean(expr))
-            | Agg(Implode(expr))
+            | Agg(Implode { input: expr, .. })
             | Agg(Std(expr, _))
             | Agg(Var(expr, _))
             | Agg(NUnique(expr))
