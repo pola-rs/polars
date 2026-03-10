@@ -69,7 +69,7 @@ def test_implode() -> None:
 
 def test_lazyframe_membership_operator() -> None:
     ldf = pl.LazyFrame({"name": ["Jane", "John"], "age": [20, 30]})
-    assert "name" in ldf
+    assert "name" in ldf.collect_schema()
     assert "phone" not in ldf
 
     # note: cannot use lazyframe in boolean context
