@@ -1284,9 +1284,7 @@ def test_replace_dynamic_pattern_column() -> None:
     assert out.to_dict(as_series=False) == {"foo": ["NUM abc", "WORD def", "789_ghi"]}
 
     out = df3.select(pl.col("foo").str.replace_all(pl.col("pat"), pl.col("val")))
-    assert out.to_dict(as_series=False) == {
-        "foo": ["NUM NUM", "WORD WORD", "789_ghi"]
-    }
+    assert out.to_dict(as_series=False) == {"foo": ["NUM NUM", "WORD WORD", "789_ghi"]}
 
     # regression test: should work with single thread too
     df4 = pl.DataFrame({"s": ["abc"], "p": ["b"], "v": ["X"]})

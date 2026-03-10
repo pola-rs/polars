@@ -695,30 +695,32 @@ fn replace_n<'a>(
 
             let mut out: StringChunked = ca
                 .into_iter()
-                .zip(pat.into_iter())
-                .zip(val.into_iter())
-                .map(|((opt_src, opt_pat), opt_val)| match (opt_src, opt_pat, opt_val) {
-                    (Some(src), Some(pat_str), Some(val_str)) => {
-                        let actual_pat = if literal || is_literal_pat(pat_str) {
-                            Cow::Owned(escape(pat_str))
-                        } else {
-                            Cow::Borrowed(pat_str)
-                        };
-                        match polars_utils::regex_cache::compile_regex(&actual_pat) {
-                            Ok(reg) => {
-                                let replaced = if literal {
-                                    reg.replace(src, NoExpand(val_str))
-                                } else {
-                                    reg.replace(src, val_str)
-                                };
-                                Some(replaced.into_owned())
-                            },
-                            Err(_) => Some(src.to_owned()),
-                        }
+                .zip(pat)
+                .zip(val)
+                .map(
+                    |((opt_src, opt_pat), opt_val)| match (opt_src, opt_pat, opt_val) {
+                        (Some(src), Some(pat_str), Some(val_str)) => {
+                            let actual_pat = if literal || is_literal_pat(pat_str) {
+                                Cow::Owned(escape(pat_str))
+                            } else {
+                                Cow::Borrowed(pat_str)
+                            };
+                            match polars_utils::regex_cache::compile_regex(&actual_pat) {
+                                Ok(reg) => {
+                                    let replaced = if literal {
+                                        reg.replace(src, NoExpand(val_str))
+                                    } else {
+                                        reg.replace(src, val_str)
+                                    };
+                                    Some(replaced.into_owned())
+                                },
+                                Err(_) => Some(src.to_owned()),
+                            }
+                        },
+                        (Some(src), _, _) => Some(src.to_owned()),
+                        _ => None,
                     },
-                    (Some(src), _, _) => Some(src.to_owned()),
-                    _ => None,
-                })
+                )
                 .collect_trusted();
 
             out.rename(ca.name().clone());
@@ -792,30 +794,32 @@ fn replace_all<'a>(
 
             let mut out: StringChunked = ca
                 .into_iter()
-                .zip(pat.into_iter())
-                .zip(val.into_iter())
-                .map(|((opt_src, opt_pat), opt_val)| match (opt_src, opt_pat, opt_val) {
-                    (Some(src), Some(pat_str), Some(val_str)) => {
-                        let actual_pat = if literal || is_literal_pat(pat_str) {
-                            Cow::Owned(escape(pat_str))
-                        } else {
-                            Cow::Borrowed(pat_str)
-                        };
-                        match polars_utils::regex_cache::compile_regex(&actual_pat) {
-                            Ok(reg) => {
-                                let replaced = if literal {
-                                    reg.replace_all(src, NoExpand(val_str))
-                                } else {
-                                    reg.replace_all(src, val_str)
-                                };
-                                Some(replaced.into_owned())
-                            },
-                            Err(_) => Some(src.to_owned()),
-                        }
+                .zip(pat)
+                .zip(val)
+                .map(
+                    |((opt_src, opt_pat), opt_val)| match (opt_src, opt_pat, opt_val) {
+                        (Some(src), Some(pat_str), Some(val_str)) => {
+                            let actual_pat = if literal || is_literal_pat(pat_str) {
+                                Cow::Owned(escape(pat_str))
+                            } else {
+                                Cow::Borrowed(pat_str)
+                            };
+                            match polars_utils::regex_cache::compile_regex(&actual_pat) {
+                                Ok(reg) => {
+                                    let replaced = if literal {
+                                        reg.replace_all(src, NoExpand(val_str))
+                                    } else {
+                                        reg.replace_all(src, val_str)
+                                    };
+                                    Some(replaced.into_owned())
+                                },
+                                Err(_) => Some(src.to_owned()),
+                            }
+                        },
+                        (Some(src), _, _) => Some(src.to_owned()),
+                        _ => None,
                     },
-                    (Some(src), _, _) => Some(src.to_owned()),
-                    _ => None,
-                })
+                )
                 .collect_trusted();
 
             out.rename(ca.name().clone());
