@@ -394,13 +394,19 @@ impl PyDataFrame {
                             polars_bail!(ComputeError: "UDF failed: {}", e.value(py))
                         },
                     };
-                    let py_pydf = result_df_wrapper.getattr(py, "_df").map_err(|_| {
-                        polars_err!(ComputeError: "could not get DataFrame attribute '_df': make sure that you return a DataFrame object")
-                    })?;
 
-                    let pydf = py_pydf.extract::<PyDataFrame>(py).map_err(|_| {
-                        polars_err!(ComputeError: "could not extract DataFrame from UDF result: make sure that you return a DataFrame object")
-                    })?;
+                    let pydf = result_df_wrapper
+                        .getattr(py, "_df")
+                        .and_then(|obj| obj.extract::<PyDataFrame>(py).map_err(|e| e.into()))
+                        .map_err(|err| {
+                            polars_err!(
+                                ComputeError:
+                                "failed to extract DataFrame from UDF return value: \
+                                value: {result_df_wrapper:?}, \
+                                error: {err:?}"
+                            )
+                        })?;
+
                     Ok(pydf.df.into_inner())
                 })
             };
