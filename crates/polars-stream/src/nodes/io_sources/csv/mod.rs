@@ -26,7 +26,7 @@ use polars_utils::slice_enum::Slice;
 
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
 use super::multi_scan::reader_interface::{BeginReadArgs, FileReader, FileReaderCallbacks};
-use super::ndjson::chunk_data_fetch::ChunkDataFetcher;
+use super::shared::chunk_data_fetch::ChunkDataFetcher;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::distributor_channel::distributor_channel;
@@ -245,7 +245,6 @@ impl FileReader for CsvFileReader {
                     Option::take(&mut self.chunk_prefetch_sync.current_all_spawned);
 
                 tokio_handle_ext::AbortOnDropHandle(io_runtime.spawn(async move {
-                    // Note. We are re-using the NDJSON ChunkDataFetcher.
                     let mut chunk_data_fetcher = ChunkDataFetcher {
                         memory_prefetch_func,
                         byte_source,

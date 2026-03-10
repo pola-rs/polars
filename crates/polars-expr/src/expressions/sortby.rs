@@ -199,7 +199,7 @@ impl PhysicalExpr for SortByExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series_f = || self.input.evaluate(df, state);
         if self.by.is_empty() {
             // Sorting by 0 columns returns input unchanged.
@@ -287,7 +287,7 @@ impl PhysicalExpr for SortByExpr {
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,

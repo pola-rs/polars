@@ -182,7 +182,10 @@ impl OptimizationRule for TypeCoercionRule {
 
                 inline_or_prune_cast(&input, &dtype, options, schema, expr_arena)?
             },
-            AExpr::Agg(IRAggExpr::Implode(expr)) => inline_implode(expr, expr_arena)?,
+            AExpr::Agg(IRAggExpr::Implode {
+                input,
+                maintain_order: _,
+            }) => inline_implode(input, expr_arena)?,
             AExpr::Ternary {
                 truthy: truthy_node,
                 falsy: falsy_node,
@@ -457,8 +460,10 @@ impl OptimizationRule for TypeCoercionRule {
                     },
                     IsInTypeCoercionResult::Implode => {
                         assert!(!is_contains);
-                        let other_input =
-                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                            input: input[1].node(),
+                            maintain_order: true,
+                        }));
                         input[1].set_node(other_input);
                     },
                 }
@@ -787,8 +792,10 @@ Please use `implode` to return to previous behavior.
 See https://github.com/pola-rs/polars/issues/22149 for more information."
                     );
 
-                    let other_input =
-                        expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                    let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                        input: input[1].node(),
+                        maintain_order: true,
+                    }));
                     input[1].set_node(other_input);
 
                     return Ok(Some(AExpr::Function {
@@ -835,8 +842,10 @@ Please use `implode` to return to previous behavior.
 See https://github.com/pola-rs/polars/issues/22149 for more information."
                     );
 
-                    let other_input =
-                        expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                    let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                        input: input[1].node(),
+                        maintain_order: true,
+                    }));
                     input[1].set_node(other_input);
 
                     return Ok(Some(AExpr::Function {
@@ -922,13 +931,17 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     );
 
                     if !type_patterns.is_list() {
-                        let other_input =
-                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                            input: input[1].node(),
+                            maintain_order: true,
+                        }));
                         input[1].set_node(other_input);
                     }
                     if !type_replace_with.is_list() {
-                        let other_input =
-                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[2].node())));
+                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                            input: input[2].node(),
+                            maintain_order: true,
+                        }));
                         input[2].set_node(other_input);
                     }
 
@@ -967,13 +980,17 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     let mut input = input.clone();
 
                     if !type_old.is_list() {
-                        let other_input =
-                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                            input: input[1].node(),
+                            maintain_order: true,
+                        }));
                         input[1].set_node(other_input);
                     }
                     if !type_new.is_list() {
-                        let other_input =
-                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[2].node())));
+                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                            input: input[2].node(),
+                            maintain_order: true,
+                        }));
                         input[2].set_node(other_input);
                     }
 

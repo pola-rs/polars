@@ -580,23 +580,29 @@ def test_merge_join_exprs() -> None:
 
 @pytest.mark.parametrize("left_descending", [False, True])
 @pytest.mark.parametrize("right_descending", [False, True])
-@pytest.mark.parametrize("left_nulls_last", [False, True])
-@pytest.mark.parametrize("right_nulls_last", [False, True])
+@pytest.mark.parametrize("left_nulls_last", [False, True, None])
+@pytest.mark.parametrize("right_nulls_last", [False, True, None])
 def test_merge_join_applicable(
     left_descending: bool,
     right_descending: bool,
-    left_nulls_last: bool,
-    right_nulls_last: bool,
+    left_nulls_last: bool | None,
+    right_nulls_last: bool | None,
 ) -> None:
-    left = pl.LazyFrame({"key": [1]}).set_sorted(
-        "key", descending=left_descending, nulls_last=left_nulls_last
-    )
-    right = pl.LazyFrame({"key": [2]}).set_sorted(
-        "key", descending=right_descending, nulls_last=right_nulls_last
-    )
+    def make_set_sorted_lf(descending: bool, nulls_last: bool | None) -> pl.LazyFrame:
+        lf = pl.LazyFrame({"key": [1]})
+        if nulls_last is None:
+            return lf.with_columns(pl.col("key").set_sorted(descending=descending))
+        else:
+            return lf.set_sorted("key", descending=descending, nulls_last=nulls_last)
+
+    left = make_set_sorted_lf(left_descending, left_nulls_last)
+    right = make_set_sorted_lf(right_descending, right_nulls_last)
     q = left.join(right, on="key", how="full", maintain_order="left_right")
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
-    if (left_descending, left_nulls_last) == (right_descending, right_nulls_last):
+    if (
+        left_descending == right_descending
+        and left_nulls_last == right_nulls_last is not None
+    ):
         assert "merge-join" in typing.cast("str", dot)
     else:
         assert "merge-join" not in typing.cast("str", dot)

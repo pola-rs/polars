@@ -10,12 +10,36 @@ pub struct FilterExec {
     streamable: bool,
 }
 
-fn column_to_mask(c: &Column) -> PolarsResult<&BooleanChunked> {
-    c.bool().map_err(|_| {
-        polars_err!(
-            ComputeError: "filter predicate must be of type `Boolean`, got `{}`", c.dtype()
-        )
-    })
+pub fn column_to_mask<'a>(
+    c: &'a Column,
+    expected_len: usize,
+) -> PolarsResult<Cow<'a, BooleanChunked>> {
+    match c {
+        // We don't want to materialize scalars
+        Column::Scalar(s) => {
+            let len = s.len();
+            polars_ensure!(len == expected_len || len == 1, ShapeMismatch: "filter predicate length of {len} doesn't match that of the DataFrame");
+
+            if matches!(s.dtype(), DataType::Boolean) {
+                let ca = match s.scalar().value() {
+                    AnyValue::Null => BooleanChunked::full_null(PlSmallStr::EMPTY, 1),
+                    AnyValue::Boolean(v) => BooleanChunked::new(PlSmallStr::EMPTY, [*v]),
+                    _ => unreachable!(),
+                };
+                Ok(Cow::Owned(ca))
+            } else {
+                polars_bail!(ComputeError: "filter predicate must be of type `Boolean`, got `{}`", s.dtype())
+            }
+        },
+        _ => c
+            .bool()
+            .map_err(|_| {
+                polars_err!(
+                    ComputeError: "filter predicate must be of type `Boolean`, got `{}`", c.dtype()
+                )
+            })
+            .map(Cow::Borrowed),
+    }
 }
 
 impl FilterExec {
@@ -48,7 +72,7 @@ impl FilterExec {
 
         // @scalar-opt
         // @partition-opt
-        df.filter(column_to_mask(&c)?)
+        df.filter(column_to_mask(&c, df.height())?.as_ref())
     }
 
     fn execute_chunks(
@@ -61,7 +85,7 @@ impl FilterExec {
 
             // @scalar-opt
             // @partition-opt
-            df.filter(column_to_mask(&c)?)
+            df.filter(column_to_mask(&c, df.height())?.as_ref())
         });
         let df = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
         Ok(accumulate_dataframes_vertical_unchecked(df))
