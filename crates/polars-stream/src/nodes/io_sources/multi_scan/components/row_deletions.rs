@@ -11,7 +11,9 @@ use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_error::{PolarsResult, feature_gated, polars_err};
 use polars_io::cloud::CloudOptions;
-use polars_plan::dsl::deletion::{DeletionFilesList, DeltaDeletionVectorCallback};
+use polars_plan::dsl::deletion::DeletionFilesList;
+#[cfg(feature = "python")]
+use polars_plan::dsl::deletion::DeltaDeletionVectorProvider;
 use polars_plan::dsl::{CastColumnsPolicy, ScanSource};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_path::PlRefPath;
@@ -39,23 +41,19 @@ pub enum DeletionFilesProvider {
     },
     #[cfg(feature = "python")]
     DeltaDeletionVector {
-        callback: DeltaDeletionVectorCallback,
+        provider: DeltaDeletionVectorProvider,
         cache: Arc<tokio::sync::OnceCell<PlIndexMap<usize, ExternalFilterMask>>>,
     },
 }
 
 impl DeletionFilesProvider {
-    pub fn from_deletion_files(
+    pub fn new(
         deletion_files: Option<DeletionFilesList>,
         execution_state: &crate::execute::StreamingExecutionState,
         io_metrics: Option<Arc<IOMetrics>>,
     ) -> Self {
-        if deletion_files.is_none() {
-            return Self::None;
-        }
-
-        match deletion_files.unwrap() {
-            DeletionFilesList::IcebergPositionDelete(paths) => feature_gated!("parquet", {
+        match deletion_files {
+            Some(DeletionFilesList::IcebergPositionDelete(paths)) => feature_gated!("parquet", {
                 let reader_builder = ParquetReaderBuilder {
                     first_metadata: None,
                     options: Arc::new(polars_io::prelude::ParquetOptions {
@@ -85,13 +83,9 @@ impl DeletionFilesProvider {
                     ])),
                 }
             }),
-        }
-    }
-
-    pub fn from_delta_callback(callback: Option<DeltaDeletionVectorCallback>) -> Self {
-        match callback {
-            Some(callback) => Self::DeltaDeletionVector {
-                callback,
+            #[cfg(feature = "python")]
+            Some(DeletionFilesList::Delta(provider)) => Self::DeltaDeletionVector {
+                provider,
                 cache: Arc::new(tokio::sync::OnceCell::new()),
             },
             None => Self::None,
@@ -277,19 +271,16 @@ impl DeletionFilesProvider {
                 Some(RowDeletionsInit::Initializing(handle))
             },
 
-            // @TODO: Replace with tokio::sync::OnceCell to avoid thundering herd.
-            Self::DeltaDeletionVector { callback, cache } => {
+            #[cfg(feature = "python")]
+            Self::DeltaDeletionVector { provider, cache } => {
                 let cache = cache.clone();
-                let callback = callback.clone();
+                let provider = provider.clone();
 
-                let handle = AbortOnDropHandle::new(async_executor::spawn(
-                    TaskPriority::Low,
-                    async move {
+                let handle =
+                    AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
                         let map = cache
                             .get_or_try_init(|| async {
-                                let df = (callback.0)().map_err(|e| {
-                                    polars_err!(ComputeError: "delta deletion vector callback error: {e:?}")
-                                })?;
+                                let df = provider.call()?;
                                 match df {
                                     Some(df) => build_delta_mask_map(&df),
                                     None => Ok(PlIndexMap::new()),
@@ -297,16 +288,14 @@ impl DeletionFilesProvider {
                             })
                             .await?;
 
-                        let mask = map.get(&scan_source_idx).cloned();
-
-                        Ok(match mask {
-                            Some(mask) => mask,
-                            None => ExternalFilterMask::DeltaDeletionVector {
+                        let mask = map.get(&scan_source_idx).cloned().unwrap_or_else(|| {
+                            ExternalFilterMask::DeltaDeletionVector {
                                 mask: BooleanChunked::new(PlSmallStr::EMPTY, [] as [bool; 0]),
-                            },
-                        })
-                    },
-                ));
+                            }
+                        });
+
+                        Ok(mask)
+                    }));
 
                 Some(RowDeletionsInit::Initializing(handle))
             },

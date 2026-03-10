@@ -732,7 +732,6 @@ fn to_graph_rec<'a>(
             include_file_paths,
             forbid_extra_columns,
             deletion_files,
-            deletion_vector_callback,
             table_statistics,
             file_schema,
             disable_morsel_split,
@@ -773,7 +772,6 @@ fn to_graph_rec<'a>(
             let forbid_extra_columns = forbid_extra_columns.clone();
             let cast_columns_policy = cast_columns_policy.clone();
             let deletion_files = deletion_files.clone();
-            let deletion_vector_callback = deletion_vector_callback.clone();
             let table_statistics = table_statistics.clone();
             let disable_morsel_split = *disable_morsel_split;
 
@@ -796,7 +794,6 @@ fn to_graph_rec<'a>(
                     forbid_extra_columns,
                     cast_columns_policy,
                     deletion_files,
-                    deletion_vector_callback,
                     table_statistics,
                     // Initialized later
                     num_pipelines: RelaxedCell::new_usize(0),
@@ -1447,7 +1444,6 @@ fn to_graph_rec<'a>(
             let forbid_extra_columns = None;
             let cast_columns_policy = CastColumnsPolicy::ERROR_ON_MISMATCH;
             let deletion_files = None;
-            let deletion_vector_callback = None;
             let table_statistics = None;
             let disable_morsel_split = false;
             let verbose = config::verbose();
@@ -1469,7 +1465,6 @@ fn to_graph_rec<'a>(
                     forbid_extra_columns,
                     cast_columns_policy,
                     deletion_files,
-                    deletion_vector_callback,
                     table_statistics,
                     // Initialized later
                     num_pipelines: RelaxedCell::new_usize(0),

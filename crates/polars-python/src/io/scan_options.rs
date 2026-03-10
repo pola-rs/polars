@@ -4,7 +4,7 @@ use polars::prelude::default_values::DefaultFieldValues;
 use polars::prelude::deletion::{DeletionFilesList, DeltaDeletionVectorProvider};
 use polars::prelude::{
     CastColumnsPolicy, CloudScheme, ColumnMapping, ExtraColumnsPolicy, MissingColumnsPolicy,
-    PlSmallStr, Schema, TableStatistics, UnifiedScanArgs,
+    PlIndexMap, PlSmallStr, Schema, TableStatistics, UnifiedScanArgs,
 };
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::IdxSize;
@@ -40,6 +40,8 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<TableStatistics> {
     }
 }
 
+pub struct PyDeletionFilesList(pub Arc<PlIndexMap<usize, Arc<[String]>>>);
+
 impl PyScanOptions<'_> {
     pub fn extract_unified_scan_args(
         &self,
@@ -64,7 +66,7 @@ impl PyScanOptions<'_> {
             cache: bool,
             storage_options: OptPyCloudOptions<'a>,
             credential_provider: Option<Py<PyAny>>,
-            deletion_files: Option<Wrap<DeletionFilesList>>,
+            deletion_files: Option<Wrap<PyDeletionFilesList>>,
             deletion_vector_callback: Option<Py<PyAny>>,
             table_statistics: Option<Wrap<TableStatistics>>,
             row_count: Option<(u64, u64)>,
@@ -111,8 +113,19 @@ impl PyScanOptions<'_> {
             try_parse_dates: try_parse_hive_dates,
         };
 
-        let deletion_vector_provider =
-            deletion_vector_callback.map(|obj| DeltaDeletionVectorProvider::new(obj.into()));
+        // Unify the two distinct Python variants into one unified Rust type.
+        let deletion_files = match (deletion_files, deletion_vector_callback) {
+            (Some(_), Some(_)) => unreachable!(
+                "a table cannot have both Iceberg deletion files and Delta deletion vectors"
+            ),
+            (Some(Wrap(PyDeletionFilesList(paths))), None) => DeletionFilesList::filter_empty(
+                Some(DeletionFilesList::IcebergPositionDelete(paths)),
+            ),
+            (None, Some(callback)) => Some(DeletionFilesList::Delta(
+                DeltaDeletionVectorProvider::new(callback.into()),
+            )),
+            (None, None) => None,
+        };
 
         let unified_scan_args = UnifiedScanArgs {
             // Schema is currently still stored inside the options per scan type, but we do eventually
@@ -136,8 +149,7 @@ impl PyScanOptions<'_> {
             missing_columns_policy: missing_columns.0,
             extra_columns_policy: extra_columns.0,
             include_file_paths: include_file_paths.map(|x| x.0),
-            deletion_files: DeletionFilesList::filter_empty(deletion_files.map(|x| x.0)),
-            deletion_vector_provider,
+            deletion_files,
             table_statistics: table_statistics.map(|x| x.0),
             row_count,
         };

@@ -446,7 +446,6 @@ where
         extra_columns_policy: _,
         include_file_paths: _,
         deletion_files,
-        deletion_vector_provider,
         table_statistics,
         row_count,
     } = unified_scan_args.as_mut()
@@ -505,7 +504,7 @@ where
             .collect::<Vec<_>>()
     });
 
-    *deletion_files = deletion_files.as_ref().and_then(|x| match x {
+    *deletion_files = deletion_files.take().and_then(|x| match x {
         DeletionFilesList::IcebergPositionDelete(deletions) => {
             let mut out = None;
 
@@ -520,13 +519,13 @@ where
 
             out.map(|x| DeletionFilesList::IcebergPositionDelete(Arc::new(x)))
         },
+        // The list of files is not known at this stage. Capture the selected_path_indices
+        // for lazy execution.
+        #[cfg(feature = "python")]
+        DeletionFilesList::Delta(provider) => Some(DeletionFilesList::Delta(
+            provider.with_selected_indices(selected_path_indices.clone()),
+        )),
     });
-
-    // The list of files is not known at this stage. Capture the selected_path_indices
-    // for lazy execution.
-    *deletion_vector_provider = deletion_vector_provider
-        .take()
-        .map(|provider| provider.with_selected_indices(selected_path_indices.clone()));
 
     *table_statistics = table_statistics.as_ref().map(|x| {
         let df_height = IdxSize::try_from(x.0.height()).unwrap();

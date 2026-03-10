@@ -11,7 +11,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pytest
-from pyroaring import BitMap
+from pyroaring import BitMap  # type: ignore[import-not-found]
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -416,7 +416,7 @@ def create_dv_table_multi(
                         "storageType": "u",
                         "pathOrInlineDv": uuid_to_z85(dv_uuid),
                         "offset": 1,
-                        "sizeInBytes": bitmap_data_size,  # kdn
+                        "sizeInBytes": bitmap_data_size,
                         "cardinality": len(deleted_rows),
                     },
                 }

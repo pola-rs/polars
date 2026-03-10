@@ -143,7 +143,7 @@ impl PostApplyExtraOps {
                 handle.await?;
             }
 
-            //kdn TODO: address issue where we never get here when the resulting df is empty
+            //@TODO: known issue: we never get here when the returned df is empty
             if verbose {
                 eprintln!(
                     "[PostApplyExtraOps]: rows_before: {}, rows_after: {}",

@@ -474,7 +474,6 @@ fn visualize_plan_rec(
             missing_columns_policy: _,
             forbid_extra_columns: _,
             deletion_files,
-            deletion_vector_callback: _,
             table_statistics: _,
             file_schema: _,
             disable_morsel_split: _,
