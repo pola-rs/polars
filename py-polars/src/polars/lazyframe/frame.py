@@ -179,7 +179,6 @@ if TYPE_CHECKING:
     T = TypeVar("T")
     P = ParamSpec("P")
 
-
 _COLLECT_BATCHES_POOL = ThreadPoolExecutor(thread_name_prefix="pl_col_batch_")
 
 
@@ -988,7 +987,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @unstable()
     def pipe_with_schema(
         self,
-        function: Callable[[LazyFrame, Schema], LazyFrame],
+        function: Callable[Concatenate[LazyFrame, Schema, P], LazyFrame],
+        *args: P.args,
+        **kwargs: P.kwargs,
     ) -> LazyFrame:
         """
         Allows to alter the lazy frame during the plan stage with the resolved schema.
@@ -1006,7 +1007,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         function
             Callable; will receive the frame as the first parameter and the resolved
-            schema as the second parameter.
+            schema as the second parameter, followed by any given args/kwargs.
+        *args
+            Arguments to pass to the UDF.
+        **kwargs
+            Keyword arguments to pass to the UDF.
 
         See Also
         --------
@@ -1015,28 +1020,39 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Examples
         --------
         >>> def cast_to_float_if_necessary(
-        ...     lf: pl.LazyFrame, schema: pl.Schema
+        ...     lf: pl.LazyFrame, schema: pl.Schema, allowlist: list[str]
         ... ) -> pl.LazyFrame:
         ...     required_casts = [
         ...         pl.col(name).cast(pl.Float64)
         ...         for name, dtype in schema.items()
         ...         if not dtype.is_float()
+        ...         if name in allowlist
         ...     ]
         ...     return lf.with_columns(required_casts)
         >>> lf = pl.LazyFrame(
-        ...     {"a": [1.0, 2.0], "b": ["1.0", "2.5"], "c": [2.0, 3.0]},
-        ...     schema={"a": pl.Float64, "b": pl.String, "c": pl.Float32},
+        ...     {
+        ...         "a": [1.0, 2.0],
+        ...         "b": ["1.0", "2.5"],
+        ...         "c": [2.0, 3.0],
+        ...         "d": ["3.0", "4.0"],
+        ...     },
+        ...     schema={
+        ...         "a": pl.Float64,
+        ...         "b": pl.String,
+        ...         "c": pl.Float32,
+        ...         "d": pl.String,
+        ...     },
         ... )
-        >>> lf.pipe_with_schema(cast_to_float_if_necessary).collect()
-        shape: (2, 3)
-        ┌─────┬─────┬─────┐
-        │ a   ┆ b   ┆ c   │
-        │ --- ┆ --- ┆ --- │
-        │ f64 ┆ f64 ┆ f32 │
-        ╞═════╪═════╪═════╡
-        │ 1.0 ┆ 1.0 ┆ 2.0 │
-        │ 2.0 ┆ 2.5 ┆ 3.0 │
-        └─────┴─────┴─────┘
+        >>> lf.pipe_with_schema(cast_to_float_if_necessary, ["a", "b", "c"]).collect()
+        shape: (2, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   ┆ d   │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ f64 ┆ f64 ┆ f32 ┆ str │
+        ╞═════╪═════╪═════╪═════╡
+        │ 1.0 ┆ 1.0 ┆ 2.0 ┆ 3.0 │
+        │ 2.0 ┆ 2.5 ┆ 3.0 ┆ 4.0 │
+        └─────┴─────┴─────┴─────┘
         """
 
         def wrapper(lf_and_schema: Any) -> PyLazyFrame:
@@ -1045,6 +1061,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             return function(
                 self._from_pyldf(lf_and_schema[0][0]),
                 lf_and_schema[1][0],
+                *args,
+                **kwargs,
             )._ldf
 
         return self._from_pyldf(self._ldf.pipe_with_schema(wrapper))
