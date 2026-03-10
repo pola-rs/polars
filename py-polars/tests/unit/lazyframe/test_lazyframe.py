@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import re
 from datetime import date, datetime
 from functools import reduce
@@ -71,7 +70,7 @@ def test_implode() -> None:
 def test_lazyframe_membership_operator() -> None:
     ldf = pl.LazyFrame({"name": ["Jane", "John"], "age": [20, 30]})
 
-    with contextlib.suppress(PerformanceWarning):
+    with pytest.raises(PerformanceWarning):
         assert "name" in ldf
 
     assert "phone" not in ldf.collect_schema()
