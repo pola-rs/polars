@@ -1176,8 +1176,14 @@ class Series:
             return self._from_pyseries(getattr(self._s, op_s)(other._s))
         elif _check_for_numpy(other) and isinstance(other, np.ndarray):
             return self._from_pyseries(getattr(self._s, op_s)(Series(other)._s))
+        elif isinstance(other, timedelta):
+            _s = sequence_to_pyseries(self.name, [other])
+            if "rhs" in op_ffi:
+                return self._from_pyseries(getattr(_s, op_s)(self._s))
+            else:
+                return self._from_pyseries(getattr(self._s, op_s)(_s))
         elif (
-            isinstance(other, (float, date, datetime, timedelta, str))
+            isinstance(other, (float, date, datetime, str))
             and not self.dtype.is_float()
         ):
             _s = sequence_to_pyseries(self.name, [other])
@@ -8229,17 +8235,28 @@ class Series:
         ]
         """
 
-    def reinterpret(self, *, signed: bool = True) -> Series:
+    def reinterpret(
+        self,
+        *,
+        signed: bool | None = None,
+        dtype: type[int | float] | PolarsDataType | None = None,
+    ) -> Series:
         """
-        Reinterpret the underlying bits as a signed/unsigned integer.
+        Reinterpret the underlying bits as a signed/unsigned integer or float.
 
-        This operation is only allowed for 64bit integers. For lower bits integers,
-        you can safely use that cast operation.
+        This operation is only allowed for numeric types of the same size.
+        For lower bits numbers, you can safely use the cast operation.
+
+        Either `signed` or `dtype` can be specified.
+        Defaults to `signed=True` otherwise.
 
         Parameters
         ----------
         signed
-            If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
+            If True, reinterpret as signed integer. Otherwise, reinterpret
+            as unsigned integer.
+        dtype
+            DataType to reinterpret to.
 
         Examples
         --------
@@ -8258,6 +8275,14 @@ class Series:
         [
                 17293822569102704640
                 18446744073709551614
+                3
+        ]
+        >>> s.reinterpret(dtype=pl.Int64)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                -1152921504606846976
+                -2
                 3
         ]
         """

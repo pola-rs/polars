@@ -2086,10 +2086,18 @@ impl SQLContext {
             let field = e_inner.to_field(&schema_before)?;
             if is_non_group_key_expr {
                 let mut e = e.clone();
-                if let Expr::Agg(AggExpr::Implode(expr)) = &e {
+                if let Expr::Agg(AggExpr::Implode {
+                    input: expr,
+                    maintain_order: _,
+                }) = &e
+                {
                     e = (**expr).clone();
                 } else if let Expr::Alias(expr, name) = &e {
-                    if let Expr::Agg(AggExpr::Implode(expr)) = expr.as_ref() {
+                    if let Expr::Agg(AggExpr::Implode {
+                        input: expr,
+                        maintain_order: _,
+                    }) = expr.as_ref()
+                    {
                         e = (**expr).clone().alias(name.clone());
                     }
                 }

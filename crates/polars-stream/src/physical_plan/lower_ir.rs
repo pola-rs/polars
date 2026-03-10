@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
+use arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
+use arrow::datatypes::ArrowDataType;
 use parking_lot::Mutex;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
-use polars_core::prelude::{DataType, PlHashMap, PlHashSet};
+use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
+use polars_core::series::Series;
 use polars_core::{SchemaExtPl, config};
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_ops::frame::JoinType;
@@ -23,7 +26,7 @@ use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "csv", feature = "json"))]
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
@@ -641,6 +644,62 @@ pub fn lower_ir(
                     df: Arc::new(DataFrame::empty_with_height(num_rows)),
                     disable_morsel_split: disable_morsel_split.unwrap_or(true),
                 }
+            } else if let FileScanIR::ExpandedPaths { name: _ } = &*scan_type {
+                let unsupported_parameter = if unified_scan_args.pre_slice.is_some() {
+                    "pre_slice"
+                } else if unified_scan_args.include_file_paths.is_some() {
+                    "include_file_paths"
+                } else if unified_scan_args.row_index.is_some() {
+                    "row_index"
+                } else if predicate.is_some() {
+                    "predicate"
+                } else if hive_parts.is_some() {
+                    "hive_parts"
+                } else {
+                    ""
+                };
+
+                polars_ensure!(
+                    unsupported_parameter.is_empty(),
+                    ComputeError:
+                    "unsupported parameter for ExpandedPaths scan: '{unsupported_parameter}'"
+                );
+
+                assert!(output_schema.len() <= 1);
+
+                let df = if let Some((name, dtype)) = output_schema.get_at_index(0) {
+                    polars_ensure!(
+                        dtype.is_string(),
+                        ComputeError:
+                        "non-string dtype for ExpandedPaths scan"
+                    );
+
+                    let mut builder = MutableBinaryViewArray::with_capacity(
+                        scan_sources.len().wrapping_mul(
+                            scan_sources
+                                .first()
+                                .map_or(0, |x| x.to_include_path_name().len()),
+                        ),
+                    );
+
+                    for source in scan_sources.iter() {
+                        builder.push_value_ignore_validity(source.to_include_path_name());
+                    }
+
+                    let array: Utf8ViewArray = builder.freeze_with_dtype(ArrowDataType::Utf8View);
+                    let c = Series::from_arrow(name.clone(), Box::new(array))
+                        .unwrap()
+                        .into_column();
+
+                    DataFrame::new(scan_sources.len(), vec![c]).unwrap()
+                } else {
+                    DataFrame::empty_with_height(scan_sources.len())
+                };
+
+                PhysNodeKind::InMemorySource {
+                    df: Arc::new(df),
+                    disable_morsel_split: disable_morsel_split.unwrap_or(true),
+                }
             } else {
                 let file_reader_builder: Arc<dyn FileReaderBuilder> = match &*scan_type {
                     #[cfg(feature = "parquet")]
@@ -717,6 +776,8 @@ pub fn lower_ir(
                             io_metrics: std::sync::OnceLock::new(),
                         }) as _
                     },
+
+                    FileScanIR::ExpandedPaths { name: _ } => unreachable!(),
 
                     FileScanIR::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
                 };
@@ -1088,7 +1149,18 @@ pub fn lower_ir(
             let join_keys_sorted_together =
                 Option::zip(left_on_sorted.as_ref(), right_on_sorted.as_ref())
                     .is_some_and(|(ls, rs)| ls == rs);
-            let use_streaming_merge_join = args.how.is_equi() && join_keys_sorted_together;
+            let mut key_descending = left_on_sorted
+                .as_ref()
+                .and_then(|v| v.first())
+                .and_then(|s| s.descending);
+            let key_nulls_last = left_on_sorted
+                .as_ref()
+                .and_then(|v| v.first())
+                .and_then(|s| s.nulls_last);
+            let use_streaming_merge_join = args.how.is_equi()
+                && join_keys_sorted_together
+                && key_descending.is_some()
+                && key_nulls_last.is_some();
             #[cfg(feature = "asof_join")]
             let use_streaming_asof_join = if let JoinType::AsOf(ref asof_options) = args.how {
                 // Grouped asof-join is not yet supported in the streaming engine.
@@ -1141,8 +1213,6 @@ pub fn lower_ir(
                 trans_left_on.drain(left_on.len()..);
                 trans_right_on.drain(right_on.len()..);
 
-                let mut key_descending = left_on_sorted.as_ref().and_then(|v| v[0].descending);
-                let key_nulls_last = left_on_sorted.as_ref().and_then(|v| v[0].nulls_last);
                 let mut tmp_left_key_col = None;
                 let mut tmp_right_key_col = None;
                 if use_streaming_merge_join || use_streaming_asof_join {

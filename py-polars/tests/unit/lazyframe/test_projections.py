@@ -552,7 +552,7 @@ def test_projection_empty_frame_len_16904() -> None:
 
     q = df.select(pl.len())
 
-    assert "0/0 COLUMNS" in q.explain()
+    assert "*/0 COLUMNS" in q.explain()
 
     expect = pl.DataFrame({"len": [0]}, schema_overrides={"len": pl.get_index_type()})
     assert_frame_equal(q.collect(), expect)

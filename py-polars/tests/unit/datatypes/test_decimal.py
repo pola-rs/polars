@@ -889,3 +889,12 @@ def test_fallible_decimal_aggregated_with_filter(maintain_order: bool) -> None:
 def test_decimal_fits_too_large() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         s = pl.Series([0, 2**128 - 10], dtype=pl.UInt128).cast(pl.Decimal(38, 0))
+
+
+def test_product_decimal_26721() -> None:
+    df = pl.DataFrame({"x": ["1.1234", "2.2345", "0.5"]}).cast(
+        pl.Decimal(precision=10, scale=5)
+    )
+    out = df.select(pl.col.x.product())
+    expected = pl.DataFrame({"x": ["1.25512"]}).cast(pl.Decimal(precision=38, scale=5))
+    assert_frame_equal(out, expected)

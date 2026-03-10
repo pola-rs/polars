@@ -44,6 +44,7 @@ pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub mod zip;
 
+pub use bit_repr::reinterpret;
 pub use chunkops::_set_check_length;
 pub use nesting_utils::ChunkNestingUtils;
 #[cfg(feature = "serde-lazy")]
@@ -52,15 +53,6 @@ pub use sort::options::*;
 
 use crate::chunked_array::cast::CastOptions;
 use crate::series::{BitRepr, IsSorted};
-pub trait Reinterpret {
-    fn reinterpret_signed(&self) -> Series {
-        unimplemented!()
-    }
-
-    fn reinterpret_unsigned(&self) -> Series {
-        unimplemented!()
-    }
-}
 
 /// Transmute [`ChunkedArray`] to bit representation.
 /// This is useful in hashing context and reduces no.

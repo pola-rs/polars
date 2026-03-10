@@ -473,7 +473,12 @@ def test_list_eval_parametric_rank(df: pl.DataFrame, expr: pl.Expr) -> None:
     ],
 )
 @pytest.mark.parametrize(
-    "expr", [pl.element().first(), pl.element().get(0), pl.element().reverse().last()]
+    "expr",
+    [
+        pl.element().first(),
+        pl.element().get(0, null_on_oob=True),
+        pl.element().reverse().last(),
+    ],
 )
 def test_list_eval_parametric_first_scalar(
     df: pl.DataFrame, expected: pl.DataFrame, expr: pl.Expr
@@ -654,6 +659,30 @@ def test_list_agg_after_slice() -> None:
         has_no_duplicates=~pl.col("list").list.agg(pl.element().is_duplicated().any())
     )
     assert all(grouped_result.to_series().to_list())
+
+
+def test_list_eval_categorical_min_max_25906() -> None:
+    s = pl.Series(
+        "a",
+        [["c", "a", "b"], ["z", None, "m"], [None, None]],
+        dtype=pl.List(pl.Categorical),
+    )
+    assert_series_equal(
+        s.list.agg(pl.element().min()),
+        pl.Series("a", ["a", "m", None], dtype=pl.Categorical),
+    )
+    assert_series_equal(
+        s.list.agg(pl.element().max()),
+        pl.Series("a", ["c", "z", None], dtype=pl.Categorical),
+    )
+    assert_series_equal(
+        s.list.agg(pl.element().arg_min()),
+        pl.Series("a", [1, 2, None], dtype=pl.get_index_type()),
+    )
+    assert_series_equal(
+        s.list.agg(pl.element().arg_max()),
+        pl.Series("a", [0, 0, None], dtype=pl.get_index_type()),
+    )
 
 
 def test_list_eval_groupby_sample_25796() -> None:

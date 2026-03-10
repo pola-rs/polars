@@ -49,6 +49,9 @@ fn scan_type_to_pyobject(
         },
         #[cfg(feature = "scan_lines")]
         FileScanIR::Lines { name } => Ok(("lines", name.as_str()).into_py_any(py)?),
+        FileScanIR::ExpandedPaths { name } => {
+            Ok(("expanded-paths", name.as_str()).into_py_any(py)?)
+        },
         FileScanIR::PythonDataset { .. } => {
             Err(PyNotImplementedError::new_err("python dataset scan"))
         },

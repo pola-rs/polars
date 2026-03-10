@@ -25,6 +25,9 @@ pub trait ListBuilderTrait {
         Ok(())
     }
     fn append_series(&mut self, s: &Series) -> PolarsResult<()>;
+    fn append_owned_series(&mut self, s: Series) -> PolarsResult<()> {
+        self.append_series(&s)
+    }
     fn append_null(&mut self);
 
     fn field(&self) -> &Field {
