@@ -486,7 +486,7 @@ pub fn get_supertype_with_options(
                             }
                         }
                     }
-                    UnknownKind::Int(v) if dt.is_bool() => {
+                    UnknownKind::Int(_) if dt.is_bool() => {
                         Some(Int32)
                     },
                     #[cfg(feature = "dtype-decimal")]
