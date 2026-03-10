@@ -56,8 +56,8 @@ environment so you can explore the functionality yourself.
 
 You can inspect the details of a query by going to the "Queries" tab and selecting the query you
 want to inspect. You can see the timeline, which shows when the query started and ended, and how
-long planning and running the query took, which for this query is 31 seconds. On top of that it
-consists of a single stage, because the query runs completely on a single node.
+long planning and running the query took. On top of that it consists of a single stage, because the
+query runs completely on a single node.
 
 At the bottom of the query details you can inspect the
 [optimized logical plan](glossary.md#optimized-logical-plan) and the
@@ -78,7 +78,7 @@ implementations, and data flow chosen at runtime.
 <!-- dprint-ignore -->
 ![Physical plan](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/physical-plan.png){ width="70%" style="display: block; margin: 0 auto;" }
 
-While the query runs, and after it has finished there are additional metrics available, such as how
+While the query runs and after it has finished, there are additional metrics available, such as how
 many rows and morsels flow through a node and how much time is spent in that node. In our example
 you can see that the group by takes particularly long and aggregates an input of 59.1 million rows
 to 4 output rows:
@@ -101,7 +101,7 @@ bottlenecks:
 
 | Indicator                                                                                                                                         | Description                                                                                                                                                            |
 | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ![CPU time](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/cpu-time.png)                           | hows which operations took the most CPU time.                                                                                                                          |
+| ![CPU time](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/cpu-time.png)                           | Shows which operations took the most CPU time.                                                                                                                         |
 | ![I/O time](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/io-time.png)                            | Percentage of the stage's total I/O time spent in this node, helping identify the most I/O-heavy operations.                                                           |
 | ![Memory intensive](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/indicator-memory-intensive.png) | The node is potentially memory-intensive because the operation requires keeping state (e.g. storing the intermediate groups in a `group_by`).                          |
 | ![Single node](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/indicator-single-node.png)           | This stage was executed on a single node because it contains operations that require a global state (e.g. `sort`). This indicator only appears in distributed queries. |
@@ -145,7 +145,8 @@ of total time spent in that stage.
 
 When you click on that stage (not one of the nodes in it), you open the stage details, displaying
 detailed metrics. For this query, the metrics show high shuffle bytes, indicating that this stage is
-shuffle-heavy. While shuffling is expensive, it can be required.
+shuffle-heavy. Shuffling is inherently expensive, but necessary when operations like joins require
+co-located keys.
 
 ![Example of heavy stage](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/stage-example.png)
 
@@ -161,12 +162,12 @@ The main thing to notice here is that at the bottom of the graph the blue I/O in
 <!-- dprint-ignore -->
 ![I/O time](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/io-time.png){ style="display: block; margin: 0 auto;" }
 
-The I/O indicator shows that for almost the full runtime of the stage the I/O was active. We can
+The I/O indicator shows that I/O was active for nearly the full runtime of the stage. We can
 conclude that the network I/O in this node is the bottleneck in this part of the physical plan.
 
 In this example the data is stored in `us-east-2` while the cluster runs in `eu-west-1`. The
 cross-region bandwidth causes I/O to take longer than it would if the data and cluster were in the
-same region.
+same region. Co-locate your cluster and data in the same region to minimize I/O latency.
 
 ## Takeaways
 
@@ -180,4 +181,5 @@ same region.
   drill down to individual operations.
 - I/O-heavy queries benefit from more bandwidth: you can add nodes or choose a higher-bandwidth
   instance type.
-- [Shuffle](glossary.md#shuffle)-heavy queries require data to move between workers.
+- [Shuffle](glossary.md#shuffle)-heavy queries may benefit from fewer, larger nodes to reduce
+  inter-node traffic.

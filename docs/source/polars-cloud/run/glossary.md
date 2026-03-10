@@ -70,9 +70,9 @@ completion back to the scheduler and write shuffle output for downstream stages 
 
 The **stage graph** is produced by the distributed query planner from the optimized logical plan.
 The planner walks the logical plan and identifies **stage boundaries**: points where a data shuffle
-is required to optimize stages to maximize parallelism, minimize data shuffle, and keep peak memory
-usage under control. Joins and group-bys are typical examples, a worker cannot produce its final
-result without first receiving the relevant keys or partial aggregates from other workers.
+is required. The planner optimizes stages to maximize parallelism, minimize data shuffle, and keep
+peak memory usage under control. Joins and group-bys are typical examples; a worker cannot produce
+its final result without first receiving the relevant keys or partial aggregates from other workers.
 
 At each stage boundary, the planner inserts a shuffle and starts a new stage. The result is a
 directed acyclic graph (DAG) in which each node is a stage and each edge is a shuffle. All workers
