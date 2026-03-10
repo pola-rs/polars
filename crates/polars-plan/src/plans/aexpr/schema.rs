@@ -378,12 +378,12 @@ impl AExpr {
 
                 #[cfg(feature = "dtype-array")]
                 if let IRFunctionExpr::ArrayExpr(IRArrayFunction::Get(false)) = function
-                    && let DataType::Array(_, shape) = fields[0].dtype()
+                    && let DataType::Array(_, width) = fields[0].dtype()
                     && let AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(index))) =
                         ctx.arena.get(input[1].node())
                 {
-                    polars_ensure!(*index < *shape as i128 && *index >= -(*shape as i128),
-                        ComputeError: "get index is out of bounds"
+                    polars_ensure!(*index < *width as i128 && *index >= -(*width as i128),
+                        ComputeError: "get index {index:?} is out of bounds for array of width {width:?}"
                     )
                 }
 
