@@ -78,6 +78,11 @@ Each node in the physical plan can show indicators to help identify bottlenecks:
 | ![Memory intensive](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/indicator-memory-intensive.png) | The node is potentially memory-intensive because the operation requires keeping state (e.g. storing the intermediate groups in a `group_by`). |
 | ![Single node](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/indicator-single-node.png)           | This stage was executed on a single node because the operation requires global state (e.g. `sort`). Only appears in distributed queries.      |
 
+<!-- TODO:
+- Check if sort is indeed single node
+- Find in-memory fallback node
+-->
+
 !!! info "I/O and CPU time don't sum to 100%"
 
     The I/O time and CPU time percentages shown per node do not sum to the total runtime. This is because execution is pipelined: data is processed as it arrives, so I/O (reading/writing) and CPU (computation) work happens concurrently. As a result, both indicators can be non-zero at the same time for a given node, and their combined total can exceed the total runtime.
@@ -128,13 +133,14 @@ same region.
 
 ## Takeaways
 
-- The [stage graph](glossary.md#stage-graph) shows which [stages](glossary.md#stage) take the
-  longest and how much data is [shuffled](glossary.md#shuffle) between them.
-- The [physical plan](glossary.md#physical-plan) shows which operations within a stage are
-  responsible for the time spent.
+- The [logical plan](glossary.md#optimized-logical-plan) shows how your query has been optimized.
+- The [physical plan](glossary.md#physical-plan) shows how your query is executed, and which
+  operations are responsible for both CPU and I/O time spent.
+- In a distributed query, the [stage graph](glossary.md#stage-graph) shows which
+  [stages](glossary.md#stage) take the longest and how much data is [shuffled](glossary.md#shuffle)
+  between them.
 - Indicators on stages and nodes highlight potential bottlenecks: start with the slowest stage and
   drill down to individual operations.
-- I/O-heavy queries benefit from more bandwidth: add nodes or choose a higher-bandwidth instance
-  type.
-- [Shuffle](glossary.md#shuffle)-heavy queries require data to move between workers; co-locating
-  data and cluster in the same region reduces I/O time.
+- I/O-heavy queries benefit from more bandwidth: you can add nodes or choose a higher-bandwidth
+  instance type.
+- [Shuffle](glossary.md#shuffle)-heavy queries require data to move between workers.
