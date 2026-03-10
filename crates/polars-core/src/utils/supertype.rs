@@ -487,8 +487,7 @@ pub fn get_supertype_with_options(
                         }
                     }
                     UnknownKind::Int(v) if dt.is_bool() => {
-                        let smallest_fitting_dtype = materialize_smallest_dyn_int(*v).dtype();
-                        get_supertype(dt, &smallest_fitting_dtype)
+                        Some(Int32)
                     },
                     #[cfg(feature = "dtype-decimal")]
                     UnknownKind::Int(_) if dt.is_decimal() => {
