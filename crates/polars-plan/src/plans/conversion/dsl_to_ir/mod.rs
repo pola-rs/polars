@@ -886,7 +886,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 for i in 0..on_columns.height() {
                     let mut name = String::new();
                     let combine = match column_naming {
-                        PivotColumnNaming::AlwaysCombine => true,
+                        PivotColumnNaming::Combine => true,
                         PivotColumnNaming::Auto => values.len() > 1,
                     };
                     if combine {

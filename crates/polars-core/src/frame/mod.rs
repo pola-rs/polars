@@ -77,7 +77,7 @@ pub enum UniqueKeepStrategy {
 /// Naming strategy for the results of a pivot.
 pub enum PivotColumnNaming {
     /// Always combine the values and on-column names.
-    AlwaysCombine,
+    Combine,
     /// Prefix the values column name only if there is more than one values
     /// column.
     #[default]

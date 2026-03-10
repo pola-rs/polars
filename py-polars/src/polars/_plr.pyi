@@ -1121,7 +1121,7 @@ class PyLazyFrame:
         agg: PyExpr,
         maintain_order: bool,
         separator: str,
-        column_naming: Literal["auto", "always_combine"],
+        column_naming: Literal["auto", "combine"],
     ) -> PyLazyFrame: ...
     def unpivot(
         self,

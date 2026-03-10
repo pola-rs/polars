@@ -8143,7 +8143,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         aggregate_function: PivotAgg | Expr | None = None,
         maintain_order: bool = False,
         separator: str = "_",
-        column_naming: Literal["auto", "always_combine"] = "auto",
+        column_naming: Literal["auto", "combine"] = "auto",
     ) -> LazyFrame:
         """
         Create a spreadsheet-style pivot table as a DataFrame.
@@ -8178,12 +8178,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         separator
             Used as separator/delimiter in generated column names in case of multiple
             `values` columns.
-        column_naming : {'auto', 'always_combine'}
+        column_naming : {'auto', 'combine'}
             How resulting column names will be constructed.
 
             * 'auto': The default; combine with separator if there are multiple
                       `values` columns, otherwise just use the `on_columns` names.
-            * 'always_combine': Always combine the `values` columns' names with
+            * 'combine': Always combine the `values` columns' names with
                       the `on_columns` names.
 
             .. warning::
