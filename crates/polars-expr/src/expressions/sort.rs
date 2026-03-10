@@ -47,13 +47,13 @@ impl PhysicalExpr for SortExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series = self.physical_expr.evaluate(df, state)?;
         series.sort_with(self.options)
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,

@@ -144,9 +144,16 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 }
                 .into()
             },
-            IRAggExpr::Implode(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Implode(Arc::new(exp)).into()
+            IRAggExpr::Implode {
+                input,
+                maintain_order,
+            } => {
+                let exp = node_to_expr(input, expr_arena);
+                AggExpr::Implode {
+                    input: Arc::new(exp),
+                    maintain_order,
+                }
+                .into()
             },
             IRAggExpr::Quantile {
                 expr,
@@ -1170,7 +1177,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         IF::GatherEvery { n, offset } => F::GatherEvery { n, offset },
         #[cfg(feature = "reinterpret")]
-        IF::Reinterpret(v) => F::Reinterpret(v),
+        IF::Reinterpret(dtype) => F::Reinterpret(None, Some(dtype)),
         IF::ExtendConstant => F::ExtendConstant,
 
         IF::RowEncode(_, v) => F::RowEncode(v),
