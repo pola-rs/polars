@@ -64,7 +64,7 @@ class IcebergTableWrap:
             if verbose():
                 from_ = (
                     "catalog table descriptor: "
-                    f"{self.table_descriptor_.table_identifier = },"
+                    f"{self.table_descriptor_.table_identifier = }, "
                     f"{self.table_descriptor_.catalog_config.class_ = }"
                     if isinstance(self.table_descriptor_, IcebergCatalogTableDescriptor)
                     else f"metadata path: {self.table_descriptor_}"
@@ -142,6 +142,60 @@ class IcebergCatalogConfig:
             name=catalog.name,
             properties=catalog.properties,
         )
+
+    @staticmethod
+    def _from_api_parameter_or_environment_default(
+        catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None,
+        *,
+        fn_name: Literal["scan_iceberg", "sink_iceberg"],
+    ) -> IcebergCatalogConfig:
+        import pyiceberg.catalog
+        from pyiceberg.catalog.noop import NoopCatalog
+
+        import polars._utils.logging
+        from polars._utils.logging import eprint
+
+        if isinstance(catalog, IcebergCatalogConfig):
+            catalog_config = catalog
+        elif isinstance(catalog, pyiceberg.catalog.Catalog):
+            catalog_config = IcebergCatalogConfig.from_catalog(catalog)
+        elif catalog is not None:
+            msg = f"unknown type for `catalog` parameter: {type(catalog)}"
+            raise TypeError(msg)
+        else:
+            if polars._utils.logging.verbose():
+                eprint(f"{fn_name}(): calling pyiceberg.catalog.load_catalog()")
+
+            try:
+                default_catalog = pyiceberg.catalog.load_catalog()
+
+            except Exception as error:
+                static_metadata_hint = (
+                    (
+                        " "
+                        "If you intended to pass a static metadata path, "
+                        "ensure it is an absolute path."
+                    )
+                    if fn_name == "scan_iceberg"
+                    else ""
+                )
+
+                msg = (
+                    f"failed to load catalog for {fn_name}() ({error = }). "
+                    "Configure the default PyIceberg catalog, or pass "
+                    "a catalog via the 'catalog' parameter, or pass a PyIceberg "
+                    "table object instead of the name."
+                    f"{static_metadata_hint}"
+                )
+                raise ComputeError(msg) from error
+
+            catalog_config = IcebergCatalogConfig.from_catalog(default_catalog)
+
+        if catalog_config.class_ == NoopCatalog:
+            msg = f"cannot use NoopCatalog with {fn_name}()"
+            raise TypeError(msg)
+
+        return catalog_config
 
 
 @dataclass(kw_only=True)

@@ -169,8 +169,24 @@ pub fn into_reduction(
         } => {
             assert!(inner_exprs.len() == 2);
             let input = inner_exprs[0].node();
-            let by = inner_exprs[1].node();
-            let gr = new_min_by_reduction(get_dt(input)?, get_dt(by)?)?;
+            let mut by = inner_exprs[1].node();
+            let input_dtype = get_dt(input)?;
+            let mut by_dtype = get_dt(by)?;
+            if by_dtype.is_nested() {
+                by = AExprBuilder::row_encode(
+                    vec![inner_exprs[1].clone()],
+                    vec![by_dtype.clone()],
+                    RowEncodingVariant::Ordered {
+                        descending: None,
+                        nulls_last: None,
+                        broadcast_nulls: None,
+                    },
+                    expr_arena,
+                )
+                .node();
+                by_dtype = DataType::BinaryOffset;
+            }
+            let gr = new_min_by_reduction(input_dtype, by_dtype)?;
             return Ok((gr, vec![input, by]));
         },
 
@@ -181,8 +197,24 @@ pub fn into_reduction(
         } => {
             assert!(inner_exprs.len() == 2);
             let input = inner_exprs[0].node();
-            let by = inner_exprs[1].node();
-            let gr = new_max_by_reduction(get_dt(input)?, get_dt(by)?)?;
+            let mut by = inner_exprs[1].node();
+            let input_dtype = get_dt(input)?;
+            let mut by_dtype = get_dt(by)?;
+            if by_dtype.is_nested() {
+                by = AExprBuilder::row_encode(
+                    vec![inner_exprs[1].clone()],
+                    vec![by_dtype.clone()],
+                    RowEncodingVariant::Ordered {
+                        descending: None,
+                        nulls_last: None,
+                        broadcast_nulls: None,
+                    },
+                    expr_arena,
+                )
+                .node();
+                by_dtype = DataType::BinaryOffset;
+            }
+            let gr = new_max_by_reduction(input_dtype, by_dtype)?;
             return Ok((gr, vec![input, by]));
         },
 

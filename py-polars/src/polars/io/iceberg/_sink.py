@@ -72,8 +72,6 @@ class IcebergSinkState:
         mode: Literal["append", "overwrite"] = "append",
         storage_options: StorageOptionsDict | None = None,
     ) -> None:
-        import pyiceberg.catalog
-
         table: pyiceberg.table.Table | None = None
 
         if importlib.util.find_spec("pyiceberg.table") is not None:
@@ -85,26 +83,12 @@ class IcebergSinkState:
         table_descriptor: IcebergCatalogTableDescriptor | None = None
 
         if isinstance(target, str):
-            import pyiceberg.catalog
-            from pyiceberg.catalog.noop import NoopCatalog
-
             catalog_config = (
-                catalog
-                if isinstance(catalog, IcebergCatalogConfig)
-                else IcebergCatalogConfig.from_catalog(catalog)
-                if isinstance(catalog, pyiceberg.catalog.Catalog)
-                else IcebergCatalogConfig.from_catalog(pyiceberg.catalog.load_catalog())
-                if catalog is None  # type: ignore[redundant-expr]
-                else None
+                IcebergCatalogConfig._from_api_parameter_or_environment_default(
+                    catalog,
+                    fn_name="sink_iceberg",
+                )
             )
-
-            if catalog_config is None:
-                msg = f"unknown type for `catalog` parameter: {type(catalog)}"
-                raise TypeError(msg)
-
-            if catalog_config.class_ == NoopCatalog:
-                msg = "cannot use NoopCatalog with sink_iceberg"
-                raise TypeError(msg)
 
             table_descriptor = IcebergCatalogTableDescriptor(
                 table_identifier=target,

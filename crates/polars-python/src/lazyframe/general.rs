@@ -152,7 +152,7 @@ impl PyLazyFrame {
         low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema,
-        cloud_options, credential_provider, include_file_paths
+        cloud_options, credential_provider, include_file_paths, missing_columns
     )
     )]
     fn new_from_csv(
@@ -187,6 +187,7 @@ impl PyLazyFrame {
         cloud_options: OptPyCloudOptions,
         credential_provider: Option<Py<PyAny>>,
         include_file_paths: Option<String>,
+        missing_columns: Option<Wrap<MissingColumnsPolicy>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let quote_char = quote_char.and_then(|s| s.as_bytes().first()).copied();
@@ -257,7 +258,8 @@ impl PyLazyFrame {
             .with_decimal_comma(decimal_comma)
             .with_glob(glob)
             .with_raise_if_empty(raise_if_empty)
-            .with_include_file_paths(include_file_paths.map(|x| x.into()));
+            .with_include_file_paths(include_file_paths.map(|x| x.into()))
+            .with_missing_columns_policy(missing_columns.map(|x| x.0));
 
         if let Some(lambda) = with_schema_modify {
             let f = |schema: Schema| {

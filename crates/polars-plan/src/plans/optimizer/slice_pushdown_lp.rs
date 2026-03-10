@@ -13,13 +13,19 @@ mod inner {
     pub struct SlicePushDown {
         scratch: UnitVec<Node>,
         pub(super) maintain_errors: bool,
+        pub(crate) slice_node_in_optimized_plan: bool,
     }
 
     impl SlicePushDown {
-        pub fn new(maintain_errors: bool) -> Self {
+        pub fn new() -> Self {
             Self {
                 scratch: unitvec![],
-                maintain_errors,
+                // We don't maintain errors on slice to make the behavior predictable across engines.
+                //
+                // Even if we enable maintain_errors (thereby preventing the slice from being pushed),
+                // the new-streaming engine still may not error due to early-stopping.
+                maintain_errors: false,
+                slice_node_in_optimized_plan: false,
             }
         }
 
@@ -46,6 +52,40 @@ impl State {
 
         (offset, len).into()
     }
+}
+
+/// Returns a combined slice if the 2 slices can be combined.
+fn combine_outer_inner_slice(outer_slice: State, inner_slice: State) -> Option<State> {
+    // Both are positive, can combine into a single slice.
+    if outer_slice.offset >= 0 && inner_slice.offset >= 0 {
+        return Some(State {
+            offset: inner_slice.offset.checked_add(outer_slice.offset).unwrap(),
+            len: if inner_slice.len as i128 > outer_slice.offset as i128 {
+                (inner_slice.len - outer_slice.offset as IdxSize).min(outer_slice.len)
+            } else {
+                0
+            },
+        });
+    }
+
+    // Both are negative, can also combine (but not so simply).
+    if outer_slice.offset < 0 && inner_slice.offset < 0 {
+        // We use 128-bit arithmetic to avoid overflows, clamping at the end.
+        let inner_start_rel_end = inner_slice.offset as i128;
+        let inner_stop_rel_end = inner_start_rel_end + inner_slice.len as i128;
+        let naive_outer_start_rel_end = inner_stop_rel_end + outer_slice.offset as i128;
+        let naive_outer_stop_rel_end = naive_outer_start_rel_end + outer_slice.len as i128;
+        let clamped_outer_start_rel_end = naive_outer_start_rel_end.max(inner_start_rel_end);
+        let clamped_outer_stop_rel_end = naive_outer_stop_rel_end.max(clamped_outer_start_rel_end);
+
+        return Some(State {
+            offset: clamped_outer_start_rel_end.clamp(i64::MIN as i128, i64::MAX as i128) as i64,
+            len: (clamped_outer_stop_rel_end - clamped_outer_start_rel_end)
+                .min(IdxSize::MAX as i128) as IdxSize,
+        });
+    }
+
+    None
 }
 
 /// Can push down slice when:
@@ -116,13 +156,14 @@ impl SlicePushDown {
     // slice will be done at this node if we found any
     // we also stop optimization
     fn no_pushdown_finish_opt(
-        &self,
+        &mut self,
         lp: IR,
         state: Option<State>,
         lp_arena: &mut Arena<IR>,
     ) -> PolarsResult<IR> {
         match state {
             Some(state) => {
+                self.slice_node_in_optimized_plan = true;
                 let input = lp_arena.add(lp);
 
                 let lp = IR::Slice {
@@ -196,75 +237,89 @@ impl SlicePushDown {
 
         match (lp, state) {
             #[cfg(feature = "python")]
-            (PythonScan {
-                mut options,
-            },
-            // TODO! we currently skip slice pushdown if there is a predicate.
-            // we can modify the readers to only limit after predicates have been applied
-                Some(state)) if state.offset == 0 && matches!(options.predicate, PythonPredicate::None) => {
+            (
+                PythonScan { mut options },
+                // TODO! we currently skip slice pushdown if there is a predicate.
+                // we can modify the readers to only limit after predicates have been applied
+                Some(state),
+            ) if state.offset == 0 && matches!(options.predicate, PythonPredicate::None) => {
                 options.n_rows = Some(state.len as usize);
-                let lp = PythonScan {
-                    options,
-                };
+                let lp = PythonScan { options };
                 Ok(lp)
-            }
+            },
 
-            (Scan {
-                sources,
-                file_info,
-                hive_parts,
-                output_schema,
-                mut unified_scan_args,
-                predicate,
-                predicate_file_skip_applied,
-                scan_type,
-            }, Some(state)) if predicate.is_none() && match &*scan_type {
-                #[cfg(feature = "parquet")]
-                FileScanIR::Parquet { .. } => true,
+            (
+                Scan {
+                    sources,
+                    file_info,
+                    hive_parts,
+                    output_schema,
+                    mut unified_scan_args,
+                    predicate,
+                    predicate_file_skip_applied,
+                    scan_type,
+                },
+                Some(state),
+            ) if predicate.is_none()
+                && match &*scan_type {
+                    #[cfg(feature = "parquet")]
+                    FileScanIR::Parquet { .. } => true,
 
-                #[cfg(feature = "ipc")]
-                FileScanIR::Ipc { .. } => true,
+                    #[cfg(feature = "ipc")]
+                    FileScanIR::Ipc { .. } => true,
 
-                #[cfg(feature = "csv")]
-                FileScanIR::Csv { .. } => true,
+                    #[cfg(feature = "csv")]
+                    FileScanIR::Csv { .. } => true,
 
-                #[cfg(feature = "json")]
-                FileScanIR::NDJson { .. } => true,
+                    #[cfg(feature = "json")]
+                    FileScanIR::NDJson { .. } => true,
 
-                #[cfg(feature = "python")]
-                FileScanIR::PythonDataset { .. } => true,
+                    #[cfg(feature = "python")]
+                    FileScanIR::PythonDataset { .. } => true,
 
-                #[cfg(feature = "scan_lines")]
-                FileScanIR::Lines { .. } => true,
+                    #[cfg(feature = "scan_lines")]
+                    FileScanIR::Lines { .. } => true,
 
-                FileScanIR::ExpandedPaths { .. } => false,
+                    FileScanIR::ExpandedPaths { .. } => false,
 
-                // TODO: This can be `true` after Anonymous scan dispatches to new-streaming.
-                FileScanIR::Anonymous { .. } => state.offset == 0,
-            } => {
-                if let Some(sl) = &unified_scan_args.pre_slice {
-                    // Already existing slice, dispatch to slice-slice pushdown.
-                    let mut unified_scan_args = unified_scan_args.clone();
-                    unified_scan_args.pre_slice = None;
-                    let scan = lp_arena.add(Scan {
-                        sources,
-                        file_info,
-                        hive_parts,
-                        output_schema,
-                        scan_type,
-                        unified_scan_args,
-                        predicate,
-                        predicate_file_skip_applied,
-                    });
+                    // TODO: This can be `true` after Anonymous scan dispatches to new-streaming.
+                    FileScanIR::Anonymous { .. } => state.offset == 0,
+                } =>
+            {
+                if let Some(existing) = &mut unified_scan_args.pre_slice {
+                    let (offset, len) = existing.to_signed_offset_len();
 
-                    let (offset, len) = sl.to_signed_offset_len();
-                    let slice_scan = Slice {
-                        input: scan,
-                        offset,
-                        len,
+                    return if let Some(combined) =
+                        combine_outer_inner_slice(state, State { offset, len })
+                    {
+                        *existing = combined.to_slice_enum();
+
+                        let lp = Scan {
+                            sources,
+                            file_info,
+                            hive_parts,
+                            output_schema,
+                            scan_type,
+                            unified_scan_args,
+                            predicate,
+                            predicate_file_skip_applied,
+                        };
+
+                        self.pushdown(lp, None, lp_arena, expr_arena)
+                    } else {
+                        let lp = Scan {
+                            sources,
+                            file_info,
+                            hive_parts,
+                            output_schema,
+                            scan_type,
+                            unified_scan_args,
+                            predicate,
+                            predicate_file_skip_applied,
+                        };
+
+                        self.no_pushdown_restart_opt(lp, Some(state), lp_arena, expr_arena)
                     };
-
-                    return self.pushdown(slice_scan, Some(state), lp_arena, expr_arena);
                 }
 
                 unified_scan_args.pre_slice = Some(state.to_slice_enum());
@@ -283,7 +338,14 @@ impl SlicePushDown {
                 Ok(lp)
             },
 
-            (DataFrameScan {df, schema, output_schema, }, Some(state))  => {
+            (
+                DataFrameScan {
+                    df,
+                    schema,
+                    output_schema,
+                },
+                Some(state),
+            ) => {
                 let df = df.slice(state.offset, state.len as usize);
                 let lp = DataFrameScan {
                     df: Arc::new(df),
@@ -291,15 +353,36 @@ impl SlicePushDown {
                     output_schema,
                 };
                 Ok(lp)
-            }
-            (Union {mut inputs, mut options }, opt_state) => {
+            },
+            (
+                Union {
+                    mut inputs,
+                    mut options,
+                },
+                opt_state,
+            ) => {
+                if let Some(existing_slice) = options.slice.as_mut() {
+                    return if let Some(outer_slice) = opt_state
+                        && let Some(combined) = combine_outer_inner_slice(
+                            outer_slice,
+                            State {
+                                offset: existing_slice.0,
+                                len: existing_slice.1 as IdxSize,
+                            },
+                        ) {
+                        *existing_slice = (combined.offset, combined.len as usize);
+                        let lp = Union { inputs, options };
+                        self.pushdown_and_continue(lp, None, lp_arena, expr_arena)
+                    } else {
+                        let lp = Union { inputs, options };
+                        self.no_pushdown_restart_opt(lp, opt_state, lp_arena, expr_arena)
+                    };
+                }
+
                 let subplan_slice: Option<State> = opt_state
                     .filter(|x| x.offset >= 0)
                     .and_then(|x| x.len.checked_add(x.offset.try_into().unwrap()))
-                    .map(|len| State {
-                        offset: 0,
-                        len,
-                    });
+                    .map(|len| State { offset: 0, len });
 
                 for input in &mut inputs {
                     let input_lp = lp_arena.take(*input);
@@ -307,17 +390,55 @@ impl SlicePushDown {
                     lp_arena.replace(*input, input_lp);
                 }
                 options.slice = opt_state.map(|x| (x.offset, x.len.try_into().unwrap()));
-                let lp = Union {inputs, options};
+                let lp = Union { inputs, options };
                 Ok(lp)
             },
-            (Join {
-                input_left,
-                input_right,
-                schema,
-                left_on,
-                right_on,
-                mut options
-            }, Some(state)) if !matches!(options.options, Some(JoinTypeOptionsIR::CrossAndFilter { .. })) => {
+            (
+                Join {
+                    input_left,
+                    input_right,
+                    schema,
+                    left_on,
+                    right_on,
+                    mut options,
+                },
+                Some(state),
+            ) if !matches!(
+                options.options,
+                Some(JoinTypeOptionsIR::CrossAndFilter { .. })
+            ) =>
+            {
+                if let Some(existing_slice) = &mut Arc::make_mut(&mut options).args.slice {
+                    return if let Some(combined) = combine_outer_inner_slice(
+                        state,
+                        State {
+                            offset: existing_slice.0,
+                            len: existing_slice.1 as IdxSize,
+                        },
+                    ) {
+                        *existing_slice = (combined.offset, combined.len as usize);
+                        let lp = Join {
+                            input_left,
+                            input_right,
+                            schema,
+                            left_on,
+                            right_on,
+                            options,
+                        };
+                        self.pushdown_and_continue(lp, None, lp_arena, expr_arena)
+                    } else {
+                        let lp = Join {
+                            input_left,
+                            input_right,
+                            schema,
+                            left_on,
+                            right_on,
+                            options,
+                        };
+                        self.no_pushdown_restart_opt(lp, Some(state), lp_arena, expr_arena)
+                    };
+                }
+
                 // first restart optimization in both inputs and get the updated LP
                 let lp_left = lp_arena.take(input_left);
                 let lp_left = self.pushdown(lp_left, None, lp_arena, expr_arena)?;
@@ -330,6 +451,7 @@ impl SlicePushDown {
                 // then assign the slice state to the join operation
 
                 let mut_options = Arc::make_mut(&mut options);
+
                 mut_options.args.slice = Some((state.offset, state.len as usize));
 
                 Ok(Join {
@@ -338,16 +460,60 @@ impl SlicePushDown {
                     schema,
                     left_on,
                     right_on,
-                    options
+                    options,
                 })
-            }
-            (GroupBy { input, keys, aggs, schema, apply, maintain_order, mut options }, Some(state)) => {
+            },
+            (
+                GroupBy {
+                    input,
+                    keys,
+                    aggs,
+                    schema,
+                    apply,
+                    maintain_order,
+                    mut options,
+                },
+                Some(state),
+            ) => {
                 // first restart optimization in inputs and get the updated LP
                 let input_lp = lp_arena.take(input);
                 let input_lp = self.pushdown(input_lp, None, lp_arena, expr_arena)?;
-                let input= lp_arena.add(input_lp);
+                let input = lp_arena.add(input_lp);
 
-                let mut_options= Arc::make_mut(&mut options);
+                if let Some(existing_slice) = &mut Arc::make_mut(&mut options).slice {
+                    return if let Some(combined) = combine_outer_inner_slice(
+                        state,
+                        State {
+                            offset: existing_slice.0,
+                            len: existing_slice.1 as IdxSize,
+                        },
+                    ) {
+                        *existing_slice = (combined.offset, combined.len as usize);
+                        let lp = GroupBy {
+                            input,
+                            keys,
+                            aggs,
+                            schema,
+                            apply,
+                            maintain_order,
+                            options,
+                        };
+                        self.pushdown_and_continue(lp, None, lp_arena, expr_arena)
+                    } else {
+                        let lp = GroupBy {
+                            input,
+                            keys,
+                            aggs,
+                            schema,
+                            apply,
+                            maintain_order,
+                            options,
+                        };
+                        self.no_pushdown_restart_opt(lp, Some(state), lp_arena, expr_arena)
+                    };
+                }
+
+                let mut_options = Arc::make_mut(&mut options);
                 mut_options.slice = Some((state.offset, state.len as usize));
 
                 Ok(GroupBy {
@@ -357,23 +523,73 @@ impl SlicePushDown {
                     schema,
                     apply,
                     maintain_order,
-                    options
+                    options,
                 })
-            }
-            (Distinct {input, mut options}, Some(state)) => {
+            },
+            (Distinct { input, mut options }, Some(state)) => {
                 // first restart optimization in inputs and get the updated LP
                 let input_lp = lp_arena.take(input);
                 let input_lp = self.pushdown(input_lp, None, lp_arena, expr_arena)?;
-                let input= lp_arena.add(input_lp);
+                let input = lp_arena.add(input_lp);
+
+                if let Some(existing_slice) = &mut options.slice {
+                    return if let Some(combined) = combine_outer_inner_slice(
+                        state,
+                        State {
+                            offset: existing_slice.0,
+                            len: existing_slice.1 as IdxSize,
+                        },
+                    ) {
+                        *existing_slice = (combined.offset, combined.len as usize);
+                        let lp = Distinct { input, options };
+                        self.pushdown_and_continue(lp, None, lp_arena, expr_arena)
+                    } else {
+                        let lp = Distinct { input, options };
+                        self.no_pushdown_restart_opt(lp, Some(state), lp_arena, expr_arena)
+                    };
+                }
+
                 options.slice = Some((state.offset, state.len as usize));
-                Ok(Distinct {
+                Ok(Distinct { input, options })
+            },
+            (
+                Sort {
                     input,
-                    options,
-                })
-            }
-            (Sort {input, by_column, slice, sort_options}, Some(state)) => {
-                // The slice argument on Sort should be inserted by slice pushdown,
-                // so it shouldn't exist yet (or be idempotently the same).
+                    by_column,
+                    mut slice,
+                    sort_options,
+                },
+                Some(state),
+            ) => {
+                if let Some(existing_slice) = &mut slice {
+                    let existing_dyn_predicate = &existing_slice.2;
+                    return if existing_dyn_predicate.is_none()
+                        && let Some(combined) = combine_outer_inner_slice(
+                            state,
+                            State {
+                                offset: existing_slice.0,
+                                len: existing_slice.1 as IdxSize,
+                            },
+                        ) {
+                        *existing_slice = (combined.offset, combined.len as usize, None);
+                        let lp = Sort {
+                            input,
+                            by_column,
+                            slice,
+                            sort_options,
+                        };
+                        self.pushdown_and_continue(lp, None, lp_arena, expr_arena)
+                    } else {
+                        let lp = Sort {
+                            input,
+                            by_column,
+                            slice,
+                            sort_options,
+                        };
+                        self.no_pushdown_restart_opt(lp, Some(state), lp_arena, expr_arena)
+                    };
+                }
+
                 let new_slice = Some((state.offset, state.len as usize, None));
                 assert!(slice.is_none() || slice == new_slice);
 
@@ -386,68 +602,17 @@ impl SlicePushDown {
                     input,
                     by_column,
                     slice: new_slice,
-                    sort_options
+                    sort_options,
                 })
-            }
-            (Slice {
-                input,
-                offset,
-                mut len
-            }, Some(outer_slice)) => {
-                let alp = lp_arena.take(input);
-
-                // Both are positive, can combine into a single slice.
-                if outer_slice.offset >= 0 && offset >= 0 {
-                    let state = State {
-                        offset: offset.checked_add(outer_slice.offset).unwrap(),
-                        len: if len as i128 > outer_slice.offset as i128 {
-                            (len - outer_slice.offset as IdxSize).min(outer_slice.len)
-                        } else {
-                            0
-                        },
-                    };
-                    return self.pushdown(alp, Some(state), lp_arena, expr_arena);
-                }
-
-                // If offset is negative the length can never be greater than it.
-                if offset < 0 {
-                    #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u64.
-                    if len as u64 > offset.unsigned_abs() as u64 {
-                        len = offset.unsigned_abs() as IdxSize;
-                    }
-                }
-
-                // Both are negative, can also combine (but not so simply).
-                if outer_slice.offset < 0 && offset < 0 {
-                    // We use 128-bit arithmetic to avoid overflows, clamping at the end.
-                    let inner_start_rel_end = offset as i128;
-                    let inner_stop_rel_end = inner_start_rel_end + len as i128;
-                    let naive_outer_start_rel_end = inner_stop_rel_end + outer_slice.offset as i128;
-                    let naive_outer_stop_rel_end = naive_outer_start_rel_end + outer_slice.len as i128;
-                    let clamped_outer_start_rel_end = naive_outer_start_rel_end.max(inner_start_rel_end);
-                    let clamped_outer_stop_rel_end = naive_outer_stop_rel_end.max(clamped_outer_start_rel_end);
-
-                    let state = State {
-                        offset: clamped_outer_start_rel_end.clamp(i64::MIN as i128, i64::MAX as i128) as i64,
-                        len: (clamped_outer_stop_rel_end - clamped_outer_start_rel_end).min(IdxSize::MAX as i128) as IdxSize,
-                    };
-                    return self.pushdown(alp, Some(state), lp_arena, expr_arena);
-                }
-
-                let inner_slice = Some(State { offset, len });
-                let lp = self.pushdown(alp, inner_slice, lp_arena, expr_arena)?;
-                let input = lp_arena.add(lp);
-                Ok(Slice {
+            },
+            (
+                Slice {
                     input,
-                    offset: outer_slice.offset,
-                    len: outer_slice.len
-                })
-            }
-            (Slice {
-                input,
-                offset,
-                mut len
-            }, None) => {
+                    offset,
+                    mut len,
+                },
+                Some(outer_slice),
+            ) => {
                 let alp = lp_arena.take(input);
 
                 // If offset is negative the length can never be greater than it.
@@ -458,98 +623,187 @@ impl SlicePushDown {
                     }
                 }
 
-                let state = Some(State {
+                if let Some(combined) =
+                    combine_outer_inner_slice(outer_slice, State { offset, len })
+                {
+                    self.pushdown(alp, Some(combined), lp_arena, expr_arena)
+                } else {
+                    let lp =
+                        self.pushdown(alp, Some(State { offset, len }), lp_arena, expr_arena)?;
+                    let input = lp_arena.add(lp);
+                    self.slice_node_in_optimized_plan = true;
+                    Ok(Slice {
+                        input,
+                        offset: outer_slice.offset,
+                        len: outer_slice.len,
+                    })
+                }
+            },
+            (
+                Slice {
+                    input,
                     offset,
-                    len
-                });
+                    mut len,
+                },
+                None,
+            ) => {
+                let alp = lp_arena.take(input);
+
+                // If offset is negative the length can never be greater than it.
+                if offset < 0 {
+                    #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u64.
+                    if len as u64 > offset.unsigned_abs() as u64 {
+                        len = offset.unsigned_abs() as IdxSize;
+                    }
+                }
+
+                let state = Some(State { offset, len });
                 self.pushdown(alp, state, lp_arena, expr_arena)
-            }
-            // [Do not pushdown] boundary
-            // here we do not pushdown.
-            // we reset the state and then start the optimization again
+            },
             m @ (Filter { .. }, _)
-            // other blocking nodes
-            | m @ (DataFrameScan {..}, _)
-            | m @ (Sort {..}, _)
-            | m @ (MapFunction {function: FunctionIR::Explode {..}, ..}, _)
-            | m @ (Cache {..}, _)
-            | m @ (Distinct {..}, _)
-            | m @ (GroupBy{..},_)
-            // blocking in streaming
-            | m @ (Join{..},_)
-            => {
+            | m @ (DataFrameScan { .. }, _)
+            | m @ (Sort { .. }, _)
+            | m @ (
+                MapFunction {
+                    function: FunctionIR::Explode { .. },
+                    ..
+                },
+                _,
+            )
+            | m @ (Cache { .. }, _)
+            | m @ (Distinct { .. }, _)
+            | m @ (GroupBy { .. }, _)
+            | m @ (Join { .. }, _) => {
                 let (lp, state) = m;
                 self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
             },
             #[cfg(feature = "pivot")]
-             m @ (MapFunction {function: FunctionIR::Unpivot {..}, ..}, _) => {
+            m @ (
+                MapFunction {
+                    function: FunctionIR::Unpivot { .. },
+                    ..
+                },
+                _,
+            ) => {
                 let (lp, state) = m;
                 self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
             },
-            // [Pushdown]
-            (MapFunction {input, function}, _) if function.allow_predicate_pd() => {
-                let lp = MapFunction {input, function};
+            (MapFunction { input, function }, _) if function.allow_predicate_pd() => {
+                let lp = MapFunction { input, function };
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
             },
-            // [NO Pushdown]
-            m @ (MapFunction {..}, _) => {
+            m @ (MapFunction { .. }, _) => {
                 let (lp, state) = m;
                 self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
-            }
-            // [Pushdown]
-            // these nodes will be pushed down.
-            // State is None, we can continue
-            m @ (Select {..}, None)
-            | m @ (HStack {..}, None)
-            | m @ (SimpleProjection {..}, _)
-            => {
+            },
+            m @ (Select { .. }, None)
+            | m @ (HStack { .. }, None)
+            | m @ (SimpleProjection { .. }, _) => {
                 let (lp, state) = m;
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
-            }
-            // there is state, inspect the projection to determine how to deal with it
-            (Select {input, expr, schema, options}, Some(_)) => {
+            },
+            (
+                Select {
+                    input,
+                    expr,
+                    schema,
+                    options,
+                },
+                Some(_),
+            ) => {
                 let maintain_errors = self.maintain_errors;
-                if can_pushdown_slice_past_projections(&expr, expr_arena, self.empty_nodes_scratch_mut(), maintain_errors).1 {
-                    let lp = Select {input, expr, schema, options};
-                    self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
-                }
-                // don't push down slice, but restart optimization
-                else {
-                    let lp = Select {input, expr, schema, options};
-                    self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
-                }
-            }
-            (HStack {input, exprs, schema, options}, _) => {
-                let maintain_errors = self.maintain_errors;
-                let (can_pushdown, can_pushdown_and_any_expr_has_column) = can_pushdown_slice_past_projections(&exprs, expr_arena, self.empty_nodes_scratch_mut(), maintain_errors);
-
-                if can_pushdown_and_any_expr_has_column || (
-                    // If the schema length is greater then an input column is being projected, so
-                    // the exprs in with_columns do not need to have an input column name.
-                    schema.len() > exprs.len() && can_pushdown
+                if can_pushdown_slice_past_projections(
+                    &expr,
+                    expr_arena,
+                    self.empty_nodes_scratch_mut(),
+                    maintain_errors,
                 )
+                .1
                 {
-                    let lp = HStack {input, exprs, schema, options};
+                    let lp = Select {
+                        input,
+                        expr,
+                        schema,
+                        options,
+                    };
                     self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
                 }
                 // don't push down slice, but restart optimization
                 else {
-                    let lp = HStack {input, exprs, schema, options};
+                    let lp = Select {
+                        input,
+                        expr,
+                        schema,
+                        options,
+                    };
                     self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
                 }
-            }
-            (HConcat {inputs, schema, options}, _) => {
+            },
+            (
+                HStack {
+                    input,
+                    exprs,
+                    schema,
+                    options,
+                },
+                _,
+            ) => {
+                let maintain_errors = self.maintain_errors;
+                let (can_pushdown, can_pushdown_and_any_expr_has_column) =
+                    can_pushdown_slice_past_projections(
+                        &exprs,
+                        expr_arena,
+                        self.empty_nodes_scratch_mut(),
+                        maintain_errors,
+                    );
+
+                if can_pushdown_and_any_expr_has_column
+                    || (
+                        // If the schema length is greater then an input column is being projected, so
+                        // the exprs in with_columns do not need to have an input column name.
+                        schema.len() > exprs.len() && can_pushdown
+                    )
+                {
+                    let lp = HStack {
+                        input,
+                        exprs,
+                        schema,
+                        options,
+                    };
+                    self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
+                }
+                // don't push down slice, but restart optimization
+                else {
+                    let lp = HStack {
+                        input,
+                        exprs,
+                        schema,
+                        options,
+                    };
+                    self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
+                }
+            },
+            (
+                HConcat {
+                    inputs,
+                    schema,
+                    options,
+                },
+                _,
+            ) => {
                 // Slice can always be pushed down for horizontal concatenation
-                let lp = HConcat {inputs, schema, options};
+                let lp = HConcat {
+                    inputs,
+                    schema,
+                    options,
+                };
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
-            }
+            },
             (lp @ Sink { .. }, _) | (lp @ SinkMultiple { .. }, _) => {
                 // Slice can always be pushed down for sinks
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
-            }
-            (catch_all, state) => {
-                self.no_pushdown_finish_opt(catch_all, state, lp_arena)
-            }
+            },
+            (catch_all, state) => self.no_pushdown_finish_opt(catch_all, state, lp_arena),
         }
     }
 

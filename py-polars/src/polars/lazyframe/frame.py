@@ -1234,14 +1234,28 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         summary = dict(zip(schema, column_metrics, strict=True))
 
         # cast by column type (numeric/bool -> float), (other -> string)
+        # for non-numeric columns, format count/null_count with thousands
+        # separator to match the formatting applied to numeric columns.
+        from polars._plr import get_thousands_separator
+
+        thousands_sep = get_thousands_separator()
+
         for c in schema:
             summary[c] = [  # type: ignore[assignment]
                 (
                     None
                     if (v is None or isinstance(v, dict))
-                    else (float(v) if (c in has_numeric_result) else str(v))
+                    else (
+                        float(v)
+                        if (c in has_numeric_result)
+                        else (
+                            f"{int(v):,}".replace(",", thousands_sep)
+                            if (thousands_sep and metric in ("count", "null_count"))
+                            else str(v)
+                        )
+                    )
                 )
-                for v in summary[c]
+                for metric, v in zip(metrics, summary[c], strict=True)
             ]
 
         # return results as a DataFrame
@@ -3237,13 +3251,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         target
-            Name of the table or the Table object representing an Iceberg table.
-
-            If a table name is provided, `catalog` must also be specified.
-
-            Note: For Local filesystem, absolute and relative paths are supported but
-            for the supported object storages - GCS, Azure and S3 full URI must be
-            provided.
+            A PyIceberg Table object, or a 'namespace.table_name' identifier string.
         mode : {'append', 'overwrite'}
             How to handle existing data.
 
@@ -3251,7 +3259,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - If 'overwrite', will replace table with new data.
         catalog
             PyIceberg catalog to load the table from if the provided `target`
-            was a table name.
+            was a table identifier.
         storage_options
             Extra options for the storage backends supported by `pyiceberg`.
             For cloud storages, this may include configurations for authentication etc.
@@ -8363,8 +8371,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             on_cols = on_columns
         elif isinstance(on_columns, pl.Series):
             on_cols = on_columns.to_frame()
+        elif isinstance(on_columns, str):
+            msg = f"invalid type for `on_columns` argument: {qualified_type_name(on_columns)!r}"
+            raise TypeError(msg)
         else:
-            on_cols = pl.Series(on_columns).to_frame()
+            on_cols = pl.Series(values=on_columns).to_frame()
 
         return self._from_pyldf(
             self._ldf.pivot(

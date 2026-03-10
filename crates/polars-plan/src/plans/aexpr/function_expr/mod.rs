@@ -385,7 +385,7 @@ pub enum IRFunctionExpr {
         offset: usize,
     },
     #[cfg(feature = "reinterpret")]
-    Reinterpret(bool),
+    Reinterpret(DataType),
     ExtendConstant,
 
     RowEncode(Vec<DataType>, RowEncodingVariant),
@@ -685,7 +685,7 @@ impl Hash for IRFunctionExpr {
             FillNullWithStrategy(strategy) => strategy.hash(state),
             GatherEvery { n, offset } => (n, offset).hash(state),
             #[cfg(feature = "reinterpret")]
-            Reinterpret(signed) => signed.hash(state),
+            Reinterpret(dtype) => dtype.hash(state),
             ExtendConstant => {},
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),

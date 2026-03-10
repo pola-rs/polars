@@ -661,6 +661,30 @@ def test_list_agg_after_slice() -> None:
     assert all(grouped_result.to_series().to_list())
 
 
+def test_list_eval_categorical_min_max_25906() -> None:
+    s = pl.Series(
+        "a",
+        [["c", "a", "b"], ["z", None, "m"], [None, None]],
+        dtype=pl.List(pl.Categorical),
+    )
+    assert_series_equal(
+        s.list.agg(pl.element().min()),
+        pl.Series("a", ["a", "m", None], dtype=pl.Categorical),
+    )
+    assert_series_equal(
+        s.list.agg(pl.element().max()),
+        pl.Series("a", ["c", "z", None], dtype=pl.Categorical),
+    )
+    assert_series_equal(
+        s.list.agg(pl.element().arg_min()),
+        pl.Series("a", [1, 2, None], dtype=pl.get_index_type()),
+    )
+    assert_series_equal(
+        s.list.agg(pl.element().arg_max()),
+        pl.Series("a", [0, 0, None], dtype=pl.get_index_type()),
+    )
+
+
 def test_list_eval_groupby_sample_25796() -> None:
     df = pl.DataFrame({"g": [10, 10], "x": [[1, 1], [1, 1]]})
     out = df.group_by("g").agg(pl.col("x").sample(n=2).list.eval(pl.element()))
