@@ -34,6 +34,48 @@ fn sanitize(name: &str) -> Option<&str> {
     }
 }
 
+fn series_to_pyarrow_list(s: &polars_core::prelude::Series) -> Option<String> {
+    if s.is_empty() || s.len() > 100 {
+        return None;
+    }
+    let mut list_repr = String::with_capacity(s.len() * 5);
+    list_repr.push('[');
+    for av in s.iter() {
+        match av {
+            AnyValue::Boolean(v) => {
+                let s = if v { "True" } else { "False" };
+                write!(list_repr, "{s},").unwrap();
+            },
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::Datetime(v, tu, tz) => {
+                let dtm = to_py_datetime(v, &tu, tz);
+                write!(list_repr, "{dtm},").unwrap();
+            },
+            #[cfg(feature = "dtype-date")]
+            AnyValue::Date(v) => {
+                write!(list_repr, "to_py_date({v}),").unwrap();
+            },
+            AnyValue::String(s) => {
+                let _ = sanitize(s)?;
+                write!(list_repr, "{av},").unwrap();
+            },
+            // Hard to sanitize
+            AnyValue::Binary(_) | AnyValue::List(_) => return None,
+            #[cfg(feature = "dtype-array")]
+            AnyValue::Array(_, _) => return None,
+            #[cfg(feature = "dtype-struct")]
+            AnyValue::Struct(_, _, _) => return None,
+            _ => {
+                write!(list_repr, "{av},").unwrap();
+            },
+        }
+    }
+    // pop last comma
+    list_repr.pop();
+    list_repr.push(']');
+    Some(list_repr)
+}
+
 // convert to a pyarrow expression that can be evaluated with pythons eval
 pub fn predicate_to_pa(
     predicate: Node,
@@ -55,45 +97,10 @@ pub fn predicate_to_pa(
             Some(format!("pa.compute.field('{name}')"))
         },
         AExpr::Literal(LiteralValue::Series(s)) => {
-            if !args.allow_literal_series || s.is_empty() || s.len() > 100 {
+            if !args.allow_literal_series {
                 None
             } else {
-                let mut list_repr = String::with_capacity(s.len() * 5);
-                list_repr.push('[');
-                for av in s.iter() {
-                    match av {
-                        AnyValue::Boolean(v) => {
-                            let s = if v { "True" } else { "False" };
-                            write!(list_repr, "{s},").unwrap();
-                        },
-                        #[cfg(feature = "dtype-datetime")]
-                        AnyValue::Datetime(v, tu, tz) => {
-                            let dtm = to_py_datetime(v, &tu, tz);
-                            write!(list_repr, "{dtm},").unwrap();
-                        },
-                        #[cfg(feature = "dtype-date")]
-                        AnyValue::Date(v) => {
-                            write!(list_repr, "to_py_date({v}),").unwrap();
-                        },
-                        AnyValue::String(s) => {
-                            let _ = sanitize(s)?;
-                            write!(list_repr, "{av},").unwrap();
-                        },
-                        // Hard to sanitize
-                        AnyValue::Binary(_) | AnyValue::List(_) => return None,
-                        #[cfg(feature = "dtype-array")]
-                        AnyValue::Array(_, _) => return None,
-                        #[cfg(feature = "dtype-struct")]
-                        AnyValue::Struct(_, _, _) => return None,
-                        _ => {
-                            write!(list_repr, "{av},").unwrap();
-                        },
-                    }
-                }
-                // pop last comma
-                list_repr.pop();
-                list_repr.push(']');
-                Some(list_repr)
+                series_to_pyarrow_list(s)
             }
         },
         AExpr::Literal(lv) => {
@@ -120,8 +127,9 @@ pub fn predicate_to_pa(
                 },
                 #[cfg(feature = "dtype-datetime")]
                 AnyValue::Datetime(v, tu, tz) => Some(to_py_datetime(v, &tu, tz)),
+                AnyValue::List(_) => None,
                 // Hard to sanitize
-                AnyValue::Binary(_) | AnyValue::List(_) => None,
+                AnyValue::Binary(_) => None,
                 #[cfg(feature = "dtype-array")]
                 AnyValue::Array(_, _) => None,
                 #[cfg(feature = "dtype-struct")]
@@ -163,9 +171,20 @@ pub fn predicate_to_pa(
             ..
         } => {
             let col = predicate_to_pa(input.first()?.node(), expr_arena, args)?;
-            let mut args = args;
-            args.allow_literal_series = true;
-            let values = predicate_to_pa(input.get(1)?.node(), expr_arena, args)?;
+            let rhs_node = input.get(1)?.node();
+
+            // Handle List scalar literal directly (new IR from parse_into_expression),
+            // otherwise fall through to predicate_to_pa for Series literals etc.
+            let values = if let AExpr::Literal(lv) = expr_arena.get(rhs_node)
+                && let Some(av) = lv.to_any_value()
+                && let AnyValue::List(s) = av.as_borrowed()
+            {
+                series_to_pyarrow_list(&s)?
+            } else {
+                let mut args = args;
+                args.allow_literal_series = true;
+                predicate_to_pa(rhs_node, expr_arena, args)?
+            };
 
             Some(format!("({col}).isin({values})"))
         },
