@@ -744,6 +744,12 @@ class LazyFrame:
         self._comparison_error("<=")
 
     def __contains__(self, key: str) -> bool:
+        issue_warning(
+            "checking membership of a LazyFrame using `in` requires resolving its schema,"
+            " which is a potentially expensive operation. Use `key in LazyFrame.collect_schema()`"
+            " to check membership without this warning.",
+            category=PerformanceWarning,
+        )
         return key in self.collect_schema()
 
     def __copy__(self) -> LazyFrame:
