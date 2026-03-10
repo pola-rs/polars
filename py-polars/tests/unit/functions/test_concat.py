@@ -5,6 +5,7 @@ import pytest
 
 import polars as pl
 from polars._typing import ConcatMethod
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal
 
 
@@ -457,3 +458,17 @@ def test_concat_align_associativity_26788(how: ConcatMethod, n_dfs: int) -> None
 
     full = pl.concat(dfs, how=how)
     assert_frame_equal(chained_from_left, full)
+
+
+def test_concat_horizontal_zero_width_height_mismatch_26876() -> None:
+    q = pl.concat(
+        [
+            pl.LazyFrame(height=5),
+            pl.LazyFrame(height=3),
+        ],
+        how="horizontal",
+        strict=True,
+    )
+
+    with pytest.raises(ShapeError):
+        q.collect()
