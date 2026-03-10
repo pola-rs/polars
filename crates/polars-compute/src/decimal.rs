@@ -457,7 +457,7 @@ fn divrem_256_128(lo: u128, hi: u128, d: u128) -> Option<(u128, u128)> {
 /// Returns whether the given Decimal128 fits in the given precision.
 #[inline]
 pub fn dec128_fits(x: i128, p: usize) -> bool {
-    x.abs() < POW10_I128[p]
+    (-POW10_I128[p] < x) & (x < POW10_I128[p])
 }
 
 #[inline]

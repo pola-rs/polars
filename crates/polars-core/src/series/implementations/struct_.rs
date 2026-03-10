@@ -4,7 +4,9 @@ use arrow::bitmap::Bitmap;
 
 use super::*;
 use crate::chunked_array::StructChunked;
-use crate::prelude::row_encode::{_get_rows_encoded_ca_unordered, encode_rows_unordered};
+use crate::prelude::row_encode::{
+    _get_rows_encoded_ca, _get_rows_encoded_ca_unordered, encode_rows_unordered,
+};
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 
@@ -50,8 +52,22 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
         build_hasher: PlSeedableRandomStateQuality,
         buf: &mut Vec<u64>,
     ) -> PolarsResult<()> {
-        _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[self.0.clone().into_column()])?
+        // TODO: don't use row-encoding here.
+        if self.0.dtype().contains_categoricals() {
+            // The unordered encoding uses physicals for categoricals which depends on insertion order,
+            // so we use the ordered one here.
+            _get_rows_encoded_ca(
+                PlSmallStr::EMPTY,
+                &[self.0.clone().into_column()],
+                &[false],
+                &[false],
+                true,
+            )?
             .vec_hash(build_hasher, buf)
+        } else {
+            _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[self.0.clone().into_column()])?
+                .vec_hash(build_hasher, buf)
+        }
     }
 
     fn vec_hash_combine(
@@ -59,8 +75,22 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
         build_hasher: PlSeedableRandomStateQuality,
         hashes: &mut [u64],
     ) -> PolarsResult<()> {
-        _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[self.0.clone().into_column()])?
+        // TODO: don't use row-encoding here.
+        if self.0.dtype().contains_categoricals() {
+            // The unordered encoding uses physicals for categoricals which depends on insertion order,
+            // so we use the ordered one here.
+            _get_rows_encoded_ca(
+                PlSmallStr::EMPTY,
+                &[self.0.clone().into_column()],
+                &[false],
+                &[false],
+                true,
+            )?
             .vec_hash_combine(build_hasher, hashes)
+        } else {
+            _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[self.0.clone().into_column()])?
+                .vec_hash_combine(build_hasher, hashes)
+        }
     }
 
     #[cfg(feature = "algorithm_group_by")]

@@ -39,6 +39,7 @@ use arrow::datatypes::{ArrowSchemaRef, Metadata};
 use arrow::io::ipc::read::{self, get_row_count};
 use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
+use polars_utils::bool::UnsafeBool;
 use polars_utils::pl_str::PlRefStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -53,12 +54,21 @@ use crate::shared::{ArrowReader, finish_reader};
 #[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct IpcScanOptions;
+pub struct IpcScanOptions {
+    /// Read StatisticsFlags from the record batch custom metadata.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub record_batch_statistics: bool,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub checked: UnsafeBool,
+}
 
 #[expect(clippy::derivable_impls)]
 impl Default for IpcScanOptions {
     fn default() -> Self {
-        Self {}
+        Self {
+            record_batch_statistics: false,
+            checked: Default::default(),
+        }
     }
 }
 

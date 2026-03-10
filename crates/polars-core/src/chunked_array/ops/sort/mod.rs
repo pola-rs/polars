@@ -13,9 +13,9 @@ use std::cmp::Ordering;
 pub(crate) use arg_sort::arg_sort_row_fmt;
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::buffer::Buffer;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use compare_inner::NonNull;
+use polars_buffer::Buffer;
 use rayon::prelude::*;
 pub use slice::*;
 
@@ -411,7 +411,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         let arr = ca.downcast_as_array().clone();
 
         let (views, buffers, validity, total_bytes_len, total_buffer_len) = arr.into_inner();
-        let mut views = views.make_mut();
+        let mut views = views.to_vec();
 
         let (partitioned_part, validity) = partition_nulls(&mut views, validity, options);
 
@@ -822,6 +822,14 @@ pub fn _broadcast_bools(n_cols: usize, values: &mut Vec<bool>) {
 /// Panics if `columns` is empty.
 pub fn arg_sort(columns: &[Column], mut sort_options: SortMultipleOptions) -> PolarsResult<IdxCa> {
     assert!(!columns.is_empty());
+
+    for column in columns {
+        if column.dtype().is_object() {
+            polars_bail!(
+                InvalidOperation: "column '{}' has a dtype of '{}', which does not support sorting", column.name(), column.dtype()
+            )
+        }
+    }
 
     if let [c] = columns {
         Ok(c.arg_sort(SortOptions {

@@ -1,23 +1,28 @@
 from __future__ import annotations
 
+import base64
 import io
+import re
 import subprocess
 import sys
 from collections import OrderedDict
+from datetime import datetime
 from pathlib import Path
 from threading import Thread
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError, SchemaError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import ParallelStrategy
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
@@ -36,9 +41,9 @@ def test_scan_parquet(parquet_file_path: Path) -> None:
 
 
 def test_scan_parquet_local_with_async(
-    monkeypatch: Any, foods_parquet_path: Path
+    plmonkeypatch: PlMonkeyPatch, foods_parquet_path: Path
 ) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     pl.scan_parquet(foods_parquet_path.relative_to(Path.cwd())).head(1).collect()
 
 
@@ -214,10 +219,12 @@ def test_row_index_schema_parquet(parquet_file_path: Path) -> None:
 
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 @pytest.mark.write_disk
-def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
+def test_parquet_is_in_statistics(
+    plmonkeypatch: PlMonkeyPatch, capfd: Any, tmp_path: Path
+) -> None:
     tmp_path.mkdir(exist_ok=True)
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     df = pl.DataFrame({"idx": pl.arange(0, 100, eager=True)}).with_columns(
         (pl.col("idx") // 25).alias("part")
@@ -245,10 +252,12 @@ def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) 
 
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 @pytest.mark.write_disk
-def test_parquet_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
+def test_parquet_statistics(
+    plmonkeypatch: PlMonkeyPatch, capfd: Any, tmp_path: Path
+) -> None:
     tmp_path.mkdir(exist_ok=True)
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     df = pl.DataFrame({"idx": pl.arange(0, 100, eager=True)}).with_columns(
         (pl.col("idx") // 25).alias("part")
@@ -414,10 +423,10 @@ def test_nested_slice_12480(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk
 def test_scan_deadlock_rayon_spawn_from_async_15172(
-    monkeypatch: Any, tmp_path: Path
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
-    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "1")
     path = tmp_path / "data.parquet"
 
     df = pl.Series("x", [1]).to_frame()
@@ -1079,7 +1088,7 @@ def test_parquet_prefiltering_inserted_column_23268() -> None:
 
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_scan_parquet_prefilter_with_cast(
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     f = io.BytesIO()
@@ -1104,7 +1113,7 @@ def test_scan_parquet_prefilter_with_cast(
         include_file_paths="file_path",
     ).filter(pl.col("b") - 1 == pl.lit(-1, dtype=pl.Int16))
 
-    with monkeypatch.context() as cx:
+    with plmonkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
         capfd.readouterr()
         out = q.collect()
@@ -1192,8 +1201,8 @@ def test_prefilter_with_n_rows_23790() -> None:
     )
 
 
-def test_scan_parquet_filter_index_panic_23849(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("POLARS_PARQUET_DECODE_TARGET_VALUES_PER_THREAD", "5")
+def test_scan_parquet_filter_index_panic_23849(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_PARQUET_DECODE_TARGET_VALUES_PER_THREAD", "5")
     num_rows = 3
     num_cols = 5
 
@@ -1210,8 +1219,8 @@ def test_scan_parquet_filter_index_panic_23849(monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.write_disk
-def test_sink_large_rows_25834(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_BYTES", "1")
+def test_sink_large_rows_25834(tmp_path: Path, plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_BYTES", "1")
     df = pl.select(idx=pl.repeat(1, 20_000), bytes=pl.lit(b"AAAAA"))
 
     df.write_parquet(tmp_path / "single.parquet")
@@ -1228,3 +1237,655 @@ def test_sink_large_rows_25834(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         partition_by="idx",
     )
     assert_frame_equal(pl.scan_parquet(tmp_path / "partitioned").collect(), df)
+
+
+def test_scan_parquet_prefilter_is_between_non_column_input_26283() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame(
+        {
+            "timestamp": pl.datetime_range(
+                start=datetime(2026, 1, 1),
+                end=datetime(2026, 1, 1, 0, 5, 0),
+                interval="1s",
+                eager=True,
+            ),
+        },
+        schema={"timestamp": pl.Datetime("us")},
+        height=301,
+    )
+
+    df.write_parquet(f)
+    f.seek(0)
+
+    q = pl.scan_parquet(f).filter(
+        pl.col("timestamp")
+        .dt.date()
+        .cast(pl.Datetime("us"))
+        .is_between(datetime(2026, 1, 1), datetime(2026, 1, 1))
+    )
+
+    assert_frame_equal(q.collect(), df)
+
+
+def test_sink_parquet_arrow_schema() -> None:
+    df = pl.DataFrame({"x": [0, 1, None]})
+
+    f = io.BytesIO()
+    df.lazy().sink_parquet(
+        f,
+        arrow_schema=pa.schema(
+            [
+                pa.field(
+                    "x",
+                    pa.int64(),
+                    metadata={"custom_field_md_key": "custom_field_md_value"},
+                )
+            ],
+        ),
+    )
+
+    f.seek(0)
+
+    assert (
+        pq.read_schema(f).field("x").metadata[b"custom_field_md_key"]
+        == b"custom_field_md_value"
+    )
+
+    f = io.BytesIO()
+
+    df.lazy().sink_parquet(
+        f,
+        arrow_schema=pa.schema(
+            [pa.field("x", pa.int64())],
+            metadata={"custom_schema_md_key": "custom_schema_md_value"},
+        ),
+        metadata={"custom_footer_md_key": "custom_footer_md_value"},
+    )
+
+    f.seek(0)
+
+    assert pq.read_schema(f).metadata == {
+        b"custom_schema_md_key": b"custom_schema_md_value"
+    }
+    assert (
+        pq.read_metadata(f).metadata[b"custom_footer_md_key"]
+        == b"custom_footer_md_value"
+    )
+    assert (
+        pl.read_parquet_metadata(f)["custom_footer_md_key"] == "custom_footer_md_value"
+    )
+    assert pa.ipc.read_schema(
+        pa.BufferReader(base64.b64decode(pq.read_metadata(f).metadata[b"ARROW:schema"]))
+    ).metadata == {b"custom_schema_md_key": b"custom_schema_md_value"}
+
+    with pytest.raises(
+        InvalidOperationError,
+        match=re.escape(
+            "to_arrow() conversion failed: cannot convert (Int64) to (Field { "
+            'name: "x", dtype: Int32, is_nullable: true, metadata: None })'
+        ),
+    ):
+        df.lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [pa.field("x", pa.int32())],
+            ),
+        )
+
+    with pytest.raises(
+        SchemaError,
+        match="nullable is false but array contained 1 NULL",
+    ):
+        df.lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [pa.field("x", pa.int64(), nullable=False)],
+            ),
+        )
+
+    with pytest.raises(
+        SchemaError,
+        match=r"schema names in arrow_schema differ",
+    ):
+        df.lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [pa.field("z", pa.int64())],
+            ),
+        )
+
+    with pytest.raises(
+        SchemaError,
+        match="schema names in arrow_schema differ",
+    ):
+        df.lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema([]),
+        )
+
+    with pytest.raises(
+        SchemaError,
+        match="schema names in arrow_schema differ",
+    ):
+        df.lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [
+                    pa.field(
+                        "x",
+                        pa.int64(),
+                    ),
+                    pa.field(
+                        "y",
+                        pa.int64(),
+                    ),
+                ],
+            ),
+        )
+
+
+def test_sink_parquet_arrow_schema_logical_types() -> None:
+    from tests.unit.datatypes.test_extension import PythonTestExtension
+
+    categorical_dtype = pl.Categorical("fbd482eb-4301-4b80-a0fb-7ec05cec4fe4")
+
+    assert categorical_dtype != pl.Categorical(pl.Categories.random())
+
+    df = pl.DataFrame(
+        {
+            "categorical": pl.Series(
+                ["A"],
+                dtype=categorical_dtype,
+            ),
+            "datetime": pl.Series([datetime(2026, 1, 1)], dtype=pl.Datetime("ns")),
+            "extension[str]": pl.Series(["A"], dtype=PythonTestExtension(pl.String)),
+        }
+    )
+
+    with pytest.raises(
+        InvalidOperationError,
+        match=re.escape(
+            "to_arrow() conversion failed: cannot convert "
+            "(Categorical('fbd482eb-4301-4b80-a0fb-7ec05cec4fe4')) to (Field "
+            '{ name: "categorical", dtype: Null, is_nullable: true'
+        ),
+    ):
+        df.select("categorical").lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [pa.field("categorical", pa.null())],
+            ),
+        )
+
+    f = io.BytesIO()
+
+    df.select("categorical").lazy().sink_parquet(
+        f,
+        arrow_schema=pa.schema(
+            [
+                pa.field(
+                    "categorical",
+                    pa.dictionary(
+                        pa.uint32(),
+                        pa.large_string(),
+                    ),
+                )
+            ],
+        ),
+    )
+
+    assert pl.scan_parquet(f).collect_schema() == {"categorical": categorical_dtype}
+
+    with pytest.raises(
+        InvalidOperationError,
+        match=re.escape(
+            "to_arrow() conversion failed: cannot convert (Datetime('ns')) to "
+            '(Field { name: "datetime", dtype: Null, is_nullable: true, metadata: None })'
+        ),
+    ):
+        df.select("datetime").lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [pa.field("datetime", pa.null())],
+            ),
+        )
+
+    df.select("datetime").lazy().sink_parquet(
+        io.BytesIO(),
+        arrow_schema=pa.schema(
+            [pa.field("datetime", pa.timestamp("ns"))],
+        ),
+    )
+
+    def build_pyarrow_extension_type(name: str) -> Any:
+        class PythonTestExtensionPyarrow(pa.ExtensionType):  # type: ignore[misc]
+            def __init__(self, data_type: pa.DataType) -> None:
+                super().__init__(data_type, name)
+
+            def __arrow_ext_serialize__(self) -> bytes:
+                return b""
+
+            @classmethod
+            def __arrow_ext_deserialize__(
+                cls, storage_type: Any, serialized: Any
+            ) -> Any:
+                return PythonTestExtensionPyarrow(storage_type[0].type)
+
+        return PythonTestExtensionPyarrow(pa.large_string())
+
+    with pytest.raises(
+        InvalidOperationError,
+        match=r'cannot convert.* to .*Extension\(ExtensionType { name: "name", inner: LargeUtf8',
+    ):
+        df.select("extension[str]").lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [pa.field("extension[str]", build_pyarrow_extension_type("name"))],
+            ),
+        )
+
+    df.select("extension[str]").lazy().sink_parquet(
+        io.BytesIO(),
+        arrow_schema=pa.schema(
+            [
+                pa.field(
+                    "extension[str]",
+                    build_pyarrow_extension_type("testing.python_test_extension"),
+                )
+            ],
+        ),
+    )
+
+
+def test_sink_parquet_arrow_schema_nested_types() -> None:
+    df = pl.DataFrame(
+        {
+            "list[struct{a:int64}]": pl.Series(
+                [[{"a": 1}, {"a": None}]], dtype=pl.List(pl.Struct({"a": pl.Int64}))
+            ),
+            "array[int64, 2]": pl.Series([[0, None]], dtype=pl.Array(pl.Int64, 2)),
+        }
+    )
+
+    with pytest.raises(SchemaError, match="struct field names mismatch"):
+        df.select("list[struct{a:int64}]").lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [
+                    pa.field(
+                        "list[struct{a:int64}]",
+                        pa.large_list(pa.struct([])),
+                    )
+                ],
+            ),
+        )
+
+    with pytest.raises(SchemaError, match="struct field names mismatch"):
+        df.select("list[struct{a:int64}]").lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [
+                    pa.field(
+                        "list[struct{a:int64}]",
+                        pa.large_list(
+                            pa.struct(
+                                [pa.field("a", pa.int64()), pa.field("b", pa.int64())]
+                            )
+                        ),
+                    )
+                ],
+            ),
+        )
+
+    with pytest.raises(
+        SchemaError,
+        match="nullable is false but array contained 1 NULL",
+    ):
+        df.select("list[struct{a:int64}]").lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [
+                    pa.field(
+                        "list[struct{a:int64}]",
+                        pa.large_list(
+                            pa.struct([pa.field("a", pa.int64(), nullable=False)])
+                        ),
+                    )
+                ],
+            ),
+        )
+
+    df.select("list[struct{a:int64}]").lazy().sink_parquet(
+        io.BytesIO(),
+        arrow_schema=pa.schema(
+            [
+                pa.field(
+                    "list[struct{a:int64}]",
+                    pa.large_list(pa.struct([pa.field("a", pa.int64())])),
+                )
+            ],
+        ),
+    )
+
+    with pytest.raises(SchemaError, match="fixed-size list width mismatch"):
+        df.select("array[int64, 2]").lazy().sink_parquet(
+            io.BytesIO(),
+            arrow_schema=pa.schema(
+                [
+                    pa.field(
+                        "array[int64, 2]",
+                        pa.list_(pa.int64(), 0),
+                    )
+                ],
+            ),
+        )
+
+    df.select("array[int64, 2]").lazy().sink_parquet(
+        io.BytesIO(),
+        arrow_schema=pa.schema(
+            [
+                pa.field(
+                    "array[int64, 2]",
+                    pa.list_(pa.int64(), 2),
+                )
+            ],
+        ),
+    )
+
+
+def test_sink_parquet_writes_strings_as_largeutf8_by_default() -> None:
+    df = pl.DataFrame({"string": "A", "binary": [b"B"]})
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("string", pa.large_string()),
+            pa.field("binary", pa.large_binary()),
+        ]
+    )
+
+    f = io.BytesIO()
+
+    df.lazy().sink_parquet(f)
+
+    f.seek(0)
+
+    assert pq.read_schema(f) == arrow_schema
+
+    f.seek(0)
+
+    assert_frame_equal(pl.scan_parquet(f).collect(), df)
+
+
+def test_sink_parquet_arrow_schema_view_types() -> None:
+    df = pl.DataFrame(
+        {
+            "large_utf8": "A",
+            "large_binary": [b"B"],
+            "utf8view": "C",
+            "binaryview": [b"D"],
+        }
+    )
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("large_utf8", pa.large_string()),
+            pa.field("large_binary", pa.large_binary()),
+            pa.field("utf8view", pa.string_view()),
+            pa.field("binaryview", pa.binary_view()),
+        ]
+    )
+
+    f = io.BytesIO()
+
+    df.lazy().sink_parquet(f, arrow_schema=arrow_schema)
+
+    f.seek(0)
+
+    assert pq.read_schema(f) == arrow_schema
+
+    f.seek(0)
+
+    assert_frame_equal(pl.scan_parquet(f).collect(), df)
+
+
+def test_sink_parquet_arrow_schema_fixed_size_binary() -> None:
+    with pytest.raises(ComputeError, match="bytes at index 1 had mismatching length 2"):
+        pl.DataFrame({"binary": [b"A", b"BB"]}).select("binary").lazy().sink_parquet(
+            io.BytesIO(), arrow_schema=pa.schema([pa.field("binary", pa.binary(1))])
+        )
+
+    df = pl.DataFrame({"binary": [b"A", b"B", None]})
+
+    arrow_schema = pa.schema([pa.field("binary", pa.binary(1))])
+
+    f = io.BytesIO()
+
+    df.select("binary").lazy().sink_parquet(f, arrow_schema=arrow_schema)
+
+    f.seek(0)
+
+    assert pq.read_schema(f) == arrow_schema
+
+    assert_frame_equal(pl.scan_parquet(f).collect(), df)
+
+
+@pytest.mark.xfail(
+    reason="""
+unimplemented: NULLs in list values array corresponding to masked out rows.
+ref https://github.com/pola-rs/polars/issues/26600.
+""",
+)
+def test_sink_parquet_arrow_schema_sliced_non_nullable_list() -> None:
+    schema = {
+        "list": pl.List(pl.Int64),
+        "fixed_size_list": pl.Array(pl.Int64, 1),
+    }
+
+    df = pl.DataFrame(
+        {
+            "list": [[None], [1], [2]],
+            "fixed_size_list": [[None], [1], [2]],
+        },
+        schema=schema,
+    )
+
+    df = df.select(pl.when(pl.Series([False, True, True])).then(pl.all()))
+
+    arrow_schema = pa.schema(
+        [
+            pa.field(
+                "list", pa.large_list(pa.field("item", pa.int64(), nullable=False))
+            ),
+            pa.field(
+                "fixed_size_list",
+                pa.list_(pa.field("item", pa.int64(), nullable=False), 1),
+            ),
+        ]
+    )
+
+    f = io.BytesIO()
+
+    df.lazy().sink_parquet(f, arrow_schema=arrow_schema)
+
+    f.seek(0)
+
+    assert pq.read_schema(f) == arrow_schema
+
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.scan_parquet(f).collect(),
+        pl.DataFrame(
+            {
+                "list": [[1], [2]],
+                "fixed_size_list": [[1], [2]],
+            },
+            schema=schema,
+        ),
+    )
+
+
+def test_sink_parquet_pyarrow_filter_string_type_26435() -> None:
+    df = pl.DataFrame({"string": ["A", None, "B"], "int": [0, 1, 2]})
+
+    f = io.BytesIO()
+
+    df.write_parquet(f)
+
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.DataFrame(pq.read_table(f, filters=[("int", "=", 0)])),
+        pl.DataFrame({"string": "A", "int": 0}),
+    )
+
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.DataFrame(pq.read_table(f, filters=[("string", "=", "A")])),
+        pl.DataFrame({"string": "A", "int": 0}),
+    )
+
+
+def test_scan_parquet_temporal_lit_comparison_skip_batch_24095_25731(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    df = pl.DataFrame(
+        {
+            "datetime[ns]": pl.Series(
+                [
+                    "2025-12-31 23:59:59.999999999",
+                    "2025-12-31 23:59:59.999999999",
+                    "2026-01-01 00:00:00.000000000",
+                    "2026-01-01 00:00:00.000000999",
+                    "2026-01-01 00:00:00.000001000",
+                    "2026-01-01 00:00:00.000001999",
+                    "2026-01-01 00:00:00.000002000",
+                    "2026-01-01 00:00:00.000999999",
+                    "2026-01-01 00:00:00.001000000",
+                    "2026-01-01 00:00:00.001000000",
+                ]
+            ).str.strptime(dtype=pl.Datetime("ns"), format="%Y-%m-%d %H:%M:%S%.f"),
+            "duration[ns]": pl.Series(
+                [-1, -1, 0, 999, 1000, 1999, 2000, -1, -1, -1]
+            ).cast(pl.Duration("ns")),
+        }
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=2)
+
+    q = pl.scan_parquet(f).filter(
+        pl.col("datetime[ns]") == pl.lit(datetime(2026, 1, 1))
+    )
+
+    capfd.readouterr()
+    out = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "reading 1 / 5 row groups" in capture
+
+    assert_frame_equal(
+        out.select(pl.col("datetime[ns]").dt.to_string()),
+        pl.DataFrame(
+            {
+                "datetime[ns]": pl.Series(
+                    [
+                        "2026-01-01 00:00:00.000000000",
+                        "2026-01-01 00:00:00.000000999",
+                    ]
+                )
+            }
+        ),
+    )
+
+    q = pl.scan_parquet(f).filter(
+        pl.col("datetime[ns]").is_between(
+            pl.lit(datetime(2026, 1, 1)),
+            pl.lit(datetime(2026, 1, 1, microsecond=1)),
+        )
+    )
+
+    capfd.readouterr()
+    out = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "reading 2 / 5 row groups" in capture
+
+    assert_frame_equal(
+        out.select(pl.col("datetime[ns]").dt.to_string()),
+        pl.DataFrame(
+            {
+                "datetime[ns]": pl.Series(
+                    [
+                        "2026-01-01 00:00:00.000000000",
+                        "2026-01-01 00:00:00.000000999",
+                        "2026-01-01 00:00:00.000001000",
+                        "2026-01-01 00:00:00.000001999",
+                    ]
+                )
+            }
+        ),
+    )
+
+    capfd.readouterr()
+
+    q = pl.scan_parquet(f).filter(
+        pl.col("datetime[ns]").is_between(
+            pl.lit(datetime(2026, 1, 1)),
+            pl.lit(datetime(2026, 1, 1, microsecond=1)),
+        )
+    )
+
+    capfd.readouterr()
+
+    out = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "reading 2 / 5 row groups" in capture
+
+    assert_frame_equal(
+        out.select(pl.col("duration[ns]").dt.to_string()),
+        pl.DataFrame(
+            {
+                "duration[ns]": pl.Series(
+                    [
+                        "PT0S",
+                        "PT0.000000999S",
+                        "PT0.000001S",
+                        "PT0.000001999S",
+                    ]
+                )
+            }
+        ),
+    )
+
+    capfd.readouterr()
+
+
+def test_sink_parquet_pipe_with_schema_26777() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    q = df.lazy().pipe_with_schema(lambda lf, _: lf.sink_parquet(f, lazy=True))
+
+    assert q.collect().shape == (0, 0)
+
+    assert_frame_equal(pl.scan_parquet(f).collect(), df)
+
+
+def test_sink_parquet_lazy_and_collect() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    q = df.lazy().sink_parquet(f, lazy=True)
+
+    assert q.collect().shape == (0, 0)
+
+    assert_frame_equal(pl.scan_parquet(f).collect(), df)

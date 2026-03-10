@@ -10,7 +10,6 @@ pub type ToPython = Arc<dyn for<'a> Fn(&'a dyn Any) -> PyResult<Py<PyAny>> + Sen
 
 #[derive(Clone)]
 pub struct FromPythonConvertRegistry {
-    pub partition_target_cb_result: FromPython,
     pub file_provider_result: FromPython,
     pub series: FromPython,
     pub df: FromPython,

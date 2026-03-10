@@ -20,6 +20,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from tests.conftest import PlMonkeyPatch
+
 SCAN_AND_WRITE_FUNCS = [
     (pl.scan_ipc, pl.DataFrame.write_ipc),
     (pl.scan_parquet, pl.DataFrame.write_parquet),
@@ -149,7 +151,6 @@ def test_multiscan_projection(
             new_projection,
             new_projection[::-1],
         ]:
-            print(projection)
             assert_frame_equal(
                 scan(multiscan_path, **args)
                 .collect(engine="streaming")
@@ -291,7 +292,7 @@ def test_multiscan_row_index(
     )
 
     with pytest.raises(
-        pl.exceptions.DuplicateError, match="'index' has more than one occurrence"
+        pl.exceptions.DuplicateError, match="duplicate column name index"
     ):
         scan(g).with_row_index().with_row_index().collect()
 
@@ -560,7 +561,7 @@ def test_many_files(scan: Any, write: Any) -> None:
     )
 
 
-def test_deadlock_stop_requested(monkeypatch: Any) -> None:
+def test_deadlock_stop_requested(plmonkeypatch: PlMonkeyPatch) -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
@@ -570,8 +571,8 @@ def test_deadlock_stop_requested(monkeypatch: Any) -> None:
     f = io.BytesIO()
     df.write_parquet(f, row_group_size=1)
 
-    monkeypatch.setenv("POLARS_MAX_THREADS", "2")
-    monkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "1")
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "2")
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "1")
 
     left_fs = [io.BytesIO(f.getbuffer()) for _ in range(10)]
     right_fs = [io.BytesIO(f.getbuffer()) for _ in range(10)]

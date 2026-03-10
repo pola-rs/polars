@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use arrow::datatypes::{
@@ -143,12 +144,6 @@ pub enum DataType {
     Unknown(UnknownKind),
 }
 
-impl Default for DataType {
-    fn default() -> Self {
-        DataType::Unknown(UnknownKind::Any)
-    }
-}
-
 pub trait AsRefDataType {
     fn as_ref_dtype(&self) -> &DataType;
 }
@@ -207,6 +202,32 @@ impl DataType {
             DataType::UInt64
         }
     };
+
+    pub fn pretty_format(&self) -> String {
+        match self {
+            #[cfg(feature = "dtype-struct")]
+            Self::Struct(fields) => {
+                let formatted_fields = fields
+                    .iter()
+                    .map(|field| format!("{}: {}", field.name, field.dtype.pretty_format()))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                format!("struct {{{}}}", formatted_fields)
+            },
+            Self::List(inner_dtype) => {
+                let formatted_dtype = inner_dtype.pretty_format();
+                format!("list[{}]", formatted_dtype)
+            },
+            #[cfg(feature = "dtype-array")]
+            Self::Array(inner_dtype, size) => {
+                let formatted_dtype = inner_dtype.pretty_format();
+                format!("array[{}, {}]", formatted_dtype, size)
+            },
+            _ => {
+                format!("{}", self)
+            },
+        }
+    }
 
     pub fn value_within_range(&self, other: AnyValue) -> bool {
         use DataType::*;
@@ -633,7 +654,7 @@ impl DataType {
         use DataType::*;
         match self {
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) | Enum(_, _) => true,
+            Categorical(_, _) => true,
             List(inner) => inner.contains_categoricals(),
             #[cfg(feature = "dtype-array")]
             Array(inner, _) => inner.contains_categoricals(),
@@ -641,6 +662,20 @@ impl DataType {
             Struct(fields) => fields
                 .iter()
                 .any(|field| field.dtype.contains_categoricals()),
+            _ => false,
+        }
+    }
+
+    pub fn contains_enums(&self) -> bool {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "dtype-categorical")]
+            Enum(_, _) => true,
+            List(inner) => inner.contains_enums(),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, _) => inner.contains_enums(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields.iter().any(|field| field.dtype.contains_enums()),
             _ => false,
         }
     }
@@ -682,6 +717,23 @@ impl DataType {
             D::Array(inner, _) => inner.contains_unknown(),
             #[cfg(feature = "dtype-struct")]
             D::Struct(fields) => fields.iter().any(|field| field.dtype.contains_unknown()),
+            _ => false,
+        }
+    }
+
+    pub fn contains_dtype_recursive(&self, dtype: &DataType) -> bool {
+        if self == dtype {
+            return true;
+        }
+        use DataType as D;
+        match self {
+            D::List(inner) => inner.contains_dtype_recursive(dtype),
+            #[cfg(feature = "dtype-array")]
+            D::Array(inner, _) => inner.contains_dtype_recursive(dtype),
+            #[cfg(feature = "dtype-struct")]
+            D::Struct(fields) => fields
+                .iter()
+                .any(|field| field.dtype.contains_dtype_recursive(dtype)),
             _ => false,
         }
     }
@@ -794,7 +846,17 @@ impl DataType {
 
     /// Convert to an Arrow Field.
     pub fn to_arrow_field(&self, name: PlSmallStr, compat_level: CompatLevel) -> ArrowField {
-        let metadata = match self {
+        let field = ArrowField::new(name, self.to_arrow(compat_level), true);
+
+        if let Some(metadata) = self.to_arrow_field_metadata() {
+            field.with_metadata(metadata)
+        } else {
+            field
+        }
+    }
+
+    pub fn to_arrow_field_metadata(&self) -> Option<Metadata> {
+        match self {
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(fcats, _map) => {
                 let cats = fcats.categories();
@@ -835,14 +897,6 @@ impl DataType {
                 PlSmallStr::from_static(MAINTAIN_PL_TYPE),
             )])),
             _ => None,
-        };
-
-        let field = ArrowField::new(name, self.to_arrow(compat_level), true);
-
-        if let Some(metadata) = metadata {
-            field.with_metadata(metadata)
-        } else {
-            field
         }
     }
 
@@ -865,7 +919,7 @@ impl DataType {
             Float64 => Scalar::from(f64::INFINITY),
             #[cfg(feature = "dtype-time")]
             Time => Scalar::new(Time, AnyValue::Time(NS_IN_DAY - 1)),
-            dt => polars_bail!(ComputeError: "cannot determine upper bound for dtype `{}`", dt),
+            dt => polars_bail!(ComputeError: "cannot determine upper bound for dtype `{dt}`"),
         };
         Ok(v)
     }
@@ -1122,6 +1176,19 @@ impl DataType {
     pub fn is_numeric(&self) -> bool {
         self.is_integer() || self.is_float() || self.is_decimal()
     }
+
+    pub fn numeric_to_unsigned_bit_repr(&self) -> Option<DataType> {
+        use DataType::*;
+
+        Some(match self {
+            Int8 | UInt8 => UInt8,
+            Int16 | UInt16 | Float16 => UInt16,
+            Int32 | UInt32 | Float32 => UInt32,
+            Int64 | UInt64 | Float64 => UInt64,
+            Int128 | UInt128 => UInt128,
+            _ => return None,
+        })
+    }
 }
 
 impl Display for DataType {
@@ -1369,6 +1436,153 @@ impl CompatLevel {
     #[doc(hidden)]
     pub fn get_level(&self) -> u16 {
         self.0
+    }
+
+    /// Whether this compat level uses Utf8View/BinaryView types.
+    pub fn uses_binview_types(&self) -> bool {
+        *self != CompatLevel::oldest()
+    }
+}
+
+impl DataType {
+    pub fn visit_with(&self, mut visitor_fn: impl FnMut(&DataType)) {
+        self.try_visit_with(|dtype| {
+            visitor_fn(dtype);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    pub fn try_visit_with(
+        &self,
+        mut visitor_fn: impl FnMut(&DataType) -> PolarsResult<()>,
+    ) -> PolarsResult<()> {
+        DataType::try_mutate_with(Cow::Borrowed(self), |dtype| {
+            visitor_fn(dtype.as_ref()).map(|_| dtype)
+        })
+        .map(|_| ())
+    }
+
+    pub fn try_mutate_with<'d>(
+        dtype: Cow<'d, DataType>,
+        mut visitor_fn: impl FnMut(Cow<'d, DataType>) -> PolarsResult<Cow<'d, DataType>>,
+    ) -> PolarsResult<Cow<'d, DataType>> {
+        DtypeVisitor {
+            visitor_fn: &mut visitor_fn,
+        }
+        .visit_rec(dtype)
+    }
+}
+
+struct DtypeVisitor<'d, 'f> {
+    visitor_fn: &'f mut dyn FnMut(Cow<'d, DataType>) -> PolarsResult<Cow<'d, DataType>>,
+}
+
+impl<'d, 'f> DtypeVisitor<'d, 'f> {
+    fn visit_rec(&mut self, dtype: Cow<'d, DataType>) -> PolarsResult<Cow<'d, DataType>> {
+        let dtype = match dtype.as_ref() {
+            DataType::List(_) => match dtype {
+                Cow::Owned(DataType::List(mut inner)) => {
+                    self.visit_ref_mut(inner.as_mut())?;
+                    Cow::Owned(DataType::List(inner))
+                },
+                Cow::Borrowed(DataType::List(inner)) => {
+                    let ret = self.visit_rec(Cow::Borrowed(inner.as_ref()))?;
+
+                    if std::ptr::eq(ret.as_ref(), inner.as_ref()) {
+                        dtype
+                    } else {
+                        Cow::Owned(DataType::List(Box::new(ret.into_owned())))
+                    }
+                },
+                _ => unreachable!(),
+            },
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(..) => match dtype {
+                Cow::Owned(DataType::Array(mut inner, width)) => {
+                    self.visit_ref_mut(inner.as_mut())?;
+                    Cow::Owned(DataType::Array(inner, width))
+                },
+                Cow::Borrowed(DataType::Array(inner, width)) => {
+                    let ret = self.visit_rec(Cow::Borrowed(inner.as_ref()))?;
+
+                    if std::ptr::eq(ret.as_ref(), inner.as_ref()) {
+                        dtype
+                    } else {
+                        Cow::Owned(DataType::Array(Box::new(ret.into_owned()), *width))
+                    }
+                },
+                _ => unreachable!(),
+            },
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => match dtype {
+                Cow::Owned(DataType::Struct(mut fields)) => {
+                    for f in &mut fields {
+                        self.visit_ref_mut(&mut f.dtype)?;
+                    }
+
+                    Cow::Owned(DataType::Struct(fields))
+                },
+                Cow::Borrowed(DataType::Struct(fields)) => {
+                    let mut new_fields = vec![];
+
+                    for (i, f) in fields.iter().enumerate() {
+                        let ret = self.visit_rec(Cow::Borrowed(f.dtype()))?;
+
+                        if std::ptr::eq(ret.as_ref(), f.dtype()) && new_fields.is_empty() {
+                            continue;
+                        }
+
+                        if new_fields.is_empty() {
+                            new_fields.reserve_exact(fields.len());
+                            new_fields.extend(fields.iter().take(i).cloned());
+                        }
+
+                        new_fields.push(Field::new(f.name().clone(), ret.into_owned()));
+                    }
+
+                    if new_fields.is_empty() {
+                        dtype
+                    } else {
+                        assert_eq!(new_fields.len(), fields.len());
+                        Cow::Owned(DataType::Struct(new_fields))
+                    }
+                },
+                _ => unreachable!(),
+            },
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(..) => match dtype {
+                Cow::Owned(DataType::Extension(ext, mut storage)) => {
+                    self.visit_ref_mut(storage.as_mut())?;
+                    Cow::Owned(DataType::Extension(ext, storage))
+                },
+                Cow::Borrowed(DataType::Extension(ext, storage)) => {
+                    let ret = self.visit_rec(Cow::Borrowed(storage.as_ref()))?;
+
+                    if std::ptr::eq(ret.as_ref(), storage.as_ref()) {
+                        dtype
+                    } else {
+                        Cow::Owned(DataType::Extension(ext.clone(), Box::new(ret.into_owned())))
+                    }
+                },
+                _ => unreachable!(),
+            },
+            _ => {
+                debug_assert!(!dtype.is_nested());
+                dtype
+            },
+        };
+
+        (self.visitor_fn)(dtype)
+    }
+
+    /// `dtype` will be set to an unspecified value if this returns an error.
+    fn visit_ref_mut(&mut self, dtype: &mut DataType) -> PolarsResult<()> {
+        *dtype = self
+            .visit_rec(Cow::Owned(std::mem::replace(dtype, DataType::Null)))?
+            .into_owned();
+
+        Ok(())
     }
 }
 

@@ -40,15 +40,16 @@ where
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        let sum = unsafe {
-            RollingAggWindowNoNulls::update(&mut self.sum, start, end).unwrap_unchecked()
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        unsafe {
+            RollingAggWindowNoNulls::update(&mut self.sum, new_start, new_end);
         };
-        if start == end {
-            None
-        } else {
-            Some(sum / NumCast::from(end - start).unwrap())
-        }
+    }
+
+    fn get_agg(&self, idx: usize) -> Option<T> {
+        let sum = RollingAggWindowNoNulls::get_agg(&self.sum, idx).unwrap();
+        (self.sum.start != self.sum.end)
+            .then(|| sum / NumCast::from(self.sum.end - self.sum.start).unwrap())
     }
 
     fn slice_len(&self) -> usize {
@@ -90,13 +91,19 @@ impl<
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        let sum = unsafe { RollingAggWindowNulls::update(&mut self.sum, start, end) };
-        let len = end - start;
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        unsafe { RollingAggWindowNulls::update(&mut self.sum, new_start, new_end) };
+    }
+
+    fn get_agg(&self, idx: usize) -> Option<T> {
+        let sum = RollingAggWindowNulls::get_agg(&self.sum, idx);
+        let len = self.sum.end - self.sum.start;
         if self.sum.null_count == len {
             None
         } else {
-            sum.map(|sum| sum / NumCast::from(end - start - self.sum.null_count).unwrap())
+            sum.map(|sum| {
+                sum / NumCast::from(self.sum.end - self.sum.start - self.sum.null_count).unwrap()
+            })
         }
     }
 

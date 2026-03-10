@@ -94,6 +94,7 @@ pub(super) fn convert_functions(
                 B::Slice => IB::Slice,
                 B::Head => IB::Head,
                 B::Tail => IB::Tail,
+                B::Get(null_on_oob) => IB::Get(null_on_oob),
             })
         },
         #[cfg(feature = "dtype-categorical")]
@@ -272,6 +273,8 @@ pub(super) fn convert_functions(
                 S::SplitExact { n, inclusive } => IS::SplitExact { n, inclusive },
                 #[cfg(feature = "dtype-struct")]
                 S::SplitN(v) => IS::SplitN(v),
+                #[cfg(feature = "regex")]
+                S::SplitRegex { inclusive, strict } => IS::SplitRegex { inclusive, strict },
                 #[cfg(feature = "temporal")]
                 S::Strptime(data_type, strptime_options) => {
                     let is_column_independent = is_column_independent_aexpr(e[0].node(), ctx.arena);
@@ -805,6 +808,8 @@ pub(super) fn convert_functions(
             descending,
             nulls_last,
         },
+        F::MinBy => I::MinBy,
+        F::MaxBy => I::MaxBy,
         F::Product => I::Product,
         #[cfg(feature = "rank")]
         F::Rank { options, seed } => I::Rank { options, seed },
@@ -873,6 +878,8 @@ pub(super) fn convert_functions(
         F::Round { decimals, mode } => I::Round { decimals, mode },
         #[cfg(feature = "round_series")]
         F::RoundSF { digits } => I::RoundSF { digits },
+        #[cfg(feature = "round_series")]
+        F::Truncate { decimals } => I::Truncate { decimals },
         #[cfg(feature = "round_series")]
         F::Floor => I::Floor,
         #[cfg(feature = "round_series")]
@@ -960,7 +967,7 @@ pub(super) fn convert_functions(
                 seed,
             }
         },
-        F::SetSortedFlag(is_sorted) => I::SetSortedFlag(is_sorted),
+        F::SetSortedFlag(sorted) => I::SetSortedFlag(sorted),
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags,
@@ -1038,7 +1045,61 @@ pub(super) fn convert_functions(
         },
         F::GatherEvery { n, offset } => I::GatherEvery { n, offset },
         #[cfg(feature = "reinterpret")]
-        F::Reinterpret(v) => I::Reinterpret(v),
+        F::Reinterpret(signed, dtype) => {
+            let input_dtype = e[0].dtype(ctx.schema, ctx.arena)?;
+
+            polars_ensure!(
+                signed.is_some() != dtype.is_some(),
+                ComputeError:
+                "reinterpret requires exactly one of `signed` or `dtype` to be specified"
+            );
+
+            polars_ensure!(
+                input_dtype.is_numeric(),
+                InvalidOperation:
+                "cannot reinterpret non-numeric input dtype '{input_dtype:?}'. \
+                Consider casting instead."
+            );
+
+            let target_dtype = if let Some(signed) = signed {
+                if signed {
+                    match input_dtype {
+                        DataType::UInt8 => DataType::Int8,
+                        DataType::UInt16 => DataType::Int16,
+                        DataType::UInt32 => DataType::Int32,
+                        DataType::UInt64 => DataType::Int64,
+                        DataType::UInt128 => DataType::Int128,
+                        _ => input_dtype.clone(),
+                    }
+                } else {
+                    match input_dtype {
+                        DataType::Int8 => DataType::UInt8,
+                        DataType::Int16 => DataType::UInt16,
+                        DataType::Int32 => DataType::UInt32,
+                        DataType::Int64 => DataType::UInt64,
+                        DataType::Int128 => DataType::UInt128,
+                        _ => input_dtype.clone(),
+                    }
+                }
+            } else if let Some(target_dtype) = dtype {
+                match (
+                    input_dtype.numeric_to_unsigned_bit_repr(),
+                    target_dtype.numeric_to_unsigned_bit_repr(),
+                ) {
+                    (Some(l), Some(r)) if l == r => {},
+                    _ => polars_bail!(
+                        InvalidOperation:
+                        "cannot reinterpret from {input_dtype:?} to {target_dtype:?}"
+                    ),
+                };
+
+                target_dtype
+            } else {
+                unreachable!();
+            };
+
+            I::Reinterpret(target_dtype)
+        },
         F::ExtendConstant => {
             polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'value' must be a scalar value");
             polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");

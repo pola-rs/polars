@@ -1,15 +1,13 @@
 #[cfg(feature = "csv")]
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
     CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
-    read_until_start_and_infer_schema,
 };
 use polars_io::path_utils::expand_paths;
-use polars_io::utils::compression::CompressedReader;
 use polars_io::{HiveOptions, RowIndex};
-use polars_utils::mmap::MemSlice;
+use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::slice_enum::Slice;
 
@@ -24,6 +22,7 @@ pub struct LazyCsvReader {
     read_options: CsvReadOptions,
     cloud_options: Option<CloudOptions>,
     include_file_paths: Option<PlSmallStr>,
+    missing_columns_policy: Option<MissingColumnsPolicy>,
 }
 
 #[cfg(feature = "csv")]
@@ -49,6 +48,7 @@ impl LazyCsvReader {
             read_options: Default::default(),
             cloud_options: Default::default(),
             include_file_paths: None,
+            missing_columns_policy: None,
         }
     }
 
@@ -253,13 +253,29 @@ impl LazyCsvReader {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
+        const ASSUMED_COMPRESSION_RATIO: usize = 4;
         let n_threads = self.read_options.n_threads;
 
-        let infer_schema = |bytes: MemSlice| {
-            let mut reader = CompressedReader::try_new(bytes)?;
+        let infer_schema = |bytes: Buffer<u8>| {
+            use polars_io::prelude::streaming::read_until_start_and_infer_schema;
+            use polars_io::utils::compression::ByteSourceReader;
 
-            let (inferred_schema, _) =
-                read_until_start_and_infer_schema(&self.read_options, None, None, &mut reader)?;
+            let bytes_len = bytes.len();
+            let mut reader = ByteSourceReader::from_memory(bytes)?;
+            let decompressed_size_hint = Some(
+                bytes_len
+                    * reader
+                        .compression()
+                        .map_or(1, |_| ASSUMED_COMPRESSION_RATIO),
+            );
+
+            let (inferred_schema, _) = read_until_start_and_infer_schema(
+                &self.read_options,
+                None,
+                decompressed_size_hint,
+                None,
+                &mut reader,
+            )?;
 
             PolarsResult::Ok(inferred_schema)
         };
@@ -268,27 +284,31 @@ impl LazyCsvReader {
             ScanSources::Paths(paths) => {
                 // TODO: Path expansion should happen when converting to the IR
                 // https://github.com/pola-rs/polars/issues/17634
-                let paths = expand_paths(
+
+                use polars_io::pl_async::get_runtime;
+
+                let paths = get_runtime().block_on(expand_paths(
                     &paths[..],
                     self.glob(),
                     &[], // hidden_file_prefix
                     &mut self.cloud_options,
-                )?;
+                ))?;
 
                 let Some(path) = paths.first() else {
                     polars_bail!(ComputeError: "no paths specified for this reader");
                 };
 
-                infer_schema(MemSlice::from_file(&polars_utils::open_file(
-                    path.as_std_path(),
-                )?)?)?
+                let file = polars_utils::open_file(path.as_std_path())?;
+                let mmap = MMapSemaphore::new_from_file(&file)?;
+                infer_schema(Buffer::from_owner(mmap))?
             },
             ScanSources::Files(files) => {
                 let Some(file) = files.first() else {
                     polars_bail!(ComputeError: "no buffers specified for this reader");
                 };
 
-                infer_schema(MemSlice::from_file(file)?)?
+                let mmap = MMapSemaphore::new_from_file(file)?;
+                infer_schema(Buffer::from_owner(mmap))?
             },
             ScanSources::Buffers(buffers) => {
                 let Some(buffer) = buffers.first() else {
@@ -316,6 +336,12 @@ impl LazyCsvReader {
         self.include_file_paths = include_file_paths;
         self
     }
+
+    #[must_use]
+    pub fn with_missing_columns_policy(mut self, policy: Option<MissingColumnsPolicy>) -> Self {
+        self.missing_columns_policy = policy;
+        self
+    }
 }
 
 impl LazyFileListReader for LazyCsvReader {
@@ -324,6 +350,8 @@ impl LazyFileListReader for LazyCsvReader {
         let rechunk = self.rechunk();
         let row_index = self.row_index().cloned();
         let pre_slice = self.n_rows().map(|len| Slice::Positive { offset: 0, len });
+
+        let missing_columns_policy = self.missing_columns_policy.unwrap_or_default();
 
         let lf: LazyFrame = DslBuilder::scan_csv(
             self.sources,
@@ -342,7 +370,7 @@ impl LazyFileListReader for LazyCsvReader {
                 row_index,
                 pre_slice,
                 cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
-                missing_columns_policy: MissingColumnsPolicy::Raise,
+                missing_columns_policy,
                 extra_columns_policy: ExtraColumnsPolicy::Raise,
                 include_file_paths: self.include_file_paths,
                 deletion_files: None,

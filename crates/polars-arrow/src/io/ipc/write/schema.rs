@@ -1,3 +1,4 @@
+use arrow_format::ipc::KeyValue;
 use arrow_format::ipc::planus::Builder;
 
 use super::super::IpcField;
@@ -18,7 +19,7 @@ pub fn schema_to_bytes(
         version: arrow_format::ipc::MetadataVersion::V5,
         header: Some(arrow_format::ipc::MessageHeader::Schema(Box::new(schema))),
         body_length: 0,
-        custom_metadata: None, // todo: allow writing custom metadata
+        custom_metadata: None,
     };
     let mut builder = Builder::new();
     let footer_data = builder.finish(&message, None);
@@ -42,23 +43,40 @@ pub fn serialize_schema(
         .map(|(field, ipc_field)| serialize_field(field, ipc_field))
         .collect::<Vec<_>>();
 
-    let custom_metadata = custom_schema_metadata.and_then(|custom_meta| {
-        let as_kv = custom_meta
-            .iter()
-            .map(|(key, val)| key_value(key.clone().into_string(), val.clone().into_string()))
-            .collect::<Vec<_>>();
-        (!as_kv.is_empty()).then_some(as_kv)
-    });
+    let mut custom_metadata: Vec<KeyValue> =
+        Vec::with_capacity(schema.metadata().len() + custom_schema_metadata.map_or(0, |x| x.len()));
+
+    for (k, v) in schema.metadata() {
+        custom_metadata.push(KeyValue {
+            key: Some(k.to_string()),
+            value: Some(v.to_string()),
+        });
+    }
+
+    if let Some(custom_schema_metadata) = custom_schema_metadata {
+        for (k, v) in custom_schema_metadata {
+            let kv = KeyValue {
+                key: Some(k.to_string()),
+                value: Some(v.to_string()),
+            };
+
+            if let Some(i) = schema.metadata().keys().position(|x| x == k) {
+                custom_metadata[i] = kv
+            } else {
+                custom_metadata.push(kv);
+            }
+        }
+    }
 
     arrow_format::ipc::Schema {
         endianness,
         fields: Some(fields),
-        custom_metadata,
+        custom_metadata: (!custom_metadata.is_empty()).then_some(custom_metadata),
         features: None, // todo add this one
     }
 }
 
-fn key_value(key: impl Into<String>, val: impl Into<String>) -> arrow_format::ipc::KeyValue {
+pub fn key_value(key: impl Into<String>, val: impl Into<String>) -> arrow_format::ipc::KeyValue {
     arrow_format::ipc::KeyValue {
         key: Some(key.into()),
         value: Some(val.into()),

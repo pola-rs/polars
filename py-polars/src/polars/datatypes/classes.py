@@ -17,10 +17,17 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyCategories
     from polars._plr import dtype_str_repr as _dtype_str_repr
 
+
 import polars.datatypes.classes as pldt
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Callable, Iterable, Iterator, Sequence
+
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
 
     from polars import Series
     from polars._typing import (
@@ -143,7 +150,7 @@ class DataType(metaclass=DataTypeClass):
         return self.__class__.__name__
 
     @classmethod
-    def base_type(cls) -> DataTypeClass:
+    def base_type(cls) -> type[Self]:
         """
         Return this DataType's fundamental/root type class.
 
@@ -1004,7 +1011,20 @@ class Enum(DataType):
         return f"{class_name}(categories={self.categories.to_list()!r})"
 
     def union(self, other: Enum) -> Enum:
-        """Union of two Enums."""
+        """
+        Union of two Enums.
+
+        .. deprecated:: 1.38
+            `Enum.union()` is deprecated and will be removed in version 2.0.
+            Enums are ordered sets and union cannot preserve both orderings.
+        """
+        from polars._utils.deprecation import issue_deprecation_warning
+
+        issue_deprecation_warning(
+            "`Enum.union()` is deprecated and will be removed in version 2.0. "
+            "Enums are ordered sets and union cannot preserve both orderings.",
+            version="1.38",
+        )
         return Enum(
             F.concat((self.categories, other.categories)).unique(maintain_order=True)
         )

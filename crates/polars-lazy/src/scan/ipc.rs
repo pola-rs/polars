@@ -1,4 +1,4 @@
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::ipc::IpcScanOptions;
 use polars_utils::pl_path::PlRefPath;

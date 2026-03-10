@@ -19,6 +19,19 @@ pub(super) fn process_join(
     mut acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
     streaming: bool,
 ) -> PolarsResult<IR> {
+    if options.args.slice.is_some() {
+        let lp = IR::Join {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            schema,
+            options,
+        };
+
+        return opt.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
+    }
+
     let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
     let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
 
@@ -702,8 +715,27 @@ fn try_rewrite_join_type(
                 let mut join_output_key_selectors = PlHashMap::with_capacity(right_on.len());
 
                 for (l, r) in left_on.iter().zip(right_on) {
+                    // Unwrap any Cast expressions that may have been inserted for type coercion.
+                    // For non full-joins coalesce can still insert casts into the key exprs.
+                    let l_node = match expr_arena.get(l.node()) {
+                        AExpr::Cast {
+                            expr,
+                            dtype: _,
+                            options: _,
+                        } if should_coalesce => *expr,
+                        _ => l.node(),
+                    };
+                    let r_node = match expr_arena.get(r.node()) {
+                        AExpr::Cast {
+                            expr,
+                            dtype: _,
+                            options: _,
+                        } if should_coalesce => *expr,
+                        _ => r.node(),
+                    };
+
                     let (AExpr::Column(lhs_input_key), AExpr::Column(rhs_input_key)) =
-                        (expr_arena.get(l.node()), expr_arena.get(r.node()))
+                        (expr_arena.get(l_node), expr_arena.get(r_node))
                     else {
                         // `should_coalesce() == true` should guarantee all are columns.
                         unreachable!()
@@ -816,8 +848,27 @@ fn try_rewrite_join_type(
                     PlHashSet::with_capacity(right_on.len());
 
                 for (l, r) in left_on.iter().zip(right_on) {
+                    // Unwrap any Cast expressions that may have been inserted for type coercion.
+                    // For non full-joins coalesce can still insert casts into the key exprs.
+                    let l_node = match expr_arena.get(l.node()) {
+                        AExpr::Cast {
+                            expr,
+                            dtype: _,
+                            options: _,
+                        } if should_coalesce => *expr,
+                        _ => l.node(),
+                    };
+                    let r_node = match expr_arena.get(r.node()) {
+                        AExpr::Cast {
+                            expr,
+                            dtype: _,
+                            options: _,
+                        } if should_coalesce => *expr,
+                        _ => r.node(),
+                    };
+
                     let (AExpr::Column(lhs_input_key), AExpr::Column(rhs_input_key)) =
-                        (expr_arena.get(l.node()), expr_arena.get(r.node()))
+                        (expr_arena.get(l_node), expr_arena.get(r_node))
                     else {
                         // `should_coalesce() == true` should guarantee all columns.
                         unreachable!()
@@ -1032,20 +1083,17 @@ fn take_iejoin_compatible_filters(
                     None,
                 )?;
 
-                macro_rules! is_supported_type {
-                    ($node:expr) => {{
-                        let node = $node;
-                        let field = expr_arena
-                            .get(node)
-                            .to_field(&ToFieldContext::new(expr_arena, output_schema))?;
-                        let dtype = field.dtype();
-
-                        !dtype.is_nested() && dtype.to_physical().is_primitive_numeric()
-                    }};
-                }
+                let is_supported_type = |node: Node| -> PolarsResult<bool> {
+                    let field = expr_arena
+                        .get(node)
+                        .to_field(&ToFieldContext::new(expr_arena, output_schema))?;
+                    let dtype = field.dtype();
+                    let phys = dtype.to_physical();
+                    Ok(!dtype.is_nested() && phys.is_primitive_numeric())
+                };
 
                 // IEJoin only supports numeric.
-                if !is_supported_type!(*left) || !is_supported_type!(*right) {
+                if !is_supported_type(*left)? || !is_supported_type(*right)? {
                     return Ok(None);
                 }
 

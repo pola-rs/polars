@@ -6,7 +6,7 @@ fn create_ctx() -> SQLContext {
     let a = Column::new("a".into(), (1..10i64).map(|i| i / 100).collect::<Vec<_>>());
     let b = Column::new("b".into(), 1..10i64);
     let df = DataFrame::new_infer_height(vec![a, b]).unwrap().lazy();
-    let mut ctx = SQLContext::new();
+    let ctx = SQLContext::new();
     ctx.register("df", df);
     ctx
 }
@@ -216,7 +216,7 @@ fn prepare_compound_join_context() -> SQLContext {
         "c" => [1, 3, 4, 5, 7]
     }
     .unwrap();
-    let mut ctx = SQLContext::new();
+    let ctx = SQLContext::new();
     ctx.register("df1", df1.lazy());
     ctx.register("df2", df2.lazy());
     ctx.register("df3", df3.lazy());

@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::query_result::QueryResult;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_expr_depth_limit};
 use polars_plan::plans::{IR, IRPlan};
 use polars_plan::prelude::AExpr;
@@ -189,13 +190,23 @@ impl StreamingQuery {
                 let morsels_sent = node_metrics.morsels_sent;
                 let max_sent = node_metrics.largest_morsel_sent;
 
+                let io_total_active_time = Duration::from_nanos(node_metrics.io_total_active_ns);
+                let io_total_bytes_requested = node_metrics.io_total_bytes_requested;
+                let io_total_bytes_received = node_metrics.io_total_bytes_received;
+                let io_total_bytes_sent = node_metrics.io_total_bytes_sent;
+
                 lines.push(
                     (total_time, format!(
                         "{name}: tot({total_time:.2?}), \
                                  poll({poll_time:.2?}, n={total_polls}, max={max_poll_time:.2?}, stolen={perc_stolen:.1}%), \
                                  update({update_time:.2?}, n={total_updates}, max={max_update_time:.2?}), \
                                  recv(row={rows_received}, morsel={morsels_received}, max={max_received}), \
-                                 sent(row={rows_sent}, morsel={morsels_sent}, max={max_sent})"))
+                                 sent(row={rows_sent}, morsel={morsels_sent}, max={max_sent}), \
+                                 io(\
+                                    total_active_time={io_total_active_time:.2?}, \
+                                    total_bytes_requested={io_total_bytes_requested}, \
+                                    total_bytes_received={io_total_bytes_received}, \
+                                    total_bytes_sent={io_total_bytes_sent})"))
                 );
 
                 total_query_ns += total_ns;
@@ -235,30 +246,6 @@ impl StreamingQuery {
                     .remove(phys_to_graph[root_phys_node])
                     .unwrap_or_else(DataFrame::empty),
             )),
-        }
-    }
-}
-
-pub enum QueryResult {
-    Single(DataFrame),
-    /// Collected to multiple in-memory sinks
-    Multiple(Vec<DataFrame>),
-}
-
-impl QueryResult {
-    pub fn unwrap_single(self) -> DataFrame {
-        use QueryResult::*;
-        match self {
-            Single(df) => df,
-            Multiple(_) => panic!(),
-        }
-    }
-
-    pub fn unwrap_multiple(self) -> Vec<DataFrame> {
-        use QueryResult::*;
-        match self {
-            Single(_) => panic!(),
-            Multiple(dfs) => dfs,
         }
     }
 }

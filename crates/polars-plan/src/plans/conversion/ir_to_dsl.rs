@@ -1,3 +1,5 @@
+use polars_utils::format_pl_smallstr;
+
 use super::*;
 
 /// converts a node from the AExpr arena to Expr
@@ -105,25 +107,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 }
                 .into()
             },
-            IRAggExpr::MinBy { input, by } => {
-                let input_exp = node_to_expr(input, expr_arena);
-                let by_exp = node_to_expr(by, expr_arena);
-                AggExpr::MinBy {
-                    input: Arc::new(input_exp),
-                    by: Arc::new(by_exp),
-                }
-                .into()
-            },
-
-            IRAggExpr::MaxBy { input, by } => {
-                let input_exp = node_to_expr(input, expr_arena);
-                let by_exp = node_to_expr(by, expr_arena);
-                AggExpr::MaxBy {
-                    input: Arc::new(input_exp),
-                    by: Arc::new(by_exp),
-                }
-                .into()
-            },
 
             IRAggExpr::Mean(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
@@ -161,9 +144,16 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 }
                 .into()
             },
-            IRAggExpr::Implode(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Implode(Arc::new(exp)).into()
+            IRAggExpr::Implode {
+                input,
+                maintain_order,
+            } => {
+                let exp = node_to_expr(input, expr_arena);
+                AggExpr::Implode {
+                    input: Arc::new(exp),
+                    maintain_order,
+                }
+                .into()
             },
             IRAggExpr::Quantile {
                 expr,
@@ -220,6 +210,17 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 predicate: Arc::new(p),
                 truthy: Arc::new(t),
                 falsy: Arc::new(f),
+            }
+        },
+        AExpr::AnonymousAgg {
+            input,
+            fmt_str,
+            function: _,
+        } => {
+            let inputs = expr_irs_to_exprs(input.clone(), expr_arena);
+            Expr::Display {
+                inputs,
+                fmt_str: fmt_str.clone(),
             }
         },
         AExpr::AnonymousFunction {
@@ -300,7 +301,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             length: Arc::new(node_to_expr(length, expr_arena)),
         },
         AExpr::Len => Expr::Len,
-        AExpr::AnonymousStreamingAgg { .. } => unreachable!("should not be hit"),
     }
 }
 
@@ -369,6 +369,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::Slice => B::Slice,
                 IB::Head => B::Head,
                 IB::Tail => B::Tail,
+                IB::Get(null_on_oob) => B::Get(null_on_oob),
             })
         },
         #[cfg(feature = "dtype-categorical")]
@@ -530,6 +531,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     B::Strptime(dtype.into(), strptime_options)
                 },
                 IB::Split(v) => B::Split(v),
+                #[cfg(feature = "regex")]
+                IB::SplitRegex { inclusive, strict } => B::SplitRegex { inclusive, strict },
                 #[cfg(feature = "dtype-decimal")]
                 IB::ToDecimal { scale } => B::ToDecimal { scale },
                 #[cfg(feature = "nightly")]
@@ -950,6 +953,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             descending,
             nulls_last,
         },
+        IF::MinBy => F::MinBy,
+        IF::MaxBy => F::MaxBy,
         IF::Product => F::Product,
         #[cfg(feature = "rank")]
         IF::Rank { options, seed } => F::Rank { options, seed },
@@ -1011,6 +1016,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Round { decimals, mode } => F::Round { decimals, mode },
         #[cfg(feature = "round_series")]
         IF::RoundSF { digits } => F::RoundSF { digits },
+        #[cfg(feature = "round_series")]
+        IF::Truncate { decimals } => F::Truncate { decimals },
         #[cfg(feature = "round_series")]
         IF::Floor => F::Floor,
         #[cfg(feature = "round_series")]
@@ -1170,7 +1177,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         IF::GatherEvery { n, offset } => F::GatherEvery { n, offset },
         #[cfg(feature = "reinterpret")]
-        IF::Reinterpret(v) => F::Reinterpret(v),
+        IF::Reinterpret(dtype) => F::Reinterpret(None, Some(dtype)),
         IF::ExtendConstant => F::ExtendConstant,
 
         IF::RowEncode(_, v) => F::RowEncode(v),
@@ -1179,6 +1186,12 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             fs.into_iter().map(|f| (f.name, f.dtype.into())).collect(),
             v,
         ),
+        IF::DynamicPred { pred } => {
+            return Expr::Display {
+                inputs: input,
+                fmt_str: Box::new(format_pl_smallstr!("{pred:?}")),
+            };
+        },
     };
 
     Expr::Function { input, function }

@@ -1,4 +1,5 @@
 use polars_core::series::IsSorted;
+use polars_plan::plans::AExprSorted;
 
 use super::*;
 
@@ -26,7 +27,7 @@ fn test_drop() -> PolarsResult<()> {
         "a" => [1],
     ]?
     .lazy()
-    .drop(by_name(["a"], true))
+    .drop(by_name(["a"], true, false))
     .collect()?;
     assert_eq!(out.width(), 0);
     Ok(())
@@ -35,6 +36,8 @@ fn test_drop() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "dynamic_group_by")]
 fn test_special_group_by_schemas() -> PolarsResult<()> {
+    use polars_plan::plans::AExprSorted;
+
     let df = df![
         "a" => [1, 2, 3, 4, 5],
         "b" => [1, 2, 3, 4, 5],
@@ -43,7 +46,7 @@ fn test_special_group_by_schemas() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .with_column(col("a").set_sorted_flag(IsSorted::Ascending))
+        .with_column(col("a").set_sorted_flag(AExprSorted::default().with_desc(Some(false))))
         .rolling(
             col("a"),
             [],
@@ -68,7 +71,7 @@ fn test_special_group_by_schemas() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .with_column(col("a").set_sorted_flag(IsSorted::Ascending))
+        .with_column(col("a").set_sorted_flag(AExprSorted::default().with_desc(Some(false))))
         .group_by_dynamic(
             col("a"),
             [],
@@ -144,7 +147,7 @@ fn test_sorted_path() -> PolarsResult<()> {
         .lazy()
         .with_row_index("index", None)
         .explode(
-            by_name(["a"], true),
+            by_name(["a"], true, false),
             ExplodeOptions {
                 empty_as_null: true,
                 keep_nulls: true,
@@ -172,7 +175,7 @@ fn test_sorted_path_joins() -> PolarsResult<()> {
 
     let out = dfa
         .lazy()
-        .with_column(col("a").set_sorted_flag(IsSorted::Ascending))
+        .with_column(col("a").set_sorted_flag(AExprSorted::default().with_desc(Some(false))))
         .join(dfb.lazy(), [col("a")], [col("a")], JoinType::Left.into())
         .collect()?;
 
@@ -263,7 +266,7 @@ fn test_group_by_on_lists() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by([col("groups")])
-        .agg([col("arrays").implode()])
+        .agg([col("arrays").implode(true)])
         .collect()?;
 
     // a list of lists

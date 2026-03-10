@@ -35,8 +35,6 @@ mod from;
 #[cfg(feature = "algorithm_group_by")]
 pub mod group_by;
 pub(crate) mod horizontal;
-#[cfg(feature = "proptest")]
-pub mod proptest;
 #[cfg(any(feature = "rows", feature = "object"))]
 pub mod row;
 mod top_k;
@@ -1157,6 +1155,12 @@ impl DataFrame {
     pub fn filter(&self, mask: &BooleanChunked) -> PolarsResult<Self> {
         if self.width() == 0 {
             filter_zero_width(self.height(), mask)
+        } else if mask.len() == 1 && self.len() >= 1 {
+            if mask.all() && mask.null_count() == 0 {
+                Ok(self.clone())
+            } else {
+                Ok(self.clear())
+            }
         } else {
             let new_columns: Vec<Column> = self.try_apply_columns_par(|s| s.filter(mask))?;
             let out = unsafe {
@@ -1171,6 +1175,12 @@ impl DataFrame {
     pub fn filter_seq(&self, mask: &BooleanChunked) -> PolarsResult<Self> {
         if self.width() == 0 {
             filter_zero_width(self.height(), mask)
+        } else if mask.len() == 1 && mask.null_count() == 0 && self.len() >= 1 {
+            if mask.all() && mask.null_count() == 0 {
+                Ok(self.clone())
+            } else {
+                Ok(self.clear())
+            }
         } else {
             let new_columns: Vec<Column> = self.try_apply_columns(|s| s.filter(mask))?;
             let out = unsafe {
@@ -1211,6 +1221,7 @@ impl DataFrame {
 
     /// # Safety
     /// The indices must be in-bounds.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn gather_group_unchecked(&self, group: &GroupsIndicator) -> Self {
         match group {
             GroupsIndicator::Idx((_, indices)) => unsafe {
@@ -1412,6 +1423,14 @@ impl DataFrame {
             } else {
                 Ok(self.clone())
             };
+        }
+
+        for column in &by_column {
+            if column.dtype().is_object() {
+                polars_bail!(
+                    InvalidOperation: "column '{}' has a dtype of '{}', which does not support sorting", column.name(), column.dtype()
+                )
+            }
         }
 
         // note that the by_column argument also contains evaluated expression from
@@ -2100,8 +2119,17 @@ impl DataFrame {
     /// This responsibility is left to the caller as we don't want to take mutable references here,
     /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
     /// as well.
-    pub fn iter_chunks(&self, compat_level: CompatLevel, parallel: bool) -> RecordBatchIter<'_> {
+    pub fn iter_chunks(
+        &self,
+        compat_level: CompatLevel,
+        parallel: bool,
+    ) -> impl Iterator<Item = RecordBatch> + '_ {
         debug_assert!(!self.should_rechunk(), "expected equal chunks");
+
+        if self.width() == 0 {
+            return RecordBatchIterWrap::new_zero_width(self.height());
+        }
+
         // If any of the columns is binview and we don't convert `compat_level` we allow parallelism
         // as we must allocate arrow strings/binaries.
         let must_convert = compat_level.0 == 0;
@@ -2113,8 +2141,8 @@ impl DataFrame {
                 .iter()
                 .any(|s| matches!(s.dtype(), DataType::String | DataType::Binary));
 
-        RecordBatchIter {
-            columns: self.columns(),
+        RecordBatchIterWrap::Batches(RecordBatchIter {
+            df: self,
             schema: Arc::new(
                 self.columns()
                     .iter()
@@ -2122,10 +2150,10 @@ impl DataFrame {
                     .collect(),
             ),
             idx: 0,
-            n_chunks: self.first_col_n_chunks(),
+            n_chunks: usize::max(1, self.first_col_n_chunks()),
             compat_level,
             parallel,
-        }
+        })
     }
 
     /// Iterator over the rows in this [`DataFrame`] as Arrow RecordBatches as physical values.
@@ -2137,9 +2165,14 @@ impl DataFrame {
     /// This responsibility is left to the caller as we don't want to take mutable references here,
     /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
     /// as well.
-    pub fn iter_chunks_physical(&self) -> PhysRecordBatchIter<'_> {
+    pub fn iter_chunks_physical(&self) -> impl Iterator<Item = RecordBatch> + '_ {
         debug_assert!(!self.should_rechunk());
-        PhysRecordBatchIter {
+
+        if self.width() == 0 {
+            return RecordBatchIterWrap::new_zero_width(self.height());
+        }
+
+        RecordBatchIterWrap::PhysicalBatches(PhysRecordBatchIter {
             schema: Arc::new(
                 self.columns()
                     .iter()
@@ -2150,7 +2183,7 @@ impl DataFrame {
                 .materialized_column_iter()
                 .map(|s| s.chunks().iter())
                 .collect(),
-        }
+        })
     }
 
     /// Get a [`DataFrame`] with all the columns in reversed order.
@@ -2641,7 +2674,7 @@ impl DataFrame {
 }
 
 pub struct RecordBatchIter<'a> {
-    columns: &'a [Column],
+    df: &'a DataFrame,
     schema: ArrowSchemaRef,
     idx: usize,
     n_chunks: usize,
@@ -2660,21 +2693,25 @@ impl Iterator for RecordBatchIter<'_> {
         // Create a batch of the columns with the same chunk no.
         let batch_cols: Vec<ArrayRef> = if self.parallel {
             let iter = self
-                .columns
+                .df
+                .columns()
                 .par_iter()
                 .map(Column::as_materialized_series)
                 .map(|s| s.to_arrow(self.idx, self.compat_level));
             POOL.install(|| iter.collect())
         } else {
-            self.columns
+            self.df
+                .columns()
                 .iter()
                 .map(Column::as_materialized_series)
                 .map(|s| s.to_arrow(self.idx, self.compat_level))
                 .collect()
         };
-        self.idx += 1;
 
         let length = batch_cols.first().map_or(0, |arr| arr.len());
+
+        self.idx += 1;
+
         Some(RecordBatch::new(length, self.schema.clone(), batch_cols))
     }
 
@@ -2708,6 +2745,58 @@ impl Iterator for PhysRecordBatchIter<'_> {
             iter.size_hint()
         } else {
             (0, None)
+        }
+    }
+}
+
+pub enum RecordBatchIterWrap<'a> {
+    ZeroWidth {
+        remaining_height: usize,
+        chunk_size: usize,
+    },
+    Batches(RecordBatchIter<'a>),
+    PhysicalBatches(PhysRecordBatchIter<'a>),
+}
+
+impl<'a> RecordBatchIterWrap<'a> {
+    fn new_zero_width(height: usize) -> Self {
+        Self::ZeroWidth {
+            remaining_height: height,
+            chunk_size: polars_config::config().ideal_morsel_size() as usize,
+        }
+    }
+}
+
+impl Iterator for RecordBatchIterWrap<'_> {
+    type Item = RecordBatch;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::ZeroWidth {
+                remaining_height,
+                chunk_size,
+            } => {
+                let n = usize::min(*remaining_height, *chunk_size);
+                *remaining_height -= n;
+
+                (n > 0).then(|| RecordBatch::new(n, ArrowSchemaRef::default(), vec![]))
+            },
+            Self::Batches(v) => v.next(),
+            Self::PhysicalBatches(v) => v.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::ZeroWidth {
+                remaining_height,
+                chunk_size,
+            } => {
+                let n = remaining_height.div_ceil(*chunk_size);
+                (n, Some(n))
+            },
+            Self::Batches(v) => v.size_hint(),
+            Self::PhysicalBatches(v) => v.size_hint(),
         }
     }
 }

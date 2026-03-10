@@ -14,7 +14,7 @@ use tokio::task::JoinHandle;
 
 use crate::async_executor;
 use crate::graph::{Graph, GraphNode, GraphNodeKey, LogicalPipeKey, PortState};
-use crate::metrics::GraphMetrics;
+use crate::metrics::{GraphMetrics, MetricsBuilder};
 use crate::pipe::PhysicalPipe;
 
 #[derive(Clone)]
@@ -111,27 +111,37 @@ fn find_runnable_subgraph(graph: &mut Graph) -> (PlHashSet<GraphNodeKey>, Vec<Lo
     // Find pipeline blockers, choose a subset with at most one memory intensive
     // pipeline blocker, and return the subgraph needed to feed them.
     let blockers = find_runnable_pipeline_blockers(graph);
-    let (mut expensive, cheap): (Vec<_>, Vec<_>) = blockers.into_iter().partition(|b| {
+    let (expensive, cheap): (Vec<_>, Vec<_>) = blockers.into_iter().partition(|b| {
         graph.nodes[*b]
             .compute
             .is_memory_intensive_pipeline_blocker()
     });
 
-    // TODO: choose which expensive pipeline blocker to run more intelligently.
-    expensive.sort_by_key(|node_key| {
-        // Prefer to run nodes whose outputs are ready to be consumed.
-        // outputs_ready_to_receive
-        graph.nodes[*node_key]
-            .outputs
-            .iter()
-            .filter(|o| graph.pipes[**o].recv_state == PortState::Ready)
-            .count()
-    });
+    // If all expensive pipeline blockers left are sinks (InMemorySink), we're not
+    // gaining anything by only running a subset.
+    let only_expensive_sinks_left = expensive
+        .iter()
+        .all(|node_key| graph.nodes[*node_key].outputs.is_empty());
 
     let mut to_run = cheap;
-    if let Some(node) = expensive.pop() {
-        to_run.push(node);
+    if only_expensive_sinks_left {
+        to_run.extend(expensive);
+    } else {
+        // TODO: choose which expensive pipeline blocker(s) to run more intelligently.
+        let best = expensive.into_iter().max_by_key(|node_key| {
+            // Prefer to run nodes whose outputs are ready to be consumed. Also
+            // prefer to run nodes which have outputs over in-memory sinks.
+            let num_outputs = graph.nodes[*node_key].outputs.len();
+            let num_outputs_ready_to_recv = graph.nodes[*node_key]
+                .outputs
+                .iter()
+                .filter(|o| graph.pipes[**o].recv_state == PortState::Ready)
+                .count();
+            (num_outputs_ready_to_recv, num_outputs)
+        });
+        to_run.extend(best);
     }
+
     expand_ready_subgraph(graph, to_run)
 }
 
@@ -212,6 +222,14 @@ fn run_subgraph(
 
             // Spawn the tasks.
             let pre_spawn_offset = join_handles.len();
+
+            if let Some(graph_metrics) = metrics.clone() {
+                node.compute.set_metrics_builder(MetricsBuilder {
+                    graph_key: node_key,
+                    graph_metrics,
+                });
+            }
+
             node.compute.spawn(
                 scope,
                 &mut recv_ports[..],
@@ -320,6 +338,11 @@ pub fn execute_graph(
             eprintln!("polars-stream: updating graph state");
         }
         graph.update_all_states(&state, metrics.as_deref())?;
+
+        if let Some(m) = metrics.as_ref() {
+            m.lock().flush(&graph.pipes);
+        }
+
         polars_io::pl_async::get_runtime().block_on(async {
             // TODO: track this in metrics.
             while let Ok(handle) = subphase_tasks_recv.try_recv() {
@@ -361,10 +384,6 @@ pub fn execute_graph(
         })?;
         if polars_core::config::verbose() {
             eprintln!("polars-stream: done running graph phase");
-        }
-
-        if let Some(m) = metrics.as_ref() {
-            m.lock().flush(&graph.pipes);
         }
     }
 

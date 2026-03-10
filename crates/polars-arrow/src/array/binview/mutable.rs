@@ -3,6 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 
 use hashbrown::hash_map::Entry;
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
@@ -13,7 +14,6 @@ use crate::array::binview::{
 };
 use crate::array::{Array, MutableArray, TryExtend, TryPush, View};
 use crate::bitmap::MutableBitmap;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::trusted_len::TrustedLenPush;
 use crate::trusted_len::TrustedLen;
@@ -74,7 +74,7 @@ impl<T: ViewType + ?Sized> From<MutableBinaryViewArray<T>> for BinaryViewArrayGe
                 value.views.into(),
                 Buffer::from(value.completed_buffers),
                 value.validity.map(|b| b.into()),
-                value.total_bytes_len,
+                Some(value.total_bytes_len),
                 value.total_buffer_len,
             )
         }
@@ -178,12 +178,11 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     /// - The array must not have validity.
     pub(crate) unsafe fn push_view_unchecked(&mut self, v: View, buffers: &[Buffer<u8>]) {
         let len = v.length;
-        self.total_bytes_len += len as usize;
         if len <= View::MAX_INLINE_SIZE {
             debug_assert!(self.views.capacity() > self.views.len());
-            self.views.push_unchecked(v)
+            self.views.push_unchecked(v);
+            self.total_bytes_len += len as usize;
         } else {
-            self.total_buffer_len += len as usize;
             let data = buffers.get_unchecked(v.buffer_idx as usize);
             let offset = v.offset as usize;
             let bytes = data.get_unchecked(offset..offset + len as usize);
@@ -359,14 +358,11 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         // Push and pop to get the properly encoded value.
         // For long string this leads to a dictionary encoding,
         // as we push the string only once in the buffers
-        let view_value = value
-            .map(|v| {
-                self.push_value_ignore_validity(v);
-                self.views.pop().unwrap()
-            })
-            .unwrap_or_default();
-        self.views
-            .extend(std::iter::repeat_n(view_value, additional));
+        if let Some(bytes) = value {
+            let view = self.push_value_into_buffer(bytes.as_ref().to_bytes());
+            self.views.extend(std::iter::repeat_n(view, additional));
+            self.total_bytes_len += view.length as usize * additional;
+        }
     }
 
     impl_mutable_array_mut_validity!();

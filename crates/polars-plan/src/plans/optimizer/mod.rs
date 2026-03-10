@@ -34,11 +34,11 @@ pub use cse::NaiveExprMerger;
 use delay_rechunk::DelayRechunk;
 pub use expand_datasets::ExpandedDataset;
 use polars_core::config::verbose;
-pub use predicate_pushdown::PredicatePushDown;
+pub use predicate_pushdown::{DynamicPred, PredicateExpr, PredicatePushDown, TrivialPredicateExpr};
 pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
-pub use sortedness::{IRSorted, are_keys_sorted_any, is_sorted};
+pub use sortedness::{AExprSorted, IRSorted, are_keys_sorted_any, is_sorted};
 pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
 
 use self::flatten_union::FlattenUnionRule;
@@ -73,7 +73,16 @@ pub(super) fn run_projection_predicate_pushdown(
     pushdown_maintain_errors: bool,
     opt_flags: &OptFlags,
 ) -> PolarsResult<()> {
-    // Should be run before predicate pushdown.
+    // Should be run before projection pushdown.
+    // This allows columns only needed for filters to be dropped early.
+    if opt_flags.predicate_pushdown() {
+        let mut predicate_pushdown_opt =
+            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
+        let ir = ir_arena.take(root);
+        let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
+        ir_arena.replace(root, ir);
+    }
+
     if opt_flags.projection_pushdown() {
         let mut projection_pushdown_opt = ProjectionPushDown::new();
         let ir = ir_arena.take(root);
@@ -84,14 +93,6 @@ pub(super) fn run_projection_predicate_pushdown(
             let mut count_star_opt = CountStar::new();
             count_star_opt.optimize_plan(ir_arena, expr_arena, root)?;
         }
-    }
-
-    if opt_flags.predicate_pushdown() {
-        let mut predicate_pushdown_opt =
-            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
-        let ir = ir_arena.take(root);
-        let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
-        ir_arena.replace(root, ir);
     }
 
     Ok(())
@@ -196,6 +197,21 @@ pub fn optimize(
         true
     };
 
+    let mut repeat_slice_pd_after_filter_pd = false;
+
+    if opt_flags.slice_pushdown() {
+        let mut slice_pushdown_opt = SlicePushDown::new();
+        let ir = ir_arena.take(root);
+        let ir = slice_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
+
+        ir_arena.replace(root, ir);
+
+        repeat_slice_pd_after_filter_pd = slice_pushdown_opt.slice_node_in_optimized_plan;
+
+        // Expressions use the stack optimizer.
+        rules.push(Box::new(slice_pushdown_opt));
+    }
+
     if run_pushdowns {
         run_projection_predicate_pushdown(
             root,
@@ -206,7 +222,6 @@ pub fn optimize(
         )?;
     }
 
-    // Make sure its before slice pushdown.
     if opt_flags.fast_projection() {
         rules.push(Box::new(SimpleProjectionAndCollapse::new(
             opt_flags.eager(),
@@ -215,24 +230,6 @@ pub fn optimize(
 
     if !opt_flags.eager() {
         rules.push(Box::new(DelayRechunk::new()));
-    }
-
-    if opt_flags.slice_pushdown() {
-        let mut slice_pushdown_opt = SlicePushDown::new(
-            // We don't maintain errors on slice as the behavior is much more predictable that way.
-            //
-            // Even if we enable maintain_errors (thereby preventing the slice from being pushed),
-            // the new-streaming engine still may not error due to early-stopping.
-            false, // maintain_errors
-            opt_flags.new_streaming(),
-        );
-        let ir = ir_arena.take(root);
-        let ir = slice_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
-
-        ir_arena.replace(root, ir);
-
-        // Expressions use the stack optimizer.
-        rules.push(Box::new(slice_pushdown_opt));
     }
 
     // This optimization removes branches, so we must do it when type coercion
@@ -247,6 +244,14 @@ pub fn optimize(
 
     root = opt.optimize_loop(&mut rules, expr_arena, ir_arena, root)?;
 
+    if repeat_slice_pd_after_filter_pd {
+        let mut slice_pushdown_opt = SlicePushDown::new();
+        let ir = ir_arena.take(root);
+        let ir = slice_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
+
+        ir_arena.replace(root, ir);
+    }
+
     if opt_flags.cluster_with_columns() && get_or_init_members!().with_columns_count > 1 {
         cluster_with_columns::optimize(root, ir_arena, expr_arena)
     }
@@ -254,7 +259,8 @@ pub fn optimize(
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
     if comm_subexpr_elim && !get_or_init_members!().has_ext_context {
-        let mut optimizer = CommonSubExprOptimizer::new();
+        let mut optimizer =
+            CommonSubExprOptimizer::new(opt_flags.contains(OptFlags::NEW_STREAMING));
         let ir_node = IRNode::new_mutate(root);
 
         root = try_with_ir_arena(ir_arena, expr_arena, |arena| {

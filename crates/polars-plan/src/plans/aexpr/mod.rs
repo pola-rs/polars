@@ -45,14 +45,6 @@ pub enum IRAggExpr {
         input: Node,
         propagate_nans: bool,
     },
-    MinBy {
-        input: Node,
-        by: Node,
-    },
-    MaxBy {
-        input: Node,
-        by: Node,
-    },
     Median(Node),
     NUnique(Node),
     Item {
@@ -65,7 +57,10 @@ pub enum IRAggExpr {
     Last(Node),
     LastNonNull(Node),
     Mean(Node),
-    Implode(Node),
+    Implode {
+        input: Node,
+        maintain_order: bool,
+    },
     Quantile {
         expr: Node,
         quantile: Node,
@@ -166,7 +161,7 @@ impl From<IRAggExpr> for GroupByMethod {
             LastNonNull(_) => GroupByMethod::LastNonNull,
             Item { allow_empty, .. } => GroupByMethod::Item { allow_empty },
             Mean(_) => GroupByMethod::Mean,
-            Implode(_) => GroupByMethod::Implode,
+            Implode { maintain_order, .. } => GroupByMethod::Implode { maintain_order },
             Sum(_) => GroupByMethod::Sum,
             Count {
                 input: _,
@@ -175,9 +170,8 @@ impl From<IRAggExpr> for GroupByMethod {
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
             AggGroups(_) => GroupByMethod::Groups,
-
             // Multi-input aggregations.
-            Quantile { .. } | MinBy { .. } | MaxBy { .. } => unreachable!(),
+            Quantile { .. } => unreachable!(),
         }
     }
 }
@@ -236,8 +230,7 @@ pub enum AExpr {
         truthy: Node,
         falsy: Node,
     },
-    /// A streaming aggregation that can only run in the streaming engine.
-    AnonymousStreamingAgg {
+    AnonymousAgg {
         input: Vec<ExprIR>,
         fmt_str: Box<PlSmallStr>,
         function: OpaqueStreamingAgg,
@@ -307,7 +300,6 @@ impl AExpr {
     #[recursive::recursive]
     pub fn is_scalar(&self, arena: &Arena<AExpr>) -> bool {
         match self {
-            AExpr::AnonymousStreamingAgg { .. } => true,
             AExpr::Element => false,
             AExpr::Literal(lv) => lv.is_scalar(),
             AExpr::Function { options, input, .. }
@@ -334,7 +326,7 @@ impl AExpr {
                     && is_scalar_ae(*truthy, arena)
                     && is_scalar_ae(*falsy, arena)
             },
-            AExpr::Agg(_) | AExpr::Len => true,
+            AExpr::Agg(_) | AExpr::AnonymousAgg { .. } | AExpr::Len => true,
             AExpr::Cast { expr, .. } => is_scalar_ae(*expr, arena),
             AExpr::Eval { expr, variant, .. } => {
                 variant.is_length_preserving() && is_scalar_ae(*expr, arena)
@@ -395,10 +387,7 @@ impl AExpr {
             #[cfg(feature = "dynamic_group_by")]
             AExpr::Rolling { .. } => true,
 
-            AExpr::AnonymousStreamingAgg { .. }
-            | AExpr::Literal(_)
-            | AExpr::Agg(_)
-            | AExpr::Len => false,
+            AExpr::AnonymousAgg { .. } | AExpr::Literal(_) | AExpr::Agg(_) | AExpr::Len => false,
             AExpr::Function { options, input, .. }
             | AExpr::AnonymousFunction { options, input, .. } => {
                 if options.flags.is_elementwise() {
@@ -457,6 +446,8 @@ impl AExpr {
                     IRArrayFunction::Get(false) => true,
                     _ => false,
                 },
+                #[cfg(feature = "replace")]
+                IRFunctionExpr::ReplaceStrict { .. } => true,
                 #[cfg(all(feature = "strings", feature = "temporal"))]
                 IRFunctionExpr::StringExpr(f) => match f {
                     IRStringFunction::Strptime(_, strptime_options) => {

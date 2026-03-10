@@ -162,8 +162,13 @@ pub struct NaiveExprMerger {
 
 impl NaiveExprMerger {
     pub fn add_expr(&mut self, node: Node, arena: &Arena<AExpr>) {
-        let node = AexprNode::new(node);
-        node.visit(self, arena).unwrap();
+        AexprNode::new(node).visit(self, arena).unwrap();
+    }
+
+    pub fn add_and_get_uniq_id(&mut self, node: Node, arena: &Arena<AExpr>) -> u32 {
+        let aexpr_node = AexprNode::new(node);
+        aexpr_node.visit(self, arena).unwrap();
+        *self.node_to_uniq_id.get(&node).unwrap()
     }
 
     pub fn get_uniq_id(&self, node: Node) -> Option<u32> {
@@ -242,14 +247,24 @@ enum VisitRecord {
     SubExprId(Identifier, bool),
 }
 
-fn skip_pre_visit(ae: &AExpr, is_groupby: bool) -> bool {
+fn skip_pre_visit(ae: &AExpr, is_groupby: bool, element_wise_select_only: bool) -> bool {
     match ae {
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling { .. } => true,
         AExpr::Over { .. } => true,
         #[cfg(feature = "dtype-struct")]
         AExpr::Ternary { .. } => is_groupby,
-        _ => false,
+        ae => {
+            if element_wise_select_only {
+                if is_groupby {
+                    true
+                } else {
+                    !ae.is_elementwise_top_level()
+                }
+            } else {
+                false
+            }
+        },
     }
 }
 
@@ -314,6 +329,8 @@ struct ExprIdentifierVisitor<'a> {
     has_sub_expr: bool,
     // During aggregation we only identify element-wise operations
     is_group_by: bool,
+    //
+    element_wise_only: bool,
 }
 
 impl ExprIdentifierVisitor<'_> {
@@ -323,6 +340,7 @@ impl ExprIdentifierVisitor<'_> {
         visit_stack: &'a mut Vec<VisitRecord>,
         is_group_by: bool,
         name_validation: &'a mut PlHashMap<u64, u32>,
+        element_wise_select_only: bool,
     ) -> ExprIdentifierVisitor<'a> {
         let id_array_offset = identifier_array.len();
         ExprIdentifierVisitor {
@@ -335,6 +353,7 @@ impl ExprIdentifierVisitor<'_> {
             id_array_offset,
             has_sub_expr: false,
             is_group_by,
+            element_wise_only: element_wise_select_only,
         }
     }
 
@@ -408,7 +427,6 @@ impl ExprIdentifierVisitor<'_> {
                 function: IRFunctionExpr::RollingExpr { .. },
                 ..
             } => REFUSE_NO_MEMBER,
-            AExpr::AnonymousFunction { .. } => REFUSE_NO_MEMBER,
             _ => {
                 // During aggregation we only store elementwise operation in the state
                 // other operations we cannot add to the state as they have the output size of the
@@ -418,7 +436,6 @@ impl ExprIdentifierVisitor<'_> {
                         return REFUSE_NO_MEMBER;
                     }
                     match ae {
-                        AExpr::AnonymousFunction { .. } => REFUSE_NO_MEMBER,
                         AExpr::Cast { .. } => REFUSE_ALLOW_MEMBER,
                         _ => ACCEPT,
                     }
@@ -439,7 +456,11 @@ impl Visitor for ExprIdentifierVisitor<'_> {
         node: &Self::Node,
         arena: &Self::Arena,
     ) -> PolarsResult<VisitRecursion> {
-        if skip_pre_visit(node.to_aexpr(arena), self.is_group_by) {
+        if skip_pre_visit(
+            node.to_aexpr(arena),
+            self.is_group_by,
+            self.element_wise_only,
+        ) {
             // Still add to the stack so that a parent becomes invalidated.
             self.visit_stack
                 .push(VisitRecord::SubExprId(Identifier::new(), false));
@@ -521,6 +542,7 @@ struct CommonSubExprRewriter<'a> {
     /// Indicates if this expression is rewritten.
     rewritten: bool,
     is_group_by: bool,
+    is_element_wise_select_only: bool,
 }
 
 impl<'a> CommonSubExprRewriter<'a> {
@@ -530,6 +552,7 @@ impl<'a> CommonSubExprRewriter<'a> {
         replaced_identifiers: &'a mut IdentifierMap<()>,
         id_array_offset: usize,
         is_group_by: bool,
+        is_element_wise_select_only: bool,
     ) -> Self {
         Self {
             sub_expr_map,
@@ -540,6 +563,7 @@ impl<'a> CommonSubExprRewriter<'a> {
             id_array_offset,
             rewritten: false,
             is_group_by,
+            is_element_wise_select_only,
         }
     }
 }
@@ -590,7 +614,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         if self.visited_idx + self.id_array_offset >= self.identifier_array.len()
             || self.max_post_visit_idx
                 > self.identifier_array[self.visited_idx + self.id_array_offset].0
-            || skip_pre_visit(ae, self.is_group_by)
+            || skip_pre_visit(ae, self.is_group_by, self.is_element_wise_select_only)
         {
             return Ok(RewriteRecursion::Stop);
         }
@@ -677,10 +701,14 @@ pub(crate) struct CommonSubExprOptimizer {
     // these are cleared per expr node
     visit_stack: Vec<VisitRecord>,
     name_validation: PlHashMap<u64, u32>,
+    // Set by the streaming engine
+    // Only supports element-wise CSEE
+    // on SELECT/HSTACK
+    element_wise_select_only: bool,
 }
 
 impl CommonSubExprOptimizer {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(element_wise_select_only: bool) -> Self {
         Self {
             se_count: Default::default(),
             id_array: Default::default(),
@@ -688,6 +716,7 @@ impl CommonSubExprOptimizer {
             id_array_offsets: Default::default(),
             replaced_identifiers: Default::default(),
             name_validation: Default::default(),
+            element_wise_select_only,
         }
     }
 
@@ -696,6 +725,7 @@ impl CommonSubExprOptimizer {
         ae_node: AexprNode,
         is_group_by: bool,
         expr_arena: &mut Arena<AExpr>,
+        element_wise_select_only: bool,
     ) -> PolarsResult<(usize, bool)> {
         let mut visitor = ExprIdentifierVisitor::new(
             &mut self.se_count,
@@ -703,6 +733,7 @@ impl CommonSubExprOptimizer {
             &mut self.visit_stack,
             is_group_by,
             &mut self.name_validation,
+            element_wise_select_only,
         );
         ae_node.visit(&mut visitor, expr_arena).map(|_| ())?;
         Ok((visitor.id_array_offset, visitor.has_sub_expr))
@@ -716,6 +747,7 @@ impl CommonSubExprOptimizer {
         id_array_offset: usize,
         is_group_by: bool,
         expr_arena: &mut Arena<AExpr>,
+        element_wise_select_only: bool,
     ) -> PolarsResult<(AexprNode, bool)> {
         let mut rewriter = CommonSubExprRewriter::new(
             &self.se_count,
@@ -723,6 +755,7 @@ impl CommonSubExprOptimizer {
             &mut self.replaced_identifiers,
             id_array_offset,
             is_group_by,
+            element_wise_select_only,
         );
         ae_node
             .rewrite(&mut rewriter, expr_arena)
@@ -736,6 +769,7 @@ impl CommonSubExprOptimizer {
         id_array_offsets: &mut Vec<u32>,
         is_group_by: bool,
         schema: &Schema,
+        element_wise_select_only: bool,
     ) -> PolarsResult<Option<ProjectionExprs>> {
         let mut has_sub_expr = false;
 
@@ -748,7 +782,7 @@ impl CommonSubExprOptimizer {
             // Visit expressions and collect sub-expression counts.
             let ae_node = AexprNode::new(e.node());
             let (id_array_offset, this_expr_has_se) =
-                self.visit_expression(ae_node, is_group_by, expr_arena)?;
+                self.visit_expression(ae_node, is_group_by, expr_arena, element_wise_select_only)?;
             id_array_offsets.push(id_array_offset as u32);
             has_sub_expr |= this_expr_has_se;
         }
@@ -780,8 +814,13 @@ impl CommonSubExprOptimizer {
             for (e, offset) in expr.iter().zip(id_array_offsets.iter()) {
                 let ae_node = AexprNode::new(e.node());
 
-                let (out, rewritten) =
-                    self.mutate_expression(ae_node, *offset as usize, is_group_by, expr_arena)?;
+                let (out, rewritten) = self.mutate_expression(
+                    ae_node,
+                    *offset as usize,
+                    is_group_by,
+                    expr_arena,
+                    element_wise_select_only,
+                )?;
 
                 let out_node = out.node();
                 let mut out_e = e.clone();
@@ -800,7 +839,7 @@ impl CommonSubExprOptimizer {
                             continue;
                         }
                         scratch.clear();
-                        let aes = expr_arena.get_many_mut([original, new]);
+                        let aes = expr_arena.get_disjoint_mut([original, new]);
 
                         // Only follow paths that are the same.
                         if std::mem::discriminant(aes[0]) != std::mem::discriminant(aes[1]) {
@@ -820,7 +859,7 @@ impl CommonSubExprOptimizer {
                             stack.push((scratch[i], scratch[i + offset]));
                         }
 
-                        match expr_arena.get_many_mut([original, new]) {
+                        match expr_arena.get_disjoint_mut([original, new]) {
                             [
                                 AExpr::Function {
                                     input: input_original,
@@ -920,6 +959,7 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                     &mut id_array_offsets,
                     false,
                     input_schema.as_ref().as_ref(),
+                    self.element_wise_select_only,
                 )? {
                     let schema = schema.clone();
                     let options = *options;
@@ -964,6 +1004,7 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                     &mut id_array_offsets,
                     false,
                     input_schema.as_ref().as_ref(),
+                    self.element_wise_select_only,
                 )? {
                     let schema = schema.clone();
                     let options = *options;
@@ -1003,7 +1044,7 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                 maintain_order,
                 apply,
                 schema,
-            } => {
+            } if !self.element_wise_select_only => {
                 let input_schema = arena.0.get(*input).schema(&arena.0);
                 if let Some(aggs) = self.find_cse(
                     aggs,
@@ -1011,6 +1052,7 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                     &mut id_array_offsets,
                     true,
                     input_schema.as_ref().as_ref(),
+                    self.element_wise_select_only,
                 )? {
                     let keys = keys.clone();
                     let options = options.clone();

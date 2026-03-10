@@ -80,6 +80,16 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "algorithm_group_by")]
+            unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+                self.0.agg_arg_min(groups)
+            }
+
+            #[cfg(feature = "algorithm_group_by")]
+            unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+                self.0.agg_arg_max(groups)
+            }
+
+            #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
                 self.0.agg_sum(groups)
             }
@@ -341,6 +351,7 @@ macro_rules! impl_dyn_series {
             fn std_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
                 Ok(VarAggSeries::std_reduce(&self.0, ddof))
             }
+
             fn quantile_reduce(
                 &self,
                 quantile: f64,
@@ -348,6 +359,15 @@ macro_rules! impl_dyn_series {
             ) -> PolarsResult<Scalar> {
                 QuantileAggSeries::quantile_reduce(&self.0, quantile, method)
             }
+
+            fn quantiles_reduce(
+                &self,
+                quantiles: &[f64],
+                method: QuantileMethod,
+            ) -> PolarsResult<Scalar> {
+                QuantileAggSeries::quantiles_reduce(&self.0, quantiles, method)
+            }
+
             #[cfg(feature = "bitwise")]
             fn and_reduce(&self) -> PolarsResult<Scalar> {
                 let dt = <$pdt as PolarsDataType>::get_static_dtype();

@@ -77,11 +77,11 @@ def test_deprecate_parameter_as_multi_positional(recwarn: Any) -> None:
         return foo
 
     with pytest.deprecated_call():
-        result = hello(foo="x")
+        result = hello(foo="x")  # type: ignore[call-arg]
     assert result == hello("x")
 
     with pytest.deprecated_call():
-        result = hello(foo=["x", "y"])  # type: ignore[arg-type]
+        result = hello(foo=["x", "y"])  # type: ignore[call-arg, arg-type]
     assert result == hello("x", "y")
 
 
@@ -91,11 +91,11 @@ def test_deprecate_parameter_as_multi_positional_existing_arg(recwarn: Any) -> N
         return bar, foo
 
     with pytest.deprecated_call():
-        result = hello(5, foo="x")
+        result = hello(5, foo="x")  # type: ignore[call-arg]
     assert result == hello(5, "x")
 
     with pytest.deprecated_call():
-        result = hello(5, foo=["x", "y"])  # type: ignore[arg-type]
+        result = hello(5, foo=["x", "y"])  # type: ignore[call-arg, arg-type]
     assert result == hello(5, "x", "y")
 
 

@@ -1,21 +1,23 @@
 use std::cmp;
 
 use memchr::memchr2_iter;
+use polars_buffer::Buffer;
+use polars_core::POOL;
 use polars_core::prelude::*;
-use polars_core::{POOL, config};
 use polars_error::feature_gated;
-use polars_utils::mmap::{MMapSemaphore, MemSlice};
+use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::select::select_unpredictable;
 use rayon::prelude::*;
 
 use super::CsvParseOptions;
-use super::buffer::Buffer;
+use super::builder::Builder;
 use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
-use crate::csv::read::read_until_start_and_infer_schema;
 use crate::prelude::CsvReadOptions;
-use crate::utils::compression::CompressedReader;
+use crate::prelude::streaming::read_until_start_and_infer_schema;
+use crate::utils::compression::ByteSourceReader;
+use crate::utils::stream_buf_reader::ReaderSource;
 
 /// Read the number of rows without parsing columns
 /// useful for count(*) queries
@@ -29,8 +31,9 @@ pub fn count_rows(
     skip_lines: usize,
     skip_rows_before_header: usize,
     skip_rows_after_header: usize,
+    raise_if_empty: bool,
 ) -> PolarsResult<usize> {
-    let file = if path.has_scheme() || config::force_async() {
+    let file = if path.has_scheme() || polars_config::config().force_async() {
         feature_gated!("cloud", {
             crate::file_cache::FILE_CACHE
                 .get_entry(path)
@@ -45,7 +48,7 @@ pub fn count_rows(
     let mmap = MMapSemaphore::new_from_file(&file).unwrap();
 
     count_rows_from_slice_par(
-        MemSlice::from_mmap(Arc::new(mmap)),
+        Buffer::from_owner(mmap),
         quote_char,
         comment_prefix,
         eol_char,
@@ -53,14 +56,16 @@ pub fn count_rows(
         skip_lines,
         skip_rows_before_header,
         skip_rows_after_header,
+        raise_if_empty,
     )
 }
 
-/// Read the number of rows without parsing columns
-/// useful for count(*) queries
+/// Read the number of rows without parsing columns.
+/// Useful for count(*) queries.
+/// Supports transparent decompression. Does not support truncated compressed files.
 #[allow(clippy::too_many_arguments)]
-pub fn count_rows_from_slice_par(
-    mem_slice: MemSlice,
+pub fn count_rows_from_reader_par(
+    mut reader: ByteSourceReader<ReaderSource>,
     quote_char: Option<u8>,
     comment_prefix: Option<&CommentPrefix>,
     eol_char: u8,
@@ -68,9 +73,9 @@ pub fn count_rows_from_slice_par(
     skip_lines: usize,
     skip_rows_before_header: usize,
     skip_rows_after_header: usize,
+    raise_if_empty: bool,
+    decompressed_size_hint: Option<usize>,
 ) -> PolarsResult<usize> {
-    let mut reader = CompressedReader::try_new(mem_slice)?;
-
     let reader_options = CsvReadOptions {
         parse_options: Arc::new(CsvParseOptions {
             quote_char,
@@ -82,11 +87,17 @@ pub fn count_rows_from_slice_par(
         skip_lines,
         skip_rows: skip_rows_before_header,
         skip_rows_after_header,
+        raise_if_empty,
         ..Default::default()
     };
 
-    let (_, mut leftover) =
-        read_until_start_and_infer_schema(&reader_options, None, None, &mut reader)?;
+    let (_, mut leftover) = read_until_start_and_infer_schema(
+        &reader_options,
+        None,
+        decompressed_size_hint,
+        None,
+        &mut reader,
+    )?;
 
     const BYTES_PER_CHUNK: usize = if cfg!(debug_assertions) {
         128
@@ -100,27 +111,27 @@ pub fn count_rows_from_slice_par(
         let eof_unterminated_row;
 
         if comment_prefix.is_none() {
-            let mut last_slice = MemSlice::EMPTY;
+            let mut last_slice = Buffer::new();
             let mut err = None;
 
             let streaming_iter = std::iter::from_fn(|| {
-                let (slice, read_n) = match reader.read_next_slice(&leftover, BYTES_PER_CHUNK) {
-                    Ok(tup) => tup,
-                    Err(e) => {
-                        err = Some(e);
-                        return None;
-                    },
-                };
+                let (slice, read_n) =
+                    match reader.read_next_slice(&leftover, BYTES_PER_CHUNK, Some(BYTES_PER_CHUNK))
+                    {
+                        Ok(tup) => tup,
+                        Err(e) => {
+                            err = Some(e);
+                            return None;
+                        },
+                    };
 
-                leftover = MemSlice::EMPTY;
-
+                leftover = Buffer::new();
                 if slice.is_empty() && read_n == 0 {
                     return None;
                 }
 
                 last_slice = slice.clone();
-
-                Some(slice.clone())
+                Some(slice)
             });
 
             states = streaming_iter
@@ -143,7 +154,8 @@ pub fn count_rows_from_slice_par(
         } else {
             // For the non-compressed case this is a zero-copy op.
             // TODO: Implement streaming chunk logic.
-            let (bytes, _) = reader.read_next_slice(&leftover, usize::MAX)?;
+            let (bytes, _) =
+                reader.read_next_slice(&leftover, usize::MAX, decompressed_size_hint)?;
 
             let num_chunks = bytes.len().div_ceil(BYTES_PER_CHUNK);
             (0..num_chunks)
@@ -187,9 +199,48 @@ pub fn count_rows_from_slice_par(
             in_string = pair[in_string as usize].end_inside_string;
         }
         n += eof_unterminated_row as usize;
-
         Ok(n)
     })
+}
+
+/// Read the number of rows without parsing columns.
+/// Useful for count(*) queries.
+/// Supports transparent decompression.
+#[allow(clippy::too_many_arguments)]
+pub fn count_rows_from_slice_par(
+    buffer: Buffer<u8>,
+    quote_char: Option<u8>,
+    comment_prefix: Option<&CommentPrefix>,
+    eol_char: u8,
+    has_header: bool,
+    skip_lines: usize,
+    skip_rows_before_header: usize,
+    skip_rows_after_header: usize,
+    raise_if_empty: bool,
+) -> PolarsResult<usize> {
+    const ASSUMED_COMPRESSION_RATIO: usize = 4;
+
+    let buffer_len = buffer.len();
+    let reader = ByteSourceReader::from_memory(buffer)?;
+    let decompressed_size_hint = Some(
+        buffer_len
+            * reader
+                .compression()
+                .map_or(1, |_| ASSUMED_COMPRESSION_RATIO),
+    );
+
+    count_rows_from_reader_par(
+        reader,
+        quote_char,
+        comment_prefix,
+        eol_char,
+        has_header,
+        skip_lines,
+        skip_rows_before_header,
+        skip_rows_after_header,
+        raise_if_empty,
+        decompressed_size_hint,
+    )
 }
 
 /// Checks if a line in a CSV file is a comment based on the given comment prefix configuration.
@@ -1014,7 +1065,7 @@ pub(super) fn parse_lines(
     ignore_errors: bool,
     null_values: Option<&NullValuesCompiled>,
     projection: &[usize],
-    buffers: &mut [Buffer],
+    buffers: &mut [Builder],
     n_lines: usize,
     // length of original schema
     schema_len: usize,

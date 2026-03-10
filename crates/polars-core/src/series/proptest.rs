@@ -1,17 +1,18 @@
 use std::ops::RangeInclusive;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use arrow::bitmap::bitmask::nth_set_bit_u32;
 #[cfg(feature = "dtype-categorical")]
-use polars_dtype::categorical::{CategoricalMapping, Categories, FrozenCategories};
+use polars_dtype::categorical::{Categories, FrozenCategories};
 use proptest::prelude::*;
 
-use crate::chunked_array::builder::AnonymousListBuilder;
+use crate::chunked_array::builder::AnonymousOwnedListBuilder;
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
-use crate::prelude::{Int32Chunked, Int64Chunked, Int128Chunked, NamedFrom, Series, TimeUnit};
+use crate::prelude::{
+    Int32Chunked, Int64Chunked, Int128Chunked, ListBuilderTrait, NamedFrom, Series, TimeUnit,
+};
 #[cfg(feature = "dtype-struct")]
 use crate::series::StructChunked;
 use crate::series::from::IntoSeries;
@@ -337,9 +338,10 @@ fn series_categorical_strategy(
         })
         .prop_map(|categories| {
             // Using Categorical8Type (u8 backing) which supports up to 256 unique categories
+            let mapping = Categories::global().mapping();
             let mut builder = CategoricalChunkedBuilder::<Categorical8Type>::new(
                 next_column_name().into(),
-                DataType::Categorical(Categories::global(), Arc::new(CategoricalMapping::new(256))),
+                DataType::Categorical(Categories::global(), mapping),
             );
 
             for category in categories {
@@ -393,7 +395,7 @@ fn series_list_strategy(
 ) -> impl Strategy<Value = Series> {
     inner.prop_flat_map(move |sample_series| {
         series_length_range.clone().prop_map(move |num_lists| {
-            let mut builder = AnonymousListBuilder::new(
+            let mut builder = AnonymousOwnedListBuilder::new(
                 next_column_name().into(),
                 num_lists,
                 Some(sample_series.dtype().clone()),
@@ -417,7 +419,7 @@ fn series_array_strategy(
         series_length_range.clone().prop_map(move |num_arrays| {
             let width = sample_series.len();
 
-            let mut builder = AnonymousListBuilder::new(
+            let mut builder = AnonymousOwnedListBuilder::new(
                 next_column_name().into(),
                 num_arrays,
                 Some(sample_series.dtype().clone()),

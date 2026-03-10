@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, MutableBitmap};
@@ -17,6 +17,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
+use crate::metrics::IOMetrics;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::{BeginReadArgs, FileReaderCallbacks};
 #[cfg(feature = "parquet")]
@@ -39,6 +40,7 @@ impl DeletionFilesProvider {
     pub fn new(
         deletion_files: Option<DeletionFilesList>,
         execution_state: &crate::execute::StreamingExecutionState,
+        io_metrics: Option<Arc<IOMetrics>>,
     ) -> Self {
         if deletion_files.is_none() {
             return Self::None;
@@ -61,6 +63,7 @@ impl DeletionFilesProvider {
                     prefetch_limit: RelaxedCell::new_usize(0),
                     prefetch_semaphore: std::sync::OnceLock::new(),
                     shared_prefetch_wait_group_slot: Default::default(),
+                    io_metrics: io_metrics.map(OnceLock::from).unwrap_or_default(),
                 };
 
                 reader_builder.set_execution_state(execution_state);
@@ -157,6 +160,7 @@ impl DeletionFilesProvider {
                                     predicate: None,
                                     cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
                                     num_pipelines,
+                                    disable_morsel_split: false,
                                     callbacks: FileReaderCallbacks {
                                         file_schema_tx: None,
                                         n_rows_in_file_tx: None,

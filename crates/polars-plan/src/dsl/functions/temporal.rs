@@ -1,5 +1,6 @@
 use arrow::temporal_conversions::{NANOSECONDS, NANOSECONDS_IN_DAY};
 use chrono::{Datelike, Timelike};
+use polars_utils::array;
 
 use super::*;
 
@@ -331,58 +332,72 @@ impl DurationArgs {
     fn as_literal(&self) -> Option<Expr> {
         use time_unit::convert_time_units;
 
-        let extract_i64 = |e: &Expr| {
+        let extract_i64_as_i128 = |e: &Expr| {
             let Expr::Literal(lv) = e else { return None };
             let av = lv.to_any_value()?;
             if !av.is_integer() {
                 return None;
             };
-            av.extract::<i64>()
+            av.extract::<i64>().map(i128::from)
         };
         let extract_f64 = |e: &Expr| {
             let Expr::Literal(lv) = e else { return None };
             let av = lv.to_any_value()?;
             av.extract::<f64>()
         };
-
-        let mut acc_i64 = Some(0);
-        let mut try_add_to_i64 = |rhs| {
-            acc_i64 = match (acc_i64, rhs) {
-                (Some(acc), Some(x)) => Some(acc + x),
-                _ => None,
+        let overflows_i64 = |e: &&Expr| {
+            let Expr::Literal(lv) = e else { return false };
+            let av = lv.to_any_value();
+            match av {
+                Some(AnyValue::UInt128(x)) => x > i64::MAX as u128,
+                Some(AnyValue::UInt64(x)) => x > i64::MAX as u64,
+                Some(AnyValue::Int128(x)) => x < i64::MIN as i128 || x > i64::MAX as i128,
+                _ => false,
             }
         };
 
-        try_add_to_i64(extract_i64(&self.weeks).map(|v| v * 7 * NANOSECONDS_IN_DAY));
-        try_add_to_i64(extract_i64(&self.days).map(|v| v * NANOSECONDS_IN_DAY));
-        try_add_to_i64(extract_i64(&self.hours).map(|v| v * 3600 * NANOSECONDS));
-        try_add_to_i64(extract_i64(&self.minutes).map(|v| v * 60 * NANOSECONDS));
-        try_add_to_i64(extract_i64(&self.seconds).map(|v| v * NANOSECONDS));
-        try_add_to_i64(extract_i64(&self.milliseconds).map(|v| v * 1_000_000));
-        try_add_to_i64(extract_i64(&self.microseconds).map(|v| v * 1_000));
-        try_add_to_i64(extract_i64(&self.nanoseconds));
+        let fields = [
+            &self.weeks,
+            &self.days,
+            &self.hours,
+            &self.minutes,
+            &self.seconds,
+            &self.milliseconds,
+            &self.microseconds,
+            &self.nanoseconds,
+        ];
 
-        let mut acc_f64 = Some(0.0);
-        let mut try_add_to_f64 = |rhs| {
-            acc_f64 = match (acc_f64, rhs) {
-                (Some(acc), Some(x)) => Some(acc + x),
-                _ => None,
-            }
-        };
+        // go into the function expr implementation to throw an error
+        if fields.iter().any(overflows_i64) {
+            return None;
+        }
 
-        try_add_to_f64(extract_f64(&self.weeks).map(|v| v * 7.0 * NANOSECONDS_IN_DAY as f64));
-        try_add_to_f64(extract_f64(&self.days).map(|v| v * NANOSECONDS_IN_DAY as f64));
-        try_add_to_f64(extract_f64(&self.hours).map(|v| v * 3600.0 * NANOSECONDS as f64));
-        try_add_to_f64(extract_f64(&self.minutes).map(|v| v * 60.0 * NANOSECONDS as f64));
-        try_add_to_f64(extract_f64(&self.seconds).map(|v| v * NANOSECONDS as f64));
-        try_add_to_f64(extract_f64(&self.milliseconds).map(|v| v * 1_000_000.0));
-        try_add_to_f64(extract_f64(&self.microseconds).map(|v| v * 1_000.0));
-        try_add_to_f64(extract_f64(&self.nanoseconds));
+        let d = if let Some(fields) = array::try_map(fields, extract_i64_as_i128) {
+            let [w, d, h, m, s, ms, us, ns] = fields;
 
-        let d = if let Some(acc) = acc_i64 {
-            convert_time_units(acc, TimeUnit::Nanoseconds, self.time_unit)
-        } else if let Some(acc) = acc_f64 {
-            convert_time_units(acc, TimeUnit::Nanoseconds, self.time_unit) as i64
+            let total_ns = w * 7 * NANOSECONDS_IN_DAY as i128
+                + d * NANOSECONDS_IN_DAY as i128
+                + h * 3600 * NANOSECONDS as i128
+                + m * 60 * NANOSECONDS as i128
+                + s * NANOSECONDS as i128
+                + ms * 1_000_000
+                + us * 1_000
+                + ns;
+
+            convert_time_units(total_ns, TimeUnit::Nanoseconds, self.time_unit) as i64
+        } else if let Some(fields) = array::try_map(fields, extract_f64) {
+            let [w, d, h, m, s, ms, us, ns] = fields;
+
+            let total_ns = w * 7.0 * NANOSECONDS_IN_DAY as f64
+                + d * NANOSECONDS_IN_DAY as f64
+                + h * 3600.0 * NANOSECONDS as f64
+                + m * 60.0 * NANOSECONDS as f64
+                + s * NANOSECONDS as f64
+                + ms * 1_000_000.0
+                + us * 1_000.0
+                + ns;
+
+            convert_time_units(total_ns, TimeUnit::Nanoseconds, self.time_unit) as i64
         } else {
             return None;
         };

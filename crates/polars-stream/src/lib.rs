@@ -12,13 +12,13 @@ pub use dispatch::build_streaming_query_executor;
 pub(crate) mod expression;
 mod graph;
 pub use graph::{GraphNodeKey, LogicalPipe, LogicalPipeKey};
-pub use skeleton::{QueryResult, StreamingQuery};
+pub use skeleton::StreamingQuery;
 mod metrics;
 pub use metrics::{GraphMetrics, NodeMetrics};
 mod morsel;
 mod nodes;
 mod physical_plan;
-pub use physical_plan::{PhysNode, PhysNodeKey, PhysNodeKind, ZipBehavior};
+pub use physical_plan::{NodeStyle, PhysNode, PhysNodeKey, PhysNodeKind, ZipBehavior};
 mod pipe;
 mod utils;
 

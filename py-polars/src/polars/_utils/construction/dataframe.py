@@ -492,7 +492,7 @@ def _sequence_to_pydf_dispatcher(
     # third-party libraries (such as numpy/pandas) should be identified inline (below)
     # and THEN registered for dispatch (here) so as not to break lazy-loading behaviour.
 
-    common_params = {
+    common_params: dict[str, Any] = {
         "data": data,
         "schema": schema,
         "schema_overrides": schema_overrides,
@@ -633,13 +633,13 @@ def _sequence_of_sequence_to_pydf(
 
 
 def _sequence_of_series_to_pydf(
-    first_element: Series,
+    first_element: Series,  # noqa: ARG001
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     *,
     schema_overrides: SchemaDict | None,
     strict: bool,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     series_names = [s.name for s in data]
     column_names, schema_overrides = _unpack_schema(
@@ -701,14 +701,14 @@ def _sequence_of_tuple_to_pydf(
 @_sequence_to_pydf_dispatcher.register(Mapping)
 @_sequence_to_pydf_dispatcher.register(dict)
 def _sequence_of_dict_to_pydf(
-    first_element: dict[str, Any],
+    first_element: dict[str, Any],  # noqa: ARG001
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     *,
     schema_overrides: SchemaDict | None,
     strict: bool,
     infer_schema_length: int | None,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     column_names, schema_overrides = _unpack_schema(
         schema, schema_overrides=schema_overrides
@@ -731,13 +731,13 @@ def _sequence_of_dict_to_pydf(
 
 @_sequence_to_pydf_dispatcher.register(str)
 def _sequence_of_elements_to_pydf(
-    first_element: Any,
+    first_element: Any,  # noqa: ARG001
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     schema_overrides: SchemaDict | None,
     *,
     strict: bool,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     column_names, schema_overrides = _unpack_schema(
         schema, schema_overrides=schema_overrides, n_expected=1
@@ -765,13 +765,13 @@ def _sequence_of_numpy_to_pydf(
 
 
 def _sequence_of_pandas_to_pydf(
-    first_element: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
+    first_element: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,  # noqa: ARG001
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     schema_overrides: SchemaDict | None,
     *,
     strict: bool,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     if schema is None:
         column_names: list[str] = []
@@ -801,7 +801,7 @@ def _sequence_of_dataclasses_to_pydf(
     infer_schema_length: int | None,
     *,
     strict: bool = True,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     """Initialize DataFrame from Python dataclasses."""
     from dataclasses import asdict, astuple
@@ -848,7 +848,7 @@ def _sequence_of_pydantic_models_to_pydf(
     infer_schema_length: int | None,
     *,
     strict: bool,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     """Initialise DataFrame from pydantic model objects."""
     import pydantic  # note: must already be available in the env here
@@ -1099,17 +1099,20 @@ def pandas_to_pydf(
     _check_pandas_columns(data, include_index=include_index)
 
     convert_index = include_index and not _pandas_has_default_index(data)
-    if not convert_index and all(
-        is_simple_numpy_backed_pandas_series(data[col]) for col in data.columns
-    ):
-        # Convert via NumPy directly, no PyArrow needed.
-        return pl.DataFrame(
-            {str(col): data[col].to_numpy() for col in data.columns},
-            schema=schema,
-            strict=strict,
-            schema_overrides=schema_overrides,
-            nan_to_null=nan_to_null,
-        )._df
+
+    if not convert_index:
+        if data.shape[1] == 0:
+            return PyDataFrame.empty_with_height(data.shape[0])
+
+        if all(is_simple_numpy_backed_pandas_series(data[col]) for col in data.columns):
+            # Convert via NumPy directly, no PyArrow needed.
+            return pl.DataFrame(
+                {str(col): data[col].to_numpy() for col in data.columns},
+                schema=schema,
+                strict=strict,
+                schema_overrides=schema_overrides,
+                nan_to_null=nan_to_null,
+            )._df
 
     if not _PYARROW_AVAILABLE:
         msg = (
@@ -1188,6 +1191,8 @@ def arrow_to_pydf(
     batches: list[pa.RecordBatch]
     if isinstance(data, pa.RecordBatch):
         batches = [data]
+    elif data.num_columns == 0:
+        return PyDataFrame.empty_with_height(data.num_rows)
     else:
         batches = data.to_batches()
 
@@ -1239,6 +1244,9 @@ def numpy_to_pydf(
             n_columns = 1
 
         elif len(shape) == 2:
+            if shape[1] == 0:
+                return PyDataFrame.empty_with_height(shape[0])
+
             if orient is None and schema is None:
                 # default convention; first axis is rows, second axis is columns
                 n_columns = shape[1]

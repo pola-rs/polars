@@ -86,8 +86,7 @@ macro_rules! impl_cat_series {
                 random_state: PlSeedableRandomStateQuality,
                 buf: &mut Vec<u64>,
             ) -> PolarsResult<()> {
-                self.0.physical().vec_hash(random_state, buf)?;
-                Ok(())
+                self.0.vec_hash(random_state, buf)
             }
 
             fn vec_hash_combine(
@@ -95,14 +94,13 @@ macro_rules! impl_cat_series {
                 build_hasher: PlSeedableRandomStateQuality,
                 hashes: &mut [u64],
             ) -> PolarsResult<()> {
-                self.0.physical().vec_hash_combine(build_hasher, hashes)?;
-                Ok(())
+                self.0.vec_hash_combine(build_hasher, hashes)
             }
 
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
                 if self.0.uses_lexical_ordering() {
-                    unimplemented!()
+                    unsafe { self.0.agg_min(groups) }
                 } else {
                     self.apply_on_phys(|phys| phys.agg_min(groups).$ca_fn().unwrap().clone())
                         .into_series()
@@ -112,12 +110,31 @@ macro_rules! impl_cat_series {
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
                 if self.0.uses_lexical_ordering() {
-                    unimplemented!()
+                    unsafe { self.0.agg_max(groups) }
                 } else {
                     self.apply_on_phys(|phys| phys.agg_max(groups).$ca_fn().unwrap().clone())
                         .into_series()
                 }
             }
+
+            #[cfg(feature = "algorithm_group_by")]
+            unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+                if self.0.uses_lexical_ordering() {
+                    unsafe { self.0.agg_arg_min(groups) }
+                } else {
+                    self.0.physical().agg_arg_min(groups)
+                }
+            }
+
+            #[cfg(feature = "algorithm_group_by")]
+            unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+                if self.0.uses_lexical_ordering() {
+                    unsafe { self.0.agg_arg_max(groups) }
+                } else {
+                    self.0.physical().agg_arg_max(groups)
+                }
+            }
+
 
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_list(&self, groups: &GroupsType) -> Series {

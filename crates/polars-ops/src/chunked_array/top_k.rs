@@ -75,7 +75,7 @@ where
     nnca.rechunk_mut();
     let chunk = nnca.downcast_into_iter().next().unwrap();
     let (_, buffer, _) = chunk.into_inner();
-    let mut vec = buffer.make_mut();
+    let mut vec = buffer.to_vec();
 
     // Partition.
     if k < vec.len() {

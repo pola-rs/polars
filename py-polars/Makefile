@@ -52,7 +52,7 @@ fix:
 lint: .venv  ## Run lint checks (only)
 	$(VENV_BIN)/ruff check
 	$(VENV_BIN)/typos ..
-	-$(VENV_BIN)/mypy
+	$(VENV_BIN)/mypy
 
 .PHONY: fmt
 fmt: .venv  ## Run autoformatting (python and rust)
@@ -62,7 +62,7 @@ fmt: .venv  ## Run autoformatting (python and rust)
 
 .PHONY: clippy
 clippy:  ## Run clippy
-	cargo clippy --locked -- -D warnings -D clippy::dbg_macro
+	python3 ../tools/cargo-fail-warning.py clippy --locked -- -W clippy::dbg_macro
 
 .PHONY: pre-commit
 pre-commit: fmt lint clippy  ## Run all code formatting, lint, and clippy quality checks
@@ -109,6 +109,7 @@ clean:  ## Clean up caches and build artifacts
 	@rm -f .coverage
 	@rm -f coverage.xml
 	@rm -f polars/polars.abi3.so
+	@find runtime -type f -name '*.so' -delete
 	@find . -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -exec rm -r {} +
 
 .PHONY: help

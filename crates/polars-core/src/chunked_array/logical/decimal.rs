@@ -1,7 +1,10 @@
 use std::borrow::Cow;
 
 use arrow::bitmap::Bitmap;
-use polars_compute::decimal::{dec128_fits, dec128_rescale, dec128_verify_prec_scale};
+use polars_compute::decimal::{
+    DEC128_MAX_PREC, dec128_fits, dec128_mul, dec128_rescale, dec128_verify_prec_scale,
+    i128_to_dec128,
+};
 
 use super::*;
 use crate::chunked_array::cast::cast_chunks;
@@ -20,9 +23,9 @@ impl Int128Chunked {
     pub fn into_decimal(self, precision: usize, scale: usize) -> PolarsResult<DecimalChunked> {
         dec128_verify_prec_scale(precision, scale)?;
         if let Some((min, max)) = self.min_max() {
-            let max_abs = max.abs().max(min.abs());
+            let max_abs = max.unsigned_abs().max(min.unsigned_abs());
             polars_ensure!(
-                dec128_fits(max_abs, precision),
+                max_abs < i128::MAX as u128 && dec128_fits(max_abs as i128, precision),
                 ComputeError: "decimal precision {} can't fit values with {} digits",
                 precision,
                 max_abs.to_string().len()
@@ -137,9 +140,9 @@ impl DecimalChunked {
                 self.phys.clone()
             } else if strict {
                 if let Some((min, max)) = self.phys.min_max() {
-                    let max_abs = max.abs().max(min.abs());
+                    let max_abs = max.unsigned_abs().max(min.unsigned_abs());
                     polars_ensure!(
-                        dec128_fits(max_abs, prec),
+                        max_abs < i128::MAX as u128 && dec128_fits(max_abs as i128, prec),
                         ComputeError: "decimal precision {} can't fit values with {} digits",
                         prec,
                         max_abs.to_string().len()
@@ -187,5 +190,26 @@ impl DecimalChunked {
         unary_elementwise(&self.phys, |x| {
             Some(dec128_rescale(x?, old_s, prec, scale).unwrap_or(sentinel))
         })
+    }
+
+    pub fn prod_reduce(&self) -> Scalar {
+        let prec = DEC128_MAX_PREC;
+        let scale = self.scale();
+
+        let mut prod = i128_to_dec128(1, prec, scale).unwrap();
+        for arr in self.phys.downcast_iter() {
+            for v in arr.non_null_values_iter() {
+                if let Some(p) = dec128_mul(prod, v, prec, scale) {
+                    prod = p;
+                } else {
+                    return Scalar::null(DataType::Decimal(prec, scale));
+                }
+            }
+        }
+
+        Scalar::new(
+            DataType::Decimal(prec, scale),
+            AnyValue::Decimal(prod, prec, scale),
+        )
     }
 }

@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use arrow::array::{Array, BinaryViewArray, MutablePlBinary, Utf8ViewArray, View};
 use arrow::bitmap::Bitmap;
-use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
+use polars_buffer::Buffer;
 use polars_utils::aliases::{InitHashMaps, PlHashSet};
 
 use super::IfThenElseKernel;

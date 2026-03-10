@@ -825,7 +825,7 @@ impl utils::Decoder for BinViewDecoder {
                         array.views().clone(),
                         array.data_buffers().clone(),
                         array.validity().cloned(),
-                        array.total_bytes_len(),
+                        array.try_total_bytes_len(),
                         array.total_buffer_len(),
                     )
                     .boxed())

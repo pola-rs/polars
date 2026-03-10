@@ -142,6 +142,8 @@ if TYPE_CHECKING:
 
     from polars import DataType, Expr, LazyFrame, Series
     from polars._typing import (
+        Alignment,
+        ArrowSchemaExportable,
         AsofJoinStrategy,
         AvroCompression,
         ClosedInterval,
@@ -185,6 +187,7 @@ if TYPE_CHECKING:
         SingleIndexSelector,
         SizeUnit,
         StartBy,
+        StorageOptionsDict,
         UniqueKeepStrategy,
         UnstackDirection,
     )
@@ -249,6 +252,13 @@ class DataFrame:
     nan_to_null : bool, default False
         If the data comes from one or more numpy arrays, can optionally convert input
         data np.nan values to null instead. This is a no-op for all other input data.
+    height : int or None, default None
+        Allows constructing DataFrames with 0 width and a specified height. If
+        passed with data, ensures the resulting DataFrame has this height.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Notes
     -----
@@ -372,11 +382,19 @@ class DataFrame:
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         nan_to_null: bool = False,
+        height: int | None = None,
     ) -> None:
+        if height is not None:
+            msg = "the `height` parameter of `DataFrame` is considered unstable."
+            issue_unstable_warning(msg)
+
         if data is None:
             self._df = dict_to_pydf(
                 {}, schema=schema, schema_overrides=schema_overrides
             )
+
+            if height is not None and self.width == 0:
+                self._df = PyDataFrame.empty_with_height(height)
 
         elif isinstance(data, dict):
             self._df = dict_to_pydf(
@@ -464,6 +482,12 @@ class DataFrame:
                 " for the `data` parameter"
             )
             raise TypeError(msg)
+
+        if height is not None and self.height != height:
+            from polars.exceptions import ShapeError
+
+            msg = f"height of data ({self.height}) does not match specified height ({height})"
+            raise ShapeError(msg)
 
     @classmethod
     def deserialize(
@@ -1742,8 +1766,20 @@ class DataFrame:
         foo: [[1,2,3,4,5,6]]
         bar: [["a","b","c","d","e","f"]]
         """
-        if not self.width:  # 0x0 dataframe, cannot infer schema from batches
-            return pa.table({})
+        if self.width == 0:
+            if self.height == 0:
+                return pa.table({})
+
+            s = pl.Series([{}], dtype=Struct({}))
+
+            arr = s.new_from_index(0, min(self.height, (1 << 32) - 2)).to_arrow()
+
+            if len(arr) < self.height:
+                arr = pa.concat_arrays(
+                    [arr, s.new_from_index(0, self.height - len(arr)).to_arrow()]
+                )
+
+            return pa.table({"": arr}).select([])
 
         compat_level_py: int | bool
         if compat_level is None:
@@ -2533,10 +2569,10 @@ class DataFrame:
         ...     }
         ... )
         >>> df.to_pandas()
-           foo  bar   ham
-        0  1.0  6.0  None
-        1  2.0  NaN     b
-        2  NaN  8.0     c
+           foo  bar  ham
+        0  1.0  6.0  NaN
+        1  2.0  NaN    b
+        2  NaN  8.0    c
 
         Pass `use_pyarrow_extension_array=True` to get a pandas DataFrame with columns
         backed by PyArrow extension arrays. This will preserve null values.
@@ -2552,6 +2588,9 @@ class DataFrame:
         ham    large_string[pyarrow]
         dtype: object
         """
+        if self.width == 0:
+            return pd.DataFrame(index=range(self.height))
+
         if use_pyarrow_extension_array:
             if parse_version(pd.__version__) < (1, 5):
                 msg = f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__!r}'
@@ -2854,13 +2893,32 @@ class DataFrame:
             return None
 
     @overload
-    def write_ndjson(self, file: None = None) -> str: ...
+    def write_ndjson(
+        self,
+        file: None = None,
+        *,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
+    ) -> str: ...
 
     @overload
-    def write_ndjson(self, file: str | Path | IO[bytes] | IO[str]) -> None: ...
+    def write_ndjson(
+        self,
+        file: str | Path | IO[bytes] | IO[str],
+        *,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
+    ) -> None: ...
 
     def write_ndjson(
-        self, file: str | Path | IO[bytes] | IO[str] | None = None
+        self,
+        file: str | Path | IO[bytes] | IO[str] | None = None,
+        *,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
     ) -> str | None:
         r"""
         Serialize to newline delimited JSON representation.
@@ -2870,6 +2928,29 @@ class DataFrame:
         file
             File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
+        compression
+            What compression format to use.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
+        compression_level
+            The compression level to use, typically 0-9 or `None` to let the
+            engine choose.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
+        check_extension
+            Whether to check if the filename matches the compression settings.
+            Will raise an error if compression is set to 'uncompressed' and the
+            filename ends in one of (".gz", ".zst", ".zstd") or if
+            compression != 'uncompressed' and the file uses an mismatched
+            extension. Only applies if file is a path.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
 
         Examples
         --------
@@ -2898,6 +2979,9 @@ class DataFrame:
 
         self.lazy().sink_ndjson(
             target,
+            compression=compression,
+            compression_level=compression_level,
+            check_extension=check_extension,
             optimizations=QueryOptFlags._eager(),
             engine=engine,
         )
@@ -2913,6 +2997,9 @@ class DataFrame:
         file: None = None,
         *,
         include_bom: bool = ...,
+        compression: Literal["uncompressed", "gzip", "zstd"] = ...,
+        compression_level: int | None = None,
+        check_extension: bool = ...,
         include_header: bool = ...,
         separator: str = ...,
         line_terminator: str = ...,
@@ -2926,9 +3013,9 @@ class DataFrame:
         decimal_comma: bool = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
-        storage_options: dict[str, Any] | None = ...,
+        storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
-        retries: int = ...,
+        retries: int | None = ...,
     ) -> str: ...
 
     @overload
@@ -2937,6 +3024,9 @@ class DataFrame:
         file: str | Path | IO[str] | IO[bytes],
         *,
         include_bom: bool = ...,
+        compression: Literal["uncompressed", "gzip", "zstd"] = ...,
+        compression_level: int | None = None,
+        check_extension: bool = ...,
         include_header: bool = ...,
         separator: str = ...,
         line_terminator: str = ...,
@@ -2950,9 +3040,9 @@ class DataFrame:
         decimal_comma: bool = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
-        storage_options: dict[str, Any] | None = ...,
+        storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
-        retries: int = ...,
+        retries: int | None = ...,
     ) -> None: ...
 
     def write_csv(
@@ -2960,6 +3050,9 @@ class DataFrame:
         file: str | Path | IO[str] | IO[bytes] | None = None,
         *,
         include_bom: bool = False,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
         include_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
@@ -2973,11 +3066,11 @@ class DataFrame:
         decimal_comma: bool = False,
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int = 2,
+        retries: int | None = None,
     ) -> str | None:
         """
         Write to comma-separated values (CSV) file.
@@ -2989,6 +3082,29 @@ class DataFrame:
             If set to `None` (default), the output is returned as a string instead.
         include_bom
             Whether to include UTF-8 BOM in the CSV output.
+        compression
+            What compression format to use.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
+        compression_level
+            The compression level to use, typically 0-9 or `None` to let the
+            engine choose.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
+        check_extension
+            Whether to check if the filename matches the compression settings.
+            Will raise an error if compression is set to 'uncompressed' and the
+            filename ends in one of (".gz", ".zst", ".zstd") or if
+            compression != 'uncompressed' and the filename does not end in the
+            appropriate extension. Only applies if file is a path.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         include_header
             Whether to include header in the CSV output.
         separator
@@ -3066,6 +3182,9 @@ class DataFrame:
         retries
             Number of retries if accessing a cloud instance fails.
 
+            .. deprecated:: 1.37.1
+                Pass {"max_retries": n} via `storage_options` instead.
+
         Examples
         --------
         >>> import pathlib
@@ -3104,6 +3223,9 @@ class DataFrame:
         self.lazy().sink_csv(
             target,
             include_bom=include_bom,
+            compression=compression,
+            compression_level=compression_level,
+            check_extension=check_extension,
             include_header=include_header,
             separator=separator,
             line_terminator=line_terminator,
@@ -3223,6 +3345,7 @@ class DataFrame:
             | tuple[int, int, int, int]
             | None
         ) = None,
+        use_zip64: bool = False,
     ) -> Workbook:
         """
         Write frame data to a table in an Excel workbook/worksheet.
@@ -3356,6 +3479,10 @@ class DataFrame:
               the `top_row` and `top_col`. Thus, to freeze only the top row and have the
               scrolling region begin at row 10, column D (5th col), supply (1, 0, 9, 4).
               Using cell notation for (row, col), supplying ("A2", 9, 4) is equivalent.
+        use_zip64 : bool
+            Whether to use ZIP64 extensions when writing the Workbook. This allows for
+            writing exceptionally large workbook files (>=4GB when uncompressed), but
+            is less broadly compatible.
 
         Notes
         -----
@@ -3613,7 +3740,7 @@ class DataFrame:
         from xlsxwriter.utility import xl_cell_to_rowcol
 
         # setup workbook/worksheet
-        wb, ws, can_close = _xl_setup_workbook(workbook, worksheet)
+        wb, ws, can_close = _xl_setup_workbook(workbook, worksheet, use_zip64=use_zip64)
         df, is_empty = self, self.is_empty()
 
         # note: `_xl_setup_table_columns` converts nested data (List, Struct, etc.) to
@@ -3776,11 +3903,11 @@ class DataFrame:
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
         record_batch_size: int | None = None,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int = 2,
+        retries: int | None = None,
     ) -> BytesIO: ...
 
     @overload
@@ -3791,11 +3918,11 @@ class DataFrame:
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
         record_batch_size: int | None = None,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int = 2,
+        retries: int | None = None,
     ) -> None: ...
 
     @deprecate_renamed_parameter("future", "compat_level", version="1.1")
@@ -3806,11 +3933,11 @@ class DataFrame:
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
         record_batch_size: int | None = None,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int = 2,
+        retries: int | None = None,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -3860,6 +3987,9 @@ class DataFrame:
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
+
+            .. deprecated:: 1.37.1
+                Pass {"max_retries": n} via `storage_options` instead.
 
         Examples
         --------
@@ -3988,12 +4118,13 @@ class DataFrame:
         pyarrow_options: dict[str, Any] | None = None,
         partition_by: str | Sequence[str] | None = None,
         partition_chunk_size_bytes: int = 4_294_967_296,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         metadata: ParquetMetadata | None = None,
+        arrow_schema: ArrowSchemaExportable | None = None,
         mkdir: bool = False,
     ) -> None:
         """
@@ -4080,6 +4211,9 @@ class DataFrame:
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
+
+            .. deprecated:: 1.37.1
+                Pass {"max_retries": n} via `storage_options` instead.
         metadata
             A dictionary or callback to add key-values to the file-level Parquet
             metadata.
@@ -4087,6 +4221,15 @@ class DataFrame:
             .. warning::
                 This functionality is considered **experimental**. It may be removed or
                 changed at any point without it being considered a breaking change.
+
+        arrow_schema
+            Provide a custom arrow schema to write to the file. This allows
+            setting custom schema and field-level metadata. Names and dtypes
+            must match.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         mkdir: bool
             Recursively create all the directories in the path.
 
@@ -4210,6 +4353,7 @@ class DataFrame:
             credential_provider=credential_provider,
             retries=retries,
             metadata=metadata,
+            arrow_schema=arrow_schema,
             engine=engine,
             mkdir=mkdir,
             optimizations=QueryOptFlags._eager(),
@@ -4588,7 +4732,7 @@ class DataFrame:
         *,
         mode: Literal["error", "append", "overwrite", "ignore"] = ...,
         overwrite_schema: bool | None = ...,
-        storage_options: dict[str, str] | None = ...,
+        storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_write_options: dict[str, Any] | None = ...,
     ) -> None: ...
@@ -4600,7 +4744,7 @@ class DataFrame:
         *,
         mode: Literal["merge"],
         overwrite_schema: bool | None = ...,
-        storage_options: dict[str, str] | None = ...,
+        storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_merge_options: dict[str, Any],
     ) -> deltalake.table.TableMerger: ...
@@ -4611,7 +4755,7 @@ class DataFrame:
         *,
         mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
         overwrite_schema: bool | None = None,
-        storage_options: dict[str, str] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
@@ -4786,7 +4930,7 @@ class DataFrame:
                 version="0.20.14",
             )
 
-        from polars.io.delta import (
+        from polars.io.delta._utils import (
             _check_for_unsupported_types,
             _check_if_delta_available,
             _resolve_delta_lake_uri,
@@ -6750,7 +6894,7 @@ class DataFrame:
     def map_columns(
         self,
         column_names: str | Sequence[str] | pl.Selector,
-        function: Callable[[Series], Series],
+        function: Callable[Concatenate[Series, P], Series],
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> DataFrame:
@@ -7770,9 +7914,10 @@ class DataFrame:
                 "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
                 By "calendar day", we mean the corresponding time on the next day
-                (which may not be 24 hours, due to daylight savings). Similarly for
-                "calendar week", "calendar month", "calendar quarter", and
-                "calendar year".
+                (which may not be 24 hours, due to daylight savings - in cases of
+                ambiguity, we follow RFC-5545 and preserve the DST fold of the original
+                datetime). Similarly for "calendar week", "calendar month",
+                "calendar quarter", and "calendar year".
 
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
@@ -8467,7 +8612,7 @@ class DataFrame:
 
         Return a DataFrame with a single column by mapping each row to a scalar:
 
-        >>> df.map_rows(lambda t: (t[0] * 2 + t[1]))
+        >>> df.map_rows(lambda t: t[0] * 2 + t[1])
         shape: (3, 1)
         ┌─────┐
         │ map │
@@ -12226,21 +12371,24 @@ class DataFrame:
             .collect(optimizations=QueryOptFlags._eager())
         )
 
-    def corr(self, **kwargs: Any) -> DataFrame:
+    def corr(self, *, label: str | None = None, **kwargs: Any) -> DataFrame:
         """
         Return pairwise Pearson product-moment correlation coefficients between columns.
 
         See numpy `corrcoef` for more information:
         https://numpy.org/doc/stable/reference/generated/numpy.corrcoef.html
 
-        Notes
-        -----
-        This functionality requires numpy to be installed.
-
         Parameters
         ----------
+        label
+            If given, a new column that contains the labels (column names)
+            associated with each row is added, with this name.
         **kwargs
-            Keyword arguments are passed to numpy `corrcoef`.
+            Keyword arguments that are passed to `numpy.corrcoef`.
+
+        Notes
+        -----
+        This functionality requires `numpy` to be installed.
 
         Examples
         --------
@@ -12256,11 +12404,27 @@ class DataFrame:
         │ -1.0 ┆ 1.0  ┆ -1.0 │
         │ 1.0  ┆ -1.0 ┆ 1.0  │
         └──────┴──────┴──────┘
+        >>> df.corr(label="cols")
+        shape: (3, 4)
+        ┌──────┬──────┬──────┬──────┐
+        │ cols ┆ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  ┆ ---  │
+        │ str  ┆ f64  ┆ f64  ┆ f64  │
+        ╞══════╪══════╪══════╪══════╡
+        │ foo  ┆ 1.0  ┆ -1.0 ┆ 1.0  │
+        │ bar  ┆ -1.0 ┆ 1.0  ┆ -1.0 │
+        │ ham  ┆ 1.0  ┆ -1.0 ┆ 1.0  │
+        └──────┴──────┴──────┴──────┘
         """
         correlation_matrix = np.corrcoef(self.to_numpy(), rowvar=False, **kwargs)
         if self.width == 1:
             correlation_matrix = np.array([correlation_matrix])
-        return DataFrame(correlation_matrix, schema=self.columns)
+
+        df = DataFrame(correlation_matrix, schema=self.columns)
+        if label is not None:
+            cols = pl.Series(name=label, values=self.columns)
+            df.insert_column(0, cols)
+        return df
 
     def merge_sorted(self, other: DataFrame, key: str) -> DataFrame:
         """
@@ -12349,6 +12513,7 @@ class DataFrame:
         column: str,
         *,
         descending: bool = False,
+        nulls_last: bool = False,
     ) -> DataFrame:
         """
         Flag a column as sorted.
@@ -12361,6 +12526,8 @@ class DataFrame:
             Column that is sorted
         descending
             Whether the column is sorted in descending order.
+        nulls_last
+            Whether the nulls are at the end.
 
         Warnings
         --------
@@ -12374,7 +12541,7 @@ class DataFrame:
 
         return (
             self.lazy()
-            .set_sorted(column, descending=descending)
+            .set_sorted(column, descending=descending, nulls_last=nulls_last)
             .collect(optimizations=QueryOptFlags._eager())
         )
 
@@ -12613,8 +12780,8 @@ class DataFrame:
         fmt_float: FloatFmt | None = None,
         fmt_str_lengths: int | None = None,
         fmt_table_cell_list_len: int | None = None,
-        tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
-        tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
+        tbl_cell_alignment: Alignment | None = None,
+        tbl_cell_numeric_alignment: Alignment | None = None,
         tbl_cols: int | None = None,
         tbl_column_data_type_inline: bool | None = None,
         tbl_dataframe_shape_below: bool | None = None,

@@ -149,6 +149,7 @@ pub struct BeginReadArgs {
     pub cast_columns_policy: CastColumnsPolicy,
 
     pub num_pipelines: usize,
+    pub disable_morsel_split: bool,
     pub callbacks: FileReaderCallbacks,
     // TODO
     // We could introduce dynamic `Option<Box<dyn Any>>` for the reader to use. That would help
@@ -166,6 +167,7 @@ impl Default for BeginReadArgs {
             // TODO: Use less restrictive default
             cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
             num_pipelines: 1,
+            disable_morsel_split: false,
             callbacks: FileReaderCallbacks::default(),
         }
     }

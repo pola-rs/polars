@@ -79,4 +79,11 @@ impl BinaryNameSpace {
         self.0
             .map_binary(FunctionExpr::BinaryExpr(BinaryFunction::Tail), n)
     }
+
+    pub fn get(self, index: Expr, null_on_oob: bool) -> Expr {
+        self.0.map_binary(
+            FunctionExpr::BinaryExpr(BinaryFunction::Get(null_on_oob)),
+            index,
+        )
+    }
 }

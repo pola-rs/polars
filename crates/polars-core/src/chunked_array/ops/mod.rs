@@ -44,6 +44,7 @@ pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub mod zip;
 
+pub use bit_repr::reinterpret;
 pub use chunkops::_set_check_length;
 pub use nesting_utils::ChunkNestingUtils;
 #[cfg(feature = "serde-lazy")]
@@ -52,15 +53,6 @@ pub use sort::options::*;
 
 use crate::chunked_array::cast::CastOptions;
 use crate::series::{BitRepr, IsSorted};
-pub trait Reinterpret {
-    fn reinterpret_signed(&self) -> Series {
-        unimplemented!()
-    }
-
-    fn reinterpret_unsigned(&self) -> Series {
-        unimplemented!()
-    }
-}
 
 /// Transmute [`ChunkedArray`] to bit representation.
 /// This is useful in hashing context and reduces no.
@@ -79,6 +71,14 @@ pub trait ChunkAnyValue {
 
     /// Get a single value. Beware this is slow.
     fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>>;
+}
+
+pub trait ChunkAnyValueBypassValidity {
+    /// Get a single value bypassing the validity map. Beware this is slow.
+    ///
+    /// # Safety
+    /// Does not do any bounds checking.
+    unsafe fn get_any_value_bypass_validity(&self, index: usize) -> AnyValue<'_>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -292,6 +292,14 @@ pub trait ChunkQuantile<T> {
     /// Returns `None` if the array is empty or only contains null values.
     fn quantile(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Option<T>> {
         Ok(None)
+    }
+    /// Aggregate a given set of quantiles of the ChunkedArray.
+    /// Returns `None` if the array is empty or only contains null values.
+    fn quantiles(&self, quantiles: &[f64], _method: QuantileMethod) -> PolarsResult<Vec<Option<T>>>
+    where
+        T: Clone,
+    {
+        Ok(vec![None; quantiles.len()])
     }
 }
 

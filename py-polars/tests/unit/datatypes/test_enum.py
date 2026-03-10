@@ -6,6 +6,7 @@ import io
 import operator
 import re
 import sys
+import warnings
 from datetime import date
 from textwrap import dedent
 from typing import TYPE_CHECKING, Any
@@ -155,11 +156,15 @@ def test_nested_enum_creation() -> None:
     assert s.dtype == dtype
 
 
+# Test can be removed after 2.0 release
 def test_enum_union() -> None:
     e1 = pl.Enum(["a", "b"])
     e2 = pl.Enum(["b", "c"])
-    assert e1 | e2 == pl.Enum(["a", "b", "c"])
-    assert e1.union(e2) == pl.Enum(["a", "b", "c"])
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        assert e1 | e2 == pl.Enum(["a", "b", "c"])
+        assert e1.union(e2) == pl.Enum(["a", "b", "c"])
 
 
 def test_nested_enum_concat() -> None:
@@ -690,3 +695,13 @@ def test_read_enum_from_csv() -> None:
     read = pl.read_csv(f, schema=schema)
     assert read.schema == schema
     assert_frame_equal(df.cast(schema), read)  # type: ignore[arg-type]
+
+
+def test_enum_struct_slice_25821() -> None:
+    df = pl.select(
+        x=pl.concat_list(
+            pl.struct(y=pl.lit("a", pl.Enum(["a", "b", "c"]))),
+        ),
+    )
+    res = df.select(pl.col.x.list.head(1))
+    assert res.to_dict(as_series=False) == {"x": [[{"y": "a"}]]}

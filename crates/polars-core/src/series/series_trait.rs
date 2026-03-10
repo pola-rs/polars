@@ -3,8 +3,6 @@ use std::borrow::Cow;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_compute::rolling::QuantileMethod;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
@@ -13,8 +11,6 @@ use crate::prelude::*;
 use crate::utils::{first_non_null, last_non_null};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum IsSorted {
     Ascending,
     Descending,
@@ -115,6 +111,22 @@ pub(crate) mod private {
         unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "algorithm_group_by")]
+        unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), &IDX_DTYPE)
+        }
+
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "algorithm_group_by")]
+        unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), &IDX_DTYPE)
+        }
+
         /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
         /// first cast to `Int64` to prevent overflow issues.
         #[cfg(feature = "algorithm_group_by")]
@@ -533,9 +545,17 @@ pub trait SeriesTrait:
     fn std_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {
         polars_bail!(opq = std, self._dtype());
     }
-    /// Get the quantile of the ChunkedArray as a new Series of length 1.
+    /// Get the quantile of the Series as a new Series of length 1.
     fn quantile_reduce(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Scalar> {
         polars_bail!(opq = quantile, self._dtype());
+    }
+    /// Get multiple quantiles of the ChunkedArray as a new `List` Scalar
+    fn quantiles_reduce(
+        &self,
+        _quantiles: &[f64],
+        _method: QuantileMethod,
+    ) -> PolarsResult<Scalar> {
+        polars_bail!(opq = quantiles, self._dtype());
     }
     /// Get the bitwise AND of the Series as a new Series of length 1,
     fn and_reduce(&self) -> PolarsResult<Scalar> {

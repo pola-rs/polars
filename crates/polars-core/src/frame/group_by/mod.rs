@@ -13,7 +13,6 @@ use crate::prelude::*;
 use crate::utils::{_set_partition_size, accumulate_dataframes_vertical};
 
 pub mod aggregations;
-pub mod expr;
 pub(crate) mod hashing;
 mod into_groups;
 mod position;
@@ -743,46 +742,7 @@ impl<'a> GroupBy<'a> {
         DataFrame::new_infer_height(cols)
     }
 
-    /// Aggregate the groups of the group_by operation into lists.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use polars_core::prelude::*;
-    /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
-    ///     // GroupBy and aggregate to Lists
-    ///     df.group_by(["date"])?.select(["temp"]).agg_list()
-    /// }
-    /// ```
-    /// Returns:
-    ///
-    /// ```text
-    /// +------------+------------------------+
-    /// | date       | temp_agg_list          |
-    /// | ---        | ---                    |
-    /// | Date       | list [i32]             |
-    /// +============+========================+
-    /// | 2020-08-23 | "[Some(9)]"            |
-    /// +------------+------------------------+
-    /// | 2020-08-22 | "[Some(7), Some(1)]"   |
-    /// +------------+------------------------+
-    /// | 2020-08-21 | "[Some(20), Some(10)]" |
-    /// +------------+------------------------+
-    /// ```
-    #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
-    pub fn agg_list(&self) -> PolarsResult<DataFrame> {
-        let (mut cols, agg_cols) = self.prepare_agg()?;
-        for agg_col in agg_cols {
-            let new_name = fmt_group_by_column(agg_col.name().as_str(), GroupByMethod::Implode);
-            let mut agg = unsafe { agg_col.agg_list(&self.groups) };
-            agg.rename(new_name);
-            cols.push(agg);
-        }
-        DataFrame::new_infer_height(cols)
-    }
-
     fn prepare_apply(&self) -> PolarsResult<DataFrame> {
-        polars_ensure!(self.df.height() > 0, ComputeError: "cannot group_by + apply on empty 'DataFrame'");
         if let Some(agg) = &self.selected_agg {
             if agg.is_empty() {
                 Ok(self.df.clone())
@@ -804,6 +764,7 @@ impl<'a> GroupBy<'a> {
     where
         F: Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
+        polars_ensure!(self.df.height() > 0, ComputeError: "cannot group_by + apply on empty 'DataFrame'");
         let df = self.prepare_apply()?;
         let dfs = self
             .get_groups()
@@ -826,13 +787,27 @@ impl<'a> GroupBy<'a> {
     where
         F: FnMut(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
-        self.apply_sliced(None, f)
+        self.apply_sliced(None, f, None)
     }
 
-    pub fn apply_sliced<F>(&self, slice: Option<(i64, usize)>, mut f: F) -> PolarsResult<DataFrame>
+    pub fn apply_sliced<F>(
+        &self,
+        slice: Option<(i64, usize)>,
+        mut f: F,
+        schema: Option<&SchemaRef>,
+    ) -> PolarsResult<DataFrame>
     where
         F: FnMut(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
+        if self.df.height() == 0 {
+            // return empty dataframe with correct schema
+            if let Some(schema) = schema {
+                return Ok(DataFrame::empty_with_arc_schema(schema.clone()));
+            }
+
+            polars_bail!(ComputeError: "cannot group_by + apply on empty 'DataFrame'");
+        }
+
         let df = self.prepare_apply()?;
         let max_height = if let Some((offset, len)) = slice {
             offset.try_into().unwrap_or(usize::MAX).saturating_add(len)
@@ -899,9 +874,11 @@ pub enum GroupByMethod {
     NUnique,
     Quantile(f64, QuantileMethod),
     Count { include_nulls: bool },
-    Implode,
+    Implode { maintain_order: bool },
     Std(u8),
     Var(u8),
+    ArgMin,
+    ArgMax,
 }
 
 impl Display for GroupByMethod {
@@ -924,9 +901,11 @@ impl Display for GroupByMethod {
             NUnique => "n_unique",
             Quantile(_, _) => "quantile",
             Count { .. } => "count",
-            Implode => "list",
+            Implode { .. } => "implode",
             Std(_) => "std",
             Var(_) => "var",
+            ArgMin => "arg_min",
+            ArgMax => "arg_max",
         };
         write!(f, "{s}")
     }
@@ -951,10 +930,12 @@ pub fn fmt_group_by_column(name: &str, method: GroupByMethod) -> PlSmallStr {
         Groups => PlSmallStr::from_static("groups"),
         NUnique => format_pl_smallstr!("{name}_n_unique"),
         Count { .. } => format_pl_smallstr!("{name}_count"),
-        Implode => format_pl_smallstr!("{name}_agg_list"),
+        Implode { .. } => format_pl_smallstr!("{name}_agg_list"),
         Quantile(quantile, _interpol) => format_pl_smallstr!("{name}_quantile_{quantile:.2}"),
         Std(_) => format_pl_smallstr!("{name}_agg_std"),
         Var(_) => format_pl_smallstr!("{name}_agg_var"),
+        ArgMin => format_pl_smallstr!("{name}_arg_min"),
+        ArgMax => format_pl_smallstr!("{name}_arg_max"),
     }
 }
 

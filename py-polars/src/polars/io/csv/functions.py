@@ -5,11 +5,16 @@ import os
 from collections.abc import Sequence
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Literal
+from typing import IO, TYPE_CHECKING, Literal
 
 import polars._reexport as pl
 import polars.functions as F
-from polars._utils.deprecation import deprecate_renamed_parameter, deprecated
+from polars._utils.deprecation import (
+    deprecate_renamed_parameter,
+    deprecated,
+    issue_deprecation_warning,
+)
+from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import (
     _process_null_values,
     is_path_or_str_sequence,
@@ -38,7 +43,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
     from polars import DataFrame, LazyFrame
-    from polars._typing import CsvEncoding, PolarsDataType, SchemaDict
+    from polars._typing import (
+        CsvEncoding,
+        PolarsDataType,
+        SchemaDict,
+        StorageOptionsDict,
+    )
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
 
@@ -74,7 +84,7 @@ def read_csv(
     low_memory: bool = False,
     rechunk: bool = False,
     use_pyarrow: bool = False,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     skip_rows_after_header: int = 0,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
@@ -278,6 +288,10 @@ def read_csv(
     │ 3   ┆ Charlie ┆ 2002-03-08 │
     └─────┴─────────┴────────────┘
     """
+    if sample_size != 1024:
+        msg = "the `sample_size` parameter was deprecated in 1.10.0, it doesn't do anything anymore"
+        issue_deprecation_warning(msg)
+
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
     _check_arg_is_1byte("eol_char", eol_char, can_be_empty=False)
@@ -453,7 +467,7 @@ def read_csv(
             new_to_current = dict(zip(new_columns, current_columns, strict=False))
             # Change new column names to current column names in dtype.
             schema_overrides = {
-                new_to_current.get(column_name, column_name): column_dtype
+                new_to_current.get(column_name, column_name): column_dtype  # type: ignore[misc]
                 for column_name, column_dtype in schema_overrides.items()
             }
 
@@ -618,6 +632,10 @@ def _read_csv_impl(
     decimal_comma: bool = False,
     glob: bool = True,
 ) -> DataFrame:
+    if sample_size != 1024:
+        msg = "the `sample_size` parameter was deprecated in 1.10.0, it doesn't do anything anymore"
+        issue_deprecation_warning(msg)
+
     path: str | None
     if isinstance(source, (str, Path)):
         path = normalize_filepath(source, check_not_directory=False)
@@ -731,12 +749,12 @@ def _read_csv_impl(
     return wrap_df(pydf)
 
 
-@deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
-@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
-@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 @deprecated(
     "`read_csv_batched` is deprecated; use `scan_csv().collect_batches()` instead."
 )
+@deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
+@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
+@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def read_csv_batched(
     source: str | Path,
     *,
@@ -933,6 +951,10 @@ def read_csv_batched(
     ...
     ...     batches = reader.next_batches(100)
     """
+    if sample_size != 1024:
+        msg = "the `sample_size` parameter was deprecated in 1.10.0, it doesn't do anything anymore"
+        issue_deprecation_warning(msg)
+
     projection, columns = parse_columns_arg(columns)
 
     if columns and not has_header:
@@ -1022,7 +1044,7 @@ def read_csv_batched(
             new_to_current = dict(zip(new_columns, current_columns, strict=False))
             # Change new column names to current column names in dtype.
             schema_overrides = {
-                new_to_current.get(column_name, column_name): column_dtype
+                new_to_current.get(column_name, column_name): column_dtype  # type: ignore[misc]
                 for column_name, column_dtype in schema_overrides.items()
             }
 
@@ -1086,7 +1108,7 @@ def scan_csv(
     null_values: str | Sequence[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
-    cache: bool = True,
+    cache: bool | None = None,
     with_column_names: Callable[[list[str]], list[str]] | None = None,
     infer_schema: bool = True,
     infer_schema_length: int | None = N_INFER_DEFAULT,
@@ -1104,11 +1126,12 @@ def scan_csv(
     truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
     glob: bool = True,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    retries: int = 2,
+    retries: int | None = None,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
+    missing_columns: Literal["insert", "raise"] | None = None,
 ) -> LazyFrame:
     r"""
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -1175,6 +1198,9 @@ def scan_csv(
         `pl.String` to check which values might cause an issue.
     cache
         Cache the result after reading.
+
+        .. deprecated:: 1.39.0
+            File cache is no longer supported.
     with_column_names
         Apply a function over the column names just in time (when they are determined);
         this function will receive (and should return) a list of column names.
@@ -1250,12 +1276,28 @@ def scan_csv(
             at any point without it being considered a breaking change.
     retries
         Number of retries if accessing a cloud instance fails.
+
+        .. deprecated:: 1.37.1
+            Pass {"max_retries": n} via `storage_options` instead.
     file_cache_ttl
         Amount of time to keep downloaded cloud files since their last access time,
         in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
         (which defaults to 1 hour) if not given.
+
+        .. deprecated:: 1.39.0
+            File cache is no longer supported.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
+    missing_columns
+        Configuration for behavior when columns defined in the schema are
+        missing from the data:
+
+        * ``"insert"``: Insert the missing columns with NULL values.
+        * ``"raise"``: Raise an error.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Returns
     -------
@@ -1359,6 +1401,22 @@ def scan_csv(
     if not infer_schema:
         infer_schema_length = 0
 
+    if retries is not None:
+        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
+        issue_deprecation_warning(msg)
+        storage_options = storage_options or {}
+        storage_options["max_retries"] = retries
+
+    if file_cache_ttl is not None or cache is not None:
+        msg = "file cache is no longer supported as of 1.39.0."
+        issue_deprecation_warning(msg)
+
+    cache_deprecated = False
+
+    if missing_columns is not None:
+        msg = "The `missing_columns` parameter of `scan_csv` is considered unstable."
+        issue_unstable_warning(msg)
+
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "scan_csv"
     )
@@ -1377,7 +1435,7 @@ def scan_csv(
         null_values=null_values,
         missing_utf8_is_empty_string=missing_utf8_is_empty_string,
         ignore_errors=ignore_errors,
-        cache=cache,
+        cache=cache_deprecated,
         with_column_names=with_column_names,
         infer_schema_length=infer_schema_length,
         n_rows=n_rows,
@@ -1393,11 +1451,10 @@ def scan_csv(
         truncate_ragged_lines=truncate_ragged_lines,
         decimal_comma=decimal_comma,
         glob=glob,
-        retries=retries,
         storage_options=storage_options,
         credential_provider=credential_provider_builder,
-        file_cache_ttl=file_cache_ttl,
         include_file_paths=include_file_paths,
+        missing_columns=missing_columns,
     )
 
 
@@ -1439,11 +1496,10 @@ def _scan_csv_impl(
     truncate_ragged_lines: bool = True,
     decimal_comma: bool = False,
     glob: bool = True,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderBuilder | None = None,
-    retries: int = 2,
-    file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
+    missing_columns: Literal["insert", "raise"] | None = None,
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
     if schema_overrides is not None:
@@ -1461,11 +1517,11 @@ def _scan_csv_impl(
     else:
         sources = []
 
-    if storage_options:
-        storage_options = list(storage_options.items())  # type: ignore[assignment]
-    else:
-        # Handle empty dict input
-        storage_options = None
+    # TODO: This is a hack. We conditionally set `missing_columns` to mimic
+    # existing behavior. This should be removed once the workaround is no
+    # longer needed.
+    if missing_columns is None and schema is not None and has_header:
+        missing_columns = "insert"
 
     pylf = PyLazyFrame.new_from_csv(
         source,
@@ -1498,8 +1554,7 @@ def _scan_csv_impl(
         schema=schema,
         cloud_options=storage_options,
         credential_provider=credential_provider,
-        retries=retries,
-        file_cache_ttl=file_cache_ttl,
         include_file_paths=include_file_paths,
+        missing_columns=missing_columns,
     )
     return wrap_ldf(pylf)

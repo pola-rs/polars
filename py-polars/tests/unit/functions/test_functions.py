@@ -11,7 +11,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
-    from polars._typing import ConcatMethod, PolarsDataType
+    from polars._typing import ConcatMethod, CorrelationMethod, PolarsDataType
 
 
 def test_concat_align() -> None:
@@ -832,3 +832,26 @@ def test_row_index_expr() -> None:
             schema={"index": pl.get_index_type()},
         ),
     )
+
+
+@pytest.mark.parametrize("dt", [pl.Float16, pl.Float32, pl.Float64])
+@pytest.mark.parametrize("method", ["pearson", "spearman"])
+def test_corr_spearman_float_dtype_26335(
+    dt: pl.DataType, method: CorrelationMethod
+) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 8, 3],
+            "b": [4, 5, 2],
+            "c": ["foo", "foo", "foo"],
+        },
+        schema_overrides={"a": dt, "b": dt},
+    )
+
+    q = df.lazy().select(pl.corr("a", "b", method=method))
+    out = q.collect()
+    assert out.schema["a"] == dt
+
+    q = df.lazy().group_by("c").agg(pl.corr("a", "b", method=method))
+    out = q.collect()
+    assert out.schema["a"] == dt

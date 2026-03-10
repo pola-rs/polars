@@ -38,7 +38,10 @@ pub trait RollingAggWindowNoNulls<T: NativeType, Out: NativeType = T> {
     ///
     /// # Safety
     /// `start` and `end` must be within the windows bounds
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<Out>;
+    unsafe fn update(&mut self, new_start: usize, new_end: usize);
+
+    /// Get the aggregate of the current window relative to the value at `idx`.
+    fn get_agg(&self, idx: usize) -> Option<Out>;
 
     /// Returns the length of the underlying input.
     fn slice_len(&self) -> usize;
@@ -69,6 +72,7 @@ where
             // SAFETY:
             // we are in bounds
             unsafe { agg_window.update(start, end) }
+            agg_window.get_agg(idx)
         }
     });
     let arr = PrimitiveArray::from_trusted_len_iter(out);

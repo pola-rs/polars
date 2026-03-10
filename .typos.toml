@@ -8,12 +8,14 @@ extend-exclude = [
   "**/py-polars/src/polars/_utils/nest_asyncio.py",
   "*.nix",
   "**/crates/polars-plan/dsl-schema-hashes.json",
+  "**/_polars_runtime*/",
 ]
 ignore-hidden = false
 
 [default]
 extend-ignore-re = [
   '"Theatre": \[.+\],',
+  'HashiCorp',
 ]
 
 [default.extend-words]
@@ -38,8 +40,10 @@ ND = "ND"
 nd = "nd"
 NDJson = "NDJson"
 NDJsonSinkNode = "NDJsonSinkNode"
+NDJsonReaderBuilder = "NDJsonReaderBuilder"
 NDJsonReadOptions = "NDJsonReadOptions"
 NDJsonFileReader = "NDJsonFileReader"
 NDJsonWriterStarter = "NDJsonWriterStarter"
+NDJsonWriterOptions = "NDJsonWriterOptions"
 opt_nd = "opt_nd"
 tpe = "tpe"

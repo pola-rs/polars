@@ -2,7 +2,7 @@ use std::sync::{Arc, LazyLock};
 
 use object_store::ObjectStore;
 use object_store::local::LocalFileSystem;
-use polars_core::config::{self, verbose_print_sensitive};
+use polars_core::config::{self, verbose, verbose_print_sensitive};
 use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_path::{PlPath, PlRefPath};
@@ -11,7 +11,7 @@ use polars_utils::{format_pl_smallstr, pl_serialize};
 use tokio::sync::RwLock;
 
 use super::{CloudLocation, CloudOptions, CloudType, PolarsObjectStore};
-use crate::cloud::CloudConfig;
+use crate::cloud::{CloudConfig, CloudRetryConfig};
 
 /// Object stores must be cached. Every object-store will do DNS lookups and
 /// get rate limited when querying the DNS (can take up to 5s).
@@ -39,18 +39,18 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Vec<u
     let cloud_options = options.map(
         |CloudOptions {
              // Destructure to ensure this breaks if anything changes.
-             max_retries,
              #[cfg(feature = "file_cache")]
              file_cache_ttl,
              config,
+             retry_config,
              #[cfg(feature = "cloud")]
              credential_provider,
          }| {
-            CloudOptions2 {
-                max_retries: *max_retries,
+            CloudOptionsKey {
                 #[cfg(feature = "file_cache")]
                 file_cache_ttl: *file_cache_ttl,
                 config: config.clone(),
+                retry_config: *retry_config,
                 #[cfg(feature = "cloud")]
                 credential_provider: credential_provider.as_ref().map_or(0, |x| x.func_addr()),
             }
@@ -75,18 +75,18 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Vec<u
     #[cfg_attr(feature = "serde", derive(serde::Serialize))]
     struct CacheKey {
         url_base: PlSmallStr,
-        cloud_options: Option<CloudOptions2>,
+        cloud_options: Option<CloudOptionsKey>,
     }
 
     /// Variant of CloudOptions for serializing to a cache key. The credential
     /// provider is replaced by the function address.
     #[derive(Clone, Debug, PartialEq, Hash, Eq)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-    struct CloudOptions2 {
-        max_retries: usize,
+    struct CloudOptionsKey {
         #[cfg(feature = "file_cache")]
         file_cache_ttl: u64,
         config: Option<CloudConfig>,
+        retry_config: CloudRetryConfig,
         #[cfg(feature = "cloud")]
         credential_provider: usize,
     }
@@ -105,6 +105,10 @@ pub(crate) struct PolarsObjectStoreBuilder {
 }
 
 impl PolarsObjectStoreBuilder {
+    pub(super) fn path(&self) -> &PlRefPath {
+        &self.path
+    }
+
     pub(super) async fn build_impl(
         &self,
         // Whether to clear cached credentials for Python credential providers.
@@ -114,6 +118,15 @@ impl PolarsObjectStoreBuilder {
             .options
             .as_ref()
             .unwrap_or_else(|| CloudOptions::default_static_ref());
+
+        if let Some(options) = &self.options
+            && verbose()
+        {
+            eprintln!(
+                "build object-store: file_cache_ttl: {}",
+                options.file_cache_ttl
+            )
+        }
 
         let store = match self.cloud_type {
             CloudType::Aws => {
@@ -157,7 +170,7 @@ impl PolarsObjectStoreBuilder {
                 {
                     #[cfg(feature = "http")]
                     {
-                        let store = options.build_http(self.path.as_str())?;
+                        let store = options.build_http(self.path.clone())?;
                         PolarsResult::Ok(Arc::new(store) as Arc<dyn ObjectStore>)
                     }
                 }

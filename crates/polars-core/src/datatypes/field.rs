@@ -1,11 +1,12 @@
 use arrow::datatypes::{IntervalUnit, Metadata};
 use polars_dtype::categorical::CategoricalPhysical;
 use polars_error::feature_gated;
-use polars_utils::check_allow_importing_interval_as_struct;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
+use crate::config::check_allow_importing_interval_as_struct;
 pub static POLARS_OBJECT_EXTENSION_NAME: &str = "_POLARS_PYTHON_OBJECT";
+pub static ARROW_UUID_EXTENSION_NAME: &str = "arrow.uuid";
 
 /// Characterizes the name and the [`DataType`] of a column.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

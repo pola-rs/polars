@@ -28,7 +28,6 @@ tokio = { workspace = true, optional = true }
 
 [features]
 async = [
-  "polars-plan/async",
   "polars-io/cloud",
   "tokio",
 ]

@@ -34,7 +34,7 @@ pub mod proptest;
 /// ```
 /// use polars_arrow::array::BooleanArray;
 /// use polars_arrow::bitmap::Bitmap;
-/// use polars_arrow::buffer::Buffer;
+/// use polars_buffer::Buffer;
 ///
 /// let array = BooleanArray::from([Some(true), None, Some(false)]);
 /// assert_eq!(array.value(0), true);

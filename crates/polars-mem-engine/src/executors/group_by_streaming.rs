@@ -5,7 +5,7 @@ use polars_core::frame::DataFrame;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::prelude::DataType;
 use polars_core::prelude::{Column, GroupsType};
-use polars_core::schema::Schema;
+use polars_core::schema::{Schema, SchemaRef};
 use polars_core::series::IsSorted;
 use polars_error::PolarsResult;
 use polars_expr::prelude::PhysicalExpr;
@@ -25,6 +25,7 @@ pub struct GroupByStreamingExec {
     phys_keys: Vec<Arc<dyn PhysicalExpr>>,
     phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
     maintain_order: bool,
+    output_schema: SchemaRef,
     slice: Option<(i64, usize)>,
     from_partitioned_ds: bool,
 }
@@ -41,6 +42,7 @@ impl GroupByStreamingExec {
         phys_keys: Vec<Arc<dyn PhysicalExpr>>,
         phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
         maintain_order: bool,
+        output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
         from_partitioned_ds: bool,
     ) -> Self {
@@ -88,6 +90,7 @@ impl GroupByStreamingExec {
             phys_keys,
             phys_aggs,
             maintain_order,
+            output_schema,
             slice,
             from_partitioned_ds,
         }
@@ -271,6 +274,7 @@ impl Executor for GroupByStreamingExec {
                 None,
                 state,
                 self.maintain_order,
+                &self.output_schema,
                 self.slice,
             );
         }

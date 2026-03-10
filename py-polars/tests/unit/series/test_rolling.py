@@ -72,11 +72,11 @@ def test_series_rolling_by_with_nulls(
 @pytest.mark.parametrize(
     ("rank_op", "expected"),
     [
-        ("average", [None, None, 1.0, 1.0, 1.0, 1.0, 3.0, 3.0]),
-        ("min", [None, None, 1, 1, 1, 1, 3, 3]),
-        ("max", [None, None, 1, 1, 1, 1, 3, 3]),
-        ("dense", [None, None, 1, 1, 1, 1, 3, 3]),
-        ("random", [None, None, 1, 1, 1, 1, 3, 3]),
+        ("average", [None, None, None, 1.0, 3.0, 1.0, 2.0, 3.0]),
+        ("min", [None, None, None, 1, 3, 1, 2, 3]),
+        ("max", [None, None, None, 1, 3, 1, 2, 3]),
+        ("dense", [None, None, None, 1, 3, 1, 2, 3]),
+        ("random", [None, None, None, 1, 3, 1, 2, 3]),
     ],
 )
 def test_series_rolling_rank_by_with_nulls(
@@ -123,7 +123,7 @@ def test_series_rolling_quantile_by(values: pl.Series, by_col: pl.Series) -> Non
 
 def test_series_rolling_rank_by(values: pl.Series, by_col: pl.Series) -> None:
     actual = values.rolling_rank_by(by_col, "2i", method="average")
-    expected = pl.Series([2.0, 2.0, 2.0, 2.0, 1.0, 1.0, 3.0, 3.0])
+    expected = pl.Series([1.0, 2.0, 1.0, 2.0, 4.0, 1.0, 2.0, 3.0])
     assert_series_equal(actual, expected)
 
 

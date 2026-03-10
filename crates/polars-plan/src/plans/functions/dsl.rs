@@ -96,6 +96,18 @@ impl DslFunction {
         let function = match self {
             #[cfg(feature = "pivot")]
             DslFunction::Unpivot { args } => {
+                let variable_name = args.variable_name.as_deref().unwrap_or("variable");
+                polars_ensure!(
+                    !input_schema.contains(variable_name),
+                    Duplicate: "duplicate column name '{variable_name}'"
+                );
+
+                let value_name = args.value_name.as_deref().unwrap_or("value");
+                polars_ensure!(
+                    !input_schema.contains(value_name),
+                    Duplicate: "duplicate column name '{value_name}'"
+                );
+
                 let on = match args.on {
                     None => None,
                     Some(on) => Some(
@@ -124,10 +136,17 @@ impl DslFunction {
                 }
             },
             DslFunction::FunctionIR(func) => func,
-            DslFunction::RowIndex { name, offset } => FunctionIR::RowIndex {
-                name,
-                offset,
-                schema: Default::default(),
+            DslFunction::RowIndex { name, offset } => {
+                polars_ensure!(
+                    !input_schema.contains(&name),
+                    Duplicate: "duplicate column name {name}"
+                );
+
+                FunctionIR::RowIndex {
+                    name,
+                    offset,
+                    schema: Default::default(),
+                }
             },
             DslFunction::Unnest { columns, separator } => {
                 let columns = columns.into_columns(input_schema, &Default::default())?;

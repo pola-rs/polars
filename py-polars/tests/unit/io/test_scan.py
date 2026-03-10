@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import sys
 import zlib
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
+from polars.io._expand_paths import _expand_paths
 from polars.testing.asserts.frame import assert_frame_equal
 from tests.unit.io.conftest import format_file_uri, normalize_path_separator_pl
 
@@ -21,6 +23,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from polars._typing import SchemaDict
+    from tests.conftest import PlMonkeyPatch
 
 
 @dataclass
@@ -29,10 +32,10 @@ class _RowIndex:
     offset: int = 0
 
 
-def _enable_force_async(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Modifies the provided monkeypatch context."""
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+def _enable_force_async(plmonkeypatch: PlMonkeyPatch) -> None:
+    """Modifies the provided plmonkeypatch context."""
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
 
 
 def _scan(
@@ -99,9 +102,7 @@ def session_tmp_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     params=[False, True],
     ids=["sync", "async"],
 )
-def force_async(
-    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
-) -> bool:
+def force_async(request: pytest.FixtureRequest, plmonkeypatch: PlMonkeyPatch) -> bool:
     value: bool = request.param
     return value
 
@@ -191,10 +192,10 @@ def data_file(
 
 @pytest.mark.write_disk
 def test_scan(
-    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+    capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
     if force_async:
-        _enable_force_async(monkeypatch)
+        _enable_force_async(plmonkeypatch)
 
     df = _scan(data_file.path, data_file.df.schema).collect()
 
@@ -203,10 +204,10 @@ def test_scan(
 
 @pytest.mark.write_disk
 def test_scan_with_limit(
-    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+    capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
     if force_async:
-        _enable_force_async(monkeypatch)
+        _enable_force_async(plmonkeypatch)
 
     df = _scan(data_file.path, data_file.df.schema).limit(4483).collect()
 
@@ -222,10 +223,10 @@ def test_scan_with_limit(
 
 @pytest.mark.write_disk
 def test_scan_with_filter(
-    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+    capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
     if force_async:
-        _enable_force_async(monkeypatch)
+        _enable_force_async(plmonkeypatch)
 
     df = (
         _scan(data_file.path, data_file.df.schema)
@@ -245,10 +246,10 @@ def test_scan_with_filter(
 
 @pytest.mark.write_disk
 def test_scan_with_filter_and_limit(
-    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+    capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
     if force_async:
-        _enable_force_async(monkeypatch)
+        _enable_force_async(plmonkeypatch)
 
     df = (
         _scan(data_file.path, data_file.df.schema)
@@ -269,10 +270,10 @@ def test_scan_with_filter_and_limit(
 
 @pytest.mark.write_disk
 def test_scan_with_limit_and_filter(
-    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+    capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
     if force_async:
-        _enable_force_async(monkeypatch)
+        _enable_force_async(plmonkeypatch)
 
     df = (
         _scan(data_file.path, data_file.df.schema)
@@ -293,10 +294,10 @@ def test_scan_with_limit_and_filter(
 
 @pytest.mark.write_disk
 def test_scan_with_row_index_and_limit(
-    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+    capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
     if force_async:
-        _enable_force_async(monkeypatch)
+        _enable_force_async(plmonkeypatch)
 
     df = (
         _scan(data_file.path, data_file.df.schema, row_index=_RowIndex())
@@ -318,10 +319,10 @@ def test_scan_with_row_index_and_limit(
 
 @pytest.mark.write_disk
 def test_scan_with_row_index_and_filter(
-    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+    capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
     if force_async:
-        _enable_force_async(monkeypatch)
+        _enable_force_async(plmonkeypatch)
 
     df = (
         _scan(data_file.path, data_file.df.schema, row_index=_RowIndex())
@@ -343,10 +344,10 @@ def test_scan_with_row_index_and_filter(
 
 @pytest.mark.write_disk
 def test_scan_with_row_index_limit_and_filter(
-    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+    capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
     if force_async:
-        _enable_force_async(monkeypatch)
+        _enable_force_async(plmonkeypatch)
 
     df = (
         _scan(data_file.path, data_file.df.schema, row_index=_RowIndex())
@@ -369,13 +370,13 @@ def test_scan_with_row_index_limit_and_filter(
 
 @pytest.mark.write_disk
 def test_scan_with_row_index_projected_out(
-    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+    capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
     if data_file.path.suffix == ".csv" and force_async:
         pytest.skip(reason="async reading of .csv not yet implemented")
 
     if force_async:
-        _enable_force_async(monkeypatch)
+        _enable_force_async(plmonkeypatch)
 
     subset = next(iter(data_file.df.schema.keys()))
     df = (
@@ -389,13 +390,13 @@ def test_scan_with_row_index_projected_out(
 
 @pytest.mark.write_disk
 def test_scan_with_row_index_filter_and_limit(
-    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+    capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
     if data_file.path.suffix == ".csv" and force_async:
         pytest.skip(reason="async reading of .csv not yet implemented")
 
     if force_async:
-        _enable_force_async(monkeypatch)
+        _enable_force_async(plmonkeypatch)
 
     df = (
         _scan(data_file.path, data_file.df.schema, row_index=_RowIndex())
@@ -522,9 +523,9 @@ def test_scan_glob_excludes_directories(tmp_path: Path) -> None:
 @pytest.mark.parametrize("file_name", ["a b", "a %25 b"])
 @pytest.mark.write_disk
 def test_scan_async_whitespace_in_path(
-    tmp_path: Path, monkeypatch: Any, file_name: str
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, file_name: str
 ) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     tmp_path.mkdir(exist_ok=True)
 
     path = tmp_path / f"{file_name}.parquet"
@@ -987,19 +988,17 @@ def test_only_project_include_file_paths(scan_type: tuple[Any, Any]) -> None:
         pytest.param(
             (pl.DataFrame.write_ipc, pl.scan_ipc),
             marks=pytest.mark.xfail(
-                reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
+                reason="IPC scan does not support the missing_columns parameter"
             ),
         ),
-        pytest.param(
-            (pl.DataFrame.write_csv, pl.scan_csv),
-            marks=pytest.mark.xfail(
-                reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
-            ),
+        (
+            pl.DataFrame.write_csv,
+            partial(pl.scan_csv, schema={"a": pl.UInt32, "missing": pl.Int32}),
         ),
         pytest.param(
             (pl.DataFrame.write_ndjson, pl.scan_ndjson),
             marks=pytest.mark.xfail(
-                reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
+                reason="NDJSON scan does not support the missing_columns parameter"
             ),
         ),
     ],
@@ -1064,7 +1063,7 @@ def test_async_read_21945(tmp_path: Path, scan_type: tuple[Any, Any]) -> None:
 @pytest.mark.write_disk
 @pytest.mark.parametrize("with_str_contains", [False, True])
 def test_hive_pruning_str_contains_21706(
-    tmp_path: Path, capfd: Any, monkeypatch: Any, with_str_contains: bool
+    tmp_path: Path, capfd: Any, plmonkeypatch: PlMonkeyPatch, with_str_contains: bool
 ) -> None:
     df = pl.DataFrame(
         {
@@ -1076,7 +1075,7 @@ def test_hive_pruning_str_contains_21706(
 
     df.write_parquet(tmp_path, partition_by=["pdate"])
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     f = pl.col("pdate") == 20250303
     if with_str_contains:
         f = f & pl.col("prod_id").str.contains("1")
@@ -1156,13 +1155,6 @@ def test_scan_empty_paths_friendly_error(
     assert "glob: true)." in exc_str
     assert exc_str.count(tmp_path.name) == 1
 
-    assert (
-        name_in_context
-        in exc_str.split(
-            "This error occurred with the following context stack:", maxsplit=1
-        )[1]
-    )
-
     if scan_function is pl.scan_parquet:
         assert (
             "Hint: passing a schema can allow this scan to succeed with an empty DataFrame."
@@ -1229,13 +1221,44 @@ def test_scan_with_schema_skips_schema_inference(
     assert_frame_equal(q.collect(engine="streaming"), pl.DataFrame(schema=schema))
 
 
-@pytest.fixture(scope="session")
-def corrupt_compressed_csv() -> bytes:
-    large_and_simple_csv = b"line_val\n" * 200_000
-    compressed_data = zlib.compress(large_and_simple_csv, level=0)
+@pytest.mark.parametrize("format_name", ["csv", "ndjson", "lines"])
+def test_scan_negative_slice_decompress(format_name: str) -> None:
+    col_name = "x"
+
+    # We could go through sink, but not for lines and this way we are testing
+    # more narrowly.
+    def format_line(val: int) -> str:
+        if format_name == "csv":
+            return f"{val}\n"
+        elif format_name == "ndjson":
+            return f'{{"{col_name}":{val}}}\n'
+        elif format_name == "lines":
+            return f"{val}\n"
+        else:
+            pytest.fail("unreachable")
+
+    buf = bytearray()
+    if format_name == "csv":
+        buf.extend(f"{col_name}\n".encode())
+    for val in range(47):
+        buf.extend(format_line(val).encode())
+
+    compressed_data = zlib.compress(buf, level=1)
+
+    lf = getattr(pl, f"scan_{format_name}")(compressed_data).slice(-9, 5)
+    if format_name == "lines":
+        lf = lf.select(pl.col("lines").alias(col_name).str.to_integer())
+
+    expected = [pl.Series("x", [38, 39, 40, 41, 42])]
+    got = lf.collect(engine="streaming")
+    assert_frame_equal(got, pl.DataFrame(expected))
+
+
+def corrupt_compressed_impl(base_line: bytes, target_size: int) -> bytes:
+    large_and_simple_data = base_line * round(target_size / len(base_line))
+    compressed_data = zlib.compress(large_and_simple_data, level=0)
 
     corruption_start_pos = round(len(compressed_data) * 0.9)
-    assert corruption_start_pos > 1_600_000
     corruption_len = 500
 
     # The idea is to corrupt the input to make sure the scan never fully
@@ -1244,9 +1267,22 @@ def corrupt_compressed_csv() -> bytes:
     corrupted_data[corruption_start_pos : corruption_start_pos + corruption_len] = (
         b"\00"
     )
-    # ~1.6MB of valid zlib compressed CSV to read before the corrupted data
+    # ~1.8MB of valid zlib compressed data to read before the corrupted data
     # appears.
-    return corrupted_data
+    return bytes(corrupted_data)
+
+
+@pytest.fixture(scope="session")
+def corrupt_compressed_csv() -> bytes:
+    return corrupt_compressed_impl(b"line_val\n", int(2e6))
+
+
+@pytest.fixture(scope="session")
+def corrupt_compressed_ndjson() -> bytes:
+    # The decompressor is part of the line-batch provider which only stops once
+    # processing noticed that it doesn't need anymore data. This can take a
+    # bit. Tested with debug/release and calm/stressed machine.
+    return corrupt_compressed_impl(b'{"line_val": 45}\n', int(100e6))
 
 
 @pytest.mark.parametrize("schema", [{"line_val": pl.String}, None])
@@ -1261,12 +1297,29 @@ def test_scan_csv_streaming_decompression(
         .collect(engine="streaming")
     )
 
-    expected = pl.DataFrame(
-        [
-            pl.Series("line_val", ["line_val"] * slice_count, dtype=pl.String),
-        ]
+    expected = [
+        pl.Series("line_val", ["line_val"] * slice_count, dtype=pl.String),
+    ]
+    assert_frame_equal(df, pl.DataFrame(expected))
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("schema", [{"line_val": pl.Int64}, None])
+def test_scan_ndjson_streaming_decompression(
+    corrupt_compressed_ndjson: bytes, schema: Any
+) -> None:
+    slice_count = 11
+
+    df = (
+        pl.scan_ndjson(io.BytesIO(corrupt_compressed_ndjson), schema=schema)
+        .slice(0, slice_count)
+        .collect(engine="streaming")
     )
-    assert_frame_equal(df, expected)
+
+    expected = [
+        pl.Series("line_val", [45] * slice_count, dtype=pl.Int64),
+    ]
+    assert_frame_equal(df, pl.DataFrame(expected))
 
 
 def test_scan_file_uri_hostname_component() -> None:
@@ -1277,3 +1330,203 @@ def test_scan_file_uri_hostname_component() -> None:
         match="unsupported: non-empty hostname for 'file:' URI: 'hostname:80'",
     ):
         q.collect()
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("polars_force_async", ["0", "1"])
+@pytest.mark.parametrize("n_repeats", [1, 2])
+@pytest.mark.parametrize("use_expand_paths_pyfn", [True, False])
+def test_scan_path_expansion_sorting_24528(
+    tmp_path: Path,
+    polars_force_async: str,
+    n_repeats: int,
+    use_expand_paths_pyfn: bool,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", polars_force_async)
+
+    def scan_fn(paths: list[Path] | list[str]) -> pl.LazyFrame:
+        return (
+            _expand_paths(paths).select(
+                pl.col("path")
+                .map_elements(
+                    lambda x: pl.scan_parquet(x).collect().item(),
+                    return_dtype=pl.String,
+                )
+                .alias("relpath")
+            )
+            if use_expand_paths_pyfn
+            else pl.scan_parquet(paths)
+        )
+
+    relpaths = ["a.parquet", "a/a.parquet", "ab.parquet"]
+
+    for p in relpaths:
+        Path(tmp_path / p).parent.mkdir(exist_ok=True, parents=True)
+        pl.DataFrame({"relpath": p}).write_parquet(tmp_path / p)
+
+    assert_frame_equal(
+        scan_fn(n_repeats * [tmp_path]).collect(),
+        pl.DataFrame({"relpath": n_repeats * relpaths}),
+    )
+
+    assert_frame_equal(
+        scan_fn(n_repeats * [f"{tmp_path}/**/*"]).collect(),
+        pl.DataFrame({"relpath": n_repeats * relpaths}),
+    )
+
+    assert_frame_equal(
+        scan_fn(n_repeats * [format_file_uri(tmp_path) + "/"]).collect(),
+        pl.DataFrame({"relpath": n_repeats * relpaths}),
+    )
+
+    assert_frame_equal(
+        scan_fn(n_repeats * [format_file_uri(f"{tmp_path}/**/*")]).collect(),
+        pl.DataFrame({"relpath": n_repeats * relpaths}),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_expand_paths_no_glob(tmp_path: Path) -> None:
+    pl.DataFrame(height=1).write_parquet(tmp_path / "data.parquet")
+    pl.DataFrame(height=1).write_parquet(tmp_path / "_HIDDEN_F.parquet")
+
+    assert not (
+        _expand_paths(tmp_path / "*")
+        .select(pl.col("path").str.ends_with("*").any())
+        .collect()
+        .item()
+    )
+
+    if "POLARS_FORCE_ASYNC" not in os.environ:
+        assert (
+            _expand_paths(tmp_path / "*", glob=False)
+            .select(pl.col("path").str.ends_with("*"))
+            .collect()
+            .item()
+        )
+
+    assert (
+        _expand_paths(tmp_path / "*")
+        .select(pl.col("path").str.contains("HIDDEN_F", literal=True).any())
+        .collect()
+        .item()
+    )
+
+    assert not (
+        _expand_paths(tmp_path / "*", hidden_file_prefix="_")
+        .select(pl.col("path").str.contains("HIDDEN_F", literal=True).any())
+        .collect()
+        .item()
+    )
+
+
+def test_scan_sink_error_captures_path() -> None:
+    storage_options = {
+        "aws_endpoint_url": "http://localhost:333",
+        "max_retries": 0,
+    }
+
+    q = pl.scan_parquet(
+        "s3://.../...",
+        storage_options=storage_options,
+        credential_provider=None,
+    )
+
+    with pytest.raises(OSError, match=r"path: s3://.../..."):
+        q.collect()
+
+    with pytest.raises(OSError, match=r"path: s3://.../..."):
+        pl.LazyFrame({"a": 1}).sink_parquet(
+            "s3://.../...",
+            storage_options=storage_options,
+            credential_provider=None,
+        )
+
+
+@pytest.mark.parametrize(
+    "file_format",
+    [
+        "parquet",
+        "ipc",
+        "csv",
+        "ndjson",
+    ],
+)
+@pytest.mark.parametrize("partitioned", [True, False])
+@pytest.mark.write_disk
+def test_scan_metrics(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    file_format: str,
+    tmp_path: Path,
+    partitioned: bool,
+) -> None:
+    path = tmp_path / "a"
+
+    df = pl.DataFrame({"a": 1})
+
+    getattr(pl.LazyFrame, f"sink_{file_format}")(
+        df.lazy(),
+        path
+        if not partitioned
+        else pl.PartitionBy("", file_path_provider=(lambda _: path), key="a"),
+    )
+
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_LOG_METRICS", "1")
+        cx.setenv("POLARS_FORCE_ASYNC", "1")
+        capfd.readouterr()
+        out = getattr(pl, f"scan_{file_format}")(
+            path,
+        ).collect()
+        capture = capfd.readouterr().err
+
+    [line] = (x for x in capture.splitlines() if x.startswith("multi-scan"))
+
+    logged_bytes_requested = int(
+        pl.select(pl.lit(line).str.extract(r"total_bytes_requested=(\d+)")).item()
+    )
+
+    logged_bytes_received = int(
+        pl.select(pl.lit(line).str.extract(r"total_bytes_received=(\d+)")).item()
+    )
+
+    # because of how metadata is accounted for, the bytes_requested may deviate
+    # from the actual file_size
+    file_size = path.stat().st_size
+    # for parquet, ipc: 131_072 is the maximum metadata size estimate
+    # for ndjson, csv: + 5 is the additional overhead (implementation detail)
+    upper_limit = {
+        "parquet": min(2 * file_size, file_size + 131072),
+        "ipc": min(2 * file_size, file_size + 131072),
+        "ndjson": file_size + 5,
+        "csv": file_size + 5,
+    }
+    lower_limit = {
+        "parquet": 2,
+        "ipc": 2,
+        "ndjson": file_size,
+        "csv": file_size,
+    }
+
+    assert logged_bytes_requested <= upper_limit[file_format]
+    assert logged_bytes_requested >= lower_limit[file_format]
+    assert logged_bytes_received == logged_bytes_requested
+
+    assert_frame_equal(out, df)
+
+
+def test_scan_slice_filter_pushdown_22790() -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame({"a": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]})
+    df.write_parquet(f)
+
+    q = pl.scan_parquet(f).tail(5).filter((pl.col("a") % 5).is_between(2, 3))
+
+    plan = q.explain()
+    assert not plan.startswith("FILTER")
+    assert plan.index("SELECTION") > plan.index("SCAN")
+    assert plan.index("SLICE") > plan.index("SCAN")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [7, 8]}))

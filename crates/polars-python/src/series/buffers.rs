@@ -14,10 +14,10 @@
 
 use arrow::array::{Array, BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::Bitmap;
-use arrow::buffer::Buffer;
 use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
 use polars::prelude::*;
+use polars_buffer::Buffer;
 use polars_core::{with_match_physical_numeric_polars_type, with_match_physical_numeric_type};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;

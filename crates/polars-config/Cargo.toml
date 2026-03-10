@@ -1,0 +1,21 @@
+[package]
+name = "polars-config"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Runtime configuration for the Polars project."
+
+[dependencies]
+serde = { workspace = true, optional = true }
+
+polars-error = { workspace = true }
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[lints]
+workspace = true

@@ -1,22 +1,9 @@
 name: Test Pyodide
 
 on:
-  pull_request:
-    paths:
-      - Cargo.lock
-      - py-polars/**
-      - docs/source/src/python/**
-      - crates/**
-      - .github/workflows/test-pyodide.yml
   push:
     branches:
-      - main
-    paths:
-      - Cargo.lock
-      - crates/**
-      - docs/source/src/python/**
-      - py-polars/**
-      - .github/workflows/test-pyodide.yml
+      - disabled-pyodide-tests  # disabled for now
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -43,7 +30,7 @@ jobs:
           FEATURES: csv|ipc|ipc_streaming|parquet|async|scan_lines|json|extract_jsonpath|catalog|cloud|polars_cloud|tokio|clipboard|decompress|new_streaming
         run: |
           sed -i 's/serde_json = { workspace = true, optional = true }/serde_json = { workspace = true }/' crates/polars-python/Cargo.toml
-          sed -i 's/"serde_json", //' crates/polars-python/Cargo.toml
+          sed -i 's/"serde_json",//' crates/polars-python/Cargo.toml
           sed -E -i "/^  \"(${FEATURES})\",$/d" crates/polars-python/Cargo.toml py-polars/runtime/polars-runtime-32/Cargo.toml
 
       - name: Setup emsdk

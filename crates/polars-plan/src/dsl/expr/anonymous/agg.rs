@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use polars_core::prelude::Field;
@@ -8,16 +9,16 @@ use polars_error::{PolarsResult, feature_gated};
 use super::SpecialEq;
 use crate::dsl::LazySerde;
 
-pub trait AnonymousStreamingAgg: Send + Sync {
+pub trait AnonymousAgg: Send + Sync {
     fn as_any(&self) -> &dyn Any;
 
     fn get_field(&self, input_schema: &Schema, fields: &[Field]) -> PolarsResult<Field>;
 }
 
-pub type OpaqueStreamingAgg = LazySerde<SpecialEq<Arc<dyn AnonymousStreamingAgg>>>;
+pub type OpaqueStreamingAgg = LazySerde<SpecialEq<Arc<dyn AnonymousAgg>>>;
 
 impl OpaqueStreamingAgg {
-    pub fn materialize(&self) -> PolarsResult<SpecialEq<Arc<dyn AnonymousStreamingAgg>>> {
+    pub fn materialize(&self) -> PolarsResult<SpecialEq<Arc<dyn AnonymousAgg>>> {
         match self {
             Self::Deserialized(t) => Ok(t.clone()),
             Self::Named {
@@ -49,12 +50,20 @@ impl OpaqueStreamingAgg {
     }
 }
 
-#[cfg(feature = "ir_serde")]
-impl serde::Serialize for SpecialEq<Arc<dyn AnonymousStreamingAgg>> {
-    fn serialize<S>(&self, _serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        unreachable!("should not be hit")
+impl Hash for OpaqueStreamingAgg {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
+        match self {
+            Self::Deserialized(ptr) => ptr.hash(state),
+            Self::Bytes(b) => b.hash(state),
+            Self::Named {
+                name,
+                payload,
+                value: _,
+            } => {
+                name.hash(state);
+                payload.hash(state);
+            },
+        }
     }
 }

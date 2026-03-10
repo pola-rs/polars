@@ -45,6 +45,7 @@ impl<T> From<T> for ErrString
 where
     T: Into<Cow<'static, str>>,
 {
+    #[track_caller]
     fn from(msg: T) -> Self {
         match &*ERROR_STRATEGY {
             ErrorStrategy::Panic => panic!("{}", msg.into()),
@@ -102,13 +103,41 @@ pub enum PolarsError {
         error: Box<PolarsError>,
         msg: ErrString,
     },
+    ExprContext {
+        error: Box<PolarsError>,
+        expr: ErrString,
+    },
     #[cfg(feature = "python")]
     Python {
         error: python::PyErrWrap,
     },
 }
 
-impl Error for PolarsError {}
+impl Error for PolarsError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            PolarsError::AssertionError(_)
+            | PolarsError::ColumnNotFound(_)
+            | PolarsError::ComputeError(_)
+            | PolarsError::Duplicate(_)
+            | PolarsError::InvalidOperation(_)
+            | PolarsError::NoData(_)
+            | PolarsError::OutOfBounds(_)
+            | PolarsError::SchemaFieldNotFound(_)
+            | PolarsError::SchemaMismatch(_)
+            | PolarsError::ShapeMismatch(_)
+            | PolarsError::SQLInterface(_)
+            | PolarsError::SQLSyntax(_)
+            | PolarsError::StringCacheMismatch(_)
+            | PolarsError::StructFieldNotFound(_) => None,
+            PolarsError::IO { error, .. } => Some(error.as_ref()),
+            PolarsError::Context { error, .. } => Some(error.as_ref()),
+            PolarsError::ExprContext { error, .. } => Some(error.as_ref()),
+            #[cfg(feature = "python")]
+            PolarsError::Python { error } => error.deref().source(),
+        }
+    }
+}
 
 impl Display for PolarsError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -134,6 +163,7 @@ impl Display for PolarsError {
             StringCacheMismatch(msg) => write!(f, "string caches don't match: {msg}"),
             StructFieldNotFound(msg) => write!(f, "field not found: {msg}"),
             Context { error, msg } => write!(f, "{error}: {msg}"),
+            ExprContext { error, expr: _ } => write!(f, "{error}"),
             #[cfg(feature = "python")]
             Python { error } => write!(f, "python: {error}"),
         }
@@ -141,11 +171,27 @@ impl Display for PolarsError {
 }
 
 impl From<io::Error> for PolarsError {
-    fn from(value: io::Error) -> Self {
-        PolarsError::IO {
-            error: Arc::new(value),
-            msg: None,
+    fn from(mut value: io::Error) -> Self {
+        if let Some(polars_err) = value
+            .get_mut()
+            .and_then(|e| e.downcast_mut::<PolarsError>())
+        {
+            std::mem::replace(
+                polars_err,
+                PolarsError::ComputeError(ErrString::new_static("")),
+            )
+        } else {
+            PolarsError::IO {
+                error: Arc::new(value),
+                msg: None,
+            }
         }
+    }
+}
+
+impl From<PolarsError> for io::Error {
+    fn from(value: PolarsError) -> Self {
+        io::Error::other(value)
     }
 }
 
@@ -153,19 +199,6 @@ impl From<io::Error> for PolarsError {
 impl From<regex::Error> for PolarsError {
     fn from(err: regex::Error) -> Self {
         PolarsError::ComputeError(format!("regex error: {err}").into())
-    }
-}
-
-#[cfg(feature = "object_store")]
-impl From<object_store::Error> for PolarsError {
-    fn from(err: object_store::Error) -> Self {
-        if let object_store::Error::Generic { store, source } = &err {
-            if let Some(polars_err) = source.as_ref().downcast_ref::<PolarsError>() {
-                return polars_err.wrap_msg(|s| format!("{s} (store: {store})"));
-            }
-        }
-
-        std::io::Error::other(format!("object-store error: {err}")).into()
     }
 }
 
@@ -205,35 +238,61 @@ pub type PolarsResult<T> = Result<T, PolarsError>;
 impl PolarsError {
     pub fn context_trace(self) -> Self {
         use PolarsError::*;
-        match self {
-            Context { error, msg } => {
-                // If context is 1 level deep, just return error.
-                if !matches!(&*error, PolarsError::Context { .. }) {
-                    return *error;
-                }
-                let mut current_error = &*error;
-                let material_error = error.get_err();
-
-                let mut messages = vec![&msg];
-
-                while let PolarsError::Context { msg, error } = current_error {
-                    current_error = error;
-                    messages.push(msg)
-                }
-
-                let mut bt = String::new();
-
-                let mut count = 0;
-                while let Some(msg) = messages.pop() {
-                    count += 1;
-                    writeln!(&mut bt, "\t[{count}] {msg}").unwrap();
-                }
-                material_error.wrap_msg(move |msg| {
-                    format!("{msg}\n\nThis error occurred with the following context stack:\n{bt}")
-                })
-            },
-            err => err,
+        if !matches!(self, Context { .. } | ExprContext { .. }) {
+            return self;
         }
+
+        let mut context_msgs = Vec::new();
+        let mut context_exprs = Vec::new();
+        let mut error = self;
+        loop {
+            match error {
+                Context { error: e, msg } => {
+                    context_msgs.push(msg);
+                    error = *e;
+                },
+
+                ExprContext { error: e, expr } => {
+                    context_exprs.push(expr);
+                    error = *e;
+                },
+
+                e => {
+                    error = e;
+                    break;
+                },
+            }
+        }
+
+        error.wrap_msg(|msg| {
+            let mut out = msg.to_string();
+            if !context_exprs.is_empty() {
+                let first = context_exprs.first().unwrap();
+                let last = context_exprs.last().unwrap();
+                writeln!(
+                    &mut out,
+                    "\n\nThis error occurred in the following expression:"
+                )
+                .unwrap();
+                writeln!(&mut out, "\t{last}").unwrap();
+                if first.0 != last.0 {
+                    writeln!(&mut out, "while evaluating this larger expression:").unwrap();
+                    writeln!(&mut out, "\t{first}").unwrap();
+                }
+            }
+
+            if !context_msgs.is_empty() {
+                writeln!(
+                    &mut out,
+                    "\n\nThis error occurred with the following context stack:"
+                )
+                .unwrap();
+                for (i, m) in context_msgs.into_iter().rev().enumerate() {
+                    writeln!(&mut out, "\t[{}] {}", i + 1, m).unwrap();
+                }
+            }
+            out
+        })
     }
 
     pub fn wrap_msg<F: FnOnce(&str) -> String>(&self, func: F) -> Self {
@@ -263,7 +322,17 @@ impl PolarsError {
             StructFieldNotFound(msg) => StructFieldNotFound(func(msg).into()),
             SQLInterface(msg) => SQLInterface(func(msg).into()),
             SQLSyntax(msg) => SQLSyntax(func(msg).into()),
-            Context { error, .. } => error.wrap_msg(func),
+            Context {
+                error,
+                msg: context_msg,
+            } => Context {
+                error: Box::new(error.wrap_msg(func)),
+                msg: context_msg.clone(),
+            },
+            ExprContext { error, expr } => ExprContext {
+                error: Box::new(error.wrap_msg(func)),
+                expr: expr.clone(),
+            },
             #[cfg(feature = "python")]
             Python { error } => pyo3::Python::attach(|py| {
                 use pyo3::types::{PyAnyMethods, PyStringMethods};
@@ -300,18 +369,10 @@ impl PolarsError {
         }
     }
 
-    fn get_err(&self) -> &Self {
-        use PolarsError::*;
-        match self {
-            Context { error, .. } => error.get_err(),
-            err => err,
-        }
-    }
-
     pub fn context(self, msg: ErrString) -> Self {
         PolarsError::Context {
-            msg,
             error: Box::new(self),
+            msg,
         }
     }
 
@@ -321,6 +382,13 @@ impl PolarsError {
         }
         self
     }
+
+    pub fn with_expr_context(self, expr: ErrString) -> Self {
+        PolarsError::ExprContext {
+            error: Box::new(self),
+            expr,
+        }
+    }
 }
 
 pub fn map_err<E: Error>(error: E) -> PolarsError {
@@ -329,6 +397,22 @@ pub fn map_err<E: Error>(error: E) -> PolarsError {
 
 #[macro_export]
 macro_rules! polars_err {
+    ($variant:ident: format!($_:tt) $(, _:tt)* $(,)?) => {
+        const { panic!("remove unnecessary format! from polars_(bail|err)! macro") }
+    };
+    ($variant:ident: $fmt:literal $(,)?) => {{
+        if const { $crate::__private::has_brace($fmt) } {
+            $crate::__private::must_use(
+                $crate::PolarsError::$variant(format!($fmt).into())
+            )
+        } else {
+            const {
+                $crate::__private::must_use(
+                    $crate::PolarsError::$variant($crate::ErrString::new_static($fmt))
+                )
+            }
+        }
+    }};
     ($variant:ident: $fmt:literal $(, $arg:expr)* $(,)?) => {
         $crate::__private::must_use(
             $crate::PolarsError::$variant(format!($fmt, $($arg),*).into())
@@ -409,7 +493,7 @@ macro_rules! polars_err {
     };
     (bigidx, ctx = $ctx:expr, size = $size:expr) => {
         $crate::polars_err!(ComputeError: "\
-{} produces {} rows which is more than maximum allowed pow(2, 32) rows; \
+{} produces {} rows which is more than maximum allowed pow(2, 32)-1 rows; \
 consider compiling with bigidx feature (pip install polars[rt64])",
             $ctx,
             $size,
@@ -581,7 +665,70 @@ pub mod __private {
     #[inline]
     #[cold]
     #[must_use]
-    pub fn must_use(error: crate::PolarsError) -> crate::PolarsError {
+    pub const fn must_use(error: crate::PolarsError) -> crate::PolarsError {
         error
+    }
+
+    pub const fn has_brace(s: &str) -> bool {
+        let bytes = s.as_bytes();
+        let mut i: usize = 0;
+
+        while i < bytes.len() {
+            if bytes[i] == b'{' || bytes[i] == b'}' {
+                return true;
+            }
+
+            i += 1;
+        }
+
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{ErrString, PolarsError};
+
+    #[test]
+    fn test_polars_error_roundtrips_through_std_io_error() {
+        use PolarsError::ComputeError;
+
+        let error_magic = "err_magic_3";
+        let error = ComputeError(ErrString::new_static(error_magic));
+
+        let io_error: std::io::Error = error.into();
+        let error: PolarsError = io_error.into();
+
+        match error {
+            ComputeError(s) if &*s == error_magic => {},
+            e => panic!("error type mismatch: {e}"),
+        };
+    }
+
+    #[test]
+    fn test_polars_error_format_str() {
+        use PolarsError::ComputeError;
+
+        let a = "A";
+
+        match polars_err!(ComputeError: "{a}") {
+            ComputeError(out) if &*out == a => {},
+            e => panic!("{e}"),
+        }
+
+        match polars_err!(ComputeError: a) {
+            ComputeError(out) if &*out == a => {},
+            e => panic!("{e}"),
+        }
+
+        match polars_err!(ComputeError: "{{") {
+            ComputeError(out) if &*out == "{" => {},
+            e => panic!("{e}"),
+        }
+
+        match polars_err!(ComputeError: "}}") {
+            ComputeError(out) if &*out == "}" => {},
+            e => panic!("{e}"),
+        }
     }
 }

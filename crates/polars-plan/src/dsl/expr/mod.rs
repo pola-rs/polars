@@ -29,14 +29,6 @@ pub enum AggExpr {
         input: Arc<Expr>,
         propagate_nans: bool,
     },
-    MinBy {
-        input: Arc<Expr>,
-        by: Arc<Expr>,
-    },
-    MaxBy {
-        input: Arc<Expr>,
-        by: Arc<Expr>,
-    },
     Median(Arc<Expr>),
     NUnique(Arc<Expr>),
     First(Arc<Expr>),
@@ -49,7 +41,10 @@ pub enum AggExpr {
         allow_empty: bool,
     },
     Mean(Arc<Expr>),
-    Implode(Arc<Expr>),
+    Implode {
+        input: Arc<Expr>,
+        maintain_order: bool,
+    },
     Count {
         input: Arc<Expr>,
         include_nulls: bool,
@@ -69,8 +64,8 @@ impl AsRef<Expr> for AggExpr {
     fn as_ref(&self) -> &Expr {
         use AggExpr::*;
         match self {
-            Min { input, .. } | MinBy { input, .. } => input,
-            Max { input, .. } | MaxBy { input, .. } => input,
+            Min { input, .. } => input,
+            Max { input, .. } => input,
             Median(e) => e,
             NUnique(e) => e,
             First(e) => e,
@@ -79,7 +74,7 @@ impl AsRef<Expr> for AggExpr {
             LastNonNull(e) => e,
             Item { input, .. } => input,
             Mean(e) => e,
-            Implode(e) => e,
+            Implode { input, .. } => input,
             Count { input, .. } => input,
             Quantile { expr, .. } => expr,
             Sum(e) => e,
@@ -210,10 +205,20 @@ pub enum Expr {
         expr: Arc<Expr>,
         evaluation: Vec<Expr>,
     },
-    SubPlan(SpecialEq<Arc<DslPlan>>, Vec<String>),
+    /// SQL SubQueries
+    /// Plan,
+    /// Post-select expression and output-name of that expr
+    SubPlan(SpecialEq<Arc<DslPlan>>, Vec<(PlSmallStr, Expr)>),
     RenameAlias {
         function: RenameAliasFn,
         expr: Arc<Expr>,
+    },
+    /// Not a real expression. This is meant
+    /// as catch-all for IR expressions that
+    /// are not supported by DSL.
+    Display {
+        inputs: Vec<Expr>,
+        fmt_str: Box<PlSmallStr>,
     },
 }
 
@@ -401,13 +406,13 @@ impl Hash for Expr {
                 offset.hash(state);
                 length.hash(state);
             },
-            // Expr::Exclude(input, excl) => {
-            //     input.hash(state);
-            //     excl.hash(state);
-            // },
             Expr::RenameAlias { function, expr } => {
                 function.hash(state);
                 expr.hash(state);
+            },
+            Expr::Display { inputs, fmt_str } => {
+                inputs.hash(state);
+                fmt_str.hash(state);
             },
             Expr::AnonymousFunction {
                 input,
@@ -717,8 +722,11 @@ pub enum Operator {
     Plus,
     Minus,
     Multiply,
-    Divide,
+    /// Rust division semantics, this is what Rust interface `/` dispatches to
+    RustDivide,
+    /// Python division semantics, converting to floats. This is what python `/` operator dispatches to
     TrueDivide,
+    /// Floor division semantics, this is what python `//` dispatches to
     FloorDivide,
     Modulus,
     And,
@@ -743,9 +751,9 @@ impl Display for Operator {
             Plus => "+",
             Minus => "-",
             Multiply => "*",
-            Divide => "//",
+            RustDivide => "rust_div",
             TrueDivide => "/",
-            FloorDivide => "floor_div",
+            FloorDivide => "//",
             Modulus => "%",
             And | LogicalAnd => "&",
             Or | LogicalOr => "|",
@@ -792,7 +800,7 @@ impl Operator {
             Operator::EqValidity => Operator::EqValidity,
             Operator::NotEqValidity => Operator::NotEqValidity,
             // Operator::Divide requires modifying the right operand: left / right == 1/right * left
-            Operator::Divide => unimplemented!(),
+            Operator::RustDivide => unimplemented!(),
             Operator::Multiply => Operator::Multiply,
             Operator::And => Operator::And,
             Operator::Plus => Operator::Plus,

@@ -45,6 +45,15 @@ fn deserialize_named_registry(buf: &[u8]) -> PolarsResult<(Arc<dyn ExprRegistry>
     }
 }
 
+impl Serialize for SpecialEq<Arc<dyn AnonymousAgg>> {
+    fn serialize<S>(&self, _serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        unreachable!("should not be hit")
+    }
+}
+
 impl Serialize for SpecialEq<Arc<dyn AnonymousColumnsUdf>> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
@@ -98,8 +107,7 @@ pub(super) fn deserialize_column_udf(buf: &[u8]) -> PolarsResult<Arc<dyn Anonymo
         if let Some(func) = reg.get_function(name, payload) {
             Ok(func)
         } else {
-            let msg = "name not found in named serde registry";
-            polars_bail!(ComputeError: msg)
+            polars_bail!(ComputeError: "name not found in named serde registry")
         }
     } else {
         polars_bail!(ComputeError: "deserialization not supported for this 'opaque' function")
@@ -119,7 +127,7 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn AnonymousColumnsUdf>> {
     }
 }
 
-impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn AnonymousStreamingAgg>> {
+impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn AnonymousAgg>> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'a>,
@@ -133,15 +141,14 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn AnonymousStreamingAgg>> {
     }
 }
 
-pub(super) fn deserialize_anon_agg(buf: &[u8]) -> PolarsResult<Arc<dyn AnonymousStreamingAgg>> {
+pub(super) fn deserialize_anon_agg(buf: &[u8]) -> PolarsResult<Arc<dyn AnonymousAgg>> {
     if buf.starts_with(NAMED_SERDE_MAGIC_BYTE_MARK) {
         let (reg, name, payload) = deserialize_named_registry(buf)?;
 
         if let Some(func) = reg.get_agg(name, payload)? {
             Ok(func)
         } else {
-            let msg = "name not found in named serde registry";
-            polars_bail!(ComputeError: msg)
+            polars_bail!(ComputeError: "name not found in named serde registry")
         }
     } else {
         polars_bail!(ComputeError: "deserialization not supported for this 'opaque' function")

@@ -199,7 +199,7 @@ class ConnectionExecutor:
         batch_size: int | None,
         iter_batches: bool,
         schema_overrides: SchemaDict | None,
-        infer_schema_length: int | None,
+        infer_schema_length: int | None,  # noqa: ARG002
     ) -> DataFrame | Iterator[DataFrame] | None:
         """Return resultset data in Arrow format for frame init."""
         from polars import DataFrame
@@ -345,7 +345,7 @@ class ConnectionExecutor:
                 msg = f"column {nm!r} appears more than once in the query/result cursor"
                 raise DuplicateError(msg)
             elif desc is not None and nm not in schema_overrides:
-                dtype = dtype_from_cursor_description(self.cursor, desc)
+                dtype = dtype_from_cursor_description(desc)
                 if dtype is not None:
                     schema_overrides[nm] = dtype  # type: ignore[index]
             dupe_check.add(nm)
@@ -553,7 +553,7 @@ class ConnectionExecutor:
         # note: some cursors execute in-place, some access results via a property
         result = self.cursor if (result is None or result is True) else result
         if self.driver_name == "duckdb" and self._is_alchemy_result(result):
-            result = result.cursor
+            result = result.cursor  # type: ignore[union-attr]
 
         self.result = result
         return self

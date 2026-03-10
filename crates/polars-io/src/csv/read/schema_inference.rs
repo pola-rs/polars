@@ -1,10 +1,10 @@
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 #[cfg(feature = "polars-time")]
 use polars_time::chunkedarray::string::infer as date_infer;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::string::Pattern;
 use polars_utils::format_pl_smallstr;
-use polars_utils::mmap::MemSlice;
 
 use super::splitfields::SplitFields;
 use super::{CsvParseOptions, NullValues};
@@ -15,8 +15,8 @@ use crate::utils::{BOOLEAN_RE, FLOAT_RE, FLOAT_RE_DECIMAL, INTEGER_RE};
 /// Use `read_until_start_and_infer_schema` instead.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn infer_file_schema_impl(
-    header_line: &Option<MemSlice>,
-    content_lines: &[MemSlice],
+    header_line: &Option<Buffer<u8>>,
+    content_lines: &[Buffer<u8>],
     infer_all_as_str: bool,
     parse_options: &CsvParseOptions,
     schema_overwrite: Option<&Schema>,

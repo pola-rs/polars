@@ -4,6 +4,7 @@ use polars_expr::state::ExecutionState;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::prelude::sink::CallbackSinkType;
 use polars_utils::unique_id::UniqueId;
+use rayon::iter::{IndexedParallelIterator as _, IntoParallelIterator as _, ParallelIterator as _};
 use recursive::recursive;
 
 #[cfg(feature = "python")]
@@ -102,6 +103,37 @@ pub struct MultiplePhysicalPlans {
     pub cache_prefiller: Option<Box<dyn Executor>>,
     pub physical_plans: Vec<Box<dyn Executor>>,
 }
+
+impl MultiplePhysicalPlans {
+    pub fn execute(mut self) -> PolarsResult<Vec<DataFrame>> {
+        let mut state = ExecutionState::new();
+        if let Some(mut cache_prefiller) = self.cache_prefiller {
+            cache_prefiller.execute(&mut state)?;
+        }
+        // Chunked iter to avoid rayon stack overflow.
+        let out = POOL.install(|| {
+            self.physical_plans
+                .chunks_mut(POOL.current_num_threads() * 3)
+                .map(|chunk| {
+                    chunk
+                        .into_par_iter()
+                        .enumerate()
+                        .map(|(idx, input)| {
+                            let mut input = std::mem::take(input);
+                            let mut state = state.split();
+                            state.branch_idx += idx;
+
+                            let df = input.execute(&mut state)?;
+                            Ok(df)
+                        })
+                        .collect::<PolarsResult<Vec<_>>>()
+                })
+                .collect::<PolarsResult<Vec<_>>>()
+        });
+        Ok(out?.into_iter().flatten().collect())
+    }
+}
+
 pub fn create_multiple_physical_plans(
     roots: &[Node],
     lp_arena: &mut Arena<IR>,
@@ -157,40 +189,90 @@ pub fn python_scan_predicate(
 )> {
     let mut predicate_serialized = None;
     let predicate = if let PythonPredicate::Polars(e) = &options.predicate {
+        // Clone the expression so we can release the borrow on `options`
+        // before mutating `options.predicate` below.
+        let e = e.clone();
+
         // Convert to a pyarrow eval string.
         if matches!(options.python_source, PythonScanSource::Pyarrow) {
             use polars_core::config::verbose_print_sensitive;
+            use polars_plan::plans::MintermIter;
 
-            let predicate_pa = polars_plan::plans::python::pyarrow::predicate_to_pa(
-                e.node(),
-                expr_arena,
-                Default::default(),
-            );
+            // Split into AND-minterms and convert each independently.
+            let mut residual_predicate_nodes: Vec<Node> = vec![];
+            let parts: Vec<String> = MintermIter::new(e.node(), expr_arena)
+                .filter_map(|node| {
+                    let result = polars_plan::plans::python::pyarrow::predicate_to_pa(
+                        node,
+                        expr_arena,
+                        Default::default(),
+                    );
+                    if result.is_none() {
+                        residual_predicate_nodes.push(node);
+                    }
+                    result
+                })
+                .collect();
+
+            let predicate_pa = match parts.len() {
+                0 => None,
+                1 => Some(parts.into_iter().next().unwrap()),
+                _ => Some(format!("({})", parts.join(" & "))),
+            };
+
+            let residual_predicate_expr_ir = if let Some(eval_str) = predicate_pa {
+                options.predicate = PythonPredicate::PyArrow(eval_str);
+
+                residual_predicate_nodes
+                    .into_iter()
+                    .fold(None, |acc, node| {
+                        Some(acc.map_or(node, |acc_node| {
+                            expr_arena.add(AExpr::BinaryExpr {
+                                left: acc_node,
+                                op: Operator::And,
+                                right: node,
+                            })
+                        }))
+                    })
+                    .map(|node| ExprIR::from_node(node, expr_arena))
+            } else {
+                Some(e.clone())
+            };
 
             verbose_print_sensitive(|| {
+                let predicate_pa_verbose_msg = match &options.predicate {
+                    PythonPredicate::PyArrow(p) => p,
+                    _ => "<conversion failed>",
+                };
+
                 format!(
                     "python_scan_predicate: \
                     predicate node: {}, \
-                    converted pyarrow predicate: {}",
+                    converted pyarrow predicate: {}, \
+                    residual predicate: {:?}",
                     ExprIRDisplay::display_node(e.node(), expr_arena),
-                    &predicate_pa.as_deref().unwrap_or("<conversion failed>")
+                    predicate_pa_verbose_msg,
+                    residual_predicate_expr_ir
+                        .as_ref()
+                        .map(|e| ExprIRDisplay::display_node(e.node(), expr_arena)),
                 )
             });
 
-            if let Some(eval_str) = predicate_pa {
-                options.predicate = PythonPredicate::PyArrow(eval_str);
-                // We don't have to use a physical expression as pyarrow deals with the filter.
-                None
-            } else {
-                Some(create_physical_expr(e, expr_arena, &options.schema, state)?)
-            }
+            residual_predicate_expr_ir
+                .map(|expr_ir| create_physical_expr(&expr_ir, expr_arena, &options.schema, state))
+                .transpose()?
         }
         // Convert to physical expression for the case the reader cannot consume the predicate.
         else {
             let dsl_expr = e.to_expr(expr_arena);
             predicate_serialized = polars_plan::plans::python::predicate::serialize(&dsl_expr)?;
 
-            Some(create_physical_expr(e, expr_arena, &options.schema, state)?)
+            Some(create_physical_expr(
+                &e,
+                expr_arena,
+                &options.schema,
+                state,
+            )?)
         }
     } else {
         None
@@ -293,7 +375,7 @@ fn create_physical_plan_impl(
             },
         },
         SinkMultiple { .. } => {
-            unreachable!("should be handled with create_multiple_physical_plans")
+            polars_bail!(InvalidOperation: "lazy multisinks only supported on streaming engine")
         },
         Union { inputs, options } => {
             let inputs = state.with_new_branch(|new_state| {
@@ -451,7 +533,7 @@ fn create_physical_plan_impl(
             Ok(Box::new(executors::SortExec {
                 input,
                 by_column,
-                slice,
+                slice: slice.map(|t| (t.0, t.1)),
                 sort_options,
             }))
         },
@@ -481,7 +563,7 @@ fn create_physical_plan_impl(
             keys,
             aggs,
             apply,
-            schema: _,
+            schema: output_schema,
             maintain_order,
             options,
         } => {
@@ -510,6 +592,7 @@ fn create_physical_plan_impl(
                     aggs: phys_aggs,
                     options,
                     input_schema,
+                    output_schema,
                     slice: _slice,
                     apply,
                 }));
@@ -524,6 +607,7 @@ fn create_physical_plan_impl(
                     aggs: phys_aggs,
                     options,
                     input_schema,
+                    output_schema,
                     slice: _slice,
                     apply,
                 }));
@@ -531,7 +615,7 @@ fn create_physical_plan_impl(
 
             // We first check if we can partition the group_by on the latest moment.
             let partitionable = partitionable_gb(&keys, &aggs, &input_schema, expr_arena, &apply);
-            if partitionable {
+            if partitionable && build_streaming_executor.is_some() {
                 let from_partitioned_ds = lp_arena.iter(input).any(|(_, lp)| {
                     if let Union { options, .. } = lp {
                         options.from_partitioned_ds
@@ -542,15 +626,23 @@ fn create_physical_plan_impl(
                 let builder = get_streaming_executor_builder();
 
                 let input = recurse!(input, state)?;
+
+                let gb_root = if state.has_cache_parent {
+                    lp_arena.add(lp_arena.get(root).clone())
+                } else {
+                    root
+                };
+
                 let executor = Box::new(GroupByStreamingExec::new(
                     input,
                     builder,
-                    root,
+                    gb_root,
                     lp_arena,
                     expr_arena,
                     phys_keys,
                     phys_aggs,
                     maintain_order,
+                    output_schema,
                     _slice,
                     from_partitioned_ds,
                 ));
@@ -565,6 +657,7 @@ fn create_physical_plan_impl(
                     apply,
                     maintain_order,
                     input_schema,
+                    output_schema,
                     options.slice,
                 )))
             }

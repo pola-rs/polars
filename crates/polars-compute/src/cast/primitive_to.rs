@@ -8,7 +8,7 @@ use arrow::offset::{Offset, Offsets};
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
 #[cfg(feature = "dtype-decimal")]
-use num_traits::Float;
+use num_traits::{Float, ToPrimitive};
 use polars_error::PolarsResult;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
@@ -16,6 +16,7 @@ use polars_utils::vec::PushUnchecked;
 
 use super::CastOptionsImpl;
 use super::temporal::*;
+use crate::comparisons::TotalEqKernel;
 #[cfg(feature = "dtype-decimal")]
 use crate::decimal::{dec128_verify_prec_scale, f64_to_dec128, i128_to_dec128};
 
@@ -164,10 +165,11 @@ fn primitive_to_values_and_offsets<T: NativeType + SerPrimitive, O: Offset>(
 pub fn primitive_to_boolean<T: NativeType>(
     from: &PrimitiveArray<T>,
     to_type: ArrowDataType,
-) -> BooleanArray {
-    let iter = from.values().iter().map(|v| *v != T::default());
-    let values = Bitmap::from_trusted_len_iter(iter);
-
+) -> BooleanArray
+where
+    PrimitiveArray<T>: TotalEqKernel<Scalar = T>,
+{
+    let values = from.tot_ne_kernel_broadcast(&T::default());
     BooleanArray::new(to_type, values, from.validity().cloned())
 }
 
@@ -177,6 +179,7 @@ pub(super) fn primitive_to_boolean_dyn<T>(
 ) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType,
+    PrimitiveArray<T>: TotalEqKernel<Scalar = T>,
 {
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(primitive_to_boolean::<T>(from, to_type)))
@@ -240,7 +243,7 @@ where
 
 /// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow
 #[cfg(feature = "dtype-decimal")]
-pub fn integer_to_decimal<T: NativeType + AsPrimitive<i128>>(
+pub fn integer_to_decimal<T: NativeType + ToPrimitive>(
     from: &PrimitiveArray<T>,
     to_precision: usize,
     to_scale: usize,
@@ -248,7 +251,7 @@ pub fn integer_to_decimal<T: NativeType + AsPrimitive<i128>>(
     assert!(dec128_verify_prec_scale(to_precision, to_scale).is_ok());
     let values = from
         .iter()
-        .map(|x| i128_to_dec128(x?.as_(), to_precision, to_scale));
+        .map(|x| i128_to_dec128(x?.to_i128()?, to_precision, to_scale));
     PrimitiveArray::<i128>::from_trusted_len_iter(values)
         .to(ArrowDataType::Decimal(to_precision, to_scale))
 }
@@ -260,7 +263,7 @@ pub(super) fn integer_to_decimal_dyn<T>(
     scale: usize,
 ) -> PolarsResult<Box<dyn Array>>
 where
-    T: NativeType + AsPrimitive<i128>,
+    T: NativeType + ToPrimitive,
 {
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(integer_to_decimal::<T>(from, precision, scale)))
@@ -417,7 +420,7 @@ pub fn int64_to_time64us(from: &PrimitiveArray<i64>) -> PrimitiveArray<i64> {
         primitive_map_is_valid(
             from,
             |v| (0..MICROSECONDS_IN_DAY).contains(&v),
-            ArrowDataType::Time32(TimeUnit::Microsecond),
+            ArrowDataType::Time64(TimeUnit::Microsecond),
         )
     }
 }
