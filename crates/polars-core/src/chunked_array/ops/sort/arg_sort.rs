@@ -338,7 +338,13 @@ mod test {
     #[test]
     fn test_arg_sort_descending_with_limit() {
         let a = Int32Chunked::new(PlSmallStr::from_static("a"), &[4, 2, 5, 1, 3]);
-        let o = SortOptions { descending: true, nulls_last: false, multithreaded: false, limit: Some(3), ..Default::default() };
+        let o = SortOptions {
+            descending: true,
+            nulls_last: false,
+            multithreaded: false,
+            limit: Some(3),
+            ..Default::default()
+        };
         let r = a.arg_sort(o);
         let idx: Vec<IdxSize> = r.into_no_null_iter().collect();
         assert_eq!(idx, vec![2, 0, 4]);
@@ -346,19 +352,34 @@ mod test {
 
     #[test]
     fn test_arg_sort_asc_with_limit() {
-        let a=Int32Chunked::new(PlSmallStr::from_static("a"),&[4,2,5,1,3]);
-        let o=SortOptions{descending:false,nulls_last:false,multithreaded:false,limit:Some(3),..Default::default()};
-        let r=a.arg_sort(o);
-        let idx:Vec<IdxSize>=r.into_no_null_iter().collect();
-        assert_eq!(idx,vec![3,1,4]);
+        let a = Int32Chunked::new(PlSmallStr::from_static("a"), &[4, 2, 5, 1, 3]);
+        let o = SortOptions {
+            descending: false,
+            nulls_last: false,
+            multithreaded: false,
+            limit: Some(3),
+            ..Default::default()
+        };
+        let r = a.arg_sort(o);
+        let idx: Vec<IdxSize> = r.into_no_null_iter().collect();
+        assert_eq!(idx, vec![3, 1, 4]);
     }
 
     #[test]
     fn test_arg_sort_desc_limit_nulls() {
-        let a=Int32Chunked::new(PlSmallStr::from_static("a"),&[Some(4),None,Some(5),Some(1),None,Some(3)]);
-        let o=SortOptions{descending:true,nulls_last:true,multithreaded:false,limit:Some(3),..Default::default()};
-        let r=a.arg_sort(o);
-        let idx:Vec<IdxSize>=r.into_no_null_iter().collect();
-        assert_eq!(idx,vec![2,0,5]);
+        let a = Int32Chunked::new(
+            PlSmallStr::from_static("a"),
+            &[Some(4), None, Some(5), Some(1), None, Some(3)],
+        );
+        let o = SortOptions {
+            descending: true,
+            nulls_last: true,
+            multithreaded: false,
+            limit: Some(3),
+            ..Default::default()
+        };
+        let r = a.arg_sort(o);
+        let idx: Vec<IdxSize> = r.into_no_null_iter().collect();
+        assert_eq!(idx, vec![2, 0, 5]);
     }
 }
