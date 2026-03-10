@@ -397,3 +397,11 @@ def test_i128_sum_reduction() -> None:
         .item()
         == 6
     )
+
+
+def test_streaming_boolean_multiply_unique() -> None:
+    lf = pl.LazyFrame({"a": [True]}).with_columns(x=pl.col("a") * 2).unique("a")
+    expected = lf.collect(engine="in-memory")
+    result = lf.collect(engine="streaming")
+
+    assert_frame_equal(result, expected, check_row_order=False)
