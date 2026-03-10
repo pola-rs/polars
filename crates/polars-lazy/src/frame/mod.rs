@@ -23,6 +23,8 @@ pub use ndjson::*;
 pub use parquet::*;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::error::feature_gated;
+#[cfg(feature = "pivot")]
+use polars_core::frame::PivotColumnNaming;
 use polars_core::prelude::*;
 use polars_core::query_result::QueryResult;
 use polars_io::RowIndex;
@@ -1772,6 +1774,7 @@ impl LazyFrame {
         agg: Expr,
         maintain_order: bool,
         separator: PlSmallStr,
+        column_naming: PivotColumnNaming,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
@@ -1784,6 +1787,7 @@ impl LazyFrame {
                 agg,
                 maintain_order,
                 separator,
+                column_naming,
             )
             .build();
         Self::from_logical_plan(lp, opt_state)
