@@ -5,6 +5,8 @@ use std::num::NonZeroUsize;
 use arrow::ffi::export_iterator;
 use either::Either;
 use parking_lot::Mutex;
+#[cfg(feature = "pivot")]
+use polars::frame::PivotColumnNaming;
 use polars::io::RowIndex;
 use polars::time::*;
 use polars_core::prelude::*;
@@ -1376,7 +1378,7 @@ impl PyLazyFrame {
     }
 
     #[cfg(feature = "pivot")]
-    #[pyo3(signature = (on, on_columns, index, values, agg, maintain_order, separator))]
+    #[pyo3(signature = (on, on_columns, index, values, agg, maintain_order, separator, column_naming))]
     fn pivot(
         &self,
         on: PySelector,
@@ -1386,6 +1388,7 @@ impl PyLazyFrame {
         agg: PyExpr,
         maintain_order: bool,
         separator: String,
+        column_naming: Wrap<PivotColumnNaming>,
     ) -> Self {
         let ldf = self.ldf.read().clone();
         ldf.pivot(
@@ -1396,6 +1399,7 @@ impl PyLazyFrame {
             agg.inner,
             maintain_order,
             separator.into(),
+            column_naming.0,
         )
         .into()
     }

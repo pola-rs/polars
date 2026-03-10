@@ -9443,6 +9443,7 @@ class DataFrame:
         maintain_order: bool = True,
         sort_columns: bool = False,
         separator: str = "_",
+        column_naming: Literal["auto", "combine"] = "auto",
     ) -> DataFrame:
         """
         Create a spreadsheet-style pivot table as a DataFrame.
@@ -9485,6 +9486,17 @@ class DataFrame:
         separator
             Used as separator/delimiter in generated column names in case of multiple
             `values` columns.
+        column_naming : {'auto', 'combine'}
+            How resulting column names will be constructed.
+
+            * 'auto': The default; combine with separator if there are multiple
+                      `values` columns, otherwise just use the `on_columns` names.
+            * 'combine': Always combine the `values` columns' names with
+                                the `on_columns` names.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Returns
         -------
@@ -9643,6 +9655,7 @@ class DataFrame:
                 aggregate_function=aggregate_function,
                 maintain_order=maintain_order,
                 separator=separator,
+                column_naming=column_naming,
             )
             .collect(optimizations=QueryOptFlags._eager())
         )
