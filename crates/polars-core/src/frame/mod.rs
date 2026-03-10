@@ -35,8 +35,6 @@ mod from;
 #[cfg(feature = "algorithm_group_by")]
 pub mod group_by;
 pub(crate) mod horizontal;
-#[cfg(feature = "proptest")]
-pub mod proptest;
 #[cfg(any(feature = "rows", feature = "object"))]
 pub mod row;
 mod top_k;
@@ -1157,6 +1155,12 @@ impl DataFrame {
     pub fn filter(&self, mask: &BooleanChunked) -> PolarsResult<Self> {
         if self.width() == 0 {
             filter_zero_width(self.height(), mask)
+        } else if mask.len() == 1 && self.len() >= 1 {
+            if mask.all() && mask.null_count() == 0 {
+                Ok(self.clone())
+            } else {
+                Ok(self.clear())
+            }
         } else {
             let new_columns: Vec<Column> = self.try_apply_columns_par(|s| s.filter(mask))?;
             let out = unsafe {
@@ -1171,6 +1175,12 @@ impl DataFrame {
     pub fn filter_seq(&self, mask: &BooleanChunked) -> PolarsResult<Self> {
         if self.width() == 0 {
             filter_zero_width(self.height(), mask)
+        } else if mask.len() == 1 && mask.null_count() == 0 && self.len() >= 1 {
+            if mask.all() && mask.null_count() == 0 {
+                Ok(self.clone())
+            } else {
+                Ok(self.clear())
+            }
         } else {
             let new_columns: Vec<Column> = self.try_apply_columns(|s| s.filter(mask))?;
             let out = unsafe {

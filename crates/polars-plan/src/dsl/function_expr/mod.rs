@@ -255,6 +255,10 @@ pub enum FunctionExpr {
         digits: i32,
     },
     #[cfg(feature = "round_series")]
+    Truncate {
+        decimals: u32,
+    },
+    #[cfg(feature = "round_series")]
     Floor,
     #[cfg(feature = "round_series")]
     Ceil,
@@ -294,7 +298,7 @@ pub enum FunctionExpr {
         method: random::RandomMethod,
         seed: Option<u64>,
     },
-    SetSortedFlag(IsSorted),
+    SetSortedFlag(AExprSorted),
     #[cfg(feature = "ffi_plugin")]
     /// Creating this node is unsafe
     /// This will lead to calls over FFI.
@@ -367,7 +371,7 @@ pub enum FunctionExpr {
         offset: usize,
     },
     #[cfg(feature = "reinterpret")]
-    Reinterpret(bool),
+    Reinterpret(Option<bool>, Option<DataType>),
     ExtendConstant,
 
     RowEncode(RowEncodingVariant),
@@ -584,6 +588,8 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "round_series")]
             FunctionExpr::RoundSF { digits } => digits.hash(state),
             #[cfg(feature = "round_series")]
+            Truncate { decimals } => decimals.hash(state),
+            #[cfg(feature = "round_series")]
             FunctionExpr::Floor => {},
             #[cfg(feature = "round_series")]
             Ceil => {},
@@ -657,7 +663,10 @@ impl Hash for FunctionExpr {
             FillNullWithStrategy(strategy) => strategy.hash(state),
             GatherEvery { n, offset } => (n, offset).hash(state),
             #[cfg(feature = "reinterpret")]
-            Reinterpret(signed) => signed.hash(state),
+            Reinterpret(signed, dtype) => {
+                signed.hash(state);
+                dtype.hash(state);
+            },
             ExtendConstant => {},
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
@@ -817,6 +826,8 @@ impl Display for FunctionExpr {
             #[cfg(feature = "round_series")]
             RoundSF { .. } => "round_sig_figs",
             #[cfg(feature = "round_series")]
+            Truncate { .. } => "truncate",
+            #[cfg(feature = "round_series")]
             Floor => "floor",
             #[cfg(feature = "round_series")]
             Ceil => "ceil",
@@ -874,7 +885,7 @@ impl Display for FunctionExpr {
             FillNullWithStrategy(_) => "fill_null_with_strategy",
             GatherEvery { .. } => "gather_every",
             #[cfg(feature = "reinterpret")]
-            Reinterpret(_) => "reinterpret",
+            Reinterpret(_, _) => "reinterpret",
             ExtendConstant => "extend_constant",
 
             RowEncode(..) => "row_encode",

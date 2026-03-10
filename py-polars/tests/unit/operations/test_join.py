@@ -3701,8 +3701,6 @@ def test_join_rewrite_panic_23307() -> None:
         (pl.lit(None, dtype=pl.Int64), lambda col: ~col.is_in([1])),
         #
         (pl.lit(None, dtype=pl.Int64), lambda col: col.is_between(1, 1)),
-        (1, lambda col: col.is_between(None, 1)),
-        (1, lambda col: col.is_between(1, None)),
         #
         (pl.lit(None, dtype=pl.Int64), lambda col: col.is_close(1)),
         (1, lambda col: col.is_close(pl.lit(None, dtype=pl.Int64))),

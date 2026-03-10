@@ -1,5 +1,7 @@
 mod agg_list;
 mod boolean;
+#[cfg(feature = "dtype-categorical")]
+mod categorical;
 mod dispatch;
 mod string;
 
@@ -189,6 +191,22 @@ where
     T: PolarsNumericType,
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    ca.into_series()
+}
+
+pub fn _agg_helper_idx_idx<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
+where
+    F: Fn((IdxSize, &'a IdxVec)) -> Option<IdxSize> + Send + Sync,
+{
+    let ca: IdxCa = POOL.install(|| groups.into_par_iter().map(f).collect());
+    ca.into_series()
+}
+
+pub fn _agg_helper_slice_idx<F>(groups: &[[IdxSize; 2]], f: F) -> Series
+where
+    F: Fn([IdxSize; 2]) -> Option<IdxSize> + Send + Sync,
+{
+    let ca: IdxCa = POOL.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
 }
 

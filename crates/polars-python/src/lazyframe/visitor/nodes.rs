@@ -49,6 +49,9 @@ fn scan_type_to_pyobject(
         },
         #[cfg(feature = "scan_lines")]
         FileScanIR::Lines { name } => Ok(("lines", name.as_str()).into_py_any(py)?),
+        FileScanIR::ExpandedPaths { name } => {
+            Ok(("expanded-paths", name.as_str()).into_py_any(py)?)
+        },
         FileScanIR::PythonDataset { .. } => {
             Err(PyNotImplementedError::new_err("python dataset scan"))
         },
@@ -92,11 +95,11 @@ pub struct PyFileOptions {
 #[pymethods]
 impl PyFileOptions {
     #[getter]
-    fn n_rows(&self) -> Option<(i64, usize)> {
+    fn n_rows(&self) -> Option<(i64, IdxSize)> {
         self.inner
             .pre_slice
             .clone()
-            .map(|slice| <(i64, usize)>::try_from(slice).unwrap())
+            .map(|slice| slice.to_signed_offset_len())
     }
     #[getter]
     fn with_columns(&self) -> Option<Vec<&str>> {

@@ -33,6 +33,8 @@ String
      - Convert string to the specified Unicode normalization form (one of NFC, NFD, NFKC, NFKD).
    * - :ref:`OCTET_LENGTH <octet_length>`
      - Returns the length of a given string in bytes.
+   * - :ref:`POSITION <position>`
+     - Returns the position of a substring within a string.
    * - :ref:`REGEXP_LIKE <regexp_like>`
      - Returns True if `pattern` matches the value (optional: `flags`).
    * - :ref:`REPLACE <replace>`
@@ -60,6 +62,8 @@ String
      - Returns a slice of the string data (from a start index, with an optional length); note that `start` is 1-indexed.
    * - :ref:`TIMESTAMP <timestamp>`
      - Converts a formatted timestamp/datetime string to an actual Datetime value.
+   * - :ref:`TRIM <trim>`
+     - Strips characters from the left and/or right of a string.
    * - :ref:`UPPER <upper>`
      - Returns an uppercased column.
 
@@ -476,6 +480,37 @@ Returns the length of a given string in bytes.
     # │ ru       ┆ синий    ┆ 10      ┆ 5       │
     # │ es       ┆ amarillo ┆ 8       ┆ 8       │
     # └──────────┴──────────┴─────────┴─────────┘
+
+.. _position:
+
+POSITION
+--------
+Returns the position of a substring within a string. The result is 1-indexed,
+returning 0 if the substring is not found.
+
+.. seealso::
+
+   :ref:`STRPOS <strpos>` for the equivalent function-call syntax.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["apple", "banana", "orange", "grape"]})
+    df.sql("""
+      SELECT foo, POSITION('an' IN foo) AS pos FROM self
+    """)
+    # shape: (4, 2)
+    # ┌────────┬─────┐
+    # │ foo    ┆ pos │
+    # │ ---    ┆ --- │
+    # │ str    ┆ u32 │
+    # ╞════════╪═════╡
+    # │ apple  ┆ 0   │
+    # │ banana ┆ 2   │
+    # │ orange ┆ 3   │
+    # │ grape  ┆ 0   │
+    # └────────┴─────┘
 
 .. _regexp_like:
 
@@ -896,6 +931,44 @@ unless a strftime-compatible formatting string is provided as the second paramet
     # │ 2024.07.05 ┆ 2024-07-05 │
     # │ 2077.02.28 ┆ 2077-02-28 │
     # └────────────┴────────────┘
+
+
+.. _trim:
+
+TRIM
+----
+Strips characters from the left and/or right of a string.
+
+**Syntax:**
+
+* ``TRIM(expr)`` - strip whitespace from both sides.
+* ``TRIM(BOTH char FROM expr)`` - strip ``char`` from both sides.
+* ``TRIM(LEADING char FROM expr)`` - strip ``char`` from the left.
+* ``TRIM(TRAILING char FROM expr)`` - strip ``char`` from the right.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["  hello  ", "  world  ", "  test  "]})
+    df.sql("""
+      SELECT
+        foo,
+        TRIM(foo) AS trimmed,
+        TRIM(LEADING ' ' FROM foo) AS ltrimmed,
+        TRIM(TRAILING ' ' FROM foo) AS rtrimmed
+      FROM self
+    """)
+    # shape: (3, 4)
+    # ┌───────────┬─────────┬──────────┬──────────┐
+    # │ foo       ┆ trimmed ┆ ltrimmed ┆ rtrimmed │
+    # │ ---       ┆ ---     ┆ ---      ┆ ---      │
+    # │ str       ┆ str     ┆ str      ┆ str      │
+    # ╞═══════════╪═════════╪══════════╪══════════╡
+    # │   hello   ┆ hello   ┆ hello    ┆   hello  │
+    # │   world   ┆ world   ┆ world    ┆   world  │
+    # │   test    ┆ test    ┆ test     ┆   test   │
+    # └───────────┴─────────┴──────────┴──────────┘
 
 
 .. _upper:

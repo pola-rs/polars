@@ -96,6 +96,8 @@ impl FileWriterStarter for IpcWriterStarter {
             let (arrow_converters, ipc_fields, dictionary_id_offsets) =
                 build_ipc_write_components(file_schema.as_ref(), options.compat_level);
 
+            let compat_level = options.compat_level;
+
             let io_handle = tokio_handle_ext::AbortOnDropHandle(
                 pl_async::get_runtime().spawn(
                     io_writer::IOWriter {
@@ -116,6 +118,7 @@ impl FileWriterStarter for IpcWriterStarter {
                         morsel_rx,
                         ipc_batch_tx,
                         arrow_converters,
+                        compat_level,
                         dictionary_id_offsets,
                         write_options: WriteOptions { compression },
                         write_statistics_flags,

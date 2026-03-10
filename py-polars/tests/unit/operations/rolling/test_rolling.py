@@ -2348,3 +2348,47 @@ def test_rolling_rank_closed_left_26147() -> None:
         x_flipped_ranked=pl.Series([2.0, 1.0]),
     )
     assert_frame_equal(actual, expected)
+
+
+def test_rolling_cov_no_panic_26741() -> None:
+    result = (
+        pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [1, 2, 3]})
+        .cast({"x": pl.Float64, "y": pl.Int8})
+        .with_columns(z=pl.rolling_cov("x", "y", window_size=2).fill_null(0))
+    )
+    expected = pl.DataFrame(
+        {"x": [1.0, 2.0, 3.0], "y": [1, 2, 3], "z": [0.0, 0.5, 0.5]},
+        schema={"x": pl.Float64, "y": pl.Int8, "z": pl.Float64},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_rolling_corr_no_panic_26741() -> None:
+    result = (
+        pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [1, 2, 3]})
+        .cast({"x": pl.Float32, "y": pl.Int8})
+        .with_columns(z=pl.rolling_corr("x", "y", window_size=2).fill_null(0))
+    )
+    expected = pl.DataFrame(
+        {"x": [1.0, 2.0, 3.0], "y": [1, 2, 3], "z": [0.0, 1.0, 1.0]},
+        schema={"x": pl.Float32, "y": pl.Int8, "z": pl.Float32},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_rolling_cov_corr_float32_26741() -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [1.0, 2.0, 3.0]}).cast(
+        {"x": pl.Float32, "y": pl.Float32}
+    )
+    assert (
+        df.with_columns(z=pl.rolling_cov("x", "y", window_size=2).fill_null(0))[
+            "z"
+        ].dtype
+        == pl.Float32
+    )
+    assert (
+        df.with_columns(z=pl.rolling_corr("x", "y", window_size=2).fill_null(0))[
+            "z"
+        ].dtype
+        == pl.Float32
+    )

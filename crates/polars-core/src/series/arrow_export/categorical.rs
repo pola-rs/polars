@@ -1,9 +1,10 @@
 use std::any::Any;
 
 use arrow::array::builder::ArrayBuilder;
+use arrow::datatypes::IntegerType;
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
-use polars_compute::cast::cast_unchecked;
+use polars_compute::cast::utf8view_to_utf8;
 
 use crate::prelude::*;
 
@@ -17,8 +18,6 @@ pub struct CategoricalToArrowConverter {
     pub converters: PlIndexMap<usize, CategoricalArrayToArrowConverter>,
     /// Persist the key remap to ensure consistent mapping across multiple calls.
     pub persist_remap: bool,
-    /// Return only the keys array when going to arrow.
-    pub output_keys_only: bool,
 }
 
 impl CategoricalToArrowConverter {
@@ -27,12 +26,12 @@ impl CategoricalToArrowConverter {
     /// * `keys_arr` is not of a `Categorical` or `Enum` type
     /// * The arc address of the `Arc<CategoricalMapping>` is not present within `self.converters`
     ///   (likely due to forgetting to call `initialize()` on this converter).
-    pub fn array_to_arrow(
+    pub(super) fn array_to_arrow(
         &mut self,
         keys_arr: &dyn Array,
         dtype: &DataType,
-        compat_level: CompatLevel,
-    ) -> Box<dyn Array> {
+        arrow_field: &ArrowField,
+    ) -> PolarsResult<Box<dyn Array>> {
         let (DataType::Categorical(_, mapping) | DataType::Enum(_, mapping)) = dtype else {
             unreachable!()
         };
@@ -40,17 +39,55 @@ impl CategoricalToArrowConverter {
         let key = Arc::as_ptr(mapping) as *const () as usize;
         let converter = self.converters.get_mut(&key).unwrap();
 
-        with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |$C| {
+        let mut output_keys_only = false;
+        let mut use_view_type = false;
+
+        let cat_physical = dtype.cat_physical().unwrap();
+
+        match arrow_field.dtype() {
+            ArrowDataType::Dictionary(arrow_key_type, values_type, _) => {
+                let expected_key_type: IntegerType = with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |$C| {
+                    <<$C as PolarsCategoricalType>::Native as DictionaryKey>::KEY_TYPE
+                });
+
+                if *arrow_key_type != expected_key_type {
+                    bail_unhandled_arrow_conversion_dtype_pair!(dtype, arrow_field)
+                }
+
+                use_view_type = match values_type.as_ref() {
+                    ArrowDataType::Utf8View => true,
+                    ArrowDataType::LargeUtf8 => false,
+                    _ => bail_unhandled_arrow_conversion_dtype_pair!(dtype, arrow_field),
+                }
+            },
+            arrow_dtype => {
+                let matching = match cat_physical {
+                    CategoricalPhysical::U8 => arrow_dtype == &ArrowDataType::UInt8,
+                    CategoricalPhysical::U16 => arrow_dtype == &ArrowDataType::UInt16,
+                    CategoricalPhysical::U32 => arrow_dtype == &ArrowDataType::UInt32,
+                };
+
+                if !matching {
+                    bail_unhandled_arrow_conversion_dtype_pair!(dtype, arrow_field)
+                }
+
+                output_keys_only = true;
+            },
+        }
+
+        let out = with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |$C| {
             let keys_arr: &PrimitiveArray<<$C as PolarsCategoricalType>::Native> = keys_arr.as_any().downcast_ref().unwrap();
 
             converter.array_to_arrow(
                 keys_arr,
                 dtype,
                 self.persist_remap,
-                self.output_keys_only,
-                compat_level
+                output_keys_only,
+                use_view_type
             )
-        })
+        });
+
+        Ok(out)
     }
 
     /// Initializes categorical converters for all categorical mappings present in this dtype.
@@ -130,7 +167,7 @@ impl CategoricalArrayToArrowConverter {
         dtype: &DataType,
         persist_remap: bool,
         output_keys_only: bool,
-        compat_level: CompatLevel,
+        use_view_type: bool, // Ignored if `output_keys_only` is `true`.
     ) -> Box<dyn Array>
     where
         T: DictionaryKey + NativeType + std::hash::Hash + Eq,
@@ -174,7 +211,7 @@ impl CategoricalArrayToArrowConverter {
             return keys_arr.boxed();
         }
 
-        let values = self.build_values_array(compat_level);
+        let values = self.build_values_array(use_view_type);
 
         let dictionary_dtype = ArrowDataType::Dictionary(
             <T as DictionaryKey>::KEY_TYPE,
@@ -194,35 +231,35 @@ impl CategoricalArrayToArrowConverter {
     ///   * If `persist_remap` is `true`, this state will hold all the keys this converter has encountered.
     ///     It will otherwise hold only the keys seen from the last `array_to_arrow()` call.
     /// * If `Self` is `::Enum`, this returns the full set of values present in the Enum's `FrozenCategories`.
-    pub fn build_values_array(&self, compat_level: CompatLevel) -> Box<dyn Array> {
+    pub fn build_values_array(&self, use_view_type: bool) -> Box<dyn Array> {
         match self {
             Self::Categorical { mapping, key_remap } => match key_remap {
                 CategoricalKeyRemap::U8(keys) => self.build_values_array_from_keys(
                     keys.iter().map(|x: &u8| *x as CatSize),
                     mapping,
-                    compat_level,
+                    use_view_type,
                 ),
                 CategoricalKeyRemap::U16(keys) => self.build_values_array_from_keys(
                     keys.iter().map(|x: &u16| *x as CatSize),
                     mapping,
-                    compat_level,
+                    use_view_type,
                 ),
                 CategoricalKeyRemap::U32(keys) => self.build_values_array_from_keys(
                     keys.iter().map(|x: &u32| *x as CatSize),
                     mapping,
-                    compat_level,
+                    use_view_type,
                 ),
             },
 
             Self::Enum { frozen, .. } => {
                 let array: &Utf8ViewArray = frozen.categories();
 
-                if compat_level != CompatLevel::oldest() {
+                if use_view_type {
                     array.to_boxed()
                 } else {
                     // Note: Could store a once-init Utf8Array on the frozen categories to avoid
                     // building this multiple times for the oldest compat level.
-                    cast_unchecked(array, &ArrowDataType::LargeUtf8).unwrap()
+                    utf8view_to_utf8::<i64>(array).to_boxed()
                 }
             },
         }
@@ -232,12 +269,12 @@ impl CategoricalArrayToArrowConverter {
         &self,
         keys_iter: I,
         mapping: &CategoricalMapping,
-        compat_level: CompatLevel,
+        use_view_type: bool,
     ) -> Box<dyn Array>
     where
         I: ExactSizeIterator<Item = CatSize>,
     {
-        if compat_level != CompatLevel::oldest() {
+        if use_view_type {
             let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8View);
             builder.reserve(keys_iter.len());
 

@@ -165,6 +165,7 @@ fix = true
 [tool.ruff.lint]
 select = [
   "ANN", # flake8-annotations
+  "ARG", # flake8-unused-arguments
   "B", # flake8-bugbear
   "C4", # flake8-comprehensions
   "D", # flake8-docstrings
@@ -219,7 +220,7 @@ allowed-confusables = ["µ"]
 [tool.ruff.lint.per-file-ignores]
 "_dependencies.py" = ["ICN001"]
 "config.py" = ["FBT001"]
-"tests/**/*.py" = ["D100", "D102", "D103", "B018", "F841", "FBT001"]
+"tests/**/*.py" = ["ARG", "D100", "D102", "D103", "B018", "F841", "FBT001"]
 
 [tool.ruff.lint.pycodestyle]
 max-doc-length = 88
