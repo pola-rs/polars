@@ -100,8 +100,25 @@ def call_expr(func: SeriesMethod) -> SeriesMethod:
         expr = F.col(s.name)
         if (namespace := getattr(self, "_accessor", None)) is not None:
             expr = getattr(expr, namespace)
+
+        if isinstance(s, pl.Series) and s.len() == 1:
+            expr = pl.lit(s) # 5
+
+            if (namespace := getattr(self, "_accessor", None)) is not None:
+                expr = getattr(expr, namespace)
+
+            f = getattr(expr, func.__name__)
+            rhs = f(*args, **kwargs)
+            return pl.select(rhs).to_series()
+
         f = getattr(expr, func.__name__)
-        return s.to_frame().select_seq(f(*args, **kwargs)).to_series()
+        rhs = f(*args, **kwargs)
+
+
+        if isinstance(rhs, pl.Series):
+            return s.to_frame().select_seq(pl.lit(rhs)).to_series()
+
+        return s.to_frame().select_seq(rhs).to_series()
 
     # note: applying explicit '__signature__' helps IDEs (especially PyCharm)
     # with proper autocomplete, in addition to what @functools.wraps does

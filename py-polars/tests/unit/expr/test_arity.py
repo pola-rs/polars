@@ -36,9 +36,9 @@ def test_when_then_broadcast_nulls_12665() -> None:
     ("needs_broadcast", "expect_contains"),
     [
         (pl.lit("a"), [True, False, False]),
-        (pl.col("name").head(1), [True, False, False]),
+        (pl.col("name").first(), [True, False, False]),
         (pl.lit(None, dtype=pl.String), [None, None, None]),
-        (pl.col("null_utf8").head(1), [None, None, None]),
+        (pl.col("null_utf8").first(), [None, None, None]),
     ],
 )
 @pytest.mark.parametrize("literal", [True, False])

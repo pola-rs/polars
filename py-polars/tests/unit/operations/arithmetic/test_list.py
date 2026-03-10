@@ -11,6 +11,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.operations.arithmetic.utils import (
     BROADCAST_SERIES_COMBINATIONS,
     EXEC_OP_COMBINATIONS,
+    EXEC_OP_COMBINATIONS2,
 )
 
 if TYPE_CHECKING:
@@ -23,17 +24,19 @@ if TYPE_CHECKING:
     "list_side", ["left", "left3", "both", "right3", "right", "none"]
 )
 @pytest.mark.parametrize(
-    "broadcast_series",
+    ("broadcast_series", "broadcast_series_name"),
     BROADCAST_SERIES_COMBINATIONS,
 )
-@pytest.mark.parametrize("exec_op", EXEC_OP_COMBINATIONS)
+@pytest.mark.parametrize(("exec_op", "exec_op_expr"), EXEC_OP_COMBINATIONS2)
 @pytest.mark.slow
 def test_list_arithmetic_values(
     list_side: str,
     broadcast_series: Callable[
         [pl.Series, pl.Series, pl.Series], tuple[pl.Series, pl.Series, pl.Series]
     ],
+    broadcast_series_name: str,
     exec_op: Callable[[pl.Series, pl.Series, Any], pl.Series],
+    exec_op_expr: bool,
 ) -> None:
     """
     Tests value correctness.
@@ -105,70 +108,73 @@ def test_list_arithmetic_values(
 
         return broadcast_series(l, r, o)
 
+    # Fixup first argument for broadcasting
+    w = (lambda op: lambda a, b: op(a.first(), b)) if broadcast_series_name == "right" and exec_op_expr else lambda op: op
+
     # Signed
     dtypes = [pl.Int8, pl.Int8, pl.Int8]
 
     l, r, o = materialize_series(2, 3, 5)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.add), o)
+    assert_series_equal(exec_op(l, r, w(op.add)), o)
 
     l, r, o = materialize_series(-5, 127, 124)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.sub), o)
+    assert_series_equal(exec_op(l, r, w(op.sub)), o)
 
     l, r, o = materialize_series(-5, 127, -123)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.mul), o)
+    assert_series_equal(exec_op(l, r, w(op.mul)), o)
 
     l, r, o = materialize_series(-5, 3, -2)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.floordiv), o)
+    assert_series_equal(exec_op(l, r, w(op.floordiv)), o)
 
     l, r, o = materialize_series(-5, 3, 1)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.mod), o)
+    assert_series_equal(exec_op(l, r, w(op.mod)), o)
 
     dtypes = [pl.UInt8, pl.UInt8, pl.Float64]
     l, r, o = materialize_series(2, 128, 0.015625)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.truediv), o)
+    assert_series_equal(exec_op(l, r, w(op.truediv)), o)
 
     # Unsigned
     dtypes = [pl.UInt8, pl.UInt8, pl.UInt8]
 
     l, r, o = materialize_series(2, 3, 5)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.add), o)
+    assert_series_equal(exec_op(l, r, w(op.add)), o)
 
     l, r, o = materialize_series(2, 3, 255)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.sub), o)
+    assert_series_equal(exec_op(l, r, w(op.sub)), o)
 
     l, r, o = materialize_series(2, 128, 0)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.mul), o)
+    assert_series_equal(exec_op(l, r, w(op.mul)), o)
 
     l, r, o = materialize_series(5, 2, 2)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.floordiv), o)
+    assert_series_equal(exec_op(l, r, w(op.floordiv)), o)
 
     l, r, o = materialize_series(5, 2, 1)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.mod), o)
+    assert_series_equal(exec_op(l, r, w(op.mod)), o)
 
     dtypes = [pl.UInt8, pl.UInt8, pl.Float64]
     l, r, o = materialize_series(2, 128, 0.015625)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.truediv), o)
+    assert_series_equal(exec_op(l, r, w(op.truediv)), o)
 
     # Floats. Note we pick Float32 to ensure there is no accidental upcasting
     # to Float64.
     dtypes = [pl.Float32, pl.Float32, pl.Float32]
     l, r, o = materialize_series(1.7, 2.3, 4.0)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.add), o)
+    assert_series_equal(exec_op(l, r, w(op.add)), o)
 
     l, r, o = materialize_series(1.7, 2.3, -0.5999999999999999)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.sub), o)
+    assert_series_equal(exec_op(l, r, w(op.sub)), o)
 
     l, r, o = materialize_series(1.7, 2.3, 3.9099999999999997)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.mul), o)
+    assert_series_equal(exec_op(l, r, w(op.mul)), o)
 
     l, r, o = materialize_series(7.0, 3.0, 2.0)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.floordiv), o)
+    assert_series_equal(exec_op(l, r, w(op.floordiv)), o)
 
     l, r, o = materialize_series(-5.0, 3.0, 1.0)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.mod), o)
+    assert_series_equal(exec_op(l, r, w(op.mod)), o)
 
     l, r, o = materialize_series(2.0, 128.0, 0.015625)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.truediv), o)
+    assert_series_equal(exec_op(l, r, w(op.truediv)), o)
 
     #
     # Tests for zero behavior
@@ -179,42 +185,42 @@ def test_list_arithmetic_values(
     dtypes = [pl.UInt8, pl.UInt8, pl.UInt8]
 
     l, r, o = materialize_series(1, 0, None)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.floordiv), o)
-    assert_series_equal(exec_op(l, r, op.mod), o)
+    assert_series_equal(exec_op(l, r, w(op.floordiv)), o)
+    assert_series_equal(exec_op(l, r, w(op.mod)), o)
 
     l, r, o = materialize_series(0, 0, None)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.floordiv), o)
-    assert_series_equal(exec_op(l, r, op.mod), o)
+    assert_series_equal(exec_op(l, r, w(op.floordiv)), o)
+    assert_series_equal(exec_op(l, r, w(op.mod)), o)
 
     dtypes = [pl.UInt8, pl.UInt8, pl.Float64]
 
     l, r, o = materialize_series(1, 0, float("inf"))  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.truediv), o)
+    assert_series_equal(exec_op(l, r, w(op.truediv)), o)
 
     l, r, o = materialize_series(0, 0, float("nan"))  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.truediv), o)
+    assert_series_equal(exec_op(l, r, w(op.truediv)), o)
 
     # Float
 
     dtypes = [pl.Float32, pl.Float32, pl.Float32]
 
     l, r, o = materialize_series(1, 0, float("inf"))  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.floordiv), o)
+    assert_series_equal(exec_op(l, r, w(op.floordiv)), o)
 
     l, r, o = materialize_series(1, 0, float("nan"))  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.mod), o)
+    assert_series_equal(exec_op(l, r, w(op.mod)), o)
 
     l, r, o = materialize_series(1, 0, float("inf"))  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.truediv), o)
+    assert_series_equal(exec_op(l, r, w(op.truediv)), o)
 
     l, r, o = materialize_series(0, 0, float("nan"))  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.floordiv), o)
+    assert_series_equal(exec_op(l, r, w(op.floordiv)), o)
 
     l, r, o = materialize_series(0, 0, float("nan"))  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.mod), o)
+    assert_series_equal(exec_op(l, r, w(op.mod)), o)
 
     l, r, o = materialize_series(0, 0, float("nan"))  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.truediv), o)
+    assert_series_equal(exec_op(l, r, w(op.truediv)), o)
 
     #
     # Tests for NULL behavior
@@ -236,63 +242,63 @@ def test_list_arithmetic_values(
             dtypes = 3 * [dtype]
 
             l, r, o = materialize_series(*vals)  # type: ignore[misc]  # noqa: E741
-            assert_series_equal(exec_op(l, r, op.add), o)
-            assert_series_equal(exec_op(l, r, op.sub), o)
-            assert_series_equal(exec_op(l, r, op.mul), o)
-            assert_series_equal(exec_op(l, r, op.floordiv), o)
-            assert_series_equal(exec_op(l, r, op.mod), o)
+            assert_series_equal(exec_op(l, r, w(op.add)), o)
+            assert_series_equal(exec_op(l, r, w(op.sub)), o)
+            assert_series_equal(exec_op(l, r, w(op.mul)), o)
+            assert_series_equal(exec_op(l, r, w(op.floordiv)), o)
+            assert_series_equal(exec_op(l, r, w(op.mod)), o)
             dtypes[2] = truediv_dtype  # type: ignore[has-type]
             l, r, o = materialize_series(*vals)  # type: ignore[misc]  # noqa: E741
-            assert_series_equal(exec_op(l, r, op.truediv), o)
+            assert_series_equal(exec_op(l, r, w(op.truediv)), o)
 
     # Type upcasting for Boolean and Null
 
     # Check boolean upcasting
     dtypes = [pl.Boolean, pl.Boolean, pl.get_index_type()]
     l, r, o = materialize_series(True, True, 2)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.add), o)
+    assert_series_equal(exec_op(l, r, w(op.add)), o)
 
     dtypes = [pl.Boolean, pl.Boolean, pl.Float64]
     l, r, o = materialize_series(True, True, 1.0)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.truediv), o)
+    assert_series_equal(exec_op(l, r, w(op.truediv)), o)
 
     dtypes = [pl.Boolean, pl.UInt8, pl.UInt8]
 
     l, r, o = materialize_series(True, 3, 4)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.add), o)
+    assert_series_equal(exec_op(l, r, w(op.add)), o)
 
     l, r, o = materialize_series(True, 3, 254)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.sub), o)
+    assert_series_equal(exec_op(l, r, w(op.sub)), o)
 
     l, r, o = materialize_series(True, 3, 3)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.mul), o)
+    assert_series_equal(exec_op(l, r, w(op.mul)), o)
 
     l, r, o = materialize_series(True, 3, 0)  # noqa: E741
     if list_side != "none":
         # TODO: We get an error on non-lists with this:
         # "floor_div operation not supported for dtype `bool`"
-        assert_series_equal(exec_op(l, r, op.floordiv), o)
+        assert_series_equal(exec_op(l, r, w(op.floordiv)), o)
 
     l, r, o = materialize_series(True, 3, 1)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.mod), o)
+    assert_series_equal(exec_op(l, r, w(op.mod)), o)
 
     dtypes = [pl.Boolean, pl.UInt8, pl.Float64]
     l, r, o = materialize_series(True, 128, 0.0078125)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.truediv), o)
+    assert_series_equal(exec_op(l, r, w(op.truediv)), o)
 
     # Check Null upcasting
     dtypes = [pl.Null, pl.UInt8, pl.UInt8]
     l, r, o = materialize_series(None, 3, None)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.add), o)
-    assert_series_equal(exec_op(l, r, op.sub), o)
-    assert_series_equal(exec_op(l, r, op.mul), o)
+    assert_series_equal(exec_op(l, r, w(op.add)), o)
+    assert_series_equal(exec_op(l, r, w(op.sub)), o)
+    assert_series_equal(exec_op(l, r, w(op.mul)), o)
     if list_side != "none":
-        assert_series_equal(exec_op(l, r, op.floordiv), o)
-    assert_series_equal(exec_op(l, r, op.mod), o)
+        assert_series_equal(exec_op(l, r, w(op.floordiv)), o)
+    assert_series_equal(exec_op(l, r, w(op.mod)), o)
 
     dtypes = [pl.Null, pl.UInt8, pl.Float64]
     l, r, o = materialize_series(None, 3, None)  # noqa: E741
-    assert_series_equal(exec_op(l, r, op.truediv), o)
+    assert_series_equal(exec_op(l, r, w(op.truediv)), o)
 
 
 @pytest.mark.parametrize(
@@ -327,9 +333,9 @@ def test_list_add_supertype(
     )
 
 
-@pytest.mark.parametrize("exec_op", EXEC_OP_COMBINATIONS)
+@pytest.mark.parametrize(("exec_op", "exec_op_expr"), EXEC_OP_COMBINATIONS2)
 @pytest.mark.parametrize(
-    "broadcast_series",
+    ("broadcast_series", "broadcast_series_name"),
     BROADCAST_SERIES_COMBINATIONS,
 )
 @pytest.mark.slow
@@ -338,6 +344,8 @@ def test_list_numeric_op_validity_combination(
         [pl.Series, pl.Series, pl.Series], tuple[pl.Series, pl.Series, pl.Series]
     ],
     exec_op: Callable[[pl.Series, pl.Series, Any], pl.Series],
+    broadcast_series_name: str,
+    exec_op_expr: bool,
 ) -> None:
     import operator as op
 
@@ -355,22 +363,25 @@ def test_list_numeric_op_validity_combination(
     b = pl.Series("b", [None], dtype=pl.Int64)
     e = pl.Series("a", [[None]], dtype=pl.List(pl.Int64))
 
+    # Fixup first argument for broadcasting
+    w = (lambda op: lambda a, b: op(a.first(), b)) if broadcast_series_name == "right" and exec_op_expr else lambda op: op
+
     a, b, e = broadcast_series(a, b, e)
-    assert_series_equal(exec_op(a, b, op.add), e)
+    assert_series_equal(exec_op(a, b, w(op.add)), e)
 
     a = pl.Series("a", [None], dtype=pl.List(pl.Int32))
     b = pl.Series("b", [1], dtype=pl.Int64)
     e = pl.Series("a", [None], dtype=pl.List(pl.Int64))
 
     a, b, e = broadcast_series(a, b, e)
-    assert_series_equal(exec_op(a, b, op.add), e)
+    assert_series_equal(exec_op(a, b, w(op.add)), e)
 
     a = pl.Series("a", [None], dtype=pl.List(pl.Int32))
     b = pl.Series("b", [0], dtype=pl.Int64)
     e = pl.Series("a", [None], dtype=pl.List(pl.Int64))
 
     a, b, e = broadcast_series(a, b, e)
-    assert_series_equal(exec_op(a, b, op.floordiv), e)
+    assert_series_equal(exec_op(a, b, w(op.floordiv)), e)
 
 
 def test_list_add_alignment() -> None:

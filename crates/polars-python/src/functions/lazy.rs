@@ -486,7 +486,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
                 .get(0)
                 .map_err(|_| PyValueError::new_err("expected at least 1 value"))?;
             let av = av.into_static();
-            Ok(dsl::lit(Scalar::new(s.dtype().clone(), av)).into())
+            Ok(dsl::lit(Scalar::new(s.dtype().clone(), av).with_name(s.name().clone())).into())
         } else {
             Ok(dsl::lit(s).into())
         }

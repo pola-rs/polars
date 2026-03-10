@@ -68,14 +68,20 @@ def broadcast_none(
 
 
 BROADCAST_SERIES_COMBINATIONS = [
-    broadcast_left,
-    broadcast_right,
-    broadcast_both,
-    broadcast_none,
+    (broadcast_left, "left"),
+    (broadcast_right, "right"),
+    (broadcast_both, "both"),
+    (broadcast_none, "none"),
 ]
 
 EXEC_OP_COMBINATIONS = [
     exec_op_with_series,
     exec_op_with_expr,
     exec_op_with_expr_no_type_coercion,
+]
+
+EXEC_OP_COMBINATIONS2 = [
+    (exec_op_with_series, False),
+    (exec_op_with_expr, True),
+    (exec_op_with_expr_no_type_coercion, True),
 ]
