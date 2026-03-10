@@ -1254,6 +1254,46 @@ def test_replace_expressions() -> None:
     }
 
 
+def test_replace_dynamic_pattern_column() -> None:
+    df = pl.DataFrame(
+        {"foo": ["hello world", "abc def"], "pat": ["world", "abc"], "val": ["X", "Y"]}
+    )
+    out = df.select(pl.col("foo").str.replace(pl.col("pat"), pl.col("val")))
+    assert out.to_dict(as_series=False) == {"foo": ["hello X", "Y def"]}
+
+    out = df.select(pl.col("foo").str.replace_all(pl.col("pat"), pl.col("val")))
+    assert out.to_dict(as_series=False) == {"foo": ["hello X", "Y def"]}
+
+    df2 = pl.DataFrame(
+        {"foo": ["aaa bbb aaa", "ccc ddd"], "pat": ["aaa", "ddd"], "val": ["Z", "W"]}
+    )
+    out = df2.select(pl.col("foo").str.replace(pl.col("pat"), pl.col("val")))
+    assert out.to_dict(as_series=False) == {"foo": ["Z bbb aaa", "ccc W"]}
+
+    out = df2.select(pl.col("foo").str.replace_all(pl.col("pat"), pl.col("val")))
+    assert out.to_dict(as_series=False) == {"foo": ["Z bbb Z", "ccc W"]}
+
+    df3 = pl.DataFrame(
+        {
+            "foo": ["123 abc", "456 def", "789 ghi"],
+            "pat": [r"\d+", r"\w+", r"\s"],
+            "val": ["NUM", "WORD", "_"],
+        }
+    )
+    out = df3.select(pl.col("foo").str.replace(pl.col("pat"), pl.col("val")))
+    assert out.to_dict(as_series=False) == {"foo": ["NUM abc", "WORD def", "789_ghi"]}
+
+    out = df3.select(pl.col("foo").str.replace_all(pl.col("pat"), pl.col("val")))
+    assert out.to_dict(as_series=False) == {
+        "foo": ["NUM NUM", "WORD WORD", "789_ghi"]
+    }
+
+    # regression test: should work with single thread too
+    df4 = pl.DataFrame({"s": ["abc"], "p": ["b"], "v": ["X"]})
+    out = df4.select(pl.col("s").str.replace(pl.col("p"), pl.col("v")))
+    assert out.to_dict(as_series=False) == {"s": ["aXc"]}
+
+
 @pytest.mark.parametrize(
     ("pattern", "replacement", "case_insensitive", "leftmost", "expected"),
     [
