@@ -535,3 +535,17 @@ def test_partition_by_diff_expr_26370(tmp_path: Path) -> None:
     q.sink_parquet(pl.PartitionBy(tmp_path, key="z"))
 
     assert_frame_equal(pl.scan_parquet(tmp_path).collect(), q.collect())
+
+
+def test_partition_by_duplicate_file_path_26885(tmp_path: Path) -> None:
+    q = pl.LazyFrame({"key": ["a"] * 100_000, "x": range(100_000)})
+
+    with pytest.raises(pl.exceptions.ComputeError, match="already been written"):
+        q.sink_parquet(
+            pl.PartitionBy(
+                tmp_path,
+                key="key",
+                file_path_provider=lambda ctx: "same_name.parquet",
+                max_rows_per_file=10_000,
+            )
+        )
