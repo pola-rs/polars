@@ -690,3 +690,30 @@ def test_list_eval_groupby_sample_25796() -> None:
     out = df.group_by("g").agg(pl.col("x").sample(n=2).list.eval(pl.element()))
     expected = pl.DataFrame({"g": [10], "x": [[[1, 1], [1, 1]]]})
     assert_frame_equal(out, expected)
+
+
+def test_list_eval_returns_scalar_groups_update_26850() -> None:
+    s = pl.Series([[1, 2], [], [3]])
+
+    assert_series_equal(
+        s.list.eval(pl.element().first()),
+        pl.Series([[1], [None], [3]]),
+    )
+
+
+def test_list_agg_nulls_panic_26237() -> None:
+    df = pl.DataFrame({"a": [[1], None, [], None, []]})
+
+    assert_frame_equal(
+        df.with_columns(
+            first=pl.col("a").list.agg(pl.element().first()),
+            sum=pl.col("a").list.agg(pl.element().sum()),
+        ),
+        pl.DataFrame(
+            {
+                "a": [[1], None, [], None, []],
+                "first": [1, None, None, None, None],
+                "sum": [1, None, 0, None, 0],
+            }
+        ),
+    )

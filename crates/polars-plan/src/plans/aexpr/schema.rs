@@ -375,6 +375,18 @@ impl AExpr {
 
                 let fields = func_args_to_fields(input, ctx)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
+
+                #[cfg(feature = "dtype-array")]
+                if let IRFunctionExpr::ArrayExpr(IRArrayFunction::Get(false)) = function
+                    && let DataType::Array(_, width) = fields[0].dtype()
+                    && let AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(index))) =
+                        ctx.arena.get(input[1].node())
+                {
+                    polars_ensure!(*index < *width as i128 && *index >= -(*width as i128),
+                        ComputeError: "get index {index:?} is out of bounds for array of width {width:?}"
+                    )
+                }
+
                 let out = function.get_field(ctx.schema, &fields)?;
 
                 Ok(out)

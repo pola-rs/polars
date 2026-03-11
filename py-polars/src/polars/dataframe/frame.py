@@ -4515,26 +4515,40 @@ class DataFrame:
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
 
+                # Try to get the name and version of the underlying ADBC driver to help
+                # with error messages and backwards compatibility
+
                 # We can reliably introspect the underlying driver from a URI
                 # We can also introspect instantiated connections when PyArrow is
                 # installed. Otherwise, the underlying driver is unknown
                 # Ref: https://github.com/apache/arrow-adbc/issues/2828
                 if isinstance(connection, str):
                     adbc_module_name = _get_adbc_module_name_from_uri(connection)
+                    adbc_driver = _import_optional_adbc_driver(
+                        adbc_module_name, dbapi_submodule=False
+                    )
+                    adbc_driver_str_version = getattr(
+                        adbc_driver,
+                        "__version__",
+                        driver_manager_str_version,
+                    )
                 elif _PYARROW_AVAILABLE:
                     adbc_module_name = (
                         f"adbc_driver_{conn.adbc_get_info()['vendor_name'].lower()}"
                     )
+                    try:
+                        adbc_driver = _import_optional_adbc_driver(
+                            adbc_module_name, dbapi_submodule=False
+                        )
+                        adbc_driver_str_version = getattr(
+                            adbc_driver,
+                            "__version__",
+                            driver_manager_str_version,
+                        )
+                    except ModuleNotFoundError:
+                        adbc_driver_str_version = driver_manager_str_version
                 else:
                     adbc_module_name = "Unknown"
-
-                if adbc_module_name != "Unknown":
-                    adbc_driver = _import_optional_adbc_driver(
-                        adbc_module_name, dbapi_submodule=False
-                    )
-                    adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
-                else:
-                    adbc_driver = "Unknown"
                     # If we can't introspect the driver, guess that it has the same
                     # version as the driver manager. This is what happens by default
                     # when installed
@@ -6880,9 +6894,9 @@ class DataFrame:
     def map_columns(
         self,
         column_names: str | Sequence[str] | pl.Selector,
-        function: Callable[[Series], Series],
-        *args: Any,
-        **kwargs: Any,
+        function: Callable[Concatenate[Series, P], Series],
+        *args: P.args,
+        **kwargs: P.kwargs,
     ) -> DataFrame:
         """
         Apply eager functions to columns of a DataFrame.
@@ -9443,6 +9457,7 @@ class DataFrame:
         maintain_order: bool = True,
         sort_columns: bool = False,
         separator: str = "_",
+        column_naming: Literal["auto", "combine"] = "auto",
     ) -> DataFrame:
         """
         Create a spreadsheet-style pivot table as a DataFrame.
@@ -9485,6 +9500,17 @@ class DataFrame:
         separator
             Used as separator/delimiter in generated column names in case of multiple
             `values` columns.
+        column_naming : {'auto', 'combine'}
+            How resulting column names will be constructed.
+
+            * 'auto': The default; combine with separator if there are multiple
+                      `values` columns, otherwise just use the `on_columns` names.
+            * 'combine': Always combine the `values` columns' names with
+                                the `on_columns` names.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Returns
         -------
@@ -9643,6 +9669,7 @@ class DataFrame:
                 aggregate_function=aggregate_function,
                 maintain_order=maintain_order,
                 separator=separator,
+                column_naming=column_naming,
             )
             .collect(optimizations=QueryOptFlags._eager())
         )
@@ -11100,11 +11127,6 @@ class DataFrame:
         -------
         DataFrame
             DataFrame with unique rows.
-
-        Warnings
-        --------
-        This method will fail if there is a column of type `List` in the DataFrame (or
-        in the "subset" parameter).
 
         Notes
         -----

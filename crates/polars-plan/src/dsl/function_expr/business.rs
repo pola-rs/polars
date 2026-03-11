@@ -8,19 +8,9 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum BusinessFunction {
-    BusinessDayCount {
-        week_mask: [bool; 7],
-        holidays: Vec<i32>,
-    },
-    AddBusinessDay {
-        week_mask: [bool; 7],
-        holidays: Vec<i32>,
-        roll: Roll,
-    },
-    IsBusinessDay {
-        week_mask: [bool; 7],
-        holidays: Vec<i32>,
-    },
+    BusinessDayCount { week_mask: [bool; 7] },
+    AddBusinessDay { week_mask: [bool; 7], roll: Roll },
+    IsBusinessDay { week_mask: [bool; 7] },
 }
 
 impl fmt::Display for BusinessFunction {

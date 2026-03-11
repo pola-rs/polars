@@ -1,9 +1,14 @@
 use std::fmt::Write;
 
 use polars_core::datatypes::AnyValue;
-use polars_core::prelude::{TimeUnit, TimeZone};
+use polars_core::prelude::{DataType, TimeUnit, TimeZone};
+use polars_core::series::Series;
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::prelude::*;
+
+// Don't convert more than this amount of items to Python objects.
+const LIST_ITEM_LIMIT: usize = 100;
 
 #[derive(Default, Copy, Clone)]
 pub struct PyarrowArgs {
@@ -34,6 +39,50 @@ fn sanitize(name: &str) -> Option<&str> {
     }
 }
 
+fn series_to_pyarrow_list(s: &polars_core::prelude::Series) -> Option<String> {
+    if s.is_empty() {
+        return Some("[]".to_string());
+    }
+
+    let mut list_repr = String::with_capacity(s.len() * 5);
+    list_repr.push('[');
+    for av in s.iter() {
+        match av {
+            AnyValue::Boolean(v) => {
+                let s = if v { "True" } else { "False" };
+                write!(list_repr, "{s},").unwrap();
+            },
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::Datetime(v, tu, tz) => {
+                let dtm = to_py_datetime(v, &tu, tz);
+                write!(list_repr, "{dtm},").unwrap();
+            },
+            #[cfg(feature = "dtype-date")]
+            AnyValue::Date(v) => {
+                write!(list_repr, "to_py_date({v}),").unwrap();
+            },
+            AnyValue::String(s) => {
+                let _ = sanitize(s)?;
+                write!(list_repr, "{av},").unwrap();
+            },
+            // Hard to sanitize
+            AnyValue::Binary(_) | AnyValue::List(_) => return None,
+            #[cfg(feature = "dtype-array")]
+            AnyValue::Array(_, _) => return None,
+            #[cfg(feature = "dtype-struct")]
+            AnyValue::Struct(_, _, _) => return None,
+            AnyValue::Null => write!(list_repr, "None,").unwrap(),
+            _ => {
+                write!(list_repr, "{av},").unwrap();
+            },
+        }
+    }
+    // pop last comma
+    list_repr.pop();
+    list_repr.push(']');
+    Some(list_repr)
+}
+
 // convert to a pyarrow expression that can be evaluated with pythons eval
 pub fn predicate_to_pa(
     predicate: Node,
@@ -55,45 +104,10 @@ pub fn predicate_to_pa(
             Some(format!("pa.compute.field('{name}')"))
         },
         AExpr::Literal(LiteralValue::Series(s)) => {
-            if !args.allow_literal_series || s.is_empty() || s.len() > 100 {
-                None
+            if args.allow_literal_series && s.len() <= LIST_ITEM_LIMIT {
+                series_to_pyarrow_list(s)
             } else {
-                let mut list_repr = String::with_capacity(s.len() * 5);
-                list_repr.push('[');
-                for av in s.iter() {
-                    match av {
-                        AnyValue::Boolean(v) => {
-                            let s = if v { "True" } else { "False" };
-                            write!(list_repr, "{s},").unwrap();
-                        },
-                        #[cfg(feature = "dtype-datetime")]
-                        AnyValue::Datetime(v, tu, tz) => {
-                            let dtm = to_py_datetime(v, &tu, tz);
-                            write!(list_repr, "{dtm},").unwrap();
-                        },
-                        #[cfg(feature = "dtype-date")]
-                        AnyValue::Date(v) => {
-                            write!(list_repr, "to_py_date({v}),").unwrap();
-                        },
-                        AnyValue::String(s) => {
-                            let _ = sanitize(s)?;
-                            write!(list_repr, "{av},").unwrap();
-                        },
-                        // Hard to sanitize
-                        AnyValue::Binary(_) | AnyValue::List(_) => return None,
-                        #[cfg(feature = "dtype-array")]
-                        AnyValue::Array(_, _) => return None,
-                        #[cfg(feature = "dtype-struct")]
-                        AnyValue::Struct(_, _, _) => return None,
-                        _ => {
-                            write!(list_repr, "{av},").unwrap();
-                        },
-                    }
-                }
-                // pop last comma
-                list_repr.pop();
-                list_repr.push(']');
-                Some(list_repr)
+                None
             }
         },
         AExpr::Literal(lv) => {
@@ -158,14 +172,63 @@ pub fn predicate_to_pa(
         },
         #[cfg(feature = "is_in")]
         AExpr::Function {
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
             input,
             ..
         } => {
             let col = predicate_to_pa(input.first()?.node(), expr_arena, args)?;
-            let mut args = args;
-            args.allow_literal_series = true;
-            let values = predicate_to_pa(input.get(1)?.node(), expr_arena, args)?;
+            let rhs_node = input.get(1)?.node();
+
+            // Explode from length-1 list RHS.
+            let values = if let AExpr::Literal(lv) = expr_arena.get(rhs_node)
+                && lv.get_datatype().is_list()
+            {
+                use polars_core::prelude::ExplodeOptions;
+
+                let mut haystack_series = if let LiteralValue::Series(s) = lv
+                    && s.dtype().is_list()
+                    && s.len() == 1
+                {
+                    if s.null_count() == 0 {
+                        s.explode(ExplodeOptions {
+                            empty_as_null: false,
+                            keep_nulls: false,
+                        })
+                        .ok()?
+                    } else {
+                        Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
+                    }
+                } else if let Some(AnyValue::List(s)) = lv.to_any_value() {
+                    s
+                } else if lv.is_null() {
+                    Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
+                } else {
+                    return None;
+                };
+
+                let converted_len = haystack_series.len()
+                    - if *nulls_equal {
+                        0
+                    } else {
+                        haystack_series.null_count()
+                    };
+
+                if converted_len > LIST_ITEM_LIMIT {
+                    return None;
+                }
+
+                if converted_len == 0 {
+                    return Some("pa.compute.scalar(False)".to_string());
+                }
+
+                if !*nulls_equal {
+                    haystack_series = haystack_series.drop_nulls();
+                }
+
+                series_to_pyarrow_list(&haystack_series)?
+            } else {
+                return None;
+            };
 
             Some(format!("({col}).isin({values})"))
         },
