@@ -5,6 +5,9 @@ use polars_core::prelude::{TimeUnit, TimeZone};
 
 use crate::prelude::*;
 
+// Don't convert more than this amount of items to Python objects.
+const LIST_ITEM_LIMIT: usize = 100;
+
 #[derive(Default, Copy, Clone)]
 pub struct PyarrowArgs {
     // pyarrow doesn't allow `filter([True, False])`
@@ -35,9 +38,6 @@ fn sanitize(name: &str) -> Option<&str> {
 }
 
 fn series_to_pyarrow_list(s: &polars_core::prelude::Series) -> Option<String> {
-    if s.is_empty() || s.len() > 100 {
-        return None;
-    }
     let mut list_repr = String::with_capacity(s.len() * 5);
     list_repr.push('[');
     for av in s.iter() {
@@ -65,6 +65,7 @@ fn series_to_pyarrow_list(s: &polars_core::prelude::Series) -> Option<String> {
             AnyValue::Array(_, _) => return None,
             #[cfg(feature = "dtype-struct")]
             AnyValue::Struct(_, _, _) => return None,
+            AnyValue::Null => write!(list_repr, "None,").unwrap(),
             _ => {
                 write!(list_repr, "{av},").unwrap();
             },
@@ -82,6 +83,8 @@ pub fn predicate_to_pa(
     expr_arena: &Arena<AExpr>,
     args: PyarrowArgs,
 ) -> Option<String> {
+    const PA_FALSE_SCALAR: &str = "pa.compute.scalar(False)";
+
     match expr_arena.get(predicate) {
         AExpr::BinaryExpr { left, right, op } => {
             if op.is_comparison_or_bitwise() {
@@ -97,10 +100,10 @@ pub fn predicate_to_pa(
             Some(format!("pa.compute.field('{name}')"))
         },
         AExpr::Literal(LiteralValue::Series(s)) => {
-            if !args.allow_literal_series {
-                None
-            } else {
+            if args.allow_literal_series && s.len() <= LIST_ITEM_LIMIT {
                 series_to_pyarrow_list(s)
+            } else {
+                None
             }
         },
         AExpr::Literal(lv) => {
@@ -116,7 +119,7 @@ pub fn predicate_to_pa(
                     if val {
                         Some("pa.compute.scalar(True)".to_string())
                     } else {
-                        Some("pa.compute.scalar(False)".to_string())
+                        Some(PA_FALSE_SCALAR.to_string())
                     }
                 },
                 #[cfg(feature = "dtype-date")]
@@ -127,9 +130,8 @@ pub fn predicate_to_pa(
                 },
                 #[cfg(feature = "dtype-datetime")]
                 AnyValue::Datetime(v, tu, tz) => Some(to_py_datetime(v, &tu, tz)),
-                AnyValue::List(_) => None,
                 // Hard to sanitize
-                AnyValue::Binary(_) => None,
+                AnyValue::Binary(_) | AnyValue::List(_) => None,
                 #[cfg(feature = "dtype-array")]
                 AnyValue::Array(_, _) => None,
                 #[cfg(feature = "dtype-struct")]
@@ -166,24 +168,58 @@ pub fn predicate_to_pa(
         },
         #[cfg(feature = "is_in")]
         AExpr::Function {
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
             input,
             ..
         } => {
             let col = predicate_to_pa(input.first()?.node(), expr_arena, args)?;
             let rhs_node = input.get(1)?.node();
 
-            // Handle List scalar literal directly (new IR from parse_into_expression),
-            // otherwise fall through to predicate_to_pa for Series literals etc.
+            // Explode from length-1 list RHS.
             let values = if let AExpr::Literal(lv) = expr_arena.get(rhs_node)
-                && let Some(av) = lv.to_any_value()
-                && let AnyValue::List(s) = av.as_borrowed()
+                && lv.get_datatype().is_list()
             {
-                series_to_pyarrow_list(&s)?
+                use polars_core::prelude::ExplodeOptions;
+
+                let mut haystack_series = if let LiteralValue::Series(s) = lv
+                    && s.dtype().is_list()
+                    && s.len() == 1
+                {
+                    if s.null_count() == 0 {
+                        s.explode(ExplodeOptions {
+                            empty_as_null: false,
+                            keep_nulls: false,
+                        })
+                        .ok()?
+                    } else {
+                        return Some(PA_FALSE_SCALAR.to_string());
+                    }
+                } else if let Some(AnyValue::List(s)) = lv.to_any_value() {
+                    s
+                } else if lv.is_null() {
+                    return Some(PA_FALSE_SCALAR.to_string());
+                } else {
+                    return None;
+                };
+
+                let converted_len = haystack_series.len()
+                    - if *nulls_equal {
+                        0
+                    } else {
+                        haystack_series.null_count()
+                    };
+
+                if converted_len > LIST_ITEM_LIMIT {
+                    return None;
+                }
+
+                if !*nulls_equal {
+                    haystack_series = haystack_series.drop_nulls();
+                }
+
+                series_to_pyarrow_list(&haystack_series)?
             } else {
-                let mut args = args;
-                args.allow_literal_series = true;
-                predicate_to_pa(rhs_node, expr_arena, args)?
+                return None;
             };
 
             Some(format!("({col}).isin({values})"))

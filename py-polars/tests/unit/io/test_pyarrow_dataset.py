@@ -250,51 +250,97 @@ def test_pyarrow_dataset_partial_predicate_pushdown(
 
 
 def test_pyarrow_dataset_is_in_predicate_pushdown(
-    tmp_path: Path,
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
 
     df = pl.DataFrame({"id": [1, 2, 3, 4, 5], "val": [10, 20, 30, 40, 50]})
-    path = tmp_path / "test.parquet"
-    df.write_parquet(path)
-    dset = ds.dataset(path, format="parquet")
+    dset = ds.dataset(df.to_arrow())
 
     q = pl.scan_pyarrow_dataset(dset).filter(pl.col("id").is_in([1, 3]))
+    expected = pl.DataFrame({"id": [1, 3], "val": [10, 30]})
 
     capfd.readouterr()
     result = q.collect()
     capture = capfd.readouterr().err
 
-    # Verify: predicate fully pushed to pyarrow
     assert "(pa.compute.field('id')).isin([1,3])" in capture
+    assert "residual predicate: None" in capture
+
+    assert_frame_equal(result, expected)
+
+    q = pl.scan_pyarrow_dataset(dset).filter(pl.col("id").is_in(range(1, 4)))
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "(pa.compute.field('id')).isin([1,2,3])" in capture
     # Verify: no residual predicate
     assert "residual predicate: None" in capture
 
-    # Verify: correctness
-    expected = df.lazy().filter(pl.col("id").is_in([1, 3])).collect()
+    expected = pl.DataFrame({"id": [1, 2, 3], "val": [10, 20, 30]})
     assert_frame_equal(result, expected)
 
 
-def test_pyarrow_dataset_list_literal_not_pushed(
-    tmp_path: Path,
+def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
 ) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+    df = pl.DataFrame({"id": [1, 2, 3, 4, None], "val": [10, 20, 30, 40, 50]})
+    dset = ds.dataset(df.to_arrow())
+
+    q = pl.scan_pyarrow_dataset(dset).filter(pl.col("id").is_in([1, None, 3]))
+    expected = pl.DataFrame({"id": [1, 3], "val": [10, 30]})
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "(pa.compute.field('id')).isin([1,3])" in capture
+    assert "residual predicate: None" in capture
+
+    assert_frame_equal(result, expected)
+
+    q = pl.scan_pyarrow_dataset(dset).filter(
+        pl.col("id").is_in([1, None, 3], nulls_equal=True)
+    )
+    expected = pl.DataFrame({"id": [1, 3, None], "val": [10, 30, 50]})
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "(pa.compute.field('id')).isin([1,None,3])" in capture
+    assert "residual predicate: None" in capture
+
+    assert_frame_equal(result, expected)
+
+
+def test_pyarrow_dataset_list_literal_not_pushed() -> None:
     """List literals outside of is_in() should not be pushed down to pyarrow."""
     df = pl.DataFrame({"id": [1, 2, 3, 4, 5], "val": [10, 20, 30, 40, 50]})
-    path = tmp_path / "test.parquet"
-    df.write_parquet(path)
-    dset = ds.dataset(path, format="parquet")
+    dset = ds.dataset(df.to_arrow())
 
     # is_in predicate should be fully pushed (no FILTER in plan)
-    q_is_in = pl.scan_pyarrow_dataset(dset).filter(pl.col("id").is_in([1, 3]))
-    assert "FILTER" not in q_is_in.explain()
+    q = pl.scan_pyarrow_dataset(dset).filter(pl.col("id").is_in([1, 3]))
+    plan = q.explain()
+    assert "FILTER" not in plan
+
+    pred = pl.col("id") == pl.lit(pl.Series([1, 2, None, None, 5]))
 
     # A bare series literal should NOT be pushed (FILTER remains in plan)
-    q_series = pl.scan_pyarrow_dataset(dset).filter(
-        pl.col("id") == pl.lit(pl.Series([1, 3]))
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
+    plan = q.explain()
+    assert plan.startswith("FILTER")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"id": [1, 2, 5], "val": [10, 20, 50]}),
     )
-    assert "FILTER" in q_series.explain()
 
 
 def test_pyarrow_dataset_comm_subplan_elim(tmp_path: Path) -> None:
