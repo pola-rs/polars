@@ -125,6 +125,7 @@ class DeltaDataset:
             eprint("DeltaDataset: to_dataset_scan(): begin path expansion")
 
         paths = table.file_uris()
+        paths_orig = paths
 
         if self.table_uri().startswith("lakefs://"):
             paths = [path.replace("lakefs://", "s3://") for path in paths]
@@ -155,7 +156,7 @@ class DeltaDataset:
         )
 
         def _deletion_vector_callback() -> pl.DataFrame | None:
-            result = _build_deletion_vectors(table, paths)
+            result = _build_deletion_vectors(table, paths_orig)
             return result
 
         deletion_vector_callback = (
