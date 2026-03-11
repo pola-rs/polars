@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use polars_error::PolarsResult;
+use polars_core::prelude::{InitHashMaps, PlHashSet};
+use polars_error::{PolarsResult, polars_bail};
 use polars_io::cloud::CloudOptions;
 use polars_io::metrics::IOMetrics;
 use polars_io::pl_async;
@@ -16,9 +17,29 @@ pub struct FileProvider {
     pub upload_chunk_size: usize,
     pub upload_max_concurrency: usize,
     pub io_metrics: Option<Arc<IOMetrics>>,
+    opened_paths: Mutex<PlHashSet<String>>,
 }
 
 impl FileProvider {
+    pub fn new(
+        base_path: PlRefPath,
+        cloud_options: Option<Arc<CloudOptions>>,
+        provider_type: FileProviderType,
+        upload_chunk_size: usize,
+        upload_max_concurrency: usize,
+        io_metrics: Option<Arc<IOMetrics>>,
+    ) -> Self {
+        Self {
+            base_path,
+            cloud_options,
+            provider_type,
+            upload_chunk_size,
+            upload_max_concurrency,
+            io_metrics,
+            opened_paths: Mutex::new(PlHashSet::new()),
+        }
+    }
+
     pub async fn open_file(&self, args: FileProviderArgs) -> PolarsResult<Writeable> {
         let provided_path: String = match &self.provider_type {
             FileProviderType::Hive(p) => p.get_path(args)?,
@@ -39,6 +60,19 @@ impl FileProvider {
         };
 
         let path = self.base_path.join(&provided_path);
+
+        {
+            let mut opened = self.opened_paths.lock().unwrap();
+            if !opened.insert(provided_path.clone()) {
+                polars_bail!(
+                    ComputeError:
+                    "tried to write to '{}', which has already been written in this sink operation. \
+                     This will corrupt data. Ensure your file_path_provider returns unique output \
+                     paths (consider using the `index_in_partition` argument)",
+                    path
+                );
+            }
+        }
 
         if !path.has_scheme()
             && let Some(path) = path.parent()

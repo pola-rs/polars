@@ -75,14 +75,14 @@ pub fn start_partition_sink_pipeline(
         write!(file_part_prefix, "{uuid}").unwrap();
     }
 
-    let file_provider = Arc::new(FileProvider {
+    let file_provider = Arc::new(FileProvider::new(
         base_path,
         cloud_options,
-        provider_type: file_path_provider,
+        file_path_provider,
         upload_chunk_size,
-        upload_max_concurrency: upload_max_concurrency.get(),
+        upload_max_concurrency.get(),
         io_metrics,
-    });
+    ));
 
     let file_writer_starter: Arc<dyn FileWriterStarter> =
         create_file_writer_starter(&file_format, &file_schema)?;
