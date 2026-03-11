@@ -1,8 +1,10 @@
 use std::sync::{Arc, OnceLock};
 
+use arrow::array::BooleanArray;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{BooleanChunked, DataType, IntoColumn, PlHashMap, UInt64Chunked};
-use polars_error::PolarsResult;
+use polars_core::prelude::{BooleanChunked, DataType, InitHashMaps, PlHashMap};
+use polars_error::{PolarsResult, polars_err};
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::python_function::PythonObject;
 
 /// This is for `polars-python` to inject so that the implementation can be done there:
@@ -49,60 +51,71 @@ impl DeltaDeletionVectorProvider {
         self
     }
 
-    pub fn call(&self) -> PolarsResult<Option<DataFrame>> {
-        let dv = (delta_dv_provider_vtable().unwrap().call)(&self.callback)?;
-
-        let Some(mut dv) = dv else {
-            return Ok(None);
+    pub fn call(&self) -> PolarsResult<PlHashMap<usize, BooleanChunked>> {
+        let Some(dv) = (delta_dv_provider_vtable().unwrap().call)(&self.callback)? else {
+            return Ok(PlHashMap::new());
         };
 
-        match &self.selected_indices {
-            Some(selected_indices) => {
-                // Filter the Deletion Vector (DV) table and map the old "idx" column to the
-                // new "idx" column.
-                //
-                // Example, given:
-                //   (all) paths = [0, 1, 2, 3]
-                //   incoming DV table:
-                //     (old) idx |   mask
-                //         1     |  mask_1
-                //         2     |  mask_2
-                //         0     |  mask_0
-                //   selected_indices = [0, 2, 3]
-                //
-                // Gets processed as follows:
-                //   selected_indices gets mapped from old idx: [0, 2, 3] to new idx: [0, 1, 2]
-                // and therefore:
-                //   DV: (1, mask_1) => mapped to None => filtered out
-                //   DV: (2, mask_2) => mapped to new idx 1 => retained
-                //   DV: (0, mask_0) => mapped to new_idx 0 => retained
-                //
-                // Finally returns as:
-                //   (new) idx |   mask
-                //       1     |  mask_2
-                //       0     |  mask_0
+        // Filter the Deletion Vector (DV) table and map the old "idx" column to the
+        // new "idx" column.
+        //
+        // Example, given:
+        //   (all) paths = [0, 1, 2, 3]
+        //   incoming DV table:
+        //     (old) idx |   mask
+        //         1     |  mask_1
+        //         2     |  mask_2
+        //         0     |  mask_0
+        //   selected_indices = [0, 2, 3]
+        //
+        // Gets processed as follows:
+        //   selected_indices gets mapped from old idx: [0, 2, 3] to new idx: [0, 1, 2]
+        // and therefore:
+        //   DV: (1, mask_1) => mapped to None => filtered out
+        //   DV: (2, mask_2) => mapped to new idx 1 => retained
+        //   DV: (0, mask_0) => mapped to new_idx 0 => retained
+        //
+        // Finally returns as:
+        //   (new) idx |   mask
+        //       1     |  mask_2
+        //       0     |  mask_0
 
-                let idx_map: PlHashMap<u64, u64> = selected_indices
-                    .as_ref()
-                    .iter()
-                    .enumerate()
-                    .map(|(out_idx, &source_idx)| Ok((source_idx as u64, out_idx as u64)))
-                    .collect::<PolarsResult<_>>()?;
+        // Build old_idx -> new_idx map from selected_indices.
+        let idx_remap: Option<PlHashMap<usize, usize>> = self.selected_indices.as_ref().map(|v| {
+            v.iter()
+                .enumerate()
+                .map(|(new_idx, &old_idx)| (old_idx, new_idx))
+                .collect()
+        });
 
-                let idx_col = dv.column("idx")?.cast(&DataType::UInt64)?;
-                let idx_col = idx_col.u64()?;
-                let remapped_idx: UInt64Chunked = idx_col
-                    .iter()
-                    .map(|opt_v| opt_v.and_then(|v| idx_map.get(&v).copied()))
-                    .collect();
-                let mask: BooleanChunked = remapped_idx.iter().map(|v| v.is_some()).collect();
-                let dv = dv.with_column(remapped_idx.into_column().with_name("idx".into()))?;
+        let idx_col = dv.column("idx")?.cast(&DataType::UInt64)?;
+        let idx_col = idx_col.u64()?;
+        let mask_col = dv.column("mask")?.list()?;
 
-                let filtered = dv.filter(&mask)?;
-                Ok(Some(filtered))
-            },
-            None => Ok(Some(dv)),
+        let mut out = PlHashMap::new();
+
+        for (idx, mask) in idx_col.iter().zip(mask_col.iter()) {
+            let idx = idx.unwrap() as usize;
+
+            let out_idx = match &idx_remap {
+                Some(remap) => match remap.get(&idx) {
+                    Some(&new_idx) => new_idx,
+                    None => continue,
+                },
+                None => idx,
+            };
+
+            let mask = mask.unwrap();
+            let mask_bool = mask.as_any().downcast_ref::<BooleanArray>().ok_or_else(
+                || polars_err!(ComputeError: "expected boolean in Delta deletion vector mask"),
+            )?;
+            let chunked = unsafe {
+                BooleanChunked::from_chunks(PlSmallStr::EMPTY, vec![Box::new(mask_bool.clone())])
+            };
+            out.insert(out_idx, chunked);
         }
+
+        Ok(out)
     }
 
     pub fn callback(&self) -> &PythonObject {

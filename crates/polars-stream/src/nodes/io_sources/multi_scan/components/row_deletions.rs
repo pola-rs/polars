@@ -1,15 +1,14 @@
 use std::sync::{Arc, OnceLock};
 
-use arrow::array::BooleanArray;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{
-    BooleanChunked, ChunkAgg, DataType, InitHashMaps, NamedFrom, PlIndexMap,
-};
+#[cfg(feature = "python")]
+use polars_core::prelude::PlHashMap;
+use polars_core::prelude::{BooleanChunked, ChunkAgg, DataType, NamedFrom, PlIndexMap};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_error::{PolarsResult, feature_gated, polars_err};
+use polars_error::{PolarsResult, feature_gated};
 use polars_io::cloud::CloudOptions;
 use polars_plan::dsl::deletion::DeletionFilesList;
 #[cfg(feature = "python")]
@@ -42,7 +41,7 @@ pub enum DeletionFilesProvider {
     #[cfg(feature = "python")]
     DeltaDeletionVector {
         provider: DeltaDeletionVectorProvider,
-        cache: Arc<tokio::sync::OnceCell<PlIndexMap<usize, ExternalFilterMask>>>,
+        cache: Arc<tokio::sync::OnceCell<PlHashMap<usize, ExternalFilterMask>>>,
     },
 }
 
@@ -280,11 +279,13 @@ impl DeletionFilesProvider {
                     AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
                         let map = cache
                             .get_or_try_init(|| async {
-                                let df = provider.call()?;
-                                match df {
-                                    Some(df) => build_delta_mask_map(&df),
-                                    None => Ok(PlIndexMap::new()),
-                                }
+                                provider.call().map(|map| {
+                                    map.into_iter()
+                                        .map(|(k, mask)| {
+                                            (k, ExternalFilterMask::DeltaDeletionVector { mask })
+                                        })
+                                        .collect()
+                                })
                             })
                             .await?;
 
@@ -498,31 +499,6 @@ fn nth_set_bit_extend(mask: &Bitmap, n: usize) -> usize {
     } else {
         BitMask::from_bitmap(mask).nth_set_bit_idx(n, 0).unwrap()
     }
-}
-
-fn build_delta_mask_map(df: &DataFrame) -> PolarsResult<PlIndexMap<usize, ExternalFilterMask>> {
-    let idx_col = df.column("idx")?.cast(&DataType::UInt64)?;
-    let idx_col = idx_col.u64()?;
-    let mask_col = df.column("mask")?.list()?;
-    assert!(idx_col.len() == mask_col.len());
-
-    let mut map = PlIndexMap::new();
-    for (idx, mask) in idx_col.iter().zip(mask_col.iter()) {
-        let idx = idx.unwrap() as usize;
-        let mask_array = mask.unwrap();
-        let mask_bool = mask_array
-            .as_any()
-            .downcast_ref::<BooleanArray>()
-            .ok_or_else(|| polars_err!(ComputeError: "expected BooleanArray in Delta deletion vector mask column"))?;
-        let chunked = unsafe {
-            BooleanChunked::from_chunks(PlSmallStr::EMPTY, vec![Box::new(mask_bool.clone())])
-        };
-        map.insert(
-            idx,
-            ExternalFilterMask::DeltaDeletionVector { mask: chunked },
-        );
-    }
-    Ok(map)
 }
 
 #[cfg(test)]
