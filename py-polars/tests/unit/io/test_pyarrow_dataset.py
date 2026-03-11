@@ -256,7 +256,7 @@ def test_pyarrow_dataset_is_in_predicate_pushdown(
     plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
 
     df = pl.DataFrame({"id": [1, 2, 3, 4, 5], "val": [10, 20, 30, 40, 50]})
-    dset = ds.dataset(df.to_arrow())
+    dset = ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
 
     pred = pl.col("id").is_in([1, 3])
     expected = pl.DataFrame({"id": [1, 3], "val": [10, 30]})
@@ -296,7 +296,7 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
 
     df = pl.DataFrame({"id": [1, 2, 3, 4, None], "val": [10, 20, 30, 40, 50]})
-    dset = ds.dataset(df.to_arrow())
+    dset = ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
 
     pred = pl.col("id").is_in([1, None, 3])
     expected = pl.DataFrame({"id": [1, 3], "val": [10, 30]})
