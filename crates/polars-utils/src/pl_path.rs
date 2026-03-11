@@ -164,6 +164,11 @@ impl PlPath {
 
         if CloudScheme::from_path(other).is_some() {
             PlRefPath::new(other)
+        } else if CloudScheme::from_path(self.as_str()).is_some() {
+            let lhs = self.as_str().trim_end_matches('/');
+            let rhs = other.trim_start_matches('/');
+
+            PlRefPath::new(format!("{lhs}/{rhs}"))
         } else {
             PlRefPath::try_from_pathbuf(self.as_std_path().join(other)).unwrap()
         }
