@@ -181,6 +181,13 @@ def test_add_business_days_multiple_holidays() -> None:
         )
         assert_series_equal(result, expected)
 
+    assert_series_equal(
+        base_df.select(
+            pl.first("start").dt.add_business_days(10, holidays=holidays).alias("")
+        ).to_series(),
+        pl.Series([date(2020, 1, 17), date(2020, 1, 15), None, date(2020, 1, 16)]),
+    )
+
 
 def test_add_business_days_bad_holidays() -> None:
     df = pl.DataFrame(
@@ -194,7 +201,7 @@ def test_add_business_days_bad_holidays() -> None:
         }
     )
     # null in list of holidays
-    with pytest.raises(ComputeError, match="contained a null"):
+    with pytest.raises(ComputeError, match="nulls found"):
         df.select(
             result=pl.col("start").dt.add_business_days(
                 "n", holidays=pl.Series([[date(2020, 1, 3)], [None], []])
@@ -208,14 +215,14 @@ def test_add_business_days_bad_holidays() -> None:
             )
         )
     # holidays are not List
-    with pytest.raises(ComputeError, match="wrong data type"):
+    with pytest.raises(ComputeError, match="dtype"):
         df.select(
             result=pl.col("start").dt.add_business_days(
                 "n", holidays=pl.Series(["abc", "xx", "def"])
             )
         )
     # holidays are not List of Date
-    with pytest.raises(ComputeError, match="wrong data type"):
+    with pytest.raises(ComputeError, match="dtype"):
         df.select(
             result=pl.col("start").dt.add_business_days(
                 "n", holidays=pl.Series([["abc"], [], ["def"]])
@@ -362,9 +369,6 @@ def test_against_np_busday_offset(
     assert result == expected
 
 
-# This fails because a Expr of length 1 from holidays makes streaming work
-# differently than it did when holidays was a non-Expr parameter.
-@pytest.mark.may_fail_auto_streaming
 def test_unequal_lengths_22018() -> None:
     with pytest.raises(pl.exceptions.ShapeError):
         pl.Series([date(2088, 8, 5)] * 2).dt.add_business_days(pl.Series([1] * 3))

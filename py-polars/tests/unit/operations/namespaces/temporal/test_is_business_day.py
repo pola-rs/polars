@@ -162,8 +162,22 @@ def test_different_holidays_per_day(
         )["date"]
         assert_series_equal(result, expected_series)
 
+    assert_series_equal(
+        pl.Series([date(2026, 1, 1)]).dt.is_business_day(
+            holidays=pl.Series(
+                [
+                    [date(2026, 1, 1)],
+                    [],
+                    None,
+                    [date(2999, 12, 31)],
+                ]
+            )
+        ),
+        pl.Series([False, True, None, True]),
+    )
 
-def test_is_business_day_invalid() -> None:
+
+def test_is_business_day_invalid_holidays() -> None:
     df = pl.DataFrame({"date": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)]})
     # A 7-day weekend:
     with pytest.raises(ComputeError):
@@ -189,7 +203,7 @@ def test_is_business_day_invalid() -> None:
             )
         )
     # List of holidays contains a null:
-    with pytest.raises(ComputeError, match="list of holidays contained a null"):
+    with pytest.raises(ComputeError, match="nulls found"):
         df.select(
             pl.col("date").dt.is_business_day(
                 holidays=pl.Series([[], [None], [date(2025, 1, 1)]]),
