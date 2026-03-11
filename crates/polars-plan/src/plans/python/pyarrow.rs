@@ -217,6 +217,10 @@ pub fn predicate_to_pa(
                     return None;
                 }
 
+                if converted_len == 0 {
+                    return Some("pa.compute.scalar(False)".to_string());
+                }
+
                 if !*nulls_equal {
                     haystack_series = haystack_series.drop_nulls();
                 }
