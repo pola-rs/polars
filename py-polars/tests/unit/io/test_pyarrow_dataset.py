@@ -37,7 +37,7 @@ def helper_dataset_test(
         assert "FILTER" not in q.explain()
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_pyarrow_dataset_source(df: pl.DataFrame, tmp_path: Path) -> None:
     file_path = tmp_path / "small.ipc"
     df.write_ipc(file_path, compat_level=pl.CompatLevel.oldest())
