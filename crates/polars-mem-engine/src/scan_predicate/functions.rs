@@ -523,7 +523,7 @@ where
         // for lazy execution.
         #[cfg(feature = "python")]
         DeletionFilesList::Delta(provider) => Some(DeletionFilesList::Delta(
-            provider.with_selected_indices(selected_path_indices.clone()),
+            provider.narrow_selected_indices(selected_path_indices.clone()),
         )),
     });
 

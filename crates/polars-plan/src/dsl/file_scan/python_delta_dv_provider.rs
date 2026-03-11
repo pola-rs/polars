@@ -37,8 +37,15 @@ impl DeltaDeletionVectorProvider {
         }
     }
 
-    pub fn with_selected_indices(mut self, indices: impl Iterator<Item = usize> + Clone) -> Self {
-        self.selected_indices = Some(indices.collect::<Vec<_>>().into());
+    /// Narrow the selected_indices, or initialize on first invocation. This supports
+    /// incremental filtering. The calling site is responsible for the order of invocation
+    /// and must ensure that indices are in range.
+    pub fn narrow_selected_indices(mut self, indices: impl Iterator<Item = usize> + Clone) -> Self {
+        let new_indices: Arc<[usize]> = match &self.selected_indices {
+            Some(existing) => indices.map(|i| existing[i]).collect(),
+            None => indices.collect::<Vec<_>>().into(),
+        };
+        self.selected_indices = Some(new_indices);
         self
     }
 
@@ -111,6 +118,6 @@ impl std::hash::Hash for DeltaDeletionVectorProvider {
 
 impl std::fmt::Display for DeltaDeletionVectorProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("DeltaOLDDeletionVectorCallbackOLD")
+        f.write_str("DeltaDeletionVectorCallback")
     }
 }
