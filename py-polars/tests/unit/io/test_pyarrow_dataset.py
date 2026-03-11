@@ -334,7 +334,7 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     result = q.collect()
     capture = capfd.readouterr().err
 
-    assert "converted pyarrow predicate: (pa.compute.field('id')).isin([])" in capture
+    assert "converted pyarrow predicate: pa.compute.scalar(False)" in capture
     assert "residual predicate: None" in capture
 
     assert_frame_equal(q.collect(), expected)
@@ -350,7 +350,7 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
 
     plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "0")
 
-    assert "converted pyarrow predicate: (pa.compute.field('id')).isin([])" in capture
+    assert "converted pyarrow predicate: pa.compute.scalar(False)" in capture
     assert "residual predicate: None" in capture
 
     assert_frame_equal(q.collect(), expected)
