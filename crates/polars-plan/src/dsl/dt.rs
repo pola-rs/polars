@@ -10,13 +10,16 @@ impl DateLikeNameSpace {
         self,
         n: Expr,
         week_mask: [bool; 7],
-        holidays: Expr,
+        holidays: Vec<i32>,
         roll: Roll,
     ) -> Expr {
-        self.0.map_ternary(
-            FunctionExpr::Business(BusinessFunction::AddBusinessDay { week_mask, roll }),
+        self.0.map_binary(
+            FunctionExpr::Business(BusinessFunction::AddBusinessDay {
+                week_mask,
+                holidays,
+                roll,
+            }),
             n,
-            holidays,
         )
     }
 
@@ -82,11 +85,12 @@ impl DateLikeNameSpace {
 
     /// Determine whether days are business days.
     #[cfg(feature = "business")]
-    pub fn is_business_day(self, week_mask: [bool; 7], holidays: Expr) -> Expr {
-        self.0.map_binary(
-            FunctionExpr::Business(BusinessFunction::IsBusinessDay { week_mask }),
-            holidays,
-        )
+    pub fn is_business_day(self, week_mask: [bool; 7], holidays: Vec<i32>) -> Expr {
+        self.0
+            .map_unary(FunctionExpr::Business(BusinessFunction::IsBusinessDay {
+                week_mask,
+                holidays,
+            }))
     }
 
     // Compute whether the year of a Date/Datetime is a leap year.

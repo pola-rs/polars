@@ -54,7 +54,6 @@ impl CountStar {
                             sources: count_star_expr.sources,
                             scan_type: count_star_expr.scan_type,
                             alias: count_star_expr.alias,
-                            cloud_options: count_star_expr.cloud_options,
                         },
                     };
 

@@ -598,20 +598,3 @@ def test_scan_csv_progressive_infer_schema_length(
     for infer_len in [1, 2, 100, n_rows - 1, n_rows, n_rows + 1, None]:
         out = pl.scan_csv(file_path, infer_schema_length=infer_len).collect()
         assert df.schema == out.schema
-
-
-@pytest.mark.write_disk
-def test_scan_csv_count_rows_async_with_schema(
-    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
-) -> None:
-    tmp_path.mkdir(exist_ok=True)
-    file_path = tmp_path / "test.csv"
-
-    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
-
-    df = pl.DataFrame({"a": range(10)})
-    df.write_csv(file_path)
-
-    schema = pl.Schema({"a": pl.Int64})
-    out = pl.scan_csv(file_path, schema=schema).select(pl.len()).collect()
-    assert out.item() == 10

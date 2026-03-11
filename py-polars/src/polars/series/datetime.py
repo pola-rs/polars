@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     import sys
     from collections.abc import Iterable
 
-    from polars import Expr, Series
+    from polars import Series
     from polars._plr import PySeries
     from polars._typing import (
         Ambiguous,
@@ -50,7 +50,7 @@ class DateTimeNameSpace:
         self,
         n: int | IntoExpr,
         week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
-        holidays: Iterable[dt.date] | Expr | Series = (),
+        holidays: Iterable[dt.date] = (),
         roll: Roll = "raise",
     ) -> Series:
         """
@@ -495,7 +495,7 @@ class DateTimeNameSpace:
         self,
         *,
         week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
-        holidays: Iterable[dt.date] | Expr | Series = (),
+        holidays: Iterable[dt.date] = (),
     ) -> Series:
         """
         Determine whether each day lands on a business day.

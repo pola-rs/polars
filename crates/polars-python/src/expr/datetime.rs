@@ -10,13 +10,13 @@ impl PyExpr {
         &self,
         n: PyExpr,
         week_mask: [bool; 7],
-        holidays: PyExpr,
+        holidays: Vec<i32>,
         roll: Wrap<Roll>,
     ) -> Self {
         self.inner
             .clone()
             .dt()
-            .add_business_days(n.inner, week_mask, holidays.inner, roll.0)
+            .add_business_days(n.inner, week_mask, holidays, roll.0)
             .into()
     }
 
@@ -142,11 +142,11 @@ impl PyExpr {
     fn dt_year(&self) -> Self {
         self.inner.clone().dt().year().into()
     }
-    fn dt_is_business_day(&self, week_mask: [bool; 7], holidays: PyExpr) -> Self {
+    fn dt_is_business_day(&self, week_mask: [bool; 7], holidays: Vec<i32>) -> Self {
         self.inner
             .clone()
             .dt()
-            .is_business_day(week_mask, holidays.inner)
+            .is_business_day(week_mask, holidays)
             .into()
     }
     fn dt_is_leap_year(&self) -> Self {

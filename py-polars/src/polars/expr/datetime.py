@@ -12,7 +12,6 @@ from polars._utils.unstable import unstable
 from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32, Int64
-from polars.functions.business import _holidays_to_expr
 
 if TYPE_CHECKING:
     import sys
@@ -49,7 +48,7 @@ class ExprDateTimeNameSpace:
         self,
         n: int | IntoExpr,
         week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
-        holidays: Iterable[dt.date] | Expr | pl.Series = (),
+        holidays: Iterable[dt.date] = (),
         roll: Roll = "raise",
     ) -> Expr:
         """
@@ -161,12 +160,12 @@ class ExprDateTimeNameSpace:
         └────────────┴─────────────────┘
         """
         n_pyexpr = parse_into_expression(n)
-        holidays_pyexpr = _holidays_to_expr(holidays)
+        unix_epoch = dt.date(1970, 1, 1)
         return wrap_expr(
             self._pyexpr.dt_add_business_days(
                 n_pyexpr,
                 list(week_mask),
-                holidays_pyexpr,
+                [(holiday - unix_epoch).days for holiday in holidays],
                 roll,
             )
         )
@@ -910,7 +909,7 @@ class ExprDateTimeNameSpace:
         self,
         *,
         week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
-        holidays: Iterable[dt.date] | Expr | pl.Series = (),
+        holidays: Iterable[dt.date] = (),
     ) -> Expr:
         """
         Determine whether each day lands on a business day.
@@ -992,10 +991,11 @@ class ExprDateTimeNameSpace:
         │ 2020-01-05 ┆ false           │
         └────────────┴─────────────────┘
         """
+        unix_epoch = dt.date(1970, 1, 1)
         return wrap_expr(
             self._pyexpr.dt_is_business_day(
                 list(week_mask),
-                _holidays_to_expr(holidays),
+                [(holiday - unix_epoch).days for holiday in holidays],
             )
         )
 

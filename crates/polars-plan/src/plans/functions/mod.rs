@@ -43,7 +43,6 @@ pub enum FunctionIR {
         sources: ScanSources,
         scan_type: Box<FileScanIR>,
         alias: Option<PlSmallStr>,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
     },
 
     Unnest {
@@ -96,7 +95,6 @@ impl Hash for FunctionIR {
                 sources,
                 scan_type,
                 alias,
-                ..
             } => {
                 sources.hash(state);
                 scan_type.hash(state);
@@ -208,8 +206,7 @@ impl FunctionIR {
                 sources,
                 scan_type,
                 alias,
-                cloud_options,
-            } => count::count_rows(sources, scan_type, alias.clone(), cloud_options.as_ref()),
+            } => count::count_rows(sources, scan_type, alias.clone()),
             Rechunk => {
                 df.rechunk_mut_par();
                 Ok(df)
@@ -330,7 +327,6 @@ impl Display for FunctionIR {
                 sources,
                 scan_type,
                 alias,
-                ..
             } => {
                 let scan_type: &str = (&(**scan_type)).into();
                 let default_column_name = PlSmallStr::from_static(crate::constants::LEN);

@@ -36,13 +36,11 @@ struct InputHead {
 }
 
 impl InputHead {
-    fn new(schema: Arc<Schema>, zip_behavior: ZipBehavior) -> Self {
-        let infer_broadcast = matches!(zip_behavior, ZipBehavior::Broadcast) || schema.is_empty();
-
+    fn new(schema: Arc<Schema>, may_broadcast: bool) -> Self {
         Self {
             schema,
             morsels: VecDeque::new(),
-            is_broadcast: if infer_broadcast { None } else { Some(false) },
+            is_broadcast: if may_broadcast { None } else { Some(false) },
             total_len: 0,
             stream_exhausted: false,
         }
@@ -72,7 +70,7 @@ impl InputHead {
 
     fn notify_no_more_morsels(&mut self) {
         if self.is_broadcast.is_none() {
-            self.is_broadcast = Some(self.total_len == 1 || self.shape() == (0, 0));
+            self.is_broadcast = Some(self.total_len == 1);
         }
         self.stream_exhausted = true;
     }
@@ -82,7 +80,7 @@ impl InputHead {
     }
 
     async fn take(&mut self, len: usize) -> DataFrame {
-        let columns: Vec<Column> = if self.is_broadcast.unwrap() && self.shape() != (0, 0) {
+        let columns: Vec<Column> = if self.is_broadcast.unwrap() {
             mm().df(&self.morsels[0].0)
                 .await
                 .columns()
@@ -119,8 +117,8 @@ impl InputHead {
         out
     }
 
-    fn shape(&self) -> (usize, usize) {
-        (self.total_len, self.schema.len())
+    fn null_shape(&self) -> bool {
+        self.schema.is_empty() && self.total_len == 0
     }
 
     fn clear(&mut self) {
@@ -140,7 +138,7 @@ impl ZipNode {
     pub fn new(zip_behavior: ZipBehavior, schemas: Vec<Arc<Schema>>) -> Self {
         let input_heads = schemas
             .into_iter()
-            .map(|s| InputHead::new(s, zip_behavior))
+            .map(|s| InputHead::new(s, matches!(zip_behavior, ZipBehavior::Broadcast)))
             .collect();
         Self {
             zip_behavior,
@@ -202,7 +200,7 @@ impl ComputeNode for ZipNode {
                     let all_len_equal = self
                         .input_heads
                         .iter()
-                        .filter(|h| h.is_broadcast == Some(false))
+                        .filter(|h| !h.null_shape())
                         .all(|h| h.total_len == first_len);
                     polars_ensure!(
                         all_len_equal,
@@ -319,8 +317,9 @@ impl ComputeNode for ZipNode {
                                 Some(token.height())
                             } else {
                                 should_break |= match self.zip_behavior {
+                                    ZipBehavior::Strict => !h.null_shape(),
                                     ZipBehavior::NullExtend => false,
-                                    ZipBehavior::Broadcast | ZipBehavior::Strict => true,
+                                    ZipBehavior::Broadcast => true,
                                 };
                                 None
                             }

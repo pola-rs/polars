@@ -1271,21 +1271,6 @@ def test_comparisons_int_series_to_float_scalar() -> None:
     assert_series_equal(srs_int > 1.5, pl.Series([False, True, True, True]))
 
 
-def test_comparisons_uint128_series_to_scalar() -> None:
-    boundary = 1 << 100
-    srs_u128 = pl.Series(
-        [boundary - 1, boundary, boundary + 1, None],
-        dtype=pl.UInt128,
-    )
-
-    assert_series_equal(srs_u128 == boundary, pl.Series([False, True, False, None]))
-    assert_series_equal(srs_u128 != boundary, pl.Series([True, False, True, None]))
-    assert_series_equal(srs_u128 < boundary, pl.Series([True, False, False, None]))
-    assert_series_equal(srs_u128 <= boundary, pl.Series([True, True, False, None]))
-    assert_series_equal(srs_u128 > boundary, pl.Series([False, False, True, None]))
-    assert_series_equal(srs_u128 >= boundary, pl.Series([False, True, True, None]))
-
-
 def test_comparisons_datetime_series_to_date_scalar() -> None:
     srs_date = pl.Series([date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)])
     dt = datetime(2023, 1, 1, 12, 0, 0)

@@ -15,7 +15,6 @@ use super::utils::{
 };
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
-use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PyDataFrame {
@@ -257,8 +256,7 @@ fn try_df_to_numpy_numeric_supertype(
 
     let np_array = match st {
         dt if dt.is_primitive_numeric() => with_match_physical_numpy_polars_type!(dt, |$T| {
-            let arr = py.enter_polars(|| df.to_ndarray::<$T>(order)).ok()?;
-            arr.into_pyarray(py).into_py_any(py).ok()?
+            df.to_ndarray::<$T>(order).ok()?.into_pyarray(py).into_py_any(py).ok()?
         }),
         _ => return None,
     };
