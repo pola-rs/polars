@@ -162,7 +162,10 @@ impl PlPath {
     pub fn join(&self, other: impl AsRef<str>) -> PlRefPath {
         let other = other.as_ref();
 
-        if CloudScheme::from_path(other).is_some() || Path::new(other).is_absolute() {
+        if CloudScheme::from_path(other).is_some()
+            || other.starts_with('/')
+            || other.starts_with('\\')
+        {
             PlRefPath::new(other)
         } else if CloudScheme::from_path(self.as_str()).is_some() {
             let lhs = self.as_str().trim_end_matches('/');
