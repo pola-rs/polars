@@ -388,6 +388,7 @@ def test_sink_partition_by_cloud_from_windows_26888() -> None:
             credential_provider=None,
             storage_options={
                 "aws_endpoint_url": "http://localhost:333",
+                "aws_region": "eu-west-1",
                 "max_retries": 0,
             },
         )
