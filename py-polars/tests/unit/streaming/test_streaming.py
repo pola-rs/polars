@@ -405,3 +405,10 @@ def test_streaming_boolean_multiply_unique_24609() -> None:
     result = lf.collect(engine="streaming")
 
     assert_frame_equal(result, expected, check_row_order=False)
+
+
+def test_streaming_boolean_multiply_dtype_24609() -> None:
+    lf = pl.LazyFrame({"a": [True]}).with_columns(x=pl.col("a") * 2)
+    assert (
+        lf.collect(engine="streaming").schema == lf.collect(engine="in-memory").schema
+    )
