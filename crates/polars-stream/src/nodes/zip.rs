@@ -36,11 +36,13 @@ struct InputHead {
 }
 
 impl InputHead {
-    fn new(schema: Arc<Schema>, may_broadcast: bool) -> Self {
+    fn new(schema: Arc<Schema>, zip_behavior: ZipBehavior) -> Self {
+        let infer_broadcast = matches!(zip_behavior, ZipBehavior::Broadcast) || schema.is_empty();
+
         Self {
             schema,
             morsels: VecDeque::new(),
-            is_broadcast: if may_broadcast { None } else { Some(false) },
+            is_broadcast: if infer_broadcast { None } else { Some(false) },
             total_len: 0,
             stream_exhausted: false,
         }
@@ -70,7 +72,7 @@ impl InputHead {
 
     fn notify_no_more_morsels(&mut self) {
         if self.is_broadcast.is_none() {
-            self.is_broadcast = Some(self.total_len == 1);
+            self.is_broadcast = Some(self.total_len == 1 || self.shape() == (0, 0));
         }
         self.stream_exhausted = true;
     }
@@ -79,16 +81,8 @@ impl InputHead {
         self.is_broadcast.is_some() && (self.total_len > 0 || self.stream_exhausted)
     }
 
-    fn min_len(&self) -> Option<usize> {
-        if self.is_broadcast == Some(false) {
-            self.morsels.front().map(|(token, _, _)| token.height())
-        } else {
-            None
-        }
-    }
-
     async fn take(&mut self, len: usize) -> DataFrame {
-        let columns: Vec<Column> = if self.is_broadcast.unwrap() {
+        let columns: Vec<Column> = if self.is_broadcast.unwrap() && self.shape() != (0, 0) {
             mm().df(&self.morsels[0].0)
                 .await
                 .columns()
@@ -125,8 +119,8 @@ impl InputHead {
         out
     }
 
-    fn null_shape(&self) -> bool {
-        self.schema.is_empty() && self.total_len == 0
+    fn shape(&self) -> (usize, usize) {
+        (self.total_len, self.schema.len())
     }
 
     fn clear(&mut self) {
@@ -146,7 +140,7 @@ impl ZipNode {
     pub fn new(zip_behavior: ZipBehavior, schemas: Vec<Arc<Schema>>) -> Self {
         let input_heads = schemas
             .into_iter()
-            .map(|s| InputHead::new(s, matches!(zip_behavior, ZipBehavior::Broadcast)))
+            .map(|s| InputHead::new(s, zip_behavior))
             .collect();
         Self {
             zip_behavior,
@@ -208,7 +202,7 @@ impl ComputeNode for ZipNode {
                     let all_len_equal = self
                         .input_heads
                         .iter()
-                        .filter(|h| !h.null_shape())
+                        .filter(|h| h.is_broadcast == Some(false))
                         .all(|h| h.total_len == first_len);
                     polars_ensure!(
                         all_len_equal,
@@ -313,13 +307,37 @@ impl ComputeNode for ZipNode {
                 // TODO: recombine morsels to make sure the concatenation is
                 // close to the ideal morsel size.
 
+                let mut should_break = false;
+
                 // Compute common size and send a combined morsel.
-                let Some(common_size) = self.input_heads.iter().flat_map(|h| h.min_len()).min()
+                let Some(common_size) = self
+                    .input_heads
+                    .iter()
+                    .filter_map(|h| {
+                        if h.is_broadcast == Some(false) {
+                            if let Some((token, ..)) = h.morsels.front() {
+                                Some(token.height())
+                            } else {
+                                should_break |= match self.zip_behavior {
+                                    ZipBehavior::NullExtend => false,
+                                    ZipBehavior::Broadcast | ZipBehavior::Strict => true,
+                                };
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
+                    .min()
                 else {
                     // If all input heads are broadcasts we don't get a common size,
                     // we handle this below.
                     break;
                 };
+
+                if should_break {
+                    break;
+                }
 
                 for input_head in &mut self.input_heads {
                     out.push(input_head.take(common_size).await);

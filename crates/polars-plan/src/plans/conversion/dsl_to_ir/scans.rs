@@ -347,6 +347,7 @@ pub async fn csv_file_info(
     row_index: Option<&RowIndex>,
     csv_options: &mut CsvReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
+    missing_columns_policy: MissingColumnsPolicy,
 ) -> PolarsResult<FileInfo> {
     use polars_core::POOL;
     use polars_core::error::feature_gated;
@@ -542,9 +543,28 @@ pub async fn csv_file_info(
                 match (schema_a.is_empty(), schema_b.is_empty()) {
                     (true, _) => Ok((schema_b, row_estimate_b)),
                     (_, true) => Ok((schema_a, row_estimate_a)),
-                    _ => {
-                        schema_a.to_supertype(&schema_b)?;
-                        Ok((schema_a, row_estimate_a.saturating_add(row_estimate_b)))
+                    _ => match missing_columns_policy {
+                        MissingColumnsPolicy::Raise => {
+                            schema_a.to_supertype(&schema_b)?;
+                            Ok((schema_a, row_estimate_a.saturating_add(row_estimate_b)))
+                        },
+                        MissingColumnsPolicy::Insert => {
+                            // Union merge: keep all columns from both schemas,
+                            // supertype columns that exist in both.
+                            use polars_core::utils::try_get_supertype;
+                            for (name, dtype) in schema_b.iter() {
+                                match schema_a.get(name) {
+                                    Some(existing_dtype) => {
+                                        let st = try_get_supertype(existing_dtype, dtype)?;
+                                        schema_a.with_column(name.clone(), st);
+                                    },
+                                    None => {
+                                        schema_a.with_column(name.clone(), dtype.clone());
+                                    },
+                                }
+                            }
+                            Ok((schema_a, row_estimate_a.saturating_add(row_estimate_b)))
+                        },
                     },
                 }
             },
@@ -892,45 +912,37 @@ this scan to succeed with an empty DataFrame.",
             .map_err(|e| e.context(failed_here!(ipc scan)))?,
             #[cfg(feature = "csv")]
             FileScanDsl::Csv { mut options } => {
-                {
-                    // TODO: This is a hack. We conditionally set `allow_missing_columns` to
-                    // mimic existing behavior, but this should be taken from a user provided
-                    // parameter instead.
-                    if options.schema.is_some() && options.has_header {
-                        unified_scan_args.missing_columns_policy = MissingColumnsPolicy::Insert;
+                let file_info = if let Some(schema) = options.schema.clone() {
+                    FileInfo {
+                        schema: schema.clone(),
+                        reader_schema: Some(either::Either::Right(schema)),
+                        row_estimation: (None, usize::MAX),
+                    }
+                } else {
+                    let first_scan_source =
+                        require_first_source("failed to retrieve file schemas (csv)", "")?;
+
+                    if verbose() {
+                        eprintln!(
+                            "sourcing csv scan file schema from: '{}'",
+                            first_scan_source.to_include_path_name()
+                        )
                     }
 
-                    let file_info = if let Some(schema) = options.schema.clone() {
-                        FileInfo {
-                            schema: schema.clone(),
-                            reader_schema: Some(either::Either::Right(schema)),
-                            row_estimation: (None, usize::MAX),
-                        }
-                    } else {
-                        let first_scan_source =
-                            require_first_source("failed to retrieve file schemas (csv)", "")?;
+                    scans::csv_file_info(
+                        sources,
+                        first_scan_source,
+                        unified_scan_args.row_index.as_ref(),
+                        Arc::make_mut(&mut options),
+                        cloud_options,
+                        unified_scan_args.missing_columns_policy,
+                    )
+                    .await?
+                };
 
-                        if verbose() {
-                            eprintln!(
-                                "sourcing csv scan file schema from: '{}'",
-                                first_scan_source.to_include_path_name()
-                            )
-                        }
-
-                        scans::csv_file_info(
-                            sources,
-                            first_scan_source,
-                            unified_scan_args.row_index.as_ref(),
-                            Arc::make_mut(&mut options),
-                            cloud_options,
-                        )
-                        .await?
-                    };
-
-                    PolarsResult::Ok((file_info, FileScanIR::Csv { options }))
-                }
-                .map_err(|e| e.context(failed_here!(csv scan)))?
-            },
+                PolarsResult::Ok((file_info, FileScanIR::Csv { options }))
+            }
+            .map_err(|e| e.context(failed_here!(csv scan)))?,
             #[cfg(feature = "json")]
             FileScanDsl::NDJson { options } => {
                 let file_info = if let Some(schema) = options.schema.clone() {
