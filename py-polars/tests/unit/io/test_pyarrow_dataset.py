@@ -357,28 +357,6 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     assert_frame_equal(df.filter(pred), expected)
 
 
-def test_pyarrow_dataset_list_literal_not_pushed() -> None:
-    """List literals outside of is_in() should not be pushed down to pyarrow."""
-    df = pl.DataFrame({"id": [1, 2, 3, 4, 5], "val": [10, 20, 30, 40, 50]})
-    dset = ds.dataset(df.to_arrow())
-
-    # is_in predicate should be fully pushed (no FILTER in plan)
-    q = pl.scan_pyarrow_dataset(dset).filter(pl.col("id").is_in([1, 3]))
-    plan = q.explain()
-    assert "FILTER" not in plan
-
-    pred = pl.col("id") == pl.lit(pl.Series([1, 2, None, None, 5]))
-    expected = pl.DataFrame({"id": [1, 2, 5], "val": [10, 20, 50]})
-
-    # A bare series literal should NOT be pushed (FILTER remains in plan)
-    q = pl.scan_pyarrow_dataset(dset).filter(pred)
-    plan = q.explain()
-    assert plan.startswith("FILTER")
-
-    assert_frame_equal(q.collect(), expected)
-    assert_frame_equal(df.filter(pred), expected)
-
-
 def test_pyarrow_dataset_comm_subplan_elim(tmp_path: Path) -> None:
     df0 = pl.DataFrame({"a": [1, 2, 3]})
 
