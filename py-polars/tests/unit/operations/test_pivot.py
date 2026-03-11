@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import pytest
 
@@ -35,8 +35,25 @@ def test_pivot() -> None:
     )
     assert_frame_equal(result, expected)
 
+    # Next, with column naming that combines value column with on columns:
+    result = df.pivot(
+        "bar", values="N", aggregate_function=None, column_naming="combine"
+    )
 
-def test_pivot_no_values() -> None:
+    expected = pl.DataFrame(
+        [
+            ("A", 1, 2, None, None, None),
+            ("B", None, None, 2, 4, None),
+            ("C", None, None, None, None, 2),
+        ],
+        schema=["foo", "N_k", "N_l", "N_m", "N_n", "N_o"],
+        orient="row",
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("column_naming", ["auto", "combine"])
+def test_pivot_no_values(column_naming: Literal["auto", "combine"]) -> None:
     df = pl.DataFrame(
         {
             "foo": ["A", "A", "B", "B", "C"],
@@ -45,7 +62,9 @@ def test_pivot_no_values() -> None:
             "N2": [1, 2, 2, 4, 2],
         }
     )
-    result = df.pivot(on="bar", index="foo", aggregate_function=None)
+    result = df.pivot(
+        on="bar", index="foo", aggregate_function=None, column_naming=column_naming
+    )
     expected = pl.DataFrame(
         {
             "foo": ["A", "B", "C"],
@@ -695,3 +714,15 @@ def test_pivot_dup_name_rename_26605() -> None:
     lf = pl.LazyFrame({"variable": [], "a": []}).unpivot(["a"], variable_name="other")
     expected = pl.DataFrame(schema={"other": pl.String, "value": pl.Null})
     assert_frame_equal(lf.collect(), expected)
+
+
+def test_pivot_on_columns_str_25862() -> None:
+    df = pl.DataFrame(
+        {
+            "index": ["A", "A", "B", "B"],
+            "data": ["bar", "baz", "bar", "baz"],
+            "value": [1, 2, 3, 4],
+        }
+    )
+    with pytest.raises(TypeError, match="on_columns"):
+        result = df.pivot("data", index="index", values="value", on_columns="bar")

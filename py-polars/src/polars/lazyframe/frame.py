@@ -114,7 +114,10 @@ if TYPE_CHECKING:
     from typing import IO, Concatenate, Literal, ParamSpec
 
     import deltalake
+    import pyiceberg.catalog
+    import pyiceberg.table
 
+    import polars.io.iceberg
     from polars.io.partition import PartitionBy
     from polars.lazyframe.opt_flags import QueryOptFlags
 
@@ -741,6 +744,12 @@ class LazyFrame:
         self._comparison_error("<=")
 
     def __contains__(self, key: str) -> bool:
+        issue_warning(
+            "checking membership of a LazyFrame using `in` requires resolving its schema,"
+            " which is a potentially expensive operation. Use `key in LazyFrame.collect_schema()`"
+            " to check membership without this warning.",
+            category=PerformanceWarning,
+        )
         return key in self.collect_schema()
 
     def __copy__(self) -> LazyFrame:
@@ -1231,14 +1240,28 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         summary = dict(zip(schema, column_metrics, strict=True))
 
         # cast by column type (numeric/bool -> float), (other -> string)
+        # for non-numeric columns, format count/null_count with thousands
+        # separator to match the formatting applied to numeric columns.
+        from polars._plr import get_thousands_separator
+
+        thousands_sep = get_thousands_separator()
+
         for c in schema:
             summary[c] = [  # type: ignore[assignment]
                 (
                     None
                     if (v is None or isinstance(v, dict))
-                    else (float(v) if (c in has_numeric_result) else str(v))
+                    else (
+                        float(v)
+                        if (c in has_numeric_result)
+                        else (
+                            f"{int(v):,}".replace(",", thousands_sep)
+                            if (thousands_sep and metric in ("count", "null_count"))
+                            else str(v)
+                        )
+                    )
                 )
-                for v in summary[c]
+                for metric, v in zip(metrics, summary[c], strict=True)
             ]
 
         # return results as a DataFrame
@@ -3212,6 +3235,60 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 **delta_write_options,
             )
             return None
+
+    @unstable()
+    def sink_iceberg(
+        self,
+        target: str | pyiceberg.table.Table,
+        *,
+        mode: Literal["append", "overwrite"],
+        catalog: pyiceberg.catalog.Catalog
+        | polars.io.iceberg.IcebergCatalogConfig
+        | None = None,
+        storage_options: StorageOptionsDict | None = None,
+    ) -> pl.DataFrame:
+        """
+        Sink a LazyFrame to an Iceberg table.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        target
+            A PyIceberg Table object, or a 'namespace.table_name' identifier string.
+        mode : {'append', 'overwrite'}
+            How to handle existing data.
+
+            - If 'append', will add new data.
+            - If 'overwrite', will replace table with new data.
+        catalog
+            PyIceberg catalog to load the table from if the provided `target`
+            was a table identifier.
+        storage_options
+            Extra options for the storage backends supported by `pyiceberg`.
+            For cloud storages, this may include configurations for authentication etc.
+
+            More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
+
+        Returns
+        -------
+        DataFrame
+            Contains the new metadata path.
+        """
+        from polars.io.iceberg._sink import IcebergSinkState
+
+        sink_state = IcebergSinkState(
+            target=target,
+            catalog=catalog,
+            mode=mode,
+            storage_options=storage_options,
+        )
+
+        sink_state.attach_sink(self).collect(engine="streaming")
+
+        return sink_state.commit()
 
     @overload
     def sink_ipc(
@@ -8086,6 +8163,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         aggregate_function: PivotAgg | Expr | None = None,
         maintain_order: bool = False,
         separator: str = "_",
+        column_naming: Literal["auto", "combine"] = "auto",
     ) -> LazyFrame:
         """
         Create a spreadsheet-style pivot table as a DataFrame.
@@ -8120,6 +8198,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         separator
             Used as separator/delimiter in generated column names in case of multiple
             `values` columns.
+        column_naming : {'auto', 'combine'}
+            How resulting column names will be constructed.
+
+            * 'auto': The default; combine with separator if there are multiple
+                      `values` columns, otherwise just use the `on_columns` names.
+            * 'combine': Always combine the `values` columns' names with
+                      the `on_columns` names.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Returns
         -------
@@ -8300,8 +8389,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             on_cols = on_columns
         elif isinstance(on_columns, pl.Series):
             on_cols = on_columns.to_frame()
+        elif isinstance(on_columns, str):
+            msg = f"invalid type for `on_columns` argument: {qualified_type_name(on_columns)!r}"
+            raise TypeError(msg)
         else:
-            on_cols = pl.Series(on_columns).to_frame()
+            on_cols = pl.Series(values=on_columns).to_frame()
 
         return self._from_pyldf(
             self._ldf.pivot(
@@ -8312,6 +8404,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 agg=agg._pyexpr,
                 maintain_order=maintain_order,
                 separator=separator,
+                column_naming=column_naming,
             )
         )
 

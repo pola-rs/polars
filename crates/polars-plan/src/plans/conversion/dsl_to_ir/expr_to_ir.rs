@@ -295,9 +295,18 @@ pub(super) fn to_aexpr_impl(
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Mean(input), output_name)
                 },
-                AggExpr::Implode(input) => {
+                AggExpr::Implode {
+                    input,
+                    maintain_order,
+                } => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::Implode(input), output_name)
+                    (
+                        IRAggExpr::Implode {
+                            input,
+                            maintain_order,
+                        },
+                        output_name,
+                    )
                 },
                 AggExpr::Count {
                     input,

@@ -404,6 +404,22 @@ def test_file_list_schema_mismatch(
         assert_frame_equal(out, expect)
 
 
+def test_scan_csv_missing_columns_insert() -> None:
+    # Union of all columns, NULLs where a file lacks a column
+    result = pl.scan_csv(
+        [b"x,y\n1,2", b"x,z\n3,4"],
+        missing_columns="insert",
+    ).collect()
+    expected = pl.DataFrame(
+        {
+            "x": [1, 3],
+            "y": [2, None],
+            "z": [None, 4],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 @pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize("streaming", [True, False])
 def test_file_list_schema_supertype(tmp_path: Path, streaming: bool) -> None:
