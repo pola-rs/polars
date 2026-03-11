@@ -381,7 +381,7 @@ def test_sink_metrics(
 def test_sink_partition_by_cloud_from_windows_26888() -> None:
     with pytest.raises(
         OSError,
-        match="http://localhost:333/bucket/prefix/a%3D1/b%3D1/00000000.parquet",
+        match=r"http://localhost:333/bucket/prefix/a%3D1/b%3D1/00000000.parquet",
     ):
         pl.LazyFrame({"a": 1, "b": 1}).sink_parquet(
             pl.PartitionBy("s3://bucket/prefix", key=["a", "b"]),
