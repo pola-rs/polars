@@ -658,6 +658,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     sources,
                     scan_type,
                     alias,
+                    ..
                 } => {
                     let sources = sources
                         .into_paths()
