@@ -376,3 +376,18 @@ def test_sink_metrics(
     assert logged_bytes_sent == path.stat().st_size
 
     assert_frame_equal(getattr(pl, f"scan_{file_format}")(path).collect(), df)
+
+
+def test_sink_partition_by_cloud_from_windows_26888() -> None:
+    with pytest.raises(
+        OSError,
+        match="http://localhost:333/bucket/prefix/a%3D1/b%3D1/00000000.parquet",
+    ):
+        pl.LazyFrame({"a": 1, "b": 1}).sink_parquet(
+            pl.PartitionBy("s3://bucket/prefix", key=["a", "b"]),
+            credential_provider=None,
+            storage_options={
+                "aws_endpoint_url": "http://localhost:333",
+                "max_retries": 0,
+            },
+        )
