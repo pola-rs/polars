@@ -722,12 +722,6 @@ fn get_arithmetic_field(
                     left_field.coerce(dtype);
                     return Ok(left_field);
                 },
-                (Boolean, _) | (_, Boolean) if op == Operator::FloorDivide => {
-                    polars_bail!(
-                        InvalidOperation:
-                        "floor_div operation not supported for dtype `bool`"
-                    )
-                },
                 _ => {
                     // Avoid needlessly type casting numeric columns during arithmetic
                     // with literals.
