@@ -11128,11 +11128,6 @@ class DataFrame:
         DataFrame
             DataFrame with unique rows.
 
-        Warnings
-        --------
-        This method will fail if there is a column of type `List` in the DataFrame (or
-        in the "subset" parameter).
-
         Notes
         -----
         If you're coming from Pandas, this is similar to
