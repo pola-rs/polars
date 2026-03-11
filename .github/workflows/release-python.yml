@@ -90,7 +90,6 @@ jobs:
         with:
           path: dist
 
-
   create-sdist:
     needs: [base-package]
     runs-on: ubuntu-latest
@@ -203,7 +202,7 @@ jobs:
           Install-Module -Name Microsoft.PowerShell.Archive -Force
 
           Write-Output "> Setup bash.exe (git-for-windows/PortableGit)"
-          Invoke-WebRequest "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/PortableGit-2.47.1-arm64.7z.exe" -OutFile /git.7z.exe
+          Invoke-WebRequest "https://github.com/git-for-windows/git/releases/download/v2.53.0.windows.2/PortableGit-2.53.0.2-arm64.7z.exe" -OutFile /git.7z.exe
           /git.7z.exe -o/git -y
 
           Write-Output "> Setup Rust"
@@ -221,17 +220,17 @@ jobs:
               --includeRecommended --quiet --norestart --wait" -Wait
 
           Write-Output "> Setup CMake"
-          Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v3.31.2/cmake-3.31.2-windows-arm64.zip" -OutFile /cmake.zip
+          Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v4.2.3/cmake-4.2.3-windows-arm64.zip" -OutFile /cmake.zip
           Expand-Archive /cmake.zip -DestinationPath /
 
           Write-Output "> Download jq.exe (github.com/jqlang) (needed for tomlq / yq)"
-          Invoke-WebRequest https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-windows-i386.exe -OutFile /jq.exe
+          Invoke-WebRequest https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-windows-i386.exe -OutFile /jq.exe
 
           Write-Output "> Update GITHUB_PATH"
           [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + "C:/git/bin/")
           [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + $Env:USERPROFILE + "/.cargo/bin/")
           [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/Llvm/bin/")
-          [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + "C:/cmake-3.31.2-windows-arm64/bin")
+          [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + "C:/cmake-4.2.3-windows-arm64/bin")
           [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + "C:/")
           [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n")
 
