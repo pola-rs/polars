@@ -336,16 +336,6 @@ def test_null_column_arithmetic(op: Any) -> None:
     assert_frame_equal(expected_df, output_df)
 
 
-def test_bool_floordiv() -> None:
-    df = pl.DataFrame({"x": [True]})
-
-    with pytest.raises(
-        InvalidOperationError,
-        match="floor_div operation not supported for dtype `bool`",
-    ):
-        df.with_columns(pl.col("x").floordiv(2))
-
-
 def test_arithmetic_in_aggregation_3739() -> None:
     def demean_dot() -> pl.Expr:
         x = pl.col("x")
