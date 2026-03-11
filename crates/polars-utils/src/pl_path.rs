@@ -546,6 +546,13 @@ mod tests {
             "s3://.../.../a=1/b=1/00000000.parquet"
         );
 
+        assert_eq!(
+            PlRefPath::new("s3://.../...//")
+                .join("a=1/b=1/00000000.parquet")
+                .as_str(),
+            "s3://.../.../a=1/b=1/00000000.parquet"
+        );
+
         fn _assert_plpath_join(base: &str, added: &str, expect: &str) {
             // Normal path test
             let expect = PlRefPath::new(expect);
