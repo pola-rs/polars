@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import contextlib
-from datetime import date
 from typing import TYPE_CHECKING
 
+import polars as pl
 from polars._utils.deprecation import deprecate_nonkeyword_arguments
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
@@ -14,9 +14,17 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from datetime import date
 
-    from polars import Expr
+    from polars import Expr, Series
     from polars._typing import IntoExprColumn
+
+
+def _holidays_to_expr(holidays: Iterable[date] | pl.Expr | pl.Series) -> plr.PyExpr:
+    """Convert into Expr of List of Date."""
+    if not isinstance(holidays, (pl.Expr, pl.Series)):
+        holidays = pl.Series("", [holidays], strict=False, dtype=pl.List(pl.Date))
+    return parse_into_expression(holidays, dtype=pl.Date)
 
 
 @unstable()
@@ -25,7 +33,7 @@ def business_day_count(
     start: date | IntoExprColumn,
     end: date | IntoExprColumn,
     week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
-    holidays: Iterable[date] = (),
+    holidays: Iterable[date] | Expr | Series = (),
 ) -> Expr:
     """
     Count the number of business days between `start` and `end` (not including `end`).
@@ -127,12 +135,12 @@ def business_day_count(
     """
     start_pyexpr = parse_into_expression(start)
     end_pyexpr = parse_into_expression(end)
-    unix_epoch = date(1970, 1, 1)
+    holidays_pyexpr = _holidays_to_expr(holidays)
     return wrap_expr(
         plr.business_day_count(
             start_pyexpr,
             end_pyexpr,
             list(week_mask),
-            [(holiday - unix_epoch).days for holiday in holidays],
+            holidays_pyexpr,
         )
     )
