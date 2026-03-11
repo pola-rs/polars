@@ -258,8 +258,9 @@ def test_pyarrow_dataset_is_in_predicate_pushdown(
     df = pl.DataFrame({"id": [1, 2, 3, 4, 5], "val": [10, 20, 30, 40, 50]})
     dset = ds.dataset(df.to_arrow())
 
-    q = pl.scan_pyarrow_dataset(dset).filter(pl.col("id").is_in([1, 3]))
+    pred = pl.col("id").is_in([1, 3])
     expected = pl.DataFrame({"id": [1, 3], "val": [10, 30]})
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
 
     capfd.readouterr()
     result = q.collect()
@@ -269,19 +270,23 @@ def test_pyarrow_dataset_is_in_predicate_pushdown(
     assert "residual predicate: None" in capture
 
     assert_frame_equal(result, expected)
+    assert_frame_equal(df.filter(pred), expected)
 
-    q = pl.scan_pyarrow_dataset(dset).filter(pl.col("id").is_in(range(1, 4)))
+    pred = pl.col("id").is_in(range(1, 4))
+    expected = pl.DataFrame({"id": [1, 2, 3], "val": [10, 20, 30]})
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
 
     capfd.readouterr()
     result = q.collect()
     capture = capfd.readouterr().err
 
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "0")
+
     assert "(pa.compute.field('id')).isin([1,2,3])" in capture
-    # Verify: no residual predicate
     assert "residual predicate: None" in capture
 
-    expected = pl.DataFrame({"id": [1, 2, 3], "val": [10, 20, 30]})
     assert_frame_equal(result, expected)
+    assert_frame_equal(df.filter(pred), expected)
 
 
 def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
@@ -293,8 +298,9 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     df = pl.DataFrame({"id": [1, 2, 3, 4, None], "val": [10, 20, 30, 40, 50]})
     dset = ds.dataset(df.to_arrow())
 
-    q = pl.scan_pyarrow_dataset(dset).filter(pl.col("id").is_in([1, None, 3]))
+    pred = pl.col("id").is_in([1, None, 3])
     expected = pl.DataFrame({"id": [1, 3], "val": [10, 30]})
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
 
     capfd.readouterr()
     result = q.collect()
@@ -304,11 +310,11 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     assert "residual predicate: None" in capture
 
     assert_frame_equal(result, expected)
+    assert_frame_equal(df.filter(pred), expected)
 
-    q = pl.scan_pyarrow_dataset(dset).filter(
-        pl.col("id").is_in([1, None, 3], nulls_equal=True)
-    )
+    pred = pl.col("id").is_in([1, None, 3], nulls_equal=True)
     expected = pl.DataFrame({"id": [1, 3, None], "val": [10, 30, 50]})
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
 
     capfd.readouterr()
     result = q.collect()
@@ -318,6 +324,37 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     assert "residual predicate: None" in capture
 
     assert_frame_equal(result, expected)
+    assert_frame_equal(df.filter(pred), expected)
+
+    pred = pl.col("id").is_in(pl.lit(None, dtype=pl.List(pl.Int64)))
+    expected = df.clear()
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "converted pyarrow predicate: (pa.compute.field('id')).isin([])" in capture
+    assert "residual predicate: None" in capture
+
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(df.filter(pred), expected)
+
+    pred = pl.col("id").is_in(pl.Series([None], dtype=pl.List(pl.Int64)))
+    expected = df.clear()
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "0")
+
+    assert "converted pyarrow predicate: (pa.compute.field('id')).isin([])" in capture
+    assert "residual predicate: None" in capture
+
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(df.filter(pred), expected)
 
 
 def test_pyarrow_dataset_list_literal_not_pushed() -> None:
@@ -331,16 +368,15 @@ def test_pyarrow_dataset_list_literal_not_pushed() -> None:
     assert "FILTER" not in plan
 
     pred = pl.col("id") == pl.lit(pl.Series([1, 2, None, None, 5]))
+    expected = pl.DataFrame({"id": [1, 2, 5], "val": [10, 20, 50]})
 
     # A bare series literal should NOT be pushed (FILTER remains in plan)
     q = pl.scan_pyarrow_dataset(dset).filter(pred)
     plan = q.explain()
     assert plan.startswith("FILTER")
 
-    assert_frame_equal(
-        q.collect(),
-        pl.DataFrame({"id": [1, 2, 5], "val": [10, 20, 50]}),
-    )
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(df.filter(pred), expected)
 
 
 def test_pyarrow_dataset_comm_subplan_elim(tmp_path: Path) -> None:

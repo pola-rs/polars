@@ -1,7 +1,9 @@
 use std::fmt::Write;
 
 use polars_core::datatypes::AnyValue;
-use polars_core::prelude::{TimeUnit, TimeZone};
+use polars_core::prelude::{DataType, TimeUnit, TimeZone};
+use polars_core::series::Series;
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::prelude::*;
 
@@ -38,6 +40,10 @@ fn sanitize(name: &str) -> Option<&str> {
 }
 
 fn series_to_pyarrow_list(s: &polars_core::prelude::Series) -> Option<String> {
+    if s.is_empty() {
+        return Some("[]".to_string());
+    }
+
     let mut list_repr = String::with_capacity(s.len() * 5);
     list_repr.push('[');
     for av in s.iter() {
@@ -83,8 +89,6 @@ pub fn predicate_to_pa(
     expr_arena: &Arena<AExpr>,
     args: PyarrowArgs,
 ) -> Option<String> {
-    const PA_FALSE_SCALAR: &str = "pa.compute.scalar(False)";
-
     match expr_arena.get(predicate) {
         AExpr::BinaryExpr { left, right, op } => {
             if op.is_comparison_or_bitwise() {
@@ -119,7 +123,7 @@ pub fn predicate_to_pa(
                     if val {
                         Some("pa.compute.scalar(True)".to_string())
                     } else {
-                        Some(PA_FALSE_SCALAR.to_string())
+                        Some("pa.compute.scalar(False)".to_string())
                     }
                 },
                 #[cfg(feature = "dtype-date")]
@@ -192,12 +196,12 @@ pub fn predicate_to_pa(
                         })
                         .ok()?
                     } else {
-                        return Some(PA_FALSE_SCALAR.to_string());
+                        Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
                     }
                 } else if let Some(AnyValue::List(s)) = lv.to_any_value() {
                     s
                 } else if lv.is_null() {
-                    return Some(PA_FALSE_SCALAR.to_string());
+                    Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
                 } else {
                     return None;
                 };
