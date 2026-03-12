@@ -335,12 +335,8 @@ jobs:
         run: cp rust-toolchain.toml py-polars/runtime/${{ matrix.package }}/rust-toolchain.toml
 
       - name: Sleep
-        if: matrix.package == 'polars-runtime-64'
-        run: sleep 600
-
-      - name: Sleep
-        if: matrix.package == 'polars-runtime-compat'
-        run: sleep 900
+        if: matrix.target == 'aarch64-unknown-linux-musl'
+        run: sleep 1200
 
       - name: Build wheel
         uses: PyO3/maturin-action@v1
