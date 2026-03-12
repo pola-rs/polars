@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+#[cfg(feature = "pivot")]
+use polars_core::frame::PivotColumnNaming;
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
 use polars_io::csv::read::CsvReadOptions;
@@ -341,6 +343,7 @@ impl DslBuilder {
         agg: Expr,
         maintain_order: bool,
         separator: PlSmallStr,
+        column_naming: PivotColumnNaming,
     ) -> Self {
         DslPlan::Pivot {
             input: Arc::new(self.0),
@@ -351,6 +354,7 @@ impl DslBuilder {
             agg,
             maintain_order,
             separator,
+            column_naming,
         }
         .into()
     }

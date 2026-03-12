@@ -69,8 +69,11 @@ def test_implode() -> None:
 
 def test_lazyframe_membership_operator() -> None:
     ldf = pl.LazyFrame({"name": ["Jane", "John"], "age": [20, 30]})
-    assert "name" in ldf
-    assert "phone" not in ldf
+
+    with pytest.raises(PerformanceWarning):
+        assert "name" in ldf
+
+    assert "phone" not in ldf.collect_schema()
 
     # note: cannot use lazyframe in boolean context
     with pytest.raises(TypeError, match="ambiguous"):
@@ -1505,6 +1508,8 @@ def test_lf_properties() -> None:
         assert lf.dtypes == [pl.Int64, pl.Float64, pl.String]
     with pytest.warns(PerformanceWarning):
         assert lf.width == 3
+    with pytest.warns(PerformanceWarning):
+        assert "foo" in lf
 
 
 def test_lf_unnest() -> None:

@@ -1,3 +1,5 @@
+#[cfg(feature = "pivot")]
+use polars_core::frame::PivotColumnNaming;
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 use serde::{Deserialize, Serialize};
@@ -99,6 +101,7 @@ pub(crate) enum SerializableDslPlanNode {
         agg: Expr,
         maintain_order: bool,
         separator: PlSmallStr,
+        column_naming: PivotColumnNaming,
     },
     Distinct {
         input: DslPlanKey,
@@ -284,6 +287,7 @@ fn convert_dsl_plan_to_serializable_plan(
             agg,
             maintain_order,
             separator,
+            column_naming,
         } => SP::Pivot {
             input: dsl_plan_key(input, arenas),
             on: on.clone(),
@@ -293,6 +297,7 @@ fn convert_dsl_plan_to_serializable_plan(
             agg: agg.clone(),
             maintain_order: *maintain_order,
             separator: separator.clone(),
+            column_naming: *column_naming,
         },
         DP::Distinct { input, options } => SP::Distinct {
             input: dsl_plan_key(input, arenas),
@@ -529,6 +534,7 @@ fn try_convert_serializable_plan_to_dsl_plan(
             agg,
             maintain_order,
             separator,
+            column_naming,
         } => Ok(DP::Pivot {
             input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             on: on.clone(),
@@ -538,6 +544,7 @@ fn try_convert_serializable_plan_to_dsl_plan(
             agg: agg.clone(),
             maintain_order: *maintain_order,
             separator: separator.clone(),
+            column_naming: *column_naming,
         }),
         SP::Distinct { input, options } => Ok(DP::Distinct {
             input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
