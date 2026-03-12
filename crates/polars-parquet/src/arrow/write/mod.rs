@@ -54,7 +54,7 @@ pub use crate::parquet::{FallibleStreamingIterator, fallible_streaming_iterator}
 use crate::write::fixed_size_binary::build_statistics_float16;
 
 /// Default truncation length for binary/string statistics (in bytes).
-pub const DEFAULT_STATISTICS_TRUNCATE_LENGTH: usize = 64;
+pub const DEFAULT_STATISTICS_TRUNCATE_LENGTH: u64 = 64;
 
 /// The statistics to write
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -67,16 +67,7 @@ pub struct StatisticsOptions {
     pub null_count: bool,
     /// Maximum length (in bytes) for binary/string min/max statistics.
     /// Values longer than this will be truncated. `None` disables truncation.
-    #[cfg_attr(
-        feature = "serde",
-        serde(default = "default_statistics_truncate_length")
-    )]
-    pub statistics_truncate_length: Option<usize>,
-}
-
-#[cfg(feature = "serde")]
-fn default_statistics_truncate_length() -> Option<usize> {
-    Some(DEFAULT_STATISTICS_TRUNCATE_LENGTH)
+    statistics_truncate_length: Option<u64>,
 }
 
 impl Default for StatisticsOptions {
@@ -86,7 +77,7 @@ impl Default for StatisticsOptions {
             max_value: true,
             distinct_count: false,
             null_count: true,
-            statistics_truncate_length: Some(DEFAULT_STATISTICS_TRUNCATE_LENGTH),
+            statistics_truncate_length: None,
         }
     }
 }
