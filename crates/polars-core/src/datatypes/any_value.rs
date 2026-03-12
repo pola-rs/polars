@@ -10,6 +10,7 @@ use polars_utils::total_ord::ToTotalOrd;
 
 use super::*;
 use crate::CHEAP_SERIES_HASH_LIMIT;
+use crate::fmt::{fmt_float_string, fmt_int_string};
 #[cfg(feature = "dtype-struct")]
 use crate::prelude::any_value::arr_to_any_value;
 
@@ -680,8 +681,24 @@ impl<'a> AnyValue<'a> {
 
     pub fn str_value(&self) -> Cow<'a, str> {
         match self {
-            Self::String(s) => Cow::Borrowed(s),
-            Self::StringOwned(s) => Cow::Owned(s.to_string()),
+            Self::String(s) => {
+                if s.parse::<i128>().is_ok() {
+                    Cow::Owned(fmt_int_string(s))
+                } else if s.parse::<f64>().is_ok() {
+                    Cow::Owned(fmt_float_string(s))
+                } else {
+                    Cow::Borrowed(s)
+                }
+            },
+            Self::StringOwned(s) => {
+                if s.parse::<i128>().is_ok() {
+                    Cow::Owned(fmt_int_string(s))
+                } else if s.parse::<f64>().is_ok() {
+                    Cow::Owned(fmt_float_string(s))
+                } else {
+                    Cow::Owned(s.to_string())
+                }
+            },
             Self::Null => Cow::Borrowed("null"),
             #[cfg(feature = "dtype-categorical")]
             Self::Categorical(cat, map) | Self::Enum(cat, map) => {
