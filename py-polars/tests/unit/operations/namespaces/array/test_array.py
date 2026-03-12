@@ -248,8 +248,13 @@ def test_array_get() -> None:
     assert_frame_equal(out_df, expected_df)
 
     # Out-of-bounds index literal.
-    with pytest.raises(ComputeError, match="get index is out of bounds"):
-        out = s.arr.get(100, null_on_oob=False)
+    with pytest.raises(
+        ComputeError,
+        match="get index 100 is out of bounds for array of width 4",
+    ):
+        s.to_frame().lazy().select(
+            pl.first().arr.get(100, null_on_oob=False)
+        ).collect_schema()
 
     # Negative index literal.
     out = s.arr.get(-2, null_on_oob=False)
