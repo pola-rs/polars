@@ -2392,3 +2392,16 @@ def test_rolling_cov_corr_float32_26741() -> None:
         ].dtype
         == pl.Float32
     )
+
+
+def test_rolling_empty_windows_streaming_26732() -> None:
+    df = pl.DataFrame({"idx": [1, 2, 3], "a": [1, 1, 1]})
+    expected = df.lazy().with_columns(
+        sum=pl.sum("a").rolling(index_column="idx", period="1i", offset="5i")
+    ).collect(engine="in-memory")
+
+    result = df.lazy().with_columns(
+        sum=pl.sum("a").rolling(index_column="idx", period="1i", offset="5i")
+    ).collect(engine="streaming")
+
+    assert_frame_equal(result, expected)
