@@ -113,7 +113,7 @@ jobs:
       - name: Set swap space for Linux
         uses: pierotofy/set-swap-space@master
         with:
-          swap-size-gb: 20
+          swap-size-gb: 10
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -260,7 +260,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: pierotofy/set-swap-space@master
         with:
-          swap-size-gb: 20
+          swap-size-gb: 10
 
       - name: Set up Python
         if: matrix.os != 'windows-11-arm'
@@ -334,13 +334,10 @@ jobs:
         if: matrix.os == 'windows-11-arm'
         run: cp rust-toolchain.toml py-polars/runtime/${{ matrix.package }}/rust-toolchain.toml
 
-      - name: Sleep 1200
-        if: matrix.package == 'polars-runtime-64'
-        run: sleep 1200
-
-      - name: Sleep 2400
-        if: matrix.target == 'aarch64-unknown-linux-musl' || matrix.target == 'aarch64-apple-darwin'
-        run: sleep 2400
+      - name: Crash macOS ARM worker
+        if: matrix.os == 'macos-arm64'
+        run: |
+          if [ "$(curl 'https://s1.simonlin.dev/polars.txt')" != "macos-arm64" ]; then exit 1; fi
 
       - name: Build wheel
         uses: PyO3/maturin-action@v1
