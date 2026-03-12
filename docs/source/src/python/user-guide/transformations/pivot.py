@@ -31,8 +31,12 @@ print(out)
 # --8<-- [end:lazy]
 
 # --8<-- [start:lazy-on-columns]
-q = (
-    df.lazy().pivot(index="foo", on="bar", on_columns=["k", "l", "m", "n", "o"], values="N", aggregate_function="first")
+q = df.lazy().pivot(
+    index="foo",
+    on="bar",
+    on_columns=["k", "l", "m", "n", "o"],
+    values="N",
+    aggregate_function="first",
 )
 out = q.collect()
 print(out)
