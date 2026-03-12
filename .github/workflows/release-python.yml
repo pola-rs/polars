@@ -90,7 +90,6 @@ jobs:
         with:
           path: dist
 
-
   create-sdist:
     needs: [base-package]
     runs-on: ubuntu-latest
@@ -334,6 +333,14 @@ jobs:
         #   1> ../rust-toolchain.toml
         if: matrix.os == 'windows-11-arm'
         run: cp rust-toolchain.toml py-polars/runtime/${{ matrix.package }}/rust-toolchain.toml
+
+      - name: Sleep
+        if: matrix.package == 'polars-runtime-64'
+        run: sleep 600
+
+      - name: Sleep
+        if: matrix.package == 'polars-runtime-compat'
+        run: sleep 900
 
       - name: Build wheel
         uses: PyO3/maturin-action@v1
