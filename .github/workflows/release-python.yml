@@ -113,7 +113,7 @@ jobs:
       - name: Set swap space for Linux
         uses: pierotofy/set-swap-space@master
         with:
-          swap-size-gb: 10
+          swap-size-gb: 20
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -260,7 +260,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: pierotofy/set-swap-space@master
         with:
-          swap-size-gb: 10
+          swap-size-gb: 20
 
       - name: Set up Python
         if: matrix.os != 'windows-11-arm'
