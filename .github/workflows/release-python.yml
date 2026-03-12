@@ -335,7 +335,7 @@ jobs:
         run: cp rust-toolchain.toml py-polars/runtime/${{ matrix.package }}/rust-toolchain.toml
 
       - name: Sleep
-        if: matrix.target == 'aarch64-unknown-linux-musl'
+        if: matrix.target == 'aarch64-unknown-linux-musl' || matrix.target == 'aarch64-apple-darwin'
         run: sleep 1200
 
       - name: Build wheel
