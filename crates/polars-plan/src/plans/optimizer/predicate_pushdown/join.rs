@@ -19,6 +19,19 @@ pub(super) fn process_join(
     mut acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
     streaming: bool,
 ) -> PolarsResult<IR> {
+    if options.args.slice.is_some() {
+        let lp = IR::Join {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            schema,
+            options,
+        };
+
+        return opt.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
+    }
+
     let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
     let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
 
