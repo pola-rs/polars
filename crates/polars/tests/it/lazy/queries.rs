@@ -266,7 +266,7 @@ fn test_group_by_on_lists() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by([col("groups")])
-        .agg([col("arrays").implode()])
+        .agg([col("arrays").implode(true)])
         .collect()?;
 
     // a list of lists

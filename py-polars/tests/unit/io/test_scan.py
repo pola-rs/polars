@@ -988,19 +988,17 @@ def test_only_project_include_file_paths(scan_type: tuple[Any, Any]) -> None:
         pytest.param(
             (pl.DataFrame.write_ipc, pl.scan_ipc),
             marks=pytest.mark.xfail(
-                reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
+                reason="IPC scan does not support the missing_columns parameter"
             ),
         ),
-        pytest.param(
-            (pl.DataFrame.write_csv, pl.scan_csv),
-            marks=pytest.mark.xfail(
-                reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
-            ),
+        (
+            pl.DataFrame.write_csv,
+            partial(pl.scan_csv, schema={"a": pl.UInt32, "missing": pl.Int32}),
         ),
         pytest.param(
             (pl.DataFrame.write_ndjson, pl.scan_ndjson),
             marks=pytest.mark.xfail(
-                reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
+                reason="NDJSON scan does not support the missing_columns parameter"
             ),
         ),
     ],
@@ -1517,3 +1515,18 @@ def test_scan_metrics(
     assert logged_bytes_received == logged_bytes_requested
 
     assert_frame_equal(out, df)
+
+
+def test_scan_slice_filter_pushdown_22790() -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame({"a": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]})
+    df.write_parquet(f)
+
+    q = pl.scan_parquet(f).tail(5).filter((pl.col("a") % 5).is_between(2, 3))
+
+    plan = q.explain()
+    assert not plan.startswith("FILTER")
+    assert plan.index("SELECTION") > plan.index("SCAN")
+    assert plan.index("SLICE") > plan.index("SCAN")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [7, 8]}))

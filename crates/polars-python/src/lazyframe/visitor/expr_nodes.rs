@@ -739,10 +739,13 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 arguments: vec![n.0],
                 options: py.None(),
             },
-            IRAggExpr::Implode(n) => Agg {
+            IRAggExpr::Implode {
+                input: n,
+                maintain_order,
+            } => Agg {
                 name: "implode".into_py_any(py)?,
                 arguments: vec![n.0],
-                options: py.None(),
+                options: maintain_order.into_py_any(py)?,
             },
             IRAggExpr::Quantile {
                 expr,
@@ -1437,7 +1440,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::GatherEvery { n, offset } => {
                     ("gather_every", offset, n).into_py_any(py)
                 },
-                IRFunctionExpr::Reinterpret(signed) => ("reinterpret", signed).into_py_any(py),
+                IRFunctionExpr::Reinterpret(dtype) => {
+                    ("reinterpret", &Wrap(dtype.clone())).into_py_any(py)
+                },
                 IRFunctionExpr::ExtendConstant => ("extend_constant",).into_py_any(py),
                 IRFunctionExpr::Business(_) => {
                     return Err(PyNotImplementedError::new_err("business"));

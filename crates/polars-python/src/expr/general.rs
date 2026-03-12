@@ -15,10 +15,10 @@ use pyo3::prelude::*;
 
 use super::datatype::PyDataTypeExpr;
 use super::selector::PySelector;
-use crate::PyExpr;
 use crate::conversion::{Wrap, parse_fill_null_strategy};
 use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
+use crate::{PyDataType, PyExpr};
 
 #[pymethods]
 impl PyExpr {
@@ -181,8 +181,8 @@ impl PyExpr {
     fn item(&self, allow_empty: bool) -> Self {
         self.inner.clone().item(allow_empty).into()
     }
-    fn implode(&self) -> Self {
-        self.inner.clone().implode().into()
+    fn implode(&self, maintain_order: bool) -> Self {
+        self.inner.clone().implode(maintain_order).into()
     }
     fn quantile(&self, quantile: Self, interpolation: Wrap<QuantileMethod>) -> Self {
         self.inner
@@ -736,8 +736,11 @@ impl PyExpr {
         self.inner.clone().dot(other.inner).into()
     }
 
-    fn reinterpret(&self, signed: bool) -> Self {
-        self.inner.clone().reinterpret(signed).into()
+    fn reinterpret(&self, signed: Option<bool>, dtype: Option<PyDataType>) -> Self {
+        self.inner
+            .clone()
+            .reinterpret(signed, dtype.map(|dt| dt.0))
+            .into()
     }
     fn mode(&self, maintain_order: bool) -> Self {
         self.inner.clone().mode(maintain_order).into()

@@ -404,6 +404,22 @@ def test_file_list_schema_mismatch(
         assert_frame_equal(out, expect)
 
 
+def test_scan_csv_missing_columns_insert() -> None:
+    # Union of all columns, NULLs where a file lacks a column
+    result = pl.scan_csv(
+        [b"x,y\n1,2", b"x,z\n3,4"],
+        missing_columns="insert",
+    ).collect()
+    expected = pl.DataFrame(
+        {
+            "x": [1, 3],
+            "y": [2, None],
+            "z": [None, 4],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 @pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize("streaming", [True, False])
 def test_file_list_schema_supertype(tmp_path: Path, streaming: bool) -> None:
@@ -582,3 +598,20 @@ def test_scan_csv_progressive_infer_schema_length(
     for infer_len in [1, 2, 100, n_rows - 1, n_rows, n_rows + 1, None]:
         out = pl.scan_csv(file_path, infer_schema_length=infer_len).collect()
         assert df.schema == out.schema
+
+
+@pytest.mark.write_disk
+def test_scan_csv_count_rows_async_with_schema(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "test.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    df = pl.DataFrame({"a": range(10)})
+    df.write_csv(file_path)
+
+    schema = pl.Schema({"a": pl.Int64})
+    out = pl.scan_csv(file_path, schema=schema).select(pl.len()).collect()
+    assert out.item() == 10

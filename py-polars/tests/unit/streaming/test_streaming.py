@@ -404,3 +404,18 @@ def test_streaming_str_replace_dynamic_pattern_26789() -> None:
     q = lf.select([pl.col("foo").str.replace(pl.col("foo").first(), pl.col("value"))])
     out = q.collect(engine="streaming")
     assert out.to_dict(as_series=False) == {"foo": ["A", "xyz 678 910t"]}
+
+
+def test_streaming_boolean_multiply_unique_24609() -> None:
+    lf = pl.LazyFrame({"a": [True]}).with_columns(x=pl.col("a") * 2).unique("a")
+    expected = lf.collect(engine="in-memory")
+    result = lf.collect(engine="streaming")
+
+    assert_frame_equal(result, expected, check_row_order=False)
+
+
+def test_streaming_boolean_multiply_dtype_24609() -> None:
+    lf = pl.LazyFrame({"a": [True]}).with_columns(x=pl.col("a") * 2)
+    assert (
+        lf.collect(engine="streaming").schema == lf.collect(engine="in-memory").schema
+    )

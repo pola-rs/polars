@@ -198,8 +198,12 @@ impl Expr {
     }
 
     /// Implode into a list scalar.
-    pub fn implode(self) -> Self {
-        AggExpr::Implode(Arc::new(self)).into()
+    pub fn implode(self, maintain_order: bool) -> Self {
+        AggExpr::Implode {
+            input: Arc::new(self),
+            maintain_order,
+        }
+        .into()
     }
 
     /// Compute the quantile per group.
@@ -1606,8 +1610,8 @@ impl Expr {
     }
 
     #[cfg(feature = "reinterpret")]
-    pub fn reinterpret(self, signed: bool) -> Expr {
-        self.map_unary(FunctionExpr::Reinterpret(signed))
+    pub fn reinterpret(self, signed: Option<bool>, dtype: Option<DataType>) -> Expr {
+        self.map_unary(FunctionExpr::Reinterpret(signed, dtype))
     }
 
     pub fn extend_constant(self, value: Expr, n: Expr) -> Expr {
