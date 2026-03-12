@@ -420,7 +420,9 @@ def test_file_path_cb_new_cloud_path(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2]})
     df.lazy().sink_csv(
         pl.PartitionBy(
-            "s3://bucket-x", file_path_provider=new_path, max_rows_per_file=1
+            format_file_uri("/"),
+            file_path_provider=new_path,
+            max_rows_per_file=1,
         )
     )
 
