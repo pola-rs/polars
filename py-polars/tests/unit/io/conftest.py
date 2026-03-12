@@ -16,7 +16,7 @@ def io_files_path() -> Path:
 
 
 def format_file_uri(absolute_local_path: str | Path) -> str:
-    absolute_local_path = str(absolute_local_path).removeprefix(r"\\\\?\\")
+    absolute_local_path = str(absolute_local_path)
 
     if sys.platform == "win32":
         assert absolute_local_path[0].isalpha()
