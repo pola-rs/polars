@@ -408,7 +408,7 @@ def test_parquet_preserve_order_within_partition_23376(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_file_path_cb_new_cloud_path(tmp_path: Path) -> None:
+def test_file_path_cb_absolute_path(tmp_path: Path) -> None:
     i = 0
 
     def new_path(_: Any) -> str:
