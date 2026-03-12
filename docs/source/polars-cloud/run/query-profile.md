@@ -86,8 +86,8 @@ to 4 output rows:
 <!-- dprint-ignore -->
 ![Group By node example](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/group-by-node.png){ width="50%" style="display: block; margin: 0 auto;" }
 
-This makes sense because this query performs a list of aggregations, which we can also see in the
-node details information in the logical plan:
+This makes sense because this query performs a list of aggregations, as we can see in the node
+details information in the logical plan:
 
 <!-- dprint-ignore -->
 ![Node details example](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/node-details.png){ width="50%" style="display: block; margin: 0 auto;" }
@@ -144,25 +144,24 @@ of total time spent in that stage.
 ![Stage graph with node details](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/stage-graph-node-details.png)
 
 When you click on that stage (not one of the nodes in it), you open the stage details, displaying
-detailed metrics. For this query, the metrics show high shuffle bytes, indicating that this stage is
-shuffle-heavy. Shuffling is inherently expensive, but necessary when operations like joins require
-co-located keys.
+detailed metrics. You can notice that the I/O time of this stage is roughly 55%.
 
 ![Example of heavy stage](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/stage-example.png)
 
-Through the details you can open the physical plan of this stage, which shows at the bottom that the
-scan in this stage took almost all of the time:
+Through the details you can open the physical plan of this stage. This will display all of the
+operations in this stage, how long they took, and any indicators that might help you find
+bottlenecks.
 
 <!-- dprint-ignore -->
 ![Example of stage's physical plan](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/stage-physical-plan-example.png){ width="50%" style="display: block; margin: 0 auto;" }
 
-The main thing to notice here is that at the bottom of the graph the blue I/O indicator is almost at
-100%:
+One thing you should immediately notice is that the MultiScan node at the bottom takes almost 100%
+of the time for I/O:
 
 <!-- dprint-ignore -->
 ![I/O time](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/io-time.png){ style="display: block; margin: 0 auto;" }
 
-The I/O indicator shows that I/O was active for nearly the full runtime of the stage. We can
+This I/O indicator shows that I/O was active for nearly the full runtime of the stage. We can
 conclude that the network I/O in this node is the bottleneck in this part of the physical plan.
 
 In this example the data is stored in `us-east-2` while the cluster runs in `eu-west-1`. The
