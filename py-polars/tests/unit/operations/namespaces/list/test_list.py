@@ -13,6 +13,7 @@ from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
     OutOfBoundsError,
+    SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import time_func
@@ -1278,6 +1279,357 @@ def test_list_contains() -> None:
 def test_list_diff_invalid_type() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Series([1, 2, 3]).list.diff()
+
+
+def test_list_zip_basic() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2, 3], [4, 5], [6]],
+            "b": [["x", "y", "z"], ["a", "b"], ["c"]],
+        }
+    )
+
+    result = df.select(pl.col("a").list.zip(pl.col("b")).alias("zipped_ab"))
+    expected = pl.DataFrame(
+        {
+            "zipped_ab": [
+                [
+                    {"a": 1, "b": "x"},
+                    {"a": 2, "b": "y"},
+                    {"a": 3, "b": "z"},
+                ],
+                [{"a": 4, "b": "a"}, {"a": 5, "b": "b"}],
+                [{"a": 6, "b": "c"}],
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_list_zip_with_nulls() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2], None, [3]],
+            "b": [["x", "y"], ["a", "b"], None],
+        }
+    )
+
+    result = df.select(pl.col("a").list.zip(pl.col("b")).alias("zipped_with_nulls"))
+    expected = pl.DataFrame(
+        {
+            "zipped_with_nulls": [
+                [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}],
+                None,
+                None,
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_list_zip_different_lengths() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2, 3, 4], [5], [6, 7]],
+            "b": [["x", "y"], ["a", "b", "c"], ["d"]],
+        }
+    )
+
+    result = df.select(pl.col("a").list.zip(pl.col("b")).alias("zipped_diff_len"))
+    expected = pl.DataFrame(
+        {
+            "zipped_diff_len": [
+                [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}],
+                [{"a": 5, "b": "a"}],
+                [{"a": 6, "b": "d"}],
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_list_zip_series() -> None:
+    s1 = pl.Series("a", [[1, 2, 3], [4, 5], [6]])
+    s2 = pl.Series("b", [["x", "y", "z"], ["a", "b"], ["c"]])
+
+    result = s1.list.zip(s2)
+    expected = pl.Series(
+        "a",
+        [
+            [
+                {"a": 1, "b": "x"},
+                {"a": 2, "b": "y"},
+                {"a": 3, "b": "z"},
+            ],
+            [{"a": 4, "b": "a"}, {"a": 5, "b": "b"}],
+            [{"a": 6, "b": "c"}],
+        ],
+    )
+    assert_series_equal(result, expected)
+
+    s3 = pl.Series("a", [[1, 2, 3], [4, 5], [6]])
+    s4 = pl.Series("b", [["x", "y"], ["a"], ["c", "d", "e"]])
+
+    result_no_pad = s3.list.zip(s4)
+    expected_no_pad = pl.Series(
+        "a",
+        [
+            [
+                {"a": 1, "b": "x"},
+                {"a": 2, "b": "y"},
+            ],
+            [{"a": 4, "b": "a"}],
+            [{"a": 6, "b": "c"}],
+        ],
+    )
+    assert_series_equal(result_no_pad, expected_no_pad)
+
+    result_with_pad = s3.list.zip(s4, pad=True)
+    expected_with_pad = pl.Series(
+        "a",
+        [
+            [
+                {"a": 1, "b": "x"},
+                {"a": 2, "b": "y"},
+                {"a": 3, "b": None},
+            ],
+            [
+                {"a": 4, "b": "a"},
+                {"a": 5, "b": None},
+            ],
+            [
+                {"a": 6, "b": "c"},
+                {"a": None, "b": "d"},
+                {"a": None, "b": "e"},
+            ],
+        ],
+    )
+    assert_series_equal(result_with_pad, expected_with_pad)
+
+
+def test_list_zip_empty_lists() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[], [1, 2], []],
+            "b": [[], ["x"], []],
+        }
+    )
+
+    result = df.select(pl.col("a").list.zip(pl.col("b")).alias("zipped_empty"))
+    expected = pl.DataFrame({"zipped_empty": [[], [{"a": 1, "b": "x"}], []]})
+    assert_frame_equal(result, expected)
+
+
+def test_list_zip_mixed_types() -> None:
+    df = pl.DataFrame(
+        {
+            "integers": [[1, 2], [3]],
+            "strings": [["a", "b"], ["c"]],
+        }
+    )
+
+    result = df.select(
+        pl.col("integers").list.zip(pl.col("strings")).alias("mixed_zip")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "mixed_zip": [
+                [
+                    {"integers": 1, "strings": "a"},
+                    {"integers": 2, "strings": "b"},
+                ],
+                [{"integers": 3, "strings": "c"}],
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_list_zip_series_comprehensive() -> None:
+    s1 = pl.Series("a", [[1, 2], None, [3]])
+    s2 = pl.Series("b", [["x", "y"], ["a", "b"], None])
+
+    result = s1.list.zip(s2)
+    expected = pl.Series(
+        "a",
+        [
+            [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}],
+            None,
+            None,
+        ],
+    )
+    assert_series_equal(result, expected)
+
+    s1 = pl.Series("single", [[1], [2], [3]])
+    s2 = pl.Series("single2", [["a"], ["b"], ["c"]])
+
+    result = s1.list.zip(s2)
+    expected = pl.Series(
+        "single",
+        [
+            [{"single": 1, "single2": "a"}],
+            [{"single": 2, "single2": "b"}],
+            [{"single": 3, "single2": "c"}],
+        ],
+    )
+    assert_series_equal(result, expected)
+
+    s1 = pl.Series("with_none", [[1, None, 3], [None], [4]])
+    s2 = pl.Series("with_none2", [["a", "b", None], ["c"], [None]])
+
+    result = s1.list.zip(s2)
+    expected = pl.Series(
+        "with_none",
+        [
+            [
+                {"with_none": 1, "with_none2": "a"},
+                {"with_none": None, "with_none2": "b"},
+                {"with_none": 3, "with_none2": None},
+            ],
+            [{"with_none": None, "with_none2": "c"}],
+            [{"with_none": 4, "with_none2": None}],
+        ],
+    )
+    assert_series_equal(result, expected)
+
+    s1 = pl.Series("first_series", [[1, 2], [3]])
+    s2 = pl.Series("second_series", [["x", "y"], ["z"]])
+
+    result = s1.list.zip(s2)
+    assert result.name == "first_series"
+    expected = pl.Series(
+        "first_series",
+        [
+            [
+                {"first_series": 1, "second_series": "x"},
+                {"first_series": 2, "second_series": "y"},
+            ],
+            [{"first_series": 3, "second_series": "z"}],
+        ],
+    )
+    assert_series_equal(result, expected)
+
+
+def test_list_zip_series_mismatched_lengths() -> None:
+    s1 = pl.Series("long", [[1, 2, 3, 4, 5], [6]])
+    s2 = pl.Series("short", [["a", "b"], ["c", "d", "e"]])
+
+    result = s1.list.zip(s2)
+    expected = pl.Series(
+        "long",
+        [
+            [{"long": 1, "short": "a"}, {"long": 2, "short": "b"}],
+            [{"long": 6, "short": "c"}],
+        ],
+    )
+    assert_series_equal(result, expected)
+
+
+def test_list_zip_error_non_list_input() -> None:
+    df = pl.DataFrame(
+        {
+            "lists": [[1, 2], [3, 4]],
+            "not_list": [10, 20],
+        }
+    )
+
+    with pytest.raises(
+        SchemaError, match="invalid series dtype: expected `List`, got `i64`"
+    ):
+        df.select(pl.col("lists").list.zip(pl.col("not_list")))
+
+    s_list = pl.Series("list_col", [[1, 2], [3, 4]])
+    s_not_list = pl.Series("not_list_col", [10, 20])
+
+    with pytest.raises(
+        SchemaError, match="invalid series dtype: expected `List`, got `i64`"
+    ):
+        s_list.list.zip(s_not_list)
+
+
+def test_list_zip_error_duplicate_names() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2], [3, 4]],
+            "b": [[5, 6], [7, 8]],
+        }
+    )
+
+    with pytest.raises(
+        pl.exceptions.DuplicateError, match="has more than one occurrence"
+    ):
+        df.select(pl.col("a").list.zip(pl.col("a")))
+
+    s1 = pl.Series("same_name", [[1, 2], [3, 4]])
+    s2 = pl.Series("same_name", [[5, 6], [7, 8]])
+
+    with pytest.raises(
+        pl.exceptions.DuplicateError, match="has more than one occurrence"
+    ):
+        s1.list.zip(s2)
+
+
+def test_list_zip_broadcast() -> None:
+    s1 = pl.Series("a", [[1, 2, 3]])
+    s2 = pl.Series("b", [["x", "y", "z"], ["a", "b", "c"], ["d", "e", "f"]])
+
+    result = s1.list.zip(s2)
+    expected = pl.Series(
+        "a",
+        [
+            [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}, {"a": 3, "b": "z"}],
+            [{"a": 1, "b": "a"}, {"a": 2, "b": "b"}, {"a": 3, "b": "c"}],
+            [{"a": 1, "b": "d"}, {"a": 2, "b": "e"}, {"a": 3, "b": "f"}],
+        ],
+    )
+    assert_series_equal(result, expected)
+
+    s1 = pl.Series("a", [[1, 2], [3, 4], [5, 6]])
+    s2 = pl.Series("b", [["x", "y"]])
+
+    result = s1.list.zip(s2)
+    expected = pl.Series(
+        "a",
+        [
+            [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}],
+            [{"a": 3, "b": "x"}, {"a": 4, "b": "y"}],
+            [{"a": 5, "b": "x"}, {"a": 6, "b": "y"}],
+        ],
+    )
+    assert_series_equal(result, expected)
+
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2], [3, 4], [5, 6]],
+        }
+    )
+    df_result = df.select(
+        pl.col("a").list.zip(pl.lit(pl.Series("b", [["x", "y"]]))).alias("zipped")
+    )
+    df_expected = pl.DataFrame(
+        {
+            "zipped": [
+                [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}],
+                [{"a": 3, "b": "x"}, {"a": 4, "b": "y"}],
+                [{"a": 5, "b": "x"}, {"a": 6, "b": "y"}],
+            ]
+        }
+    )
+    assert_frame_equal(df_result, df_expected)
+
+    s1 = pl.Series("a", [[1, 2, 3]])
+    s2 = pl.Series("b", [["x"], ["y", "z"]])
+
+    result = s1.list.zip(s2, pad=True)
+    expected = pl.Series(
+        "a",
+        [
+            [{"a": 1, "b": "x"}, {"a": 2, "b": None}, {"a": 3, "b": None}],
+            [{"a": 1, "b": "y"}, {"a": 2, "b": "z"}, {"a": 3, "b": None}],
+        ],
+    )
+    assert_series_equal(result, expected)
 
 
 def test_list_df_invalid_type_in_planner() -> None:
