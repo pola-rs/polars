@@ -1211,7 +1211,16 @@ impl Display for AnyValue<'_> {
             },
             #[cfg(feature = "dtype-array")]
             AnyValue::Array(s, _size) => write!(f, "{}", s.fmt_list()),
-            AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
+            AnyValue::List(s) => {
+                #[cfg(feature = "object")]
+                if s.dtype().is_object() {
+                    write!(f, "[<object>]")
+                } else {
+                    write!(f, "{}", s.fmt_list())
+                }
+                #[cfg(not(feature = "object"))]
+                write!(f, "{}", s.fmt_list())
+            },
             #[cfg(feature = "object")]
             AnyValue::Object(v) => write!(f, "{v}"),
             #[cfg(feature = "object")]
@@ -1540,5 +1549,14 @@ ChunkedArray: 'name' [str]
 ]"#,
             format!("{ca:?}")
         );
+    }
+
+    #[test]
+    #[cfg(feature = "object")]
+    fn test_fmt_list_object() {
+        let s = ObjectChunked::<i32>::new_from_vec(PlSmallStr::from_static(""), vec![1, 2, 3])
+            .into_series();
+        let list_value = AnyValue::List(s);
+        assert_eq!(format!("{}", list_value), "[<object>]");
     }
 }
