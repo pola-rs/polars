@@ -132,7 +132,12 @@ impl EvalExpr {
 
         let mut ac = self.evaluation.evaluate_on_groups(&df, &groups, &state)?;
 
-        ac.groups(); // Update the groups.
+        // Update the groups.
+        if self.evaluation_is_scalar || is_agg {
+            ac.set_groups_for_undefined_agg_states();
+        } else {
+            ac.groups();
+        }
 
         let flat_naive = ac.flat_naive();
 

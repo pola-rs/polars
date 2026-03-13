@@ -2051,6 +2051,42 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(AExprBuilder::col(out_name.clone(), ctx.expr_arena).node());
             },
 
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: func @ (IRFunctionExpr::ArgMin | IRFunctionExpr::ArgMax),
+                options: _,
+            } => {
+                // expr.arg_min()
+                //
+                // ->
+                // .select(tmp_expr = expr)
+                // .with_row_index(tmp_idx)
+                // .select(tmp_idx.min_by(tmp_expr))
+                let col_name = unique_column_name();
+                let idx_name = unique_column_name();
+
+                let col_stream = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(col_name.clone())],
+                    ctx,
+                )?;
+                let row_index_stream =
+                    build_row_idx_stream(col_stream, idx_name.clone(), None, ctx.phys_sm);
+
+                let idx_builder = AExprBuilder::col(idx_name.clone(), ctx.expr_arena);
+                let col_builder = AExprBuilder::col(col_name.clone(), ctx.expr_arena);
+                let min_max_by_node = if func == IRFunctionExpr::ArgMin {
+                    idx_builder.min_by(col_builder, ctx.expr_arena).node()
+                } else {
+                    idx_builder.max_by(col_builder, ctx.expr_arena).node()
+                };
+
+                let (trans_stream, trans_node) =
+                    lower_reduce_node(row_index_stream, min_max_by_node, ctx)?;
+                input_streams.insert(trans_stream);
+                transformed_exprs.push(trans_node);
+            },
+
             AExpr::Slice {
                 input: inner,
                 offset,

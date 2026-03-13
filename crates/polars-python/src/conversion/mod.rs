@@ -11,6 +11,8 @@ use std::hash::{Hash, Hasher};
 pub use categorical::PyCategories;
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
+#[cfg(feature = "pivot")]
+use polars::frame::PivotColumnNaming;
 use polars::frame::row::Row;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
@@ -1258,6 +1260,24 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<SearchSortedSide> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "sorted `side` must be one of {{'any', 'left', 'right'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+#[cfg(feature = "pivot")]
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PivotColumnNaming> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "auto" => PivotColumnNaming::Auto,
+            "combine" => PivotColumnNaming::Combine,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`column_naming` must be one of {{'auto', 'combine'}}, got {v}",
                 )));
             },
         };

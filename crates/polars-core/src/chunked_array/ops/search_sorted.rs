@@ -15,6 +15,17 @@ pub enum SearchSortedSide {
     Right,
 }
 
+impl SearchSortedSide {
+    pub fn flip(self) -> Self {
+        use SearchSortedSide::*;
+        match self {
+            Any => Any,
+            Left => Right,
+            Right => Left,
+        }
+    }
+}
+
 /// Computes the first point on [lo, hi) where f is true, assuming it is first
 /// always false and then always true. It is assumed f(hi) is true.
 /// midpoint is a function that returns some lo < i < hi if one exists, else lo.

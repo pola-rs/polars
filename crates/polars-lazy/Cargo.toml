@@ -240,7 +240,7 @@ asof_join = [
   "polars-ops/asof_join",
   "polars-mem-engine/asof_join",
 ]
-iejoin = ["polars-plan/iejoin"]
+iejoin = ["polars-plan/iejoin", "polars-stream/iejoin"]
 business = ["polars-expr/business"]
 concat_str = ["polars-expr/concat_str"]
 range = [
