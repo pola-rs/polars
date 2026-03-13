@@ -435,7 +435,10 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        self.0.cast_with_options(dtype, cast_options)
+        match dtype {
+            DataType::String => Ok(self.0.to_string("iso")?.into_series()),
+            _ => self.0.cast_with_options(dtype, cast_options),
+        }
     }
 
     #[inline]

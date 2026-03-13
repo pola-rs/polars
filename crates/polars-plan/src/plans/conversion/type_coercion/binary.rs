@@ -115,6 +115,21 @@ fn err_date_str_compare() -> PolarsResult<()> {
     }
 }
 
+#[cfg(feature = "dtype-duration")]
+fn err_duration_str_compare() -> PolarsResult<()> {
+    if cfg!(feature = "python") {
+        polars_bail!(
+            InvalidOperation:
+            "cannot compare 'duration' to a string value \
+            (create a native python {{ 'timedelta' }} or compare to a duration column)"
+        );
+    } else {
+        polars_bail!(
+            InvalidOperation: "cannot compare 'duration' to a string value"
+        );
+    }
+}
+
 pub(super) fn process_binary(
     expr_arena: &mut Arena<AExpr>,
     input_schema: &Schema,
@@ -255,6 +270,13 @@ pub(super) fn process_binary(
         #[cfg(feature = "dtype-time")]
         (Time | Unknown(UnknownKind::Str), String, op) if op.is_comparison_or_bitwise() => {
             err_date_str_compare()?
+        },
+        #[cfg(feature = "dtype-duration")]
+        (Duration(_), String | Unknown(UnknownKind::Str), op)
+        | (String | Unknown(UnknownKind::Str), Duration(_), op)
+            if op.is_comparison_or_bitwise() =>
+        {
+            err_duration_str_compare()?
         },
         // structs can be arbitrarily nested, leave the complexity to the caller for now.
         #[cfg(feature = "dtype-struct")]
