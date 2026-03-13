@@ -73,11 +73,12 @@ async fn resolve_negative_slice(
         });
     }
 
-    let deletion_files_provider = DeletionFilesProvider::new(
+    let deletion_files_provider = DeletionFilesProvider::try_new(
         config.deletion_files.clone(),
+        config.sources.clone(),
         execution_state,
         config.io_metrics(),
-    );
+    )?;
     let num_pipelines = config.num_pipelines();
 
     let mut initialized_readers =

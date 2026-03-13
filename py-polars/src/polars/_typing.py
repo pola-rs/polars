@@ -114,9 +114,12 @@ ColumnMapping: TypeAlias = tuple[
 DefaultFieldValues: TypeAlias = tuple[
     Literal["iceberg"], dict[int, Union["Series", str]]
 ]
-DeletionFiles: TypeAlias = tuple[
-    Literal["iceberg-position-delete"], dict[int, list[str]]
-]
+DeletionFiles: TypeAlias = (
+    tuple[Literal["iceberg-position-delete"], dict[int, list[str]]]
+    | tuple[
+        Literal["delta-deletion-vector"], Callable[["DataFrame"], "DataFrame | None"]
+    ]
+)
 FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"
 ]

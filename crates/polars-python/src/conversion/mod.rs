@@ -20,6 +20,7 @@ use polars::prelude::ColumnMapping;
 use polars::prelude::default_values::{
     DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
 };
+use polars::prelude::deletion::{DeletionFilesList, DeltaDeletionVectorProvider};
 use polars::series::ops::NullBehavior;
 use polars_buffer::Buffer;
 use polars_compute::decimal::dec128_verify_prec_scale;
@@ -33,6 +34,7 @@ use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
 use polars_utils::compression::{BrotliLevel, GzipLevel, ZstdLevel};
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::python_function::PythonObject;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -45,7 +47,6 @@ use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
 use crate::error::PyPolarsErr;
 use crate::expr::PyExpr;
 use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
-use crate::io::scan_options::PyDeletionFilesList;
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
@@ -1813,7 +1814,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ColumnMapping> {
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PyDeletionFilesList> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DeletionFilesList> {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
@@ -1847,7 +1848,12 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PyDeletionFilesList> {
                     }
                 }
 
-                PyDeletionFilesList(Arc::new(out))
+                DeletionFilesList::IcebergPositionDelete(Arc::new(out))
+            },
+
+            "delta-deletion-vector" => {
+                let callback: Py<PyAny> = ob.extract()?;
+                DeletionFilesList::Delta(DeltaDeletionVectorProvider::new(PythonObject(callback)))
             },
 
             v => {

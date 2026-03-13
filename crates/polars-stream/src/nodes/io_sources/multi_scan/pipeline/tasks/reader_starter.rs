@@ -8,7 +8,7 @@ use polars_core::config::verbose_print_sensitive;
 use polars_core::prelude::{AnyValue, DataType};
 use polars_core::scalar::Scalar;
 use polars_core::schema::iceberg::IcebergSchema;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_mem_engine::scan_predicate::skip_files_mask::SkipFilesMask;
 use polars_plan::dsl::{MissingColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
@@ -205,6 +205,18 @@ impl ReaderStarter {
             if skip_read_reason.is_some() {
                 // If this is not the case then the reader does not need to be sent here.
                 debug_assert!(extra_ops.has_row_index_or_slice())
+            }
+
+            if cfg!(debug_assertions)
+                && let Some(n_rows_in_file) = n_rows_in_file
+                && let Some(ExternalFilterMask::DeltaDeletionVector { mask }) =
+                    &external_filter_mask
+            {
+                // @TODO: check for equality, pending https://github.com/delta-io/delta-rs/issues/4235
+                polars_ensure!(mask.len() <= n_rows_in_file.num_physical_rows(),
+                    ComputeError: "deletion vector length: {}, exceeds number of physical rows: {}",
+                    mask.len(), n_rows_in_file.num_physical_rows()
+                )
             }
 
             // `fast_n_rows_in_file()` or negative slice, we know the exact row count here already.

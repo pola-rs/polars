@@ -152,9 +152,11 @@ impl PyFileOptions {
                     .into_any()
                     .unbind()
             },
-
             Some(DeletionFilesList::Delta(provider)) => {
-                provider.callback().clone_ref(py).into_any()
+                ("delta-deletion-vector", provider.callback().0.clone_ref(py))
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind()
             },
         })
     }

@@ -519,12 +519,9 @@ where
 
             out.map(|x| DeletionFilesList::IcebergPositionDelete(Arc::new(x)))
         },
-        // The list of files is not known at this stage. Capture the selected_path_indices
-        // for lazy execution.
+        // No-op. The list of files with deletion vectors is not known at this stage.
         #[cfg(feature = "python")]
-        DeletionFilesList::Delta(provider) => Some(DeletionFilesList::Delta(
-            provider.narrow_selected_indices(selected_path_indices.clone()),
-        )),
+        DeletionFilesList::Delta(provider) => Some(DeletionFilesList::Delta(provider)),
     });
 
     *table_statistics = table_statistics.as_ref().map(|x| {

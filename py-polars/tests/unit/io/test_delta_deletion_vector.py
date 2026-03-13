@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import json
 import struct
 import uuid
@@ -7,13 +8,16 @@ import zlib
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
+import duckdb
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pytest
+from deltalake import DeltaTable
 from pyroaring import BitMap  # type: ignore[import-not-found]
 
 import polars as pl
+from polars.io.delta._dataset import _extract_delta_deletion_vectors
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -190,8 +194,8 @@ def compute_stats(table: pa.Table, tight_bounds: bool = True) -> DeltaStats:
         field = table.schema.field(name)
         t = field.type
 
-        # null count is always cheap
-        null_count[name] = pc.sum(pc.is_null(col)).as_py() or 0
+        # null_count
+        null_count[name] = col.null_count
 
         # min / max only for primitive comparable types
         if (
@@ -252,6 +256,10 @@ def create_dv_table(
     pq.write_table(data, parquet_path, compression="snappy")
 
     parquet_size = parquet_path.stat().st_size
+
+    # Set statistics to pre-deletion-vector values
+    # TODO: expand logic and test case to cover tight_bounds=True; this
+    # requires statistics to be recomputed after applying the deletion vectors
     stats = compute_stats(data, tight_bounds=False)
 
     # --- Commit 0: initial table setup ---
@@ -433,6 +441,84 @@ def create_dv_table_multi(
                 f.write(json.dumps(action) + "\n")
 
 
+#
+# Test suite: internal py methods
+#
+
+
+@pytest.mark.parametrize(
+    ("requested_paths", "dvs", "expected_vectors"),
+    [
+        (["a", "b"], {"b": [False], "a": [True]}, [[True], [False]]),
+        (["a", "c"], {"a": [False], "b": [False]}, [[False], None]),
+        (["c", "d"], {"a": [False], "b": [False]}, [None, None]),
+        ([], {"a": [False]}, []),
+        (["a", "b"], {}, [None, None]),
+        (["b"], {"a": [True], "b": [False]}, [[False]]),
+        (["a", "a"], {"a": [False]}, [[False], [False]]),  # duplicate
+    ],
+)
+def test_scan_delta_dv_extract_dvs(
+    requested_paths: list[str],
+    dvs: dict[str, list[bool]],
+    expected_vectors: list[list[bool] | None],
+) -> None:
+    requested_df = pl.DataFrame({"path": requested_paths}, schema={"path": pl.String})
+    delta_deletion_vectors = pl.DataFrame(
+        {
+            "filepath": list(dvs.keys()),
+            "selection_vector": list(dvs.values()),
+        },
+        schema={"filepath": pl.String, "selection_vector": pl.List(pl.Boolean)},
+    )
+    out = _extract_delta_deletion_vectors(requested_df, delta_deletion_vectors)
+    expected = pl.DataFrame(
+        {"selection_vector": expected_vectors},
+        schema_overrides={"selection_vector": pl.List(pl.Boolean)},
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("requested_paths", "dv_paths", "n_matches"),
+    [
+        (["/tmp/foo"], ["file:///tmp/foo"], 1),
+        (["file:///tmp/foo"], ["file:///tmp/foo"], 1),
+        (["file:///tmp/foo"], ["s3:///tmp/foo"], 0),
+        (["/tmp/foo"], ["s3:///tmp/foo"], 0),
+        (["s3:///tmp/foo"], ["s3:///tmp/foo"], 1),
+        (["s3:///tmp/foo"], ["lakefs:///tmp/foo"], 1),
+        (["lakefs:///tmp/foo"], ["s3:///tmp/foo"], 0),
+        (["lakefs:///tmp/foo"], ["lakefs:///tmp/foo"], 0),
+        (["/tmp/foo"], ["/tmp/foo"], 1),  # not possible, dv always has scheme
+        (["foo"], ["blah"], 0),
+    ],
+)
+def test_scan_delta_dv_normalize_scheme(
+    requested_paths: list[str],
+    dv_paths: list[str],
+    n_matches: int,
+    # expected_vectors: list[list[bool] | None],
+) -> None:
+    requested_df = pl.DataFrame({"path": requested_paths}, schema={"path": pl.String})
+    delta_deletion_vectors = pl.DataFrame(
+        {
+            "filepath": dv_paths,
+            "selection_vector": [[False] for _ in dv_paths],
+        },
+        schema={"filepath": pl.String, "selection_vector": pl.List(pl.Boolean)},
+    )
+    out = _extract_delta_deletion_vectors(requested_df, delta_deletion_vectors)
+    out_non_null = out.select(pl.col("selection_vector").is_not_null().sum()).item()
+    assert out_non_null == n_matches
+
+
+#
+# Test suite: delta with roaring bitmap DVs
+#
+
+
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("n_rows", "dv"),
@@ -465,11 +551,45 @@ def test_scan_delta_dv_single(
     out = pl.scan_delta(path).collect()
     capture = capfd.readouterr().err
 
+    # Test: resulting df
     expected = df.with_row_index().filter(~pl.col.index.is_in(dv)).drop("index")
-
     assert_frame_equal(out, expected)
 
-    # kdn TODO: known issue: no message is printed when the resulting df is empty
+    # duckdb cross-check
+    conn = duckdb.connect()
+    df_duckdb = conn.execute(f"SELECT * FROM delta_scan('{path}')").pl()
+    assert_frame_equal(out, df_duckdb, check_row_order=False)
+
+    # Test: py deletion_vectors() API contract
+    dv_df = pl.DataFrame(DeltaTable(path).deletion_vectors())
+    parquet_path = list(path.glob("*.parquet"))
+    assert len(parquet_path) == 1
+
+    # Since delta may truncate trailing trues, we normalize both
+    # to truncated form for comparison.
+    def truncate_trailing_trues(vec: list[bool]) -> list[bool]:
+        v = list(vec)
+        while v and v[-1]:
+            v.pop()
+        return v
+
+    observed_vec = truncate_trailing_trues(dv_df["selection_vector"][0].to_list())
+    expected_vec = truncate_trailing_trues([i not in dv for i in range(n_rows)])
+
+    expected_dv_df = pl.DataFrame(
+        {
+            "filepath": [parquet_path[0].as_uri()],
+            "selection_vector": [expected_vec],
+        },
+        schema_overrides={"selection_vector": pl.List(pl.Boolean)},
+    )
+    normalized_dv_df = dv_df.with_columns(
+        pl.Series("selection_vector", [observed_vec], dtype=pl.List(pl.Boolean))
+    )
+    assert_frame_equal(normalized_dv_df, expected_dv_df)
+
+    # Test: stderr feedback
+    # TODO: known issue: no message is printed when the resulting df is empty
     if n_rows - len(dv) > 0:
         expected_msg = (
             f"DeltaDeletionVector(<{len(dv)} deletion{'' if len(dv) == 1 else 's'}>)"
@@ -484,6 +604,7 @@ def test_scan_delta_dv_single(
         assert expected_msg in capture
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("n_files", "n_rows", "dvs"),
@@ -526,6 +647,11 @@ def test_scan_delta_dv_multiple(
 
     assert_frame_equal(out, expected, check_row_order=False)
 
+    # duckdb cross-check
+    conn = duckdb.connect()
+    df_duckdb = conn.execute(f"SELECT * FROM delta_scan('{path}')").pl()
+    assert_frame_equal(out, df_duckdb, check_row_order=False)
+
 
 @pytest.mark.slow
 @pytest.mark.write_disk
@@ -562,11 +688,18 @@ def test_scan_delta_dv_multiple_with_predicate_pushdown(
     path = tmp_path / "delta_table"
     create_dv_table_multi(path, list(zip(data, dvs, strict=True)))
 
-    for limit in range(0, n_files * n_rows * 10, 10):
+    # sample limits to include boundaries, see tightBounds above
+    max_b = (n_files * n_rows - 1) * 10
+    deleted_b_values = {dfs[i]["b"][j] for i, dv in enumerate(dvs) for j in dv}
+    sample_limits = sorted({0, max_b // 2, max_b, max_b + 10, *deleted_b_values})
+
+    for limit in sample_limits:
         expr = pl.col.b >= limit
         out = pl.scan_delta(path).filter(expr).collect()
         capture = capfd.readouterr().err
 
+        # notice how n_skip_files ignores the presence of deletion vectors
+        # because statistics are not updated (tightBounds = False)
         n_skip_files = sum(df.select((~expr).all()).item() for df in dfs)
         expected_msg = f"skipping {n_skip_files} / 3 files"
 
@@ -583,3 +716,243 @@ def test_scan_delta_dv_multiple_with_predicate_pushdown(
         )
 
         assert_frame_equal(out, expected, check_row_order=False)
+
+        # duckdb cross-check
+
+        conn = duckdb.connect()
+        df_duckdb = (
+            conn.execute(f"SELECT * FROM delta_scan('{path}')").pl().filter(expr)
+        )
+        assert_frame_equal(out, df_duckdb, check_row_order=False)
+
+
+#
+# Test suite: parquet/delta with mock DVs
+#
+
+
+def _mock_deletion_vector_callback(
+    paths: pl.DataFrame,
+    n_rows: int,
+    dvs: list[list[int]],
+) -> pl.DataFrame | None:
+    path_list = paths["path"].to_list()
+
+    selection_vectors = [[i not in dv for i in range(n_rows)] for dv in dvs]
+
+    result = _extract_delta_deletion_vectors(
+        paths,
+        pl.DataFrame(
+            {
+                "filepath": [Path(p).as_uri() for p in path_list],
+                "selection_vector": selection_vectors,
+            }
+        ),
+    )
+    return result
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("n_files", "n_rows", "dvs"),
+    [
+        (3, 5, [[1, 2, 3], [], [2]]),
+        (3, 5, [[], [0, 1, 2], [2]]),
+        (3, 5, [[], [2], [1, 2, 3]]),
+        (3, 5, [[], [], []]),
+        (3, 5, [list(range(5)), list(range(5)), list(range(5))]),
+    ],
+)
+def test_scan_delta_dv_from_parquet_mock(
+    n_files: int,
+    n_rows: int,
+    dvs: list[list[int]],
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_DELTA_READER_FEATURE_DV", "1")
+
+    dfs = []
+    for i in range(n_files):
+        start = i * n_rows
+        df = pl.DataFrame(
+            {
+                "a": range(start, start + n_rows),
+                "b": range(start * 10, (start + n_rows) * 10, 10),
+                "file_idx": i,
+            }
+        )
+        dfs.append(df)
+
+    for i, df in enumerate(dfs):
+        df.lazy().sink_parquet(tmp_path / f"df_{i}.parquet")
+
+    paths = tmp_path / "*.parquet"
+    dv_callback = functools.partial(
+        _mock_deletion_vector_callback, n_rows=n_rows, dvs=dvs
+    )
+
+    # order is preserved in the case of parquet file-by-file
+    out = pl.scan_parquet(
+        paths,
+        _deletion_files=("delta-deletion-vector", dv_callback),  # type: ignore[arg-type]
+    ).collect()
+
+    expected = pl.concat(
+        [
+            df.with_row_index().filter(~pl.col.index.is_in(dv)).drop("index")
+            for df, dv in zip(dfs, dvs, strict=True)
+        ]
+    )
+
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("n_rows", "dv", "head_n"),
+    [
+        (10, [1, 3, 5], 4),
+        (10, [1, 3, 5], 0),
+        (10, [1, 3, 5], 10),
+        (10, [], 4),
+        (10, list(range(10)), 4),
+        (5, [0, 1], 2),
+    ],
+)
+def test_scan_delta_dv_slice_mock(
+    n_rows: int,
+    dv: list[int],
+    head_n: int,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_DELTA_READER_FEATURE_DV", "1")
+
+    df = pl.DataFrame({"a": range(n_rows), "b": [f"b_{i}" for i in range(n_rows)]})
+    df.lazy().sink_parquet(tmp_path / "df_0.parquet")
+
+    dv_callback = functools.partial(
+        _mock_deletion_vector_callback, n_rows=n_rows, dvs=[dv]
+    )
+
+    out = (
+        pl.scan_parquet(
+            tmp_path / "*.parquet",
+            _deletion_files=("delta-deletion-vector", dv_callback),
+        )
+        .head(head_n)
+        .collect()
+    )
+
+    expected = (
+        df.with_row_index().filter(~pl.col.index.is_in(dv)).drop("index").head(head_n)
+    )
+
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.write_disk
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    ("n_files", "n_rows", "dvs"),
+    [
+        (3, 5, [[1, 2, 3], [], [2]]),
+        (3, 5, [[], [0, 1, 2], [2]]),
+        (3, 5, [[], [], []]),
+        (3, 5, [list(range(5)), list(range(5)), list(range(5))]),
+    ],
+)
+def test_scan_delta_dv_delta_sink_mock(
+    n_files: int,
+    n_rows: int,
+    dvs: list[list[int]],
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_DELTA_READER_FEATURE_DV", "1")
+
+    dfs = []
+    for i in range(n_files):
+        start = i * n_rows
+        df = pl.DataFrame(
+            {
+                "row": range(start, start + n_rows),
+                "file": i,
+            }
+        )
+        dfs.append(df)
+
+    for df in dfs:
+        df.lazy().sink_delta(tmp_path, mode="append")
+
+    # note: delta has no order maintaining guarantees with respect to file or row (!?)
+    # therefore: we track file and row mapping explicitl by index inside the dataframe,
+    # and extract this from the file as written to stub the right deletion_vectors
+    path_to_dv: dict[str, list[int]] = {}
+    for p in tmp_path.glob("*.parquet"):
+        file_idx = pl.read_parquet(p, columns=["file"])["file"][0]
+        path_to_dv[str(p)] = dvs[file_idx]
+
+    def _callback(paths: pl.DataFrame) -> pl.DataFrame | None:
+        path_list = paths["path"].to_list()
+        # row order within each file may differ from original df,
+        # so look up deletions by actual 'a' value not position
+        selection_vectors = []
+        for p in path_list:
+            # caveat - we are re-entering polars from within the callback
+            file_data = pl.read_parquet(p, columns=["row", "file"])
+            file_idx = file_data["file"][0]
+            dv = dvs[file_idx]
+            deleted_rows = set(dfs[file_idx]["row"].gather(dv).to_list())
+            vec = file_data["row"].is_in(deleted_rows).not_().to_list()
+            selection_vectors.append(vec)
+
+        return _extract_delta_deletion_vectors(
+            paths,
+            pl.DataFrame(
+                {
+                    "filepath": [Path(p).as_uri() for p in path_list],
+                    "selection_vector": selection_vectors,
+                }
+            ),
+        )
+
+    out = pl.scan_parquet(
+        tmp_path / "*.parquet",
+        _deletion_files=("delta-deletion-vector", _callback),
+    ).collect()
+
+    # expected: concat surviving rows from each df, order-independent
+    expected = pl.concat(
+        [
+            df.with_row_index().filter(~pl.col.index.is_in(dv)).drop("index")
+            for df, dv in zip(dfs, dvs, strict=True)
+        ]
+    )
+
+    assert_frame_equal(
+        out,
+        expected,
+        check_row_order=False,
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_delta_dv_requires_deltalake_version(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_DELTA_READER_FEATURE_DV", "1")
+
+    path = tmp_path / "delta_table"
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    create_dv_table(path, df.to_arrow(), deleted_rows=[0])
+
+    import deltalake
+
+    monkeypatch.setattr(deltalake, "__version__", "1.4.1")
+
+    with pytest.raises(ImportError, match=r"deltalake >= 1.4.2"):
+        pl.scan_delta(path).collect()

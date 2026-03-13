@@ -1,19 +1,24 @@
 use std::sync::{Arc, OnceLock};
 
+#[cfg(feature = "python")]
+use arrow::array::ListArray;
+use arrow::array::{Array, BooleanArray};
+#[cfg(feature = "python")]
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
 #[cfg(feature = "python")]
-use polars_core::prelude::PlHashMap;
 use polars_core::prelude::{BooleanChunked, ChunkAgg, DataType, NamedFrom, PlIndexMap};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_error::{PolarsResult, feature_gated};
+use polars_error::{PolarsResult, feature_gated, polars_bail, polars_err};
 use polars_io::cloud::CloudOptions;
+use polars_io::pl_async;
 use polars_plan::dsl::deletion::DeletionFilesList;
 #[cfg(feature = "python")]
 use polars_plan::dsl::deletion::DeltaDeletionVectorProvider;
-use polars_plan::dsl::{CastColumnsPolicy, ScanSource};
+use polars_plan::dsl::{CastColumnsPolicy, ScanSource, ScanSources};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
@@ -41,16 +46,18 @@ pub enum DeletionFilesProvider {
     #[cfg(feature = "python")]
     DeltaDeletionVector {
         provider: DeltaDeletionVectorProvider,
-        cache: Arc<tokio::sync::OnceCell<PlHashMap<usize, ExternalFilterMask>>>,
+        selected_paths: Buffer<PlRefPath>,
+        cache: Arc<tokio::sync::OnceCell<Option<ListArray<i64>>>>,
     },
 }
 
 impl DeletionFilesProvider {
-    pub fn new(
+    pub fn try_new(
         deletion_files: Option<DeletionFilesList>,
+        selected_sources: ScanSources,
         execution_state: &crate::execute::StreamingExecutionState,
         io_metrics: Option<Arc<IOMetrics>>,
-    ) -> Self {
+    ) -> PolarsResult<Self> {
         match deletion_files {
             Some(DeletionFilesList::IcebergPositionDelete(paths)) => feature_gated!("parquet", {
                 let reader_builder = ParquetReaderBuilder {
@@ -73,21 +80,28 @@ impl DeletionFilesProvider {
 
                 reader_builder.set_execution_state(execution_state);
 
-                Self::IcebergPositionDelete {
+                Ok(Self::IcebergPositionDelete {
                     paths,
                     reader_builder,
                     projected_schema: Arc::new(Schema::from_iter([
                         (PlSmallStr::from_static("file_path"), DataType::String),
                         (PlSmallStr::from_static("pos"), DataType::Int64),
                     ])),
-                }
+                })
             }),
             #[cfg(feature = "python")]
-            Some(DeletionFilesList::Delta(provider)) => Self::DeltaDeletionVector {
-                provider,
-                cache: Arc::new(tokio::sync::OnceCell::new()),
+            Some(DeletionFilesList::Delta(provider)) => {
+                let ScanSources::Paths(selected_paths) = selected_sources else {
+                    polars_bail!(ComputeError: "delta deletion vectors require path-based scan sources");
+                };
+
+                Ok(Self::DeltaDeletionVector {
+                    provider,
+                    selected_paths,
+                    cache: Arc::new(tokio::sync::OnceCell::new()),
+                })
             },
-            None => Self::None,
+            None => Ok(Self::None),
         }
     }
 
@@ -271,31 +285,52 @@ impl DeletionFilesProvider {
             },
 
             #[cfg(feature = "python")]
-            Self::DeltaDeletionVector { provider, cache } => {
+            Self::DeltaDeletionVector {
+                provider,
+                selected_paths,
+                cache,
+            } => {
                 let cache = cache.clone();
                 let provider = provider.clone();
+                let selected_paths = selected_paths.clone();
 
                 let handle =
                     AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
-                        let map = cache
+                        let deletion_vectors = cache
                             .get_or_try_init(|| async {
-                                provider.call().map(|map| {
-                                    map.into_iter()
-                                        .map(|(k, mask)| {
-                                            (k, ExternalFilterMask::DeltaDeletionVector { mask })
-                                        })
-                                        .collect()
-                                })
+                                let provider = provider.clone();
+                                let selected_paths = selected_paths.clone();
+                                pl_async::get_runtime()
+                                    .spawn_blocking(move || provider.call(selected_paths))
+                                    .await
+                                    .unwrap()
                             })
                             .await?;
 
-                        let mask = map.get(&scan_source_idx).cloned().unwrap_or_else(|| {
-                            ExternalFilterMask::DeltaDeletionVector {
-                                mask: BooleanChunked::new(PlSmallStr::EMPTY, [] as [bool; 0]),
-                            }
-                        });
+                        let empty_mask = BooleanChunked::new(PlSmallStr::EMPTY, [] as [bool; 0]);
 
-                        Ok(mask)
+                        let mask = match deletion_vectors {
+                            None => empty_mask,
+                            Some(list) if list.is_null(scan_source_idx) => empty_mask,
+                            Some(list) => {
+                                let arr = list.value(scan_source_idx);
+                                let bool_arr = arr
+                                    .as_any()
+                                    .downcast_ref::<BooleanArray>()
+                                    .ok_or_else(|| {
+                                        polars_err!(ComputeError:
+                                            "expected boolean array in Delta deletion vector")
+                                    })?;
+                                unsafe {
+                                    BooleanChunked::from_chunks(
+                                        PlSmallStr::EMPTY,
+                                        vec![Box::new(bool_arr.clone())],
+                                    )
+                                }
+                            },
+                        };
+
+                        Ok(ExternalFilterMask::DeltaDeletionVector { mask })
                     }));
 
                 Some(RowDeletionsInit::Initializing(handle))
