@@ -201,8 +201,7 @@ pub fn optimize(
 
     if opt_flags.slice_pushdown() {
         let mut slice_pushdown_opt = SlicePushDown::new();
-        let ir = ir_arena.take(root);
-        let ir = slice_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
+        let ir = slice_pushdown_opt.optimize(root, ir_arena, expr_arena)?;
 
         ir_arena.replace(root, ir);
 
@@ -246,8 +245,7 @@ pub fn optimize(
 
     if repeat_slice_pd_after_filter_pd {
         let mut slice_pushdown_opt = SlicePushDown::new();
-        let ir = ir_arena.take(root);
-        let ir = slice_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
+        let ir = slice_pushdown_opt.optimize(root, ir_arena, expr_arena)?;
 
         ir_arena.replace(root, ir);
     }
