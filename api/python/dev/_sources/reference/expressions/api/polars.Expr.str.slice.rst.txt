@@ -1,0 +1,6 @@
+﻿polars.Expr.str.slice
+=====================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.str.slice

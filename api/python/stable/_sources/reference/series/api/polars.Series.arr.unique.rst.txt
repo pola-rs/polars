@@ -1,0 +1,6 @@
+﻿polars.Series.arr.unique
+========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.arr.unique

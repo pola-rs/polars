@@ -1,0 +1,6 @@
+﻿polars.Series.cum\_max
+======================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.cum_max

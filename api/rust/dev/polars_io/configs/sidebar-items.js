@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["partitioned_upload_chunk_size","partitioned_upload_concurrency","upload_chunk_size","upload_concurrency"]};

@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.map\_batches
+=============================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.map_batches

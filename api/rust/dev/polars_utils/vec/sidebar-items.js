@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["with_cast_mut_vec"],"trait":["CapacityByFactor","ConvertVec","IntoRawParts","PushUnchecked","ResizeFaster"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["new_column_udf"],"mod":["named_serde"],"struct":["BaseColumnUdf","SpecialEq"],"trait":["AnonymousAgg","AnonymousColumnsUdf","ColumnsUdf"],"type":["OpaqueColumnUdf","OpaqueStreamingAgg"]};

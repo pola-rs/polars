@@ -1,0 +1,37 @@
+﻿polars.Boolean
+==============
+
+.. currentmodule:: polars
+
+.. autoclass:: Boolean
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Boolean.__init__
+      ~Boolean.base_type
+      ~Boolean.is_
+      ~Boolean.is_float
+      ~Boolean.is_integer
+      ~Boolean.is_not
+      ~Boolean.is_numeric
+      ~Boolean.is_signed_integer
+      ~Boolean.is_temporal
+      ~Boolean.is_unsigned_integer
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Boolean.is_nested
+   
+   

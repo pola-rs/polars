@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["build_object_store","glob","object_path_from_str"],"mod":["cloud_writer","credential_provider","options"],"struct":["CloudLocation","ObjectStoreErrorContext","PolarsObjectStore","PolarsObjectStoreError"],"type":["ObjectStorePath"]};

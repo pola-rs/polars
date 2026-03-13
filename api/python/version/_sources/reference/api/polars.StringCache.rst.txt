@@ -1,0 +1,22 @@
+﻿polars.StringCache
+==================
+
+.. currentmodule:: polars
+
+.. autoclass:: StringCache
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~StringCache.__init__
+   
+   
+
+   
+   
+   

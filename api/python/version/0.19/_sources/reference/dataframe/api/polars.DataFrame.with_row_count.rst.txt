@@ -1,0 +1,6 @@
+﻿polars.DataFrame.with\_row\_count
+=================================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.with_row_count

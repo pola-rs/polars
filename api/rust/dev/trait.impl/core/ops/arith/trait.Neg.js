@@ -1,0 +1,9 @@
+(function() {
+    const implementors = Object.fromEntries([["polars_time",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/ops/arith/trait.Neg.html\" title=\"trait core::ops::arith::Neg\">Neg</a> for <a class=\"struct\" href=\"polars_time/struct.Duration.html\" title=\"struct polars_time::Duration\">Duration</a>",0]]],["polars_utils",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/ops/arith/trait.Neg.html\" title=\"trait core::ops::arith::Neg\">Neg</a> for <a class=\"struct\" href=\"polars_utils/float16/struct.pf16.html\" title=\"struct polars_utils::float16::pf16\">pf16</a>",0]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":59,"fragment_lengths":[284,293]}

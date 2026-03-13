@@ -1,0 +1,6 @@
+﻿polars.DataFrame.transpose
+==========================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.transpose

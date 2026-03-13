@@ -1,0 +1,31 @@
+﻿polars.UInt16
+=============
+
+.. currentmodule:: polars
+
+.. autoclass:: UInt16
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~UInt16.__init__
+      ~UInt16.base_type
+      ~UInt16.is_
+      ~UInt16.is_not
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~UInt16.is_nested
+   
+   

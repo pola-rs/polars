@@ -1,0 +1,34 @@
+﻿polars.Catalog
+==============
+
+.. currentmodule:: polars
+
+.. autoclass:: Catalog
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Catalog.__init__
+      ~Catalog.create_catalog
+      ~Catalog.create_namespace
+      ~Catalog.create_table
+      ~Catalog.delete_catalog
+      ~Catalog.delete_namespace
+      ~Catalog.delete_table
+      ~Catalog.get_table_info
+      ~Catalog.list_catalogs
+      ~Catalog.list_namespaces
+      ~Catalog.list_tables
+      ~Catalog.scan_table
+      ~Catalog.write_table
+   
+   
+
+   
+   
+   
