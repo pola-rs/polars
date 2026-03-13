@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use polars_core::POOL;
 use polars_core::error::PolarsResult;
-use polars_core::prelude::{BooleanChunked, Column, DataType, IntoColumn, NamedFrom};
+use polars_core::prelude::{BooleanChunked, Column, DataType, IntoColumn, NamedFrom, SortOptions};
+use polars_ops::prelude::SeriesMethods;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRBooleanFunction;
 use polars_utils::pl_str::PlSmallStr;
@@ -39,6 +40,10 @@ pub fn function_expr_to_udf(func: IRBooleanFunction) -> SpecialEq<Arc<dyn Column
             rel_tol,
             nans_equal,
         } => wrap!(is_close, abs_tol, rel_tol, nans_equal),
+        IsSorted {
+            descending,
+            nulls_last,
+        } => map!(is_sorted, descending, nulls_last),
         Not => map!(not),
         AllHorizontal => map_as_slice!(all_horizontal),
         AnyHorizontal => map_as_slice!(any_horizontal),
@@ -150,6 +155,34 @@ fn is_close(
         nans_equal,
     )
     .map(IntoColumn::into_column)
+}
+
+fn is_sorted(
+    s: &Column,
+    descending: Option<bool>,
+    nulls_last: Option<bool>,
+) -> PolarsResult<Column> {
+    let series = s.as_materialized_series();
+    let desc_values = match descending {
+        Some(d) => vec![d],
+        None => vec![false, true],
+    };
+    let nulls_last_values = match nulls_last {
+        Some(n) => vec![n],
+        None => vec![false, true],
+    };
+    for d in &desc_values {
+        for n in &nulls_last_values {
+            if series.is_sorted(SortOptions {
+                descending: *d,
+                nulls_last: *n,
+                ..Default::default()
+            })? {
+                return Ok(Column::new(s.name().clone(), [true]));
+            }
+        }
+    }
+    Ok(Column::new(s.name().clone(), [false]))
 }
 
 fn not(s: &Column) -> PolarsResult<Column> {

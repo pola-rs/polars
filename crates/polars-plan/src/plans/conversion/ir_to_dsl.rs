@@ -713,6 +713,13 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     rel_tol,
                     nans_equal,
                 },
+                IB::IsSorted {
+                    descending,
+                    nulls_last,
+                } => B::IsSorted {
+                    descending,
+                    nulls_last,
+                },
                 IB::AllHorizontal => B::AllHorizontal,
                 IB::AnyHorizontal => B::AnyHorizontal,
                 IB::Not => B::Not,
