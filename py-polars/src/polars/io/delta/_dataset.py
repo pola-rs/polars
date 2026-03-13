@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from functools import partial
-import sys
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
