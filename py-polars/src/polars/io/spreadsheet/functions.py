@@ -243,7 +243,7 @@ def read_excel(
     source: FileSource,
     *,
     sheet_id: int | Sequence[int] | None = None,
-    sheet_name: str | list[str] | tuple[str, ...] | None = None,
+    sheet_name: str | list[str] | tuple[str, ...] | Callable[[str], bool] | None = None,
     table_name: str | None = None,
     engine: ExcelSpreadsheetEngine = "calamine",
     engine_options: dict[str, Any] | None = None,
@@ -283,8 +283,10 @@ def read_excel(
         return a `{sheetname:frame,}` dict. (Defaults to `1` if neither this nor
         `sheet_name` are specified). Can also take a sequence of sheet numbers.
     sheet_name
-        Sheet name(s) to convert; cannot be used in conjunction with `sheet_id`. If
-        more than one is given then a `{sheetname:frame,}` dict is returned.
+        Sheet name(s) to convert. Can be a string, a list/tuple of strings, or a
+        function that takes a sheet name and returns a boolean. Cannot be used in
+        conjunction with `sheet_id`. If more than one sheet is returned, a
+        `{sheetname:frame,}` dict is returned.
     table_name
         Name of a specific table to read; note that table names are unique across
         the workbook, so additionally specifying a sheet id or name is optional;
@@ -643,7 +645,7 @@ def _read_spreadsheet(
     source: str | IO[bytes] | bytes,
     *,
     sheet_id: int | Sequence[int] | None,
-    sheet_name: str | Sequence[str] | None,
+    sheet_name: str | Sequence[str] | Callable[[str], bool] | None,
     table_name: str | None,
     engine: ExcelSpreadsheetEngine,
     engine_options: dict[str, Any] | None = None,
@@ -774,7 +776,7 @@ def _get_read_options(
 
 def _get_sheet_names(
     sheet_id: int | Sequence[int] | None,
-    sheet_name: str | Sequence[str] | None,
+    sheet_name: str | Sequence[str] | Callable[[str], bool] | None,
     table_name: str | None,
     worksheets: list[dict[str, Any]],
 ) -> tuple[list[str], bool]:
@@ -782,7 +784,8 @@ def _get_sheet_names(
     if sheet_id is not None and sheet_name is not None:
         msg = f"cannot specify both `sheet_name` ({sheet_name!r}) and `sheet_id` ({sheet_id!r})"
         raise ValueError(msg)
-
+    if callable(sheet_name):  # rewrite sheet_name to a list of names
+        sheet_name = [ws["name"] for ws in worksheets if sheet_name(ws["name"])]
     sheet_names = []
     if sheet_id is None and sheet_name is None:
         name = None if table_name else worksheets[0]["name"]
