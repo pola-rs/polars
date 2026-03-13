@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 use crate::PyLazyFrame;
 use crate::error::PyPolarsErr;
 
-#[pyclass(frozen)]
+#[pyclass(frozen, skip_from_py_object)]
 #[repr(transparent)]
 pub struct PySQLContext {
     pub context: RwLock<SQLContext>,

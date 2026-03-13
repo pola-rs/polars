@@ -47,7 +47,7 @@ pub struct Literal {
     dtype: Py<PyAny>,
 }
 
-#[pyclass(name = "Operator", eq, frozen)]
+#[pyclass(name = "Operator", eq, frozen, skip_from_py_object)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyOperator {
     Eq,
@@ -128,7 +128,7 @@ impl<'py> IntoPyObject<'py> for Wrap<InequalityOperator> {
     }
 }
 
-#[pyclass(name = "StringFunction", eq, frozen)]
+#[pyclass(name = "StringFunction", eq, frozen, skip_from_py_object)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyStringFunction {
     ConcatHorizontal,
@@ -185,7 +185,7 @@ impl PyStringFunction {
     }
 }
 
-#[pyclass(name = "BooleanFunction", eq, frozen)]
+#[pyclass(name = "BooleanFunction", eq, frozen, skip_from_py_object)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyBooleanFunction {
     Any,
@@ -215,7 +215,7 @@ impl PyBooleanFunction {
     }
 }
 
-#[pyclass(name = "TemporalFunction", eq, frozen)]
+#[pyclass(name = "TemporalFunction", eq, frozen, skip_from_py_object)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyTemporalFunction {
     Millennium,
@@ -272,7 +272,7 @@ impl PyTemporalFunction {
     }
 }
 
-#[pyclass(name = "StructFunction", eq, frozen)]
+#[pyclass(name = "StructFunction", eq, frozen, skip_from_py_object)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyStructFunction {
     FieldByName,

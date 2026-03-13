@@ -15,7 +15,7 @@ use crate::error::PyPolarsErr;
 use crate::{PyExpr, Wrap, raise_err};
 
 #[derive(Clone)]
-#[pyclass(frozen)]
+#[pyclass(frozen, skip_from_py_object)]
 pub struct PyExprIR {
     #[pyo3(get)]
     node: usize,

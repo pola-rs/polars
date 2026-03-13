@@ -193,7 +193,7 @@ def test_df_getitem_col_invalid_inputs(input: Any, match: str) -> None:
 @pytest.mark.parametrize(
     ("input", "match"),
     [
-        (["a", 2], "'int' object cannot be cast as 'str'"),
+        (["a", 2], "'int' object is not an instance of 'str'"),
         ([1, "c"], "'str' object cannot be interpreted as an integer"),
     ],
 )
