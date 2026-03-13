@@ -3,12 +3,10 @@ use std::sync::{Arc, OnceLock};
 #[cfg(feature = "python")]
 use arrow::array::ListArray;
 use arrow::array::{Array, BooleanArray};
-#[cfg(feature = "python")]
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
-#[cfg(feature = "python")]
 use polars_core::prelude::{BooleanChunked, ChunkAgg, DataType, NamedFrom, PlIndexMap};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
