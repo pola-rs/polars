@@ -2152,6 +2152,82 @@ def test_str_replace_null_19601() -> None:
     )
 
 
+def test_str_replace_dynamic_pattern_26789() -> None:
+    """Test per-row dynamic pattern replacement (replace_n and replace_all)."""
+    df = pl.DataFrame(
+        {
+            "src": ["hello world", "foo bar baz"],
+            "pat": ["world", "bar"],
+            "val": ["X", "Y"],
+        }
+    )
+
+    # replace with per-row pattern and per-row value
+    out = df.select(pl.col("src").str.replace(pl.col("pat"), pl.col("val")))
+    assert out.to_dict(as_series=False) == {"src": ["hello X", "foo Y baz"]}
+
+    # replace_all with per-row pattern and per-row value
+    df2 = pl.DataFrame(
+        {
+            "src": ["aaa bbb aaa", "ccc ddd ccc"],
+            "pat": ["aaa", "ccc"],
+            "val": ["X", "Y"],
+        }
+    )
+    out = df2.select(pl.col("src").str.replace_all(pl.col("pat"), pl.col("val")))
+    assert out.to_dict(as_series=False) == {"src": ["X bbb X", "Y ddd Y"]}
+
+    # replace_all with per-row pattern and single value
+    out = df2.select(pl.col("src").str.replace_all(pl.col("pat"), pl.lit("Z")))
+    assert out.to_dict(as_series=False) == {"src": ["Z bbb Z", "Z ddd Z"]}
+
+    # replace with n=0 should return unchanged
+    out = df.select(pl.col("src").str.replace(pl.col("pat"), pl.col("val"), n=0))
+    assert out.to_dict(as_series=False) == {"src": ["hello world", "foo bar baz"]}
+
+    # null handling: null in source
+    df3 = pl.DataFrame(
+        {"src": ["hello", None], "pat": ["hello", "x"], "val": ["A", "B"]}
+    )
+    out = df3.select(pl.col("src").str.replace(pl.col("pat"), pl.col("val")))
+    assert out.to_dict(as_series=False) == {"src": ["A", None]}
+
+    # replace_all with null in source
+    out = df3.select(pl.col("src").str.replace_all(pl.col("pat"), pl.col("val")))
+    assert out.to_dict(as_series=False) == {"src": ["A", None]}
+
+    # literal replacement with per-row pattern
+    df6 = pl.DataFrame(
+        {"src": ["a.b.c", "d.e.f"], "pat": [".", "."], "val": ["-", "_"]}
+    )
+    out = df6.select(
+        pl.col("src").str.replace_all(pl.col("pat"), pl.col("val"), literal=True)
+    )
+    assert out.to_dict(as_series=False) == {"src": ["a-b-c", "d_e_f"]}
+
+    # regex pattern with per-row dynamic
+    df7 = pl.DataFrame(
+        {
+            "src": ["abc123", "def456"],
+            "pat": [r"\d+", r"[a-z]+"],
+            "val": ["NUM", "ALPHA"],
+        }
+    )
+    out = df7.select(pl.col("src").str.replace(pl.col("pat"), pl.col("val")))
+    assert out.to_dict(as_series=False) == {"src": ["abcNUM", "ALPHA456"]}
+
+    # n > 1 with dynamic pattern should work (replacen)
+    df_n = pl.DataFrame(
+        {
+            "src": ["aaa bbb aaa bbb aaa", "ccc ddd ccc ddd"],
+            "pat": ["aaa", "ccc"],
+            "val": ["X", "Y"],
+        }
+    )
+    out = df_n.select(pl.col("src").str.replace(pl.col("pat"), pl.col("val"), n=2))
+    assert out.to_dict(as_series=False) == {"src": ["X bbb X bbb aaa", "Y ddd Y ddd"]}
+
+
 def test_str_json_decode_25237() -> None:
     s = pl.Series(['[{"a": 0, "b": 1}, {"b": 2}]'])
 
