@@ -428,3 +428,58 @@ def test_replace_strict_incompatible_types_26329() -> None:
         pl.exceptions.InvalidOperationError, match="cannot use values of type"
     ):
         df.with_columns(pl.col("x").replace_strict({"a": 1}))
+
+
+def test_replace_strict_expr_in_sequence() -> None:
+    s = pl.Series([1, 2, 3])
+
+    result = s.replace_strict([pl.lit(1)], [10], default=None)
+    expected = pl.Series([10, None, None])
+    assert_series_equal(result, expected, check_dtypes=False)
+
+    result = s.replace_strict([1], [pl.lit(10)], default=None)
+    expected = pl.Series([10, None, None])
+    assert_series_equal(result, expected, check_dtypes=False)
+
+    result = s.replace_strict([pl.lit(1), 2], [10, pl.lit(20)], default=-1)
+    expected = pl.Series([10, 20, -1])
+    assert_series_equal(result, expected, check_dtypes=False)
+
+    result = s.replace_strict(pl.lit(1), pl.lit(10), default=pl.lit(None))
+    expected = pl.Series([10, None, None], dtype=pl.Int32)
+    assert_series_equal(result, expected)
+
+
+def test_replace_strict_expr_in_sequence_many_to_one() -> None:
+    s = pl.Series([1, 2, 3])
+    result = s.replace_strict([pl.lit(1), 2], [10], default=-1)
+    expected = pl.Series([10, 10, -1])
+    assert_series_equal(result, expected, check_dtypes=False)
+
+
+def test_replace_strict_expr_in_sequence_null_in_old() -> None:
+    s = pl.Series([1, None, 3])
+    result = s.replace_strict([pl.lit(1), None], [10, 99], default=-1)
+    expected = pl.Series([10, 99, -1])
+    assert_series_equal(result, expected, check_dtypes=False)
+
+
+def test_replace_strict_expr_in_sequence_length_mismatch() -> None:
+    s = pl.Series([1, 2, 3])
+    with pytest.raises(
+        ValueError, match=r"lengths of `old` \(2\) and `new` \(3\) must match"
+    ):
+        s.replace_strict([pl.lit(1), 2], [10, 20, 30], default=None)
+
+
+def test_replace_strict_expr_in_sequence_no_default() -> None:
+    s = pl.Series([1, 2, 3])
+    with pytest.raises(TypeError, match="`default` is required when using expressions"):
+        s.replace_strict([pl.lit(1)], [10])
+
+
+def test_replace_strict_expr_in_sequence_return_dtype() -> None:
+    s = pl.Series([1, 2, 3])
+    result = s.replace_strict([pl.lit(1)], [10], default=None, return_dtype=pl.Float64)
+    expected = pl.Series([10.0, None, None], dtype=pl.Float64)
+    assert_series_equal(result, expected)
