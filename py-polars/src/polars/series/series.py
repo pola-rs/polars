@@ -932,6 +932,17 @@ class Series:
         except NotImplementedError:
             f = None
         if f is None:
+            other_dtype = getattr(other, "dtype", type(other))
+            if (
+                self.dtype.is_temporal()
+                and not getattr(other_dtype, "is_temporal", lambda: False)()
+            ):
+                msg = (
+                    "Invalid comparison between temporal dtype "
+                    f"{self.dtype!r} and non-temporal value of dtype {other_dtype!r}. "
+                    "Temporal values may only be compared against compatible temporal dtypes."
+                )
+                raise TypeError(msg)
             msg = f"Series of type {self.dtype} does not have {op} operator"
             raise NotImplementedError(msg)
         if other is not None:
