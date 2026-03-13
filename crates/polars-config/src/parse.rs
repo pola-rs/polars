@@ -21,6 +21,14 @@ pub fn parse_u64(var: &str, val: &str) -> Option<u64> {
     ret
 }
 
+pub fn parse_f64(var: &str, val: &str) -> Option<f64> {
+    let ret = val.trim_ascii().parse::<f64>().ok();
+    if ret.is_none() {
+        polars_warn!("illegal value '{val}' found while parsing option '{var}'");
+    }
+    ret
+}
+
 pub fn parse_engine(var: &str, val: &str) -> Option<Engine> {
     match val.trim_ascii().parse::<Engine>() {
         Ok(x) => Some(x),

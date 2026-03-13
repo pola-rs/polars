@@ -1,10 +1,9 @@
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 use crossbeam_queue::ArrayQueue;
 use polars_core::POOL;
 use polars_error::PolarsResult;
-use polars_ooc::AccessPattern::Fifo;
-use polars_ooc::{Token, mm};
+use polars_ooc::{AccessPattern, SpillContext, Token, mm};
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -37,15 +36,17 @@ const LOPSIDED_SAMPLE_FACTOR: usize = 10;
 struct BufferedStream {
     morsels: ArrayQueue<(Token, MorselSeq)>,
     post_buffer_offset: MorselSeq,
+    _spill_ctx: Arc<SpillContext>,
 }
 
 impl BufferedStream {
     pub fn new(morsels: Vec<Morsel>, start_offset: MorselSeq) -> Self {
         // Relabel so we can insert into parallel streams later.
         let mut seq = start_offset;
+        let ctx = mm().register_context();
         let queue = ArrayQueue::new(morsels.len().max(1));
         for morsel in morsels {
-            let token = mm().store_blocking(morsel.into_df(), Fifo);
+            let token = mm().store_blocking(morsel.into_df(), &ctx, AccessPattern::Fifo);
             queue.push((token, seq)).unwrap();
             seq = seq.successor();
         }
@@ -53,6 +54,7 @@ impl BufferedStream {
         Self {
             morsels: queue,
             post_buffer_offset: seq,
+            _spill_ctx: ctx,
         }
     }
 
@@ -124,6 +126,7 @@ impl Default for BufferedStream {
         Self {
             morsels: ArrayQueue::new(1),
             post_buffer_offset: MorselSeq::default(),
+            _spill_ctx: mm().register_context(),
         }
     }
 }

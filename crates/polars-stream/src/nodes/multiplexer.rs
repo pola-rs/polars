@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
+use std::sync::Arc;
 
-use polars_ooc::AccessPattern::Fifo;
+use polars_ooc::{AccessPattern, SpillContext, mm};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use super::compute_node_prelude::*;
@@ -21,12 +22,14 @@ impl BufferedStream {
 
 pub struct MultiplexerNode {
     buffers: Vec<BufferedStream>,
+    spill_ctx: Arc<SpillContext>,
 }
 
 impl MultiplexerNode {
     pub fn new() -> Self {
         Self {
             buffers: Vec::default(),
+            spill_ctx: mm().register_context(),
         }
     }
 }
@@ -136,8 +139,10 @@ impl ComputeNode for MultiplexerNode {
             .unzip();
 
         // TODO: parallel multiplexing.
+        let spill_ctx = self.spill_ctx.clone();
         if let Some(mut receiver) = recv_ports[0].take().map(|r| r.serial()) {
             let buffered_source_token = buffered_source_token.clone();
+            let spill_ctx = spill_ctx.clone();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 loop {
                     let Ok(mut morsel) = receiver.recv().await else {
@@ -157,7 +162,13 @@ impl ComputeNode for MultiplexerNode {
                                 Err(_) => *buf_sender = Listener::Inactive,
                             },
                             Listener::Buffering(b) => {
-                                b.push_front((morsel.clone().into_token(Fifo).await, morsel.seq()));
+                                b.push_front((
+                                    morsel
+                                        .clone()
+                                        .into_token(&spill_ctx, AccessPattern::Fifo)
+                                        .await,
+                                    morsel.seq(),
+                                ));
                                 anyone_interested = true;
                             },
                             Listener::Inactive => {},
@@ -186,6 +197,7 @@ impl ComputeNode for MultiplexerNode {
 
                 let wait_group = WaitGroup::default();
                 let buffered_source_token = buffered_source_token.clone();
+                let spill_ctx = spill_ctx.clone();
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     // First we try to flush all the old buffered data.
                     while let Some((token, seq)) = buf.pop_back() {
@@ -200,7 +212,10 @@ impl ComputeNode for MultiplexerNode {
                         {
                             rx_morsel.source_token().stop();
                             let rx_seq = rx_morsel.seq();
-                            buf.push_front((rx_morsel.into_token(Fifo).await, rx_seq));
+                            buf.push_front((
+                                rx_morsel.into_token(&spill_ctx, AccessPattern::Fifo).await,
+                                rx_seq,
+                            ));
                         }
                         wait_group.wait().await;
                     }

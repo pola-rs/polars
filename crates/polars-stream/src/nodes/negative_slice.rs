@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_ooc::AccessPattern::Fifo;
+use polars_ooc::{AccessPattern, SpillContext, mm};
 
 use super::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
@@ -26,6 +26,7 @@ pub struct NegativeSliceNode {
     state: NegativeSliceState,
     slice_offset: i64,
     length: usize,
+    spill_ctx: Arc<SpillContext>,
 }
 
 impl NegativeSliceNode {
@@ -35,6 +36,7 @@ impl NegativeSliceNode {
             state: NegativeSliceState::Buffering(Buffer::default()),
             slice_offset,
             length,
+            spill_ctx: mm().register_context(),
         }
     }
 }
@@ -129,10 +131,13 @@ impl ComputeNode for NegativeSliceNode {
                 let mut recv = recv_ports[0].take().unwrap().serial();
                 assert!(send_ports[0].is_none());
                 let max_buffer_needed = self.slice_offset.unsigned_abs() as usize;
+                let spill_ctx = self.spill_ctx.clone();
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = recv.recv().await {
                         buffer.total_len += morsel.df().height();
-                        buffer.tokens.push_back(morsel.into_token(Fifo).await);
+                        buffer
+                            .tokens
+                            .push_back(morsel.into_token(&spill_ctx, AccessPattern::Fifo).await);
 
                         if buffer.total_len - buffer.tokens.front().unwrap().height()
                             >= max_buffer_needed

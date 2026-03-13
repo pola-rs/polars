@@ -3,8 +3,7 @@ use std::sync::Arc;
 
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
-use polars_ooc::AccessPattern::Fifo;
-use polars_ooc::mm;
+use polars_ooc::{AccessPattern, SpillContext, mm};
 
 use super::compute_node_prelude::*;
 use crate::async_primitives::wait_group::WaitGroup;
@@ -30,6 +29,7 @@ struct ShiftState {
     tokens: VecDeque<Token>,
     fill: DataFrame,
     seq: MorselSeq,
+    spill_ctx: Arc<SpillContext>,
 }
 
 impl ShiftState {
@@ -51,7 +51,11 @@ impl ShiftState {
                         continue;
                     }
                     self.rows_received += morsel.df().height();
-                    self.tokens.push_back(morsel.into_token(Fifo).await);
+                    self.tokens.push_back(
+                        morsel
+                            .into_token(&self.spill_ctx, AccessPattern::Fifo)
+                            .await,
+                    );
                 }
             }
 
@@ -222,6 +226,7 @@ impl ComputeNode for ShiftNode {
                     tokens: VecDeque::new(),
                     fill: fill_frame,
                     seq: MorselSeq::default(),
+                    spill_ctx: mm().register_context(),
                 })
             }
         }
