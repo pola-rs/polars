@@ -19,6 +19,8 @@ pub mod cross_join;
 pub mod equi_join;
 pub mod in_memory;
 pub mod merge_join;
+#[cfg(feature = "iejoin")]
+pub mod range_join;
 #[cfg(feature = "semi_anti_join")]
 pub mod semi_anti_join;
 mod utils;
