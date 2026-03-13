@@ -1,131 +1,184 @@
 # Query profiling
 
 Monitor query execution across workers to identify bottlenecks, understand data flow, and optimize
-performance. You can see which stages are running, how data moves between workers, and where time is
-spent during execution.
+performance.
 
-This visibility helps you optimize complex queries and better understand the distributed execution
-of queries.
+## Types of operations in a query
 
-<details>
-<summary>Example query and dataset</summary>
+To optimize a query it helps to understand where it spends its time. Each worker in a distributed
+query does three things: it reads data, computes on it, and exchanges data with other workers.
 
-You can copy and paste the example below to explore the feature yourself. Don't forget to change the
-workspace name to one of your own workspaces.
+**Input/Output**: Each worker reads its assigned [partitions](glossary.md#partition) from storage
+and writes results to a destination. These are typically the first and last activities you see in
+the profiler. I/O-heavy queries benefit from more network bandwidth, either by adding more nodes or
+by choosing a higher-bandwidth instance type.
 
-```python
-import polars as pl
-import polars_cloud as pc
+**Computation**: Workers execute the query operations (such as filters, joins, aggregations, etc.)
+on their local data. CPU and memory usage are visible in the resource overview of the nodes.
 
-pc.authenticate()
+**Shuffling**: Some operations, such as joins and group-bys, require all rows with a given key to be
+on the same worker. To accomplish this, data is redistributed across the cluster in a
+[shuffle](glossary.md#shuffle) between stages. Within a stage, the streaming engine processes
+incoming shuffle data as it arrives over the network, so I/O and computation overlap. Shuffle-heavy
+queries produce large volumes of inter-node traffic, visible as network bandwidth usage in the
+cluster dashboard and as a high percentage of time spent shuffling in the metrics.
 
-ctx = pc.ComputeContext(workspace="your-workspace", cpus=12, memory=12, cluster_size=4)
+## Using the query profiler
 
-def pdsh_q3(customer, lineitem, orders):
-    return (
-        customer.filter(pl.col("c_mktsegment") == "BUILDING")
-        .join(orders, left_on="c_custkey", right_on="o_custkey")
-        .join(lineitem, left_on="o_orderkey", right_on="l_orderkey")
-        .filter(pl.col("o_orderdate") < pl.date(1995, 3, 15))
-        .filter(pl.col("l_shipdate") > pl.date(1995, 3, 15))
-        .with_columns(
-            (pl.col("l_extendedprice") * (1 - pl.col("l_discount"))).alias("revenue")
-        )
-        .group_by("o_orderkey", "o_orderdate", "o_shippriority")
-        .agg(pl.sum("revenue"))
-        .select(
-            pl.col("o_orderkey").alias("l_orderkey"),
-            "revenue",
-            "o_orderdate",
-            "o_shippriority",
-        )
-        .sort(by=["revenue", "o_orderdate"], descending=[True, False])
-    )
+The cluster dashboard and built-in query profiler are available through the Polars Cloud compute
+dashboard.
 
-lineitem = pl.scan_parquet(
-    "s3://polars-cloud-samples-us-east-2-prd/pdsh/sf100/lineitem/*.parquet",
-    storage_options={"request_payer": "true"},
-)
-customer = pl.scan_parquet(
-    "s3://polars-cloud-samples-us-east-2-prd/pdsh/sf100/customer/*.parquet",
-    storage_options={"request_payer": "true"},
-)
-orders = pl.scan_parquet(
-    "s3://polars-cloud-samples-us-east-2-prd/pdsh/sf100/orders/*.parquet",
-    storage_options={"request_payer": "true"},
-)
-```
+The profiler shows detailed metrics, both real-time and after query completion, such as workers'
+resource usage and the percentage of time spent shuffling.
 
-</details>
+![Cluster dashboard](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/cluster-dashboard.png)
 
-{{code_block('polars-cloud/query-profile','execute',[])}}
+### Single Node Query
 
-The `await_profile` method can be used to monitor an in-progress query. It returns a QueryProfile
-object containing a DataFrame with information about which stages are being processed across
-workers, which can be analyzed in the same way as any Polars query.
+Our first example is a query that runs on a single node. If you'd like you can run this in your own
+environment so you can explore the functionality yourself.
 
-{{code_block('polars-cloud/query-profile','await_profile',[])}}
+??? example "Try it: Single node query"
 
-Each row represents one worker processing a span. A span represents a chunk of work done by a
-worker, for example generating the query plan, reading data from another worker, or executing the
-query on that data. Some spans may output data, which is recorded in the output_rows column.
+    Queries can be run on a single node by marking your query like so:
 
-```text
-shape: (53, 6)
-┌──────────────┬──────────────┬───────────┬─────────────────────┬────────────────────┬─────────────┬───────────────────────┬────────────────────┐
-│ stage_number ┆ span_name    ┆ worker_id ┆ start_time          ┆ end_time           ┆ output_rows ┆ shuffle_bytes_written ┆ shuffle_bytes_read │
-│ ---          ┆ ---          ┆ ---       ┆ ---                 ┆ ---                ┆ ---         ┆ ---                   ┆                    │
-│ u32          ┆ str          ┆ str       ┆ datetime[ns]        ┆ datetime[ns]       ┆ u64         ┆ u64                   ┆ u64                │
-╞══════════════╪══════════════╪═══════════╪═════════════════════╪════════════════════╪═════════════╪═══════════════════════╪════════════════════╡
-│ 6            ┆ Execute IR   ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ 282794      ┆ 72395264              ┆ null               │
-│              ┆              ┆           ┆ 08:08:52.820228585  ┆ 08:08:52.878229914 ┆             ┆                       ┆                    │
-│ 3            ┆ Execute IR   ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ 3643370     ┆ 932702720             ┆ null               │
-│              ┆              ┆           ┆ 08:08:45.421053731  ┆ 08:08:45.600081475 ┆             ┆                       ┆                    │
-│ 5            ┆ Execute IR   ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ 282044      ┆ 723203264             ┆ null               │
-│              ┆              ┆           ┆ 08:08:52.667547917  ┆ 08:08:52.718114297 ┆             ┆                       ┆                    │
-│ 5            ┆ Shuffle read ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ null        ┆ null                  ┆ 932702720          │
-│              ┆              ┆           ┆ 08:08:52.694917167  ┆ 08:08:52.720657155 ┆             ┆                       ┆                    │
-│ 7            ┆ Execute IR   ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ 145179      ┆ 37165824              ┆ null               │
-│              ┆              ┆           ┆ 08:08:53.039771274  ┆ 08:08:53.166535930 ┆             ┆                       ┆                    │
-│ …            ┆ …            ┆ …         ┆ …                   ┆ …                  ┆ …           ┆ …                     ┆ …                  │
-│ 5            ┆ Shuffle read ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ null        ┆ null                  ┆ 72503808           │
-│              ┆              ┆           ┆ 08:08:52.649434841  ┆ 08:08:52.667065947 ┆             ┆                       ┆                    │
-│ 6            ┆ Execute IR   ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ 283218      ┆ 72503808              ┆ null               │
-│              ┆              ┆           ┆ 08:08:52.818787714  ┆ 08:08:52.880324797 ┆             ┆                       ┆                    │
-│ 4            ┆ Shuffle read ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ null        ┆ null                  ┆ 3979787264         │
-│              ┆              ┆           ┆ 08:08:46.188322234  ┆ 08:08:50.871792346 ┆             ┆                       ┆                    │
-│ 1            ┆ Execute IR   ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ 15546044    ┆ 3979787264            ┆ null               │
-│              ┆              ┆           ┆ 08:08:40.325404872  ┆ 08:08:44.030028095 ┆             ┆                       ┆                    │
-│ 7            ┆ Shuffle read ┆ i-xxx     ┆ 2025-xx-xx          ┆ 2025-xx-xx         ┆ null        ┆ null                  ┆ 37165824           │
-│              ┆              ┆           ┆ 08:08:52.925442390  ┆ 08:08:52.962600065 ┆             ┆                       ┆                    │
-└──────────────┴──────────────┴───────────┴─────────────────────┴────────────────────┴─────────────┴───────────────────────┴────────────────────┘
-```
+    ```python
+    query.remote(ctx).single_node().execute()
+    ```
 
-As each worker starts and completes each stage of the query, it notifies the lead worker. The
-`await_profile` method will poll the lead worker until there is an update from any worker, and then
-return the full profile data of the query.
+    This will let the query run on a single worker. This simplifies query execution and you don't
+    need to shuffle data between workers. Copy and paste the example below to explore the feature
+    yourself. Don't forget to change the workspace name to one of your own workspaces.
 
-The QueryProfile object also has a summary property to return an aggregated view of each stage.
+    {{code_block('polars-cloud/query-profile','single-node-query',[])}}
 
-{{code_block('polars-cloud/query-profile','await_summary',[])}}
+#### Query plans
 
-```text
-shape: (13, 6)
-┌──────────────┬──────────────┬───────────┬────────────┬──────────────┬─────────────┬───────────────────────┬────────────────────┐
-│ stage_number ┆ span_name    ┆ completed ┆ worker_ids ┆ duration     ┆ output_rows ┆ shuffle_bytes_written ┆ shuffle_bytes_read │
-│ ---          ┆ ---          ┆ ---       ┆ ---        ┆ ---          ┆ ---         ┆ ---                   ┆ ---                │
-│ u32          ┆ str          ┆ bool      ┆ str        ┆ duration[μs] ┆ u64         ┆ u64                   ┆ u64                │
-╞══════════════╪══════════════╪═══════════╪════════════╪══════════════╪═════════════╪═══════════════════════╪════════════════════╡
-│ 6            ┆ Shuffle read ┆ true      ┆ i-xxx      ┆ 1228µs       ┆ 0           ┆ 0                     ┆ 289546496          │
-│ 5            ┆ Shuffle read ┆ true      ┆ i-xxx      ┆ 140759µs     ┆ 0           ┆ 0                     ┆ 289546496          │
-│ 4            ┆ Execute IR   ┆ true      ┆ i-xxx      ┆ 1s 73534µs   ┆ 1131041     ┆ 289546496             ┆ 0                  │
-│ 2            ┆ Execute IR   ┆ true      ┆ i-xxx      ┆ 6s 944740µs  ┆ 3000188     ┆ 768048128             ┆ 0                  │
-│ 5            ┆ Execute IR   ┆ true      ┆ i-xxx      ┆ 167483µs     ┆ 1131041     ┆ 289546496             ┆ 0                  │
-│ …            ┆ …            ┆ …         ┆ …          ┆ …            ┆ …           ┆ …                     ┆ …                  │
-│ 4            ┆ Shuffle read ┆ true      ┆ i-xxx      ┆ 4s 952005µs  ┆ 0           ┆ 0                     ┆ 255627121          │
-│ 1            ┆ Execute IR   ┆ true      ┆ i-xxx      ┆ 7s 738907µs  ┆ 72874383    ┆ 18655842048           ┆ 0                  │
-│ 3            ┆ Shuffle read ┆ true      ┆ i-xxx      ┆ 812807µs     ┆ 0           ┆ 0                     ┆ 768048128          │
-│ 0            ┆ Execute IR   ┆ true      ┆ i-xxx      ┆ 15s 2883µs   ┆ 323494519   ┆ 82814596864           ┆ 0                  │
-│ 7            ┆ Execute IR   ┆ true      ┆ i-xxx      ┆ 356662µs     ┆ 1131041     ┆ 289546496             ┆ 0                  │
-└──────────────┴──────────────┴───────────┴────────────┴──────────────┴─────────────┴───────────────────────┴────────────────────┘
-```
+You can inspect the details of a query by going to the "Queries" tab and selecting the query you
+want to inspect. You can see the timeline, which shows when the query started and ended, and how
+long planning and running the query took. On top of that it consists of a single stage, because the
+query runs completely on a single node.
+
+At the bottom of the query details you can inspect the
+[optimized logical plan](glossary.md#optimized-logical-plan) and the
+[physical plan](glossary.md#physical-plan):
+
+![Query details](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/query-details.png)
+
+The logical plan is a graph representation that shows what your query will do, and how your query
+has been optimized. Clicking nodes in the plan gives you more details about the operation that will
+be performed:
+
+<!-- dprint-ignore -->
+![Logical plan](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/logical-plan.png){ width="50%" style="display: block; margin: 0 auto;" }
+
+The physical plan shows how the engine executes your query: the concrete algorithms, operator
+implementations, and data flow chosen at runtime.
+
+<!-- dprint-ignore -->
+![Physical plan](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/physical-plan.png){ width="70%" style="display: block; margin: 0 auto;" }
+
+While the query runs and after it has finished, there are additional metrics available, such as how
+many rows and morsels flow through a node and how much time is spent in that node. In our example
+you can see that the group by takes particularly long and aggregates an input of 59.1 million rows
+to 4 output rows:
+
+<!-- dprint-ignore -->
+![Group By node example](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/group-by-node.png){ width="50%" style="display: block; margin: 0 auto;" }
+
+This makes sense because this query performs a list of aggregations, as we can see in the node
+details information in the logical plan:
+
+<!-- dprint-ignore -->
+![Node details example](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/node-details.png){ width="50%" style="display: block; margin: 0 auto;" }
+
+The indication that most time is spent in the GroupBy node matches our expectations for this query.
+
+#### Indicators
+
+Modes in the physical plan or stages in the stage graph can show indicators to help identify
+bottlenecks:
+
+| Indicator                                                                                                                                         | Description                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ![CPU time](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/cpu-time.png)                           | Shows which operations took the most CPU time.                                                                                                                         |
+| ![I/O time](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/io-time.png)                            | Percentage of the stage's total I/O time spent in this node, helping identify the most I/O-heavy operations.                                                           |
+| ![Memory intensive](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/indicator-memory-intensive.png) | The node is potentially memory-intensive because the operation requires keeping state (e.g. storing the intermediate groups in a `group_by`).                          |
+| ![Single node](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/indicator-single-node.png)           | This stage was executed on a single node because it contains operations that require a global state (e.g. `sort`). This indicator only appears in distributed queries. |
+| ![In-memory fallback](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/indicator-in-memory.png)      | This operation is currently not supported on the streaming engine and was executed on the in-memory engine.                                                            |
+
+!!! info "I/O and CPU time don't sum to 100%"
+
+    The I/O time and CPU time percentages shown per node do not sum to the total runtime. This is because execution is pipelined: data is processed as it arrives, so I/O (reading/writing) and CPU (computation) work happens concurrently. As a result, both indicators can be non-zero at the same time for a given node, and their combined total can exceed the total runtime.
+
+### Distributed Query
+
+The following section is based on a distributed query. You can follow along with this example code:
+
+??? example "Try it: Distributed query"
+
+    Distributed is the default execution mode in Polars Cloud. You can also set it explicitly:
+
+    ```python
+    query.remote(ctx).distributed().execute()
+    ```
+
+    For more on how distributed execution works, see [Distributed queries](distributed-engine.md).
+    Copy and paste the example below to explore the feature yourself. Don't forget to change the
+    workspace name to one of your own workspaces.
+
+    {{code_block('polars-cloud/query-profile','distributed-query',[])}}
+
+#### Stage graph
+
+When executing distributed queries, queries are often executed in [stages](glossary.md#stage). Some
+operations require [shuffles](glossary.md#shuffle) to make sure the correct
+[partitions](glossary.md#partition) are available to the workers. To accomplish this, data is
+shuffled between workers over the network. Each stage can be expanded to inspect the operations it
+contains and understand what work is happening at each point in the pipeline.
+
+When you execute the example query, you get the result that can be seen in the image below. In the
+stage graph, one of the scan stages at the bottom stands out: its indicator shows a high percentage
+of total time spent in that stage.
+
+![Stage graph with node details](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/stage-graph-node-details.png)
+
+When you click on that stage (not one of the nodes in it), you open the stage details, displaying
+detailed metrics. You can notice that the I/O time of this stage is roughly 55%.
+
+![Example of heavy stage](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/stage-example.png)
+
+Through the details you can open the physical plan of this stage. This will display all of the
+operations in this stage, how long they took, and any indicators that might help you find
+bottlenecks.
+
+<!-- dprint-ignore -->
+![Example of stage's physical plan](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/stage-physical-plan-example.png){ width="50%" style="display: block; margin: 0 auto;" }
+
+One thing you should immediately notice is that the MultiScan node at the bottom takes almost 100%
+of the time for I/O:
+
+<!-- dprint-ignore -->
+![I/O time](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/query-profiler/io-time.png){ style="display: block; margin: 0 auto;" }
+
+This I/O indicator shows that I/O was active for nearly the full runtime of the stage. We can
+conclude that the network I/O in this node is the bottleneck in this part of the physical plan.
+
+In this example the data is stored in `us-east-2` while the cluster runs in `eu-west-1`. The
+cross-region bandwidth causes I/O to take longer than it would if the data and cluster were in the
+same region. Co-locate your cluster and data in the same region to minimize I/O latency.
+
+## Takeaways
+
+- The [logical plan](glossary.md#optimized-logical-plan) shows how your query has been optimized.
+- The [physical plan](glossary.md#physical-plan) shows how your query is executed, and which
+  operations are responsible for both CPU and I/O time spent.
+- In a distributed query, the [stage graph](glossary.md#stage-graph) shows which
+  [stages](glossary.md#stage) take the longest and how much data is [shuffled](glossary.md#shuffle)
+  between them.
+- Indicators on stages and nodes highlight potential bottlenecks: start with the slowest stage and
+  drill down to individual operations.
+- I/O-heavy queries benefit from more bandwidth: you can add nodes or choose a higher-bandwidth
+  instance type.
+- [Shuffle](glossary.md#shuffle)-heavy queries may benefit from fewer, larger nodes to reduce
+  inter-node traffic.
