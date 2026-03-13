@@ -2396,11 +2396,7 @@ def test_rolling_cov_corr_float32_26741() -> None:
 
 def test_rolling_empty_windows_streaming_26732() -> None:
     df = pl.DataFrame({"idx": [1, 2, 3], "a": [1, 1, 1]})
-    expected = pl.DataFrame({
-        "idx": [1, 2, 3],
-        "a": [1, 1, 1],
-        "sum": [0, 0, 0]
-    })
+    expected = pl.DataFrame({"idx": [1, 2, 3], "a": [1, 1, 1], "sum": [0, 0, 0]})
 
     result = (
         df.lazy()
