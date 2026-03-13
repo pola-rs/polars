@@ -1,235 +1,285 @@
 use std::cmp;
 use std::fmt::Write;
+use std::marker::PhantomData;
 
-use num_traits::ToPrimitive;
 use polars_core::prelude::*;
-use polars_core::with_match_physical_numeric_polars_type;
 
-const DEFAULT_BIN_COUNT: usize = 10;
+pub(crate) const DEFAULT_BIN_COUNT: usize = 10;
 
-fn get_breaks<T>(
-    ca: &ChunkedArray<T>,
+struct UniformWidthHistogram<T: PolarsNumericType> {
+    lower: T::Native,
+    upper: T::Native,
+    num_bins: usize,
+}
+
+struct VariableWidthHistogram<T: PolarsNumericType> {
+    edges: Series,
+    phantom: PhantomData<T>,
+}
+
+trait Histogram {
+    fn hist(&self, s: &Series) -> PolarsResult<Series>;
+    fn get_breakpoints(&self) -> Series;
+    fn get_categories(&self) -> Series;
+}
+
+fn new_histogram(
+    s: &Series,
     bin_count: Option<usize>,
-    bins: Option<&[f64]>,
-) -> PolarsResult<(Vec<f64>, bool)>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: ChunkAgg<T::Native>,
-{
-    let (bins, uniform) = match (bin_count, bins) {
+    edges: Option<Series>,
+) -> PolarsResult<Box<dyn Histogram>> {
+    let hist = match (bin_count, edges) {
         (Some(_), Some(_)) => {
-            return Err(PolarsError::ComputeError(
-                "can only provide one of `bin_count` or `bins`".into(),
-            ));
+            polars_bail!(InvalidOperation: "cannot supply both 'bins' and 'bin_count' to hist")
         },
-        (None, Some(bins)) => {
-            // User-supplied bins. Note these are actually bin edges. Check for monotonicity.
-            // If we only have one edge, we have no bins.
-            let bin_len = bins.len();
-            if bin_len > 1 {
-                for i in 1..bin_len {
-                    if (bins[i] - bins[i - 1]) <= 0.0 {
+        (None, Some(edges)) => match s.dtype() {
+            &DataType::Float64 => {
+                let hist = VariableWidthHistogram::<Float64Type>::new(edges)?;
+                Box::new(hist) as Box<dyn Histogram>
+            },
+            _ => unimplemented!(),
+        },
+        _ => match s.dtype() {
+            &DataType::Float64 => {
+                let hist = UniformWidthHistogram::<Float64Type>::new(s.f64()?, bin_count);
+                Box::new(hist) as Box<dyn Histogram>
+            },
+            _ => unimplemented!(),
+        },
+    };
+    Ok(hist)
+}
+
+impl UniformWidthHistogram<Float64Type> {
+    fn new(ca: &ChunkedArray<Float64Type>, num_bins: Option<usize>) -> Self {
+        let n = ca.len() - ca.null_count();
+        let (lower, upper) = if n == 0 {
+            // No non-null items; supply the unit interval.
+            (0.0, 1.0)
+        } else if n == 1 {
+            // One non-null item; create a unit interval centered around the single value.
+            let idx = ca.first_non_null().unwrap();
+            // SAFETY: idx is guaranteed to contain an element.
+            let center = unsafe { ca.get_unchecked(idx) }.unwrap();
+            (center - 0.5, center + 0.5)
+        } else {
+            // Determine outer bin edges from the data itself
+            let lower = ca.min().unwrap();
+            let upper = ca.max().unwrap();
+
+            // All data points are identical--use unit interval.
+            if lower == upper {
+                (lower - 0.5, upper + 0.5)
+            } else {
+                (lower, upper)
+            }
+        };
+
+        Self {
+            lower,
+            upper,
+            num_bins: num_bins.unwrap_or(DEFAULT_BIN_COUNT),
+        }
+    }
+}
+
+impl<T: PolarsNumericType> VariableWidthHistogram<T> {
+    // Given a set of user-provided edges, ensure they are valid, i.e. monotonic increasing.
+    // In the future, we may consider detecting whether user-provided bins are uniformly
+    // distributed.
+    fn check_bins(edges: &Series) -> PolarsResult<()> {
+        let bin_len = edges.len();
+        if bin_len > 1 {
+            for idx in 1..bin_len {
+                // SAFETY: idx is within bounds.
+                unsafe {
+                    if edges.get_unchecked(idx) < edges.get_unchecked(idx - 1) {
                         return Err(PolarsError::ComputeError(
                             "bins must increase monotonically".into(),
                         ));
                     }
                 }
-                (bins.to_vec(), false)
-            } else {
-                (Vec::<f64>::new(), false)
-            }
-        },
-        (bin_count, None) => {
-            // User-supplied bin count, or 10 by default. Compute edges from the data.
-            let bin_count = bin_count.unwrap_or(DEFAULT_BIN_COUNT);
-            let n = ca.len() - ca.null_count();
-            let (offset, width, upper_limit) = if n == 0 {
-                // No non-null items; supply unit interval.
-                (0.0, 1.0 / bin_count as f64, 1.0)
-            } else if n == 1 {
-                // Unit interval around single point
-                let idx = ca.first_non_null().unwrap();
-                // SAFETY: idx is guaranteed to contain an element.
-                let center = unsafe { ca.get_unchecked(idx) }.unwrap().to_f64().unwrap();
-                (center - 0.5, 1.0 / bin_count as f64, center + 0.5)
-            } else {
-                // Determine outer bin edges from the data itself
-                let min_value = ca.min().unwrap().to_f64().unwrap();
-                let max_value = ca.max().unwrap().to_f64().unwrap();
-
-                // All data points are identical--use unit interval.
-                if min_value == max_value {
-                    (min_value - 0.5, 1.0 / bin_count as f64, max_value + 0.5)
-                } else {
-                    (
-                        min_value,
-                        (max_value - min_value) / bin_count as f64,
-                        max_value,
-                    )
-                }
-            };
-            // Manually set the final value to the maximum value to ensure the final value isn't
-            // missed due to floating-point precision.
-            let out = (0..bin_count)
-                .map(|x| (x as f64 * width) + offset)
-                .chain(std::iter::once(upper_limit))
-                .collect::<Vec<f64>>();
-            (out, true)
-        },
-    };
-    Ok((bins, uniform))
-}
-
-// O(n) implementation when buckets are fixed-size.
-// We deposit items directly into their buckets.
-fn uniform_hist_count<T>(breaks: &[f64], ca: &ChunkedArray<T>) -> Vec<IdxSize>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: ChunkAgg<T::Native>,
-{
-    let num_bins = breaks.len() - 1;
-    let mut count: Vec<IdxSize> = vec![0; num_bins];
-    let min_break: f64 = breaks[0];
-    let max_break: f64 = breaks[num_bins];
-    let scale = num_bins as f64 / (max_break - min_break);
-    let max_idx = num_bins - 1;
-
-    for chunk in ca.downcast_iter() {
-        for item in chunk.non_null_values_iter() {
-            let item = item.to_f64().unwrap();
-            if item > min_break && item <= max_break {
-                // idx > (num_bins - 1) may happen due to floating point representation imprecision
-                let mut idx = cmp::min((scale * (item - min_break)) as usize, max_idx);
-
-                // Adjust for float imprecision providing idx > 1 ULP of the breaks
-                if item <= breaks[idx] {
-                    idx -= 1;
-                } else if item > breaks[idx + 1] {
-                    idx += 1;
-                }
-
-                count[idx] += 1;
-            } else if item == min_break {
-                count[0] += 1;
             }
         }
+        Ok(())
     }
-    count
-}
 
-// Variable-width bucketing. We sort the items and then move linearly through buckets.
-fn hist_count<T>(breaks: &[f64], ca: &ChunkedArray<T>) -> Vec<IdxSize>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: ChunkAgg<T::Native>,
-{
-    let num_bins = breaks.len() - 1;
-    let mut breaks_iter = breaks.iter().skip(1); // Skip the first lower bound
-    let (min_break, max_break) = (breaks[0], breaks[breaks.len() - 1]);
-    let mut upper_bound = *breaks_iter.next().unwrap();
-    let mut sorted = ca.sort(false);
-    sorted.rechunk_mut();
-    let mut current_count: IdxSize = 0;
-    let chunk = sorted.downcast_as_array();
-    let mut count: Vec<IdxSize> = Vec::with_capacity(num_bins);
-
-    'item: for item in chunk.non_null_values_iter() {
-        let item = item.to_f64().unwrap();
-
-        // Cycle through items until we hit the first bucket.
-        if item.is_nan() || item < min_break {
-            continue;
-        }
-
-        while item > upper_bound {
-            if item > max_break {
-                // No more items will fit in any buckets
-                break 'item;
-            }
-
-            // Finished with prior bucket; push, reset, and move to next.
-            count.push(current_count);
-            current_count = 0;
-            upper_bound = *breaks_iter.next().unwrap();
-        }
-
-        // Item is in bound.
-        current_count += 1;
-    }
-    count.push(current_count);
-    count.resize(num_bins, 0); // If we left early, fill remainder with 0.
-    count
-}
-
-fn compute_hist<T>(
-    ca: &ChunkedArray<T>,
-    bin_count: Option<usize>,
-    bins: Option<&[f64]>,
-    include_category: bool,
-    include_breakpoint: bool,
-) -> PolarsResult<Series>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: ChunkAgg<T::Native>,
-{
-    let (breaks, uniform) = get_breaks(ca, bin_count, bins)?;
-    let num_bins = std::cmp::max(breaks.len(), 1) - 1;
-    let count = if num_bins > 0 && ca.len() > ca.null_count() {
-        if uniform {
-            uniform_hist_count(&breaks, ca)
+    fn new(edges: Series) -> PolarsResult<Self> {
+        // We cannot have only one edge, this creates zero bins.
+        let edges = if edges.len() < 2 {
+            Series::new_empty(PlSmallStr::EMPTY, &DataType::Float64)
         } else {
-            hist_count(&breaks, ca)
-        }
-    } else {
-        vec![0; num_bins]
-    };
-
-    // Generate output: breakpoint (optional), breaks (optional), count
-    let mut fields = Vec::with_capacity(3);
-
-    if include_breakpoint {
-        let breakpoints = if num_bins > 0 {
-            Series::new(PlSmallStr::from_static("breakpoint"), &breaks[1..])
-        } else {
-            let empty: &[f64; 0] = &[];
-            Series::new(PlSmallStr::from_static("breakpoint"), empty)
+            edges.rechunk()
         };
-        fields.push(breakpoints)
+        Self::check_bins(&edges)?;
+        Ok(Self {
+            edges,
+            phantom: PhantomData,
+        })
     }
+}
 
-    if include_category {
-        let mut categories =
-            StringChunkedBuilder::new(PlSmallStr::from_static("category"), breaks.len());
-        if num_bins > 0 {
-            let mut lower = AnyValue::Float64(breaks[0]);
-            let mut buf = String::new();
-            let mut open_bracket = "[";
-            for br in &breaks[1..] {
-                let br = AnyValue::Float64(*br);
-                buf.clear();
-                write!(buf, "{open_bracket}{lower}, {br}]").unwrap();
-                open_bracket = "(";
-                categories.append_value(buf.as_str());
-                lower = br;
+impl Histogram for UniformWidthHistogram<Float64Type> {
+    fn hist(&self, s: &Series) -> PolarsResult<Series> {
+        let name = PlSmallStr::from_static("count");
+        if self.num_bins == 0 {
+            return Ok(Series::new_empty(name, &IDX_DTYPE));
+        }
+        let ca = s.f64()?;
+        let scale = self.num_bins as f64 / (self.upper - self.lower);
+        let max_idx = self.num_bins - 1;
+        let bin_width = (self.upper - self.lower) / self.num_bins as f64;
+
+        let mut count: Vec<IdxSize> = vec![0; self.num_bins];
+        for chunk in ca.downcast_iter() {
+            for item in chunk.non_null_values_iter() {
+                if item > self.lower && item <= self.upper {
+                    let mut idx = (scale * (item - self.lower)) as usize;
+
+                    // Adjust for float imprecision providing idx > 1 ULP of the breaks
+                    let current_break = self.lower + bin_width * idx as f64;
+                    if item <= current_break {
+                        idx -= 1;
+                    } else if item > current_break + bin_width {
+                        idx += 1;
+                    }
+
+                    // idx > (num_bins - 1) may happen due to floating point representation imprecision
+                    idx = cmp::min(idx, max_idx);
+                    count[idx] += 1;
+                } else if item == self.lower {
+                    count[0] += 1;
+                }
             }
         }
-        let categories = categories
+        Ok(Series::from_vec(name, count))
+    }
+
+    fn get_breakpoints(&self) -> Series {
+        let name = PlSmallStr::from_static("breakpoint");
+        if self.num_bins == 0 {
+            return Series::new_empty(name, &DataType::Float64);
+        }
+        let bin_width = (self.upper - self.lower) / self.num_bins as f64;
+        Series::from_iter(
+            (1..self.num_bins)
+                .map(|idx| self.lower + (idx as f64) * bin_width)
+                .chain(std::iter::once(self.upper)),
+        )
+        .with_name(name)
+    }
+
+    fn get_categories(&self) -> Series {
+        let name = PlSmallStr::from_static("category");
+        let dt = DataType::Categorical(Categories::global(), Categories::global().mapping());
+        if self.num_bins == 0 {
+            return Series::new_empty(name, &dt);
+        }
+
+        let mut categories = StringChunkedBuilder::new(name, self.num_bins);
+        let width = (self.upper - self.lower) / self.num_bins as f64;
+        let mut lower = AnyValue::Float64(self.lower);
+        let upper = AnyValue::Float64(self.lower + width);
+
+        // Write first fully-closed interval.
+        let mut buf = format!("[{}, {}]", lower, upper);
+        categories.append_value(buf.as_str());
+        lower = upper;
+
+        // Write remaining right-closed intervals.
+        for idx in 1..self.num_bins {
+            let upper = AnyValue::Float64(self.lower + (idx + 1) as f64 * width);
+            buf.clear();
+            write!(buf, "({lower}, {upper}]").unwrap();
+            categories.append_value(buf.as_str());
+            lower = upper;
+        }
+        categories
             .finish()
             .cast(&DataType::from_categories(Categories::global()))
-            .unwrap();
-        fields.push(categories);
-    };
-
-    let count = Series::new(PlSmallStr::from_static("count"), count);
-    fields.push(count);
-
-    Ok(if fields.len() == 1 {
-        fields.pop().unwrap().with_name(ca.name().clone())
-    } else {
-        StructChunked::from_series(ca.name().clone(), fields[0].len(), fields.iter())
             .unwrap()
-            .into_series()
-    })
+    }
+}
+
+impl Histogram for VariableWidthHistogram<Float64Type> {
+    // Variable-width bucketing. We sort the items and then move linearly through buckets.
+    fn hist(&self, s: &Series) -> PolarsResult<Series> {
+        let name = PlSmallStr::from_static("count");
+        if self.edges.is_empty() {
+            return Ok(Series::new_empty(name, &IDX_DTYPE));
+        }
+        let ca = s.f64()?;
+        let edges = self.edges.f64().unwrap().cont_slice().unwrap();
+        let num_edges = edges.len();
+        let mut edges_iter = edges.iter().skip(1); // Skip the first lower bound
+        let (min_break, max_break) = (edges[0], edges[num_edges - 1]);
+        let mut upper_bound = *edges_iter.next().unwrap();
+        let mut sorted = ca.sort(false);
+        sorted.rechunk_mut();
+        let mut current_count: IdxSize = 0;
+        let chunk = sorted.downcast_as_array();
+        let mut count: Vec<IdxSize> = Vec::with_capacity(num_edges - 1);
+
+        'item: for item in chunk.non_null_values_iter() {
+            // Cycle through items until we hit the first bucket.
+            if item.is_nan() || item < min_break {
+                continue;
+            }
+
+            while item > upper_bound {
+                if item > max_break {
+                    // No more items will fit in any buckets
+                    break 'item;
+                }
+
+                // Finished with prior bucket; push, reset, and move to next.
+                count.push(current_count);
+                current_count = 0;
+                upper_bound = *edges_iter.next().unwrap();
+            }
+
+            // Item is in bound.
+            current_count += 1;
+        }
+        count.push(current_count);
+        count.resize(num_edges - 1, 0); // If we left early, fill remainder with 0.
+        Ok(Series::from_vec(name, count))
+    }
+
+    fn get_breakpoints(&self) -> Series {
+        let name = PlSmallStr::from_static("breakpoint");
+        if self.edges.is_empty() {
+            return Series::new_empty(name, &DataType::Float64);
+        }
+        self.edges.slice(1, self.edges.len() - 1).with_name(name)
+    }
+
+    fn get_categories(&self) -> Series {
+        let name = PlSmallStr::from_static("category");
+        let dt = DataType::Categorical(Categories::global(), Categories::global().mapping());
+        if self.edges.is_empty() {
+            return Series::new_empty(name, &dt);
+        }
+        let mut categories =
+            StringChunkedBuilder::new(PlSmallStr::from_static("category"), self.edges.len() - 1);
+        let edges = self.edges.f64().unwrap().cont_slice().unwrap();
+        let mut lower = AnyValue::Float64(edges[0]);
+        let mut buf = String::new();
+        let mut change_bracket = true;
+        let mut bracket = "[";
+        for br in &edges[1..] {
+            let br = AnyValue::Float64(*br);
+            buf.clear();
+            write!(buf, "{bracket}{lower}, {br}]").unwrap();
+            if change_bracket {
+                bracket = "(";
+                change_bracket = false;
+            }
+            categories.append_value(buf.as_str());
+            lower = br;
+        }
+        categories.finish().cast(&dt).unwrap()
+    }
 }
 
 pub fn hist_series(
@@ -239,23 +289,23 @@ pub fn hist_series(
     include_category: bool,
     include_breakpoint: bool,
 ) -> PolarsResult<Series> {
-    let mut bins_arg = None;
+    let histogram = new_histogram(s, bin_count, bins)?;
 
-    let owned_bins;
-    if let Some(bins) = bins {
-        polars_ensure!(bins.null_count() == 0, InvalidOperation: "nulls not supported in 'bins' argument");
-        let bins = bins.cast(&DataType::Float64)?;
-        let bins_s = bins.rechunk();
-        owned_bins = bins_s;
-        let bins = owned_bins.f64().unwrap();
-        let bins = bins.cont_slice().unwrap();
-        bins_arg = Some(bins);
-    };
-    polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "'hist' is only supported for numeric data");
-
-    let out = with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-         let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-         compute_hist(ca, bin_count, bins_arg, include_category, include_breakpoint)?
-    });
-    Ok(out)
+    // Generate output: breakpoint (optional), breaks (optional), count
+    let count = histogram.hist(s)?;
+    Ok(if include_category || include_breakpoint {
+        let mut fields = Vec::with_capacity(3);
+        if include_breakpoint {
+            fields.push(histogram.get_breakpoints());
+        }
+        if include_category {
+            fields.push(histogram.get_categories());
+        }
+        fields.push(count);
+        StructChunked::from_series(s.name().clone(), fields[0].len(), fields.iter())
+            .unwrap()
+            .into_series()
+    } else {
+        count
+    })
 }
