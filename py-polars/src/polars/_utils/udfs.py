@@ -695,12 +695,46 @@ class InstructionTranslator:
                     not_ = "" if op == "is" else "not_"
                     return f"{e1}.is_{not_}null()"
                 elif op in ("in", "not in"):
-                    not_ = "" if op == "in" else "~"
-                    return (
-                        f"{not_}({e1}.is_in({e2}))"
-                        if " " in e1
-                        else f"{not_}{e1}.is_in({e2})"
-                    )
+                    is_collection_literal = e2.startswith(("(", "[", "{", "frozenset("))
+
+                    is_collection_variable = False
+                    if not is_collection_literal and not e2.startswith(
+                        ("pl.col(", "'", '"')  # col ref, or string literal
+                    ):
+                        if not self._caller_variables:
+                            self._caller_variables = _get_all_caller_variables()
+                        var_value = self._caller_variables.get(e2)
+                        if isinstance(var_value, (list, tuple, set, frozenset, dict)):
+                            is_collection_variable = True
+                        elif not isinstance(var_value, str):
+                            msg = "cannot determine operand type for 'in'"
+                            raise NotImplementedError(msg)
+
+                    if is_collection_literal or is_collection_variable:
+                        not_ = "" if op == "in" else "~"
+                        return (
+                            f"{not_}({e1}.is_in({e2}))"
+                            if " " in e1
+                            else f"{not_}{e1}.is_in({e2})"
+                        )
+                    else:
+                        e2_is_col = e2.startswith("pl.col(")
+                        e1_is_col = e1.startswith("pl.col(")
+
+                        if e2_is_col:
+                            needle = f"pl.lit({e1})" if not e1_is_col else e1
+                            haystack = e2
+                        else:
+                            needle = e1
+                            haystack = f"pl.lit({e2})"
+
+                        contains_expr = (
+                            f"{haystack}.str.contains({needle}, literal=True)"
+                        )
+
+                        if op == "not in":
+                            return f"~{contains_expr}"
+                        return contains_expr
                 elif op == "replace_strict":
                     if not self._caller_variables:
                         self._caller_variables = _get_all_caller_variables()
