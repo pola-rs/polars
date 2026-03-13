@@ -88,7 +88,7 @@ def lit(
         msg = f"dtype '{dtype}' is a BaseExtension class, it should be an instance"
         raise TypeError(msg)
     elif isinstance(dtype, DataTypeExpr):
-        dtype = dtype.collect_dtype({})
+        return lit(value).cast(dtype)
     elif dtype == Object:
         value_s = pl.Series("literal", [value], dtype=dtype)
         return wrap_expr(plr.lit(value_s._s, allow_object, is_scalar=True))
