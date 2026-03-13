@@ -200,6 +200,17 @@ class ExprListNameSpace:
 
         if n is None:
             n = 1
+        if isinstance(n, bool):
+            msg = "expected `n` to be an int, got bool"
+            raise TypeError(msg)
+        if isinstance(n, int):
+            if n < 0:
+                msg = f"expected `n` to be non-negative, got {n}"
+                raise ValueError(msg)
+        elif isinstance(n, float):
+            msg = f"expected `n` to be an int, got {type(n).__name__}"
+            raise TypeError(msg)
+
         n_pyexpr = parse_into_expression(n)
         return wrap_expr(
             self._pyexpr.list_sample_n(n_pyexpr, with_replacement, shuffle, seed)
