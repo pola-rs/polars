@@ -277,10 +277,9 @@ impl<'a> IRBuilder<'a> {
         apply: Option<PlanCallback<DataFrame, DataFrame>>,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
-    ) -> Self {
+    ) -> PolarsResult<Self> {
         let current_schema = self.schema();
-        let mut schema = expr_irs_to_schema(&keys, &current_schema, self.expr_arena)
-            .expect("no valid schema can be derived for the key expression");
+        let mut schema = expr_irs_to_schema(&keys, &current_schema, self.expr_arena)?;
 
         #[cfg(feature = "dynamic_group_by")]
         {
@@ -299,8 +298,7 @@ impl<'a> IRBuilder<'a> {
             }
         }
 
-        let mut aggs_schema = expr_irs_to_schema(&aggs, &current_schema, self.expr_arena)
-            .expect("no valid schema can be derived for the agg expression");
+        let mut aggs_schema = expr_irs_to_schema(&aggs, &current_schema, self.expr_arena)?;
 
         // Coerce aggregation column(s) into List unless not needed (auto-implode)
         debug_assert!(aggs_schema.len() == aggs.len());
@@ -321,7 +319,7 @@ impl<'a> IRBuilder<'a> {
             maintain_order,
             options,
         };
-        self.add_alp(lp)
+        Ok(self.add_alp(lp))
     }
 
     pub fn join(

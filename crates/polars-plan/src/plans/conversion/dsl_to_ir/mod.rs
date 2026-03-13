@@ -985,7 +985,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
 
             IRBuilder::new(input, ctxt.expr_arena, ctxt.lp_arena)
-                .group_by(keys, aggs, None, maintain_order, Default::default())
+                .group_by(keys, aggs, None, maintain_order, Default::default())?
                 .build()
         },
         DslPlan::Distinct { input, options } => {

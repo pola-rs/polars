@@ -85,7 +85,7 @@ pub(super) fn process_group_by(
             apply,
             maintain_order,
             options,
-        );
+        )?;
         Ok(builder.build())
     }
 }
