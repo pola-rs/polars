@@ -235,6 +235,7 @@ impl SlicePushDown {
     ) -> PolarsResult<IR> {
         use IR::*;
 
+        // Don't take this, the node can be referenced multiple times in the tree.
         if let IR::Cache { .. } = lp_arena.get(ir_node) {
             return self.no_pushdown_restart_opt(
                 lp_arena.get(ir_node).clone(),
