@@ -911,7 +911,7 @@ def test_comparison_literal_downcast_flooring_duration_ns() -> None:
     )
 
     plan = q.explain()
-    assert plan.count("999µs 999ns") == 2
+    assert plan.count("999999ns") == 2
 
     assert_frame_equal(
         q.filter("eq")

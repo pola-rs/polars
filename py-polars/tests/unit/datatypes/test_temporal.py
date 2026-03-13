@@ -1208,7 +1208,7 @@ def test_temporal_to_string_iso_default() -> None:
     assert df_stringified.to_dict(as_series=False) == {
         "td_pl": [
             "-1d -42s",
-            "13d 14h 1ms 1µs",
+            "13d 14h 1001µs",
             "0µs",
         ],
         "td:iso": [
