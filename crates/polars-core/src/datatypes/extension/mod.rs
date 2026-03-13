@@ -4,6 +4,7 @@ use std::fmt::{Debug, Display};
 use std::hash::{Hash, Hasher};
 
 use crate::datatypes::DataType;
+use crate::prelude::Column;
 
 mod generic;
 mod registry;
@@ -44,6 +45,13 @@ pub trait ExtensionTypeImpl: 'static + Send + Sync + Any {
     /// Should be a more verbose string representation, useful for debugging, in TitleCase,
     /// for example: String, Decimal(10, 2).
     fn dyn_debug(&self) -> Cow<'_, str>;
+
+    /// Display representation of the extension type's data.
+    ///
+    /// Defaults to the storage type str_value
+    fn dyn_display_value<'a>(&self, column: &'a Column, index: usize) -> Cow<'a, str> {
+        column.get(index).unwrap().str_value()
+    }
 }
 
 #[repr(transparent)]
