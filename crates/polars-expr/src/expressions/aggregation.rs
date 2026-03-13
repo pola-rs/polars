@@ -578,31 +578,70 @@ impl PhysicalExpr for AggQuantileExpr {
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.get_values().name().clone();
 
-        let quantile_column = self.quantile.evaluate(df, state)?;
-        polars_ensure!(quantile_column.len() <= 1, ComputeError:
-            "polars only supports computing a single quantile in a groupby aggregation context"
-        );
-        let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
+        // Evaluate quantile per group to support varying quantiles across groups.
+        let quantile_ac = self.quantile.evaluate_on_groups(df, groups, state)?;
 
-        if let AggState::LiteralScalar(c) = &mut ac.state {
-            *c = c
-                .quantile_reduce(quantile, self.method)?
-                .into_column(keep_name);
-            return Ok(ac);
+        match quantile_ac.agg_state() {
+            AggState::LiteralScalar(c) => {
+                // Single quantile for all groups.
+                let quantile: f64 = c.get(0).unwrap().try_extract()?;
+
+                if let AggState::LiteralScalar(c) = &mut ac.state {
+                    *c = c
+                        .quantile_reduce(quantile, self.method)?
+                        .into_column(keep_name);
+                    return Ok(ac);
+                }
+
+                // SAFETY: groups are in bounds
+                let mut agg = unsafe {
+                    ac.flat_naive()
+                        .into_owned()
+                        .agg_quantile(ac.groups(), quantile, self.method)
+                };
+                agg.rename(keep_name);
+                Ok(AggregationContext::from_agg_state(
+                    AggregatedScalar(agg),
+                    Cow::Borrowed(groups),
+                ))
+            },
+            AggState::AggregatedScalar(c) => {
+                // Per-group quantile values.
+                let c = c.cast(&DataType::Float64)?;
+                let ca = c.f64()?;
+                // Null quantile values are mapped to NaN, which fails the range check
+                // in agg_varying_quantile_generic and produces null output for that group.
+                let quantiles: Vec<f64> = ca.iter().map(|v| v.unwrap_or(f64::NAN)).collect();
+
+                if let AggState::LiteralScalar(c) = &mut ac.state {
+                    // Input is a literal scalar; quantile of a single value is always
+                    // that value, regardless of the quantile parameter.
+                    let q = quantiles.first().copied().unwrap_or(f64::NAN);
+                    *c = c.quantile_reduce(q, self.method)?.into_column(keep_name);
+                    return Ok(ac);
+                }
+
+                // SAFETY: groups are in bounds
+                let mut agg = unsafe {
+                    ac.flat_naive().into_owned().agg_varying_quantile(
+                        ac.groups(),
+                        &quantiles,
+                        self.method,
+                    )
+                };
+                agg.rename(keep_name);
+                Ok(AggregationContext::from_agg_state(
+                    AggregatedScalar(agg),
+                    Cow::Borrowed(groups),
+                ))
+            },
+            _ => {
+                polars_bail!(ComputeError:
+                    "quantile expression in group_by must produce a scalar per group; \
+                    use .first() or another aggregation to reduce to a scalar"
+                );
+            },
         }
-
-        // SAFETY:
-        // groups are in bounds
-        let mut agg = unsafe {
-            ac.flat_naive()
-                .into_owned()
-                .agg_quantile(ac.groups(), quantile, self.method)
-        };
-        agg.rename(keep_name);
-        Ok(AggregationContext::from_agg_state(
-            AggregatedScalar(agg),
-            Cow::Borrowed(groups),
-        ))
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

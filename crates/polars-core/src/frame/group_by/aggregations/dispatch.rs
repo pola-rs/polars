@@ -28,7 +28,7 @@ impl Series {
         };
 
         match groups {
-            GroupsType::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
+            GroupsType::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |_, idx| {
                 debug_assert!(idx.len() <= s.len());
                 if idx.is_empty() {
                     None
@@ -40,7 +40,7 @@ impl Series {
                 }
             }),
             GroupsType::Slice { groups, .. } => {
-                _agg_helper_slice::<IdxType, _>(groups, |[first, len]| {
+                _agg_helper_slice::<IdxType, _>(groups, |_, [first, len]| {
                     debug_assert!(len <= s.len() as IdxSize);
                     if len == 0 {
                         None
@@ -499,6 +499,73 @@ impl Series {
                 .into_datetime(TimeUnit::Microseconds, None),
             dt if dt.is_primitive_numeric() => {
                 apply_method_physical_integer!(s, agg_quantile, groups, quantile, method)
+            },
+            _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
+        }
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn agg_varying_quantile(
+        &self,
+        groups: &GroupsType,
+        quantiles: &[f64],
+        method: QuantileMethod,
+    ) -> Series {
+        // Prevent a rechunk for every individual group.
+        let s = if groups.len() > 1 {
+            self.rechunk()
+        } else {
+            self.clone()
+        };
+
+        use DataType::*;
+        match s.dtype() {
+            Float32 => s
+                .f32()
+                .unwrap()
+                .agg_varying_quantile(groups, quantiles, method),
+            Float64 => s
+                .f64()
+                .unwrap()
+                .agg_varying_quantile(groups, quantiles, method),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => s
+                .cast(&DataType::Float64)
+                .unwrap()
+                .agg_varying_quantile(groups, quantiles, method),
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(tu, tz) => self
+                .to_physical_repr()
+                .agg_varying_quantile(groups, quantiles, method)
+                .cast(&Int64)
+                .unwrap()
+                .into_datetime(*tu, tz.clone()),
+            #[cfg(feature = "dtype-duration")]
+            Duration(tu) => self
+                .to_physical_repr()
+                .agg_varying_quantile(groups, quantiles, method)
+                .cast(&Int64)
+                .unwrap()
+                .into_duration(*tu),
+            #[cfg(feature = "dtype-time")]
+            Time => self
+                .to_physical_repr()
+                .agg_varying_quantile(groups, quantiles, method)
+                .cast(&Int64)
+                .unwrap()
+                .into_time(),
+            #[cfg(feature = "dtype-date")]
+            Date => (self
+                .to_physical_repr()
+                .agg_varying_quantile(groups, quantiles, method)
+                .cast(&Float64)
+                .unwrap()
+                * (US_IN_DAY as f64))
+                .cast(&DataType::Int64)
+                .unwrap()
+                .into_datetime(TimeUnit::Microseconds, None),
+            dt if dt.is_primitive_numeric() => {
+                apply_method_physical_integer!(s, agg_varying_quantile, groups, quantiles, method)
             },
             _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
         }

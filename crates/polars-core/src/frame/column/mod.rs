@@ -868,6 +868,24 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
+    pub unsafe fn agg_varying_quantile(
+        &self,
+        groups: &GroupsType,
+        quantiles: &[f64],
+        method: QuantileMethod,
+    ) -> Self {
+        // @scalar-opt
+        unsafe {
+            self.as_materialized_series()
+                .agg_varying_quantile(groups, quantiles, method)
+        }
+        .into()
+    }
+
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_median(&self, groups: &GroupsType) -> Self {
         self.agg_with_scalar_identity(groups, |s, g| unsafe { s.agg_median(g) })
     }
