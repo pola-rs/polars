@@ -41,6 +41,8 @@ impl NodeStyle {
             | K::EquiJoin { .. }
             | K::SemiAntiJoin { .. }
             | K::Multiplexer { .. } => Self::MemoryIntensive,
+            #[cfg(feature = "iejoin")]
+            K::RangeJoin { .. } => Self::MemoryIntensive,
             #[cfg(feature = "merge_sorted")]
             K::MergeSorted { .. } => Self::MemoryIntensive,
             _ => Self::Generic,
@@ -647,32 +649,21 @@ fn visualize_plan_rec(
             args,
             ..
         } => {
-            let mut label = "merge-join".to_string();
-            let how: &'static str = (&args.how).into();
-            write!(
-                label,
-                r"\nleft_on:\n{}",
-                left_on
-                    .iter()
-                    .map(|s| escape_graphviz(&s[..]))
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            )
-            .unwrap();
-            write!(
-                label,
-                r"\nright_on:\n{}",
-                right_on
-                    .iter()
-                    .map(|s| escape_graphviz(&s[..]))
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            )
-            .unwrap();
-            write!(label, r"\nhow: {}", escape_graphviz(how)).unwrap();
-            if args.nulls_equal {
-                write!(label, r"\njoin-nulls").unwrap();
-            }
+            let mut tmp_arena: Arena<AExpr> = Arena::with_capacity(2);
+            let left_on_exprs = left_on
+                .iter()
+                .map(|on| ExprIR::from_column_name(on.clone(), &mut tmp_arena))
+                .collect_vec();
+            let right_on_exprs = right_on
+                .iter()
+                .map(|on| ExprIR::from_column_name(on.clone(), &mut tmp_arena))
+                .collect_vec();
+            let label = fmt_join_label(
+                "merge-join",
+                &fmt_exprs_to_label(&left_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
+                &fmt_exprs_to_label(&right_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
+                args,
+            );
             (label, &[*input_left, *input_right][..])
         },
         PhysNodeKind::InMemoryJoin {
@@ -702,7 +693,6 @@ fn visualize_plan_rec(
                 PhysNodeKind::MergeJoin { .. } => "merge-join",
                 PhysNodeKind::EquiJoin { .. } => "equi-join",
                 PhysNodeKind::InMemoryJoin { .. } => "in-memory-join",
-                PhysNodeKind::CrossJoin { .. } => "cross-join",
                 PhysNodeKind::SemiAntiJoin {
                     output_bool: false, ..
                 } if args.how.is_semi() => "semi-join",
@@ -721,6 +711,32 @@ fn visualize_plan_rec(
                 base_label,
                 &fmt_exprs_to_label(left_on, expr_arena, FormatExprStyle::NoAliases),
                 &fmt_exprs_to_label(right_on, expr_arena, FormatExprStyle::NoAliases),
+                args,
+            );
+            (label, &[*input_left, *input_right][..])
+        },
+        #[cfg(feature = "iejoin")]
+        PhysNodeKind::RangeJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+            ..
+        } => {
+            let mut tmp_arena: Arena<AExpr> = Arena::with_capacity(3);
+            let left_on_exprs = left_on
+                .iter()
+                .map(|on| ExprIR::from_column_name(on.clone(), &mut tmp_arena))
+                .collect_vec();
+            let right_on_exprs = right_on
+                .iter()
+                .map(|on| ExprIR::from_column_name(on.clone(), &mut tmp_arena))
+                .collect_vec();
+            let label = fmt_join_label(
+                "range-join",
+                &fmt_exprs_to_label(&left_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
+                &fmt_exprs_to_label(&right_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
                 args,
             );
             (label, &[*input_left, *input_right][..])

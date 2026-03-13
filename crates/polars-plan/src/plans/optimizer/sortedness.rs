@@ -102,6 +102,23 @@ pub fn are_keys_sorted_any(
     Some(sortedness)
 }
 
+/// Is this expression sorted given the sortedness of the input dataframe?
+///
+/// Returns the way in which the expression is sorted, if it is sorted.
+pub fn expr_is_sorted(
+    ir_sorted: Option<&IRSorted>,
+    expr: &ExprIR,
+    expr_arena: &Arena<AExpr>,
+    input_schema: &Schema,
+) -> Option<AExprSorted> {
+    aexpr_sortedness(
+        expr_arena.get(expr.node()),
+        expr_arena,
+        input_schema,
+        ir_sorted.map(|s| s.0.as_ref()),
+    )
+}
+
 pub fn is_sorted(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<IRSorted> {
     let mut sortedness = PlHashMap::default();
     let mut cache_proxy = PlHashMap::default();
