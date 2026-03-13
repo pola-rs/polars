@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from functools import partial
+import sys
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
@@ -301,14 +302,16 @@ def _extract_delta_deletion_vectors(
     delta_deletion_vectors = delta_deletion_vectors.select(delta_dv_schema.keys())
     assert delta_deletion_vectors.schema == delta_dv_schema
 
+    file_prefix = "file://" if sys.platform != "win32" else "file:///"
+
     joined_df = (
         requested_paths.lazy()
-        .with_columns(pl.col("path").str.strip_prefix("file://"))
+        .with_columns(pl.col("path").str.strip_prefix(file_prefix))
         .join(
             delta_deletion_vectors.lazy().with_columns(
                 pl.col("filepath")
                 .str.replace("^lakefs://", "s3://")
-                .str.strip_prefix("file://")
+                .str.strip_prefix(file_prefix)
             ),
             left_on="path",
             right_on="filepath",
