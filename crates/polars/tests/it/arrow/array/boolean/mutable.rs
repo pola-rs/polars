@@ -175,3 +175,25 @@ fn extend_from_self() {
         MutableBooleanArray::from([Some(true), None, Some(true), None])
     );
 }
+
+#[test]
+fn extend_constant_with_none_validity_empty() {
+    let mut a = MutableBooleanArray::new();
+
+    a.extend_constant(2, None);
+
+    assert_eq!(a.validity(), Some(&MutableBitmap::from([false, false])));
+}
+
+#[test]
+fn extend_constant_with_none_validity_nonempty() {
+    let mut a = MutableBooleanArray::new();
+    a.push_value(true);
+
+    a.extend_constant(2, None);
+
+    assert_eq!(
+        a.validity(),
+        Some(&MutableBitmap::from([true, false, false]))
+    );
+}
