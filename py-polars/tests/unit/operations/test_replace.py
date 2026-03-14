@@ -289,3 +289,18 @@ def test_replace_single_argument_not_mapping() -> None:
         match="`new` argument is required if `old` argument is not a Mapping type",
     ):
         df.select(pl.col("a").replace("b"))
+
+
+def test_replace_single_value_rewrite_plan_21707() -> None:
+    plan = pl.LazyFrame({"a": [1, 2, 3]}).select(pl.col("a").replace(1, 99)).explain()
+    assert "when" in plan
+
+
+def test_replace_single_value_rewrite_result_21707() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3, 1, None]})
+
+    result_replace = lf.select(pl.col("a").replace(1, 99)).collect()
+    result_when = lf.select(
+        pl.when(pl.col("a") == 1).then(99).otherwise(pl.col("a")).alias("a")
+    ).collect()
+    assert_frame_equal(result_replace, result_when)

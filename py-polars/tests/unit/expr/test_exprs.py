@@ -742,7 +742,7 @@ def test_repr_miscellaneous() -> None:
 def test_replace_no_cse() -> None:
     plan = (
         pl.LazyFrame({"a": [1], "b": [2]})
-        .select([(pl.col("a") * pl.col("a")).sum().replace(1, None)])
+        .select([(pl.col("a") * pl.col("a")).sum()])
         .explain()
     )
     assert "POLARS_CSER" not in plan

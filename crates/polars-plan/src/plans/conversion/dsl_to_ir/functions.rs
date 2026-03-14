@@ -1021,7 +1021,29 @@ pub(super) fn convert_functions(
         #[cfg(feature = "ewma")]
         F::EwmVar { options } => I::EwmVar { options },
         #[cfg(feature = "replace")]
-        F::Replace => I::Replace,
+        F::Replace => {
+            let is_single_value = |node| match ctx.arena.get(node) {
+                AExpr::Literal(LiteralValue::Scalar(sc)) => !sc.dtype().is_list(),
+                AExpr::Literal(LiteralValue::Dyn(_)) => true,
+                _ => false,
+            };
+            if is_single_value(e[1].node()) && is_single_value(e[2].node()) {
+                let predicate =
+                    AExprBuilder::new_from_node(e[0].node()).eq_validity(e[1].node(), ctx.arena);
+                return Ok((
+                    AExprBuilder::when_then_otherwise(
+                        predicate,
+                        e[2].node(),
+                        e[0].node(),
+                        ctx.arena,
+                    )
+                    .node(),
+                    e[0].output_name().clone(),
+                ));
+            }
+
+            I::Replace
+        },
         #[cfg(feature = "replace")]
         F::ReplaceStrict { return_dtype } => I::ReplaceStrict {
             return_dtype: match return_dtype {
