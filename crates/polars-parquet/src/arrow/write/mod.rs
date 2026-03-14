@@ -31,9 +31,9 @@ use arrow::datatypes::*;
 use arrow::types::{NativeType, days_ms, i256};
 pub use nested::{num_values, write_rep_and_def};
 pub use pages::{to_leaves, to_nested, to_parquet_leaves};
+use polars_config::config;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
-use polars_config::{config};
 pub use utils::write_def_levels;
 
 pub use crate::parquet::compression::{BrotliLevel, CompressionOptions, GzipLevel, ZstdLevel};

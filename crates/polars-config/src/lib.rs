@@ -119,7 +119,9 @@ impl Config {
             warn_unstable: AtomicBool::new(DEFAULT_WARN_UNSTABLE),
             ideal_morsel_size: AtomicU64::new(DEFAULT_IDEAL_MORSEL_SIZE),
             engine_affinity: AtomicU8::new(DEFAULT_ENGINE_AFFINITY as u8),
-            parquet_statistics_truncate_length: AtomicU64::new(DEFAULT_PARQUET_STATISTICS_TRUNCATE_LENGTH),
+            parquet_statistics_truncate_length: AtomicU64::new(
+                DEFAULT_PARQUET_STATISTICS_TRUNCATE_LENGTH,
+            ),
 
             // Private.
             verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
@@ -248,7 +250,8 @@ impl Config {
 
     /// To how many bytes (or less) parquet statistics are truncated.
     pub fn parquet_statistics_truncate_length(&self) -> u64 {
-        self.parquet_statistics_truncate_length.load(Ordering::Relaxed)
+        self.parquet_statistics_truncate_length
+            .load(Ordering::Relaxed)
     }
 
     /// Whether we should do verbose printing on sensitive information.

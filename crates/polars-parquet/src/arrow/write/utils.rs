@@ -192,8 +192,7 @@ pub(super) fn truncate_min_statistics_value(mut val: Vec<u8>, len: u64, is_utf8:
         if let Some(substring) = utf8_substring {
             val.truncate(substring.len());
         }
-    }
-    else {
+    } else {
         // Binary data (or zero-length valid prefix): truncate raw bytes.
         val.truncate(len as usize);
     }
@@ -247,18 +246,15 @@ pub(super) fn truncate_max_statistics_value(mut val: Vec<u8>, len: u64, is_utf8:
         return val;
     }
     if is_utf8 {
-        let valid_len = extract_truncated_utf8(&val, len as usize)
-            .map(|s| s.len());
+        let valid_len = extract_truncated_utf8(&val, len as usize).map(|s| s.len());
         if let Some(valid_len) = valid_len {
             // SAFETY: `extract_truncated_utf8` guarantees `val[..valid_len]` is valid UTF-8.
-            let mutable_str =
-                unsafe { std::str::from_utf8_unchecked_mut(&mut val[..valid_len]) };
+            let mutable_str = unsafe { std::str::from_utf8_unchecked_mut(&mut val[..valid_len]) };
             if let Some(incremented_len) = increment_utf8(mutable_str).map(|s| s.len()) {
                 val.truncate(incremented_len);
             }
         }
-    }
-    else {
+    } else {
         // Binary data: truncate and increment raw bytes.
         if let Some(new_len) = increment_bytes(&mut val[..len as usize]).map(|s| s.len()) {
             val.truncate(new_len);
