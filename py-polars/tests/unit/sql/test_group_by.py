@@ -525,7 +525,7 @@ def test_group_by_aggregate_name_is_group_key() -> None:
     """Unaliased aggregation with a column that's also used in the GROUP BY key."""
     df = pl.DataFrame({"c0": [1, 2]})
 
-    # 'COUNT(col)' where 'col' is also part of the the group key
+    # 'COUNT(col)' where 'col' is also part of the group key
     for query in (
         "SELECT COUNT(c0) FROM self GROUP BY c0",
         "SELECT COUNT(c0) AS c0 FROM self GROUP BY c0",
