@@ -5,7 +5,7 @@ use arrow::array::Array;
 use arrow::datatypes::Field as ArrowField;
 use arrow::io::ipc::write::encode_dictionary_values;
 use polars_core::prelude::CompatLevel;
-use polars_core::series::ToArrowConverter;
+use polars_core::series::arrow_export::ToArrowConverter;
 use polars_core::utils::arrow;
 use polars_core::utils::arrow::io::ipc::write::{
     EncodedData, WriteOptions, commit_encoded_arrays, encode_array, schema,

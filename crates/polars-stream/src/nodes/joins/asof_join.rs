@@ -12,7 +12,7 @@ use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::ComputeNode;
-use crate::nodes::joins::utils::DataFrameSearchBuffer;
+use crate::nodes::joins::utils::{DataFrameSearchBuffer, stop_and_buffer_pipe_contents};
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
 #[derive(Debug)]
@@ -208,22 +208,6 @@ impl ComputeNode for AsOfJoinNode {
                 unreachable!();
             },
         }
-    }
-}
-
-/// Tell the sender to this port to stop, and buffer everything that is still in the pipe.
-async fn stop_and_buffer_pipe_contents<F>(port: Option<&mut PortReceiver>, buffer_morsel: &mut F)
-where
-    F: FnMut(DataFrame, MorselSeq),
-{
-    let Some(port) = port else {
-        return;
-    };
-
-    while let Ok(morsel) = port.recv().await {
-        morsel.source_token().stop();
-        let (df, seq, _, _) = morsel.into_inner();
-        buffer_morsel(df, seq);
     }
 }
 

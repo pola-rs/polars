@@ -51,7 +51,6 @@ pub use fused::FusedOperator;
 pub use list::IRListFunction;
 pub use polars_core::datatypes::ReshapeDimension;
 use polars_core::prelude::*;
-use polars_core::series::IsSorted;
 use polars_core::series::ops::NullBehavior;
 use polars_core::utils::SuperTypeFlags;
 #[cfg(feature = "random")]
@@ -313,7 +312,7 @@ pub enum IRFunctionExpr {
         method: IRRandomMethod,
         seed: Option<u64>,
     },
-    SetSortedFlag(IsSorted),
+    SetSortedFlag(AExprSorted),
     #[cfg(feature = "ffi_plugin")]
     /// Creating this node is unsafe
     /// This will lead to calls over FFI.
@@ -386,7 +385,7 @@ pub enum IRFunctionExpr {
         offset: usize,
     },
     #[cfg(feature = "reinterpret")]
-    Reinterpret(bool),
+    Reinterpret(DataType),
     ExtendConstant,
 
     RowEncode(Vec<DataType>, RowEncodingVariant),
@@ -686,7 +685,7 @@ impl Hash for IRFunctionExpr {
             FillNullWithStrategy(strategy) => strategy.hash(state),
             GatherEvery { n, offset } => (n, offset).hash(state),
             #[cfg(feature = "reinterpret")]
-            Reinterpret(signed) => signed.hash(state),
+            Reinterpret(dtype) => dtype.hash(state),
             ExtendConstant => {},
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
@@ -1105,7 +1104,8 @@ impl IRFunctionExpr {
             F::ArgMin | F::ArgMax => FunctionOptions::aggregation(),
             F::ArgSort { .. } => FunctionOptions::length_preserving(),
             F::MinBy | F::MaxBy => FunctionOptions::aggregation(),
-            F::Product => FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING),
+            // TODO: Only decimal product is order-observing, we should get schema here to indicate `NON_ORDER_OBSERVING` for other dtypes.
+            F::Product => FunctionOptions::aggregation(),
             #[cfg(feature = "rank")]
             F::Rank { .. } => FunctionOptions::length_preserving(),
             F::Repeat => {

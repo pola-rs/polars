@@ -7,8 +7,10 @@ import itertools
 import os
 import pickle
 import sys
+import uuid
 import warnings
 import zoneinfo
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal as D
 from functools import partial
@@ -19,6 +21,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pydantic
 import pyiceberg
+import pyiceberg.exceptions
+import pyiceberg.table
 import pytest
 from pyiceberg.expressions import literal
 from pyiceberg.partitioning import (
@@ -28,6 +32,7 @@ from pyiceberg.partitioning import (
     PartitionSpec,
 )
 from pyiceberg.schema import Schema as IcebergSchema
+from pyiceberg.table import StaticTable
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -51,8 +56,15 @@ from pyiceberg.types import (
 
 import polars as pl
 from polars._utils.various import parse_version
+from polars.io._expand_paths import _expand_paths
 from polars.io.cloud._utils import NoPickleOption
-from polars.io.iceberg._dataset import IcebergDataset, _NativeIcebergScanData
+from polars.io.iceberg._dataset import (
+    IcebergScanResolver,
+    IcebergScanTableSerializer,
+    IcebergTableWrap,
+    _NativeIcebergScanData,
+)
+from polars.io.iceberg._sink import IcebergSinkState, PlIcebergPathProviderConfig
 from polars.io.iceberg._utils import (
     _convert_predicate,
     _normalize_windows_iceberg_file_uri,
@@ -63,8 +75,6 @@ from polars.testing import assert_frame_equal
 from tests.unit.io.conftest import normalize_path_separator_pl
 
 if TYPE_CHECKING:
-    from pyiceberg.table import Table
-
     from tests.conftest import PlMonkeyPatch
 
     # Mypy does not understand the constructors and we can't construct the inputs
@@ -105,19 +115,43 @@ with warnings.catch_warnings():
     from pyiceberg.io.pyarrow import schema_to_pyarrow
 
 
-def new_pl_iceberg_dataset(source: str | Table) -> IcebergDataset:
-    from pyiceberg.table import Table
-
-    return IcebergDataset(
-        table_=NoPickleOption(source if isinstance(source, Table) else None),
-        metadata_path_=source if not isinstance(source, Table) else None,
+def new_iceberg_scan_resolver(
+    source: str | pyiceberg.table.Table,
+) -> IcebergScanResolver:
+    return IcebergScanResolver(
+        table=IcebergTableWrap(
+            table_=NoPickleOption(
+                source if isinstance(source, pyiceberg.table.Table) else None
+            ),
+            table_descriptor_=source
+            if not isinstance(source, pyiceberg.table.Table)
+            else None,
+            serializer=IcebergScanTableSerializer(),
+            iceberg_storage_properties=None,
+        ),
         snapshot_id=None,
-        iceberg_storage_properties=None,
         reader_override=None,
         use_metadata_statistics=True,
         fast_deletion_count=False,
         use_pyiceberg_filter=True,
     )
+
+
+def new_iceberg_table(
+    tmp_path: Path,
+    *,
+    schema: IcebergSchema,
+    name: str = "table",
+) -> tuple[pyiceberg.table.Table, SqlCatalog]:
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}?mode=memory&cache=shared",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    namespace = uuid.uuid4().bytes.hex()
+    catalog.create_namespace(namespace)
+
+    return catalog.create_table((namespace, name), schema), catalog
 
 
 # PyIceberg on Windows uses `file://C:/` rather than `file:///C:/`.
@@ -289,6 +323,331 @@ class TestIcebergExpressions:
         assert expr == Not(EqualTo("is_active", True))
 
 
+@dataclass(kw_only=True)
+class _TableDataAllTypes:
+    iceberg_schema: IcebergSchema
+    arrow_schema: pa.Schema
+    arrow_table: pa.Table
+    polars_df: pl.DataFrame
+
+    @staticmethod
+    def new(*, exclude_uuid: bool = False) -> _TableDataAllTypes:
+        from datetime import time
+
+        include_decimal_and_fixed = parse_version(pyiceberg.__version__) >= (0, 10, 0)
+        next_field_id = partial(next, itertools.count(1))
+
+        iceberg_schema = IcebergSchema(
+            NestedField(next_field_id(), "height_provider", IntegerType()),
+            NestedField(next_field_id(), "BooleanType", BooleanType()),
+            NestedField(next_field_id(), "IntegerType", IntegerType()),
+            NestedField(next_field_id(), "LongType", LongType()),
+            NestedField(next_field_id(), "FloatType", FloatType()),
+            NestedField(next_field_id(), "DoubleType", DoubleType()),
+            NestedField(next_field_id(), "DateType", DateType()),
+            NestedField(next_field_id(), "TimeType", TimeType()),
+            NestedField(next_field_id(), "TimestampType", TimestampType()),
+            NestedField(next_field_id(), "TimestamptzType", TimestamptzType()),
+            NestedField(next_field_id(), "StringType", StringType()),
+            NestedField(next_field_id(), "BinaryType", BinaryType()),
+            *(
+                [
+                    NestedField(next_field_id(), "DecimalType", DecimalType(18, 2)),
+                    NestedField(next_field_id(), "FixedType", FixedType(1)),
+                ]
+                if include_decimal_and_fixed
+                else []
+            ),
+            *(
+                [NestedField(next_field_id(), "UUIDType", UUIDType())]
+                if not exclude_uuid
+                else []
+            ),
+        )
+
+        arrow_table = pa.Table.from_pydict(
+            {
+                "height_provider": [1],
+                "BooleanType": [True],
+                "IntegerType": [1],
+                "LongType": [1],
+                "FloatType": [1.0],
+                "DoubleType": [1.0],
+                "DateType": [date(2025, 1, 1)],
+                "TimeType": [time(11, 30)],
+                "TimestampType": [datetime(2025, 1, 1)],
+                "TimestamptzType": [datetime(2025, 1, 1)],
+                "StringType": ["A"],
+                "BinaryType": [b"A"],
+                **(
+                    {"DecimalType": [D("1.0")], "FixedType": [b"A"]}
+                    if include_decimal_and_fixed
+                    else {}
+                ),
+                **({"UUIDType": [b"0000111100001111"]} if not exclude_uuid else {}),
+            },
+            schema=schema_to_pyarrow(iceberg_schema, include_field_ids=False),
+        )
+
+        polars_df = pl.DataFrame(
+            [
+                pl.Series('height_provider', [1], dtype=pl.Int32),
+                pl.Series('BooleanType', [True], dtype=pl.Boolean),
+                pl.Series('IntegerType', [1], dtype=pl.Int32),
+                pl.Series('LongType', [1], dtype=pl.Int64),
+                pl.Series('FloatType', [1.0], dtype=pl.Float32),
+                pl.Series('DoubleType', [1.0], dtype=pl.Float64),
+                pl.Series('DateType', [date(2025, 1, 1)], dtype=pl.Date),
+                pl.Series('TimeType', [time(11, 30)], dtype=pl.Time),
+                pl.Series('TimestampType', [datetime(2025, 1, 1, 0, 0)], dtype=pl.Datetime(time_unit='us', time_zone=None)),
+                pl.Series('TimestamptzType', [datetime(2025, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key='UTC'))], dtype=pl.Datetime(time_unit='us', time_zone='UTC')),
+                pl.Series('StringType', ['A'], dtype=pl.String),
+                pl.Series('BinaryType', [b'A'], dtype=pl.Binary),
+                *(
+                    [
+                        pl.Series('DecimalType', [D('1.00')], dtype=pl.Decimal(precision=18, scale=2)),
+                        pl.Series('FixedType', [b'A'], dtype=pl.Binary),
+                    ]
+                    if include_decimal_and_fixed
+                    else []
+                ),
+                *(
+                    [pl.Series('UUIDType', [b"0000111100001111"], dtype=pl.Binary)]
+                    if not exclude_uuid
+                    else []
+                )
+            ]
+        )  # fmt: skip
+
+        arrow_schema = schema_to_pyarrow(iceberg_schema)
+
+        return _TableDataAllTypes(
+            iceberg_schema=iceberg_schema,
+            arrow_schema=arrow_schema,
+            arrow_table=arrow_table,
+            polars_df=polars_df,
+        )
+
+
+@pytest.mark.write_disk
+def test_iceberg_sink_parquet_arrow_schema_roundtrip_all_iceberg_types(
+    tmp_path: Path,
+) -> None:
+    table_data = _TableDataAllTypes.new()
+    iceberg_schema = table_data.iceberg_schema
+
+    tbl, _ = new_iceberg_table(tmp_path, schema=iceberg_schema)
+
+    data_file_path = str(tmp_path / "data.parquet")
+
+    table_data.polars_df.lazy().sink_parquet(
+        data_file_path,
+        arrow_schema=table_data.arrow_schema,
+    )
+
+    tbl.add_files(
+        [format_file_uri_iceberg(data_file_path)], check_duplicate_files=False
+    )
+
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), table_data.polars_df)
+    assert_frame_equal(pl.DataFrame(tbl.scan().to_arrow()), table_data.polars_df)
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_all_types(tmp_path: Path) -> None:
+    table_data = _TableDataAllTypes.new()
+
+    tbl, _ = new_iceberg_table(tmp_path, schema=table_data.iceberg_schema)
+
+    original_md_path = tbl.metadata_location
+
+    new_md_path = table_data.polars_df.lazy().sink_iceberg(tbl, mode="append").item()
+    assert tbl.metadata_location != original_md_path
+    assert new_md_path == tbl.metadata_location
+
+    table_data.polars_df.lazy().sink_iceberg(tbl, mode="append")
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect(),
+        pl.concat(2 * [table_data.polars_df]),
+    )
+
+    table_data.polars_df.lazy().sink_iceberg(tbl, mode="overwrite")
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect(),
+        table_data.polars_df,
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_raises_on_static_table(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+
+    err_cx = pytest.raises(
+        TypeError,
+        match=r"cannot sink to static Iceberg table.*class.*StaticTable.*class.*NoopCatalog",
+    )
+
+    with err_cx:
+        IcebergSinkState(StaticTable.from_metadata(tbl.metadata_location))
+
+    with err_cx:
+        pl.LazyFrame({"a": 1}).sink_iceberg(
+            StaticTable.from_metadata(tbl.metadata_location), mode="append"
+        )
+
+    with pytest.raises(TypeError, match="cannot use NoopCatalog with sink_iceberg"):
+        pl.LazyFrame({"a": 1}).sink_iceberg(
+            "namespace.table",
+            catalog=StaticTable.from_metadata(tbl.metadata_location).catalog,
+            mode="append",
+        )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_pickle(tmp_path: Path) -> None:
+    tbl, catalog = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+    )
+
+    sink_state = IcebergSinkState(tbl)
+    sink_q = sink_state.attach_sink(pl.LazyFrame({"a": 1}))
+    sink_q.collect()
+    new_md_path = sink_state.commit().item(0, "metadata_path")
+
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), pl.DataFrame({"a": 1}))
+    assert new_md_path == tbl.metadata_location
+
+    sink_state = IcebergSinkState(tbl)
+    sink_q = sink_state.attach_sink(pl.LazyFrame({"a": 2}))
+    sink_q = pickle.loads(pickle.dumps(sink_q))
+    sink_q.collect()
+    new_md_path = (
+        pickle.loads(pickle.dumps(sink_state)).commit().item(0, "metadata_path")
+    )
+
+    assert new_md_path != tbl.metadata_location
+
+    tbl = catalog.load_table(tbl.name())
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect(),
+        pl.DataFrame({"a": [2, 1]}),
+    )
+
+    assert new_md_path == tbl.metadata_location
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_simulate_from_multiple_workers(tmp_path: Path) -> None:
+    tbl, catalog = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+    )
+
+    sink_state = IcebergSinkState(tbl)
+    sink_q = sink_state.attach_sink(pl.LazyFrame({"a": 1}))
+    pl.collect_all(
+        [
+            pickle.loads(pickle.dumps(sink_q)),
+            pickle.loads(pickle.dumps(sink_q)),
+            pickle.loads(pickle.dumps(sink_q)),
+            sink_state.attach_sink(pl.LazyFrame({"a": 2})),
+            sink_state.attach_sink(pl.LazyFrame({"a": 3})),
+        ]
+    )
+
+    new_md_path = sink_state.commit().item(0, "metadata_path")
+
+    tbl = catalog.load_table(tbl.name())
+
+    assert tbl.metadata_location == new_md_path
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("a"),
+        pl.DataFrame({"a": [1, 1, 1, 2, 3]}),
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_attach_sink_deferred_to_ir_resolution(tmp_path: Path) -> None:
+    sink_state = IcebergSinkState(
+        "x.x",
+        catalog=SqlCatalog(
+            "default",
+            uri="sqlite:///:memory:",
+            warehouse=format_file_uri_iceberg(tmp_path / "catalog"),
+        ),
+    )
+    q = sink_state.attach_sink(pl.LazyFrame())
+
+    with pytest.raises(pyiceberg.exceptions.NoSuchTableError):
+        q.collect()
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_internal_path_provider(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [None, ""]})
+
+    df.lazy().sink_parquet(
+        pl.PartitionBy(
+            tmp_path / "keyed",
+            file_path_provider=PlIcebergPathProviderConfig(),
+            key="a",
+        )
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path / "keyed").sort("*").collect(),
+        df,
+    )
+
+    assert (
+        _expand_paths(tmp_path / "keyed")
+        .with_columns(
+            part_prefix=pl.col("path").str.extract(r"/\w{32}(\w{32})00000000\.parquet$")
+        )
+        .select(
+            (pl.col("part_prefix").len() == 2)
+            & (pl.col("part_prefix").null_count() == 0)
+            & (pl.col("part_prefix").n_unique() == 1)
+        )
+        .collect()
+        .item()
+    )
+
+    df.lazy().sink_parquet(
+        pl.PartitionBy(
+            tmp_path / "max-rows",
+            file_path_provider=PlIcebergPathProviderConfig(),
+            max_rows_per_file=1,
+        )
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path / "max-rows").sort("*").collect(),
+        df,
+    )
+
+    assert (
+        _expand_paths(tmp_path / "max-rows/**/*0000000[01].parquet")
+        .with_columns(
+            part_prefix=pl.col("path").str.extract(r"/(\w{32})0000000[01]\.parquet$"),
+        )
+        .select(
+            (pl.col("part_prefix").len() == 2)
+            & (pl.col("part_prefix").null_count() == 0)
+            & (pl.col("part_prefix").n_unique() == 1)
+        )
+        .collect()
+        .item()
+    )
+
+
 @pytest.mark.write_disk
 def test_iceberg_dataset_does_not_pickle_table_object(tmp_path: Path) -> None:
     catalog = SqlCatalog(
@@ -314,11 +673,11 @@ def test_iceberg_dataset_does_not_pickle_table_object(tmp_path: Path) -> None:
 
     df.write_iceberg(tbl, mode="append")
 
-    dataset = new_pl_iceberg_dataset(tbl)
+    dataset = new_iceberg_scan_resolver(tbl)
 
-    assert dataset.table_.get() is not None
+    assert dataset.table.table_.get() is not None
     dataset = pickle.loads(pickle.dumps(dataset))
-    assert dataset.table_.get() is None
+    assert dataset.table.table_.get() is None
 
     assert_frame_equal(dataset.to_dataset_scan()[0].collect(), df)  # type: ignore[index]
 
@@ -399,7 +758,7 @@ def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
         },
         _column_mapping=(
             "iceberg-column-mapping",
-            new_pl_iceberg_dataset(tbl).arrow_schema(),
+            new_iceberg_scan_resolver(tbl).table.arrow_schema(),
         ),
         include_file_paths="file_path",
         row_index_name="row_index",
@@ -422,6 +781,40 @@ def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
                 "file_path": pl.String,
             },
         ),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_table_name(tmp_path: Path) -> None:
+    tbl, catalog = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()),
+        ),
+    )
+
+    pl.DataFrame({"a": 1}).lazy().sink_iceberg(tbl, mode="append")
+    pl.DataFrame({"a": 2}).lazy().sink_iceberg(
+        ".".join(tbl.name()),
+        mode="append",
+        catalog=catalog,
+    )
+
+    tbl = catalog.load_table(tbl.name())
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect(),
+        pl.DataFrame({"a": [2, 1]}),
+    )
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl.metadata_location).collect(),
+        pl.DataFrame({"a": [2, 1]}),
+    )
+
+    assert_frame_equal(
+        pl.scan_iceberg(".".join(tbl.name()), catalog=catalog).collect(),
+        pl.DataFrame({"a": [2, 1]}),
     )
 
 
@@ -537,7 +930,7 @@ def test_scan_iceberg_collect_without_version_scans_latest(
     assert_frame_equal(q_with_id.collect(), pl.DataFrame({"a": 1}))
 
     assert (
-        "IcebergDataset: to_dataset_scan(): early return (snapshot_id_key = "
+        "IcebergScanResolver: to_dataset_scan(): early return (snapshot_id_key = "
         in capfd.readouterr().err
     )
 
@@ -581,7 +974,7 @@ def test_scan_iceberg_extra_columns(tmp_path: Path) -> None:
         schema={"a": pl.Int32},
         _column_mapping=(
             "iceberg-column-mapping",
-            new_pl_iceberg_dataset(tbl).arrow_schema(),
+            new_iceberg_scan_resolver(tbl).table.arrow_schema(),
         ),
     )
 
@@ -599,7 +992,7 @@ def test_scan_iceberg_extra_columns(tmp_path: Path) -> None:
         schema={"a": pl.Int32},
         _column_mapping=(
             "iceberg-column-mapping",
-            new_pl_iceberg_dataset(tbl).arrow_schema(),
+            new_iceberg_scan_resolver(tbl).table.arrow_schema(),
         ),
         extra_columns="ignore",
         missing_columns="insert",
@@ -655,7 +1048,7 @@ def test_scan_iceberg_extra_struct_fields(tmp_path: Path) -> None:
         schema={"a": pl.Struct({"a": pl.Int32})},
         _column_mapping=(
             "iceberg-column-mapping",
-            new_pl_iceberg_dataset(tbl).arrow_schema(),
+            new_iceberg_scan_resolver(tbl).table.arrow_schema(),
         ),
     )
 
@@ -673,7 +1066,7 @@ def test_scan_iceberg_extra_struct_fields(tmp_path: Path) -> None:
         schema={"a": pl.Struct({"a": pl.Int32})},
         _column_mapping=(
             "iceberg-column-mapping",
-            new_pl_iceberg_dataset(tbl).arrow_schema(),
+            new_iceberg_scan_resolver(tbl).table.arrow_schema(),
         ),
         cast_options=pl.ScanCastOptions(
             extra_struct_fields="ignore", missing_struct_fields="insert"
@@ -1394,13 +1787,14 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
 
 
 # Note: This test also generally covers primitive type round-tripping.
-@pytest.mark.parametrize("test_uuid", [True, False])
+@pytest.mark.parametrize(
+    "exclude_uuid",
+    [True, False] if parse_version(pyiceberg.__version__) >= (0, 10, 0) else [True],
+)
 @pytest.mark.write_disk
 def test_fill_missing_fields_with_identity_partition_values(
-    test_uuid: bool, tmp_path: Path
+    exclude_uuid: bool, tmp_path: Path
 ) -> None:
-    from datetime import time
-
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
@@ -1408,60 +1802,9 @@ def test_fill_missing_fields_with_identity_partition_values(
     )
     catalog.create_namespace("namespace")
 
-    min_version = parse_version(pyiceberg.__version__) >= (0, 10, 0)
-
-    test_decimal_and_fixed = min_version
-    test_uuid = test_uuid and min_version
-
-    next_field_id = partial(next, itertools.count(1))
-
-    iceberg_schema = IcebergSchema(
-        NestedField(next_field_id(), "height_provider", IntegerType()),
-        NestedField(next_field_id(), "BooleanType", BooleanType()),
-        NestedField(next_field_id(), "IntegerType", IntegerType()),
-        NestedField(next_field_id(), "LongType", LongType()),
-        NestedField(next_field_id(), "FloatType", FloatType()),
-        NestedField(next_field_id(), "DoubleType", DoubleType()),
-        NestedField(next_field_id(), "DateType", DateType()),
-        NestedField(next_field_id(), "TimeType", TimeType()),
-        NestedField(next_field_id(), "TimestampType", TimestampType()),
-        NestedField(next_field_id(), "TimestamptzType", TimestamptzType()),
-        NestedField(next_field_id(), "StringType", StringType()),
-        NestedField(next_field_id(), "BinaryType", BinaryType()),
-        *(
-            [
-                NestedField(next_field_id(), "DecimalType", DecimalType(18, 2)),
-                NestedField(next_field_id(), "FixedType", FixedType(1)),
-            ]
-            if test_decimal_and_fixed
-            else []
-        ),
-        *([NestedField(next_field_id(), "UUIDType", UUIDType())] if test_uuid else []),
-    )
-
-    arrow_tbl = pa.Table.from_pydict(
-        {
-            "height_provider": [1],
-            "BooleanType": [True],
-            "IntegerType": [1],
-            "LongType": [1],
-            "FloatType": [1.0],
-            "DoubleType": [1.0],
-            "DateType": [date(2025, 1, 1)],
-            "TimeType": [time(11, 30)],
-            "TimestampType": [datetime(2025, 1, 1)],
-            "TimestamptzType": [datetime(2025, 1, 1)],
-            "StringType": ["A"],
-            "BinaryType": [b"A"],
-            **(
-                {"DecimalType": [D("1.0")], "FixedType": [b"A"]}
-                if test_decimal_and_fixed
-                else {}
-            ),
-            **({"UUIDType": [b"0000111100001111"]} if test_uuid else {}),
-        },
-        schema=schema_to_pyarrow(iceberg_schema, include_field_ids=False),
-    )
+    table_data = _TableDataAllTypes.new(exclude_uuid=exclude_uuid)
+    iceberg_schema = table_data.iceberg_schema
+    arrow_tbl = table_data.arrow_table
 
     tbl = catalog.create_table(
         "namespace.table",
@@ -1478,7 +1821,7 @@ def test_fill_missing_fields_with_identity_partition_values(
         ),
     )
 
-    if test_uuid:
+    if not exclude_uuid:
         # Note: If this starts working one day we can include it in tests.
         with pytest.raises(
             pa.ArrowNotImplementedError,
@@ -1490,30 +1833,7 @@ def test_fill_missing_fields_with_identity_partition_values(
 
     tbl.append(arrow_tbl)
 
-    expect = pl.DataFrame(
-        [
-            pl.Series('height_provider', [1], dtype=pl.Int32),
-            pl.Series('BooleanType', [True], dtype=pl.Boolean),
-            pl.Series('IntegerType', [1], dtype=pl.Int32),
-            pl.Series('LongType', [1], dtype=pl.Int64),
-            pl.Series('FloatType', [1.0], dtype=pl.Float32),
-            pl.Series('DoubleType', [1.0], dtype=pl.Float64),
-            pl.Series('DateType', [date(2025, 1, 1)], dtype=pl.Date),
-            pl.Series('TimeType', [time(11, 30)], dtype=pl.Time),
-            pl.Series('TimestampType', [datetime(2025, 1, 1, 0, 0)], dtype=pl.Datetime(time_unit='us', time_zone=None)),
-            pl.Series('TimestamptzType', [datetime(2025, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key='UTC'))], dtype=pl.Datetime(time_unit='us', time_zone='UTC')),
-            pl.Series('StringType', ['A'], dtype=pl.String),
-            pl.Series('BinaryType', [b'A'], dtype=pl.Binary),
-            *(
-                [
-                    pl.Series('DecimalType', [D('1.00')], dtype=pl.Decimal(precision=18, scale=2)),
-                    pl.Series('FixedType', [b'A'], dtype=pl.Binary),
-                ]
-                if test_decimal_and_fixed
-                else []
-            ),
-        ]
-    )  # fmt: skip
+    expect = table_data.polars_df
 
     assert_frame_equal(
         pl.scan_iceberg(tbl, reader_override="pyiceberg").collect(),
@@ -1797,13 +2117,13 @@ def test_scan_iceberg_min_max_statistics_filter(
 
     # Begin inspecting statistics
 
-    scan_data = new_pl_iceberg_dataset(tbl)._to_dataset_scan_impl()
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
 
     assert isinstance(scan_data, _NativeIcebergScanData)
     assert scan_data.statistics_loader is None
     assert scan_data.min_max_statistics is None
 
-    scan_data = new_pl_iceberg_dataset(tbl)._to_dataset_scan_impl(
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl(
         filter_columns=["height_provider"]
     )
 
@@ -1828,7 +2148,7 @@ def test_scan_iceberg_min_max_statistics_filter(
         ),
     )
 
-    scan_data = new_pl_iceberg_dataset(tbl)._to_dataset_scan_impl(
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl(
         filter_columns=pl_schema.names()
     )
 

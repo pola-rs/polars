@@ -43,6 +43,7 @@ pub enum FunctionIR {
         sources: ScanSources,
         scan_type: Box<FileScanIR>,
         alias: Option<PlSmallStr>,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
     },
 
     Unnest {
@@ -82,12 +83,20 @@ impl Hash for FunctionIR {
         std::mem::discriminant(self).hash(state);
         match self {
             #[cfg(feature = "python")]
-            FunctionIR::OpaquePython { .. } => {},
+            FunctionIR::OpaquePython(OpaquePythonUdf { function, .. }) => {
+                // Use the Python object pointer as its identity (equivalent to Python's id()).
+                // This ensures two different Python functions are never treated as identical
+                // by common subplan elimination, while the same function object used twice
+                // on the same input is correctly recognised as a common subplan.
+                let ptr_addr = function.0.as_ptr() as usize;
+                ptr_addr.hash(state);
+            },
             FunctionIR::Opaque { fmt_str, .. } => fmt_str.hash(state),
             FunctionIR::FastCount {
                 sources,
                 scan_type,
                 alias,
+                ..
             } => {
                 sources.hash(state);
                 scan_type.hash(state);
@@ -199,7 +208,8 @@ impl FunctionIR {
                 sources,
                 scan_type,
                 alias,
-            } => count::count_rows(sources, scan_type, alias.clone()),
+                cloud_options,
+            } => count::count_rows(sources, scan_type, alias.clone(), cloud_options.as_ref()),
             Rechunk => {
                 df.rechunk_mut_par();
                 Ok(df)
@@ -320,6 +330,7 @@ impl Display for FunctionIR {
                 sources,
                 scan_type,
                 alias,
+                ..
             } => {
                 let scan_type: &str = (&(**scan_type)).into();
                 let default_column_name = PlSmallStr::from_static(crate::constants::LEN);

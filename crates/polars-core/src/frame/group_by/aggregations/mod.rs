@@ -1,5 +1,7 @@
 mod agg_list;
 mod boolean;
+#[cfg(feature = "dtype-categorical")]
+mod categorical;
 mod dispatch;
 mod string;
 
@@ -77,11 +79,6 @@ where
     T: IsFloat + NativeType,
     Out: NativeType,
 {
-    if values.is_empty() {
-        let out: Vec<Out> = vec![];
-        return PrimitiveArray::new(Out::PRIMITIVE.into(), out.into(), None);
-    }
-
     // This iterators length can be trusted
     // these represent the number of groups in the group_by operation
     let output_len = offsets.size_hint().0;
@@ -126,10 +123,6 @@ where
     T: IsFloat + NativeType,
     Out: NativeType,
 {
-    if values.is_empty() {
-        let out: Vec<Out> = vec![];
-        return PrimitiveArray::new(Out::PRIMITIVE.into(), out.into(), None);
-    }
     // start with a dummy index, will be overwritten on first iteration.
     let mut agg_window = Agg::new(values, 0, 0, params, None);
 
@@ -189,6 +182,22 @@ where
     T: PolarsNumericType,
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    ca.into_series()
+}
+
+pub fn _agg_helper_idx_idx<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
+where
+    F: Fn((IdxSize, &'a IdxVec)) -> Option<IdxSize> + Send + Sync,
+{
+    let ca: IdxCa = POOL.install(|| groups.into_par_iter().map(f).collect());
+    ca.into_series()
+}
+
+pub fn _agg_helper_slice_idx<F>(groups: &[[IdxSize; 2]], f: F) -> Series
+where
+    F: Fn([IdxSize; 2]) -> Option<IdxSize> + Send + Sync,
+{
+    let ca: IdxCa = POOL.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
 }
 

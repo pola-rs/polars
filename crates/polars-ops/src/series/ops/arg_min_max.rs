@@ -1,6 +1,6 @@
 use polars_core::chunked_array::arg_min_max::{
-    arg_max_binary, arg_max_bool, arg_max_numeric, arg_max_str, arg_min_binary, arg_min_bool,
-    arg_min_numeric, arg_min_str,
+    arg_max_binary, arg_max_binary_offset, arg_max_bool, arg_max_numeric, arg_max_str,
+    arg_min_binary, arg_min_binary_offset, arg_min_bool, arg_min_numeric, arg_min_str,
 };
 #[cfg(feature = "dtype-categorical")]
 use polars_core::chunked_array::arg_min_max::{arg_max_cat, arg_min_cat};
@@ -65,6 +65,7 @@ impl ArgAgg for Series {
             Date | Datetime(_, _) | Duration(_) | Time => phys_s.arg_min(),
             String => arg_min_str(self.str().unwrap()),
             Binary => arg_min_binary(self.binary().unwrap()),
+            BinaryOffset => arg_min_binary_offset(self.binary_offset().unwrap()),
             Boolean => arg_min_bool(self.bool().unwrap()),
             dt if dt.is_primitive_numeric() => {
                 with_match_physical_numeric_polars_type!(phys_s.dtype(), |$T| {
@@ -72,6 +73,11 @@ impl ArgAgg for Series {
                     arg_min_numeric(ca)
                 })
             },
+            dt if dt.is_nested() => self
+                .row_encode_ordered(false, false)
+                .ok()?
+                .into_series()
+                .arg_min(),
             _ => None,
         }
     }
@@ -93,6 +99,7 @@ impl ArgAgg for Series {
             Date | Datetime(_, _) | Duration(_) | Time => phys_s.arg_max(),
             String => arg_max_str(self.str().unwrap()),
             Binary => arg_max_binary(self.binary().unwrap()),
+            BinaryOffset => arg_max_binary_offset(self.binary_offset().unwrap()),
             Boolean => arg_max_bool(self.bool().unwrap()),
             dt if dt.is_primitive_numeric() => {
                 with_match_physical_numeric_polars_type!(phys_s.dtype(), |$T| {
@@ -100,6 +107,11 @@ impl ArgAgg for Series {
                     arg_max_numeric(ca)
                 })
             },
+            dt if dt.is_nested() => self
+                .row_encode_ordered(false, false)
+                .ok()?
+                .into_series()
+                .arg_max(),
             _ => None,
         }
     }

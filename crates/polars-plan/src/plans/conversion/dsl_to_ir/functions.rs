@@ -533,28 +533,14 @@ pub(super) fn convert_functions(
         },
         #[cfg(feature = "business")]
         F::Business(business_function) => I::Business(match business_function {
-            BusinessFunction::BusinessDayCount {
-                week_mask,
-                holidays,
-            } => IRBusinessFunction::BusinessDayCount {
-                week_mask,
-                holidays,
+            BusinessFunction::BusinessDayCount { week_mask } => {
+                IRBusinessFunction::BusinessDayCount { week_mask }
             },
-            BusinessFunction::AddBusinessDay {
-                week_mask,
-                holidays,
-                roll,
-            } => IRBusinessFunction::AddBusinessDay {
-                week_mask,
-                holidays,
-                roll,
+            BusinessFunction::AddBusinessDay { week_mask, roll } => {
+                IRBusinessFunction::AddBusinessDay { week_mask, roll }
             },
-            BusinessFunction::IsBusinessDay {
-                week_mask,
-                holidays,
-            } => IRBusinessFunction::IsBusinessDay {
-                week_mask,
-                holidays,
+            BusinessFunction::IsBusinessDay { week_mask } => {
+                IRBusinessFunction::IsBusinessDay { week_mask }
             },
         }),
         #[cfg(feature = "abs")]
@@ -967,7 +953,7 @@ pub(super) fn convert_functions(
                 seed,
             }
         },
-        F::SetSortedFlag(is_sorted) => I::SetSortedFlag(is_sorted),
+        F::SetSortedFlag(sorted) => I::SetSortedFlag(sorted),
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags,
@@ -1045,7 +1031,61 @@ pub(super) fn convert_functions(
         },
         F::GatherEvery { n, offset } => I::GatherEvery { n, offset },
         #[cfg(feature = "reinterpret")]
-        F::Reinterpret(v) => I::Reinterpret(v),
+        F::Reinterpret(signed, dtype) => {
+            let input_dtype = e[0].dtype(ctx.schema, ctx.arena)?;
+
+            polars_ensure!(
+                signed.is_some() != dtype.is_some(),
+                ComputeError:
+                "reinterpret requires exactly one of `signed` or `dtype` to be specified"
+            );
+
+            polars_ensure!(
+                input_dtype.is_numeric(),
+                InvalidOperation:
+                "cannot reinterpret non-numeric input dtype '{input_dtype:?}'. \
+                Consider casting instead."
+            );
+
+            let target_dtype = if let Some(signed) = signed {
+                if signed {
+                    match input_dtype {
+                        DataType::UInt8 => DataType::Int8,
+                        DataType::UInt16 => DataType::Int16,
+                        DataType::UInt32 => DataType::Int32,
+                        DataType::UInt64 => DataType::Int64,
+                        DataType::UInt128 => DataType::Int128,
+                        _ => input_dtype.clone(),
+                    }
+                } else {
+                    match input_dtype {
+                        DataType::Int8 => DataType::UInt8,
+                        DataType::Int16 => DataType::UInt16,
+                        DataType::Int32 => DataType::UInt32,
+                        DataType::Int64 => DataType::UInt64,
+                        DataType::Int128 => DataType::UInt128,
+                        _ => input_dtype.clone(),
+                    }
+                }
+            } else if let Some(target_dtype) = dtype {
+                match (
+                    input_dtype.numeric_to_unsigned_bit_repr(),
+                    target_dtype.numeric_to_unsigned_bit_repr(),
+                ) {
+                    (Some(l), Some(r)) if l == r => {},
+                    _ => polars_bail!(
+                        InvalidOperation:
+                        "cannot reinterpret from {input_dtype:?} to {target_dtype:?}"
+                    ),
+                };
+
+                target_dtype
+            } else {
+                unreachable!();
+            };
+
+            I::Reinterpret(target_dtype)
+        },
         F::ExtendConstant => {
             polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'value' must be a scalar value");
             polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");

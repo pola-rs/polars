@@ -3,6 +3,8 @@ import io
 import itertools
 import typing
 
+import pyarrow as pa
+import pyarrow.dataset as pad
 import pytest
 
 import polars as pl
@@ -18,7 +20,7 @@ def test_is_null_followed_by_all() -> None:
     )
 
     assert r'[[(col("val").len()) == (col("val").null_count())]]' in result_lf.explain()
-    assert "is_null" not in result_lf
+    assert "is_null" not in result_lf.collect_schema()
     assert_frame_equal(expected_df, result_lf.collect())
 
     # verify we don't optimize on chained expressions when last one is not col
@@ -588,3 +590,41 @@ def test_concat_str_sortedness_26466() -> None:
         )
 
         assert "sorted-group-by" not in typing.cast("str", dot)
+
+
+def test_select_all_columns_no_projection() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    plan = lf.select(pl.col("a"), pl.col("b")).explain()
+    assert "PROJECT */2 COLUMNS" in plan
+
+
+def test_scan_select_all_columns_no_projection_csv() -> None:
+    f = io.StringIO()
+    pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).write_csv(f)
+    f.seek(0)
+    plan = pl.scan_csv(f).select(pl.col("a"), pl.col("b")).explain()
+    assert "PROJECT */2 COLUMNS" in plan
+
+
+def test_scan_select_all_columns_no_projection_parquet() -> None:
+    f = io.BytesIO()
+    pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).write_parquet(f)
+    f.seek(0)
+    plan = pl.scan_parquet(f).select(pl.col("a"), pl.col("b")).explain()
+    assert "PROJECT */2 COLUMNS" in plan
+
+
+def test_scan_select_all_columns_no_projection_pyarrow() -> None:
+    ds = pad.dataset(pa.table({"a": [1, 2, 3], "b": [4, 5, 6]}))
+    plan = pl.scan_pyarrow_dataset(ds).select(pl.col("a"), pl.col("b")).explain()
+    assert "PROJECT */2 COLUMNS" in plan
+
+
+def test_slice_pushdown_with_cache_arena_take_panic_26905() -> None:
+    lf = pl.LazyFrame({"x": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]})
+    q = pl.concat([lf, lf]).select(pl.all()).filter(pl.col("x") > 3).head(2)
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"x": [4, 5]}),
+    )
