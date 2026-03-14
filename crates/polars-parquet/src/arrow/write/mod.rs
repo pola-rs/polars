@@ -31,6 +31,7 @@ use arrow::datatypes::*;
 use arrow::types::{NativeType, days_ms, i256};
 pub use nested::{num_values, write_rep_and_def};
 pub use pages::{to_leaves, to_nested, to_parquet_leaves};
+use polars_config::config;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
 pub use utils::write_def_levels;
@@ -62,6 +63,11 @@ pub struct StatisticsOptions {
     pub max_value: bool,
     pub distinct_count: bool,
     pub null_count: bool,
+    /// Maximum length (in bytes) for binary/string min/max statistics.
+    /// Values longer than this will be truncated. `0` means no truncation.
+    /// `None` means that the truncation setting will be retrieved from
+    /// `polars-config`.
+    pub statistics_truncate_length_value: Option<u64>,
 }
 
 impl Default for StatisticsOptions {
@@ -71,6 +77,7 @@ impl Default for StatisticsOptions {
             max_value: true,
             distinct_count: false,
             null_count: true,
+            statistics_truncate_length_value: None,
         }
     }
 }
@@ -113,6 +120,7 @@ impl StatisticsOptions {
             max_value: false,
             distinct_count: false,
             null_count: false,
+            statistics_truncate_length_value: None,
         }
     }
 
@@ -122,6 +130,7 @@ impl StatisticsOptions {
             max_value: true,
             distinct_count: true,
             null_count: true,
+            statistics_truncate_length_value: None,
         }
     }
 
@@ -131,6 +140,18 @@ impl StatisticsOptions {
 
     pub fn is_full(&self) -> bool {
         self.min_value && self.max_value && self.distinct_count && self.null_count
+    }
+
+    /// Maximum length (in bytes) for binary/string min/max statistics.
+    /// Values longer than this will be truncated.
+    /// This function will first try to receive the internal `statistics_truncate_length_value`,
+    /// and if that's `None`, it will retrieve the setting from `polars-config`.
+    /// The return value of `None` means that no truncation will be performed.
+    pub fn statistics_truncate_length(&self) -> Option<u64> {
+        let len = self
+            .statistics_truncate_length_value
+            .unwrap_or_else(|| config().parquet_statistics_truncate_length());
+        if len > 0 { Some(len) } else { None }
     }
 }
 
