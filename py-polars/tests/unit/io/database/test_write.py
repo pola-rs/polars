@@ -164,7 +164,10 @@ class TestWriteDatabase:
         """`append` should create table when one does not already exist."""
         if engine == "adbc":
             adbc_driver_manager = pytest.importorskip("adbc_driver_manager")
-            if parse_version(getattr(adbc_driver_manager, "__version__", "0.0")) < (0, 7):
+            if parse_version(getattr(adbc_driver_manager, "__version__", "0.0")) < (
+                0,
+                7,
+            ):
                 pytest.skip("adbc-driver-manager < 0.7.0 has no create_append mode")
 
         df = pl.DataFrame(
@@ -174,7 +177,9 @@ class TestWriteDatabase:
             }
         )
         tmp_path.mkdir(exist_ok=True)
-        test_db_uri = f"sqlite:///{tmp_path}/test_append_create_{int(uri_connection)}.db"
+        test_db_uri = (
+            f"sqlite:///{tmp_path}/test_append_create_{int(uri_connection)}.db"
+        )
 
         table_name = "test_append_create"
         conn = self._get_connection(test_db_uri, engine, uri_connection)
