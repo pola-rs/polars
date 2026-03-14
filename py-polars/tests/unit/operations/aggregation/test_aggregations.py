@@ -1537,3 +1537,28 @@ def test_min_max_by_all_null_by_group(agg: Callable[..., pl.Expr]) -> None:
         .collect(engine="streaming")
     )
     assert_frame_equal(streaming, expected)
+
+
+@pytest.mark.parametrize("agg", [pl.Expr.min_by, pl.Expr.max_by])
+def test_min_max_by_all_null_by_group_slice(agg: Callable[..., pl.Expr]) -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [date(2020, 1, 1), date(2020, 1, 1), date(2020, 2, 1)],
+            "val": [1, 2, 3],
+            "by": pl.Series([None, None, 5], dtype=pl.Int64),
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "dt": [date(2020, 1, 1), date(2020, 2, 1)],
+            "val": pl.Series([None, 3], dtype=pl.Int64),
+        }
+    )
+
+    result = (
+        df.lazy()
+        .group_by_dynamic("dt", every="1mo")
+        .agg(agg(pl.col("val"), pl.col("by")))
+        .collect()
+    )
+    assert_frame_equal(result, expected)
