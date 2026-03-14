@@ -9,7 +9,6 @@ use polars_core::utils::{_split_offsets, NoNull};
 use polars_ops::prelude::ArgAgg;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
-use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
 use super::*;
@@ -723,9 +722,7 @@ impl PhysicalExpr for AggMinMaxByExpr {
             GroupsType::Slice { groups, .. } => idxs_in_groups
                 .iter()
                 .enumerate()
-                .map(|(group_idx, idx_in_group)| {
-                    idx_in_group.map(|i| groups[group_idx][0] + i)
-                })
+                .map(|(group_idx, idx_in_group)| idx_in_group.map(|i| groups[group_idx][0] + i))
                 .collect(),
         };
 

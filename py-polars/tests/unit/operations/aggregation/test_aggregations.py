@@ -1523,7 +1523,9 @@ def test_min_max_by_all_null_by_group(agg: Callable[..., pl.Expr]) -> None:
             "by": pl.Series([None, None, 5], dtype=pl.Int64),
         }
     )
-    expected = pl.DataFrame({"g": ["a", "b"], "val": pl.Series([None, 3], dtype=pl.Int64)})
+    expected = pl.DataFrame(
+        {"g": ["a", "b"], "val": pl.Series([None, 3], dtype=pl.Int64)}
+    )
 
     eager = df.group_by("g", maintain_order=True).agg(agg(pl.col("val"), pl.col("by")))
     assert_frame_equal(eager, expected)
