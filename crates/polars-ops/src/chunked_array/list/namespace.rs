@@ -659,6 +659,14 @@ pub trait ListNameSpaceImpl: AsList {
         let fraction_s = fraction.cast(&DataType::Float64)?;
         let fraction = fraction_s.f64()?;
 
+        // Validate that all fraction values are between 0.0 and 1.0
+        for frac in fraction.into_no_null_iter() {
+            polars_ensure!(
+                frac >= 0.0 && frac <= 1.0,
+                ComputeError: "fraction must be between 0.0 and 1.0, got: {}", frac
+            );
+        }
+
         polars_ensure!(
             ca.len() == fraction.len() || ca.len() == 1 || fraction.len() == 1,
             length_mismatch = "list.sample(fraction)",
