@@ -11,6 +11,8 @@ from hypothesis import given
 import polars as pl
 from polars.testing import assert_frame_equal
 from polars.testing.parametric.strategies import series
+from polars.testing.parametric.strategies.core import dataframes
+from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
@@ -305,18 +307,22 @@ def test_join_where_predicates(range_constraint: list[pl.Expr]) -> None:
     }
 
 
-def _inequality_expression(col1: str, op: str, col2: str) -> pl.Expr:
+def _inequality_expression(expr1: pl.Expr, op: str, expr2: pl.Expr) -> pl.Expr:
     if op == "<":
-        return pl.col(col1) < pl.col(col2)
+        return expr1 < expr2
     elif op == "<=":
-        return pl.col(col1) <= pl.col(col2)
+        return expr1 <= expr2
     elif op == ">":
-        return pl.col(col1) > pl.col(col2)
+        return expr1 > expr2
     elif op == ">=":
-        return pl.col(col1) >= pl.col(col2)
+        return expr1 >= expr2
     else:
         message = f"Invalid operator '{op}'"
         raise ValueError(message)
+
+
+def _inequality_expression_col(col1: str, op: str, col2: str) -> pl.Expr:
+    return _inequality_expression(pl.col(col1), op, pl.col(col2))
 
 
 def operators() -> SearchStrategy[str]:
@@ -407,8 +413,8 @@ def west_df(
     op2=operators(),
 )
 def test_ie_join(east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str) -> None:
-    expr0 = _inequality_expression("dur", op1, "time")
-    expr1 = _inequality_expression("rev", op2, "cost")
+    expr0 = _inequality_expression_col("dur", op1, "time")
+    expr1 = _inequality_expression_col("rev", op2, "cost")
 
     actual = east.join_where(west, expr0 & expr1)
 
@@ -425,8 +431,8 @@ def test_ie_join(east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str) -> 
 def test_ie_join_with_nulls(
     east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str
 ) -> None:
-    expr0 = _inequality_expression("dur", op1, "time")
-    expr1 = _inequality_expression("rev", op2, "cost")
+    expr0 = _inequality_expression_col("dur", op1, "time")
+    expr1 = _inequality_expression_col("rev", op2, "cost")
 
     actual = east.join_where(west, expr0 & expr1)
 
@@ -443,8 +449,8 @@ def test_ie_join_with_nulls(
 def test_ie_join_with_floats(
     east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str
 ) -> None:
-    expr0 = _inequality_expression("dur", op1, "time")
-    expr1 = _inequality_expression("rev", op2, "cost")
+    expr0 = _inequality_expression_col("dur", op1, "time")
+    expr1 = _inequality_expression_col("rev", op2, "cost")
 
     actual = east.join_where(west, expr0, expr1)
 
@@ -491,7 +497,7 @@ def test_ie_join_use_keys_multiple() -> None:
     op=operators(),
 )
 def test_single_inequality(left: pl.Series, right: pl.Series, op: str) -> None:
-    expr = _inequality_expression("x", op, "y")
+    expr = _inequality_expression_col("x", op, "y")
 
     left_df = pl.DataFrame(
         {
@@ -690,3 +696,163 @@ def test_boolean_predicate_join_where() -> None:
     assert "NESTED LOOP JOIN" in plan
 
     assert_frame_equal(q.collect(), expect)
+
+
+@pytest.mark.parametrize("lower_op", [">=", ">"])
+@pytest.mark.parametrize("upper_op", ["<", "<="])
+@pytest.mark.parametrize("swap_sides", [False, True])
+@given(
+    point=dataframes(min_cols=1, max_cols=1, allowed_dtypes=[pl.Int16]),
+    interval=dataframes(min_cols=2, max_cols=2, allowed_dtypes=[pl.Int16]),
+)
+def test_range_join_double_parametric(
+    point: pl.DataFrame,
+    interval: pl.DataFrame,
+    lower_op: str,
+    upper_op: str,
+    swap_sides: bool,
+) -> None:
+    point_lf = pl.LazyFrame(point.rename({"col0": "point"})).with_row_index()
+    interval_lf = pl.LazyFrame(
+        interval.rename({"col0": "lo", "col1": "hi"})
+    ).with_row_index()
+
+    left_lf, right_lf = (
+        (point_lf, interval_lf) if not swap_sides else (interval_lf, point_lf)
+    )
+    q = left_lf.join_where(
+        right_lf,
+        _inequality_expression_col("point", lower_op, "lo"),
+        _inequality_expression_col("point", upper_op, "hi"),
+    )
+
+    plan = q.explain(engine="streaming")
+    assert "RANGE" in plan
+
+    expected = q.collect(engine="in-memory").sort("index", "index_right")
+    actual = q.collect(engine="streaming").sort("index", "index_right")
+    assert_frame_equal(actual, expected, check_exact=True)
+
+
+@pytest.mark.parametrize("op", [">=", ">", "<=", "<"])
+@given(
+    df1=dataframes(min_cols=1, max_cols=1, allowed_dtypes=[pl.Int16]),
+    df2=dataframes(min_cols=1, max_cols=1, allowed_dtypes=[pl.Int16]),
+)
+def test_range_join_single_parametric(
+    df1: pl.DataFrame,
+    df2: pl.DataFrame,
+    op: str,
+) -> None:
+    lf1 = pl.LazyFrame(df1.rename({"col0": "a"})).with_row_index()
+    lf2 = pl.LazyFrame(df2.rename({"col0": "a"})).with_row_index()
+
+    q = lf1.join_where(lf2, _inequality_expression_col("a", op, "a_right"))
+
+    plan = q.explain(engine="streaming")
+    assert "RANGE" in plan
+
+    expected = q.collect(engine="in-memory").sort("index", "index_right")
+    actual = q.collect(engine="streaming").sort("index", "index_right")
+    assert_frame_equal(actual, expected, check_exact=True)
+
+
+@pytest.mark.parametrize("lower_op", [None, ">=", ">"])
+@pytest.mark.parametrize("upper_op", ["<=", "<"])
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series("point", [1, 2, 3], dtype=dtype)
+        for dtype in NUMERIC_DTYPES + TEMPORAL_DTYPES
+    ]
+    + [
+        pl.Series("point", [1, 2, 3], dtype=pl.Decimal(10, 2)),
+    ],
+)
+def test_range_join_dtypes(
+    s: pl.DataType,
+    lower_op: str | None,
+    upper_op: str | None,
+) -> None:
+    point_df = pl.DataFrame(s)
+
+    # 50 samples should ensure that this join will have plenty of matches
+    lo_df = point_df.sample(50, with_replacement=True, seed=0).rename({"point": "lo"})
+    hi_df = point_df.sample(50, with_replacement=True, seed=1).rename({"point": "hi"})
+    interval_lf = pl.concat([lo_df, hi_df], how="horizontal").with_row_index().lazy()
+    point_lf = point_df.with_row_index().lazy()
+    predicates = [
+        _inequality_expression_col("point", op, col)
+        for op, col in [(lower_op, "lo"), (upper_op, "hi")]
+        if op is not None
+    ]
+
+    q = point_lf.join_where(interval_lf, *predicates)
+
+    plan = q.explain(engine="streaming")
+    assert "RANGE" in plan
+
+    expected = q.collect(engine="in-memory").sort("index", "index_right")
+    actual = q.collect(engine="streaming").sort("index", "index_right")
+    assert expected.height > 0
+    assert_frame_equal(actual, expected, check_exact=True)
+
+
+@pytest.mark.parametrize("lower_op", [None, ">=", ">"])
+@pytest.mark.parametrize("upper_op", ["<=", "<"])
+@given(
+    point=dataframes(min_cols=1, max_cols=1, allowed_dtypes=[pl.Int16]),
+    interval=dataframes(min_cols=2, max_cols=2, allowed_dtypes=[pl.Int16]),
+)
+def test_range_join_already_sorted(
+    point: pl.DataFrame,
+    interval: pl.DataFrame,
+    lower_op: str | None,
+    upper_op: str | None,
+) -> None:
+    def predicates(*, descending: bool) -> list[pl.Expr]:
+        return [
+            _inequality_expression(
+                pl.col("point").set_sorted(descending=descending), op, pl.col(col)
+            )
+            for op, col in [(lower_op, "lo"), (upper_op, "hi")]
+            if op is not None
+        ]
+
+    point_lf_asc, point_lf_desc = [
+        (
+            pl.DataFrame(point.rename({"col0": "point"}))
+            .with_row_index()
+            .sort("point", descending=desc)
+            .lazy()
+        )
+        for desc in [False, True]
+    ]
+    interval_lf = (
+        pl.DataFrame(interval.rename({"col0": "lo", "col1": "hi"}))
+        .with_row_index()
+        .lazy()
+    )
+
+    q_asc = point_lf_asc.join_where(interval_lf, *predicates(descending=False))
+    q_desc = point_lf_desc.join_where(interval_lf, *predicates(descending=True))
+
+    # In both cases, the join input is already sorted, so the IR lowering
+    # should not add an additional sort node.
+    dot_asc = q_asc.show_graph(
+        plan_stage="physical", engine="streaming", raw_output=True
+    )
+    dot_desc = q_desc.show_graph(
+        plan_stage="physical", engine="streaming", raw_output=True
+    )
+    assert r"range-join\n" in str(dot_asc)
+    assert r"range-join\n" in str(dot_desc)
+    assert r"sort\n" not in str(dot_asc)
+    assert r"sort\n" not in str(dot_desc)
+
+    expected = q_asc.collect(engine="in-memory").sort("index", "index_right")
+    actual_asc = q_asc.collect(engine="streaming").sort("index", "index_right")
+    actual_desc = q_desc.collect(engine="streaming").sort("index", "index_right")
+
+    assert_frame_equal(actual_asc, expected, check_exact=True)
+    assert_frame_equal(actual_desc, expected, check_exact=True)

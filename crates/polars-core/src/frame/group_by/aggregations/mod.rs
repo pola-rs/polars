@@ -79,11 +79,6 @@ where
     T: IsFloat + NativeType,
     Out: NativeType,
 {
-    if values.is_empty() {
-        let out: Vec<Out> = vec![];
-        return PrimitiveArray::new(Out::PRIMITIVE.into(), out.into(), None);
-    }
-
     // This iterators length can be trusted
     // these represent the number of groups in the group_by operation
     let output_len = offsets.size_hint().0;
@@ -128,10 +123,6 @@ where
     T: IsFloat + NativeType,
     Out: NativeType,
 {
-    if values.is_empty() {
-        let out: Vec<Out> = vec![];
-        return PrimitiveArray::new(Out::PRIMITIVE.into(), out.into(), None);
-    }
     // start with a dummy index, will be overwritten on first iteration.
     let mut agg_window = Agg::new(values, 0, 0, params, None);
 
