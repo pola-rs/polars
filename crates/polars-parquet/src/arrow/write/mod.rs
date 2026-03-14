@@ -33,6 +33,7 @@ pub use nested::{num_values, write_rep_and_def};
 pub use pages::{to_leaves, to_nested, to_parquet_leaves};
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
+use polars_config::{config};
 pub use utils::write_def_levels;
 
 pub use crate::parquet::compression::{BrotliLevel, CompressionOptions, GzipLevel, ZstdLevel};
@@ -53,9 +54,6 @@ pub use crate::parquet::write::{
 pub use crate::parquet::{FallibleStreamingIterator, fallible_streaming_iterator};
 use crate::write::fixed_size_binary::build_statistics_float16;
 
-/// Default truncation length for binary/string statistics (in bytes).
-pub const DEFAULT_STATISTICS_TRUNCATE_LENGTH: u64 = 64;
-
 /// The statistics to write
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -66,8 +64,10 @@ pub struct StatisticsOptions {
     pub distinct_count: bool,
     pub null_count: bool,
     /// Maximum length (in bytes) for binary/string min/max statistics.
-    /// Values longer than this will be truncated. `None` disables truncation.
-    statistics_truncate_length: Option<u64>,
+    /// Values longer than this will be truncated. `0` means no truncation.
+    /// `None` means that the truncation setting will be retrieved from
+    /// `polars-config`.
+    pub statistics_truncate_length_value: Option<u64>,
 }
 
 impl Default for StatisticsOptions {
@@ -77,7 +77,7 @@ impl Default for StatisticsOptions {
             max_value: true,
             distinct_count: false,
             null_count: true,
-            statistics_truncate_length: None,
+            statistics_truncate_length_value: None,
         }
     }
 }
@@ -120,7 +120,7 @@ impl StatisticsOptions {
             max_value: false,
             distinct_count: false,
             null_count: false,
-            statistics_truncate_length: Some(DEFAULT_STATISTICS_TRUNCATE_LENGTH),
+            statistics_truncate_length_value: None,
         }
     }
 
@@ -130,7 +130,7 @@ impl StatisticsOptions {
             max_value: true,
             distinct_count: true,
             null_count: true,
-            statistics_truncate_length: Some(DEFAULT_STATISTICS_TRUNCATE_LENGTH),
+            statistics_truncate_length_value: None,
         }
     }
 
@@ -140,6 +140,18 @@ impl StatisticsOptions {
 
     pub fn is_full(&self) -> bool {
         self.min_value && self.max_value && self.distinct_count && self.null_count
+    }
+
+    /// Maximum length (in bytes) for binary/string min/max statistics.
+    /// Values longer than this will be truncated.
+    /// This function will first try to receive the internal `statistics_truncate_length_value`,
+    /// and if that's `None`, it will retrieve the setting from `polars-config`.
+    /// The return value of `None` means that no truncation will be performed.
+    pub fn statistics_truncate_length(&self) -> Option<u64> {
+        let len = self
+            .statistics_truncate_length_value
+            .unwrap_or_else(|| config().parquet_statistics_truncate_length());
+        if len > 0 { Some(len) } else { None }
     }
 }
 
