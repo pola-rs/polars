@@ -1109,6 +1109,38 @@ def test_list_sample_fraction_self_broadcast() -> None:
     )
 
 
+def test_list_sample_fraction_validation_22024() -> None:
+    """Test that list.sample fraction parameter validates bounds correctly."""
+    df = pl.DataFrame([
+        pl.Series('a', [
+            ["a"], ["eb", "d"],
+        ], pl.List(pl.String)),
+    ])
+    
+    # Test valid fractions work correctly
+    result = df.select(pl.col.a.list.sample(fraction=0.5))
+    assert result.shape[0] == 2
+    
+    result = df.select(pl.col.a.list.sample(fraction=1.0))
+    assert result.shape[0] == 2
+    
+    result = df.select(pl.col.a.list.sample(fraction=0.0))
+    assert result.shape[0] == 2
+    
+    # Test invalid fractions raise errors
+    with pytest.raises(pl.exceptions.ComputeError, match="fraction must be between 0.0 and 1.0, got: 1.5"):
+        df.select(pl.col.a.list.sample(fraction=1.5))
+    
+    with pytest.raises(pl.exceptions.ComputeError, match="fraction must be between 0.0 and 1.0, got: 2.0"):
+        df.select(pl.col.a.list.sample(fraction=2.0))
+    
+    with pytest.raises(pl.exceptions.ComputeError, match="fraction must be between 0.0 and 1.0, got: -0.1"):
+        df.select(pl.col.a.list.sample(fraction=-0.1))
+    
+    with pytest.raises(pl.exceptions.ComputeError, match="fraction must be between 0.0 and 1.0, got: 1.2"):
+        df.select(pl.col.a.list.sample(fraction=1.2))
+
+
 def test_list_shift_unequal_lengths_22018() -> None:
     with pytest.raises(pl.exceptions.ShapeError):
         pl.Series("a", [[1, 2], [1, 2]]).list.shift(pl.Series([1, 2, 3]))
