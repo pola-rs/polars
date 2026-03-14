@@ -1024,6 +1024,7 @@ pub(super) fn convert_functions(
         F::Replace => {
             let is_single_value = |node| match ctx.arena.get(node) {
                 AExpr::Literal(LiteralValue::Scalar(sc)) => !sc.dtype().is_list(),
+                AExpr::Literal(LiteralValue::Dyn(_)) => true,
                 _ => false,
             };
             if is_single_value(e[1].node()) && is_single_value(e[2].node()) {
