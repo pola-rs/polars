@@ -3988,7 +3988,7 @@ def test_parquet_statistics_truncation_binary_23498(
     stats = pq.read_metadata(f).row_group(0).column(0).statistics
     assert stats.min == expected_min
     assert stats.max == expected_max
-    
+
 
 @pytest.mark.parametrize(
     "values",
