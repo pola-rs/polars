@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use polars_error::PolarsResult;
+use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
@@ -30,6 +31,10 @@ impl PostApplyExtraOps {
             first_morsel_position,
             num_pipelines,
         } = self;
+
+        let verbose = polars_core::config::verbose();
+        let rows_before = Arc::new(RelaxedCell::new_u64(0));
+        let rows_after = Arc::new(RelaxedCell::new_u64(0));
 
         let (mut distr_tx, distr_receivers) = distributor_channel(num_pipelines, 1);
 
@@ -115,11 +120,14 @@ impl PostApplyExtraOps {
             .zip(senders)
             .map(|(mut morsel_rx, mut morsel_tx)| {
                 let ops_applier = ops_applier.clone();
+                let rows_before = rows_before.clone();
+                let rows_after = rows_after.clone();
 
                 AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
                     while let Ok((mut morsel, row_offset)) = morsel_rx.recv().await {
+                        rows_before.fetch_add(morsel.df().height() as u64);
                         ops_applier.apply_to_df(morsel.df_mut(), row_offset)?;
-
+                        rows_after.fetch_add(morsel.df().height() as u64);
                         if morsel_tx.insert(morsel).await.is_err() {
                             break;
                         }
@@ -133,6 +141,15 @@ impl PostApplyExtraOps {
         let handle = AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
             for handle in worker_handles {
                 handle.await?;
+            }
+
+            //@TODO: known issue: we never get here when the returned df is empty
+            if verbose {
+                eprintln!(
+                    "[PostApplyExtraOps]: rows_before: {}, rows_after: {}",
+                    rows_before.load(),
+                    rows_after.load(),
+                );
             }
 
             Ok(())

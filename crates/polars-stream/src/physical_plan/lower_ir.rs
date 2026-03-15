@@ -834,6 +834,11 @@ pub fn lower_ir(
                     let pre_slice = unified_scan_args.pre_slice.clone();
                     let disable_morsel_split = disable_morsel_split.unwrap_or(true);
 
+                    // Set to None if empty for performance.
+                    let deletion_files = unified_scan_args
+                        .deletion_files
+                        .and_then(|files| DeletionFilesList::filter_empty(Some(files)));
+
                     let mut multi_scan_node = PhysNodeKind::MultiScan {
                         scan_sources,
                         file_reader_builder,
@@ -849,10 +854,7 @@ pub fn lower_ir(
                         missing_columns_policy: unified_scan_args.missing_columns_policy,
                         forbid_extra_columns,
                         include_file_paths: unified_scan_args.include_file_paths,
-                        // Set to None if empty for performance.
-                        deletion_files: DeletionFilesList::filter_empty(
-                            unified_scan_args.deletion_files,
-                        ),
+                        deletion_files,
                         table_statistics: unified_scan_args.table_statistics,
                         file_schema,
                         disable_morsel_split,

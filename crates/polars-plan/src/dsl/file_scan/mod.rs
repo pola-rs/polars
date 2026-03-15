@@ -23,7 +23,10 @@ use super::*;
 use crate::dsl::default_values::DefaultFieldValues;
 pub mod default_values;
 pub mod deletion;
-
+#[cfg(feature = "python")]
+pub mod python_delta_dv_provider;
+#[cfg(feature = "python")]
+pub use python_delta_dv_provider::{DELTA_DV_PROVIDER_VTABLE, DeltaDeletionVectorProviderVTable};
 #[cfg(feature = "python")]
 pub mod python_dataset;
 #[cfg(feature = "python")]

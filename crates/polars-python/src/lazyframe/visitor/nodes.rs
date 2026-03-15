@@ -142,15 +142,18 @@ impl PyFileOptions {
     fn deletion_files(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(match &self.inner.deletion_files {
             None => py.None().into_any(),
-
             Some(DeletionFilesList::IcebergPositionDelete(paths)) => {
                 let out = PyDict::new(py);
-
                 for (k, v) in paths.iter() {
                     out.set_item(*k, v.as_ref())?;
                 }
-
                 ("iceberg-position-delete", out)
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind()
+            },
+            Some(DeletionFilesList::Delta(provider)) => {
+                ("delta-deletion-vector", provider.callback().0.clone_ref(py))
                     .into_pyobject(py)?
                     .into_any()
                     .unbind()
