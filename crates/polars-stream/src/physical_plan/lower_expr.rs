@@ -2051,6 +2051,7 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(AExprBuilder::col(out_name.clone(), ctx.expr_arena).node());
             },
 
+            #[cfg(feature = "index_of")]
             AExpr::Function {
                 input: ref inner_exprs,
                 function: IRFunctionExpr::IndexOf,
