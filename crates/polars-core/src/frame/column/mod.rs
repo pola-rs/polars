@@ -605,7 +605,7 @@ impl Column {
     pub fn first_non_null(&self) -> Option<usize> {
         match self {
             Self::Series(s) => crate::utils::first_non_null(s.chunks().iter().map(|a| a.as_ref())),
-            Self::Scalar(s) => (!s.scalar().is_null() && s.len() > 0).then_some(0),
+            Self::Scalar(s) => (!s.scalar().is_null() && !s.is_empty()).then_some(0),
         }
     }
 
@@ -614,7 +614,7 @@ impl Column {
             Self::Series(s) => {
                 crate::utils::last_non_null(s.chunks().iter().map(|a| a.as_ref()), s.len())
             },
-            Self::Scalar(s) => (!s.scalar().is_null() && s.len() > 0).then(|| s.len() - 1),
+            Self::Scalar(s) => (!s.scalar().is_null() && !s.is_empty()).then(|| s.len() - 1),
         }
     }
 

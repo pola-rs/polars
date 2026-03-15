@@ -162,7 +162,7 @@ impl ComputeNode for ForwardFillNode {
                             // likely overkill), you can implement a kernel of `forward_fill` with a
                             // `init` value. This would remove the need for these appends.
                             let leading = column.first_non_null().unwrap();
-                            let fill_last_count = (leading_limit as usize).min(leading);
+                            let fill_last_count = leading_limit.min(leading);
                             let mut out = Column::new_scalar(
                                 name.clone(),
                                 Scalar::new(dtype.clone(), last),
