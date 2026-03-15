@@ -7,6 +7,7 @@ pub mod dynamic_slice;
 #[cfg(feature = "ewma")]
 pub mod ewm;
 pub mod filter;
+pub mod forward_fill;
 pub mod gather_every;
 pub mod group_by;
 pub mod in_memory_map;

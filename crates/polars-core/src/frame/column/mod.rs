@@ -602,6 +602,22 @@ impl Column {
         }
     }
 
+    pub fn first_non_null(&self) -> Option<usize> {
+        match self {
+            Self::Series(s) => crate::utils::first_non_null(s.chunks().iter().map(|a| a.as_ref())),
+            Self::Scalar(s) => (!s.scalar().is_null() && !s.is_empty()).then_some(0),
+        }
+    }
+
+    pub fn last_non_null(&self) -> Option<usize> {
+        match self {
+            Self::Series(s) => {
+                crate::utils::last_non_null(s.chunks().iter().map(|a| a.as_ref()), s.len())
+            },
+            Self::Scalar(s) => (!s.scalar().is_null() && !s.is_empty()).then(|| s.len() - 1),
+        }
+    }
+
     pub fn take(&self, indices: &IdxCa) -> PolarsResult<Column> {
         check_bounds_ca(indices, self.len() as IdxSize)?;
         Ok(unsafe { self.take_unchecked(indices) })

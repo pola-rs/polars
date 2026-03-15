@@ -1187,6 +1187,35 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key)));
             },
 
+            AExpr::Function {
+                input: ref inner_exprs,
+                function:
+                    IRFunctionExpr::FillNullWithStrategy(
+                        polars_core::prelude::FillNullStrategy::Forward(limit),
+                    ),
+                options: _,
+            } => {
+                assert_eq!(inner_exprs.len(), 1);
+
+                let input_schema = &ctx.phys_sm[input.node].output_schema;
+                let value_key = unique_column_name();
+                let value_dtype = inner_exprs[0].dtype(input_schema, ctx.expr_arena)?;
+
+                let input = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(value_key.clone())],
+                    ctx,
+                )?;
+                let node_kind = PhysNodeKind::ForwardFill { input, limit };
+
+                let output_schema = Schema::from_iter([(value_key.clone(), value_dtype.clone())]);
+                let node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(Arc::new(output_schema), node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key)));
+            },
+
             #[cfg(feature = "diff")]
             AExpr::Function {
                 input: ref inner_exprs,
