@@ -306,7 +306,11 @@ def _extract_delta_deletion_vectors(
 
     joined_df = (
         requested_paths.lazy()
-        .with_columns(pl.col("path").str.strip_prefix(file_prefix))
+        .with_columns(
+            pl.col("path")
+            .str.replace("^lakefs://", "s3://")
+            .str.strip_prefix(file_prefix)
+        )
         .join(
             delta_deletion_vectors.lazy().with_columns(
                 pl.col("filepath")

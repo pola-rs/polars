@@ -3,12 +3,12 @@ from __future__ import annotations
 import functools
 import json
 import struct
+import sys
 import uuid
 import zlib
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
-import duckdb
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
@@ -480,26 +480,38 @@ def test_scan_delta_dv_extract_dvs(
 
 
 @pytest.mark.parametrize(
-    ("requested_paths", "dv_paths", "n_matches"),
+    ("platform", "requested_paths", "dv_paths", "n_matches"),
     [
-        (["/tmp/foo"], ["file:///tmp/foo"], 1),
-        (["file:///tmp/foo"], ["file:///tmp/foo"], 1),
-        (["file:///tmp/foo"], ["s3:///tmp/foo"], 0),
-        (["/tmp/foo"], ["s3:///tmp/foo"], 0),
-        (["s3:///tmp/foo"], ["s3:///tmp/foo"], 1),
-        (["s3:///tmp/foo"], ["lakefs:///tmp/foo"], 1),
-        (["lakefs:///tmp/foo"], ["s3:///tmp/foo"], 0),
-        (["lakefs:///tmp/foo"], ["lakefs:///tmp/foo"], 0),
-        (["/tmp/foo"], ["/tmp/foo"], 1),  # not possible, dv always has scheme
-        (["foo"], ["blah"], 0),
+        # common
+        (None, ["s3:///tmp/foo"], ["s3:///tmp/foo"], 1),
+        (None, ["s3:///tmp/foo"], ["lakefs:///tmp/foo"], 1),
+        (None, ["lakefs:///tmp/foo"], ["s3:///tmp/foo"], 1),
+        (None, ["lakefs:///tmp/foo"], ["lakefs:///tmp/foo"], 1),
+        # posix
+        ("posix", ["/tmp/foo"], ["file:///tmp/foo"], 1),
+        ("posix", ["file:///tmp/foo"], ["file:///tmp/foo"], 1),
+        ("posix", ["/tmp/foo"], ["/tmp/foo"], 1),
+        ("posix", ["/tmp/foo"], ["s3:///tmp/foo"], 0),
+        ("posix", ["file:///tmp/foo"], ["s3:///tmp/foo"], 0),
+        # win32
+        ("win32", ["C:/foo"], ["file:///C:/foo"], 1),
+        ("win32", ["file:///C:/foo"], ["file:///C:/foo"], 1),
+        ("win32", ["C:/foo"], ["C:/foo"], 1),
+        ("win32", ["C:/foo"], ["s3:///C:/foo"], 0),
+        ("win32", ["file:///C:/foo"], ["s3:///C:/foo"], 0),
     ],
 )
 def test_scan_delta_dv_normalize_scheme(
+    platform: str | None,
     requested_paths: list[str],
     dv_paths: list[str],
     n_matches: int,
-    # expected_vectors: list[list[bool] | None],
 ) -> None:
+    if platform == "win32" and sys.platform != "win32":
+        pytest.skip("windows-only test")
+    if platform == "posix" and sys.platform == "win32":
+        pytest.skip("posix-only test")
+
     requested_df = pl.DataFrame({"path": requested_paths}, schema={"path": pl.String})
     delta_deletion_vectors = pl.DataFrame(
         {
@@ -556,6 +568,8 @@ def test_scan_delta_dv_single(
     assert_frame_equal(out, expected)
 
     # duckdb cross-check
+    import duckdb
+
     conn = duckdb.connect()
     df_duckdb = conn.execute(f"SELECT * FROM delta_scan('{path}')").pl()
     assert_frame_equal(out, df_duckdb, check_row_order=False)
@@ -648,6 +662,8 @@ def test_scan_delta_dv_multiple(
     assert_frame_equal(out, expected, check_row_order=False)
 
     # duckdb cross-check
+    import duckdb
+
     conn = duckdb.connect()
     df_duckdb = conn.execute(f"SELECT * FROM delta_scan('{path}')").pl()
     assert_frame_equal(out, df_duckdb, check_row_order=False)
@@ -673,6 +689,8 @@ def test_scan_delta_dv_multiple_with_predicate_pushdown(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
+    import duckdb
+
     plmonkeypatch.setenv("POLARS_DELTA_READER_FEATURE_DV", "1")
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
@@ -698,7 +716,7 @@ def test_scan_delta_dv_multiple_with_predicate_pushdown(
         out = pl.scan_delta(path).filter(expr).collect()
         capture = capfd.readouterr().err
 
-        # notice how n_skip_files ignores the presence of deletion vectors
+        # note: n_skip_files ignores the presence of deletion vectors
         # because statistics are not updated (tightBounds = False)
         n_skip_files = sum(df.select((~expr).all()).item() for df in dfs)
         expected_msg = f"skipping {n_skip_files} / 3 files"
@@ -718,7 +736,6 @@ def test_scan_delta_dv_multiple_with_predicate_pushdown(
         assert_frame_equal(out, expected, check_row_order=False)
 
         # duckdb cross-check
-
         conn = duckdb.connect()
         df_duckdb = (
             conn.execute(f"SELECT * FROM delta_scan('{path}')").pl().filter(expr)
