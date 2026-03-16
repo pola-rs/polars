@@ -190,9 +190,7 @@ def test_schema_row_index_cse(maintain_order: bool) -> None:
         df_a = pl.scan_csv(csv_a.name).with_row_index("Idx")
 
         result = (
-            df_a.join(
-                df_a, on="B", maintain_order="left_right" if maintain_order else "none"
-            )
+            df_a.join(df_a, on="B", maintain_order="left" if maintain_order else "none")
             .group_by("A", maintain_order=maintain_order)
             .all()
             .collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))
@@ -208,7 +206,17 @@ def test_schema_row_index_cse(maintain_order: bool) -> None:
         },
         schema_overrides={"Idx": pl.List(pl.UInt32), "Idx_right": pl.List(pl.UInt32)},
     )
-    assert_frame_equal(result, expected, check_row_order=maintain_order)
+    if not maintain_order:
+        # Sort the lists to make sure that the result is correctly ordered
+        list_cols = [c for c in result.columns if c != "A"]
+        result = (
+            result.explode(list_cols)
+            .sort("Idx")
+            .group_by("A", maintain_order=True)
+            .all()
+            .select(result.columns)
+        )
+    assert_frame_equal(result, expected)
 
 
 @pytest.mark.debug
