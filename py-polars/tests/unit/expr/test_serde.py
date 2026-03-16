@@ -59,6 +59,16 @@ def test_expression_json_13991() -> None:
     assert round_tripped.meta == expr
 
 
+def test_expr_serde_nan_vs_inf_26929() -> None:
+    nan_json = pl.lit(float("nan")).meta.serialize(format="json")
+    inf_json = pl.lit(float("inf")).meta.serialize(format="json")
+    ninf_json = pl.lit(float("-inf")).meta.serialize(format="json")
+
+    assert nan_json != inf_json
+    assert nan_json != ninf_json
+    assert inf_json != ninf_json
+
+
 def test_expr_write_json_from_json_deprecated() -> None:
     expr = pl.col("foo").sum().over("bar")
 
