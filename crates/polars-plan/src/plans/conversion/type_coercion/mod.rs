@@ -766,6 +766,7 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
+            #[cfg(feature = "business")]
             AExpr::Function {
                 function: IRFunctionExpr::Business(ref business_fn),
                 ref input,
