@@ -37,19 +37,31 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       POLARS_IDEAL_MORSEL_SIZE: ${{ matrix.ideal_morsel_size }}
+      POLARS_AUTO_NEW_STREAMING: ${{ matrix.auto_new_streaming }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
         python-version: ['3.10', '3.12', '3.13', '3.14', '3.14t']
         ideal_morsel_size: [100000]
+        auto_new_streaming: ['']
         include:
           - os: windows-latest
             python-version: '3.14'
             ideal_morsel_size: 100000
+            auto_new_streaming: ''
           - os: ubuntu-latest
             python-version: '3.14'
             ideal_morsel_size: 4
+            auto_new_streaming: ''
+          - os: ubuntu-latest
+            python-version: '3.14'
+            ideal_morsel_size: 100000
+            auto_new_streaming: '1'
+          - os: ubuntu-latest
+            python-version: '3.14'
+            ideal_morsel_size: 4
+            auto_new_streaming: '1'
 
     steps:
       - uses: actions/checkout@v6
@@ -123,14 +135,12 @@ jobs:
         if: github.ref_name != 'main' && matrix.python-version != '3.14t'
         env:
           POLARS_TIMEOUT_MS: 60000
-        run: pytest -n auto -m "not release and not benchmark and not docs"
-
-      - name: Run tests with new streaming engine
-        if: github.ref_name != 'main' && matrix.python-version != '3.14t'
-        env:
-          POLARS_AUTO_NEW_STREAMING: 1
-          POLARS_TIMEOUT_MS: 60000
-        run: pytest -n auto -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not benchmark and not ci_only"
+        run: |
+          if [ -n "$POLARS_AUTO_NEW_STREAMING" ]; then
+            pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs"
+          else
+            pytest -n auto -m "not release and not benchmark and not docs"
+          fi
 
       - name: Run tests async reader tests
         if: github.ref_name != 'main' && matrix.os != 'windows-latest' && matrix.python-version != '3.14t'
