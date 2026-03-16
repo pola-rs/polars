@@ -190,7 +190,9 @@ def test_schema_row_index_cse(maintain_order: bool) -> None:
         df_a = pl.scan_csv(csv_a.name).with_row_index("Idx")
 
         result = (
-            df_a.join(df_a, on="B", maintain_order="left" if maintain_order else "none")
+            df_a.join(
+                df_a, on="B", maintain_order="left_right" if maintain_order else "none"
+            )
             .group_by("A", maintain_order=maintain_order)
             .all()
             .collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))
