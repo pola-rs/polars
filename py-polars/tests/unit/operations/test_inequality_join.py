@@ -17,6 +17,8 @@ from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
 
+    from tests.conftest import PlMonkeyPatch
+
 
 @pytest.mark.parametrize(
     ("pred_1", "pred_2"),
@@ -856,3 +858,27 @@ def test_range_join_already_sorted(
 
     assert_frame_equal(actual_asc, expected, check_exact=True)
     assert_frame_equal(actual_desc, expected, check_exact=True)
+
+
+def test_cross_join_validity_bitmap_offset_26925(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "2")
+    plmonkeypatch.setenv("POLARS_AUTO_NEW_STREAMING", "1")
+
+    left = pl.DataFrame({"id": [0, 1], "x": pl.Series([0, 0], dtype=pl.Int64)})
+    right = pl.DataFrame(
+        {"id": [0, 1, 2, 3, 4], "y": pl.Series([0, 0, 0, None, None], dtype=pl.Int64)}
+    )
+
+    expr = pl.col("x") <= pl.col("y")
+    actual = left.join(right, how="cross").filter(expr).sort("id", "id_right")
+    expected = (
+        left.lazy()
+        .join(right.lazy(), how="cross")
+        .filter(expr)
+        .collect(engine="in-memory")
+        .sort("id", "id_right")
+    )
+
+    assert_frame_equal(actual, expected, check_exact=True)
