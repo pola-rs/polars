@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sys
 from dataclasses import dataclass
 from functools import partial
@@ -171,10 +170,13 @@ class DeltaDataset:
 
             def _deletion_vector_callback(
                 requested_paths: pl.DataFrame,
-            ) -> pl.DataFrame | None:
+            ) -> pl.DataFrame:
                 delta_deletion_vectors = _fetch_deletion_vectors(table)
                 if delta_deletion_vectors is None:
-                    return None
+                    return pl.DataFrame(
+                        {"selection_vector": [None] * len(requested_paths)},
+                        schema={"selection_vector": pl.List(pl.Boolean)},
+                    )
                 return _extract_delta_deletion_vectors(
                     requested_paths, delta_deletion_vectors
                 )
@@ -223,8 +225,7 @@ class DeltaDataset:
             )
 
             # Some reader features require explicit support by the engine (polars)
-            if os.getenv("POLARS_DELTA_READER_FEATURE_DV") == "1":
-                SUPPORTED_READER_FEATURES.add("deletionVectors")
+            SUPPORTED_READER_FEATURES.add("deletionVectors")
 
             from polars.io.delta._utils import _get_delta_lake_table
 
@@ -298,12 +299,12 @@ def _extract_delta_deletion_vectors(
     The selection_vector from deltalake is a keep-mask (True = keep).
     """
     assert requested_paths.schema == {"path": pl.String}
+
     delta_dv_schema = {"filepath": pl.String, "selection_vector": pl.List(pl.Boolean)}
     delta_deletion_vectors = delta_deletion_vectors.select(delta_dv_schema.keys())
     assert delta_deletion_vectors.schema == delta_dv_schema
 
     file_prefix = "file://" if sys.platform != "win32" else "file:///"
-
     joined_df = (
         requested_paths.lazy()
         .with_columns(
@@ -326,7 +327,7 @@ def _extract_delta_deletion_vectors(
         .collect()
     )
 
-    assert len(requested_paths) == joined_df.height
+    assert joined_df.height == len(requested_paths)
 
     return joined_df
 

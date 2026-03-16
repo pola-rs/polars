@@ -88,7 +88,7 @@ impl std::fmt::Display for DeletionFilesList {
             },
             #[cfg(feature = "python")]
             Delta(_) => {
-                write!(f, "delta-deletion-vector-callback")?;
+                write!(f, "delta-deletion-vector-python-callback")?;
             },
         }
 

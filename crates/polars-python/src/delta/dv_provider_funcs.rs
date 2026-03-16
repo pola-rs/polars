@@ -11,29 +11,28 @@ use pyo3::{PyErr, Python, intern};
 use crate::dataframe::PyDataFrame;
 
 pub fn call(callback: &PythonObject, paths: Buffer<PlRefPath>) -> PolarsResult<Option<DataFrame>> {
+    let df = {
+        let mut builder = MutableBinaryViewArray::with_capacity(
+            paths.len().wrapping_mul(
+                paths
+                    .first()
+                    .map_or(0, |x| ScanSourceRef::Path(x).to_include_path_name().len()),
+            ),
+        );
+
+        for path in paths.iter() {
+            builder.push_value_ignore_validity(ScanSourceRef::Path(path).to_include_path_name());
+        }
+
+        let array: Utf8ViewArray = builder.freeze_with_dtype(ArrowDataType::Utf8View);
+        let c = Series::from_arrow("path".into(), Box::new(array))
+            .unwrap()
+            .into_column();
+
+        DataFrame::new(paths.len(), vec![c]).unwrap()
+    };
+
     Python::attach(|py| {
-        let df = {
-            let mut builder = MutableBinaryViewArray::with_capacity(
-                paths.len().wrapping_mul(
-                    paths
-                        .first()
-                        .map_or(0, |x| ScanSourceRef::Path(x).to_include_path_name().len()),
-                ),
-            );
-
-            for path in paths.iter() {
-                builder
-                    .push_value_ignore_validity(ScanSourceRef::Path(path).to_include_path_name());
-            }
-
-            let array: Utf8ViewArray = builder.freeze_with_dtype(ArrowDataType::Utf8View);
-            let c = Series::from_arrow("path".into(), Box::new(array))
-                .unwrap()
-                .into_column();
-
-            DataFrame::new(paths.len(), vec![c]).unwrap()
-        };
-
         // Wrap to Python
         let pl = PyModule::import(py, "polars")?;
         let py_df_wrapped = pl

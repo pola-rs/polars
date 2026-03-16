@@ -209,13 +209,12 @@ impl ReaderStarter {
 
             if cfg!(debug_assertions)
                 && let Some(n_rows_in_file) = n_rows_in_file
-                && let Some(ExternalFilterMask::DeltaDeletionVector { mask }) =
-                    &external_filter_mask
+                && let Some(mask_len) = external_filter_mask.as_ref().map(|fm| fm.len())
             {
-                // @TODO: check for equality, pending https://github.com/delta-io/delta-rs/issues/4235
-                polars_ensure!(mask.len() <= n_rows_in_file.num_physical_rows(),
-                    ComputeError: "deletion vector length: {}, exceeds number of physical rows: {}",
-                    mask.len(), n_rows_in_file.num_physical_rows()
+                // @NOTE: the deletion files / vectors may be truncated
+                polars_ensure!(mask_len <= n_rows_in_file.num_physical_rows(),
+                    ComputeError: "deletion row count: {}, exceeds number of physical rows: {}",
+                    mask_len, n_rows_in_file.num_physical_rows()
                 )
             }
 

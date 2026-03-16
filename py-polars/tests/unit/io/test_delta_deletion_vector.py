@@ -552,7 +552,6 @@ def test_scan_delta_dv_single(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    plmonkeypatch.setenv("POLARS_DELTA_READER_FEATURE_DV", "1")
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     path = tmp_path / "delta_table"
@@ -620,6 +619,22 @@ def test_scan_delta_dv_single(
 
 @pytest.mark.slow
 @pytest.mark.write_disk
+@pytest.mark.xfail(
+    strict=True,
+    reason="canary: file_uris() and deletion_vector() both url-encode paths",
+)
+def test_scan_delta_dv_percent_encoded_path_canary(tmp_path: Path) -> None:
+    path = tmp_path / "file#1_delta"
+    df = pl.DataFrame({"a": range(5)})
+    create_dv_table(path, df.to_arrow(), deleted_rows=[1, 3])
+
+    out = pl.scan_delta(str(path)).collect()
+    expected = df.filter(~pl.col.a.is_in([1, 3]))
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("n_files", "n_rows", "dvs"),
     [
@@ -635,10 +650,7 @@ def test_scan_delta_dv_multiple(
     n_rows: int,
     dvs: list[list[int]],
     tmp_path: Path,
-    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    plmonkeypatch.setenv("POLARS_DELTA_READER_FEATURE_DV", "1")
-
     dfs = []
     for i in range(n_files):
         start = i * n_rows
@@ -691,7 +703,6 @@ def test_scan_delta_dv_multiple_with_predicate_pushdown(
 ) -> None:
     import duckdb
 
-    plmonkeypatch.setenv("POLARS_DELTA_READER_FEATURE_DV", "1")
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     dfs = []
@@ -752,7 +763,7 @@ def _mock_deletion_vector_callback(
     paths: pl.DataFrame,
     n_rows: int,
     dvs: list[list[int]],
-) -> pl.DataFrame | None:
+) -> pl.DataFrame:
     path_list = paths["path"].to_list()
 
     selection_vectors = [[i not in dv for i in range(n_rows)] for dv in dvs]
@@ -785,10 +796,7 @@ def test_scan_delta_dv_from_parquet_mock(
     n_rows: int,
     dvs: list[list[int]],
     tmp_path: Path,
-    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    plmonkeypatch.setenv("POLARS_DELTA_READER_FEATURE_DV", "1")
-
     dfs = []
     for i in range(n_files):
         start = i * n_rows
@@ -842,10 +850,7 @@ def test_scan_delta_dv_slice_mock(
     dv: list[int],
     head_n: int,
     tmp_path: Path,
-    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    plmonkeypatch.setenv("POLARS_DELTA_READER_FEATURE_DV", "1")
-
     df = pl.DataFrame({"a": range(n_rows), "b": [f"b_{i}" for i in range(n_rows)]})
     df.lazy().sink_parquet(tmp_path / "df_0.parquet")
 
@@ -885,10 +890,7 @@ def test_scan_delta_dv_delta_sink_mock(
     n_rows: int,
     dvs: list[list[int]],
     tmp_path: Path,
-    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    plmonkeypatch.setenv("POLARS_DELTA_READER_FEATURE_DV", "1")
-
     dfs = []
     for i in range(n_files):
         start = i * n_rows
@@ -911,7 +913,7 @@ def test_scan_delta_dv_delta_sink_mock(
         file_idx = pl.read_parquet(p, columns=["file"])["file"][0]
         path_to_dv[str(p)] = dvs[file_idx]
 
-    def _callback(paths: pl.DataFrame) -> pl.DataFrame | None:
+    def _callback(paths: pl.DataFrame) -> pl.DataFrame:
         path_list = paths["path"].to_list()
         # row order within each file may differ from original df,
         # so look up deletions by actual 'a' value not position
@@ -958,11 +960,8 @@ def test_scan_delta_dv_delta_sink_mock(
 @pytest.mark.write_disk
 def test_scan_delta_dv_requires_deltalake_version(
     tmp_path: Path,
-    plmonkeypatch: PlMonkeyPatch,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    plmonkeypatch.setenv("POLARS_DELTA_READER_FEATURE_DV", "1")
-
     path = tmp_path / "delta_table"
     df = pl.DataFrame({"a": [1, 2, 3]})
     create_dv_table(path, df.to_arrow(), deleted_rows=[0])

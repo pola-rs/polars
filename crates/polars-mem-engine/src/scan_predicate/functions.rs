@@ -519,7 +519,7 @@ where
 
             out.map(|x| DeletionFilesList::IcebergPositionDelete(Arc::new(x)))
         },
-        // No-op. The list of files with deletion vectors is not known at this stage.
+        // No-op - Delta takes scan paths at the execution stage.
         #[cfg(feature = "python")]
         DeletionFilesList::Delta(provider) => Some(DeletionFilesList::Delta(provider)),
     });

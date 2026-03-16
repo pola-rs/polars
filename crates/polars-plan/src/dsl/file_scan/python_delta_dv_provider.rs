@@ -51,6 +51,11 @@ impl DeltaDeletionVectorProvider {
         };
 
         let mask_col = dv.column("selection_vector")?.list()?;
+
+        if mask_col.null_count() == selected_paths.len() {
+            return Ok(None);
+        };
+
         let arr = mask_col.rechunk();
         let out = arr.downcast_as_array().clone();
         Ok(Some(out))
