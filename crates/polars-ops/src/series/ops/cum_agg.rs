@@ -11,6 +11,7 @@ use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
 use num_traits::ToPrimitive;
+use num_traits::cast::NumCast;
 use polars_utils::kahan_sum::KahanSum;
 
 #[derive(Debug, Clone, Default)]
@@ -428,6 +429,34 @@ pub fn cum_sum(s: &Series, reverse: bool) -> PolarsResult<Series> {
     cum_sum_with_init(s, reverse, &AnyValue::Null)
 }
 
+fn cum_mean_update(state: &mut CumMeanState, v: f64) -> f64 {
+    state.sum += v;
+    state.count += 1;
+    state.sum.sum() / state.count as f64
+}
+
+fn cum_mean_scan_streaming<T, O, F>(
+    ca: &ChunkedArray<T>,
+    state: &mut CumMeanState,
+    cast: F,
+) -> ChunkedArray<O>
+where
+    T: PolarsNumericType,
+    O: PolarsNumericType,
+    F: Fn(T::Native) -> f64 + Copy,
+{
+    let out: ChunkedArray<O> = ca.iter().scan(state, |state, opt_v| {
+        match opt_v {
+            Some(v) => {
+                let mean = cum_mean_update(state, cast(v));
+                Some(Some(NumCast::from(mean).unwrap()))
+            }
+            None => Some(None),
+        }
+    }).collect_trusted();
+    out.with_name(ca.name().clone())
+}
+
 pub fn cum_mean_with_streaming(
     s: &Series,
     reverse: bool,
@@ -464,66 +493,29 @@ pub fn cum_mean_with_streaming(
 
         #[cfg(feature = "dtype-duration")]
         Duration(tu) => {
-            let ca = s.duration()?.physical();
-            let out: Int64Chunked = ca.iter().scan(state, |state, opt_v| {
-                match opt_v {
-                    Some(v) => {
-                        state.sum += v as f64;
-                        state.count += 1;
-                        Some(Some((state.sum.sum() / state.count as f64) as i64))
-                    }
-                    None => Some(None),
-                }
-            }).collect_trusted();
-            out.with_name(ca.name().clone()).into_duration(*tu).into_series()
+            let ct = s.cast(&Int64)?;
+            let ca = ct.i64()?;
+            cum_mean_scan_streaming::<Int64Type, Int64Type, _>(ca, state, |v| v as f64).into_duration(*tu).into_series()
         }
 
         #[cfg(feature = "dtype-datetime")]
         Datetime(tu, tz) => {
-            let ca = s.datetime()?.physical();
-            let out: Int64Chunked = ca.iter().scan(state, |state, opt_v| {
-                match opt_v {
-                    Some(v) => {
-                        state.sum += v as f64;
-                        state.count += 1;
-                        Some(Some((state.sum.sum() / state.count as f64) as i64))
-                    }
-                    None => Some(None),
-                }
-            }).collect_trusted();
-            out.with_name(ca.name().clone()).into_datetime(*tu, tz.clone()).into_series()
+            let ct = s.cast(&Int64)?;
+            let ca = ct.i64()?;
+            cum_mean_scan_streaming::<Int64Type, Int64Type, _>(ca, state, |v| v as f64).into_datetime(*tu, tz.clone()).into_series()
         }
 
         #[cfg(feature = "dtype-date")]
         Date => {
-            let ca = s.date()?.physical();
-            let out: Int32Chunked = ca.iter().scan(state, |state, opt_v| {
-                match opt_v {
-                    Some(v) => {
-                        state.sum += v as f64;
-                        state.count += 1;
-                        Some(Some((state.sum.sum() / state.count as f64) as i32))
-                    }
-                    None => Some(None),
-                }
-            }).collect_trusted();
-            out.with_name(ca.name().clone()).into_date().into_series()
+            let ct = s.cast(&Int32)?;
+            let ca = ct.i32()?;
+            cum_mean_scan_streaming::<Int32Type, Int32Type, _>(ca, state, |v| v as f64).into_date().into_series()
         }
 
         _ => {
             let ct = s.cast(&Float64)?;
             let ca = ct.f64()?;
-            let out: Float64Chunked = ca.iter().scan(state, |state, opt_v| {
-                match opt_v {
-                    Some(v) => {
-                        state.sum += v;
-                        state.count += 1;
-                        Some(Some(state.sum.sum() / state.count as f64))
-                    }
-                    None => Some(None),
-                }
-            }).collect_trusted();
-            out.with_name(ca.name().clone()).into_series()
+            cum_mean_scan_streaming::<Float64Type, Float64Type, _>(ca, state, |v| v).into_series()
         }
     };
     Ok(out)
