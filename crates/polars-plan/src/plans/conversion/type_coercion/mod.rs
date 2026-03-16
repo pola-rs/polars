@@ -779,6 +779,8 @@ impl OptimizationRule for TypeCoercionRule {
 
                 let holiday_arg = unpack!(input.get(holiday_arg_idx));
 
+                // We implode, only for literal Series(dtype=Date), as this is considered a valid
+                // parameter on the Python API as an `Iterable[date]`.
                 let new_lv_ae: AExpr = match expr_arena.get(holiday_arg.node()) {
                     AExpr::Literal(LiteralValue::Series(s)) if s.dtype() == &DataType::Date => {
                         AExpr::Literal(LiteralValue::Series(SpecialEq::new(
@@ -788,8 +790,13 @@ impl OptimizationRule for TypeCoercionRule {
                     ae => {
                         let dtype = ae.to_dtype(&ToFieldContext::new(expr_arena, schema))?;
 
+                        let is_list_of_date = match &dtype {
+                            DataType::List(inner) => inner.as_ref() == &DataType::Date,
+                            _ => false,
+                        };
+
                         polars_ensure!(
-                            dtype == DataType::Date,
+                            is_list_of_date,
                             ComputeError:
                             "dtype of holidays list must be List(Date), got {dtype:?} instead"
                         );
@@ -799,11 +806,12 @@ impl OptimizationRule for TypeCoercionRule {
                 };
 
                 let mut input = input.clone();
+                let function = IRFunctionExpr::Business(business_fn.clone());
                 input[holiday_arg_idx].set_node(expr_arena.add(new_lv_ae));
 
                 Some(AExpr::Function {
                     input,
-                    function: IRFunctionExpr::Business(business_fn.clone()),
+                    function,
                     options,
                 })
             },
