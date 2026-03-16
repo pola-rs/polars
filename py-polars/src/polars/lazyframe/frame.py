@@ -4226,7 +4226,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         chunk_size: int | None = None,
         maintain_order: bool = True,
         lazy: bool = False,
-        engine: EngineType = "streaming",
+        engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> Iterator[DataFrame]:
         """
@@ -4271,6 +4271,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> for df in lf.collect_batches():
         ...     print(df)  # doctest: +SKIP
         """
+        engine = "streaming" if engine == "auto" else _select_engine(engine)
 
         class CollectBatches:
             def __init__(self, inner: Any) -> None:
