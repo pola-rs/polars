@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 import hypothesis.strategies as st
 import numpy as np
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -495,6 +495,11 @@ def test_ie_join_use_keys_multiple() -> None:
         max_size=10,
     ),
     op=operators(),
+)
+@example(
+    left=pl.Series("", [0, 0], dtype=pl.Int64),
+    right=pl.Series("", [0, 0, 0, None, None], dtype=pl.Int64),
+    op="<=",
 )
 def test_single_inequality(left: pl.Series, right: pl.Series, op: str) -> None:
     expr = _inequality_expression_col("x", op, "y")
