@@ -19,6 +19,7 @@ from tests.unit.conftest import time_func
 
 if TYPE_CHECKING:
     from polars._typing import EngineType, PolarsDataType
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_list_arr_get() -> None:
@@ -1165,7 +1166,9 @@ def test_list_filter_null() -> None:
 
 @pytest.mark.may_fail_cloud  # reason: time check
 @pytest.mark.slow
-def test_list_struct_field_perf() -> None:
+def test_list_struct_field_perf(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.delenv("POLARS_IDEAL_MORSEL_SIZE", raising=False)
+
     base_df = pl.concat(100 * [pl.DataFrame({"a": [[{"fld": 1}]]})]).rechunk()
     df = base_df
 
