@@ -248,6 +248,11 @@ class PlMonkeyPatch(pytest.MonkeyPatch):  # type: ignore[misc]
         if name.startswith("POLARS_"):
             pl.Config.reload_env_vars()
 
+    def delenv(self, name: str, raising: bool = True) -> None:
+        super().delenv(name, raising)
+        if name.startswith("POLARS_"):
+            pl.Config.reload_env_vars()
+
     def undo(self) -> None:
         super().undo()
         pl.Config.reload_env_vars()
