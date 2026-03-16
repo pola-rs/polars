@@ -4226,7 +4226,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         chunk_size: int | None = None,
         maintain_order: bool = True,
         lazy: bool = False,
-        engine: EngineType = "auto",
+        engine: EngineType = "streaming",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> Iterator[DataFrame]:
         """
