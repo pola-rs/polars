@@ -4271,7 +4271,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> for df in lf.collect_batches():
         ...     print(df)  # doctest: +SKIP
         """
-        engine = "streaming" if engine == "auto" else _select_engine(engine)
+        engine = _select_engine(engine)
+
+        if engine == "auto":
+            engine = "streaming"
 
         class CollectBatches:
             def __init__(self, inner: Any) -> None:
