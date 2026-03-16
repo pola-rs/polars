@@ -23,7 +23,7 @@ impl Div for Expr {
     type Output = Expr;
 
     fn div(self, rhs: Self) -> Self::Output {
-        binary_expr(self, Operator::Divide, rhs)
+        binary_expr(self, Operator::RustDivide, rhs)
     }
 }
 

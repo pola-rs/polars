@@ -1846,3 +1846,22 @@ def test_struct_with_fields_order_observe() -> None:
         .select(pl.col.a.value_counts().struct.with_fields(pl.field("count") * 2))
     )
     assert "SORT" not in q.explain()
+
+
+def test_join_general_error() -> None:
+    lhs = pl.DataFrame({"x": [1, 2, 3]})
+    rhs = pl.DataFrame({"x": ["a", "b", "c"]})
+
+    with pytest.raises(
+        pl.exceptions.SchemaError,
+        match=r"datatypes of join keys don't match - `x`: i64 on left does not match `x`: str on right",
+    ):
+        lhs.join(rhs, on="x")
+
+
+def test_join_struct_error_lazy_26276() -> None:
+    lhs = pl.DataFrame({"x": [{"a": 1, "b": 2}]}).lazy()
+    rhs = pl.DataFrame({"x": [{"b": 2, "a": 1}]}).lazy()
+
+    with pytest.raises(pl.exceptions.SchemaError, match=r"struct \{.*\}"):
+        lhs.join(rhs, on="x").collect()

@@ -3,9 +3,10 @@ from __future__ import annotations
 import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from polars._dependencies import _DELTALAKE_AVAILABLE, deltalake
+from polars._utils.logging import eprint
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
 from polars.io.cloud._utils import POLARS_STORAGE_CONFIG_KEYS, _get_path_scheme
@@ -14,7 +15,7 @@ if TYPE_CHECKING:
     from deltalake import DeltaTable
 
     from polars import DataFrame, DataType
-    from polars._typing import StorageOptionsDict
+    from polars._typing import SchemaDict, StorageOptionsDict
 
 
 def _resolve_delta_lake_uri(table_uri: str | Path, *, strict: bool = True) -> str:
@@ -105,42 +106,58 @@ def _check_for_unsupported_types(dtypes: list[DataType]) -> None:
         raise TypeError(msg)
 
 
-def _extract_pl_data_statistics(dl_tbl: DeltaTable) -> DataFrame | None:
-    import polars as pl
-
-    table_statistics = cast("pl.DataFrame", pl.from_arrow(dl_tbl.get_add_actions()))
-
-    if table_statistics["num_records"].null_count() == 0:
-        dfs = [table_statistics.select([pl.col("num_records").alias("len")])]
-        for stat in [("null_count", "nc"), ("min", "min"), ("max", "max")]:
-            if stat[0] in table_statistics.columns:
-                df_struct = table_statistics.select(pl.col(stat[0]).struct.unnest())
-                for col in df_struct.columns:
-                    stat_df = df_struct.select(pl.col(col).alias(f"{col}_{stat[1]}"))
-                    dfs.append(stat_df)
-
-        return pl.concat(dfs, how="horizontal")
-    else:
-        return None
-
-
-def _fill_missing_columns(
-    stats_df: DataFrame | None,
-    delta_schema: deltalake._internal.Schema,
-    partition_cols: list[str],
+def _extract_table_statistics_from_delta_add_actions(
+    add_actions_df: DataFrame,
+    *,
+    filter_columns: list[str],
+    schema: SchemaDict,
+    verbose: bool,
 ) -> DataFrame | None:
-    if stats_df is None:
-        return None
-
     import polars as pl
 
-    dfs = []
+    if "num_records" not in add_actions_df:
+        if verbose:
+            eprint(
+                "scan_delta: statistics load failed: 'num_records' column not present"
+            )
 
-    for col in [field.name for field in delta_schema.fields]:
-        if col not in partition_cols:
-            for stat in [("null_count", "nc"), ("min", "min"), ("max", "max")]:
-                stats_col = f"{col}_{stat[1]}"
-                if stats_col not in stats_df.columns:
-                    dfs.append(pl.lit(None).alias(stats_col))
+        return None
 
-    return stats_df.with_columns(dfs)
+    out: dict[str, pl.Series] = {"len": add_actions_df["num_records"]}
+
+    null_count_cols = (
+        add_actions_df["null_count"].struct.unnest().to_dict(as_series=True)
+        if "null_count" in add_actions_df
+        else {}
+    )
+    min_cols = (
+        add_actions_df["min"].struct.unnest().to_dict(as_series=True)
+        if "min" in add_actions_df
+        else {}
+    )
+    max_cols = (
+        add_actions_df["max"].struct.unnest().to_dict(as_series=True)
+        if "max" in add_actions_df
+        else {}
+    )
+
+    for col_name in filter_columns:
+        if (col_nc := null_count_cols.get(col_name)) is None:
+            col_nc = pl.Series([None], dtype=pl.get_index_type()).new_from_index(
+                0, add_actions_df.height
+            )
+        if (col_min := min_cols.get(col_name)) is None:
+            col_min = pl.Series([None], dtype=schema[col_name]).new_from_index(
+                0, add_actions_df.height
+            )
+
+        if (col_max := max_cols.get(col_name)) is None:
+            col_max = pl.Series([None], dtype=schema[col_name]).new_from_index(
+                0, add_actions_df.height
+            )
+
+        out[f"{col_name}_nc"] = col_nc
+        out[f"{col_name}_min"] = col_min
+        out[f"{col_name}_max"] = col_max
+
+    return pl.DataFrame(out, height=add_actions_df.height)

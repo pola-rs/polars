@@ -208,8 +208,13 @@ def test_gather_array_outer_validity_19482() -> None:
 def test_gather_len_19561() -> None:
     N = 4
     df = pl.DataFrame({"foo": ["baz"] * N, "bar": range(N)})
-    idxs = pl.int_range(1, N).repeat_by(pl.int_range(1, N)).flatten()
-    gather = pl.col.bar.gather(idxs).alias("gather")
+
+    idxs = (
+        pl.int_range(1, N)
+        .repeat_by(pl.int_range(1, N))
+        .list.explode(keep_nulls=False, empty_as_null=False)
+    )
+    gather = pl.col("bar").gather(idxs).alias("gather")
 
     assert df.group_by("foo").agg(gather.len()).to_dict(as_series=False) == {
         "foo": ["baz"],

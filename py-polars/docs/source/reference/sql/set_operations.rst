@@ -10,9 +10,17 @@ Set Operations
    * - :ref:`EXCEPT <except>`
      - Combine the result sets of two SELECT statements, returning only the rows
        that appear in the first result set but not in the second.
+   * - :ref:`EXCEPT BY NAME <except_by_name>`
+     - Combine the result sets of two SELECT statements, returning only the rows
+       that appear in the first result set but not in the second, aligning columns
+       by name instead of by ordinal position.
    * - :ref:`INTERSECT <intersect>`
      - Combine the result sets of two SELECT statements, returning only the rows
        that appear in both result sets.
+   * - :ref:`INTERSECT BY NAME <intersect_by_name>`
+     - Combine the result sets of two SELECT statements, returning only the rows
+       that appear in both result sets, aligning columns by name instead of by
+       ordinal position.
    * - :ref:`UNION <union>`
      - Combine the distinct result sets of two or more SELECT statements.
        The final result set will have no duplicate rows.
@@ -59,6 +67,42 @@ that appear in the first result set but not in the second.
     # │ 1   ┆ Alice │
     # └─────┴───────┘
 
+.. _except_by_name:
+
+EXCEPT BY NAME
+--------------
+Combine the result sets of two SELECT statements, returning only the rows
+that appear in the first result set but not in the second, aligning columns
+by name instead of by ordinal position. This allows the two queries to have
+different column orders or different numbers of columns (only commonly-named
+columns are used for the comparison).
+
+**Example:**
+
+.. code-block:: python
+
+    lf1 = pl.LazyFrame({
+        "id": [1, 2, 3],
+        "name": ["Alice", "Bob", "Charlie"],
+    })
+    lf2 = pl.LazyFrame({
+        "name": ["Bob", "Charlie", "David"],
+        "id": [2, 3, 4],
+    })
+    pl.sql("""
+        SELECT * FROM lf1
+        EXCEPT BY NAME
+        SELECT * FROM lf2
+    """).sort(by="id").collect()
+    # shape: (1, 2)
+    # ┌─────┬───────┐
+    # │ id  ┆ name  │
+    # │ --- ┆ ---   │
+    # │ i64 ┆ str   │
+    # ╞═════╪═══════╡
+    # │ 1   ┆ Alice │
+    # └─────┴───────┘
+
 .. _intersect:
 
 INTERSECT
@@ -74,6 +118,43 @@ that appear in both result sets.
         SELECT id, name FROM lf1
         INTERSECT
         SELECT id, name FROM lf2
+    """).sort(by="id").collect()
+    # shape: (2, 2)
+    # ┌─────┬─────────┐
+    # │ id  ┆ name    │
+    # │ --- ┆ ---     │
+    # │ i64 ┆ str     │
+    # ╞═════╪═════════╡
+    # │ 2   ┆ Bob     │
+    # │ 3   ┆ Charlie │
+    # └─────┴─────────┘
+
+.. _intersect_by_name:
+
+INTERSECT BY NAME
+-----------------
+Combine the result sets of two SELECT statements, returning only the rows
+that appear in both result sets, aligning columns by name instead of by
+ordinal position. This allows the two queries to have different column
+orders or different numbers of columns (only commonly-named columns are
+used for the comparison).
+
+**Example:**
+
+.. code-block:: python
+
+    lf1 = pl.LazyFrame({
+        "id": [1, 2, 3],
+        "name": ["Alice", "Bob", "Charlie"],
+    })
+    lf2 = pl.LazyFrame({
+        "name": ["Bob", "Charlie", "David"],
+        "id": [2, 3, 4],
+    })
+    pl.sql("""
+        SELECT * FROM lf1
+        INTERSECT BY NAME
+        SELECT * FROM lf2
     """).sort(by="id").collect()
     # shape: (2, 2)
     # ┌─────┬─────────┐

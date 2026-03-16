@@ -23,7 +23,7 @@ pub(crate) fn roll_backward(
     };
     let date = NaiveDate::from_ymd_opt(ts.year(), ts.month(), 1).ok_or_else(|| {
         polars_err!(
-            ComputeError: format!("Could not construct date {}-{}-1", ts.year(), ts.month())
+            ComputeError: "Could not construct date {}-{}-1", ts.year(), ts.month()
         )
     })?;
     let time = NaiveTime::from_hms_nano_opt(
@@ -35,13 +35,11 @@ pub(crate) fn roll_backward(
     .ok_or_else(|| {
         polars_err!(
             ComputeError:
-                format!(
-                    "Could not construct time {}:{}:{}.{}",
-                    ts.hour(),
-                    ts.minute(),
-                    ts.second(),
-                    ts.and_utc().timestamp_subsec_nanos()
-                )
+                "Could not construct time {}:{}:{}.{}",
+                ts.hour(),
+                ts.minute(),
+                ts.second(),
+                ts.and_utc().timestamp_subsec_nanos()
         )
     })?;
     let ndt = NaiveDateTime::new(date, time);

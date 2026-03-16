@@ -34,6 +34,7 @@ if TYPE_CHECKING:
         PolarsTemporalType,
         TimeUnit,
     )
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_fill_null() -> None:
@@ -349,13 +350,13 @@ def test_datetime_consistency() -> None:
     ]
     # Similar to above, but check for no error when crossing DST
     test_data = [
-        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
-        datetime(2021, 11, 7, 1, 0, tzinfo=ZoneInfo("US/Central")),
-        datetime(2021, 11, 7, 1, 0, fold=1, tzinfo=ZoneInfo("US/Central")),
-        datetime(2021, 11, 7, 2, 0, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
+        datetime(2021, 11, 7, 1, 0, tzinfo=ZoneInfo("America/Chicago")),
+        datetime(2021, 11, 7, 1, 0, fold=1, tzinfo=ZoneInfo("America/Chicago")),
+        datetime(2021, 11, 7, 2, 0, tzinfo=ZoneInfo("America/Chicago")),
     ]
     ddf = pl.DataFrame({"dtm": test_data}).select(
-        pl.col("dtm").dt.convert_time_zone("US/Central")
+        pl.col("dtm").dt.convert_time_zone("America/Chicago")
     )
     assert ddf.rows() == [
         (test_data[0],),
@@ -1076,7 +1077,7 @@ def test_supertype_timezones_4174() -> None:
 
 
 def test_from_dict_tu_consistency() -> None:
-    tz = ZoneInfo("PRC")
+    tz = ZoneInfo("Asia/Shanghai")
     dt = datetime(2020, 8, 1, 12, 0, 0, tzinfo=tz)
     from_dict = pl.from_dict({"dt": [dt]})
     from_dicts = pl.from_dicts([{"dt": dt}])
@@ -1753,7 +1754,9 @@ def test_tz_aware_truncate() -> None:
         }
     ).lazy()
     lf = lf.with_columns(pl.col("naive").dt.replace_time_zone("UTC").alias("UTC"))
-    lf = lf.with_columns(pl.col("UTC").dt.convert_time_zone("US/Central").alias("CST"))
+    lf = lf.with_columns(
+        pl.col("UTC").dt.convert_time_zone("America/Chicago").alias("CST")
+    )
     lf = lf.with_columns(pl.col("CST").dt.truncate("1d").alias("CST truncated"))
     assert lf.collect().to_dict(as_series=False) == {
         "naive": [
@@ -1777,24 +1780,24 @@ def test_tz_aware_truncate() -> None:
             datetime(2022, 1, 1, 6, 0, tzinfo=ZoneInfo("UTC")),
         ],
         "CST": [
-            datetime(2021, 12, 31, 17, 0, tzinfo=ZoneInfo("US/Central")),
-            datetime(2021, 12, 31, 18, 0, tzinfo=ZoneInfo("US/Central")),
-            datetime(2021, 12, 31, 19, 0, tzinfo=ZoneInfo("US/Central")),
-            datetime(2021, 12, 31, 20, 0, tzinfo=ZoneInfo("US/Central")),
-            datetime(2021, 12, 31, 21, 0, tzinfo=ZoneInfo("US/Central")),
-            datetime(2021, 12, 31, 22, 0, tzinfo=ZoneInfo("US/Central")),
-            datetime(2021, 12, 31, 23, 0, tzinfo=ZoneInfo("US/Central")),
-            datetime(2022, 1, 1, 0, 0, tzinfo=ZoneInfo("US/Central")),
+            datetime(2021, 12, 31, 17, 0, tzinfo=ZoneInfo("America/Chicago")),
+            datetime(2021, 12, 31, 18, 0, tzinfo=ZoneInfo("America/Chicago")),
+            datetime(2021, 12, 31, 19, 0, tzinfo=ZoneInfo("America/Chicago")),
+            datetime(2021, 12, 31, 20, 0, tzinfo=ZoneInfo("America/Chicago")),
+            datetime(2021, 12, 31, 21, 0, tzinfo=ZoneInfo("America/Chicago")),
+            datetime(2021, 12, 31, 22, 0, tzinfo=ZoneInfo("America/Chicago")),
+            datetime(2021, 12, 31, 23, 0, tzinfo=ZoneInfo("America/Chicago")),
+            datetime(2022, 1, 1, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
         ],
         "CST truncated": [
-            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("US/Central")),
-            datetime(2022, 1, 1, 0, 0, tzinfo=ZoneInfo("US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
+            datetime(2022, 1, 1, 0, 0, tzinfo=ZoneInfo("America/Chicago")),
         ],
     }
 
@@ -2184,10 +2187,14 @@ def test_truncate_ambiguous2() -> None:
 
 
 def test_truncate_non_existent_14957() -> None:
-    with pytest.raises(ComputeError, match="non-existent"):
-        pl.Series([datetime(2020, 3, 29, 2, 1)]).dt.replace_time_zone(
-            "Europe/London"
-        ).dt.truncate("46m")
+    result = (
+        pl.Series([datetime(2020, 3, 29, 2, 1)])
+        .dt.replace_time_zone("Europe/London")
+        .dt.truncate("46m")
+        .item()
+    )
+    expected = datetime(2020, 3, 29, 2, 42, tzinfo=ZoneInfo(key="Europe/London"))
+    assert result == expected
 
 
 def test_cast_time_to_duration() -> None:
@@ -2385,17 +2392,16 @@ def test_series_is_temporal(dtype: pl.DataType) -> None:
         None,
         timezone.utc,
         "America/Caracas",
+        "America/New_York",
         "Asia/Kathmandu",
         "Asia/Taipei",
         "Europe/Amsterdam",
+        "Europe/Istanbul",
         "Europe/Lisbon",
         "Indian/Maldives",
         "Pacific/Norfolk",
         "Pacific/Samoa",
-        "Turkey",
-        "US/Eastern",
-        "UTC",
-        "Zulu",
+        "Etc/UTC",
     ],
 )
 def test_misc_precision_any_value_conversion(time_zone: Any) -> None:
@@ -2477,7 +2483,7 @@ def test_temporal_downcast_construction_19309() -> None:
 
 def test_timezone_ignore_error(
     capfd: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     dtype = pl.Datetime(time_zone="non-existent")
 
@@ -2492,9 +2498,9 @@ def test_timezone_ignore_error(
     ):
         pl.DataFrame({"a": datetime(2025, 1, 1)}, schema={"a": dtype})
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
-    with monkeypatch.context() as cx:
+    with plmonkeypatch.context() as cx:
         cx.setenv("POLARS_IGNORE_TIMEZONE_PARSE_ERROR", "1")
         capfd.readouterr()
 

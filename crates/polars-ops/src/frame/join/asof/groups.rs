@@ -336,7 +336,7 @@ fn dispatch_join_strategy<T: PolarsDataType>(
     allow_eq: bool,
 ) -> PolarsResult<IdxArr>
 where
-    for<'a> T::Physical<'a>: PartialOrd,
+    for<'a> T::Physical<'a>: TotalOrd,
 {
     let right_asof = left_asof.unpack_series_matching_type(right_asof)?;
 

@@ -1,4 +1,5 @@
 use polars_ops::frame::DataFrameJoinOps;
+use recursive::recursive;
 
 use super::*;
 
@@ -36,6 +37,7 @@ impl JoinExec {
 }
 
 impl Executor for JoinExec {
+    #[recursive]
     fn execute<'a>(&'a mut self, state: &'a mut ExecutionState) -> PolarsResult<DataFrame> {
         state.should_stop()?;
         #[cfg(debug_assertions)]

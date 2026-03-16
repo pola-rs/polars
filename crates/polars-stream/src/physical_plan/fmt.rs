@@ -1,5 +1,6 @@
 use std::fmt::Write;
 
+use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::PartitionStrategyIR;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
@@ -8,6 +9,7 @@ use polars_time::ClosedWindow;
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::DynamicGroupOptions;
 use polars_utils::arena::Arena;
+use polars_utils::itertools::Itertools;
 use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
@@ -39,6 +41,8 @@ impl NodeStyle {
             | K::EquiJoin { .. }
             | K::SemiAntiJoin { .. }
             | K::Multiplexer { .. } => Self::MemoryIntensive,
+            #[cfg(feature = "iejoin")]
+            K::RangeJoin { .. } => Self::MemoryIntensive,
             #[cfg(feature = "merge_sorted")]
             K::MergeSorted { .. } => Self::MemoryIntensive,
             _ => Self::Generic,
@@ -146,6 +150,24 @@ pub fn fmt_exprs(
             fmt_expr(f, e, expr_arena).unwrap();
         }
     }
+}
+
+fn fmt_join_label(base_label: &str, left_on: &str, right_on: &str, args: &JoinArgs) -> String {
+    let mut label = base_label.to_string();
+    write!(label, r"\nleft_on:\n{}", left_on).unwrap();
+    write!(label, r"\nright_on:\n{}", right_on).unwrap();
+    if args.how.is_equi() {
+        write!(
+            label,
+            r"\nhow: {}",
+            escape_graphviz(&format!("{:?}", args.how))
+        )
+        .unwrap();
+    }
+    if args.nulls_equal {
+        write!(label, r"\njoin-nulls").unwrap();
+    }
+    label
 }
 
 #[recursive::recursive]
@@ -261,10 +283,22 @@ fn visualize_plan_rec(
             ),
             from_ref(input),
         ),
-        PhysNodeKind::SimpleProjection { input, columns } => (
-            format!("select\\ncols: {}", columns.join(", ")),
-            from_ref(input),
-        ),
+        PhysNodeKind::SimpleProjection { input, columns } => {
+            let mut label = "select".to_string();
+            let mut f = EscapeLabel(&mut label);
+            if columns.iter().all(|(out, col)| out == col) {
+                write!(f, "\n{}", &columns.values().join(", ")).unwrap();
+            } else {
+                for (out, col) in columns {
+                    if out == col {
+                        write!(f, "\n{col}").unwrap();
+                    } else {
+                        write!(f, "\n{out} = {col}").unwrap();
+                    }
+                }
+            };
+            (label, from_ref(input))
+        },
         PhysNodeKind::InMemorySink { input } => ("in-memory-sink".to_string(), from_ref(input)),
         PhysNodeKind::CallbackSink { input, .. } => ("callback-sink".to_string(), from_ref(input)),
         PhysNodeKind::FileSink { input, options } => match options.file_format {
@@ -276,8 +310,6 @@ fn visualize_plan_rec(
             FileWriteFormat::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
             #[cfg(feature = "json")]
             FileWriteFormat::NDJson(_) => ("ndjson-sink".to_string(), from_ref(input)),
-            #[allow(unreachable_patterns)]
-            _ => todo!(),
         },
         PhysNodeKind::PartitionedSink { input, options } => {
             let variant = match options.partition_strategy {
@@ -294,8 +326,6 @@ fn visualize_plan_rec(
                 FileWriteFormat::Csv(_) => (format!("{variant}[csv]"), from_ref(input)),
                 #[cfg(feature = "json")]
                 FileWriteFormat::NDJson(_) => (format!("{variant}[ndjson]"), from_ref(input)),
-                #[allow(unreachable_patterns)]
-                _ => todo!(),
             }
         },
         PhysNodeKind::InMemoryMap {
@@ -368,6 +398,7 @@ fn visualize_plan_rec(
             by_column,
             reverse,
             nulls_last: _,
+            dyn_pred: _,
         } => {
             let name = if reverse.iter().all(|r| *r) {
                 "bottom-k"
@@ -618,32 +649,21 @@ fn visualize_plan_rec(
             args,
             ..
         } => {
-            let mut label = "merge-join".to_string();
-            let how: &'static str = (&args.how).into();
-            write!(
-                label,
-                r"\nleft_on:\n{}",
-                left_on
-                    .iter()
-                    .map(|s| escape_graphviz(&s[..]))
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            )
-            .unwrap();
-            write!(
-                label,
-                r"\nright_on:\n{}",
-                right_on
-                    .iter()
-                    .map(|s| escape_graphviz(&s[..]))
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            )
-            .unwrap();
-            write!(label, r"\nhow: {}", escape_graphviz(how)).unwrap();
-            if args.nulls_equal {
-                write!(label, r"\njoin-nulls").unwrap();
-            }
+            let mut tmp_arena: Arena<AExpr> = Arena::with_capacity(2);
+            let left_on_exprs = left_on
+                .iter()
+                .map(|on| ExprIR::from_column_name(on.clone(), &mut tmp_arena))
+                .collect_vec();
+            let right_on_exprs = right_on
+                .iter()
+                .map(|on| ExprIR::from_column_name(on.clone(), &mut tmp_arena))
+                .collect_vec();
+            let label = fmt_join_label(
+                "merge-join",
+                &fmt_exprs_to_label(&left_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
+                &fmt_exprs_to_label(&right_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
+                args,
+            );
             (label, &[*input_left, *input_right][..])
         },
         PhysNodeKind::InMemoryJoin {
@@ -669,11 +689,10 @@ fn visualize_plan_rec(
             args,
             output_bool: _,
         } => {
-            let label = match phys_sm[node_key].kind {
+            let base_label = match phys_sm[node_key].kind {
                 PhysNodeKind::MergeJoin { .. } => "merge-join",
                 PhysNodeKind::EquiJoin { .. } => "equi-join",
                 PhysNodeKind::InMemoryJoin { .. } => "in-memory-join",
-                PhysNodeKind::CrossJoin { .. } => "cross-join",
                 PhysNodeKind::SemiAntiJoin {
                     output_bool: false, ..
                 } if args.how.is_semi() => "semi-join",
@@ -688,30 +707,38 @@ fn visualize_plan_rec(
                 } if args.how.is_anti() => "is-not-in",
                 _ => unreachable!(),
             };
-            let mut label = label.to_string();
-            write!(
-                label,
-                r"\nleft_on:\n{}",
-                fmt_exprs_to_label(left_on, expr_arena, FormatExprStyle::NoAliases)
-            )
-            .unwrap();
-            write!(
-                label,
-                r"\nright_on:\n{}",
-                fmt_exprs_to_label(right_on, expr_arena, FormatExprStyle::NoAliases)
-            )
-            .unwrap();
-            if args.how.is_equi() {
-                write!(
-                    label,
-                    r"\nhow: {}",
-                    escape_graphviz(&format!("{:?}", args.how))
-                )
-                .unwrap();
-            }
-            if args.nulls_equal {
-                write!(label, r"\njoin-nulls").unwrap();
-            }
+            let label = fmt_join_label(
+                base_label,
+                &fmt_exprs_to_label(left_on, expr_arena, FormatExprStyle::NoAliases),
+                &fmt_exprs_to_label(right_on, expr_arena, FormatExprStyle::NoAliases),
+                args,
+            );
+            (label, &[*input_left, *input_right][..])
+        },
+        #[cfg(feature = "iejoin")]
+        PhysNodeKind::RangeJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+            ..
+        } => {
+            let mut tmp_arena: Arena<AExpr> = Arena::with_capacity(3);
+            let left_on_exprs = left_on
+                .iter()
+                .map(|on| ExprIR::from_column_name(on.clone(), &mut tmp_arena))
+                .collect_vec();
+            let right_on_exprs = right_on
+                .iter()
+                .map(|on| ExprIR::from_column_name(on.clone(), &mut tmp_arena))
+                .collect_vec();
+            let label = fmt_join_label(
+                "range-join",
+                &fmt_exprs_to_label(&left_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
+                &fmt_exprs_to_label(&right_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
+                args,
+            );
             (label, &[*input_left, *input_right][..])
         },
         PhysNodeKind::CrossJoin {
@@ -719,6 +746,22 @@ fn visualize_plan_rec(
             input_right,
             args: _,
         } => ("cross-join".to_string(), &[*input_left, *input_right][..]),
+        PhysNodeKind::AsOfJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+            ..
+        } => {
+            let label = fmt_join_label(
+                "asof-join",
+                &escape_graphviz(&left_on[..]),
+                &escape_graphviz(&right_on[..]),
+                args,
+            );
+            (label, &[*input_left, *input_right][..])
+        },
         #[cfg(feature = "merge_sorted")]
         PhysNodeKind::MergeSorted {
             input_left,

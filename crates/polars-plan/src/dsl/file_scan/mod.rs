@@ -46,16 +46,24 @@ const _: () = {
 /// Note: This is cheaply cloneable.
 pub enum FileScanDsl {
     #[cfg(feature = "csv")]
-    Csv { options: Arc<CsvReadOptions> },
+    Csv {
+        options: Arc<CsvReadOptions>,
+    },
 
     #[cfg(feature = "json")]
-    NDJson { options: NDJsonReadOptions },
+    NDJson {
+        options: NDJsonReadOptions,
+    },
 
     #[cfg(feature = "parquet")]
-    Parquet { options: ParquetOptions },
+    Parquet {
+        options: ParquetOptions,
+    },
 
     #[cfg(feature = "ipc")]
-    Ipc { options: IpcScanOptions },
+    Ipc {
+        options: IpcScanOptions,
+    },
 
     #[cfg(feature = "python")]
     PythonDataset {
@@ -63,7 +71,13 @@ pub enum FileScanDsl {
     },
 
     #[cfg(feature = "scan_lines")]
-    Lines { name: PlSmallStr },
+    Lines {
+        name: PlSmallStr,
+    },
+
+    ExpandedPaths {
+        name: PlSmallStr,
+    },
 
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Anonymous {
@@ -83,10 +97,14 @@ const _: () = {
 /// Note: This is cheaply cloneable.
 pub enum FileScanIR {
     #[cfg(feature = "csv")]
-    Csv { options: Arc<CsvReadOptions> },
+    Csv {
+        options: Arc<CsvReadOptions>,
+    },
 
     #[cfg(feature = "json")]
-    NDJson { options: NDJsonReadOptions },
+    NDJson {
+        options: NDJsonReadOptions,
+    },
 
     #[cfg(feature = "parquet")]
     Parquet {
@@ -109,7 +127,13 @@ pub enum FileScanIR {
     },
 
     #[cfg(feature = "scan_lines")]
-    Lines { name: PlSmallStr },
+    Lines {
+        name: PlSmallStr,
+    },
+
+    ExpandedPaths {
+        name: PlSmallStr,
+    },
 
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Anonymous {
@@ -181,6 +205,10 @@ pub struct CastColumnsPolicy {
     /// Allow casting when target dtype is lossless supertype
     pub integer_upcast: bool,
 
+    /// Allow casting integers to floats.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub integer_to_float_cast: bool,
+
     /// Allow upcasting from small floats to bigger floats
     pub float_upcast: bool,
     /// Allow downcasting from big floats to smaller floats
@@ -209,6 +237,7 @@ impl CastColumnsPolicy {
     /// Configuration variant that defaults to raising on mismatch.
     pub const ERROR_ON_MISMATCH: Self = Self {
         integer_upcast: false,
+        integer_to_float_cast: false,
         float_upcast: false,
         float_downcast: false,
         datetime_nanoseconds_downcast: false,
@@ -359,7 +388,6 @@ mod _file_scan_eq_hash {
     use std::hash::{Hash, Hasher};
     use std::sync::Arc;
 
-    #[cfg(feature = "scan_lines")]
     use polars_utils::pl_str::PlSmallStr;
 
     use super::FileScanIR;
@@ -412,7 +440,13 @@ mod _file_scan_eq_hash {
         },
 
         #[cfg(feature = "scan_lines")]
-        Lines { name: &'a PlSmallStr },
+        Lines {
+            name: &'a PlSmallStr,
+        },
+
+        ExpandedPaths {
+            name: &'a PlSmallStr,
+        },
 
         Anonymous {
             options: &'a crate::dsl::AnonymousScanOptions,
@@ -456,6 +490,8 @@ mod _file_scan_eq_hash {
 
                 #[cfg(feature = "scan_lines")]
                 FileScanIR::Lines { name } => FileScanEqHashWrap::Lines { name },
+
+                FileScanIR::ExpandedPaths { name } => FileScanEqHashWrap::ExpandedPaths { name },
 
                 FileScanIR::Anonymous { options, function } => FileScanEqHashWrap::Anonymous {
                     options,
@@ -685,6 +721,16 @@ impl CastColumnsPolicy {
                 },
 
                 _ => unreachable!(),
+            };
+        }
+
+        if target_dtype.is_float() && incoming_dtype.is_integer() {
+            return if !self.integer_to_float_cast {
+                mismatch_err(
+                    "hint: pass cast_options=pl.ScanCastOptions(integer_cast='allow-float')",
+                )
+            } else {
+                Ok(true)
             };
         }
 

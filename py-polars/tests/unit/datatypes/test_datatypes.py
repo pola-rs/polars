@@ -103,6 +103,15 @@ def test_dtype_groups() -> None:
     assert pl.Datetime("ms", "Asia/Tokyo") in grp
 
 
+def test_base_type_typing() -> None:
+    # Here we just check that these don't raise type-checking complaints.
+    _result_0: type[pl.Struct] = pl.Struct(
+        [pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)]
+    ).base_type()
+    _result_1: type[pl.Int64] = pl.Int64.base_type()
+    _result_2: type[pl.List] = pl.List(pl.Int32).base_type()
+
+
 def test_dtypes_picklable() -> None:
     parametric_type = pl.Datetime("ns")
     singleton_type = pl.Float64

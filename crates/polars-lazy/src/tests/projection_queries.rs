@@ -189,7 +189,7 @@ fn test_select_hconcat_pushdown_non_strict_25263() -> PolarsResult<()> {
 
     // not strict: we read a single column from `df_a` to ensure that the concat output
     // has the correct height
-    let lf = concat_lf_horizontal([df_a, df_b], UnionArgs::default())?.select([col("d")]);
+    let lf = concat_lf_horizontal([df_a, df_b], Default::default())?.select([col("d")]);
     let plan = lf.clone().to_alp_optimized()?;
 
     let node = plan.lp_top;
@@ -237,7 +237,7 @@ fn test_select_hconcat_pushdown_strict_25263() -> PolarsResult<()> {
     // strict: we don't read any columns from `df_a`
     let lf = concat_lf_horizontal(
         [df_a, df_b],
-        UnionArgs {
+        HConcatOptions {
             strict: true,
             ..Default::default()
         },

@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_error::PolarsResult;
+use polars_io::metrics::IOMetrics;
 use polars_plan::dsl::UnifiedSinkArgs;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -26,13 +27,14 @@ pub fn start_partition_sink_pipeline(
     morsel_rx: connector::Receiver<Morsel>,
     config: IOSinkNodeConfig,
     execution_state: &StreamingExecutionState,
+    io_metrics: Option<Arc<IOMetrics>>,
 ) -> PolarsResult<async_executor::AbortOnDropHandle<PolarsResult<()>>> {
     let num_pipelines: NonZeroUsize = execution_state.num_pipelines.try_into().unwrap();
 
     let inflight_morsel_limit = config.inflight_morsel_limit(num_pipelines);
     let num_pipelines_per_sink = config.num_pipelines_per_sink(num_pipelines);
     let max_open_sinks = config.max_open_sinks().get();
-    let upload_chunk_size = config.partitioned_cloud_upload_chunk_size();
+    let upload_chunk_size = config.partitioned_upload_chunk_size();
     let upload_max_concurrency = config.partitioned_upload_concurrency();
 
     let IOSinkNodeConfig {
@@ -53,7 +55,7 @@ pub fn start_partition_sink_pipeline(
 
     let PartitionedTarget {
         base_path,
-        file_path_provider,
+        mut file_path_provider,
         partitioner,
         hstack_keys,
         include_keys_in_file,
@@ -64,13 +66,22 @@ pub fn start_partition_sink_pipeline(
     let node_name = node_name.clone();
     let verbose = polars_core::config::verbose();
     let in_memory_exec_state = Arc::new(execution_state.in_memory_exec_state.clone());
+    let io_metrics_is_some = io_metrics.is_some();
+
+    if let Some(file_part_prefix) = file_path_provider.file_part_prefix_mut() {
+        use std::fmt::Write as _;
+        let uuid = uuid::Uuid::new_v4();
+        let uuid = uuid.as_simple();
+        write!(file_part_prefix, "{uuid}").unwrap();
+    }
 
     let file_provider = Arc::new(FileProvider {
         base_path,
         cloud_options,
         provider_type: file_path_provider,
         upload_chunk_size,
-        upload_max_concurrency,
+        upload_max_concurrency: upload_max_concurrency.get(),
+        io_metrics,
     });
 
     let file_writer_starter: Arc<dyn FileWriterStarter> =
@@ -92,7 +103,9 @@ pub fn start_partition_sink_pipeline(
             inflight_morsel_limit: {}, \
             takeable_rows_provider: {:?}, \
             file_size_limit: {:?}, \
-            upload_chunk_size: {}",
+            upload_chunk_size: {}, \
+            upload_concurrency: {}, \
+            io_metrics: {}",
             partitioner.verbose_display(),
             file_writer_starter.writer_name(),
             &file_provider.provider_type,
@@ -100,7 +113,9 @@ pub fn start_partition_sink_pipeline(
             inflight_morsel_limit,
             takeable_rows_provider,
             file_size_limit,
-            upload_chunk_size
+            upload_chunk_size,
+            upload_max_concurrency,
+            io_metrics_is_some,
         );
     }
 

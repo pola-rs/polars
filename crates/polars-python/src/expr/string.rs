@@ -411,7 +411,7 @@ impl PyExpr {
     #[staticmethod]
     fn str_format(f_string: String, exprs: Vec<PyExpr>) -> PyResult<Self> {
         let exprs = exprs.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-        Ok(format_str(&f_string, exprs)
+        Ok(format_str(&f_string, &exprs)
             .map_err(PyPolarsErr::from)?
             .into())
     }

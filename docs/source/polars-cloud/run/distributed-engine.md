@@ -14,7 +14,8 @@ significantly reduced, allowing users to process data at scale.
 
 ## Using distributed engine
 
-To execute queries using the distributed engine, you can call the `distributed()` method.
+To execute queries using the distributed engine, you can call the `distributed()` method. This is
+the default mode of execution for remote queries.
 
 ```python
 lf: LazyFrame
@@ -31,7 +32,7 @@ result = (
 This example demonstrates running query 3 of the PDS-H benchmarkon scale factor 100 (approx. 100GB
 of data) using Polars Cloud distributed engine.
 
-!!! note "Run the example yourself"
+!!! example "Run the example yourself"
 
     Copy and paste the code to you environment and run it. The data is hosted in S3 buckets that use [AWS Requester Pays](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RequesterPaysBuckets.html), meaning you pay only for pays the cost of the request and the data download from the bucket. The storage costs are covered.
 
@@ -55,3 +56,30 @@ query takes around xx seconds to execute.
 !!! tip "Try on SF1000 (approx. 1TB of data)"
 
     You can also run this example on a higher scale factor. The data is available on the same bucket. You can change the URL from `sf100` to `sf1000`.
+
+## How it works
+
+When you call `.execute()` on a distributed query, it passes through the following pipeline:
+
+![Flow graph](https://raw.githubusercontent.com/pola-rs/polars-static/master/docs/distributed-query-flow.png)
+
+1. You write a query using the Polars [DSL](glossary.md#dsl), building up a
+   [LazyFrame](glossary.md#query).
+2. The LazyFrame is translated into a [logical plan](glossary.md#logical-plan): a tree of operations
+   capturing _what_ to compute. You can inspect this logical plan by running
+   `lf.explain(optimized=False)`.
+3. The query optimizer rewrites the logical plan into an equivalent but more efficient
+   [optimized logical plan](glossary.md#optimized-logical-plan). You can inspect the optimized
+   logical plan with `lf.explain()`.
+4. The distributed query planner walks the optimized logical plan and produces a
+   [stage graph](glossary.md#stage-graph): a DAG of [stages](glossary.md#stage) separated by
+   [shuffles](glossary.md#shuffle) at each point where a data needs to be redistributed across
+   workers.
+5. The [scheduler](glossary.md#scheduler) executes stages and assigns
+   [partitions](glossary.md#partition) to [workers](glossary.md#worker) in dependency order, waiting
+   for all workers to finish before starting the next stage.
+6. Each worker receives the optimized logical plan together with its assigned partitions, derives
+   its own [physical plan](glossary.md#physical-plan), and executes it. After finishing the stage,
+   intermediate results are written to a local or network-shared disk.
+7. After the final stage, results are written to the destination location, or sent back to the user,
+   depending on the query.

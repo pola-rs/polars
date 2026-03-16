@@ -8,6 +8,7 @@ mod convert;
 mod count;
 mod first_last;
 mod first_last_nonnull;
+mod implode;
 mod len;
 mod mean;
 mod min_max;
@@ -59,6 +60,8 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// reductions, seq_id can be used to resolve order between calls/multiple
     /// reductions.
     ///
+    /// The column MUST consist of single chunk.
+    ///
     /// # Safety
     /// The subset and group_idxs are in-bounds.
     unsafe fn update_groups_subset(
@@ -79,6 +82,8 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// reductions, seq_id can be used to resolve order between calls/multiple
     /// reductions. If the group_idxs[i] has its evict bit set the current value
     /// in the group should be evicted and reset before updating.
+    ///
+    /// The column MUST consist of single chunk.
     ///
     /// # Safety
     /// The subset and group_idxs are in-bounds.
@@ -527,8 +532,8 @@ impl GroupedReduction for NullGroupedReduction {
         _group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
-        let &[values] = values else { unreachable!() };
-        assert!(values.dtype().is_null());
+        assert!(!values.is_empty());
+        assert!(values.iter().any(|v| v.dtype().is_null()));
         Ok(())
     }
 
@@ -539,8 +544,8 @@ impl GroupedReduction for NullGroupedReduction {
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
-        let &[values] = values else { unreachable!() };
-        assert!(values.dtype().is_null());
+        assert!(!values.is_empty());
+        assert!(values.iter().any(|v| v.dtype().is_null()));
         assert!(subset.len() == group_idxs.len());
         for g in group_idxs {
             self.num_evictions += g.should_evict() as IdxSize;

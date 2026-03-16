@@ -160,13 +160,15 @@ pub trait StringMethods: AsString {
             let mut s = opt_s?;
             while !s.is_empty() {
                 let timestamp = if tz_aware {
-                    DateTime::parse_and_remainder(s, fmt).map(|(dt, _r)| func(dt.naive_utc()))
+                    DateTime::parse_and_remainder(s, fmt)
+                        .ok()
+                        .map(|(dt, _r)| func(dt.naive_utc()))
                 } else {
-                    NaiveDateTime::parse_and_remainder(s, fmt).map(|(nd, _r)| func(nd))
+                    infer::parse_datetime_and_remainder(s, fmt).map(|(nd, _r)| func(nd))
                 };
                 match timestamp {
-                    Ok(ts) => return Some(ts),
-                    Err(_) => {
+                    Some(ts) => return Some(ts),
+                    None => {
                         let mut it = s.chars();
                         it.next();
                         s = it.as_str();

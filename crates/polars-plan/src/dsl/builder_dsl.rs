@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+#[cfg(feature = "pivot")]
+use polars_core::frame::PivotColumnNaming;
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
 use polars_io::csv::read::CsvReadOptions;
@@ -91,6 +93,20 @@ impl DslBuilder {
             sources,
             unified_scan_args: Box::new(unified_scan_args),
             scan_type: Box::new(FileScanDsl::Lines { name }),
+            cached_ir: Default::default(),
+        }
+        .into())
+    }
+
+    pub fn expand_paths(
+        sources: ScanSources,
+        unified_scan_args: UnifiedScanArgs,
+        name: PlSmallStr,
+    ) -> PolarsResult<Self> {
+        Ok(DslPlan::Scan {
+            sources,
+            unified_scan_args: Box::new(unified_scan_args),
+            scan_type: Box::new(FileScanDsl::ExpandedPaths { name }),
             cached_ir: Default::default(),
         }
         .into())
@@ -327,6 +343,7 @@ impl DslBuilder {
         agg: Expr,
         maintain_order: bool,
         separator: PlSmallStr,
+        column_naming: PivotColumnNaming,
     ) -> Self {
         DslPlan::Pivot {
             input: Arc::new(self.0),
@@ -337,6 +354,7 @@ impl DslBuilder {
             agg,
             maintain_order,
             separator,
+            column_naming,
         }
         .into()
     }

@@ -12,6 +12,10 @@ pub(super) fn round_sig_figs(c: &Column, digits: i32) -> PolarsResult<Column> {
     c.try_apply_unary_elementwise(|s| s.round_sig_figs(digits))
 }
 
+pub(super) fn truncate(c: &Column, decimals: u32) -> PolarsResult<Column> {
+    c.try_apply_unary_elementwise(|s| s.truncate(decimals))
+}
+
 pub(super) fn floor(c: &Column) -> PolarsResult<Column> {
     c.try_apply_unary_elementwise(Series::floor)
 }

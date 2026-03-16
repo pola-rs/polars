@@ -13,6 +13,7 @@ use crate::reduce::bitwise::{
 use crate::reduce::count::{CountReduce, NullCountReduce};
 use crate::reduce::first_last::{new_first_reduction, new_item_reduction, new_last_reduction};
 use crate::reduce::first_last_nonnull::{new_first_nonnull_reduction, new_last_nonnull_reduction};
+use crate::reduce::implode::new_unordered_implode_reduction;
 use crate::reduce::len::LenReduce;
 use crate::reduce::mean::new_mean_reduction;
 use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
@@ -68,18 +69,14 @@ pub fn into_reduction(
                 let count = Box::new(CountReduce::new(*include_nulls)) as Box<_>;
                 (count, *input)
             },
-            IRAggExpr::MinBy { input, by } => {
-                let gr = new_min_by_reduction(get_dt(*input)?, get_dt(*by)?)?;
-                return Ok((gr, vec![*input, *by]));
-            },
-            IRAggExpr::MaxBy { input, by } => {
-                let gr = new_max_by_reduction(get_dt(*input)?, get_dt(*by)?)?;
-                return Ok((gr, vec![*input, *by]));
-            },
+            IRAggExpr::Implode {
+                input,
+                maintain_order: false,
+            } => (new_unordered_implode_reduction(get_dt(*input)?), *input),
             IRAggExpr::Quantile { .. } => todo!(),
             IRAggExpr::Median(_) => todo!(),
             IRAggExpr::NUnique(_) => todo!(),
-            IRAggExpr::Implode(_) => todo!(),
+            IRAggExpr::Implode { .. } => todo!(),
             IRAggExpr::AggGroups(_) => todo!(),
         },
         AExpr::Len => {
@@ -164,7 +161,64 @@ pub fn into_reduction(
                 _ => unreachable!(),
             }
         },
-        AExpr::AnonymousStreamingAgg {
+
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::MinBy,
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 2);
+            let input = inner_exprs[0].node();
+            let mut by = inner_exprs[1].node();
+            let input_dtype = get_dt(input)?;
+            let mut by_dtype = get_dt(by)?;
+            if by_dtype.is_nested() {
+                by = AExprBuilder::row_encode(
+                    vec![inner_exprs[1].clone()],
+                    vec![by_dtype.clone()],
+                    RowEncodingVariant::Ordered {
+                        descending: None,
+                        nulls_last: None,
+                        broadcast_nulls: None,
+                    },
+                    expr_arena,
+                )
+                .node();
+                by_dtype = DataType::BinaryOffset;
+            }
+            let gr = new_min_by_reduction(input_dtype, by_dtype)?;
+            return Ok((gr, vec![input, by]));
+        },
+
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::MaxBy,
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 2);
+            let input = inner_exprs[0].node();
+            let mut by = inner_exprs[1].node();
+            let input_dtype = get_dt(input)?;
+            let mut by_dtype = get_dt(by)?;
+            if by_dtype.is_nested() {
+                by = AExprBuilder::row_encode(
+                    vec![inner_exprs[1].clone()],
+                    vec![by_dtype.clone()],
+                    RowEncodingVariant::Ordered {
+                        descending: None,
+                        nulls_last: None,
+                        broadcast_nulls: None,
+                    },
+                    expr_arena,
+                )
+                .node();
+                by_dtype = DataType::BinaryOffset;
+            }
+            let gr = new_max_by_reduction(input_dtype, by_dtype)?;
+            return Ok((gr, vec![input, by]));
+        },
+
+        AExpr::AnonymousAgg {
             input: inner_exprs,
             fmt_str: _,
             function,

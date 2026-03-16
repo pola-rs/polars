@@ -14,6 +14,7 @@ from polars.plugins import (
     _serialize_kwargs,
     register_plugin_function,
 )
+from tests.conftest import PlMonkeyPatch
 
 
 @pytest.mark.write_disk
@@ -48,7 +49,7 @@ def test_serialize_kwargs(input: dict[str, Any] | None, expected: bytes) -> None
 @pytest.mark.write_disk
 @pytest.mark.parametrize("use_abs_path", [True, False])
 def test_resolve_plugin_path(
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     tmp_path: Path,
     use_abs_path: bool,
 ) -> None:
@@ -61,7 +62,7 @@ def test_resolve_plugin_path(
     (mock_venv_lib / "lib1.so").touch()
     (mock_venv_lib / "__init__.py").touch()
 
-    with pytest.MonkeyPatch.context() as mp:
+    with PlMonkeyPatch.context() as mp:
         mp.setattr(sys, "prefix", str(mock_venv))
         expected_full_path = mock_venv_lib / "lib1.so"
         expected_relative_path = expected_full_path.relative_to(mock_venv)

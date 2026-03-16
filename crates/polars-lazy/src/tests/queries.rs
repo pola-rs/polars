@@ -51,8 +51,8 @@ fn test_lazy_unpivot() {
     let df = get_df();
 
     let args = UnpivotArgsDSL {
-        on: Some(by_name(["sepal_length", "sepal_width"], true)),
-        index: by_name(["petal_width", "petal_length"], true),
+        on: Some(by_name(["sepal_length", "sepal_width"], true, false)),
+        index: by_name(["petal_width", "petal_length"], true, false),
         variable_name: None,
         value_name: None,
     };
@@ -288,7 +288,7 @@ fn test_lazy_query_4() -> PolarsResult<()> {
                 .alias("diff_cases"),
         ])
         .explode(
-            by_name(["day", "diff_cases"], true),
+            by_name(["day", "diff_cases"], true, false),
             ExplodeOptions {
                 empty_as_null: true,
                 keep_nulls: true,
@@ -1114,7 +1114,7 @@ fn test_multiple_explode() -> PolarsResult<()> {
         .group_by([col("a")])
         .agg([col("b").alias("b_list"), col("c").alias("c_list")])
         .explode(
-            by_name(["c_list", "b_list"], true),
+            by_name(["c_list", "b_list"], true, false),
             ExplodeOptions {
                 empty_as_null: true,
                 keep_nulls: true,
@@ -1516,7 +1516,7 @@ fn test_list_in_select_context() -> PolarsResult<()> {
 
     let df = DataFrame::new_infer_height(vec![s])?;
 
-    let out = df.lazy().select([col("a").implode()]).collect()?;
+    let out = df.lazy().select([col("a").implode(true)]).collect()?;
 
     let s = out.column("a")?;
     assert!(s.equals(&expected));
@@ -1783,7 +1783,9 @@ fn test_is_in() -> PolarsResult<()> {
         .lazy()
         .group_by_stable([col("fruits")])
         .agg([col("cars").is_in(
-            col("cars").filter(col("cars").eq(lit("beetle"))).implode(),
+            col("cars")
+                .filter(col("cars").eq(lit("beetle")))
+                .implode(true),
             false,
         )])
         .collect()?;
@@ -1803,7 +1805,7 @@ fn test_is_in() -> PolarsResult<()> {
         .lazy()
         .group_by_stable([col("fruits")])
         .agg([col("cars").is_in(
-            lit(Series::new("a".into(), ["beetle", "vw"])).implode(),
+            lit(Series::new("a".into(), ["beetle", "vw"])).implode(true),
             false,
         )])
         .collect()?;

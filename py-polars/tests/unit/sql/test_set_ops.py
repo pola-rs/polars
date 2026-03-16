@@ -5,6 +5,7 @@ import pytest
 import polars as pl
 from polars.exceptions import SQLInterfaceError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 def test_except_intersect() -> None:
@@ -86,7 +87,7 @@ def test_except_intersect_all_unsupported(op: str, op_subtype: str) -> None:
         SQLInterfaceError,
         match=f"'{op} {op_subtype}' is not supported",
     ):
-        pl.sql(f"SELECT * FROM df1 {op} {op_subtype} SELECT * FROM df2")
+        pl.sql(f"SELECT * FROM df1 {op} {op_subtype} SELECT * FROM df2", eager=True)
 
 
 def test_update_statement_error() -> None:
@@ -114,7 +115,7 @@ def test_update_statement_error() -> None:
 
     with pytest.raises(
         SQLInterfaceError,
-        match=r"'UPDATE large SET FQDN = u\.FQDN, NS1 = u\.NS1, NS2 = u\.NS2, NS3 = u\.NS3 FROM u WHERE large\.FQDN = u\.FQDN' operation is currently unsupported",
+        match=r"'UPDATE large SET FQDN = .+ operation is currently unsupported",
     ):
         ctx.execute("""
             WITH u AS (
@@ -264,13 +265,12 @@ def test_union_with_join_state_isolation() -> None:
     # ensures that aliases from one branch don't leak into the other
     res = pl.sql(
         query="""
-            WITH a AS (
-              SELECT 0 AS k
-            ), b AS (
-              SELECT 1 AS k
-            ), c AS (
-              SELECT 0 AS k
-            )
+            -- start CTEs
+            WITH
+              a AS (SELECT 0 AS k),
+              b AS (SELECT 1 AS k),
+              c AS (SELECT 0 AS k)
+            -- end of CTEs
             SELECT a.k FROM a JOIN c ON a.k = c.k
             UNION ALL
             SELECT b.k FROM b JOIN c ON b.k = c.k
@@ -278,3 +278,172 @@ def test_union_with_join_state_isolation() -> None:
         eager=True,
     )
     assert res.to_series().to_list() == [0]
+
+
+def test_set_operations_order_by() -> None:
+    df1 = pl.DataFrame({"id": [1, 2, 3], "value": [100, 200, 300]})
+    df2 = pl.DataFrame({"id": [4, 5, 6], "value": [400, 500, 600]})
+    df3 = pl.DataFrame({"id": [2, 3, 4], "value": [200, 300, 400]})
+
+    # overall ORDER BY applies to the combined UNION result
+    assert_sql_matches(
+        frames={"df1": df1, "df2": df2},
+        query="""
+            SELECT * FROM df1
+            UNION ALL
+            SELECT * FROM df2
+            ORDER BY id DESC
+        """,
+        expected={
+            "id": [6, 5, 4, 3, 2, 1],
+            "value": [600, 500, 400, 300, 200, 100],
+        },
+        compare_with="sqlite",
+    )
+
+    # ORDER BY with LIMIT on the final result
+    assert_sql_matches(
+        frames={"df1": df1, "df2": df2},
+        query="""
+            SELECT * FROM df1
+            UNION ALL
+            SELECT * FROM df2
+            ORDER BY value DESC
+            LIMIT 3
+        """,
+        expected={"id": [6, 5, 4], "value": [600, 500, 400]},
+        compare_with="sqlite",
+    )
+
+    # ORDER BY with FETCH on the final result
+    assert_sql_matches(
+        frames={"df1": df1, "df2": df2},
+        query="""
+            SELECT * FROM df1
+            UNION ALL
+            SELECT * FROM df2
+            ORDER BY value DESC
+            FETCH FIRST 3 ROWS ONLY
+        """,
+        expected={"id": [6, 5, 4], "value": [600, 500, 400]},
+        compare_with="duckdb",
+    )
+
+    # Nested ORDER BY in subqueries (top-N from each side) with LIMIT
+    assert_sql_matches(
+        frames={"df1": df1, "df2": df2},
+        query="""
+            SELECT * FROM (SELECT * FROM df1 ORDER BY value DESC LIMIT 2) AS top1
+            UNION ALL
+            SELECT * FROM (SELECT * FROM df2 ORDER BY value ASC LIMIT 2) AS top2
+            ORDER BY id
+        """,
+        expected={"id": [2, 3, 4, 5], "value": [200, 300, 400, 500]},
+        compare_with="sqlite",
+    )
+
+    # Nested ORDER BY in subqueries with LIMIT, with an outer ORDER BY/LIMIT
+    assert_sql_matches(
+        {"df1": df1, "df2": df2},
+        query="""
+            SELECT * FROM (
+              SELECT * FROM (SELECT * FROM df1 ORDER BY value DESC LIMIT 2) t1
+              UNION ALL
+              SELECT * FROM (SELECT * FROM df2 ORDER BY value ASC LIMIT 2) t2
+            ) t3
+            ORDER BY id
+            LIMIT 3
+        """,
+        expected={"id": [2, 3, 4], "value": [200, 300, 400]},
+        compare_with="sqlite",
+    )
+
+    # EXCEPT with ORDER BY
+    assert_sql_matches(
+        {"df1": df1, "df3": df3},
+        query="""
+            SELECT * FROM df1
+            EXCEPT
+            SELECT * FROM df3
+            ORDER BY id
+        """,
+        expected={"id": [1], "value": [100]},
+        compare_with="sqlite",
+    )
+
+    # INTERSECT with ORDER BY
+    assert_sql_matches(
+        {"df1": df1, "df3": df3},
+        query="""
+            SELECT * FROM df1
+            INTERSECT
+            SELECT * FROM df3
+            ORDER BY id DESC
+        """,
+        expected={"id": [3, 2], "value": [300, 200]},
+        compare_with="sqlite",
+    )
+
+    # INTERSECT with ORDER BY and FETCH (df1 ∩ df3 = {(2,200), (3,300)})
+    assert_sql_matches(
+        {"df1": df1, "df2": df2, "df3": df3},
+        query="""
+            (
+              SELECT * FROM df1
+              UNION
+              SELECT * FROM df2
+              INTERSECT
+              SELECT * FROM df3
+            )
+            ORDER BY id
+            FETCH FIRST 4 ROWS ONLY
+        """,
+        expected={
+            "id": [1, 2, 3, 4],
+            "value": [100, 200, 300, 400],
+        },
+        compare_with="duckdb",
+    )
+
+    # Chained UNION with overall ORDER BY
+    for open_paren, close_paren, compare_with in (
+        ("", "", "sqlite"),
+        ("", "", "duckdb"),
+        ("(", ")", "duckdb"),
+    ):
+        assert_sql_matches(
+            {"df1": df1, "df2": df2, "df3": df3},
+            query=f"""
+                {open_paren}
+                SELECT * FROM df1
+                UNION
+                SELECT * FROM df2
+                UNION
+                SELECT * FROM df3
+                {close_paren}
+                ORDER BY value
+            """,
+            expected={
+                "id": [1, 2, 3, 4, 5, 6],
+                "value": [100, 200, 300, 400, 500, 600],
+            },
+            compare_with=compare_with,  # type: ignore[arg-type]
+        )
+
+    # UNION with ORDER BY on expression (wrapped in subquery)
+    assert_sql_matches(
+        {"df1": df1, "df2": df2},
+        query="""
+            SELECT * FROM (
+                SELECT id, value FROM df1
+                UNION ALL
+                SELECT id, value FROM df2
+            ) AS combined
+            ORDER BY value % 200, id
+        """,
+        expected={
+            "id": [2, 4, 6, 1, 3, 5],
+            "value": [200, 400, 600, 100, 300, 500],
+        },
+        compare_with="sqlite",
+    )

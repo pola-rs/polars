@@ -238,7 +238,7 @@ c = pl.col.a
         (False, c.min(), 1, pl.Int64()),
         (False, c.count(), 3, pl.get_index_type()),
         (False, c.len(), 3, pl.get_index_type()),
-        (False, c.product(), 6, pl.Int64()),
+        (True, c.product(), 6, pl.Int64()),
         (False, c.bitwise_or(), 3, pl.Int64()),
         (False, (c == 1).any(), True, pl.Boolean()),
         (False, pl.when(c != 1).then(c).null_count(), 1, pl.get_index_type()),

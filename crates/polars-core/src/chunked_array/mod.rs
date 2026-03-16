@@ -5,6 +5,7 @@ use std::sync::Arc;
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
 use arrow::compute::concatenate::concatenate_unchecked;
+use arrow::compute::utils::combine_validities_and;
 use polars_compute::filter::filter_with_bitmap;
 
 use crate::prelude::{ChunkTakeUnchecked, *};
@@ -57,9 +58,6 @@ pub use struct_::StructChunked;
 use self::flags::{StatisticsFlags, StatisticsFlagsIM};
 use crate::series::IsSorted;
 use crate::utils::{first_non_null, first_null, last_non_null};
-
-#[cfg(not(feature = "dtype-categorical"))]
-pub struct RevMapping {}
 
 pub type ChunkLenIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&ArrayRef) -> usize>;
 
@@ -621,7 +619,6 @@ where
     pub fn deposit(&self, validity: &Bitmap) -> Self {
         let set_bits = validity.set_bits();
 
-        assert_eq!(self.null_count(), 0);
         assert_eq!(self.len(), set_bits);
 
         if set_bits == validity.len() {
@@ -645,7 +642,13 @@ where
         }));
 
         let mut ca = unsafe { ChunkTakeUnchecked::take_unchecked(self, &gather_idxs) };
-        ca.set_validity(validity);
+
+        if let Some(combined) =
+            combine_validities_and(Some(validity), ca.rechunk_validity().as_ref())
+        {
+            ca.set_validity(&combined);
+        }
+
         ca
     }
 }

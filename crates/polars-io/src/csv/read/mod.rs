@@ -27,9 +27,9 @@ pub mod streaming;
 mod utils;
 
 pub use options::{CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues};
-pub use parser::{SplitLines, count_rows, count_rows_from_slice_par};
+pub use parser::{SplitLines, count_rows, count_rows_from_reader_par, count_rows_from_slice_par};
 pub use reader::CsvReader;
-pub use streaming::read_until_start_and_infer_schema;
+pub use streaming::read_until_start_and_infer_schema_from_compressed_reader;
 
 pub mod _csv_read_internal {
     pub use super::builder::validate_utf8;

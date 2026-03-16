@@ -888,6 +888,30 @@ def test_sort_by_11653() -> None:
     ).sort("id").to_dict(as_series=False) == {"id": [0, 1], "sort_by": [1.0, 1.0]}
 
 
+def test_sort_by_nulls_last_agg_map_batches() -> None:
+    df = pl.DataFrame(
+        {
+            "g": ["a", "a", "a", "b", "b", "b"],
+            "val": [10, 20, 30, 40, 50, 60],
+            "order": [None, 2.0, 1.0, 3.0, None, 1.0],
+        }
+    )
+
+    result = df.group_by("g", maintain_order=True).agg(
+        pl.col("val")
+        .map_batches(lambda s: s, return_dtype=pl.Int64)
+        .sort_by("order", nulls_last=True)
+    )
+    assert result["val"].to_list() == [[30, 20, 10], [60, 40, 50]]
+
+    result = df.group_by("g", maintain_order=True).agg(
+        pl.col("val")
+        .map_batches(lambda s: s, return_dtype=pl.Int64)
+        .sort_by("order", nulls_last=False)
+    )
+    assert result["val"].to_list() == [[10, 30, 20], [50, 60, 40]]
+
+
 @pytest.mark.parametrize(
     ("sort_function"),
     [

@@ -230,13 +230,6 @@ impl FromIterator<Option<Series>> for ListChunked {
     }
 }
 
-impl FromIterator<Option<Box<dyn Array>>> for ListChunked {
-    #[inline]
-    fn from_iter<I: IntoIterator<Item = Option<Box<dyn Array>>>>(iter: I) -> Self {
-        iter.into_iter().collect_ca(PlSmallStr::EMPTY)
-    }
-}
-
 #[cfg(feature = "object")]
 impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
     fn from_iter<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {

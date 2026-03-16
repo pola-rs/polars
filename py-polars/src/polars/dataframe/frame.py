@@ -142,6 +142,8 @@ if TYPE_CHECKING:
 
     from polars import DataType, Expr, LazyFrame, Series
     from polars._typing import (
+        Alignment,
+        ArrowSchemaExportable,
         AsofJoinStrategy,
         AvroCompression,
         ClosedInterval,
@@ -3343,6 +3345,7 @@ class DataFrame:
             | tuple[int, int, int, int]
             | None
         ) = None,
+        use_zip64: bool = False,
     ) -> Workbook:
         """
         Write frame data to a table in an Excel workbook/worksheet.
@@ -3476,6 +3479,10 @@ class DataFrame:
               the `top_row` and `top_col`. Thus, to freeze only the top row and have the
               scrolling region begin at row 10, column D (5th col), supply (1, 0, 9, 4).
               Using cell notation for (row, col), supplying ("A2", 9, 4) is equivalent.
+        use_zip64 : bool
+            Whether to use ZIP64 extensions when writing the Workbook. This allows for
+            writing exceptionally large workbook files (>=4GB when uncompressed), but
+            is less broadly compatible.
 
         Notes
         -----
@@ -3733,7 +3740,7 @@ class DataFrame:
         from xlsxwriter.utility import xl_cell_to_rowcol
 
         # setup workbook/worksheet
-        wb, ws, can_close = _xl_setup_workbook(workbook, worksheet)
+        wb, ws, can_close = _xl_setup_workbook(workbook, worksheet, use_zip64=use_zip64)
         df, is_empty = self, self.is_empty()
 
         # note: `_xl_setup_table_columns` converts nested data (List, Struct, etc.) to
@@ -4117,6 +4124,7 @@ class DataFrame:
         ) = "auto",
         retries: int | None = None,
         metadata: ParquetMetadata | None = None,
+        arrow_schema: ArrowSchemaExportable | None = None,
         mkdir: bool = False,
     ) -> None:
         """
@@ -4213,6 +4221,15 @@ class DataFrame:
             .. warning::
                 This functionality is considered **experimental**. It may be removed or
                 changed at any point without it being considered a breaking change.
+
+        arrow_schema
+            Provide a custom arrow schema to write to the file. This allows
+            setting custom schema and field-level metadata. Names and dtypes
+            must match.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         mkdir: bool
             Recursively create all the directories in the path.
 
@@ -4336,6 +4353,7 @@ class DataFrame:
             credential_provider=credential_provider,
             retries=retries,
             metadata=metadata,
+            arrow_schema=arrow_schema,
             engine=engine,
             mkdir=mkdir,
             optimizations=QueryOptFlags._eager(),
@@ -4497,26 +4515,40 @@ class DataFrame:
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
 
+                # Try to get the name and version of the underlying ADBC driver to help
+                # with error messages and backwards compatibility
+
                 # We can reliably introspect the underlying driver from a URI
                 # We can also introspect instantiated connections when PyArrow is
                 # installed. Otherwise, the underlying driver is unknown
                 # Ref: https://github.com/apache/arrow-adbc/issues/2828
                 if isinstance(connection, str):
                     adbc_module_name = _get_adbc_module_name_from_uri(connection)
+                    adbc_driver = _import_optional_adbc_driver(
+                        adbc_module_name, dbapi_submodule=False
+                    )
+                    adbc_driver_str_version = getattr(
+                        adbc_driver,
+                        "__version__",
+                        driver_manager_str_version,
+                    )
                 elif _PYARROW_AVAILABLE:
                     adbc_module_name = (
                         f"adbc_driver_{conn.adbc_get_info()['vendor_name'].lower()}"
                     )
+                    try:
+                        adbc_driver = _import_optional_adbc_driver(
+                            adbc_module_name, dbapi_submodule=False
+                        )
+                        adbc_driver_str_version = getattr(
+                            adbc_driver,
+                            "__version__",
+                            driver_manager_str_version,
+                        )
+                    except ModuleNotFoundError:
+                        adbc_driver_str_version = driver_manager_str_version
                 else:
                     adbc_module_name = "Unknown"
-
-                if adbc_module_name != "Unknown":
-                    adbc_driver = _import_optional_adbc_driver(
-                        adbc_module_name, dbapi_submodule=False
-                    )
-                    adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
-                else:
-                    adbc_driver = "Unknown"
                     # If we can't introspect the driver, guess that it has the same
                     # version as the driver manager. This is what happens by default
                     # when installed
@@ -6862,7 +6894,7 @@ class DataFrame:
     def map_columns(
         self,
         column_names: str | Sequence[str] | pl.Selector,
-        function: Callable[[Series], Series],
+        function: Callable[Concatenate[Series, P], Series],
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> DataFrame:
@@ -7882,9 +7914,10 @@ class DataFrame:
                 "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
                 By "calendar day", we mean the corresponding time on the next day
-                (which may not be 24 hours, due to daylight savings). Similarly for
-                "calendar week", "calendar month", "calendar quarter", and
-                "calendar year".
+                (which may not be 24 hours, due to daylight savings - in cases of
+                ambiguity, we follow RFC-5545 and preserve the DST fold of the original
+                datetime). Similarly for "calendar week", "calendar month",
+                "calendar quarter", and "calendar year".
 
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
@@ -8579,7 +8612,7 @@ class DataFrame:
 
         Return a DataFrame with a single column by mapping each row to a scalar:
 
-        >>> df.map_rows(lambda t: (t[0] * 2 + t[1]))
+        >>> df.map_rows(lambda t: t[0] * 2 + t[1])
         shape: (3, 1)
         ┌─────┐
         │ map │
@@ -9424,6 +9457,7 @@ class DataFrame:
         maintain_order: bool = True,
         sort_columns: bool = False,
         separator: str = "_",
+        column_naming: Literal["auto", "combine"] = "auto",
     ) -> DataFrame:
         """
         Create a spreadsheet-style pivot table as a DataFrame.
@@ -9466,6 +9500,17 @@ class DataFrame:
         separator
             Used as separator/delimiter in generated column names in case of multiple
             `values` columns.
+        column_naming : {'auto', 'combine'}
+            How resulting column names will be constructed.
+
+            * 'auto': The default; combine with separator if there are multiple
+                      `values` columns, otherwise just use the `on_columns` names.
+            * 'combine': Always combine the `values` columns' names with
+                                the `on_columns` names.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Returns
         -------
@@ -9624,6 +9669,7 @@ class DataFrame:
                 aggregate_function=aggregate_function,
                 maintain_order=maintain_order,
                 separator=separator,
+                column_naming=column_naming,
             )
             .collect(optimizations=QueryOptFlags._eager())
         )
@@ -11082,11 +11128,6 @@ class DataFrame:
         DataFrame
             DataFrame with unique rows.
 
-        Warnings
-        --------
-        This method will fail if there is a column of type `List` in the DataFrame (or
-        in the "subset" parameter).
-
         Notes
         -----
         If you're coming from Pandas, this is similar to
@@ -12338,21 +12379,24 @@ class DataFrame:
             .collect(optimizations=QueryOptFlags._eager())
         )
 
-    def corr(self, **kwargs: Any) -> DataFrame:
+    def corr(self, *, label: str | None = None, **kwargs: Any) -> DataFrame:
         """
         Return pairwise Pearson product-moment correlation coefficients between columns.
 
         See numpy `corrcoef` for more information:
         https://numpy.org/doc/stable/reference/generated/numpy.corrcoef.html
 
-        Notes
-        -----
-        This functionality requires numpy to be installed.
-
         Parameters
         ----------
+        label
+            If given, a new column that contains the labels (column names)
+            associated with each row is added, with this name.
         **kwargs
-            Keyword arguments are passed to numpy `corrcoef`.
+            Keyword arguments that are passed to `numpy.corrcoef`.
+
+        Notes
+        -----
+        This functionality requires `numpy` to be installed.
 
         Examples
         --------
@@ -12368,11 +12412,27 @@ class DataFrame:
         │ -1.0 ┆ 1.0  ┆ -1.0 │
         │ 1.0  ┆ -1.0 ┆ 1.0  │
         └──────┴──────┴──────┘
+        >>> df.corr(label="cols")
+        shape: (3, 4)
+        ┌──────┬──────┬──────┬──────┐
+        │ cols ┆ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  ┆ ---  │
+        │ str  ┆ f64  ┆ f64  ┆ f64  │
+        ╞══════╪══════╪══════╪══════╡
+        │ foo  ┆ 1.0  ┆ -1.0 ┆ 1.0  │
+        │ bar  ┆ -1.0 ┆ 1.0  ┆ -1.0 │
+        │ ham  ┆ 1.0  ┆ -1.0 ┆ 1.0  │
+        └──────┴──────┴──────┴──────┘
         """
         correlation_matrix = np.corrcoef(self.to_numpy(), rowvar=False, **kwargs)
         if self.width == 1:
             correlation_matrix = np.array([correlation_matrix])
-        return DataFrame(correlation_matrix, schema=self.columns)
+
+        df = DataFrame(correlation_matrix, schema=self.columns)
+        if label is not None:
+            cols = pl.Series(name=label, values=self.columns)
+            df.insert_column(0, cols)
+        return df
 
     def merge_sorted(self, other: DataFrame, key: str) -> DataFrame:
         """
@@ -12461,6 +12521,7 @@ class DataFrame:
         column: str,
         *,
         descending: bool = False,
+        nulls_last: bool = False,
     ) -> DataFrame:
         """
         Flag a column as sorted.
@@ -12473,6 +12534,8 @@ class DataFrame:
             Column that is sorted
         descending
             Whether the column is sorted in descending order.
+        nulls_last
+            Whether the nulls are at the end.
 
         Warnings
         --------
@@ -12486,7 +12549,7 @@ class DataFrame:
 
         return (
             self.lazy()
-            .set_sorted(column, descending=descending)
+            .set_sorted(column, descending=descending, nulls_last=nulls_last)
             .collect(optimizations=QueryOptFlags._eager())
         )
 
@@ -12725,8 +12788,8 @@ class DataFrame:
         fmt_float: FloatFmt | None = None,
         fmt_str_lengths: int | None = None,
         fmt_table_cell_list_len: int | None = None,
-        tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
-        tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
+        tbl_cell_alignment: Alignment | None = None,
+        tbl_cell_numeric_alignment: Alignment | None = None,
         tbl_cols: int | None = None,
         tbl_column_data_type_inline: bool | None = None,
         tbl_dataframe_shape_below: bool | None = None,

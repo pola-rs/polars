@@ -100,7 +100,7 @@ macro_rules! impl_cat_series {
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
                 if self.0.uses_lexical_ordering() {
-                    unimplemented!()
+                    unsafe { self.0.agg_min(groups) }
                 } else {
                     self.apply_on_phys(|phys| phys.agg_min(groups).$ca_fn().unwrap().clone())
                         .into_series()
@@ -110,7 +110,7 @@ macro_rules! impl_cat_series {
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
                 if self.0.uses_lexical_ordering() {
-                    unimplemented!()
+                    unsafe { self.0.agg_max(groups) }
                 } else {
                     self.apply_on_phys(|phys| phys.agg_max(groups).$ca_fn().unwrap().clone())
                         .into_series()
@@ -120,7 +120,7 @@ macro_rules! impl_cat_series {
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
                 if self.0.uses_lexical_ordering() {
-                    unimplemented!()
+                    unsafe { self.0.agg_arg_min(groups) }
                 } else {
                     self.0.physical().agg_arg_min(groups)
                 }
@@ -129,7 +129,7 @@ macro_rules! impl_cat_series {
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
                 if self.0.uses_lexical_ordering() {
-                    unimplemented!()
+                    unsafe { self.0.agg_arg_max(groups) }
                 } else {
                     self.0.physical().agg_arg_max(groups)
                 }

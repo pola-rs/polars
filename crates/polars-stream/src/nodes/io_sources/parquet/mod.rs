@@ -85,12 +85,17 @@ impl FileReader for ParquetFileReader {
         let scan_source = self.scan_source.clone();
         let byte_source_builder = self.byte_source_builder.clone();
         let cloud_options = self.cloud_options.clone();
+        let io_metrics = self.io_metrics.clone();
 
         let byte_source = pl_async::get_runtime()
             .spawn(async move {
                 scan_source
                     .as_scan_source_ref()
-                    .to_dyn_byte_source(&byte_source_builder, cloud_options.as_deref())
+                    .to_dyn_byte_source(
+                        &byte_source_builder,
+                        cloud_options.as_deref(),
+                        io_metrics.0,
+                    )
                     .await
             })
             .await
@@ -103,16 +108,10 @@ impl FileReader for ParquetFileReader {
         } else {
             let (metadata_bytes, opt_full_bytes) = {
                 let byte_source = byte_source.clone();
-                let io_metrics = self.io_metrics.clone();
 
                 pl_async::get_runtime()
                     .spawn(async move {
-                        metadata_utils::read_parquet_metadata_bytes(
-                            &byte_source,
-                            verbose,
-                            &io_metrics,
-                        )
-                        .await
+                        metadata_utils::read_parquet_metadata_bytes(&byte_source, verbose).await
                     })
                     .await
                     .unwrap()?
@@ -349,7 +348,6 @@ impl FileReader for ParquetFileReader {
             rg_prefetch_current_all_spawned: Option::take(
                 &mut self.row_group_prefetch_sync.current_all_spawned,
             ),
-            io_metrics: self.io_metrics.clone(),
             disable_morsel_split,
         }
         .run();
@@ -439,7 +437,6 @@ struct ParquetReadImpl {
     rg_prefetch_semaphore: Arc<tokio::sync::Semaphore>,
     rg_prefetch_prev_all_spawned: Option<WaitGroup>,
     rg_prefetch_current_all_spawned: Option<WaitToken>,
-    io_metrics: OptIOMetrics,
     disable_morsel_split: bool,
 }
 

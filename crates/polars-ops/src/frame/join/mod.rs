@@ -36,6 +36,7 @@ use polars_core::POOL;
 use polars_core::chunked_array::ops::row_encode::{
     encode_rows_vertical_par_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,
 };
+use polars_core::datatypes::DataType;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 pub(super) use polars_core::series::IsSorted;
@@ -219,10 +220,8 @@ pub trait DataFrameJoinOps: IntoDf {
         {
             polars_bail!(
                 ComputeError:
-                    format!(
-                        "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
-                        l.name(), l.dtype(), r.name(), r.dtype()
-                    )
+                    "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
+                    l.name(), l.dtype().pretty_format(), r.name(), r.dtype().pretty_format()
             );
         };
 
@@ -327,7 +326,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     },
                 },
                 #[cfg(feature = "iejoin")]
-                JoinType::IEJoin => {
+                JoinType::IEJoin | JoinType::Range => {
                     unreachable!()
                 },
                 JoinType::Cross => {
@@ -373,7 +372,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 ComputeError: "asof join not supported for join on multiple keys"
             ),
             #[cfg(feature = "iejoin")]
-            JoinType::IEJoin => {
+            JoinType::IEJoin | JoinType::Range => {
                 unreachable!()
             },
             JoinType::Cross => {

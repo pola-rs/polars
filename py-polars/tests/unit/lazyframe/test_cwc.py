@@ -1,6 +1,10 @@
 # Tests for the optimization pass cluster WITH_COLUMNS
 
+import pytest
+
 import polars as pl
+from polars.exceptions import ColumnNotFoundError
+from polars.testing import assert_frame_equal
 
 
 def test_basic_cwc() -> None:
@@ -107,33 +111,53 @@ def test_swap_remove() -> None:
 
 
 def test_try_remove_simple_project() -> None:
-    df = (
+    q = (
         pl.LazyFrame({"a": [1, 2]})
         .with_columns(pl.col("a").alias("b") * 2)
         .with_columns(pl.col("a").alias("d") * 4, pl.col("b").alias("c") * 3)
     )
 
-    explain = df.explain()
-
-    assert (
-        """[[(col("a")) * (2)].alias("b"), [(col("a")) * (4)].alias("d")]""" in explain
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a", [1, 2], dtype=pl.Int64),
+                pl.Series("b", [2, 4], dtype=pl.Int64),
+                pl.Series("d", [4, 8], dtype=pl.Int64),
+                pl.Series("c", [6, 12], dtype=pl.Int64),
+            ]
+        ),
     )
-    assert """[[(col("b")) * (3)].alias("c")]""" in explain
-    assert """simple π""" not in explain
 
-    df = (
+    plan = q.explain()
+
+    assert """[[(col("a")) * (2)].alias("b"), [(col("a")) * (4)].alias("d")]""" in plan
+    assert """[[(col("b")) * (3)].alias("c")]""" in plan
+    assert """simple π""" not in plan
+
+    q = (
         pl.LazyFrame({"a": [1, 2]})
         .with_columns(pl.col("a").alias("b") * 2)
         .with_columns(pl.col("b").alias("c") * 3, pl.col("a").alias("d") * 4)
     )
 
-    explain = df.explain()
-
-    assert (
-        """[[(col("a")) * (2)].alias("b"), [(col("a")) * (4)].alias("d")]""" in explain
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a", [1, 2], dtype=pl.Int64),
+                pl.Series("b", [2, 4], dtype=pl.Int64),
+                pl.Series("c", [6, 12], dtype=pl.Int64),
+                pl.Series("d", [4, 8], dtype=pl.Int64),
+            ]
+        ),
     )
-    assert """[[(col("b")) * (3)].alias("c")]""" in explain
-    assert """simple π""" in explain
+
+    plan = q.explain()
+
+    assert """[[(col("a")) * (2)].alias("b"), [(col("a")) * (4)].alias("d")]""" in plan
+    assert """[[(col("b")) * (3)].alias("c")]""" in plan
+    assert """simple π""" in plan
 
 
 def test_cwc_with_internal_aliases() -> None:
@@ -203,9 +227,9 @@ def test_realias_of_unread_column_16530() -> None:
         .with_columns(y=pl.lit(False))
     )
 
-    explain = df.explain()
+    plan = df.explain()
 
-    assert explain.count("WITH_COLUMNS") == 1
+    assert plan.count("WITH_COLUMNS") == 1
     assert df.collect().equals(pl.DataFrame({"x": [False], "y": [False]}))
 
 
@@ -248,3 +272,80 @@ def test_neighbour_live_expr() -> None:
 
     assert explain.count("WITH_COLUMNS") == 1
     assert df.collect().equals(pl.DataFrame({"x": [False], "y": [False], "z": [True]}))
+
+
+def test_cluster_with_columns_collect_all_panic_26092() -> None:
+    lf = pl.LazyFrame()
+    lf = lf.with_columns(pl.lit(1.0).cast(pl.Float64()).alias("numbers1"))
+    lf = lf.with_columns(pl.lit(2.0).cast(pl.Float64()).alias("numbers2"))
+
+    a, b = pl.collect_all([lf, lf])
+
+    assert_frame_equal(a, pl.DataFrame({"numbers1": 1.0, "numbers2": 2.0}))
+    assert_frame_equal(b, pl.DataFrame({"numbers1": 1.0, "numbers2": 2.0}))
+
+
+def test_cluster_with_columns_schema_update_26417() -> None:
+    lf = pl.LazyFrame({"x": [[0.0, 1.0]], "y": [[2.0]]})
+
+    q = (
+        lf.with_columns(pl.col("x").cast(pl.Array(pl.Float64, shape=2)))
+        .with_columns(pl.col("y").cast(pl.Array(pl.Float64, shape=1)))
+        .with_columns(pl.col("y").arr.get(0))
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("x", [[0.0, 1.0]], dtype=pl.Array(pl.Float64, shape=(2,))),
+                pl.Series("y", [2.0], dtype=pl.Float64),
+            ]
+        ),
+    )
+
+
+def test_cluster_with_columns_use_existing_names_26456() -> None:
+    q = (
+        pl.LazyFrame({"a": [1, 2, 3]})
+        .with_columns(pl.lit(1).alias("b"))
+        .with_columns(pl.col("a") + 1, pl.col("b") + pl.col("a"))
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a", [2, 3, 4], dtype=pl.Int64),
+                pl.Series("b", [2, 3, 4], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+
+def test_cluster_with_columns_prune_col() -> None:
+    q = (
+        pl.LazyFrame({"foo": [0.5, 1.7, 3.2], "bar": [4.1, 1.5, 9.2]})
+        .with_columns(pl.col("foo").alias("buzz"))
+        .with_columns(pl.col("buzz"), pl.col("foo") * 2.0)
+    )
+
+    plan = q.explain()
+
+    assert plan.count("WITH_COLUMNS") == 1
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("foo", [1.0, 3.4, 6.4], dtype=pl.Float64),
+                pl.Series("bar", [4.1, 1.5, 9.2], dtype=pl.Float64),
+                pl.Series("buzz", [0.5, 1.7, 3.2], dtype=pl.Float64),
+            ]
+        ),
+    )
+
+    q = pl.LazyFrame({"a": 1}).with_columns(pl.col("a")).with_columns(pl.col("b"))
+
+    with pytest.raises(ColumnNotFoundError, match='unable to find column "b"'):
+        q.collect()

@@ -1,14 +1,18 @@
 use std::sync::Arc;
 
+use arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
+use arrow::datatypes::ArrowDataType;
 use parking_lot::Mutex;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
-use polars_core::prelude::{DataType, PlHashMap, PlHashSet};
+use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
+use polars_core::series::Series;
 use polars_core::{SchemaExtPl, config};
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
+use polars_ops::frame::JoinType;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
@@ -22,7 +26,7 @@ use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "csv", feature = "json"))]
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
@@ -36,7 +40,6 @@ use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
-use crate::nodes::joins::merge_join;
 use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_expr::{ExprCache, build_select_stream, lower_exprs};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
@@ -190,7 +193,10 @@ pub fn lower_ir(
     let node_kind = match ir_node {
         IR::SimpleProjection { input, columns } => {
             disable_morsel_split.get_or_insert(true);
-            let columns = columns.iter_names_cloned().collect::<Vec<_>>();
+            let columns = columns
+                .iter_names_cloned()
+                .map(|c| (c.clone(), c))
+                .collect();
             let phys_input = lower_ir!(*input)?;
             PhysNodeKind::SimpleProjection {
                 input: phys_input,
@@ -256,9 +262,13 @@ pub fn lower_ir(
                         .any(|(l, r)| l != r)
                 {
                     let phys_input = phys_sm.insert(PhysNode::new(schema, node_kind));
+                    let columns = projection_schema
+                        .iter_names_cloned()
+                        .map(|c| (c.clone(), c))
+                        .collect();
                     node_kind = PhysNodeKind::SimpleProjection {
                         input: PhysStream::first(phys_input),
-                        columns: projection_schema.iter_names_cloned().collect::<Vec<_>>(),
+                        columns,
                     };
                 }
             }
@@ -439,14 +449,14 @@ pub fn lower_ir(
             slice,
             sort_options,
         } => {
-            let slice = *slice;
+            let slice = slice.clone();
             let mut by_column = by_column.clone();
             let mut sort_options = sort_options.clone();
             let phys_input = lower_ir!(*input)?;
 
             // See if we can insert a top k.
             let mut limit = u64::MAX;
-            if let Some((0, l)) = slice {
+            if let Some((0, l, _)) = slice {
                 limit = limit.min(l as u64);
             }
             #[allow(clippy::unnecessary_cast)]
@@ -503,6 +513,7 @@ pub fn lower_ir(
                         by_column: trans_by_column,
                         reverse: sort_options.descending.iter().map(|x| !x).collect(),
                         nulls_last: sort_options.nulls_last.clone(),
+                        dyn_pred: slice.as_ref().and_then(|t| t.2.clone()),
                     },
                 }));
             }
@@ -512,7 +523,7 @@ pub fn lower_ir(
                 kind: PhysNodeKind::Sort {
                     input: stream,
                     by_column,
-                    slice,
+                    slice: slice.as_ref().map(|t| (t.0, t.1)),
                     sort_options,
                 },
             }));
@@ -564,6 +575,8 @@ pub fn lower_ir(
         } => {
             let zip_behavior = if options.strict {
                 ZipBehavior::Strict
+            } else if options.broadcast_unit_length {
+                ZipBehavior::Broadcast
             } else {
                 ZipBehavior::NullExtend
             };
@@ -631,6 +644,62 @@ pub fn lower_ir(
                     df: Arc::new(DataFrame::empty_with_height(num_rows)),
                     disable_morsel_split: disable_morsel_split.unwrap_or(true),
                 }
+            } else if let FileScanIR::ExpandedPaths { name: _ } = &*scan_type {
+                let unsupported_parameter = if unified_scan_args.pre_slice.is_some() {
+                    "pre_slice"
+                } else if unified_scan_args.include_file_paths.is_some() {
+                    "include_file_paths"
+                } else if unified_scan_args.row_index.is_some() {
+                    "row_index"
+                } else if predicate.is_some() {
+                    "predicate"
+                } else if hive_parts.is_some() {
+                    "hive_parts"
+                } else {
+                    ""
+                };
+
+                polars_ensure!(
+                    unsupported_parameter.is_empty(),
+                    ComputeError:
+                    "unsupported parameter for ExpandedPaths scan: '{unsupported_parameter}'"
+                );
+
+                assert!(output_schema.len() <= 1);
+
+                let df = if let Some((name, dtype)) = output_schema.get_at_index(0) {
+                    polars_ensure!(
+                        dtype.is_string(),
+                        ComputeError:
+                        "non-string dtype for ExpandedPaths scan"
+                    );
+
+                    let mut builder = MutableBinaryViewArray::with_capacity(
+                        scan_sources.len().wrapping_mul(
+                            scan_sources
+                                .first()
+                                .map_or(0, |x| x.to_include_path_name().len()),
+                        ),
+                    );
+
+                    for source in scan_sources.iter() {
+                        builder.push_value_ignore_validity(source.to_include_path_name());
+                    }
+
+                    let array: Utf8ViewArray = builder.freeze_with_dtype(ArrowDataType::Utf8View);
+                    let c = Series::from_arrow(name.clone(), Box::new(array))
+                        .unwrap()
+                        .into_column();
+
+                    DataFrame::new(scan_sources.len(), vec![c]).unwrap()
+                } else {
+                    DataFrame::empty_with_height(scan_sources.len())
+                };
+
+                PhysNodeKind::InMemorySource {
+                    df: Arc::new(df),
+                    disable_morsel_split: disable_morsel_split.unwrap_or(true),
+                }
             } else {
                 let file_reader_builder: Arc<dyn FileReaderBuilder> = match &*scan_type {
                     #[cfg(feature = "parquet")]
@@ -662,11 +731,25 @@ pub fn lower_ir(
                     }) as _,
 
                     #[cfg(feature = "csv")]
-                    FileScanIR::Csv { options } => Arc::new(Arc::clone(options)) as _,
-
+                    FileScanIR::Csv { options } => {
+                        Arc::new(crate::nodes::io_sources::csv::builder::CsvReaderBuilder {
+                            options: options.clone(),
+                            prefetch_limit: RelaxedCell::new_usize(0),
+                            prefetch_semaphore: std::sync::OnceLock::new(),
+                            shared_prefetch_wait_group_slot: Default::default(),
+                            io_metrics: std::sync::OnceLock::new(),
+                        }) as _
+                    },
                     #[cfg(feature = "json")]
-                    FileScanIR::NDJson { options } => Arc::new(options.clone()) as _,
-
+                    FileScanIR::NDJson { options } => Arc::new(
+                        crate::nodes::io_sources::ndjson::builder::NDJsonReaderBuilder {
+                            options: Arc::new(options.clone()),
+                            prefetch_limit: RelaxedCell::new_usize(0),
+                            prefetch_semaphore: std::sync::OnceLock::new(),
+                            shared_prefetch_wait_group_slot: Default::default(),
+                            io_metrics: std::sync::OnceLock::new(),
+                        },
+                    ) as _,
                     #[cfg(feature = "python")]
                     FileScanIR::PythonDataset {
                         dataset_object: _,
@@ -686,8 +769,15 @@ pub fn lower_ir(
 
                     #[cfg(feature = "scan_lines")]
                     FileScanIR::Lines { name: _ } => {
-                        Arc::new(crate::nodes::io_sources::lines::LineReaderBuilder {}) as _
+                        Arc::new(crate::nodes::io_sources::lines::LineReaderBuilder {
+                            prefetch_limit: RelaxedCell::new_usize(0),
+                            prefetch_semaphore: std::sync::OnceLock::new(),
+                            shared_prefetch_wait_group_slot: Default::default(),
+                            io_metrics: std::sync::OnceLock::new(),
+                        }) as _
                     },
+
+                    FileScanIR::ExpandedPaths { name: _ } => unreachable!(),
 
                     FileScanIR::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
                 };
@@ -859,9 +949,13 @@ pub fn lower_ir(
                         stream = PhysStream::first(node_key);
 
                         if reorder_after_row_index_post {
+                            let columns = output_schema
+                                .iter_names_cloned()
+                                .map(|c| (c.clone(), c))
+                                .collect();
                             let node = PhysNodeKind::SimpleProjection {
                                 input: stream,
-                                columns: output_schema.iter_names_cloned().collect(),
+                                columns,
                             };
 
                             let node_key = phys_sm.insert(PhysNode {
@@ -888,9 +982,13 @@ pub fn lower_ir(
                         stream = PhysStream::first(node_key);
 
                         if reorder_after_row_index_post {
+                            let columns = output_schema
+                                .iter_names_cloned()
+                                .map(|c| (c.clone(), c))
+                                .collect();
                             let node = PhysNodeKind::SimpleProjection {
                                 input: stream,
-                                columns: output_schema.iter_names_cloned().collect(),
+                                columns,
                             };
 
                             let node_key = phys_sm.insert(PhysNode {
@@ -1023,8 +1121,11 @@ pub fn lower_ir(
             right_on,
             options,
         } => {
-            let input_left = *input_left;
-            let input_right = *input_right;
+            #[cfg(feature = "iejoin")]
+            const RANGE_JOIN_PREFER_DESCENDING: bool = false;
+
+            #[allow(unused_mut)]
+            let (mut input_left, mut input_right) = (*input_left, *input_right);
             let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);
             let input_right_schema = IR::schema_with_cache(input_right, ir_arena, schema_cache);
             let left_on = left_on.clone();
@@ -1032,8 +1133,76 @@ pub fn lower_ir(
             let get_expr_name = |e: &ExprIR| e.output_name().clone();
             let left_on_names = left_on.iter().map(get_expr_name).collect_vec();
             let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
+            let mut tmp_left_col_names: Vec<Option<PlSmallStr>> = Vec::new();
+            let mut tmp_right_col_names: Vec<Option<PlSmallStr>> = Vec::new();
             let args = options.args.clone();
             let options = options.options.clone();
+
+            #[cfg(feature = "iejoin")]
+            if args.how.is_range() {
+                use crate::nodes::joins::range_join;
+
+                let key_expr_is_trivial = |c: &ExprIR, ea: &mut Arena<AExpr>| {
+                    matches!(ea.get(c.node()), AExpr::Column(_))
+                };
+
+                // If the key column is not trivial, evaluate it and append it to the dataframe
+                for (input, on, tmp_col_names) in [
+                    (&mut input_left, &left_on, &mut tmp_left_col_names),
+                    (&mut input_right, &right_on, &mut tmp_right_col_names),
+                ] {
+                    let mut hstack_exprs: Vec<ExprIR> = Vec::new();
+                    let mut hstack_schema =
+                        (*IR::schema_with_cache(*input, ir_arena, schema_cache)).clone();
+                    for on_expr in on.iter() {
+                        if key_expr_is_trivial(on_expr, expr_arena) {
+                            tmp_col_names.push(None);
+                        } else {
+                            let tmp_name = unique_column_name();
+                            tmp_col_names.push(Some(tmp_name.clone()));
+                            let dtype = on_expr
+                                .dtype(&hstack_schema, expr_arena)?
+                                .clone()
+                                .materialize_unknown(false)?;
+                            hstack_schema.with_column(tmp_name.clone(), dtype);
+                            hstack_exprs.push(on_expr.with_alias(tmp_name));
+                        }
+                    }
+                    if !hstack_exprs.is_empty() {
+                        *input = ir_arena.add(IR::HStack {
+                            input: *input,
+                            exprs: hstack_exprs,
+                            schema: hstack_schema.into(),
+                            options: ProjectionOptions::default(),
+                        })
+                    }
+                }
+
+                // The streaming range join node needs its point side to be sorted
+                if range_join::left_is_point(&left_on, &right_on, &args) {
+                    input_left = insert_sort_node_if_not_sorted(
+                        input_left,
+                        &left_on[0],
+                        RANGE_JOIN_PREFER_DESCENDING,
+                        ir_arena,
+                        expr_arena,
+                        schema_cache,
+                    );
+                } else {
+                    input_right = insert_sort_node_if_not_sorted(
+                        input_right,
+                        &right_on[0],
+                        RANGE_JOIN_PREFER_DESCENDING,
+                        ir_arena,
+                        expr_arena,
+                        schema_cache,
+                    );
+                }
+            }
+
+            let phys_left = lower_ir!(input_left)?;
+            let phys_right = lower_ir!(input_right)?;
+
             let left_df_sortedness = is_sorted(input_left, ir_arena, expr_arena);
             let left_on_sorted = are_keys_sorted_any(
                 left_df_sortedness.as_ref(),
@@ -1051,11 +1220,35 @@ pub fn lower_ir(
             let join_keys_sorted_together =
                 Option::zip(left_on_sorted.as_ref(), right_on_sorted.as_ref())
                     .is_some_and(|(ls, rs)| ls == rs);
+            let mut key_descending = left_on_sorted
+                .as_ref()
+                .and_then(|v| v.first())
+                .and_then(|s| s.descending);
+            let key_nulls_last = left_on_sorted
+                .as_ref()
+                .and_then(|v| v.first())
+                .and_then(|s| s.nulls_last);
+            let use_streaming_merge_join = args.how.is_equi()
+                && join_keys_sorted_together
+                && key_descending.is_some()
+                && key_nulls_last.is_some();
+            #[cfg(feature = "asof_join")]
+            let use_streaming_asof_join = if let JoinType::AsOf(ref asof_options) = args.how {
+                // Grouped asof-join is not yet supported in the streaming engine.
+                asof_options.left_by.is_none() && asof_options.right_by.is_none()
+            } else {
+                false
+            };
+            #[cfg(not(feature = "asof_join"))]
+            let use_streaming_asof_join = false;
 
-            let phys_left = lower_ir!(input_left)?;
-            let phys_right = lower_ir!(input_right)?;
-
-            if (args.how.is_equi() || args.how.is_semi_anti()) && !args.validation.needs_checks() {
+            if (args.how.is_equi()
+                || args.how.is_semi_anti()
+                || args.how.is_cross()
+                || use_streaming_asof_join
+                || args.how.is_range())
+                && !args.validation.needs_checks()
+            {
                 // When lowering the expressions for the keys we need to ensure we keep around the
                 // payload columns, otherwise the input nodes can get replaced by input-independent
                 // nodes since the lowering code does not see we access any non-literal expressions.
@@ -1092,120 +1285,113 @@ pub fn lower_ir(
                 trans_left_on.drain(left_on.len()..);
                 trans_right_on.drain(right_on.len()..);
 
-                let node = if args.how.is_equi() && join_keys_sorted_together {
-                    // For merge-joins, evaluate key expressions if they are non-trivial,
-                    // row-encode them if there are multiple, and append them as new columns
-                    // to the input dataframes.
-                    let row_encode_key_cols = left_on_names.len() > 1;
-                    let mut left_key_col_descending =
-                        left_on_sorted.as_ref().unwrap()[0].descending.unwrap();
-                    let mut right_key_col_descending =
-                        right_on_sorted.as_ref().unwrap()[0].descending.unwrap();
-                    let mut left_key_col_nulls_last =
-                        left_on_sorted.as_ref().unwrap()[0].nulls_last.unwrap();
-                    let mut right_key_col_nulls_last =
-                        right_on_sorted.as_ref().unwrap()[0].nulls_last.unwrap();
-                    for (
-                        on,
-                        trans_on,
-                        trans_input,
-                        phys,
-                        expr_sorted,
-                        descending,
-                        nulls_last,
-                        side_schema,
-                    ) in [
-                        (
-                            left_on,
-                            &mut trans_left_on,
-                            &mut trans_input_left,
-                            phys_left,
-                            &left_on_sorted.unwrap(),
-                            &mut left_key_col_descending,
-                            &mut left_key_col_nulls_last,
-                            &input_left_schema,
-                        ),
-                        (
-                            right_on,
-                            &mut trans_right_on,
-                            &mut trans_input_right,
-                            phys_right,
-                            &right_on_sorted.unwrap(),
-                            &mut right_key_col_descending,
-                            &mut right_key_col_nulls_last,
-                            &input_right_schema,
-                        ),
-                    ] {
-                        let expr_is_trivial =
-                            |c: &ExprIR| matches!(expr_arena.get(c.node()), AExpr::Column(_));
-                        if row_encode_key_cols || !expr_is_trivial(&on[0]) {
-                            let sorted_descending = expr_sorted
-                                .iter()
-                                .map(|s| s.descending.unwrap())
-                                .collect_vec();
-                            let sorted_nulls_last = expr_sorted
-                                .iter()
-                                .map(|s| s.nulls_last.unwrap())
-                                .collect_vec();
+                if use_streaming_merge_join || use_streaming_asof_join {
+                    let (tmp_left_key_col, tmp_right_key_col);
+                    (trans_input_left, trans_left_on, tmp_left_key_col) = append_sorted_key_column(
+                        trans_input_left,
+                        trans_left_on,
+                        left_on_sorted.as_ref(),
+                        Some(!args.nulls_equal),
+                        expr_arena,
+                        phys_sm,
+                        expr_cache,
+                        ctx,
+                    )?;
+                    (trans_input_right, trans_right_on, tmp_right_key_col) =
+                        append_sorted_key_column(
+                            trans_input_right,
+                            trans_right_on,
+                            right_on_sorted.as_ref(),
+                            Some(!args.nulls_equal),
+                            expr_arena,
+                            phys_sm,
+                            expr_cache,
+                            ctx,
+                        )?;
+                    tmp_left_col_names.push(tmp_left_key_col);
+                    tmp_right_col_names.push(tmp_right_key_col);
+                }
 
-                            if row_encode_key_cols {
-                                let tfc = ToFieldContext::new(expr_arena, side_schema);
-                                let expr_dtype =
-                                    |e: &ExprIR| expr_arena.get(e.node()).to_dtype(&tfc);
-                                let nulls_last_encoded = sorted_nulls_last[0];
-                                let row_encode_col_expr = AExprBuilder::row_encode(
-                                    trans_on.clone(),
-                                    trans_on.iter().map(expr_dtype).try_collect_vec()?,
-                                    RowEncodingVariant::Ordered {
-                                        descending: Some(sorted_descending),
-                                        nulls_last: Some(sorted_nulls_last),
-                                        broadcast_nulls: Some(!args.nulls_equal),
-                                    },
-                                    expr_arena,
-                                )
-                                .expr_ir(merge_join::KEY_COL_NAME);
-                                trans_on.clear();
-                                trans_on.push(row_encode_col_expr);
-                                *descending = false;
-                                *nulls_last = nulls_last_encoded;
-                            } else {
-                                trans_on[0] = trans_on[0]
-                                    .with_alias(PlSmallStr::from_str(merge_join::KEY_COL_NAME));
-                            }
-                            *trans_input = build_hstack_stream(
-                                phys, trans_on, expr_arena, phys_sm, expr_cache, ctx,
-                            )?;
+                let node = match () {
+                    _ if use_streaming_merge_join => {
+                        let keys_are_row_encoded = left_on_names.len() > 1;
+                        if keys_are_row_encoded {
+                            key_descending = Some(false);
                         }
-                    }
-                    assert!(left_key_col_descending == right_key_col_descending);
-                    assert!(left_key_col_nulls_last == right_key_col_nulls_last);
+                        phys_sm.insert(PhysNode::new(
+                            output_schema,
+                            PhysNodeKind::MergeJoin {
+                                input_left: trans_input_left,
+                                input_right: trans_input_right,
+                                left_on: left_on_names,
+                                right_on: right_on_names,
+                                tmp_left_key_col: tmp_left_col_names.pop().unwrap(),
+                                tmp_right_key_col: tmp_right_col_names.pop().unwrap(),
+                                keys_row_encoded: keys_are_row_encoded,
+                                descending: key_descending.unwrap(),
+                                nulls_last: key_nulls_last.unwrap(),
+                                args: args.clone(),
+                            },
+                        ))
+                    },
+                    #[cfg(feature = "iejoin")]
+                    _ if args.how.is_range() => {
+                        use crate::nodes::joins::range_join::left_is_point;
 
-                    phys_sm.insert(PhysNode::new(
-                        output_schema,
-                        PhysNodeKind::MergeJoin {
-                            input_left: trans_input_left,
-                            input_right: trans_input_right,
-                            left_on: left_on_names,
-                            right_on: right_on_names,
-                            descending: left_key_col_descending,
-                            nulls_last: left_key_col_nulls_last,
-                            keys_row_encoded: row_encode_key_cols,
-                            args: args.clone(),
-                        },
-                    ))
-                } else if args.how.is_equi() {
-                    phys_sm.insert(PhysNode::new(
-                        output_schema,
-                        PhysNodeKind::EquiJoin {
-                            input_left: trans_input_left,
-                            input_right: trans_input_right,
-                            left_on: trans_left_on,
-                            right_on: trans_right_on,
-                            args: args.clone(),
-                        },
-                    ))
-                } else {
-                    phys_sm.insert(PhysNode::new(
+                        let Some(JoinTypeOptionsIR::IEJoin(range_options)) = options else {
+                            unreachable!()
+                        };
+
+                        let descending = match left_is_point(&left_on, &right_on, &args) {
+                            true => expr_is_sorted(
+                                left_df_sortedness.as_ref(),
+                                &left_on[0],
+                                expr_arena,
+                                &input_left_schema,
+                            ),
+                            false => expr_is_sorted(
+                                right_df_sortedness.as_ref(),
+                                &right_on[0],
+                                expr_arena,
+                                &input_right_schema,
+                            ),
+                        }
+                        .and_then(|s| s.descending)
+                        // If the join key is not sorted, then we added a Sort IR node to sort it
+                        .unwrap_or(RANGE_JOIN_PREFER_DESCENDING);
+                        phys_sm.insert(PhysNode::new(
+                            output_schema,
+                            PhysNodeKind::RangeJoin {
+                                input_left: trans_input_left,
+                                input_right: trans_input_right,
+                                left_on: left_on_names,
+                                right_on: right_on_names,
+                                tmp_left_key_cols: tmp_left_col_names,
+                                tmp_right_key_cols: tmp_right_col_names,
+                                descending,
+                                args: args.clone(),
+                                options: range_options,
+                            },
+                        ))
+                    },
+                    #[cfg(feature = "asof_join")]
+                    _ if use_streaming_asof_join => {
+                        assert!(left_on_names.len() == 1 && right_on_names.len() == 1);
+                        phys_sm.insert(PhysNode::new(
+                            output_schema,
+                            PhysNodeKind::AsOfJoin {
+                                input_left: trans_input_left,
+                                input_right: trans_input_right,
+                                left_on: left_on_names[0].clone(),
+                                right_on: right_on_names[0].clone(),
+                                tmp_left_key_col: tmp_left_col_names.pop().unwrap(),
+                                tmp_right_key_col: tmp_right_col_names.pop().unwrap(),
+                                args: args.clone(),
+                            },
+                        ))
+                    },
+                    #[cfg(feature = "semi_anti_join")]
+                    _ if args.how.is_semi_anti() => phys_sm.insert(PhysNode::new(
                         output_schema,
                         PhysNodeKind::SemiAntiJoin {
                             input_left: trans_input_left,
@@ -1215,22 +1401,27 @@ pub fn lower_ir(
                             args: args.clone(),
                             output_bool: false,
                         },
-                    ))
+                    )),
+                    _ if args.how.is_equi() => phys_sm.insert(PhysNode::new(
+                        output_schema,
+                        PhysNodeKind::EquiJoin {
+                            input_left: trans_input_left,
+                            input_right: trans_input_right,
+                            left_on: trans_left_on,
+                            right_on: trans_right_on,
+                            args: args.clone(),
+                        },
+                    )),
+                    _ if args.how.is_cross() => phys_sm.insert(PhysNode::new(
+                        output_schema,
+                        PhysNodeKind::CrossJoin {
+                            input_left: phys_left,
+                            input_right: phys_right,
+                            args: args.clone(),
+                        },
+                    )),
+                    _ => unreachable!(),
                 };
-                let mut stream = PhysStream::first(node);
-                if let Some((offset, len)) = args.slice {
-                    stream = build_slice_stream(stream, offset, len, phys_sm);
-                }
-                return Ok(stream);
-            } else if args.how.is_cross() {
-                let node = phys_sm.insert(PhysNode::new(
-                    output_schema,
-                    PhysNodeKind::CrossJoin {
-                        input_left: phys_left,
-                        input_right: phys_right,
-                        args: args.clone(),
-                    },
-                ));
                 let mut stream = PhysStream::first(node);
                 if let Some((offset, len)) = args.slice {
                     stream = build_slice_stream(stream, offset, len, phys_sm);
@@ -1418,4 +1609,88 @@ pub fn lower_ir(
 
     let node_key = phys_sm.insert(PhysNode::new(output_schema, node_kind));
     Ok(PhysStream::first(node_key))
+}
+
+#[cfg(feature = "iejoin")]
+fn insert_sort_node_if_not_sorted(
+    input: Node,
+    on: &ExprIR,
+    descending: bool,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
+) -> Node {
+    use polars_core::prelude::SortMultipleOptions;
+
+    let input_schema = IR::schema_with_cache(input, ir_arena, schema_cache);
+    let df_sortedness = is_sorted(input, ir_arena, expr_arena);
+    if expr_is_sorted(df_sortedness.as_ref(), on, expr_arena, &input_schema)
+        .and_then(|s| s.descending)
+        .is_none()
+    {
+        ir_arena.add(IR::Sort {
+            input,
+            by_column: vec![on.clone()],
+            slice: None,
+            sort_options: SortMultipleOptions::default().with_order_descending(descending),
+        })
+    } else {
+        input
+    }
+}
+
+/// Append a sorted key column to the DataFrame.
+///
+/// If keys_sorted is None, the sortedness of the key will be decided by the
+/// default sortedness behavior of RowEncodingVariant::Ordered.
+#[allow(clippy::too_many_arguments)]
+fn append_sorted_key_column(
+    phys_input: PhysStream,
+    mut key_exprs: Vec<ExprIR>,
+    keys_sorted: Option<&Vec<AExprSorted>>,
+    broadcast_nulls: Option<bool>,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext,
+) -> PolarsResult<(PhysStream, Vec<ExprIR>, Option<PlSmallStr>)> {
+    let input_schema = &phys_sm[phys_input.node].output_schema.clone();
+    let use_row_encoding =
+        key_exprs.len() > 1 || key_exprs[0].dtype(input_schema, expr_arena)?.is_nested();
+    let key_expr_is_trivial =
+        |c: &ExprIR, ea: &mut Arena<AExpr>| matches!(ea.get(c.node()), AExpr::Column(_));
+    let (phys_output, key_col_name) = if use_row_encoding {
+        let key_col_name = unique_column_name();
+        let tfc = ToFieldContext::new(expr_arena, input_schema);
+        let sorted_descending =
+            keys_sorted.and_then(|v| v.iter().map(|s| s.descending).collect::<Option<Vec<_>>>());
+        let sorted_nulls_last =
+            keys_sorted.and_then(|v| v.iter().map(|s| s.nulls_last).collect::<Option<Vec<_>>>());
+        let expr_dtype = |e: &ExprIR| expr_arena.get(e.node()).to_dtype(&tfc);
+        let row_encode_col_expr = AExprBuilder::row_encode(
+            key_exprs.clone(),
+            key_exprs.iter().map(expr_dtype).try_collect_vec()?,
+            RowEncodingVariant::Ordered {
+                descending: sorted_descending,
+                nulls_last: sorted_nulls_last,
+                broadcast_nulls,
+            },
+            expr_arena,
+        )
+        .expr_ir(key_col_name.clone());
+        key_exprs.clear();
+        key_exprs.push(row_encode_col_expr);
+        let output =
+            build_hstack_stream(phys_input, &key_exprs, expr_arena, phys_sm, expr_cache, ctx)?;
+        (output, Some(key_col_name))
+    } else if !key_expr_is_trivial(&key_exprs[0], expr_arena) {
+        let key_col_name = unique_column_name();
+        key_exprs[0] = key_exprs[0].with_alias(key_col_name.clone());
+        let output =
+            build_hstack_stream(phys_input, &key_exprs, expr_arena, phys_sm, expr_cache, ctx)?;
+        (output, Some(key_col_name))
+    } else {
+        (phys_input, None)
+    };
+    Ok((phys_output, key_exprs, key_col_name))
 }

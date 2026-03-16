@@ -10,6 +10,7 @@ use polars_compute::min_max::MinMaxKernel;
 use super::{EncodeNullability, StatisticsOptions};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::FixedLenStatistics;
+use crate::parquet::types::NativeType as ParquetNativeType;
 
 pub(crate) fn encode_plain(
     array: &FixedSizeBinaryArray,
@@ -68,7 +69,7 @@ pub(super) fn build_statistics_float16(
             .then(|| {
                 array
                     .max_propagate_nan_kernel()
-                    .map(|x| x.to_le_bytes().as_ref().to_vec())
+                    .map(|x| x.norm_max().to_le_bytes().as_ref().to_vec())
             })
             .flatten(),
         min_value: options
@@ -76,7 +77,7 @@ pub(super) fn build_statistics_float16(
             .then(|| {
                 array
                     .min_propagate_nan_kernel()
-                    .map(|x| x.to_le_bytes().as_ref().to_vec())
+                    .map(|x| x.norm_min().to_le_bytes().as_ref().to_vec())
             })
             .flatten(),
     }

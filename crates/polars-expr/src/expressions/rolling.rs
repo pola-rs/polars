@@ -24,7 +24,7 @@ pub(crate) struct RollingExpr {
 }
 
 impl PhysicalExpr for RollingExpr {
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let groups = if let Some(index_column_name) = self.index_column.as_column() {
             let options = RollingGroupOptions {
                 index_column: index_column_name.clone(),
@@ -74,7 +74,7 @@ impl PhysicalExpr for RollingExpr {
         Ok(out.into_column())
     }
 
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
@@ -185,10 +185,19 @@ impl PhysicalExpr for RollingExpr {
                 let mut i = 0;
                 for idx in idx.all() {
                     nested_groups.extend(windows[i..][..idx.len()].iter().map(|[s, l]| {
-                        (
-                            idx[*s as usize],
-                            UnitVec::from_iter(idx[*s as usize..][..*l as usize].iter().copied()),
-                        )
+                        if *l == 0 {
+                            // Do not index into `idx` for an empty window as this may lead to
+                            // out-of-bound access, e.g. when offset is larger than the default offset.
+                            // Instead, we use 0 as a (meaningless) placeholder value.
+                            (0, UnitVec::new())
+                        } else {
+                            (
+                                idx[*s as usize],
+                                UnitVec::from_iter(
+                                    idx[*s as usize..][..*l as usize].iter().copied(),
+                                ),
+                            )
+                        }
                     }));
                     i += idx.len();
                 }

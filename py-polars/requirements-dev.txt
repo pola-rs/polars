@@ -37,11 +37,11 @@ boto3
 cloudpickle
 fsspec
 pyiceberg>=0.7.1; python_version < '3.13'
-s3fs
+s3fs>=2026.2.0
 # Spreadsheet
 fastexcel>=0.11.5
 openpyxl
-xlsx2csv>=0.8.0,<0.8.5
+xlsx2csv
 xlsxwriter>=3.2.9
 # Other I/O
 deltalake>=1.1.4

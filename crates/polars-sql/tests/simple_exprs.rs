@@ -505,31 +505,34 @@ fn test_arr_agg() {
     let exprs = vec![
         (
             "SELECT ARRAY_AGG(a) AS a FROM df",
-            vec![col("a").implode().alias("a")],
+            vec![col("a").implode(true).alias("a")],
         ),
         (
             "SELECT ARRAY_AGG(a) AS a, ARRAY_AGG(b) AS b FROM df",
-            vec![col("a").implode().alias("a"), col("b").implode().alias("b")],
+            vec![
+                col("a").implode(true).alias("a"),
+                col("b").implode(true).alias("b"),
+            ],
         ),
         (
             "SELECT ARRAY_AGG(a ORDER BY a) AS a FROM df",
             vec![
                 col("a")
                     .sort_by(vec![col("a")], SortMultipleOptions::default())
-                    .implode()
+                    .implode(true)
                     .alias("a"),
             ],
         ),
         (
             "SELECT ARRAY_AGG(a) AS a FROM df",
-            vec![col("a").implode().alias("a")],
+            vec![col("a").implode(true).alias("a")],
         ),
         (
             "SELECT UNNEST(ARRAY_AGG(DISTINCT a)) FROM df",
             vec![
                 col("a")
                     .unique_stable()
-                    .implode()
+                    .implode(true)
                     .explode(ExplodeOptions {
                         empty_as_null: true,
                         keep_nulls: true,
@@ -543,7 +546,7 @@ fn test_arr_agg() {
                 col("a")
                     .sort_by(vec![col("b")], SortMultipleOptions::default())
                     .head(Some(2))
-                    .implode(),
+                    .implode(true),
             ],
         ),
     ];
@@ -560,7 +563,7 @@ fn test_explode_with_multiple_columns() {
     // Implode column "a"
     let df_imploded = df
         .lazy()
-        .select(&[col("a").implode().alias("a")])
+        .select(&[col("a").implode(true).alias("a")])
         .collect()
         .unwrap();
 
@@ -609,8 +612,8 @@ fn test_multiple_explodes_with_same_column() {
     let df_imploded = df
         .lazy()
         .select(&[
-            col("a").implode().alias("list_a"),
-            col("b").implode().alias("list_b"),
+            col("a").implode(true).alias("list_a"),
+            col("b").implode(true).alias("list_b"),
         ])
         .collect()
         .unwrap();
@@ -665,8 +668,8 @@ fn test_multiple_explodes_different_columns() {
     let df_imploded = df
         .lazy()
         .select(&[
-            col("a").implode().alias("list_a"),
-            col("b").implode().alias("list_b"),
+            col("a").implode(true).alias("list_a"),
+            col("b").implode(true).alias("list_b"),
         ])
         .collect()
         .unwrap();
@@ -749,7 +752,7 @@ fn explode_same_name_with_cte() {
 
     let df_imploded = df
         .lazy()
-        .select(&[col("list_a").implode().alias("list_a")])
+        .select(&[col("list_a").implode(true).alias("list_a")])
         .collect()
         .unwrap();
 

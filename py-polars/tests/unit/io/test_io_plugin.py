@@ -178,12 +178,11 @@ def test_datetime_io_predicate_pushdown_21790() -> None:
     assert_series_equal(filtered_df.to_series(), df.filter(expr).to_series())
 
     # check the expression directly
-    dt_val, column_cast = pushed_predicate.meta.pop()
+    dt_val, column = pushed_predicate.meta.pop()
     # Extract the datetime value from the expression
     assert pl.DataFrame({}).select(dt_val).item() == cutoff
 
-    column = column_cast.meta.pop()[0]
-    assert column.meta == pl.col("timestamp")
+    assert str(column) == str(pl.col("timestamp"))
 
 
 @pytest.mark.parametrize(("validate"), [(True), (False)])

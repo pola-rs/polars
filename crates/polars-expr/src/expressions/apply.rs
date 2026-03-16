@@ -429,7 +429,7 @@ impl PhysicalExpr for ApplyExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate(df, state);
         let mut inputs = if self.allow_threading && self.inputs.len() > 1 {
             POOL.install(|| {
@@ -451,7 +451,7 @@ impl PhysicalExpr for ApplyExpr {
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,

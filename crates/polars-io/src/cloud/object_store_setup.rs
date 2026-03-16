@@ -2,7 +2,7 @@ use std::sync::{Arc, LazyLock};
 
 use object_store::ObjectStore;
 use object_store::local::LocalFileSystem;
-use polars_core::config::{self, verbose_print_sensitive};
+use polars_core::config::{self, verbose, verbose_print_sensitive};
 use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_path::{PlPath, PlRefPath};
@@ -38,7 +38,6 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Vec<u
     // We include credentials as they can expire, so users will send new credentials for the same url.
     let cloud_options = options.map(
         |CloudOptions {
-             max_retries: _,
              // Destructure to ensure this breaks if anything changes.
              #[cfg(feature = "file_cache")]
              file_cache_ttl,
@@ -106,6 +105,10 @@ pub(crate) struct PolarsObjectStoreBuilder {
 }
 
 impl PolarsObjectStoreBuilder {
+    pub(super) fn path(&self) -> &PlRefPath {
+        &self.path
+    }
+
     pub(super) async fn build_impl(
         &self,
         // Whether to clear cached credentials for Python credential providers.
@@ -115,6 +118,15 @@ impl PolarsObjectStoreBuilder {
             .options
             .as_ref()
             .unwrap_or_else(|| CloudOptions::default_static_ref());
+
+        if let Some(options) = &self.options
+            && verbose()
+        {
+            eprintln!(
+                "build object-store: file_cache_ttl: {}",
+                options.file_cache_ttl
+            )
+        }
 
         let store = match self.cloud_type {
             CloudType::Aws => {
@@ -158,7 +170,7 @@ impl PolarsObjectStoreBuilder {
                 {
                     #[cfg(feature = "http")]
                     {
-                        let store = options.build_http(self.path.as_str())?;
+                        let store = options.build_http(self.path.clone())?;
                         PolarsResult::Ok(Arc::new(store) as Arc<dyn ObjectStore>)
                     }
                 }

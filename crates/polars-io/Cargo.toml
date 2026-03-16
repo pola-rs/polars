@@ -11,13 +11,14 @@ description = "IO related logic for the Polars DataFrame library"
 [dependencies]
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
+polars-config = { workspace = true }
 polars-core = { workspace = true }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
 polars-parquet = { workspace = true, optional = true }
 polars-schema = { workspace = true }
 polars-time = { workspace = true, features = [], optional = true }
-polars-utils = { workspace = true, features = ['mmap'] }
+polars-utils = { workspace = true, features = ['mmap', 'sysinfo'] }
 
 arrow = { workspace = true }
 async-trait = { workspace = true, optional = true }
@@ -36,6 +37,7 @@ memchr = { workspace = true }
 memmap = { workspace = true }
 num-traits = { workspace = true }
 object_store = { workspace = true, optional = true }
+parking_lot = { workspace = true, optional = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
@@ -74,6 +76,7 @@ scan_lines = []
 serde = [
   "dep:serde",
   "polars-buffer/serde",
+  "polars-config/serde",
   "polars-core/serde-lazy",
   "polars-parquet/serde",
   "polars-utils/serde",
@@ -124,6 +127,7 @@ async = [
   "tokio",
   "polars-error/regex",
   "polars-parquet?/async",
+  "polars-utils/async-utils",
 ]
 cloud = [
   "object_store",
@@ -135,7 +139,7 @@ cloud = [
   "reqwest",
   "http",
 ]
-file_cache = ["async", "dep:blake3", "dep:fs4", "serde_json", "cloud"]
+file_cache = ["async", "dep:blake3", "dep:fs4", "dep:parking_lot", "serde_json", "cloud"]
 aws = ["object_store/aws", "cloud", "reqwest"]
 azure = ["object_store/azure", "cloud"]
 gcp = ["object_store/gcp", "cloud"]

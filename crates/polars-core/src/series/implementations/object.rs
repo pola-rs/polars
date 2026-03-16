@@ -5,6 +5,7 @@ use self::compare_inner::TotalOrdInner;
 use super::{BitRepr, StatisticsFlags, *};
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::object::PolarsObjectSafe;
+use crate::chunked_array::object::registry::run_with_gil;
 use crate::chunked_array::ops::compare_inner::{IntoTotalEqInner, TotalEqInner};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
@@ -137,25 +138,35 @@ where
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
-        ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
+        run_with_gil(|| ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series()))
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        let ca = self.rechunk_object();
-        Ok(ca.take(indices)?.into_series())
+        run_with_gil(|| {
+            let ca = self.rechunk_object();
+            Ok(ca.take(indices)?.into_series())
+        })
     }
 
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
-        let ca = self.rechunk_object();
-        ca.take_unchecked(indices).into_series()
+        run_with_gil(|| {
+            let ca = self.rechunk_object();
+            ca.take_unchecked(indices).into_series()
+        })
     }
 
     fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
-        Ok(self.0.take(indices)?.into_series())
+        run_with_gil(|| {
+            let ca = self.rechunk_object();
+            Ok(ca.take(indices)?.into_series())
+        })
     }
 
     unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
-        self.0.take_unchecked(indices).into_series()
+        run_with_gil(|| {
+            let ca = self.rechunk_object();
+            ca.take_unchecked(indices).into_series()
+        })
     }
 
     fn deposit(&self, validity: &Bitmap) -> Series {

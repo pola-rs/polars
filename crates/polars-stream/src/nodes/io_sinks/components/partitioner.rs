@@ -101,7 +101,10 @@ impl KeyedPartitioner {
         let mut key_columns = Vec::with_capacity(self.key_exprs.len());
 
         for e in self.key_exprs.as_slice() {
-            key_columns.push(e.evaluate(&df, in_memory_exec_state).await?);
+            key_columns.push(
+                e.evaluate_preserve_len_broadcast(&df, in_memory_exec_state)
+                    .await?,
+            );
         }
 
         let mut pre_computed_keys: Option<PreComputedKeys> = None;

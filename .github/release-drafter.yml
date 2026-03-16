@@ -117,6 +117,9 @@ autolabeler:
   - label: A-plugin
     title:
       - '/plugin/i'
+  - label: A-selectors
+    title:
+      - '/selector/i'
   - label: A-streaming
     title:
       - '/streaming/i'

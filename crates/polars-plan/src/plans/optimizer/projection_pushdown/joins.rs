@@ -1,24 +1,56 @@
 use std::sync::Arc;
 
 use polars_core::prelude::InitHashMaps;
+use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_ops::frame::{JoinCoalesce, JoinType};
 use polars_utils::arena::Arena;
 use polars_utils::format_pl_smallstr;
+use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 
+use crate::dsl::JoinTypeOptionsIR;
 use crate::plans::{
     AExpr, ColumnNode, ExprIR, ExprOrigin, IR, IRBuilder, OutputName, PlHashSet, det_join_schema,
 };
 use crate::prelude::optimizer::projection_pushdown::ProjectionContext;
 use crate::prelude::{ProjectionOptions, ProjectionPushDown};
-use crate::utils::{aexpr_to_leaf_names_iter, column_node_to_name};
+use crate::utils::{aexpr_to_column_nodes_iter, aexpr_to_leaf_names_iter, column_node_to_name};
+
+fn pushdown_cross_and_filter_pred(
+    options: &Option<JoinTypeOptionsIR>,
+    proj_cx: &mut ProjectionContext,
+    expr_arena: &mut Arena<AExpr>,
+    input_schema_left: &Schema,
+    input_schema_right: &Schema,
+    suffix: &PlSmallStr,
+) -> bool {
+    if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) = options
+        && proj_cx.has_pushed_down()
+    {
+        let root_nodes = aexpr_to_column_nodes_iter(predicate.node(), expr_arena).collect_vec();
+        for mut root_node in root_nodes {
+            let mut name = column_node_to_name(root_node, expr_arena).clone();
+
+            if !(input_schema_left.contains(&name) || input_schema_right.contains(&name)) {
+                name = PlSmallStr::from_str(name.strip_suffix(suffix.as_str()).unwrap());
+                root_node = ColumnNode(expr_arena.add(AExpr::Column(name.clone())));
+            }
+            if proj_cx.projected_names.insert(name) {
+                proj_cx.acc_projections.push(root_node)
+            }
+        }
+        true
+    } else {
+        false
+    }
+}
 
 /// # Panics
 /// Panics if `join_ir` is not `IR::Join`.
 pub(super) fn process_join(
     mut join_ir: IR,
-    proj_cx: ProjectionContext,
+    mut proj_cx: ProjectionContext,
     proj_pd: &mut ProjectionPushDown,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
@@ -34,12 +66,22 @@ pub(super) fn process_join(
     else {
         panic!()
     };
+    let input_schema_left = ir_arena.get(*input_left).schema(ir_arena).into_owned();
+    let input_schema_right = ir_arena.get(*input_right).schema(ir_arena).into_owned();
+
+    // If we have a predicate, ensure we load those columns, but drop
+    // them after doing the join if we can.
+    let post_project = pushdown_cross_and_filter_pred(
+        &options.options,
+        &mut proj_cx,
+        expr_arena,
+        &input_schema_left,
+        &input_schema_right,
+        options.args.suffix(),
+    );
 
     let is_projected =
         |name: &str| proj_cx.projected_names.contains(name) || !proj_cx.has_pushed_down();
-
-    let input_schema_left = ir_arena.get(*input_left).schema(ir_arena).into_owned();
-    let input_schema_right = ir_arena.get(*input_right).schema(ir_arena).into_owned();
 
     let mut project_left = PlHashSet::with_capacity(input_schema_left.len());
     let mut project_right = PlHashSet::with_capacity(input_schema_right.len());
@@ -207,7 +249,7 @@ pub(super) fn process_join(
     )
     .unwrap();
 
-    let post_project: Option<Vec<ExprIR>> = if proj_cx.has_pushed_down() {
+    let post_project: Option<Vec<ExprIR>> = if proj_cx.has_pushed_down() || post_project {
         let mut needs_post_project = proj_cx.acc_projections.len() != new_join_output_schema.len();
 
         // Build post-projection to re-order the columns and add suffixes if necessary.

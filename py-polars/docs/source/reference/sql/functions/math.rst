@@ -36,11 +36,13 @@ Math
    * - :ref:`POW <pow>`
      - Returns the value to the power of the given exponent.
    * - :ref:`ROUND <round>`
-     - Round a number to `x` decimals (default: 0) away from zero.
+     - Round a number to `n` decimals (default: 0) away from zero.
    * - :ref:`SIGN <sign>`
      - Returns the sign of the argument as -1, 0, or +1.
    * - :ref:`SQRT <sqrt>`
      - Returns the square root (√) of a number.
+   * - :ref:`TRUNC <trunc>`
+     - Truncate a number toward zero to `n` decimals (default: 0).
 
 .. _abs:
 
@@ -405,7 +407,7 @@ Returns the value to the power of the given exponent.
 
 ROUND
 -----
-Round a number to `x` decimals (default: 0) away from zero.
+Round a number to `n` decimals (default: 0) away from zero.
 
 **Example:**
 
@@ -479,3 +481,33 @@ Returns the square root (√) of a number.
     # │ 4096  ┆ 64.0     │
     # │ 65536 ┆ 256.0    │
     # └───────┴──────────┘
+
+.. _trunc:
+
+TRUNC
+-----
+Truncate a number toward zero to `n` decimals (default: 0).
+
+.. admonition:: Aliases
+
+   `TRUNCATE`
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"x": [1.5671, -2.999, 3.4569, -4.3218]})
+    df.sql("""
+      SELECT x, TRUNC(x) AS xt0, TRUNC(x, 2) AS xt2 FROM self
+    """)
+    # shape: (4, 3)
+    # ┌─────────┬──────┬───────┐
+    # │ x       ┆ xt0  ┆ xt2   │
+    # │ ---     ┆ ---  ┆ ---   │
+    # │ f64     ┆ f64  ┆ f64   │
+    # ╞═════════╪══════╪═══════╡
+    # │ 1.5671  ┆ 1.0  ┆ 1.56  │
+    # │ -2.999  ┆ -2.0 ┆ -2.99 │
+    # │ 3.4569  ┆ 3.0  ┆ 3.45  │
+    # │ -4.3218 ┆ -4.0 ┆ -4.32 │
+    # └─────────┴──────┴───────┘

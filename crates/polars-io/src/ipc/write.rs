@@ -23,8 +23,6 @@ pub struct IpcWriterOptions {
     /// Write record batch StatisticsFlags as custom metadata into the record batch header.
     #[cfg_attr(feature = "serde", serde(default))]
     pub record_batch_statistics: bool,
-    /// Size of each written chunk.
-    pub chunk_size: IdxSize,
 }
 
 impl Default for IpcWriterOptions {
@@ -34,7 +32,6 @@ impl Default for IpcWriterOptions {
             compat_level: CompatLevel::newest(),
             record_batch_size: None,
             record_batch_statistics: false,
-            chunk_size: 1 << 18,
         }
     }
 }

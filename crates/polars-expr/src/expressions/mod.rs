@@ -100,6 +100,15 @@ impl AggState {
         }
     }
 
+    pub fn rename(&mut self, name: PlSmallStr) {
+        match self {
+            AggState::AggregatedList(s)
+            | AggState::NotAggregated(s)
+            | AggState::LiteralScalar(s)
+            | AggState::AggregatedScalar(s) => s.rename(name),
+        }
+    }
+
     pub fn flat_dtype(&self) -> &DataType {
         match self {
             AggState::AggregatedList(s) => s.dtype().inner_dtype().unwrap(),
@@ -251,6 +260,10 @@ impl<'a> AggregationContext<'a> {
 
     fn with_agg_state(&mut self, agg_state: AggState) {
         self.state = agg_state;
+    }
+
+    fn rename(&mut self, name: PlSmallStr) {
+        self.state.rename(name);
     }
 
     fn from_agg_state(
@@ -683,7 +696,20 @@ pub trait PhysicalExpr: Send + Sync {
     }
 
     /// Take a DataFrame and evaluate the expression.
-    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column>;
+    ///
+    /// Note: implementers should implement evaluate_impl instead, as this wraps
+    /// that call with an error context.
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+        self.evaluate_impl(df, state).map_err(|e| {
+            if let Some(expr) = self.as_expression() {
+                e.with_expr_context(expr.to_string().into())
+            } else {
+                e
+            }
+        })
+    }
+
+    fn evaluate_impl(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column>;
 
     /// Some expression that are not aggregations can be done per group
     /// Think of sort, slice, filter, shift, etc.
@@ -709,6 +735,23 @@ pub trait PhysicalExpr: Send + Sync {
     // this means filters will be incorrect and lead to invalid results down the line
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupPositions,
+        state: &ExecutionState,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        self.evaluate_on_groups_impl(df, groups, state)
+            .map_err(|e| {
+                if let Some(expr) = self.as_expression() {
+                    e.with_expr_context(expr.to_string().into())
+                } else {
+                    e
+                }
+            })
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,

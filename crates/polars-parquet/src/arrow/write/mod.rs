@@ -95,71 +95,6 @@ pub struct WriteOptions {
     pub data_page_size: Option<usize>,
 }
 
-#[derive(Clone)]
-pub struct ColumnWriteOptions {
-    pub field_id: Option<i32>,
-    pub metadata: Vec<KeyValue>,
-    pub required: Option<bool>,
-    pub children: ChildWriteOptions,
-}
-
-#[derive(Clone)]
-pub enum ChildWriteOptions {
-    Leaf(FieldWriteOptions),
-    ListLike(Box<ListLikeFieldWriteOptions>),
-    Struct(Box<StructFieldWriteOptions>),
-}
-
-impl ColumnWriteOptions {
-    pub fn to_leaves<'a>(&'a self, out: &mut Vec<&'a FieldWriteOptions>) {
-        match &self.children {
-            ChildWriteOptions::Leaf(o) => out.push(o),
-            ChildWriteOptions::ListLike(o) => o.child.to_leaves(out),
-            ChildWriteOptions::Struct(o) => {
-                for o in &o.children {
-                    o.to_leaves(out);
-                }
-            },
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct FieldWriteOptions {
-    pub encoding: Encoding,
-}
-
-impl ColumnWriteOptions {
-    pub fn default_with(children: ChildWriteOptions) -> Self {
-        Self {
-            field_id: None,
-            metadata: Vec::new(),
-            required: None,
-            children,
-        }
-    }
-}
-
-impl FieldWriteOptions {
-    pub fn default_with_encoding(encoding: Encoding) -> Self {
-        Self { encoding }
-    }
-
-    pub fn into_default_column_write_options(self) -> ColumnWriteOptions {
-        ColumnWriteOptions::default_with(ChildWriteOptions::Leaf(self))
-    }
-}
-
-#[derive(Clone)]
-pub struct ListLikeFieldWriteOptions {
-    pub child: ColumnWriteOptions,
-}
-
-#[derive(Clone)]
-pub struct StructFieldWriteOptions {
-    pub children: Vec<ColumnWriteOptions>,
-}
-
 use arrow::compute::aggregate::estimated_bytes_size;
 use arrow::match_integer_type;
 pub use file::FileWriter;
@@ -219,6 +154,33 @@ impl EncodeNullability {
     }
 }
 
+/// `data_page_size`: Set a target threshold for the approximate encoded size of data
+/// pages within a column chunk (in bytes). If None, use the default data page size of 1MByte.
+/// See: https://arrow.apache.org/docs/python/generated/pyarrow.parquet.write_table.html
+pub(crate) fn row_slice_ranges(
+    number_of_rows: usize,
+    byte_size: usize,
+    options: WriteOptions,
+) -> impl Iterator<Item = (usize, usize)> {
+    const DEFAULT_PAGE_SIZE: usize = 1024 * 1024; // 1 MB
+    let max_page_size = options.data_page_size.unwrap_or(DEFAULT_PAGE_SIZE);
+    let max_page_size = max_page_size.min(2usize.pow(31) - 2usize.pow(25)); // allowed maximum page size
+
+    let bytes_per_row = if number_of_rows == 0 {
+        0
+    } else {
+        ((byte_size as f64) / (number_of_rows as f64)) as usize
+    };
+    let rows_per_page = (max_page_size / (bytes_per_row + 1)).max(1);
+
+    (0..number_of_rows)
+        .step_by(rows_per_page)
+        .map(move |offset| {
+            let length = (offset + rows_per_page).min(number_of_rows) - offset;
+            (offset, length)
+        })
+}
+
 /// returns offset and length to slice the leaf values
 pub fn slice_nested_leaf(nested: &[Nested]) -> (usize, usize) {
     // find the deepest recursive dremel structure as that one determines how many values we must
@@ -256,14 +218,10 @@ fn decimal_length_from_precision(precision: usize) -> usize {
 }
 
 /// Creates a parquet [`SchemaDescriptor`] from a [`ArrowSchema`].
-pub fn to_parquet_schema(
-    schema: &ArrowSchema,
-    column_options: &[ColumnWriteOptions],
-) -> PolarsResult<SchemaDescriptor> {
+pub fn to_parquet_schema(schema: &ArrowSchema) -> PolarsResult<SchemaDescriptor> {
     let parquet_types = schema
         .iter_values()
-        .zip(column_options)
-        .map(|(field, options)| to_parquet_type(field, options))
+        .map(to_parquet_type)
         .collect::<PolarsResult<Vec<_>>>()?;
     Ok(SchemaDescriptor::new(
         PlSmallStr::from_static("root"),
@@ -355,9 +313,8 @@ pub fn array_to_pages(
     type_: ParquetPrimitiveType,
     nested: &[Nested],
     options: WriteOptions,
-    field_options: &FieldWriteOptions,
+    mut encoding: Encoding,
 ) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
-    let mut encoding = field_options.encoding;
     if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.dtype().to_storage() {
         return match_integer_type!(key_type, |$T| {
             dictionary::array_to_pages::<$T>(
@@ -384,49 +341,26 @@ pub fn array_to_pages(
     }
 
     let nested = nested.to_vec();
-
     let number_of_rows = nested[0].len();
-
     // note: this is not correct if the array is sliced - the estimation should happen on the
     // primitive after sliced for parquet
     let byte_size = estimated_bytes_size(primitive_array);
-
-    const DEFAULT_PAGE_SIZE: usize = 1024 * 1024;
-    let max_page_size = options.data_page_size.unwrap_or(DEFAULT_PAGE_SIZE);
-    let max_page_size = max_page_size.min(2usize.pow(31) - 2usize.pow(25)); // allowed maximum page size
-    let bytes_per_row = if number_of_rows == 0 {
-        0
-    } else {
-        ((byte_size as f64) / (number_of_rows as f64)) as usize
-    };
-    let rows_per_page = (max_page_size / (bytes_per_row + 1)).max(1);
-
-    let row_iter = (0..number_of_rows)
-        .step_by(rows_per_page)
-        .map(move |offset| {
-            let length = if offset + rows_per_page > number_of_rows {
-                number_of_rows - offset
-            } else {
-                rows_per_page
-            };
-            (offset, length)
-        });
-
     let primitive_array = primitive_array.to_boxed();
 
-    let pages = row_iter.map(move |(offset, length)| {
-        let mut right_array = primitive_array.clone();
-        let mut right_nested = nested.clone();
-        slice_parquet_array(right_array.as_mut(), &mut right_nested, offset, length);
+    let pages =
+        row_slice_ranges(number_of_rows, byte_size, options).map(move |(offset, length)| {
+            let mut right_array = primitive_array.clone();
+            let mut right_nested = nested.clone();
+            slice_parquet_array(right_array.as_mut(), &mut right_nested, offset, length);
 
-        array_to_page(
-            right_array.as_ref(),
-            type_.clone(),
-            &right_nested,
-            options,
-            encoding,
-        )
-    });
+            array_to_page(
+                right_array.as_ref(),
+                type_.clone(),
+                &right_nested,
+                options,
+                encoding,
+            )
+        });
     Ok(DynIter::new(pages))
 }
 
@@ -1199,31 +1133,34 @@ fn array_to_page_nested(
     .map(Page::Data)
 }
 
-fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
-    dtype: &ArrowDataType,
-    map: F,
-    encodings: &mut Vec<T>,
-) {
+fn get_encodings_recursive(dtype: &ArrowDataType, encodings: &mut Vec<Encoding>) {
     use arrow::datatypes::PhysicalType::*;
     match dtype.to_physical_type() {
         Null | Boolean | Primitive(_) | Binary | FixedSizeBinary | LargeBinary | Utf8
-        | Dictionary(_) | LargeUtf8 | BinaryView | Utf8View => encodings.push(map(dtype)),
+        | Dictionary(_) | LargeUtf8 | BinaryView | Utf8View => {
+            encodings.push(get_primitive_dtype_encoding(dtype))
+        },
         List | FixedSizeList | LargeList => {
             let a = dtype.to_storage();
             if let ArrowDataType::List(inner) = a {
-                transverse_recursive(&inner.dtype, map, encodings)
+                get_encodings_recursive(&inner.dtype, encodings)
             } else if let ArrowDataType::LargeList(inner) = a {
-                transverse_recursive(&inner.dtype, map, encodings)
+                get_encodings_recursive(&inner.dtype, encodings)
             } else if let ArrowDataType::FixedSizeList(inner, _) = a {
-                transverse_recursive(&inner.dtype, map, encodings)
+                get_encodings_recursive(&inner.dtype, encodings)
             } else {
                 unreachable!()
             }
         },
         Struct => {
             if let ArrowDataType::Struct(fields) = dtype.to_storage() {
+                if fields.is_empty() {
+                    // 0-field struct writes as a boolean column representing outer validity.
+                    encodings.push(Encoding::Rle)
+                }
+
                 for field in fields {
-                    transverse_recursive(&field.dtype, map.clone(), encodings)
+                    get_encodings_recursive(&field.dtype, encodings)
                 }
             } else {
                 unreachable!()
@@ -1233,7 +1170,7 @@ fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
             if let ArrowDataType::Map(field, _) = dtype.to_storage() {
                 if let ArrowDataType::Struct(fields) = field.dtype.to_storage() {
                     for field in fields {
-                        transverse_recursive(&field.dtype, map.clone(), encodings)
+                        get_encodings_recursive(&field.dtype, encodings)
                     }
                 } else {
                     unreachable!()
@@ -1250,8 +1187,21 @@ fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
 /// items based on `map`.
 ///
 /// This is used to assign an [`Encoding`] to every parquet column based on the columns' type (see example)
-pub fn transverse<T, F: Fn(&ArrowDataType) -> T + Clone>(dtype: &ArrowDataType, map: F) -> Vec<T> {
+pub fn get_dtype_encoding(dtype: &ArrowDataType) -> Vec<Encoding> {
     let mut encodings = vec![];
-    transverse_recursive(dtype, map, &mut encodings);
+    get_encodings_recursive(dtype, &mut encodings);
     encodings
+}
+
+fn get_primitive_dtype_encoding(dtype: &ArrowDataType) -> Encoding {
+    match dtype.to_physical_type() {
+        PhysicalType::Dictionary(_)
+        | PhysicalType::LargeBinary
+        | PhysicalType::LargeUtf8
+        | PhysicalType::Utf8View
+        | PhysicalType::BinaryView
+        | PhysicalType::Primitive(_) => Encoding::RleDictionary,
+        // remaining is plain
+        _ => Encoding::Plain,
+    }
 }

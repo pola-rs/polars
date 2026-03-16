@@ -44,6 +44,7 @@ mod compute_node_prelude {
     pub use polars_core::frame::DataFrame;
     pub use polars_error::PolarsResult;
     pub use polars_expr::state::ExecutionState;
+    pub use polars_ooc::Token;
 
     pub use super::ComputeNode;
     pub use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};

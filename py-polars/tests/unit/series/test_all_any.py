@@ -18,6 +18,9 @@ from polars.exceptions import SchemaError
         ([False, None], False),
         ([True], True),
         ([True, None], True),
+        ([None] * 199 + [True], True),
+        ([None] * 200, False),
+        ([None] * 200 + [False] * 200, False),
     ],
 )
 def test_any(data: list[bool | None], expected: bool) -> None:
@@ -53,6 +56,8 @@ def test_any_wrong_dtype() -> None:
         ([False, None], False),
         ([True], True),
         ([True, None], True),
+        ([None] * 200 + [True] * 199 + [False], False),
+        ([True] * 200 + [None] * 200 + [True] * 200, True),
     ],
 )
 def test_all(data: list[bool | None], expected: bool) -> None:

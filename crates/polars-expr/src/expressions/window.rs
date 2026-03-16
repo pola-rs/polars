@@ -237,7 +237,7 @@ impl WindowExpr {
                 let mut finishes_list = false;
                 for e in &**function {
                     match e {
-                        Expr::Agg(AggExpr::Implode(_)) => {
+                        Expr::Agg(AggExpr::Implode { .. }) => {
                             finishes_list = true;
                         },
                         Expr::Alias(_, _) => {},
@@ -353,7 +353,7 @@ impl PhysicalExpr for WindowExpr {
 
     // This first cached the group_by and the join tuples, but rayon under a mutex leads to deadlocks:
     // https://github.com/rayon-rs/rayon/issues/592
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         // This method does the following:
         // 1. determine group_by tuples based on the group_column
         // 2. apply an aggregation function
@@ -640,7 +640,7 @@ impl PhysicalExpr for WindowExpr {
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
@@ -1044,7 +1044,13 @@ fn set_by_groups(
     len: usize,
     update_groups: bool,
 ) -> Option<Column> {
-    if update_groups || !ac.original_len {
+    if update_groups
+        || !ac.original_len
+        || matches!(
+            ac.agg_state(),
+            AggState::AggregatedScalar(_) | AggState::LiteralScalar(_)
+        )
+    {
         return None;
     }
     if s.dtype().to_physical().is_primitive_numeric() {

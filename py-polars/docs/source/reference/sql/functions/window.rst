@@ -11,8 +11,12 @@ Window
      - Returns the rank of each row within a window partition, without gaps for ties.
    * - :ref:`FIRST_VALUE <first_value>`
      - Returns the first value in an ordered set of values with respect to the window declared in `OVER`.
+   * - :ref:`LAG <lag>`
+     - Returns the value of a column at a given offset before the current row within a window partition.
    * - :ref:`LAST_VALUE <last_value>`
      - Returns the last value in an ordered set of values with respect to the window declared in `OVER`.
+   * - :ref:`LEAD <lead>`
+     - Returns the value of a column at a given offset after the current row within a window partition.
    * - :ref:`OVER <over>`
      - Define a window (a set of rows) within which a function is applied.
    * - :ref:`RANK <rank>`
@@ -81,11 +85,113 @@ FIRST_VALUE
 Returns the first value in an ordered set of values with respect to the window declared in `OVER`.
 
 
+.. _lag:
+
+LAG
+---
+Returns the value of a column at a given offset before the current row within a window partition.
+If the offset goes beyond the partition boundary, NULL is returned.
+
+**Syntax:**
+
+* ``LAG(expr) OVER (...)`` - offset defaults to 1.
+* ``LAG(expr, n) OVER (...)`` - offset of ``n`` rows.
+
+**Requirements:**
+
+- Must be used with an ``OVER`` clause.
+- That clause must have ``ORDER BY`` in the window specification.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({
+        "id": [1, 2, 3, 4, 5, 6],
+        "category": ["A", "A", "A", "B", "B", "B"],
+        "value": [10, 20, 30, 40, 50, 60],
+    })
+    df.sql("""
+      SELECT
+        id,
+        category,
+        value,
+        LAG(value) OVER (PARTITION BY category ORDER BY id) AS prev_value,
+        LAG(value, 2) OVER (PARTITION BY category ORDER BY id) AS prev2_value
+      FROM self
+      ORDER BY category, id
+    """)
+    # shape: (6, 5)
+    # ┌─────┬──────────┬───────┬────────────┬─────────────┐
+    # │ id  ┆ category ┆ value ┆ prev_value ┆ prev2_value │
+    # │ --- ┆ ---      ┆ ---   ┆ ---        ┆ ---         │
+    # │ i64 ┆ str      ┆ i64   ┆ i64        ┆ i64         │
+    # ╞═════╪══════════╪═══════╪════════════╪═════════════╡
+    # │ 1   ┆ A        ┆ 10    ┆ null       ┆ null        │
+    # │ 2   ┆ A        ┆ 20    ┆ 10         ┆ null        │
+    # │ 3   ┆ A        ┆ 30    ┆ 20         ┆ 10          │
+    # │ 4   ┆ B        ┆ 40    ┆ null       ┆ null        │
+    # │ 5   ┆ B        ┆ 50    ┆ 40         ┆ null        │
+    # │ 6   ┆ B        ┆ 60    ┆ 50         ┆ 40          │
+    # └─────┴──────────┴───────┴────────────┴─────────────┘
+
+
 .. _last_value:
 
 LAST_VALUE
 ----------
 Returns the last value in an ordered set of values with respect to the window declared in `OVER`.
+
+
+.. _lead:
+
+LEAD
+----
+Returns the value of a column at a given offset after the current row within a window partition.
+If the offset goes beyond the partition boundary, NULL is returned.
+
+**Syntax:**
+
+* ``LEAD(expr) OVER (...)`` - offset defaults to 1.
+* ``LEAD(expr, n) OVER (...)`` - offset of ``n`` rows.
+
+**Requirements:**
+
+- Must be used with an ``OVER`` clause.
+- That clause must have ``ORDER BY`` in the window specification.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({
+        "id": [1, 2, 3, 4, 5, 6],
+        "category": ["A", "A", "A", "B", "B", "B"],
+        "value": [10, 20, 30, 40, 50, 60],
+    })
+    df.sql("""
+      SELECT
+        id,
+        category,
+        value,
+        LEAD(value) OVER (PARTITION BY category ORDER BY id) AS next_value,
+        LEAD(value, 2) OVER (PARTITION BY category ORDER BY id) AS next2_value
+      FROM self
+      ORDER BY category, id
+    """)
+    # shape: (6, 5)
+    # ┌─────┬──────────┬───────┬────────────┬─────────────┐
+    # │ id  ┆ category ┆ value ┆ next_value ┆ next2_value │
+    # │ --- ┆ ---      ┆ ---   ┆ ---        ┆ ---         │
+    # │ i64 ┆ str      ┆ i64   ┆ i64        ┆ i64         │
+    # ╞═════╪══════════╪═══════╪════════════╪═════════════╡
+    # │ 1   ┆ A        ┆ 10    ┆ 20         ┆ 30          │
+    # │ 2   ┆ A        ┆ 20    ┆ 30         ┆ null        │
+    # │ 3   ┆ A        ┆ 30    ┆ null       ┆ null        │
+    # │ 4   ┆ B        ┆ 40    ┆ 50         ┆ 60          │
+    # │ 5   ┆ B        ┆ 50    ┆ 60         ┆ null        │
+    # │ 6   ┆ B        ┆ 60    ┆ null       ┆ null        │
+    # └─────┴──────────┴───────┴────────────┴─────────────┘
 
 
 .. _rank:

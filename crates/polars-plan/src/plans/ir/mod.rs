@@ -89,7 +89,7 @@ pub enum IR {
     Sort {
         input: Node,
         by_column: Vec<ExprIR>,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, usize, Option<DynamicPred>)>,
         sort_options: SortMultipleOptions,
     },
     Cache {
@@ -169,6 +169,19 @@ impl IRPlan {
             lp_top: top,
             lp_arena: ir_arena,
             expr_arena,
+        }
+    }
+
+    /// If `lp_top` is not a `Sink`, it will be set to an in-memory sink.
+    pub fn ensure_root_node_is_sink(&mut self) {
+        match self.root() {
+            IR::Sink { .. } | IR::SinkMultiple { .. } => {},
+            _ => {
+                self.lp_top = self.lp_arena.add(IR::Sink {
+                    input: self.lp_top,
+                    payload: SinkTypeIR::Memory,
+                })
+            },
         }
     }
 

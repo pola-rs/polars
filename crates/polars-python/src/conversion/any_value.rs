@@ -206,8 +206,7 @@ pub(crate) fn py_object_to_any_value(
         } else if let Ok(v) = ob.extract::<u128>() {
             Ok(AnyValue::UInt128(v))
         } else if !strict {
-            let f = ob.extract::<f64>()?;
-            Ok(AnyValue::Float64(f))
+            Ok(AnyValue::Null)
         } else {
             Err(PyOverflowError::new_err(format!(
                 "int value too large for Polars integer types: {ob}"

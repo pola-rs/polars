@@ -66,7 +66,8 @@ impl<'a> FieldsMapper<'a> {
         let dt = self.args()[0].dtype();
         polars_ensure!(
             dt.is_list(),
-            InvalidOperation: format!("expected List data type for list operation, got: {:?}", dt)
+            InvalidOperation:
+            "expected List data type for list operation, got: {dt:?}"
         );
         Ok(self)
     }

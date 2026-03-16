@@ -3,8 +3,6 @@ use std::borrow::Cow;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_compute::rolling::QuantileMethod;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
@@ -13,8 +11,6 @@ use crate::prelude::*;
 use crate::utils::{first_non_null, last_non_null};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum IsSorted {
     Ascending,
     Descending,

@@ -166,3 +166,20 @@ def test_clip_unequal_lengths_22018() -> None:
         pl.Series([1, 2, 3]).clip(pl.Series([1, 2]), pl.Series([1, 2, 3]))
     with pytest.raises(pl.exceptions.ShapeError):
         pl.Series([1, 2, 3]).clip(pl.Series([1, 2, 3]), pl.Series([1, 2]))
+
+
+def test_clip_bound_nan() -> None:
+    assert_series_equal(
+        pl.Series([1.0, 2.0]).clip(float("nan"), float("nan")),
+        pl.Series([1.0, 2.0]),
+    )
+
+    assert_series_equal(
+        pl.Series([1.0, 2.0]).clip(float("nan"), None),
+        pl.Series([1.0, 2.0]),
+    )
+
+    assert_series_equal(
+        pl.Series([1.0, 2.0]).clip(None, float("nan")),
+        pl.Series([1.0, 2.0]),
+    )

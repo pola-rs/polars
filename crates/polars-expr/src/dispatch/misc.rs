@@ -2,8 +2,8 @@ use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use polars_core::prelude::*;
 use polars_core::scalar::Scalar;
+use polars_core::series::Series;
 use polars_core::series::ops::NullBehavior;
-use polars_core::series::{IsSorted, Series};
 use polars_core::utils::try_get_supertype;
 #[cfg(feature = "interpolate")]
 use polars_ops::series::InterpolationMethod;
@@ -16,7 +16,7 @@ use polars_plan::dsl::ReshapeDimension;
 use polars_plan::plans::FusedOperator;
 #[cfg(feature = "cov")]
 use polars_plan::plans::IRCorrelationMethod;
-use polars_plan::plans::RowEncodingVariant;
+use polars_plan::plans::{AExprSorted, DynamicPred, RowEncodingVariant};
 use polars_row::RowEncodingOptions;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -76,9 +76,9 @@ pub(super) fn to_physical(s: &Column) -> PolarsResult<Column> {
     Ok(s.to_physical_repr())
 }
 
-pub(super) fn set_sorted_flag(s: &Column, sorted: IsSorted) -> PolarsResult<Column> {
+pub(super) fn set_sorted_flag(s: &Column, sorted: AExprSorted) -> PolarsResult<Column> {
     let mut s = s.clone();
-    s.set_sorted_flag(sorted);
+    s.set_sorted_flag(sorted.into());
     Ok(s)
 }
 
@@ -245,6 +245,32 @@ pub(super) fn arg_sort(s: &Column, descending: bool, nulls_last: bool) -> Polars
         .into_column())
 }
 
+pub(super) fn min_by(s: &[Column]) -> PolarsResult<Column> {
+    assert!(s.len() == 2);
+    let input = &s[0];
+    let by = &s[1];
+    if input.len() != by.len() {
+        polars_bail!(ShapeMismatch: "'by' column in `min_by` operation has incorrect length (got {}, expected {})", by.len(), input.len());
+    }
+    match by.as_materialized_series().arg_min() {
+        Some(idx) => Ok(input.new_from_index(idx, 1)),
+        None => Ok(Series::new_null(input.name().clone(), 1).into_column()),
+    }
+}
+
+pub(super) fn max_by(s: &[Column]) -> PolarsResult<Column> {
+    assert!(s.len() == 2);
+    let input = &s[0];
+    let by = &s[1];
+    if input.len() != by.len() {
+        polars_bail!(ShapeMismatch: "'by' column in `max_by` operation has incorrect length (got {}, expected {})", by.len(), input.len());
+    }
+    match by.as_materialized_series().arg_max() {
+        Some(idx) => Ok(input.new_from_index(idx, 1)),
+        None => Ok(Series::new_null(input.name().clone(), 1).into_column()),
+    }
+}
+
 pub(super) fn product(s: &Column) -> PolarsResult<Column> {
     // @scalar-opt
     s.as_materialized_series()
@@ -316,8 +342,9 @@ pub(super) fn gather_every(s: &Column, n: usize, offset: usize) -> PolarsResult<
 }
 
 #[cfg(feature = "reinterpret")]
-pub(super) fn reinterpret(s: &Column, signed: bool) -> PolarsResult<Column> {
-    polars_ops::series::reinterpret(s.as_materialized_series(), signed).map(Column::from)
+pub(super) fn reinterpret(s: &Column, dtype: &DataType) -> PolarsResult<Column> {
+    polars_core::chunked_array::ops::reinterpret(s.as_materialized_series(), dtype)
+        .map(Column::from)
 }
 
 pub(super) fn negate(s: &Column) -> PolarsResult<Column> {
@@ -794,26 +821,32 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
         let a = a.drop_nulls();
         let b = b.drop_nulls();
 
-        let a_rank = a
-            .as_materialized_series()
-            .rank(
-                RankOptions {
-                    method: RankMethod::Average,
-                    ..Default::default()
-                },
-                None,
-            )
-            .into();
-        let b_rank = b
-            .as_materialized_series()
-            .rank(
-                RankOptions {
-                    method: RankMethod::Average,
-                    ..Default::default()
-                },
-                None,
-            )
-            .into();
+        let a_rank = a.as_materialized_series().rank(
+            RankOptions {
+                method: RankMethod::Average,
+                ..Default::default()
+            },
+            None,
+        );
+        let b_rank = b.as_materialized_series().rank(
+            RankOptions {
+                method: RankMethod::Average,
+                ..Default::default()
+            },
+            None,
+        );
+
+        // Because rank results in f64, we may need to restore the dtype
+        let a_rank = if a.dtype().is_float() {
+            a_rank.cast(a.dtype())?.into()
+        } else {
+            a_rank.into()
+        };
+        let b_rank = if b.dtype().is_float() {
+            b_rank.cast(b.dtype())?.into()
+        } else {
+            b_rank.into()
+        };
 
         pearson_corr(&[a_rank, b_rank])
     }
@@ -1021,4 +1054,8 @@ pub fn repeat(args: &[Column]) -> PolarsResult<Column> {
     )?;
 
     Ok(c.new_from_index(0, n))
+}
+
+pub fn dynamic_pred(columns: &[Column], pred: &DynamicPred) -> PolarsResult<Column> {
+    pred.evaluate(columns)
 }

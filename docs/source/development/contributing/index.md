@@ -199,6 +199,88 @@ Two other things to keep in mind:
 - If you add code that should be tested, add tests.
 - If you change the public API, [update the documentation](#api-reference).
 
+### Finding the commit that introduced a bug
+
+If you have found a bug, it can be very helpful to identify the exact commit that introduced it.
+This allows maintainers to understand the root cause more quickly. You can use
+[`git bisect`](https://git-scm.com/docs/git-bisect) to do this automatically.
+
+**1. Create a minimal reproducible example (MRE)**
+
+First, reduce your bug to the smallest possible Python script that reproduces it. See
+[this guide](https://matthewrocklin.com/minimal-bug-reports/) for guidance.
+
+**2. Turn your MRE into a bisect script**
+
+Save the following as `bisect.py` in the root of the repository, adding your MRE at the bottom. You
+can add it to `.git/info/exclude` to ignore it locally without affecting the repository's
+`.gitignore`:
+
+```python
+import subprocess
+import sys
+import importlib
+
+# Try to build Polars. Skip this commit if the build fails.
+build = subprocess.run(["make", "build"])
+if build.returncode != 0:
+    sys.exit(125)  # Tell git bisect to skip this commit.
+
+importlib.invalidate_caches()  # Ensure we see newly built package.
+
+
+import polars as pl
+
+# Your MRE here.
+# If Python exits with an unhandled exception, git bisect treats it as a bad commit.
+# If it exits normally (giving exit code 0), it is treated as a good commit.
+# Example:
+# result = pl.Series([1, 2, 3]).some_method()
+# assert result == expected, f"Got {result}"
+```
+
+The script must exit with:
+
+- `0` if the bug is **not** present (good commit, normal Python exit)
+- `1` (or any non-zero code except `125`) if the bug **is** present (bad commit, e.g. an assertion
+  error)
+- `125` to tell `git bisect` to skip the commit (e.g. it does not build)
+
+**3. Mark a good and a bad commit**
+
+Find a commit hash or [release tag](https://github.com/pola-rs/polars/tags) where the bug did not
+exist (e.g. `py-1.32.0` for Polars 1.32.0) and another hash or tag which is confirmed to contain the
+bug (e.g. `HEAD` if it still exists):
+
+```bash
+git bisect start
+git bisect bad HEAD
+git bisect good py-1.32.0
+```
+
+**4. Run the bisect automatically**
+
+From the root of the repository, run:
+
+```bash
+git bisect run .venv/bin/python bisect.py
+```
+
+`git bisect` will binary-search through the commit history and print the first bad commit when it is
+done.
+
+**5. Include the result in your issue**
+
+Copy the output (the commit hash and message) and add it to your
+[bug report](https://github.com/pola-rs/polars/issues/new?labels=bug&template=bug_report_python.yml).
+This greatly speeds up the investigation for maintainers.
+
+When you are done, reset your repository:
+
+```bash
+git bisect reset
+```
+
 ### Pull requests
 
 When you have resolved your issue,
@@ -226,9 +308,18 @@ in the Polars repository. Please adhere to the following guidelines:
     - Clearly state in your pull request's description which parts of the code were AI-generated.
     - Explicitly state that you yourself have reviewed *all* changes in your pull request, and believe
       that they are relevant and correct.
-    - Adhere to the rest of our [AI policy](/AI_policy.md).
+    - Not try to solve an issue marked as "good first issue".
+    - Adhere to the rest of our [AI policy](/AI_POLICY.md).
   If you fail either requirement the maintainer may simply close your pull request.
 <!-- dprint-ignore-end -->
+
+We unfortunately are overwhelmed by the amount of low-quality contributions created primarily using
+AI. These cost us a lot of time (and regularly simply don't work), while the author has barely spent
+any effort, so for first-time contributors there are some more rules:
+
+- You must post a screenshot of you successfully running the test suite (`make test`), locally on
+  your machine (not the CI).
+- You may not have more than one open PR at a time.
 
 After you have opened your pull request, a maintainer will review it and possibly leave some
 comments. Once all issues are resolved, the maintainer will merge your pull request, and your work

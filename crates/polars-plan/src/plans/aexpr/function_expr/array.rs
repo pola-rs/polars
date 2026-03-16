@@ -47,7 +47,8 @@ impl<'a> FieldsMapper<'a> {
         let dt = self.args()[0].dtype();
         polars_ensure!(
             dt.is_array(),
-            InvalidOperation: format!("expected Array datatype for array operation, got: {:?}", dt)
+            InvalidOperation:
+            "expected Array datatype for array operation, got: {dt:?}"
         );
         Ok(self)
     }

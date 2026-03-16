@@ -7,7 +7,6 @@ use std::ops::{BitAnd, BitOr, Not};
 
 use arrow::array::BooleanArray;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::compute;
 use num_traits::{NumCast, ToPrimitive};
 use polars_compute::comparisons::{TotalEqKernel, TotalOrdKernel};
 
@@ -1040,7 +1039,7 @@ impl Not for &BooleanChunked {
     type Output = BooleanChunked;
 
     fn not(self) -> Self::Output {
-        let chunks = self.downcast_iter().map(compute::boolean::not);
+        let chunks = self.downcast_iter().map(polars_compute::boolean::not);
         ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
     }
 }
@@ -1058,14 +1057,16 @@ impl BooleanChunked {
     ///
     /// Null values are ignored.
     pub fn any(&self) -> bool {
-        self.downcast_iter().any(compute::boolean::any)
+        self.downcast_iter()
+            .any(|a| polars_compute::boolean::any(a).unwrap_or(false))
     }
 
     /// Returns whether all values in the array are `true`.
     ///
     /// Null values are ignored.
     pub fn all(&self) -> bool {
-        self.downcast_iter().all(compute::boolean::all)
+        self.downcast_iter()
+            .all(|a| polars_compute::boolean::all(a).unwrap_or(true))
     }
 
     /// Returns whether any of the values in the column are `true`.
@@ -1073,15 +1074,12 @@ impl BooleanChunked {
     /// The output is unknown (`None`) if the array contains any null values and
     /// no `true` values.
     pub fn any_kleene(&self) -> Option<bool> {
-        let mut result = Some(false);
         for arr in self.downcast_iter() {
-            match compute::boolean_kleene::any(arr) {
-                Some(true) => return Some(true),
-                None => result = None,
-                _ => (),
-            };
+            if let Some(true) = polars_compute::boolean::any(arr) {
+                return Some(true);
+            }
         }
-        result
+        if self.has_nulls() { None } else { Some(false) }
     }
 
     /// Returns whether all values in the column are `true`.
@@ -1089,15 +1087,12 @@ impl BooleanChunked {
     /// The output is unknown (`None`) if the array contains any null values and
     /// no `false` values.
     pub fn all_kleene(&self) -> Option<bool> {
-        let mut result = Some(true);
         for arr in self.downcast_iter() {
-            match compute::boolean_kleene::all(arr) {
-                Some(false) => return Some(false),
-                None => result = None,
-                _ => (),
-            };
+            if let Some(false) = polars_compute::boolean::all(arr) {
+                return Some(false);
+            }
         }
-        result
+        if self.has_nulls() { None } else { Some(true) }
     }
 }
 

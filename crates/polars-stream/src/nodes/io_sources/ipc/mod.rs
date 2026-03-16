@@ -92,12 +92,17 @@ impl FileReader for IpcFileReader {
         let scan_source = self.scan_source.clone();
         let byte_source_builder = self.byte_source_builder.clone();
         let cloud_options = self.cloud_options.clone();
+        let io_metrics = self.io_metrics.clone();
 
         let byte_source = pl_async::get_runtime()
             .spawn(async move {
                 scan_source
                     .as_scan_source_ref()
-                    .to_dyn_byte_source(&byte_source_builder, cloud_options.as_deref())
+                    .to_dyn_byte_source(
+                        &byte_source_builder,
+                        cloud_options.as_deref(),
+                        io_metrics.0,
+                    )
                     .await
             })
             .await
@@ -110,12 +115,9 @@ impl FileReader for IpcFileReader {
         } else {
             let (metadata_bytes, opt_full_bytes) = {
                 let byte_source = byte_source.clone();
-                let io_metrics = self.io_metrics.clone();
 
                 pl_async::get_runtime()
-                    .spawn(async move {
-                        read_ipc_metadata_bytes(&byte_source, verbose, &io_metrics).await
-                    })
+                    .spawn(async move { read_ipc_metadata_bytes(&byte_source, verbose).await })
                     .await
                     .unwrap()?
             };
@@ -131,19 +133,11 @@ impl FileReader for IpcFileReader {
 
         let dictionaries = {
             let byte_source_async = byte_source.clone();
-            let io_metrics = self.io_metrics.clone();
             let metadata_async = file_metadata.clone();
             let checked = self.checked;
             let dictionaries = pl_async::get_runtime()
                 .spawn(async move {
-                    read_dictionaries(
-                        &byte_source_async,
-                        io_metrics,
-                        metadata_async,
-                        verbose,
-                        checked,
-                    )
-                    .await
+                    read_dictionaries(&byte_source_async, metadata_async, verbose, checked).await
                 })
                 .await
                 .unwrap()?;
@@ -339,7 +333,6 @@ impl FileReader for IpcFileReader {
             Option::take(&mut self.record_batch_prefetch_sync.prev_all_spawned);
         let rb_prefetch_current_all_spawned =
             Option::take(&mut self.record_batch_prefetch_sync.current_all_spawned);
-        let io_metrics = self.io_metrics.clone();
 
         // Task: Prefetch.
         let byte_source = byte_source.clone();
@@ -357,7 +350,6 @@ impl FileReader for IpcFileReader {
                 prefetch_send,
                 rb_prefetch_semaphore,
                 rb_prefetch_current_all_spawned,
-                io_metrics,
             };
 
             if let Some(rb_prefetch_prev_all_spawned) = rb_prefetch_prev_all_spawned {
@@ -507,7 +499,6 @@ impl FileReader for IpcFileReader {
 
 async fn read_dictionaries(
     byte_source: &DynByteSource,
-    io_metrics: OptIOMetrics,
     file_metadata: Arc<FileMetadata>,
     verbose: bool,
     checked: UnsafeBool,
@@ -530,11 +521,7 @@ async fn read_dictionaries(
     for block in blocks {
         let range = block.offset as usize
             ..block.offset as usize + block.meta_data_length as usize + block.body_length as usize;
-        let fut = byte_source.get_range(range.clone());
-        let bytes = match byte_source {
-            DynByteSource::Buffer(_) => fut.await?,
-            DynByteSource::Cloud(_) => io_metrics.record_download(range.len() as u64, fut).await?,
-        };
+        let bytes = byte_source.get_range(range).await?;
 
         let mut reader = BlockReader::new(Cursor::new(bytes.as_ref()));
 

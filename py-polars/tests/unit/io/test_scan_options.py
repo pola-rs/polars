@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import polars as pl
+from polars.datatypes.group import FLOAT_DTYPES
+from polars.exceptions import SchemaError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -489,7 +491,7 @@ def test_cast_options_ignore_extra_columns() -> None:
         # (pl.scan_ndjson, pl.DataFrame.write_ndjson),
     ],
 )
-def test_scan_extra_columns(
+def test_scan_cast_options_extra_columns(
     scan_func: Callable[[Any], pl.LazyFrame],
     write_func: Callable[[pl.DataFrame, io.BytesIO], None],
 ) -> None:
@@ -508,4 +510,34 @@ def test_scan_extra_columns(
     assert_frame_equal(
         scan_func(files, extra_columns="ignore").collect(),  # type: ignore[call-arg]
         pl.DataFrame({"a": [1, 2], "b": [1, 2]}),
+    )
+
+
+@pytest.mark.parametrize("float_dtype", sorted(FLOAT_DTYPES, key=repr))
+def test_scan_cast_options_integer_to_float(float_dtype: pl.DataType) -> None:
+    df = pl.DataFrame({"a": [1]}, schema={"a": pl.Int64})
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.scan_parquet(f).collect(),
+        pl.DataFrame({"a": [1]}, schema={"a": pl.Int64}),
+    )
+
+    q = pl.scan_parquet(f, schema={"a": float_dtype})
+
+    with pytest.raises(SchemaError):
+        q.collect()
+
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.scan_parquet(
+            f,
+            schema={"a": float_dtype},
+            cast_options=pl.ScanCastOptions(integer_cast="allow-float"),
+        ).collect(),
+        pl.DataFrame({"a": [1.0]}, schema={"a": float_dtype}),
     )

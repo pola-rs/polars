@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import timedelta
 from typing import cast
 
@@ -21,9 +22,10 @@ def test_corr() -> None:
             "b": [-1, 23, 8],
         }
     )
-    result = df.corr()
+    result = df.corr(label="")
     expected = pl.DataFrame(
         {
+            "": ["a", "b"],
             "a": [1.0, 0.18898223650461357],
             "b": [0.1889822365046136, 1.0],
         }
@@ -148,3 +150,11 @@ def test_kurtosis_same_vals() -> None:
 def test_correction_shape_mismatch_22080() -> None:
     with pytest.raises(pl.exceptions.ShapeError):
         pl.select(pl.corr(pl.Series([1, 2]), pl.Series([2, 3, 5])))
+
+
+def test_corr_cov_lit_produces_nan_26633() -> None:
+    df = pl.DataFrame({"a": [1, 3, 2]})
+    result_corr = df.select(pl.corr(pl.lit(1), "a"))
+    assert math.isnan(result_corr.item())
+    result_cov = df.select(pl.cov(pl.lit(1), "a"))
+    assert math.isnan(result_cov.item())

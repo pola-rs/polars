@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_io::parquet::write::BatchedWriter;
 use polars_io::prelude::KeyValueMetadata;
-use polars_parquet::write::{ColumnWriteOptions, FileWriter, SchemaDescriptor, WriteOptions};
+use polars_parquet::write::{Encoding, FileWriter, SchemaDescriptor, WriteOptions};
 
 use crate::async_executor::{self};
 use crate::nodes::io_sinks::writers::interface::FileOpenTaskHandle;
@@ -18,7 +19,7 @@ pub struct IOWriter {
     pub arrow_schema: ArrowSchemaRef,
     pub schema_descriptor: Arc<SchemaDescriptor>,
     pub write_options: WriteOptions,
-    pub column_options: Arc<Vec<ColumnWriteOptions>>,
+    pub encodings: Buffer<Vec<Encoding>>,
     pub key_value_metadata: Option<KeyValueMetadata>,
     pub num_leaf_columns: usize,
 }
@@ -31,7 +32,7 @@ impl IOWriter {
             arrow_schema,
             schema_descriptor,
             write_options,
-            column_options,
+            encodings,
             key_value_metadata,
             num_leaf_columns,
         } = self;
@@ -46,7 +47,7 @@ impl IOWriter {
                 Arc::unwrap_or_clone(schema_descriptor),
                 write_options,
             )),
-            Arc::unwrap_or_clone(column_options),
+            encodings,
             write_options,
             false,
             key_value_metadata,

@@ -39,7 +39,8 @@ impl MorselSerializerPipeline {
                 } else if num_created_serializers < max_serializers {
                     num_created_serializers += 1;
                     MorselSerializer {
-                        serialized_data: Vec::with_capacity(base_allocation_size),
+                        serialized_data: vec![],
+                        allocation_size: base_allocation_size,
                     }
                 } else if let Some(serializer) = reuse_serializer_rx.recv().await {
                     serializer
@@ -67,15 +68,20 @@ impl MorselSerializerPipeline {
 
 pub struct MorselSerializer {
     pub serialized_data: Vec<u8>,
+    allocation_size: usize,
 }
 
 impl MorselSerializer {
     pub async fn serialize_morsel(mut self, mut df: DataFrame) -> PolarsResult<Self> {
-        let MorselSerializer { serialized_data } = &mut self;
+        let MorselSerializer {
+            serialized_data,
+            allocation_size,
+        } = &mut self;
 
         rechunk_par(unsafe { df.columns_mut_retain_schema() }).await;
 
         serialized_data.clear();
+        serialized_data.reserve_exact(*allocation_size);
 
         let height = df.height();
 
@@ -96,6 +102,7 @@ impl MorselSerializer {
         let serializer = polars_json::json::write::new_serializer(&array, 0, usize::MAX);
 
         serializer.serialize_json_lines_to_vec(serialized_data, height);
+        *allocation_size = usize::max(*allocation_size, serialized_data.capacity());
 
         Ok(self)
     }
