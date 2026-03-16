@@ -4226,7 +4226,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         chunk_size: int | None = None,
         maintain_order: bool = True,
         lazy: bool = False,
-        engine: EngineType = "auto",
+        engine: EngineType = "streaming",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> Iterator[DataFrame]:
         """
@@ -4290,7 +4290,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
         inner = ldf.collect_batches(
-            engine="streaming" if engine == "auto" else engine,
+            engine=engine,
             maintain_order=maintain_order,
             chunk_size=chunk_size,
             lazy=lazy,
