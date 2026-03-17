@@ -377,7 +377,7 @@ pub(super) fn set_cache_states(
                 let lp = loop {
                     match lp {
                         IR::Cache { .. } => break lp,
-                        IR::SimpleProjection { input, columns } => lp = lp_arena.take(input),
+                        IR::SimpleProjection { input, .. } => lp = lp_arena.take(input),
                         _ => unreachable!(),
                     }
                 };
