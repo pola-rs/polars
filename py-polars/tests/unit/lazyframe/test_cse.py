@@ -1335,7 +1335,7 @@ def test_cspe_map_groups_26547() -> None:
 
 
 def test_cse_group_by_join_filter_26916() -> None:
-    raw = pl.LazyFrame(
+    lf = pl.LazyFrame(
         {
             "VendorID": [1, 1, 2, 2, 2],
             "total_amount": [10.0, 20.0, 30.0, 40.0, 50.0],
@@ -1343,11 +1343,11 @@ def test_cse_group_by_join_filter_26916() -> None:
         }
     )
 
-    grp1 = raw.group_by("VendorID").agg(pl.col.total_amount.mean())
-    grp2 = raw.group_by("VendorID").agg(pl.col.passenger_count.mean())
-    dat = grp1.join(grp2, "VendorID")
+    g1 = lf.group_by("VendorID").agg(pl.mean("total_amount"))
+    g2 = lf.group_by("VendorID").agg(pl.mean("passenger_count"))
 
-    q = dat.filter(VendorID=1)
+    q = g1.join(g2, "VendorID").filter(VendorID=1)
+
     assert_frame_equal(
         q.collect(),
         pl.DataFrame(
