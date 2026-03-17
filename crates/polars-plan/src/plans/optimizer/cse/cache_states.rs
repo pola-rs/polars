@@ -371,22 +371,44 @@ pub(super) fn set_cache_states(
 
                 let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, new_streaming)
                     .block_at_cache(1);
-                let mut lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
+                let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
+                lp_arena.replace(node, lp.clone());
 
-                // Skip SimpleProjection inserted by projection pushdown.
-                let lp = loop {
-                    match lp {
-                        IR::Cache { .. } => break lp,
-                        IR::SimpleProjection { input, .. } => lp = lp_arena.take(input),
+                // TODO: Drop filter column if it isn't used after the filter.
+
+                let mut updated_cache_node = node;
+
+                loop {
+                    match lp_arena.get(updated_cache_node) {
+                        IR::Cache { .. } => break,
+                        IR::SimpleProjection { input, .. } => updated_cache_node = *input,
                         _ => unreachable!(),
                     }
-                };
+                }
 
-                lp_arena.replace(node, lp.clone());
                 for &parents in &v.parents[1..] {
-                    let node = get_filter_node(parents, lp_arena)
+                    let filter_node = get_filter_node(parents, lp_arena)
                         .expect("expected filter; this is an optimizer bug");
-                    lp_arena.replace(node, lp.clone());
+
+                    let IR::Filter { input, .. } = lp_arena.get(filter_node) else {
+                        unreachable!()
+                    };
+
+                    let new_lp = match lp_arena.get(*input) {
+                        IR::SimpleProjection { input, columns } => {
+                            debug_assert!(matches!(lp_arena.get(*input), IR::Cache { .. }));
+                            IR::SimpleProjection {
+                                input: updated_cache_node,
+                                columns: columns.clone(),
+                            }
+                        },
+                        ir => {
+                            debug_assert!(matches!(ir, IR::Cache { .. }));
+                            lp_arena.get(updated_cache_node).clone()
+                        },
+                    };
+
+                    lp_arena.replace(filter_node, new_lp);
                 }
             } else {
                 let child = *v.children.first().unwrap();
