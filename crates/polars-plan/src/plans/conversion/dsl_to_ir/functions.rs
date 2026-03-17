@@ -568,7 +568,7 @@ pub(super) fn convert_functions(
         F::ArgWhere => I::ArgWhere,
         #[cfg(feature = "index_of")]
         F::IndexOf => {
-            polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar stop passed to `index_of`");
+            polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar value passed to `index_of`");
             I::IndexOf
         },
         #[cfg(feature = "search_sorted")]
