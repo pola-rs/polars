@@ -301,6 +301,15 @@ pub fn optimize(
         }
     }
 
+    if !opt_flags.eager() {
+        // The late order pass can rewrite merge_sorted into unions after the
+        // main union-flattening pass has already run. Flatten again here so any
+        // newly created nested unions are collapsed before execution planning.
+        let mut post_order_rules: Vec<Box<dyn OptimizationRule>> =
+            vec![Box::new(FlattenUnionRule {})];
+        root = opt.optimize_loop(&mut post_order_rules, expr_arena, ir_arena, root)?;
+    }
+
     expand_datasets::expand_datasets(root, ir_arena, expr_arena, apply_scan_predicate_to_scan_ir)?;
 
     // During debug we check if the optimizations have not modified the final schema.

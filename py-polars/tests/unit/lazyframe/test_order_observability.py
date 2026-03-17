@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 from typing import Any
 
 import pytest
@@ -162,6 +163,16 @@ def test_merge_sorted_to_union() -> None:
     explain = lf.explain()
     assert "MERGE_SORTED" not in explain
     assert "UNION" in explain
+
+
+def test_merge_sorted_chain_to_flat_union() -> None:
+    lfs = [pl.LazyFrame({"a": [i]}) for i in range(8)]
+
+    lf = functools.reduce(lambda a, b: a.merge_sorted(b, key="a"), lfs).sort("a")
+
+    explain = lf.explain()
+    assert explain.count("END UNION") == 1
+    assert "MERGE_SORTED" not in explain
 
 
 @pytest.mark.parametrize(
