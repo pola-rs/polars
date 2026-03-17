@@ -365,7 +365,7 @@ where
             state.sum += cast(v);
             state.count += 1;
             let mean = state.sum.sum() / state.count as f64;
-            Some(Some(NumCast::from(mean).unwrap()))
+            Some(NumCast::from(mean))
         }
         None => Some(None),
     }
