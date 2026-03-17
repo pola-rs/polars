@@ -581,20 +581,22 @@ def test_decimal32_64_scan_parquet(tmp_path: Path) -> None:
     # Write a parquet file using PyArrow with decimal32/64 columns.
     # PyArrow embeds the Arrow schema in the parquet metadata, so Polars
     # will see Decimal32/Decimal64 types when inferring the schema.
+    arrow_schema = pa.schema(
+        [
+            ("d32", pa.decimal32(4, 1)),
+            ("d64", pa.decimal64(6, 2)),
+        ]
+    )
     tbl = pa.Table.from_pydict(
         mapping={
             "d32": [Decimal("1.1"), Decimal("2.2"), Decimal("3.3")],
             "d64": [Decimal("10.01"), Decimal("20.02"), Decimal("30.03")],
         },
-        schema=pa.schema(
-            [
-                ("d32", pa.decimal32(4, 1)),
-                ("d64", pa.decimal64(6, 2)),
-            ]
-        ),
+        schema=arrow_schema,
     )
     path = tmp_path / "decimals.parquet"
     pq.write_table(tbl, path)
+    assert pq.read_schema(path) == arrow_schema
 
     result = pl.scan_parquet(path).collect()
     assert result.shape == (3, 2)
