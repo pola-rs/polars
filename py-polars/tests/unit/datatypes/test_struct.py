@@ -1108,6 +1108,15 @@ def test_zfs_unnest(size: int) -> None:
     assert a.width == 0
 
 
+@pytest.mark.may_fail_cloud  # reason: ZFS
+@pytest.mark.parametrize("size", [0, 1, 2, 13])
+def test_zfs_dataframe_unnest(size: int) -> None:
+    df = pl.Series("a", [{}] * size, pl.Struct([])).to_frame()
+    result = df.unnest("a")
+    assert result.height == size
+    assert result.width == 0
+
+
 @pytest.mark.parametrize("size", [0, 1, 2, 13])
 def test_zfs_equality(size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([]))
