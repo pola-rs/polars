@@ -373,6 +373,7 @@ pub(super) fn set_cache_states(
                     .block_at_cache(1);
                 let mut lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
 
+                // Skip SimpleProjection inserted by projection pushdown.
                 let lp = loop {
                     match lp {
                         IR::Cache { .. } => break lp,
