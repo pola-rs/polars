@@ -180,8 +180,7 @@ fn extract_truncated_utf8(bytes: &[u8], len: usize) -> Option<&str> {
             if result.len() == bytes.len() {
                 // If no truncation took place, return `None` such that the value will be used as-is
                 None
-            }
-            else {
+            } else {
                 Some(result)
             }
         },
