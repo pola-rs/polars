@@ -286,9 +286,9 @@ pub(super) fn set_cache_states(
                         }
                     }
 
-                    let lp = lp_arena.take(node);
-                    let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
-                    let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
+                    let lp = proj_pd.optimize(node, lp_arena, expr_arena)?;
+                    let node = lp_arena.add(lp);
+                    let lp = pred_pd.optimize(node, lp_arena, expr_arena)?;
                     lp_arena.replace(node, lp);
                 }
                 return Ok(());
@@ -321,6 +321,7 @@ pub(super) fn set_cache_states(
                     .project_simple(projection)
                     .expect("unique names")
                     .build();
+                let lp = lp_arena.add(lp);
 
                 let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
                 // Optimization can lead to a double projection. Only take the last.
@@ -344,8 +345,7 @@ pub(super) fn set_cache_states(
             } else {
                 // No upper projections to include, run projection pushdown from cache node.
                 let first_child = *v.children.first().expect("at least on child");
-                let child_lp = lp_arena.take(first_child);
-                let lp = proj_pd.optimize(child_lp, lp_arena, expr_arena)?;
+                let lp = proj_pd.optimize(first_child, lp_arena, expr_arena)?;
                 lp_arena.replace(first_child, lp.clone());
 
                 for &child in &v.children[1..] {
@@ -367,11 +367,10 @@ pub(super) fn set_cache_states(
                 let parents = *v.parents.first().unwrap();
                 let node = get_filter_node(parents, lp_arena)
                     .expect("expected filter; this is an optimizer bug");
-                let start_lp = lp_arena.take(node);
 
                 let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, new_streaming)
                     .block_at_cache(1);
-                let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
+                let lp = pred_pd.optimize(node, lp_arena, expr_arena)?;
                 lp_arena.replace(node, lp.clone());
                 for &parents in &v.parents[1..] {
                     let node = get_filter_node(parents, lp_arena)
@@ -380,8 +379,7 @@ pub(super) fn set_cache_states(
                 }
             } else {
                 let child = *v.children.first().unwrap();
-                let child_lp = lp_arena.take(child);
-                let lp = pred_pd.optimize(child_lp, lp_arena, expr_arena)?;
+                let lp = pred_pd.optimize(child, lp_arena, expr_arena)?;
                 lp_arena.replace(child, lp.clone());
                 for &child in &v.children[1..] {
                     lp_arena.replace(child, lp.clone());

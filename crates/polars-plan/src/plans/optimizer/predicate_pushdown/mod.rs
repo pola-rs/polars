@@ -83,8 +83,7 @@ impl PredicatePushDown {
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<()> {
-        let alp = lp_arena.take(input);
-        let lp = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
+        let lp = self.push_down(input, acc_predicates, lp_arena, expr_arena)?;
         lp_arena.replace(input, lp);
         Ok(())
     }
@@ -141,8 +140,7 @@ impl PredicatePushDown {
                 }
             }
 
-            let alp = lp_arena.take(input);
-            let alp = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
+            let alp = self.push_down(input, acc_predicates, lp_arena, expr_arena)?;
             lp_arena.replace(input, alp);
 
             Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
@@ -171,8 +169,7 @@ impl PredicatePushDown {
                         }
                     }
 
-                    let alp = lp_arena.take(node);
-                    let alp = self.push_down(alp, pushdown_predicates, lp_arena, expr_arena)?;
+                    let alp = self.push_down(node, pushdown_predicates, lp_arena, expr_arena)?;
                     lp_arena.replace(node, alp);
                     Ok(node)
                 })
@@ -200,9 +197,8 @@ impl PredicatePushDown {
 
         let new_inputs = inputs
             .map(|node| {
-                let alp = lp_arena.take(node);
                 let alp = self.push_down(
-                    alp,
+                    node,
                     reuse_hashmap.take().unwrap_or_else(|| init_hashmap(None)),
                     lp_arena,
                     expr_arena,
@@ -242,7 +238,7 @@ impl PredicatePushDown {
     #[recursive]
     fn push_down(
         &mut self,
-        lp: IR,
+        lp_node: Node,
         mut acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
@@ -252,6 +248,12 @@ impl PredicatePushDown {
         // Note: The logic within the match block should ensure `acc_predicates` is left in a state
         // where it contains only pushable exprs after it is done (although in some cases it may
         // contain a single fallible expression).
+
+        let lp = if let IR::Cache { .. } = lp_arena.get(lp_node) {
+            lp_arena.get(lp_node).clone()
+        } else {
+            lp_arena.take(lp_node)
+        };
 
         match lp {
             Filter {
@@ -303,8 +305,7 @@ impl PredicatePushDown {
                     insert_predicate_dedup(&mut acc_predicates, &predicate, expr_arena);
                 }
 
-                let alp = lp_arena.take(input);
-                let new_input = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
+                let new_input = self.push_down(input, acc_predicates, lp_arena, expr_arena)?;
 
                 // TODO!
                 // If a predicates result would be influenced by earlier applied
@@ -692,7 +693,7 @@ impl PredicatePushDown {
 
     pub(crate) fn optimize(
         &mut self,
-        logical_plan: IR,
+        logical_plan: Node,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {

@@ -234,9 +234,8 @@ impl ProjectionPushDown {
         let new_inputs = inputs
             .into_iter()
             .map(|node| {
-                let alp = lp_arena.take(node);
                 let ctx = ProjectionContext::new(Default::default(), Default::default(), ctx.inner);
-                let alp = self.push_down(alp, ctx, lp_arena, expr_arena)?;
+                let alp = self.push_down(node, ctx, lp_arena, expr_arena)?;
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
@@ -316,8 +315,7 @@ impl ProjectionPushDown {
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<()> {
-        let alp = lp_arena.take(input);
-        let lp = self.push_down(alp, ctx, lp_arena, expr_arena)?;
+        let lp = self.push_down(input, ctx, lp_arena, expr_arena)?;
         lp_arena.replace(input, lp);
         Ok(())
     }
@@ -336,8 +334,7 @@ impl ProjectionPushDown {
         // an unnest changes/expands the schema
         expands_schema: bool,
     ) -> PolarsResult<Vec<ColumnNode>> {
-        let alp = lp_arena.take(input);
-        let down_schema = alp.schema(lp_arena);
+        let down_schema = lp_arena.get(input).schema(lp_arena).into_owned();
 
         let (acc_projections, local_projections, names) = split_acc_projections(
             ctx.acc_projections,
@@ -349,7 +346,7 @@ impl ProjectionPushDown {
         ctx.acc_projections = acc_projections;
         ctx.projected_names = names;
 
-        let lp = self.push_down(alp, ctx, lp_arena, expr_arena)?;
+        let lp = self.push_down(input, ctx, lp_arena, expr_arena)?;
         lp_arena.replace(input, lp);
         Ok(local_projections)
     }
@@ -367,12 +364,18 @@ impl ProjectionPushDown {
     #[recursive]
     fn push_down(
         &mut self,
-        logical_plan: IR,
+        logical_plan_node: Node,
         mut ctx: ProjectionContext,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
         use IR::*;
+
+        let logical_plan = if let IR::Cache { .. } = lp_arena.get(logical_plan_node) {
+            lp_arena.get(logical_plan_node).clone()
+        } else {
+            lp_arena.take(logical_plan_node)
+        };
 
         match logical_plan {
             Select { expr, input, .. } => {
@@ -801,7 +804,7 @@ impl ProjectionPushDown {
 
     pub fn optimize(
         &mut self,
-        logical_plan: IR,
+        logical_plan: Node,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {

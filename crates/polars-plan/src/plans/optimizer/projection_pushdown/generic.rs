@@ -23,8 +23,7 @@ pub(super) fn process_generic(
             if reset_count_star {
                 proj_pd.is_count_star = false;
             }
-            let alp = lp_arena.take(node);
-            let mut alp = proj_pd.push_down(alp, ctx.clone(), lp_arena, expr_arena)?;
+            let mut alp = proj_pd.push_down(node, ctx.clone(), lp_arena, expr_arena)?;
 
             // double projection can mess up the schema ordering
             // here we ensure the ordering is maintained.

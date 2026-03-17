@@ -78,15 +78,13 @@ pub(super) fn run_projection_predicate_pushdown(
     if opt_flags.predicate_pushdown() {
         let mut predicate_pushdown_opt =
             PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
-        let ir = ir_arena.take(root);
-        let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
+        let ir = predicate_pushdown_opt.optimize(root, ir_arena, expr_arena)?;
         ir_arena.replace(root, ir);
     }
 
     if opt_flags.projection_pushdown() {
         let mut projection_pushdown_opt = ProjectionPushDown::new();
-        let ir = ir_arena.take(root);
-        let ir = projection_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
+        let ir = projection_pushdown_opt.optimize(root, ir_arena, expr_arena)?;
         ir_arena.replace(root, ir);
 
         if projection_pushdown_opt.is_count_star {
