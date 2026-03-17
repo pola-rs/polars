@@ -1109,7 +1109,7 @@ def test_zfs_unnest(size: int) -> None:
 
 
 @pytest.mark.may_fail_cloud  # reason: ZFS
-def test_zfs_dataframe_unnest(size: int) -> None:
+def test_unnest_zero_field_struct_preserves_height(size: int) -> None:
     df = pl.Series("a", [{}, {}, {}, {}, {}], pl.Struct([])).to_frame()
     result = df.unnest("a")
     assert result.shape == (5, 0)
