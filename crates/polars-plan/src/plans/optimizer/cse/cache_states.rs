@@ -371,7 +371,16 @@ pub(super) fn set_cache_states(
 
                 let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, new_streaming)
                     .block_at_cache(1);
-                let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
+                let mut lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
+
+                let lp = loop {
+                    match lp {
+                        IR::Cache { .. } => break lp,
+                        IR::SimpleProjection { input, columns } => lp = lp_arena.take(input),
+                        _ => unreachable!(),
+                    }
+                };
+
                 lp_arena.replace(node, lp.clone());
                 for &parents in &v.parents[1..] {
                     let node = get_filter_node(parents, lp_arena)
