@@ -1332,3 +1332,29 @@ def test_cspe_map_groups_26547() -> None:
         schema={"A": pl.Int32, "PART": pl.Int32, "B": pl.Int32},
     )
     assert_frame_equal(out, expected)
+
+
+def test_cse_group_by_join_filter_26916() -> None:
+    raw = pl.LazyFrame(
+        {
+            "VendorID": [1, 1, 2, 2, 2],
+            "total_amount": [10.0, 20.0, 30.0, 40.0, 50.0],
+            "passenger_count": [1, 2, 1, 3, 2],
+        }
+    )
+
+    grp1 = raw.group_by("VendorID").agg(pl.col.total_amount.mean())
+    grp2 = raw.group_by("VendorID").agg(pl.col.passenger_count.mean())
+    dat = grp1.join(grp2, "VendorID")
+
+    q = dat.filter(VendorID=1)
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "VendorID": 1,
+                "total_amount": 15.0,
+                "passenger_count": 1.5,
+            }
+        ),
+    )

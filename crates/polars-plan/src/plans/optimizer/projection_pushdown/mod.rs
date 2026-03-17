@@ -838,11 +838,15 @@ fn pre_post_predicate<
             &mut ctx.projected_names,
             expr_arena,
         );
-        if post_project.len() != ctx.projected_names.len() {
-            Some(post_project)
-        } else {
-            None
-        }
+
+        // FIXME: Temporary hack to fix a CSE issue
+        // if post_project.len() != ctx.projected_names.len() {
+        //     Some(post_project)
+        // } else {
+        //     None
+        // }
+
+        Some(post_project)
     } else {
         None
     };
