@@ -350,10 +350,25 @@ pub fn cum_sum(s: &Series, reverse: bool) -> PolarsResult<Series> {
     cum_sum_with_init(s, reverse, &AnyValue::Null)
 }
 
-fn cum_mean_update(state: &mut CumMeanState, v: f64) -> f64 {
-    state.sum += v;
-    state.count += 1;
-    state.sum.sum() / state.count as f64
+fn cum_mean_update<T, O, F>(
+    state: &mut CumMeanState,
+    opt_v: Option<T::Native>,
+    cast: F,
+) -> Option<Option<O::Native>>
+where
+    T: PolarsNumericType,
+    O: PolarsNumericType,
+    F: Fn(T::Native) -> f64 + Copy,
+{
+    match opt_v {
+        Some(v) => {
+            state.sum += cast(v);
+            state.count += 1;
+            let mean = state.sum.sum() / state.count as f64;
+            Some(Some(NumCast::from(mean).unwrap()))
+        }
+        None => Some(None),
+    }
 }
 
 fn cum_mean_scan_numeric<T, O, F>(
@@ -368,21 +383,9 @@ where
     F: Fn(T::Native) -> f64 + Copy,
 {
     let out: ChunkedArray<O> = if reverse {
-        ca.iter().rev().scan(state, |state, opt_v| match opt_v {
-            Some(v) => {
-                let mean = cum_mean_update(state, cast(v));
-                Some(Some(NumCast::from(mean).unwrap()))
-            }
-            None => Some(None),
-        }).collect_reversed()
+        ca.iter().rev().scan(state, |s, v| cum_mean_update::<T, O, F>(s, v, cast)).collect_reversed()
     } else {
-        ca.iter().scan(state, |state, opt_v| match opt_v {
-            Some(v) => {
-                let mean = cum_mean_update(state, cast(v));
-                Some(Some(NumCast::from(mean).unwrap()))
-            }
-            None => Some(None),
-        }).collect_trusted()
+        ca.iter().scan(state, |s, v| cum_mean_update::<T, O, F>(s, v, cast)).collect_trusted()
     };
     out.with_name(ca.name().clone())
 }
