@@ -174,7 +174,29 @@ fn extract_truncated_utf8(bytes: &[u8], len: usize) -> Option<&str> {
     // UTF-8: truncate at a character boundary. The first `utf8_chunk`
     // of the byte prefix gives us the longest valid UTF-8 prefix (any
     // trailing incomplete char is in `.invalid()`).
-    bytes[..len].utf8_chunks().next().map(|span| span.valid())
+    match bytes[..len].utf8_chunks().next() {
+        Some(span) => {
+            let result = span.valid();
+            if result.len() == bytes.len() {
+                // If no truncation took place, return `None` such that the value will be used as-is
+                None
+            }
+            else {
+                Some(result)
+            }
+        },
+        None => {
+            if len < 4 {
+                // If we wanted to truncate to less than 4 bytes, that could mean we didn't get any
+                // results because that didn't even include the first UTF-8 codepoint (which can get
+                // up to 4 bytes long). Retry with the full 4 bytes to ensure we will get at least
+                // one UTF-8 character.
+                bytes[..4].utf8_chunks().next().map(|span| span.valid())
+            } else {
+                None
+            }
+        },
+    }
 }
 
 /// Truncates a min statistics value to `len` bytes.
