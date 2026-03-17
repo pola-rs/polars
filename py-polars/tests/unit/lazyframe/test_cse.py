@@ -1334,7 +1334,7 @@ def test_cspe_map_groups_26547() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_cse_group_by_join_filter_26916() -> None:
+def test_cspe_projection_between_filter_cache_26916() -> None:
     lf = pl.LazyFrame(
         {
             "VendorID": [1, 1, 2, 2, 2],
