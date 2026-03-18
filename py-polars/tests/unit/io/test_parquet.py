@@ -3940,7 +3940,7 @@ def test_parquet_dict_and_data_page_offset_26531(tmp_path: Path) -> None:
         ),
     ],
 )
-def test_parquet_statistics_truncation_file_size_23498(
+def test_parquet_binary_statistics_truncation_file_size_23498(
     to_df: Callable[[str], pl.DataFrame],
 ) -> None:
     """Large values must not bloat the file via untruncated statistics."""
@@ -3973,7 +3973,7 @@ def test_parquet_statistics_truncation_file_size_23498(
         ("A" * 62 + "\U00010348" + "z" * 3, "A" * 62, "A" * 61 + "B"),
     ],
 )
-def test_parquet_statistics_truncation_string_23498(
+def test_parquet_binary_statistics_truncation_utf8_23498(
     to_df: Callable[[str], pl.DataFrame],
     value: str,
     expected_min: str,
@@ -3985,6 +3985,58 @@ def test_parquet_statistics_truncation_string_23498(
     stats = pq.read_metadata(f).row_group(0).column(0).statistics
     assert stats.min == expected_min
     assert stats.max == expected_max
+
+
+def test_parquet_binary_statistics_truncation_23498(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_PARQUET_BINARY_STATISTICS_TRUNCATE_LEN", "1")
+
+    f = io.BytesIO()
+    df = pl.DataFrame(
+        {
+            "a": [b"\xe0\xb8\x90".decode()],
+            "b": [b"\xe0\xb8\x90\xe0\xb8\x90".decode()],
+            "c": [b"\xff\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff"],
+        },
+        height=1,
+    )
+
+    df.write_parquet(f)
+
+    md = pq.read_metadata(f)
+    rg = md.row_group(0)
+
+    assert rg.column(0).statistics.min == b"\xe0\xb8\x90".decode()
+    assert rg.column(0).statistics.max == b"\xe0\xb8\x90".decode()
+
+    assert rg.column(1).statistics.min == b"\xe0\xb8\x90".decode()
+    assert rg.column(1).statistics.max == b"\xe0\xb8\x91".decode()
+
+    assert rg.column(2).statistics.min == b"\xff"
+    assert rg.column(2).statistics.max == b"\xff\xff\xff\xff\xff\xff\xff\xff\x01"
+
+    plmonkeypatch.setenv("POLARS_PARQUET_BINARY_STATISTICS_TRUNCATE_LEN", "0")
+
+    df.write_parquet(f)
+
+    md = pq.read_metadata(f)
+    rg = md.row_group(0)
+
+    assert rg.column(0).statistics.min == b"\xe0\xb8\x90".decode()
+    assert rg.column(0).statistics.max == b"\xe0\xb8\x90".decode()
+
+    assert rg.column(1).statistics.min == b"\xe0\xb8\x90\xe0\xb8\x90".decode()
+    assert rg.column(1).statistics.max == b"\xe0\xb8\x90\xe0\xb8\x90".decode()
+
+    assert (
+        rg.column(2).statistics.min
+        == b"\xff\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff"
+    )
+    assert (
+        rg.column(2).statistics.max
+        == b"\xff\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff"
+    )
 
 
 @pytest.mark.parametrize(
@@ -4009,7 +4061,7 @@ def test_parquet_statistics_truncation_string_23498(
         ),
     ],
 )
-def test_parquet_statistics_truncation_binary_23498(
+def test_parquet_binary_statistics_truncation_parametric_23498(
     to_df: Callable[[bytes], pl.DataFrame],
     value: bytes,
     expected_min: bytes,

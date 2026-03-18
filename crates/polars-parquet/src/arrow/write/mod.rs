@@ -63,11 +63,9 @@ pub struct StatisticsOptions {
     pub max_value: bool,
     pub distinct_count: bool,
     pub null_count: bool,
-    /// Maximum length (in bytes) for binary/string min/max statistics.
-    /// Values longer than this will be truncated. `0` means no truncation.
-    /// `None` means that the truncation setting will be retrieved from
-    /// `polars-config`.
-    pub statistics_truncate_length_value: Option<u64>,
+    /// Target byte length for binary/string statistics truncation. Set to
+    /// `Some(0)` to disable truncation.
+    pub binary_statistics_truncate_length: Option<u64>,
 }
 
 impl Default for StatisticsOptions {
@@ -77,7 +75,7 @@ impl Default for StatisticsOptions {
             max_value: true,
             distinct_count: false,
             null_count: true,
-            statistics_truncate_length_value: None,
+            binary_statistics_truncate_length: None,
         }
     }
 }
@@ -120,7 +118,7 @@ impl StatisticsOptions {
             max_value: false,
             distinct_count: false,
             null_count: false,
-            statistics_truncate_length_value: None,
+            binary_statistics_truncate_length: None,
         }
     }
 
@@ -130,7 +128,7 @@ impl StatisticsOptions {
             max_value: true,
             distinct_count: true,
             null_count: true,
-            statistics_truncate_length_value: None,
+            binary_statistics_truncate_length: None,
         }
     }
 
@@ -142,16 +140,17 @@ impl StatisticsOptions {
         self.min_value && self.max_value && self.distinct_count && self.null_count
     }
 
-    /// Maximum length (in bytes) for binary/string min/max statistics.
-    /// Values longer than this will be truncated.
-    /// This function will first try to receive the internal `statistics_truncate_length_value`,
-    /// and if that's `None`, it will retrieve the setting from `polars-config`.
-    /// The return value of `None` means that no truncation will be performed.
-    pub fn statistics_truncate_length(&self) -> Option<u64> {
+    /// Truncate statistics for binary columns to this length.
+    pub fn binary_statistics_truncate_length(&self) -> Option<u64> {
         let len = self
-            .statistics_truncate_length_value
-            .unwrap_or_else(|| config().parquet_statistics_truncate_length());
-        if len > 0 { Some(len) } else { None }
+            .binary_statistics_truncate_length
+            .unwrap_or_else(|| config().parquet_binary_statistics_truncate_length());
+        (len > 0).then_some(len)
+    }
+
+    pub fn binary_statistics_truncate_length_usize(&self) -> Option<usize> {
+        self.binary_statistics_truncate_length()
+            .and_then(|x| usize::try_from(x).ok())
     }
 }
 

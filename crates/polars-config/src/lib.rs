@@ -29,9 +29,9 @@ const DEFAULT_IDEAL_MORSEL_SIZE: u64 = 100_000;
 const ENGINE_AFFINITY: &str = "POLARS_ENGINE_AFFINITY";
 const DEFAULT_ENGINE_AFFINITY: Engine = Engine::Auto;
 
-const PARQUET_STATISTICS_TRUNCATE_LENGTH: &str = "POLARS_PARQUET_BINARY_STATISTICS_TRUNCATE_LEN";
-// Truncate parquet statistics to 64 bytes per default
-const DEFAULT_PARQUET_STATISTICS_TRUNCATE_LENGTH: u64 = 64;
+const PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH: &str =
+    "POLARS_PARQUET_BINARY_STATISTICS_TRUNCATE_LEN";
+const DEFAULT_PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH: u64 = 64;
 
 // Private.
 const VERBOSE_SENSITIVE: &str = "POLARS_VERBOSE_SENSITIVE";
@@ -60,7 +60,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     IDEAL_MORSEL_SIZE,
     STREAMING_CHUNK_SIZE,
     ENGINE_AFFINITY,
-    PARQUET_STATISTICS_TRUNCATE_LENGTH,
+    PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
     /*
     Not yet supported public options:
 
@@ -99,7 +99,7 @@ pub struct Config {
     warn_unstable: AtomicBool,
     ideal_morsel_size: AtomicU64,
     engine_affinity: AtomicU8,
-    parquet_statistics_truncate_length: AtomicU64,
+    parquet_binary_statistics_truncate_length: AtomicU64,
 
     // Private.
     verbose_sensitive: AtomicBool,
@@ -119,8 +119,8 @@ impl Config {
             warn_unstable: AtomicBool::new(DEFAULT_WARN_UNSTABLE),
             ideal_morsel_size: AtomicU64::new(DEFAULT_IDEAL_MORSEL_SIZE),
             engine_affinity: AtomicU8::new(DEFAULT_ENGINE_AFFINITY as u8),
-            parquet_statistics_truncate_length: AtomicU64::new(
-                DEFAULT_PARQUET_STATISTICS_TRUNCATE_LENGTH,
+            parquet_binary_statistics_truncate_length: AtomicU64::new(
+                DEFAULT_PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
             ),
 
             // Private.
@@ -178,11 +178,13 @@ impl Config {
                     .unwrap_or(DEFAULT_ENGINE_AFFINITY) as u8,
                 Ordering::Relaxed,
             ),
-            PARQUET_STATISTICS_TRUNCATE_LENGTH => self.parquet_statistics_truncate_length.store(
-                val.and_then(|x| parse::parse_u64(var, x))
-                    .unwrap_or(DEFAULT_PARQUET_STATISTICS_TRUNCATE_LENGTH),
-                Ordering::Relaxed,
-            ),
+            PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH => {
+                self.parquet_binary_statistics_truncate_length.store(
+                    val.and_then(|x| parse::parse_u64(var, x))
+                        .unwrap_or(DEFAULT_PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH),
+                    Ordering::Relaxed,
+                )
+            },
 
             // Private flags.
             VERBOSE_SENSITIVE => self.verbose_sensitive.store(
@@ -248,9 +250,9 @@ impl Config {
         Engine::from_discriminant(self.engine_affinity.load(Ordering::Relaxed))
     }
 
-    /// To how many bytes (or less) parquet statistics are truncated.
-    pub fn parquet_statistics_truncate_length(&self) -> u64 {
-        self.parquet_statistics_truncate_length
+    /// Target byte length to truncate statistics to for binary columns in parquet.
+    pub fn parquet_binary_statistics_truncate_length(&self) -> u64 {
+        self.parquet_binary_statistics_truncate_length
             .load(Ordering::Relaxed)
     }
 

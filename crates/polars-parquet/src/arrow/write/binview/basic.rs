@@ -8,7 +8,8 @@ use crate::parquet::statistics::{BinaryStatistics, ParquetStatistics};
 use crate::read::schema::is_nullable;
 use crate::write::binary::encode_non_null_values;
 use crate::write::utils::{
-    invalid_encoding, is_utf8_type, truncate_max_statistics_value, truncate_min_statistics_value,
+    invalid_encoding, is_utf8_type, truncate_max_binary_statistics_value,
+    truncate_min_binary_statistics_value,
 };
 use crate::write::{EncodeNullability, Encoding, Page, StatisticsOptions, WriteOptions, utils};
 
@@ -122,10 +123,10 @@ pub(crate) fn build_statistics(
         .then(|| array.max_propagate_nan_kernel().map(<[u8]>::to_vec))
         .flatten();
 
-    if let Some(len) = options.statistics_truncate_length() {
+    if let Some(len) = options.binary_statistics_truncate_length_usize() {
         let is_utf8 = is_utf8_type(&primitive_type);
-        min_value = min_value.map(|v| truncate_min_statistics_value(v, len, is_utf8));
-        max_value = max_value.map(|v| truncate_max_statistics_value(v, len, is_utf8));
+        min_value = min_value.map(|v| truncate_min_binary_statistics_value(v, len, is_utf8));
+        max_value = max_value.map(|v| truncate_max_binary_statistics_value(v, len, is_utf8));
     }
 
     BinaryStatistics {
