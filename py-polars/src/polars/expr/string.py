@@ -3189,20 +3189,27 @@ class ExprStringNameSpace:
 
 
 def _validate_format_argument(format: str | None) -> None:
-    if format is not None:
-        if ".%f" in format:
+    if format is None:
+        return
+
+    arg_info_list = [
+        (
+            ".%f",
+            " This pattern should not be used to parse values after a decimal point."
+            " Use `%.f` instead.",
+        ),
+        (
+            "%f",
+            " This pattern should not be used to parse microseconds."
+            " Instead, use e.g. `%3f` for decimal fraction of a second with a fixed length of 3.",
+        ),
+    ]
+
+    for arg_info in arg_info_list:
+        if arg_info[0] in format:
             message = (
-                "Detected the pattern `.%f` in the chrono format string."
-                " This pattern should not be used to parse values after a decimal point."
-                " Use `%.f` instead."
+                f"Detected the pattern `{arg_info[0]}` in the chrono format string."
+                f"{arg_info[1]}"
                 " See the full specification: https://docs.rs/chrono/latest/chrono/format/strftime"
             )
-            warnings.warn(message, ChronoFormatWarning, stacklevel=find_stacklevel())
-        if "%f" in format:
-            message = (
-                "Detected the pattern `%f` in the chrono format string."
-                " This pattern should not be used to parse microseconds."
-                " Instead, use e.g. `%3f` for decimal fraction of a second with a fixed length of 3."
-                " See the full specification: https://docs.rs/chrono/latest/chrono/format/strftime"
-            )
-            warnings.warn(message, ChronoFormatWarning, stacklevel=find_stacklevel())
+        warnings.warn(message, ChronoFormatWarning, stacklevel=find_stacklevel())
