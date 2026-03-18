@@ -327,6 +327,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "object")]
     m.add_wrapped(wrap_pyfunction!(functions::__register_startup_deps))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::gen_uuid_v7))
+        .unwrap();
 
     // Functions - random
     m.add_wrapped(wrap_pyfunction!(functions::set_random_seed))
