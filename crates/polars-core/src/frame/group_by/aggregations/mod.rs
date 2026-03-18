@@ -167,21 +167,37 @@ where
 
 /// Helper that iterates on the `all: Vec<Vec<u32>` collection,
 /// this doesn't have traverse the `first: Vec<u32>` memory and is therefore faster.
+/// The closure receives `(group_idx, indices)`.
 fn agg_helper_idx_on_all<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
-    F: Fn(&IdxVec) -> Option<T::Native> + Send + Sync,
+    F: Fn(usize, &IdxVec) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: ChunkedArray<T> = POOL.install(|| groups.all().into_par_iter().map(f).collect());
+    let ca: ChunkedArray<T> = POOL.install(|| {
+        groups
+            .all()
+            .into_par_iter()
+            .enumerate()
+            .map(|(group_idx, idx)| f(group_idx, idx))
+            .collect()
+    });
     ca.into_series()
 }
 
+/// The closure receives `(group_idx, [first, len])`.
 pub fn _agg_helper_slice<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
-    F: Fn([IdxSize; 2]) -> Option<T::Native> + Send + Sync,
+    F: Fn(usize, [IdxSize; 2]) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: ChunkedArray<T> = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    let ca: ChunkedArray<T> = POOL.install(|| {
+        groups
+            .par_iter()
+            .copied()
+            .enumerate()
+            .map(|(group_idx, g)| f(group_idx, g))
+            .collect()
+    });
     ca.into_series()
 }
 
@@ -278,7 +294,7 @@ where
     match groups {
         GroupsType::Idx(groups) => {
             let ca = ca.rechunk();
-            agg_helper_idx_on_all::<K, _>(groups, |idx| {
+            agg_helper_idx_on_all::<K, _>(groups, |_, idx| {
                 debug_assert!(idx.len() <= ca.len());
                 if idx.is_empty() {
                     return None;
@@ -327,7 +343,7 @@ where
                 // float output type we need.
                 ChunkedArray::<K>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
             } else {
-                _agg_helper_slice::<K, _>(groups, |[first, len]| {
+                _agg_helper_slice::<K, _>(groups, |_, [first, len]| {
                     debug_assert!(first + len <= ca.len() as IdxSize);
                     match len {
                         0 => None,
@@ -347,6 +363,69 @@ where
     }
 }
 
+/// Variant of `agg_quantile_generic` where each group gets its own quantile value.
+unsafe fn agg_varying_quantile_generic<T, K>(
+    ca: &ChunkedArray<T>,
+    groups: &GroupsType,
+    quantiles: &[f64],
+    method: QuantileMethod,
+) -> Series
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>: QuantileDispatcher<K::Native>,
+    K: PolarsNumericType,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float + quantile_filter::SealedRolling,
+{
+    debug_assert_eq!(
+        quantiles.len(),
+        groups.len(),
+        "quantiles length ({}) must match groups length ({})",
+        quantiles.len(),
+        groups.len()
+    );
+    match groups {
+        GroupsType::Idx(groups) => {
+            let ca = ca.rechunk();
+            agg_helper_idx_on_all::<K, _>(groups, |group_idx, idx| {
+                debug_assert!(idx.len() <= ca.len());
+                if idx.is_empty() {
+                    return None;
+                }
+                let quantile = quantiles[group_idx];
+                if !(0.0..=1.0).contains(&quantile) {
+                    return None;
+                }
+                let take = { ca.take_unchecked(idx) };
+                // SAFETY: _quantile only returns Err for out-of-range quantiles,
+                // which are filtered by the range check above.
+                take._quantile(quantile, method).unwrap_unchecked()
+            })
+        },
+        GroupsType::Slice { groups, .. } => {
+            _agg_helper_slice::<K, _>(groups, |group_idx, [first, len]| {
+                debug_assert!(first + len <= ca.len() as IdxSize);
+                let quantile = quantiles[group_idx];
+                if !(0.0..=1.0).contains(&quantile) {
+                    return None;
+                }
+                match len {
+                    0 => None,
+                    1 => ca.get(first as usize).map(|v| NumCast::from(v).unwrap()),
+                    _ => {
+                        let arr_group = _slice_from_offsets(ca, first, len);
+                        // SAFETY: _quantile only returns Err for out-of-range quantiles,
+                        // which are filtered by the range check above.
+                        arr_group
+                            ._quantile(quantile, method)
+                            .unwrap_unchecked()
+                            .map(|flt| NumCast::from(flt).unwrap_unchecked())
+                    },
+                }
+            })
+        },
+    }
+}
+
 unsafe fn agg_median_generic<T, K>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series
 where
     T: PolarsNumericType,
@@ -357,7 +436,7 @@ where
     match groups {
         GroupsType::Idx(groups) => {
             let ca = ca.rechunk();
-            agg_helper_idx_on_all::<K, _>(groups, |idx| {
+            agg_helper_idx_on_all::<K, _>(groups, |_, idx| {
                 debug_assert!(idx.len() <= ca.len());
                 if idx.is_empty() {
                     return None;
@@ -393,7 +472,7 @@ where
     };
 
     match groups {
-        GroupsType::Idx(groups) => agg_helper_idx_on_all::<T, _>(groups, |idx| {
+        GroupsType::Idx(groups) => agg_helper_idx_on_all::<T, _>(groups, |_, idx| {
             debug_assert!(idx.len() <= s.len());
             if idx.is_empty() {
                 None
@@ -402,7 +481,7 @@ where
                 f(&take)
             }
         }),
-        GroupsType::Slice { groups, .. } => _agg_helper_slice::<T, _>(groups, |[first, len]| {
+        GroupsType::Slice { groups, .. } => _agg_helper_slice::<T, _>(groups, |_, [first, len]| {
             debug_assert!(len <= s.len() as IdxSize);
             if len == 0 {
                 None
@@ -508,7 +587,7 @@ where
                     };
                     Self::from(arr).into_series()
                 } else {
-                    _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
+                    _agg_helper_slice::<T, _>(groups_slice, |_, [first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
@@ -546,7 +625,7 @@ where
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = !arr.has_nulls();
 
-                agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
+                agg_helper_idx_on_all::<IdxType, _>(groups, |_, idx| {
                     if idx.is_empty() {
                         return None;
                     }
@@ -614,7 +693,7 @@ where
 
                     IdxCa::from(idx_arr).into_series()
                 } else {
-                    _agg_helper_slice::<IdxType, _>(groups_slice, |[first, len]| {
+                    _agg_helper_slice::<IdxType, _>(groups_slice, |_, [first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
@@ -689,7 +768,7 @@ where
                     };
                     Self::from(arr).into_series()
                 } else {
-                    _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
+                    _agg_helper_slice::<T, _>(groups_slice, |_, [first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
@@ -726,7 +805,7 @@ where
                 let arr = ca.downcast_as_array();
                 let no_nulls = arr.null_count() == 0;
 
-                agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
+                agg_helper_idx_on_all::<IdxType, _>(groups, |_, idx| {
                     if idx.is_empty() {
                         return None;
                     }
@@ -796,7 +875,7 @@ where
                     };
                     IdxCa::from(idx_arr).into_series()
                 } else {
-                    _agg_helper_slice::<IdxType, _>(groups_slice, |[first, len]| {
+                    _agg_helper_slice::<IdxType, _>(groups_slice, |_, [first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
@@ -962,7 +1041,7 @@ where
                     };
                     ChunkedArray::<T>::from(arr).into_series()
                 } else {
-                    _agg_helper_slice::<T, _>(groups, |[first, len]| {
+                    _agg_helper_slice::<T, _>(groups, |_, [first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
@@ -988,7 +1067,7 @@ where
                 let ca = ca.rechunk();
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
-                agg_helper_idx_on_all::<T, _>(groups, |idx| {
+                agg_helper_idx_on_all::<T, _>(groups, |_, idx| {
                     debug_assert!(idx.len() <= ca.len());
                     if idx.is_empty() {
                         return None;
@@ -1035,7 +1114,7 @@ where
                     };
                     ChunkedArray::<T>::from(arr).into_series()
                 } else {
-                    _agg_helper_slice::<T, _>(groups, |[first, len]| {
+                    _agg_helper_slice::<T, _>(groups, |_, [first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
@@ -1065,7 +1144,7 @@ where
             GroupsType::Idx(groups) => {
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
-                agg_helper_idx_on_all::<T, _>(groups, |idx| {
+                agg_helper_idx_on_all::<T, _>(groups, |_, idx| {
                     debug_assert!(idx.len() <= ca.len());
                     if idx.is_empty() {
                         return None;
@@ -1115,7 +1194,7 @@ where
                     ca.apply_mut(|v| v.powf(NumCast::from(0.5).unwrap()));
                     ca.into_series()
                 } else {
-                    _agg_helper_slice::<T, _>(groups, |[first, len]| {
+                    _agg_helper_slice::<T, _>(groups, |_, [first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
@@ -1147,6 +1226,14 @@ impl Float32Chunked {
     ) -> Series {
         agg_quantile_generic::<_, Float32Type>(self, groups, quantile, method)
     }
+    pub(crate) unsafe fn agg_varying_quantile(
+        &self,
+        groups: &GroupsType,
+        quantiles: &[f64],
+        method: QuantileMethod,
+    ) -> Series {
+        agg_varying_quantile_generic::<_, Float32Type>(self, groups, quantiles, method)
+    }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
         agg_median_generic::<_, Float32Type>(self, groups)
     }
@@ -1159,6 +1246,14 @@ impl Float64Chunked {
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
+    }
+    pub(crate) unsafe fn agg_varying_quantile(
+        &self,
+        groups: &GroupsType,
+        quantiles: &[f64],
+        method: QuantileMethod,
+    ) -> Series {
+        agg_varying_quantile_generic::<_, Float64Type>(self, groups, quantiles, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
         agg_median_generic::<_, Float64Type>(self, groups)
@@ -1226,7 +1321,7 @@ where
                         .unwrap();
                     ca.agg_mean(groups)
                 } else {
-                    _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
+                    _agg_helper_slice::<Float64Type, _>(groups_slice, |_, [first, len]| {
                         debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
@@ -1248,7 +1343,7 @@ where
                 let ca_self = self.rechunk();
                 let arr = ca_self.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
-                agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
+                agg_helper_idx_on_all::<Float64Type, _>(groups, |_, idx| {
                     debug_assert!(idx.len() <= arr.len());
                     if idx.is_empty() {
                         return None;
@@ -1271,7 +1366,7 @@ where
                         .unwrap();
                     ca.agg_var(groups, ddof)
                 } else {
-                    _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
+                    _agg_helper_slice::<Float64Type, _>(groups_slice, |_, [first, len]| {
                         debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
@@ -1298,7 +1393,7 @@ where
                 let ca_self = self.rechunk();
                 let arr = ca_self.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
-                agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
+                agg_helper_idx_on_all::<Float64Type, _>(groups, |_, idx| {
                     debug_assert!(idx.len() <= self.len());
                     if idx.is_empty() {
                         return None;
@@ -1322,7 +1417,7 @@ where
                         .unwrap();
                     ca.agg_std(groups, ddof)
                 } else {
-                    _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
+                    _agg_helper_slice::<Float64Type, _>(groups_slice, |_, [first, len]| {
                         debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
@@ -1351,6 +1446,14 @@ where
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
+    }
+    pub(crate) unsafe fn agg_varying_quantile(
+        &self,
+        groups: &GroupsType,
+        quantiles: &[f64],
+        method: QuantileMethod,
+    ) -> Series {
+        agg_varying_quantile_generic::<_, Float64Type>(self, groups, quantiles, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
         agg_median_generic::<_, Float64Type>(self, groups)

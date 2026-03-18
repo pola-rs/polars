@@ -120,7 +120,7 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                 };
                 ChunkedArray::<T>::from(arr).into_series()
             } else {
-                _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
+                _agg_helper_slice::<T, _>(groups_slice, |_, [first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);
                     match len {
                         0 => None,
@@ -187,7 +187,7 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                 };
                 ChunkedArray::<T>::from(arr).into_series()
             } else {
-                _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
+                _agg_helper_slice::<T, _>(groups_slice, |_, [first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);
                     match len {
                         0 => None,
