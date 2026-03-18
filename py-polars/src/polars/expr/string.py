@@ -3212,4 +3212,4 @@ def _validate_format_argument(format: str | None) -> None:
                 f"{arg_info[1]}"
                 " See the full specification: https://docs.rs/chrono/latest/chrono/format/strftime"
             )
-        warnings.warn(message, ChronoFormatWarning, stacklevel=find_stacklevel())
+            warnings.warn(message, ChronoFormatWarning, stacklevel=find_stacklevel())
