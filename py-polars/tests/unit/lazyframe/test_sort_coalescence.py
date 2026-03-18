@@ -6,10 +6,10 @@ from polars.testing.asserts.frame import assert_frame_equal
 from polars.testing.parametric.strategies.core import dataframes
 
 
-@pytest.mark.parametrize("mo1", [False, True])
-@pytest.mark.parametrize("mo2", [False, True])
 @pytest.mark.parametrize("key1", ["col0", "col1"])
 @pytest.mark.parametrize("key2", ["col0", "col1"])
+@pytest.mark.parametrize("mo1", [False, True])
+@pytest.mark.parametrize("mo2", [False, True])
 @given(df=dataframes(min_cols=2, max_cols=2))
 def test_sort_node_coalescence(
     df: pl.DataFrame, mo1: bool, mo2: bool, key1: str, key2: str
@@ -48,3 +48,53 @@ def test_sort_node_coalescence_multiple(mo1: bool, mo2: bool) -> None:
         actual = q.collect()
         expected = df.sort("a", "b", maintain_order=mo1 and mo2)
         assert_frame_equal(actual, expected, check_row_order=mo1 and mo2)
+
+
+@pytest.mark.parametrize("key1", ["col0", "col1"])
+@pytest.mark.parametrize("key2", ["col0", "col1"])
+@pytest.mark.parametrize("maintain_order", [False, True])
+@given(df=dataframes(min_cols=2, max_cols=2))
+def test_sort_node_prune_hint(
+    df: pl.DataFrame, key1: str, key2: str, maintain_order: bool
+) -> None:
+    q = (
+        df.sort(key1)
+        .with_row_index("idx")
+        .lazy()
+        .set_sorted(key1)
+        .sort(key2, maintain_order=maintain_order)
+        .select(pl.col("idx"))
+    )
+    lp = q.explain()
+    if key1 == key2:
+        assert "SORT BY" not in lp
+    else:
+        assert "SORT BY" in lp
+    actual = q.collect()
+    expected = (
+        df.sort(key1)
+        .with_row_index("idx")
+        .sort(key2, maintain_order=maintain_order)
+        .select(pl.col("idx"))
+    )
+    assert_frame_equal(actual, expected, check_row_order=maintain_order)
+
+
+def test_sort_node_prune_hint_multiple() -> None:
+    df = pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4]}).with_row_index("idx")
+    q = df.lazy().set_sorted("a", "b").sort("a").select(pl.col("idx"))
+    assert "SORT BY" not in q.explain()
+    q = (
+        df.lazy()
+        .set_sorted("a")
+        .sort("a", "b", maintain_order=False)
+        .select(pl.col("idx"))
+    )
+    assert 'SORT BY [col("a"), col("b")]' in q.explain()
+    q = (
+        df.lazy()
+        .set_sorted("a")
+        .sort("a", "b", maintain_order=True)
+        .select(pl.col("idx"))
+    )
+    assert 'SORT BY [maintain_order: true] [col("a"), col("b")]' in q.explain()

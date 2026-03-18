@@ -113,9 +113,11 @@ fn try_prune_sort_with_sortedness(
         .0
         .iter()
         .map(|s| (&s.column, s.descending, s.nulls_last));
-    let hint_sorts_most_cols = prefix_dominance(input_sort_cols, node_sort_cols, |n1, n2| {
+    if !prefix_dominance(input_sort_cols, node_sort_cols, |n1, n2| {
         *n1.0 == n2.0 && n1.1 == Some(*n2.1.0) && n1.2 == Some(*n2.1.1)
-    })?;
+    })? {
+        return None;
+    }
 
     // We can safely prune this sort node
     if let Some((offset, len, None)) = slice {
