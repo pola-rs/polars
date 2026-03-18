@@ -2081,7 +2081,7 @@ fn lower_exprs_with_ctx(
                     build_row_idx_stream(col_val_stream, idx_name.clone(), None, ctx.phys_sm);
 
                 let eq_node = AExprBuilder::col(col_name.clone(), ctx.expr_arena)
-                    .eq(AExprBuilder::col(val_name, ctx.expr_arena), ctx.expr_arena);
+                    .eq_validity(AExprBuilder::col(val_name, ctx.expr_arena), ctx.expr_arena);
                 let filter_stream = build_filter_stream(
                     row_index_stream,
                     eq_node.expr_ir(col_name),
