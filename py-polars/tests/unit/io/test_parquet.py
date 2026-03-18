@@ -3946,7 +3946,7 @@ def test_parquet_binary_statistics_truncation_file_size_23498(
     """Large values must not bloat the file via untruncated statistics."""
     f = io.BytesIO()
     to_df("A" * 1_000_000).write_parquet(f)
-    assert f.tell() < 5_000
+    assert len(f.getvalue()) < 5_000
 
 
 @pytest.mark.parametrize(
