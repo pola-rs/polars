@@ -48,9 +48,11 @@ fn try_coalesce_sorts(node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr
         return None;
     };
 
-    if slice != in_slice {
-        return None;
-    }
+    let slice = match (slice, in_slice) {
+        (s @ Some((offset, len, None)), None) => s,
+        (None, s @ Some((offset, len, None))) => s,
+        _ => return None,
+    };
 
     let expr_eq = |e1: &&ExprIR, e2: &&ExprIR| {
         AExpr::is_expr_equal_to(
