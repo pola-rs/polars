@@ -766,6 +766,56 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
+            #[cfg(feature = "business")]
+            AExpr::Function {
+                function: IRFunctionExpr::Business(ref business_fn),
+                ref input,
+                options,
+            } => {
+                let holiday_arg_idx: usize = match business_fn {
+                    IRBusinessFunction::AddBusinessDay { .. }
+                    | IRBusinessFunction::BusinessDayCount { .. } => 2,
+                    IRBusinessFunction::IsBusinessDay { .. } => 1,
+                };
+
+                let holiday_arg = unpack!(input.get(holiday_arg_idx));
+
+                // We implode, only for literal Series(dtype=Date), as this is considered a valid
+                // parameter on the Python API as an `Iterable[date]`.
+                let new_lv_ae: AExpr = match expr_arena.get(holiday_arg.node()) {
+                    AExpr::Literal(LiteralValue::Series(s)) if s.dtype() == &DataType::Date => {
+                        AExpr::Literal(LiteralValue::Series(SpecialEq::new(
+                            s.implode().unwrap().into_series(),
+                        )))
+                    },
+                    ae => {
+                        let dtype = ae.to_dtype(&ToFieldContext::new(expr_arena, schema))?;
+
+                        let is_list_of_date = match &dtype {
+                            DataType::List(inner) => inner.as_ref() == &DataType::Date,
+                            _ => false,
+                        };
+
+                        polars_ensure!(
+                            is_list_of_date,
+                            ComputeError:
+                            "dtype of holidays list must be List(Date), got {dtype:?} instead"
+                        );
+
+                        return Ok(None);
+                    },
+                };
+
+                let mut input = input.clone();
+                let function = IRFunctionExpr::Business(business_fn.clone());
+                input[holiday_arg_idx].set_node(expr_arena.add(new_lv_ae));
+
+                Some(AExpr::Function {
+                    input,
+                    function,
+                    options,
+                })
+            },
             #[cfg(feature = "list_gather")]
             AExpr::Function {
                 function: ref function @ IRFunctionExpr::ListExpr(IRListFunction::Gather(_)),

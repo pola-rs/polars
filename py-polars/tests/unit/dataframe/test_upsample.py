@@ -359,3 +359,19 @@ def test_upsample_with_group_by_15530() -> None:
             every="1d",
             group_by=["time", "time"],
         )
+
+
+def test_upsample_empty_dataframe_with_group_by_26342() -> None:
+    df = pl.DataFrame(
+        {
+            "time": pl.Series([], dtype=pl.Datetime("ns")),
+            "my_group": pl.Series([], dtype=pl.Int32),
+            "my_id": pl.Series([], dtype=pl.String),
+        }
+    )
+
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match="cannot determine upsample boundaries: all elements are null",
+    ):
+        df.upsample(time_column="time", every="15m", group_by="my_group")

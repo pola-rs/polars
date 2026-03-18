@@ -190,7 +190,9 @@ def test_schema_row_index_cse(maintain_order: bool) -> None:
         df_a = pl.scan_csv(csv_a.name).with_row_index("Idx")
 
         result = (
-            df_a.join(df_a, on="B", maintain_order="left" if maintain_order else "none")
+            df_a.join(
+                df_a, on="B", maintain_order="left_right" if maintain_order else "none"
+            )
             .group_by("A", maintain_order=maintain_order)
             .all()
             .collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))
@@ -1330,3 +1332,29 @@ def test_cspe_map_groups_26547() -> None:
         schema={"A": pl.Int32, "PART": pl.Int32, "B": pl.Int32},
     )
     assert_frame_equal(out, expected)
+
+
+def test_cspe_projection_between_filter_and_cache_26916() -> None:
+    lf = pl.LazyFrame(
+        {
+            "VendorID": [1, 1, 2, 2, 2],
+            "total_amount": [10.0, 20.0, 30.0, 40.0, 50.0],
+            "passenger_count": [1, 2, 1, 3, 2],
+        }
+    )
+
+    g1 = lf.group_by("VendorID").agg(pl.mean("total_amount"))
+    g2 = lf.group_by("VendorID").agg(pl.mean("passenger_count"))
+
+    q = g1.join(g2, "VendorID").filter(VendorID=1)
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "VendorID": 1,
+                "total_amount": 15.0,
+                "passenger_count": 1.5,
+            }
+        ),
+    )

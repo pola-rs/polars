@@ -373,10 +373,42 @@ pub(super) fn set_cache_states(
                     .block_at_cache(1);
                 let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
                 lp_arena.replace(node, lp.clone());
+
+                // TODO: Drop filter column if it isn't used after the filter.
+
+                let mut updated_cache_node = node;
+
+                loop {
+                    match lp_arena.get(updated_cache_node) {
+                        IR::Cache { .. } => break,
+                        IR::SimpleProjection { input, .. } => updated_cache_node = *input,
+                        _ => unreachable!(),
+                    }
+                }
+
                 for &parents in &v.parents[1..] {
-                    let node = get_filter_node(parents, lp_arena)
+                    let filter_node = get_filter_node(parents, lp_arena)
                         .expect("expected filter; this is an optimizer bug");
-                    lp_arena.replace(node, lp.clone());
+
+                    let IR::Filter { input, .. } = lp_arena.get(filter_node) else {
+                        unreachable!()
+                    };
+
+                    let new_lp = match lp_arena.get(*input) {
+                        IR::SimpleProjection { input, columns } => {
+                            debug_assert!(matches!(lp_arena.get(*input), IR::Cache { .. }));
+                            IR::SimpleProjection {
+                                input: updated_cache_node,
+                                columns: columns.clone(),
+                            }
+                        },
+                        ir => {
+                            debug_assert!(matches!(ir, IR::Cache { .. }));
+                            lp_arena.get(updated_cache_node).clone()
+                        },
+                    };
+
+                    lp_arena.replace(filter_node, new_lp);
                 }
             } else {
                 let child = *v.children.first().unwrap();

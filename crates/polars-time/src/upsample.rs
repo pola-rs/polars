@@ -164,6 +164,12 @@ fn upsample_core(
         return upsample_single_impl(source, index_column.as_materialized_series(), every);
     }
 
+    if source.height() == 0 {
+        polars_bail!(
+            ComputeError: "cannot determine upsample boundaries: all elements are null"
+        );
+    }
+
     let source_schema = source.schema();
 
     let group_keys_df = source.select(by)?;

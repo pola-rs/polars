@@ -445,8 +445,8 @@ where
         missing_columns_policy: _,
         extra_columns_policy: _,
         include_file_paths: _,
-        table_statistics,
         deletion_files,
+        table_statistics,
         row_count,
     } = unified_scan_args.as_mut()
     else {
@@ -504,7 +504,7 @@ where
             .collect::<Vec<_>>()
     });
 
-    *deletion_files = deletion_files.as_ref().and_then(|x| match x {
+    *deletion_files = deletion_files.take().and_then(|x| match x {
         DeletionFilesList::IcebergPositionDelete(deletions) => {
             let mut out = None;
 
@@ -519,6 +519,9 @@ where
 
             out.map(|x| DeletionFilesList::IcebergPositionDelete(Arc::new(x)))
         },
+        // No-op - Delta takes scan paths at the execution stage.
+        #[cfg(feature = "python")]
+        DeletionFilesList::Delta(provider) => Some(DeletionFilesList::Delta(provider)),
     });
 
     *table_statistics = table_statistics.as_ref().map(|x| {

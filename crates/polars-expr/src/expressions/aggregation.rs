@@ -9,7 +9,6 @@ use polars_core::utils::{_split_offsets, NoNull};
 use polars_ops::prelude::ArgAgg;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
-use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
 use super::*;
@@ -712,21 +711,23 @@ impl PhysicalExpr for AggMinMaxByExpr {
             unsafe { by_col.agg_arg_min(&by_groups) }
         };
         let idxs_in_groups: &IdxCa = idxs_in_groups.as_materialized_series().as_ref().as_ref();
-        let flat_gather_idxs = match input_groups.as_ref().as_ref() {
+        let gather_idxs: IdxCa = match input_groups.as_ref().as_ref() {
             GroupsType::Idx(g) => idxs_in_groups
-                .into_no_null_iter()
+                .iter()
                 .enumerate()
-                .map(|(group_idx, idx_in_group)| g.all()[group_idx][idx_in_group as usize])
-                .collect_vec(),
+                .map(|(group_idx, idx_in_group)| {
+                    idx_in_group.map(|i| g.all()[group_idx][i as usize])
+                })
+                .collect(),
             GroupsType::Slice { groups, .. } => idxs_in_groups
-                .into_no_null_iter()
+                .iter()
                 .enumerate()
-                .map(|(group_idx, idx_in_group)| groups[group_idx][0] + idx_in_group)
-                .collect_vec(),
+                .map(|(group_idx, idx_in_group)| idx_in_group.map(|i| groups[group_idx][0] + i))
+                .collect(),
         };
 
-        // SAFETY: All indices are within input_col's groups.
-        let gathered = unsafe { input_col.take_slice_unchecked(&flat_gather_idxs) };
+        // SAFETY: All non-null indices are within input_col's groups.
+        let gathered = unsafe { input_col.take_unchecked(&gather_idxs) };
         let agg_state = AggregatedScalar(gathered.with_name(keep_name));
         Ok(AggregationContext::from_agg_state(
             agg_state,

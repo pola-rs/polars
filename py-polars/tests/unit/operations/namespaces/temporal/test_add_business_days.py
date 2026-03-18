@@ -147,6 +147,25 @@ def test_add_business_days_w_holidays() -> None:
     )
     assert_series_equal(result, expected)
 
+    result = df.select(
+        result=pl.col("start").dt.add_business_days(
+            "n",
+            holidays=pl.Series(
+                [
+                    date(2019, 1, 1),
+                    date(2020, 1, 1),
+                    date(2020, 1, 2),
+                    date(2021, 1, 1),
+                ]
+            ),
+            roll="backward",
+        ),
+    )["result"]
+    expected = pl.Series(
+        "result", [date(2020, 1, 3), date(2020, 1, 9), date(2020, 1, 13)]
+    )
+    assert_series_equal(result, expected)
+
 
 def test_add_business_days_multiple_holidays() -> None:
     base_df = pl.DataFrame(
