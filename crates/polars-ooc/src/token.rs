@@ -1,18 +1,30 @@
 use polars_core::prelude::DataFrame;
 
-use crate::memory_manager::{DfKey, mm};
+use crate::memory_manager::mm;
+
+/// Ownerless slot identity — `(index, generation)` without the `Drop`
+/// that frees the slot. Used in the spill-tracking stack as a weak
+/// lookup key; stale entries are harmlessly skipped via generation checks.
+#[derive(Clone, Copy)]
+pub(crate) struct SlotId {
+    pub(crate) index: u32,
+    pub(crate) generation: u32,
+}
 
 /// Handle to a [`DataFrame`] stored in the [`MemoryManager`](crate::MemoryManager).
+///
+/// 8 bytes: `(index: u32, generation: u32)`. The index locates the slot in the
+/// [`DataFrameStore`](crate::df_store::DataFrameStore); the generation prevents ABA reuse.
 ///
 /// Dropping the token releases the slot and its memory accounting. If the
 /// frame was spilled to disk the spill file is deleted.
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub struct Token {
-    thread_idx: u64,
-    pub(crate) key: DfKey,
+    index: u32,
+    generation: u32,
 }
 
-const _: () = assert!(size_of::<Token>() == 16);
+const _: () = assert!(size_of::<Token>() == 8);
 
 impl Drop for Token {
     fn drop(&mut self) {
@@ -22,13 +34,17 @@ impl Drop for Token {
 
 impl Token {
     #[inline]
-    pub(crate) fn new(thread_idx: u64, key: DfKey) -> Self {
-        Self { thread_idx, key }
+    pub(crate) fn new(index: u32, generation: u32) -> Self {
+        Self { index, generation }
     }
 
+    /// Ownerless copy of this token's slot identity for spill tracking.
     #[inline]
-    pub(crate) fn thread_idx(&self) -> u64 {
-        self.thread_idx
+    pub(crate) fn id(&self) -> SlotId {
+        SlotId {
+            index: self.index,
+            generation: self.generation,
+        }
     }
 
     /// Return the row count of the stored [`DataFrame`].
@@ -39,14 +55,14 @@ impl Token {
     /// Pin the entry so it has lower priority during spill collection.
     /// Unpinned entries are always spilled first; pinned entries are only
     /// spilled if freeing unpinned entries alone is not enough.
-    pub fn pin(self) -> Self {
-        mm().pin(&self);
+    pub fn pin(&self) -> &Self {
+        mm().pin(self);
         self
     }
 
     /// Unpin the entry so it has higher priority during spill collection.
-    pub fn unpin(self) -> Self {
-        mm().unpin(&self);
+    pub fn unpin(&self) -> &Self {
+        mm().unpin(self);
         self
     }
 

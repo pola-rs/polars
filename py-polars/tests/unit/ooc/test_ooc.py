@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
 
 
-def test_ooc_spill(tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any) -> None:
+def _force_spill(tmp_path: Path, plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_OOC_SPILL_POLICY", "spill")
     # Tiny budget so every store() exceeds it and triggers spilling.
     plmonkeypatch.setenv("POLARS_OOC_MEMORY_BUDGET_FRACTION", "0.000000001")
@@ -19,6 +19,18 @@ def test_ooc_spill(tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any) -> 
     plmonkeypatch.setenv("POLARS_OOC_DRIFT_THRESHOLD", "1")
     plmonkeypatch.setenv("POLARS_OOC_SPILL_MIN_BYTES", "1")
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+
+def _assert_spill_reload_clean(captured: str, label: str = "") -> None:
+    suffix = f" ({label})" if label else ""
+    assert "[ooc] spill_trigger" in captured, f"no spill_trigger{suffix}"
+    assert "[ooc] spill" in captured, f"no spill{suffix}"
+    assert "[ooc] reload" in captured, f"no reload{suffix}"
+    assert "[ooc] clean" in captured, f"no clean{suffix}"
+
+
+def test_ooc_spill(tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any) -> None:
+    _force_spill(tmp_path, plmonkeypatch)
 
     capfd.readouterr()
 
@@ -36,6 +48,20 @@ def test_ooc_spill(tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any) -> 
     expected = q.collect(engine="in-memory")
     assert_frame_equal(result, expected)
 
-    captured = capfd.readouterr().err
-    assert "[ooc] spill_trigger" in captured
-    assert "[ooc] spill" in captured
+    _assert_spill_reload_clean(capfd.readouterr().err)
+
+
+def test_ooc_spill_multiple_queries(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any
+) -> None:
+    """Verify spill lifecycle across three streaming queries."""
+    _force_spill(tmp_path, plmonkeypatch)
+
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [10, 20, 30]})
+    q = lf.join(lf, on="a").sort("a")
+    expected = q.collect(engine="in-memory")
+
+    for i in range(3):
+        capfd.readouterr()
+        assert_frame_equal(q.collect(engine="streaming"), expected)
+        _assert_spill_reload_clean(capfd.readouterr().err, f"query {i}")

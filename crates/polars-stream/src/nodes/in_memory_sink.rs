@@ -3,7 +3,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_ooc::AccessPattern::NoPattern;
+use polars_ooc::{AccessPattern, SpillContext, mm};
 
 use super::compute_node_prelude::*;
 use crate::utils::in_memory_linearize::linearize;
@@ -12,6 +12,7 @@ use crate::utils::in_memory_linearize::linearize;
 pub struct InMemorySinkNode {
     morsels_per_pipe: Mutex<Vec<Vec<(MorselSeq, Token)>>>,
     schema: Arc<Schema>,
+    spill_ctx: Arc<SpillContext>,
 }
 
 impl InMemorySinkNode {
@@ -19,6 +20,7 @@ impl InMemorySinkNode {
         Self {
             morsels_per_pipe: Mutex::default(),
             schema,
+            spill_ctx: mm().register_context(),
         }
     }
 }
@@ -66,7 +68,11 @@ impl ComputeNode for InMemorySinkNode {
                 let mut morsels = Vec::new();
                 while let Ok(mut morsel) = recv.recv().await {
                     morsel.take_consume_token();
-                    morsels.push(morsel.store_into_token_and_seq(NoPattern).await);
+                    morsels.push(
+                        morsel
+                            .store_into_token_and_seq(&slf.spill_ctx, AccessPattern::NoPattern)
+                            .await,
+                    );
                 }
 
                 slf.morsels_per_pipe.lock().push(morsels);

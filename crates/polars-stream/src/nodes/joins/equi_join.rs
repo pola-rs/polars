@@ -11,8 +11,7 @@ use polars_core::{POOL, config};
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_io::pl_async::get_runtime;
-use polars_ooc::AccessPattern::NoPattern;
-use polars_ooc::mm;
+use polars_ooc::{AccessPattern, SpillContext, mm};
 use polars_ops::frame::{JoinArgs, JoinBuildSide, JoinType, MaintainOrderJoin};
 use polars_ops::series::coalesce_columns;
 use polars_utils::cardinality_sketch::CardinalitySketch;
@@ -306,6 +305,7 @@ impl SampleState {
         recv: &[PortState],
         params: &mut EquiJoinParams,
         state: &StreamingExecutionState,
+        spill_ctx: &SpillContext,
     ) -> PolarsResult<Option<BuildState>> {
         let left_saturated = self.left_len >= params.sample_limit;
         let right_saturated = self.right_len >= params.sample_limit;
@@ -414,6 +414,7 @@ impl SampleState {
                             partitioner.clone(),
                             params,
                             state,
+                            spill_ctx,
                         ),
                     ));
                 }
@@ -478,6 +479,7 @@ impl BuildState {
         partitioner: HashPartitioner,
         params: &EquiJoinParams,
         state: &StreamingExecutionState,
+        spill_ctx: &SpillContext,
     ) -> PolarsResult<()> {
         let track_unmatchable = params.emit_unmatched_build();
         let (key_selectors, payload_selector);
@@ -512,7 +514,9 @@ impl BuildState {
             local
                 .morsel_idxs_offsets_per_p
                 .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
-            let token = mm().store(payload, NoPattern).await;
+            let token = mm()
+                .store(payload, spill_ctx, AccessPattern::NoPattern)
+                .await;
             local.morsels.push((morsel.seq(), token, hash_keys));
         }
         Ok(())
@@ -1194,6 +1198,7 @@ pub struct EquiJoinNode {
     state: EquiJoinState,
     params: EquiJoinParams,
     table: Box<dyn IdxTable>,
+    spill_ctx: Arc<SpillContext>,
 }
 
 impl EquiJoinNode {
@@ -1294,6 +1299,7 @@ impl EquiJoinNode {
                 sample_limit,
             },
             table: new_idx_table(unique_key_schema),
+            spill_ctx: mm().register_context(),
         })
     }
 }
@@ -1318,9 +1324,12 @@ impl ComputeNode for EquiJoinNode {
 
         // If we are sampling and both sides are done/filled, transition to building.
         if let EquiJoinState::Sample(sample_state) = &mut self.state {
-            if let Some(build_state) =
-                sample_state.try_transition_to_build(recv, &mut self.params, state)?
-            {
+            if let Some(build_state) = sample_state.try_transition_to_build(
+                recv,
+                &mut self.params,
+                state,
+                &self.spill_ctx,
+            )? {
                 self.state = EquiJoinState::Build(build_state);
             }
         }
@@ -1521,6 +1530,7 @@ impl ComputeNode for EquiJoinNode {
                             partitioner.clone(),
                             &self.params,
                             state,
+                            &self.spill_ctx,
                         ),
                     ));
                 }
