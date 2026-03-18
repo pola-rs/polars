@@ -158,13 +158,14 @@ def test_forward_fill_is_length_preserving() -> None:
 
 
 @given(
-    s=series(allow_null=True, min_size=1),
+    s=series(allow_null=True),
     limit=st.one_of(st.none(), st.integers(min_value=0, max_value=10)),
 )
-def test_forward_fill_streaming_matches_in_memory(
-    s: pl.Series, limit: int | None
+@pytest.mark.parametrize("fill", ["forward_fill", "backward_fill"])
+def test_fill_streaming_matches_in_memory(
+    fill: str, s: pl.Series, limit: int | None
 ) -> None:
-    q = pl.LazyFrame({"a": s}).select(pl.col("a").forward_fill(limit=limit))
+    q = pl.LazyFrame({"a": s}).select(getattr(pl.col("a"), fill)(limit=limit))
     expected = q.collect(engine="in-memory")
     result = q.collect(engine="streaming")
     assert_series_equal(result["a"], expected["a"])

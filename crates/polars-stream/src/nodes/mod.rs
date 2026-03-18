@@ -1,3 +1,4 @@
+pub mod backward_fill;
 pub mod callback_sink;
 #[cfg(feature = "cum_agg")]
 pub mod cum_agg;

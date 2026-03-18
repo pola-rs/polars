@@ -1191,7 +1191,8 @@ fn lower_exprs_with_ctx(
                 input: ref inner_exprs,
                 function:
                     IRFunctionExpr::FillNullWithStrategy(
-                        polars_core::prelude::FillNullStrategy::Forward(limit),
+                        strategy @ (polars_core::prelude::FillNullStrategy::Forward(limit)
+                        | polars_core::prelude::FillNullStrategy::Backward(limit)),
                     ),
                 options: _,
             } => {
@@ -1206,7 +1207,12 @@ fn lower_exprs_with_ctx(
                     &[inner_exprs[0].with_alias(value_key.clone())],
                     ctx,
                 )?;
-                let node_kind = PhysNodeKind::ForwardFill { input, limit };
+                let node_kind =
+                    if matches!(strategy, polars_core::prelude::FillNullStrategy::Forward(_)) {
+                        PhysNodeKind::ForwardFill { input, limit }
+                    } else {
+                        PhysNodeKind::BackwardFill { input, limit }
+                    };
 
                 let output_schema = Schema::from_iter([(value_key.clone(), value_dtype.clone())]);
                 let node_key = ctx

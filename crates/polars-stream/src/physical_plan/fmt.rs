@@ -436,9 +436,14 @@ fn visualize_plan_rec(
             format!("gather_every\\nn: {n}, offset: {offset}"),
             &[*input][..],
         ),
-        PhysNodeKind::ForwardFill { input, limit } => (
+        PhysNodeKind::ForwardFill { input, limit }
+        | PhysNodeKind::BackwardFill { input, limit } => (
             {
-                let mut out = String::from("forward_fill");
+                let mut out = if matches!(kind, PhysNodeKind::ForwardFill { .. }) {
+                    String::from("forward_fill")
+                } else {
+                    String::from("backward_fill")
+                };
                 if let Some(limit) = limit {
                     use std::fmt::Write;
                     writeln!(&mut out).unwrap();
