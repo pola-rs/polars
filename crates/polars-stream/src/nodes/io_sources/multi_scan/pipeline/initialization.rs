@@ -106,9 +106,14 @@ async fn finish_initialize_multi_scan_pipeline(
         eprintln!(
             "[MultiScanTaskInit]: \
             predicate: {:?}, \
+            deletion_files: {:?}, \
             skip files mask: {:?}, \
             predicate to reader: {:?}",
             config.predicate.is_some().then_some("<predicate>"),
+            config
+                .deletion_files
+                .is_some()
+                .then_some("<deletion_files>"),
             skip_files_mask.is_some().then_some("<skip_files>"),
             predicate.is_some().then_some("<predicate>"),
         )
@@ -304,6 +309,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 .min(skip_files_mask.len() - skip_files_mask.trailing_skipped_files());
         }
 
+        // Note, range does not alter the indexes (`scan_source_idx`) of `scan_sources`.
         let range = range.filter(move |scan_source_idx| {
             let can_skip = !has_row_index_or_slice
                 && skip_files_mask
@@ -316,11 +322,16 @@ async fn finish_initialize_multi_scan_pipeline(
         let sources = config.sources.clone();
         let cloud_options = config.cloud_options.clone();
         let file_reader_builder = config.file_reader_builder.clone();
-        let deletion_files_provider = DeletionFilesProvider::new(
+
+        // Note: The list of sources is fixed, so indexing via `scan_source_idx` is sound.
+        // The list of sources is captured so that in the case of Delta deletion vector,
+        // the first callback has everything needed to request all deletion vectors.
+        let deletion_files_provider = DeletionFilesProvider::try_new(
             config.deletion_files.clone(),
+            config.sources.clone(),
             &execution_state,
             config.io_metrics(),
-        );
+        )?;
 
         futures::stream::iter(range)
             .map(move |scan_source_idx| {

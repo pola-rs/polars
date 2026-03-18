@@ -436,6 +436,18 @@ fn visualize_plan_rec(
             format!("gather_every\\nn: {n}, offset: {offset}"),
             &[*input][..],
         ),
+        PhysNodeKind::ForwardFill { input, limit } => (
+            {
+                let mut out = String::from("forward_fill");
+                if let Some(limit) = limit {
+                    use std::fmt::Write;
+                    writeln!(&mut out).unwrap();
+                    write!(&mut out, "limit: {limit}").unwrap();
+                }
+                out
+            },
+            &[*input][..],
+        ),
         PhysNodeKind::Rle(input) => ("rle".to_owned(), &[*input][..]),
         PhysNodeKind::RleId(input) => ("rle_id".to_owned(), &[*input][..]),
         PhysNodeKind::PeakMinMax { input, is_peak_max } => (

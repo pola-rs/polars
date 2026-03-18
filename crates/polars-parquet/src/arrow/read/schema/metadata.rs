@@ -78,6 +78,7 @@ fn convert_dtype(mut dtype: ArrowDataType) -> ArrowDataType {
                 convert_field(field);
             }
         },
+        Decimal32(p, s) | Decimal64(p, s) => dtype = Decimal(p, s),
         Float16 => dtype = Float16,
         Binary | LargeBinary => dtype = BinaryView,
         Utf8 | LargeUtf8 => dtype = Utf8View,
