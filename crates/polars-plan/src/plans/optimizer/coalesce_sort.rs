@@ -48,12 +48,6 @@ fn try_coalesce_sorts(node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr
         return None;
     };
 
-    let slice = match (slice, in_slice) {
-        (s @ Some((offset, len, None)), None) => s,
-        (None, s @ Some((offset, len, None))) => s,
-        _ => return None,
-    };
-
     let expr_eq = |e1: &&ExprIR, e2: &&ExprIR| {
         AExpr::is_expr_equal_to(
             expr_arena.get(e1.node()),
@@ -62,23 +56,29 @@ fn try_coalesce_sorts(node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr
         )
     };
 
-    let main_has_most_cols = prefix_dominance(by_column.iter(), in_by_column.iter(), expr_eq)?;
-    let (merged_options, main_has_most_cols2) =
-        coalesce_sort_multiple_options(sort_options, in_sort_options)?;
-    debug_assert_eq!(main_has_most_cols, main_has_most_cols2);
+    let node_sorts_most_columns = prefix_dominance(by_column.iter(), in_by_column.iter(), expr_eq)?;
+    let merged_options =
+        coalesce_sort_multiple_options(sort_options, in_sort_options, node_sorts_most_columns)?;
 
-    Some(if main_has_most_cols {
+    let slice = match (slice, in_slice) {
+        (s @ Some((_, _, None)), None) => s.to_owned(),
+        (None, s @ Some((_, _, None))) => s.to_owned(),
+        (Some((o1, l1, None)), Some((o2, l2, None))) => Some((o1 + o2, usize::min(*l1, *l2), None)),
+        _ => return None,
+    };
+
+    Some(if node_sorts_most_columns {
         Sort {
             input: *in_input,
             by_column: by_column.clone(),
-            slice: slice.clone(),
+            slice,
             sort_options: merged_options,
         }
     } else {
         Sort {
             input: *in_input,
             by_column: in_by_column.clone(),
-            slice: slice.clone(),
+            slice,
             sort_options: merged_options,
         }
     })
@@ -108,16 +108,18 @@ fn try_prune_sort_with_sortedness(
         sort_options.descending.iter(),
         sort_options.nulls_last.iter(),
     );
-    let node_sort_cols = by.zip(sort_props);
+    let node_sortedness_props = by.zip(sort_props);
 
     let input_sortedness = is_sorted(*input, lp_arena, expr_arena)?;
-    let input_sort_cols = input_sortedness
+    let input_sortedness_props = input_sortedness
         .0
         .iter()
         .map(|s| (&s.column, s.descending, s.nulls_last));
-    if !prefix_dominance(input_sort_cols, node_sort_cols, |n1, n2| {
-        *n1.0 == n2.0 && n1.1 == Some(*n2.1.0) && n1.2 == Some(*n2.1.1)
-    })? {
+    let node_sorts_most_columns =
+        prefix_dominance(input_sortedness_props, node_sortedness_props, |n1, n2| {
+            *n1.0 == n2.0 && n1.1 == Some(*n2.1.0) && n1.2 == Some(*n2.1.1)
+        })?;
+    if !node_sorts_most_columns {
         return None;
     }
 
@@ -159,11 +161,14 @@ where
 fn coalesce_sort_multiple_options(
     node: &SortMultipleOptions,
     input: &SortMultipleOptions,
-) -> Option<(SortMultipleOptions, bool)> {
+    node_sorts_most_columns: bool,
+) -> Option<SortMultipleOptions> {
     let node_sort_props = Iterator::zip(node.descending.iter(), node.nulls_last.iter());
     let input_sort_propes: std::iter::Zip<std::slice::Iter<'_, bool>, std::slice::Iter<'_, bool>> =
         Iterator::zip(input.descending.iter(), input.nulls_last.iter());
-    let node_sorts_most_cols = prefix_dominance(node_sort_props, input_sort_propes, |n, i| n == i)?;
+    let node_sorts_most_columns2 =
+        prefix_dominance(node_sort_props, input_sort_propes, |n, i| n == i)?;
+    debug_assert!(node_sorts_most_columns2 == node_sorts_most_columns);
 
     // We don't care about the multithreaded criterion
 
@@ -173,14 +178,13 @@ fn coalesce_sort_multiple_options(
         (Some(l), None) | (None, Some(l)) => Some(l),
         (None, None) => None,
     };
-    let result = SortMultipleOptions {
+    Some(SortMultipleOptions {
         maintain_order,
         limit,
-        ..if node_sorts_most_cols {
+        ..if node_sorts_most_columns {
             node.clone()
         } else {
             input.clone()
         }
-    };
-    Some((result, node_sorts_most_cols))
+    })
 }
