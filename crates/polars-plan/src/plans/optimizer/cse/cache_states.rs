@@ -408,6 +408,8 @@ pub(super) fn set_cache_states(
                         },
                     };
 
+                    let new_lp = proj_pd.optimize(new_lp, lp_arena, expr_arena)?;
+
                     lp_arena.replace(filter_node, new_lp);
                 }
             } else {

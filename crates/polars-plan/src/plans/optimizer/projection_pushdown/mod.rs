@@ -762,6 +762,8 @@ impl ProjectionPushDown {
             },
             lp @ SinkMultiple { .. } => process_generic(self, lp, ctx, lp_arena, expr_arena, true),
             Cache { .. } => {
+                // Important: Stop optimization at cache, this behavior is relied on by set_cache_states.
+                //
                 // projections above this cache will be accumulated and pushed down
                 // later
                 // the redundant projection will be cleaned in the fast projection optimization
