@@ -39,14 +39,10 @@ impl CumAggState {
             CumAggKind::Sum
             | CumAggKind::Min
             | CumAggKind::Max
+            | CumAggKind::Count
             | CumAggKind::Prod => {
                 Self::Scalar(AnyValue::Null)
             }
-
-            CumAggKind::Count => {
-                Self::Scalar(AnyValue::UInt64(0))
-            }
-
             CumAggKind::Mean => {
                 Self::MeanState(CumMeanState::default())
             }
