@@ -103,5 +103,17 @@ fn register_atexit() {
         cleaner::delete_directory(dir);
         cleaner::shutdown();
     }
-    unsafe { libc::atexit(cleanup_on_exit) };
+
+    #[cfg(not(target_os = "windows"))]
+    unsafe {
+        libc::atexit(cleanup_on_exit);
+    }
+
+    // On Windows, libc::atexit is unreliable during CRT shutdown
+    // (cleaner thread may already be dead). Layer 3 (cleanup_stale_dirs)
+    // handles leftover spill directories on next startup.
+    #[cfg(target_os = "windows")]
+    {
+        let _ = cleanup_on_exit;
+    }
 }
