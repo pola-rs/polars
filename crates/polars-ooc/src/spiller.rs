@@ -100,20 +100,23 @@ fn register_atexit() {
         let dir = polars_config::config()
             .ooc_spill_dir()
             .join(std::process::id().to_string());
-        cleaner::delete_directory(dir);
-        cleaner::shutdown();
+
+        // On Windows, the cleaner thread may already be terminated by the
+        // CRT during process shutdown. Sending to its channel would block
+        // forever or access invalid memory. Delete directly instead.
+        #[cfg(target_os = "windows")]
+        {
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            cleaner::delete_directory(dir);
+            cleaner::shutdown();
+        }
     }
 
-    #[cfg(not(target_os = "windows"))]
     unsafe {
         libc::atexit(cleanup_on_exit);
-    }
-
-    // On Windows, libc::atexit is unreliable during CRT shutdown
-    // (cleaner thread may already be dead). Layer 3 (cleanup_stale_dirs)
-    // handles leftover spill directories on next startup.
-    #[cfg(target_os = "windows")]
-    {
-        let _ = cleanup_on_exit;
     }
 }
