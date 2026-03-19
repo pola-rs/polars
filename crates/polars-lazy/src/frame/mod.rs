@@ -747,6 +747,8 @@ impl LazyFrame {
         chunk_size: Option<NonZeroUsize>,
         lazy: bool,
     ) -> PolarsResult<CollectBatches> {
+        let chunk_size = chunk_size
+            .or_else(|| NonZeroUsize::new(polars_config::config().ideal_morsel_size() as usize));
         let (send, recv) = sync_channel(1);
         let runner_send = send.clone();
         let ldf = self.sink_batches(

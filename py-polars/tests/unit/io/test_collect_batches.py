@@ -109,3 +109,15 @@ print("OK", end="")
     )
 
     assert out == b"OK"
+
+
+def test_collect_batches_respects_config_chunk_size() -> None:
+    df = pl.DataFrame({"a": range(113)})
+
+    pl.Config.set_streaming_chunk_size(17)
+    try:
+        batches = list(df.lazy().collect_batches())
+        assert all(len(b) == 17 for b in batches[:-1])
+        assert_frame_equal(pl.concat(batches), df)
+    finally:
+        pl.Config.restore_defaults()
