@@ -1,0 +1,26 @@
+[package]
+name = "polars-buffer"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "Data buffers for the Polars DataFrame library"
+
+[dependencies]
+bytemuck = { workspace = true }
+either = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+
+[build-dependencies]
+version_check = { workspace = true }
+
+[features]
+nightly = []
+serde = ["dep:serde"]
+
+[lints]
+workspace = true

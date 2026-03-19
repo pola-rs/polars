@@ -1,0 +1,203 @@
+use polars_compute::decimal::{DEC128_MAX_PREC, dec128_fits};
+use pyo3::prelude::*;
+
+use crate::PySeries;
+use crate::error::PyPolarsErr;
+use crate::prelude::*;
+use crate::utils::EnterPolarsExt;
+
+#[pymethods]
+impl PySeries {
+    fn eq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| self.series.read().equal(&*rhs.series.read()))
+    }
+
+    fn neq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| self.series.read().not_equal(&*rhs.series.read()))
+    }
+
+    fn gt(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| self.series.read().gt(&*rhs.series.read()))
+    }
+
+    fn gt_eq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| self.series.read().gt_eq(&*rhs.series.read()))
+    }
+
+    fn lt(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| self.series.read().lt(&*rhs.series.read()))
+    }
+
+    fn lt_eq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| self.series.read().lt_eq(&*rhs.series.read()))
+    }
+}
+
+macro_rules! impl_op {
+    ($op:ident, $name:ident, $type:ty) => {
+        #[pymethods]
+        impl PySeries {
+            fn $name(&self, py: Python<'_>, rhs: $type) -> PyResult<Self> {
+                py.enter_polars_series(|| self.series.read().$op(rhs))
+            }
+        }
+    };
+}
+
+impl_op!(equal, eq_u8, u8);
+impl_op!(equal, eq_u16, u16);
+impl_op!(equal, eq_u32, u32);
+impl_op!(equal, eq_u64, u64);
+impl_op!(equal, eq_u128, u128);
+impl_op!(equal, eq_i8, i8);
+impl_op!(equal, eq_i16, i16);
+impl_op!(equal, eq_i32, i32);
+impl_op!(equal, eq_i64, i64);
+impl_op!(equal, eq_i128, i128);
+impl_op!(equal, eq_f16, pf16);
+impl_op!(equal, eq_f32, f32);
+impl_op!(equal, eq_f64, f64);
+impl_op!(equal, eq_str, &str);
+
+impl_op!(not_equal, neq_u8, u8);
+impl_op!(not_equal, neq_u16, u16);
+impl_op!(not_equal, neq_u32, u32);
+impl_op!(not_equal, neq_u64, u64);
+impl_op!(not_equal, neq_u128, u128);
+impl_op!(not_equal, neq_i8, i8);
+impl_op!(not_equal, neq_i16, i16);
+impl_op!(not_equal, neq_i32, i32);
+impl_op!(not_equal, neq_i64, i64);
+impl_op!(not_equal, neq_i128, i128);
+impl_op!(not_equal, neq_f16, pf16);
+impl_op!(not_equal, neq_f32, f32);
+impl_op!(not_equal, neq_f64, f64);
+impl_op!(not_equal, neq_str, &str);
+
+impl_op!(gt, gt_u8, u8);
+impl_op!(gt, gt_u16, u16);
+impl_op!(gt, gt_u32, u32);
+impl_op!(gt, gt_u64, u64);
+impl_op!(gt, gt_u128, u128);
+impl_op!(gt, gt_i8, i8);
+impl_op!(gt, gt_i16, i16);
+impl_op!(gt, gt_i32, i32);
+impl_op!(gt, gt_i64, i64);
+impl_op!(gt, gt_i128, i128);
+impl_op!(gt, gt_f16, pf16);
+impl_op!(gt, gt_f32, f32);
+impl_op!(gt, gt_f64, f64);
+impl_op!(gt, gt_str, &str);
+
+impl_op!(gt_eq, gt_eq_u8, u8);
+impl_op!(gt_eq, gt_eq_u16, u16);
+impl_op!(gt_eq, gt_eq_u32, u32);
+impl_op!(gt_eq, gt_eq_u64, u64);
+impl_op!(gt_eq, gt_eq_u128, u128);
+impl_op!(gt_eq, gt_eq_i8, i8);
+impl_op!(gt_eq, gt_eq_i16, i16);
+impl_op!(gt_eq, gt_eq_i32, i32);
+impl_op!(gt_eq, gt_eq_i64, i64);
+impl_op!(gt_eq, gt_eq_i128, i128);
+impl_op!(gt_eq, gt_eq_f16, pf16);
+impl_op!(gt_eq, gt_eq_f32, f32);
+impl_op!(gt_eq, gt_eq_f64, f64);
+impl_op!(gt_eq, gt_eq_str, &str);
+
+impl_op!(lt, lt_u8, u8);
+impl_op!(lt, lt_u16, u16);
+impl_op!(lt, lt_u32, u32);
+impl_op!(lt, lt_u64, u64);
+impl_op!(lt, lt_u128, u128);
+impl_op!(lt, lt_i8, i8);
+impl_op!(lt, lt_i16, i16);
+impl_op!(lt, lt_i32, i32);
+impl_op!(lt, lt_i64, i64);
+impl_op!(lt, lt_i128, i128);
+impl_op!(lt, lt_f16, pf16);
+impl_op!(lt, lt_f32, f32);
+impl_op!(lt, lt_f64, f64);
+impl_op!(lt, lt_str, &str);
+
+impl_op!(lt_eq, lt_eq_u8, u8);
+impl_op!(lt_eq, lt_eq_u16, u16);
+impl_op!(lt_eq, lt_eq_u32, u32);
+impl_op!(lt_eq, lt_eq_u64, u64);
+impl_op!(lt_eq, lt_eq_u128, u128);
+impl_op!(lt_eq, lt_eq_i8, i8);
+impl_op!(lt_eq, lt_eq_i16, i16);
+impl_op!(lt_eq, lt_eq_i32, i32);
+impl_op!(lt_eq, lt_eq_i64, i64);
+impl_op!(lt_eq, lt_eq_i128, i128);
+impl_op!(lt_eq, lt_eq_f16, pf16);
+impl_op!(lt_eq, lt_eq_f32, f32);
+impl_op!(lt_eq, lt_eq_f64, f64);
+impl_op!(lt_eq, lt_eq_str, &str);
+
+struct PyDecimal(i128, usize, usize);
+
+impl<'a, 'py> FromPyObject<'a, 'py> for PyDecimal {
+    type Error = PyErr;
+
+    fn extract(obj: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        if let Ok(val) = obj.extract() {
+            return Ok(PyDecimal(val, DEC128_MAX_PREC, 0));
+        }
+
+        let err = || {
+            Err(PyPolarsErr::from(polars_err!(ComputeError: "overflow in Python Decimal to Polars Decimal conversion")).into())
+        };
+
+        let (sign, digits, exponent) = obj
+            .call_method0("as_tuple")?
+            .extract::<(i8, Vec<u8>, i8)>()?;
+        let mut val = 0_i128;
+        for d in digits {
+            if let Some(v) = val.checked_mul(10).and_then(|val| val.checked_add(d as _)) {
+                val = v;
+            } else {
+                return err();
+            }
+        }
+        let scale = if exponent > 0 {
+            if let Some(v) = val.checked_mul(10_i128.pow((-exponent) as u32)) {
+                val = v;
+            } else {
+                return err();
+            };
+            0_usize
+        } else {
+            (-exponent) as usize
+        };
+        if sign == 1 {
+            val = -val
+        };
+        if dec128_fits(val, DEC128_MAX_PREC) {
+            Ok(PyDecimal(val, DEC128_MAX_PREC, scale))
+        } else {
+            err()
+        }
+    }
+}
+
+macro_rules! impl_decimal {
+    ($name:ident, $method:ident) => {
+        #[pymethods]
+        impl PySeries {
+            fn $name(&self, py: Python<'_>, rhs: PyDecimal) -> PyResult<Self> {
+                let rhs = Series::new(
+                    PlSmallStr::from_static("decimal"),
+                    &[AnyValue::Decimal(rhs.0, rhs.1, rhs.2)],
+                );
+                py.enter_polars_series(|| self.series.read().$method(&rhs))
+            }
+        }
+    };
+}
+
+impl_decimal!(eq_decimal, equal);
+impl_decimal!(neq_decimal, not_equal);
+impl_decimal!(gt_decimal, gt);
+impl_decimal!(gt_eq_decimal, gt_eq);
+impl_decimal!(lt_decimal, lt);
+impl_decimal!(lt_eq_decimal, lt_eq);

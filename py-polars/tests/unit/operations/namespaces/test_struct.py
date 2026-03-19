@@ -1,0 +1,182 @@
+from __future__ import annotations
+
+import datetime
+from collections import OrderedDict
+
+import pytest
+
+import polars as pl
+from polars.exceptions import ColumnNotFoundError, InvalidOperationError
+from polars.testing import assert_frame_equal, assert_series_equal
+
+
+def test_struct_various() -> None:
+    df = pl.DataFrame(
+        {"int": [1, 2], "str": ["a", "b"], "bool": [True, None], "list": [[1, 2], [3]]}
+    )
+    s = df.to_struct("my_struct")
+
+    assert s.struct.fields == ["int", "str", "bool", "list"]
+    assert s[0] == {"int": 1, "str": "a", "bool": True, "list": [1, 2]}
+    assert s[1] == {"int": 2, "str": "b", "bool": None, "list": [3]}
+    assert s.struct.field("list").to_list() == [[1, 2], [3]]
+    assert s.struct.field("int").to_list() == [1, 2]
+    assert s.struct["list"].to_list() == [[1, 2], [3]]
+    assert s.struct["int"].to_list() == [1, 2]
+
+    for s, expected_name in (
+        (df.to_struct(), ""),
+        (df.to_struct("my_struct"), "my_struct"),
+    ):
+        assert s.name == expected_name
+        assert_frame_equal(s.struct.unnest(), df)
+        assert s.struct._ipython_key_completions_() == s.struct.fields
+
+
+def test_rename_fields() -> None:
+    df = pl.DataFrame({"int": [1, 2], "str": ["a", "b"], "bool": [True, None]})
+    s = df.to_struct("my_struct").struct.rename_fields(["a", "b"])
+    assert s.struct.fields == ["a", "b"]
+
+
+def test_struct_json_encode() -> None:
+    assert pl.DataFrame(
+        {"a": [{"a": [1, 2], "b": [45]}, {"a": [9, 1, 3], "b": None}]}
+    ).with_columns(pl.col("a").struct.json_encode().alias("encoded")).to_dict(
+        as_series=False
+    ) == {
+        "a": [{"a": [1, 2], "b": [45]}, {"a": [9, 1, 3], "b": None}],
+        "encoded": ['{"a":[1,2],"b":[45]}', '{"a":[9,1,3],"b":null}'],
+    }
+
+
+def test_struct_json_encode_logical_type() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [
+                {
+                    "a": [datetime.date(1997, 1, 1)],
+                    "b": [datetime.datetime(2000, 1, 29, 10, 30)],
+                    "c": [datetime.timedelta(1, 25)],
+                }
+            ]
+        }
+    ).select(pl.col("a").struct.json_encode().alias("encoded"))
+    assert df.to_dict(as_series=False) == {
+        "encoded": ['{"a":["1997-01-01"],"b":["2000-01-29 10:30:00"],"c":["PT86425S"]}']
+    }
+
+
+def test_map_fields() -> None:
+    df = pl.DataFrame({"x": {"a": 1, "b": 2}})
+    assert df.schema == OrderedDict([("x", pl.Struct({"a": pl.Int64, "b": pl.Int64}))])
+    df = df.select(pl.col("x").name.map_fields(lambda x: x.upper()))
+    assert df.schema == OrderedDict([("x", pl.Struct({"A": pl.Int64, "B": pl.Int64}))])
+
+
+def test_prefix_suffix_fields() -> None:
+    df = pl.DataFrame({"x": {"a": 1, "b": 2}})
+
+    prefix_df = df.select(pl.col("x").name.prefix_fields("p_"))
+    assert prefix_df.schema == OrderedDict(
+        [("x", pl.Struct({"p_a": pl.Int64, "p_b": pl.Int64}))]
+    )
+
+    suffix_df = df.select(pl.col("x").name.suffix_fields("_f"))
+    assert suffix_df.schema == OrderedDict(
+        [("x", pl.Struct({"a_f": pl.Int64, "b_f": pl.Int64}))]
+    )
+
+
+def test_struct_alias_prune_15401() -> None:
+    df = pl.DataFrame({"a": []}, schema={"a": pl.Struct({"b": pl.Int8})})
+    assert df.select(pl.col("a").alias("c").struct.field("b")).columns == ["b"]
+
+
+def test_empty_list_eval_schema_5734() -> None:
+    df = pl.DataFrame({"a": [[{"b": 1, "c": 2}]]})
+    assert df.filter(False).select(
+        pl.col("a").list.eval(pl.element().struct.field("b"))
+    ).schema == {"a": pl.List(pl.Int64)}
+
+
+def test_field_by_index_18732() -> None:
+    df = pl.DataFrame({"foo": [{"a": 1, "b": 2}, {"a": 2, "b": 1}]})
+
+    # illegal upper bound
+    with pytest.raises(ColumnNotFoundError):
+        df.filter(pl.col.foo.struct[2] == 1)
+
+    # legal
+    expected_df = pl.DataFrame({"foo": [{"a": 1, "b": 2}]})
+    result_df = df.filter(pl.col.foo.struct[0] == 1)
+    assert_frame_equal(expected_df, result_df)
+
+    expected_df = pl.DataFrame({"foo": [{"a": 2, "b": 1}]})
+    result_df = df.filter(pl.col.foo.struct[-1] == 1)
+    assert_frame_equal(expected_df, result_df)
+
+
+def test_unnest_raises_on_non_struct_23654() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1],
+            "b": [1.1],
+            "c": ["abc"],
+            "d": [True],
+            "e": [datetime.datetime(2025, 1, 1)],
+            "f": [datetime.datetime(2025, 1, 2).date()],
+        }
+    )
+    for z in "abcdef":
+        with pytest.raises(InvalidOperationError):
+            df.unnest(z)
+
+
+def test_json_encode_decimal_25881() -> None:
+    s = pl.Series(
+        [{"a": 1.23}, {"a": 4.56}, {"a": None}, {"a": 30.13}],
+        dtype=pl.Struct({"a": pl.Decimal(4, 2)}),
+    )
+    result = s.struct.json_encode()
+    expected = pl.Series(
+        ['{"a":"1.23"}', '{"a":"4.56"}', '{"a":null}', '{"a":"30.13"}']
+    )
+    assert_series_equal(result, expected)
+
+
+def test_json_encode_i128() -> None:
+    s = pl.Series(
+        [{"a": 2**127 - 5}, {"a": None}, {"a": -(2**127) + 124912489}],
+        dtype=pl.Struct({"a": pl.Int128}),
+    )
+    result = s.struct.json_encode()
+    expected = pl.Series(
+        [
+            '{"a":170141183460469231731687303715884105723}',
+            '{"a":null}',
+            '{"a":-170141183460469231731687303715759193239}',
+        ]
+    )
+    assert_series_equal(result, expected)
+
+
+def test_json_encode_u128() -> None:
+    s = pl.Series(
+        [{"a": 2**128 - 5}, {"a": None}],
+        dtype=pl.Struct({"a": pl.UInt128}),
+    )
+    result = s.struct.json_encode()
+    expected = pl.Series(
+        ['{"a":340282366920938463463374607431768211451}', '{"a":null}']
+    )
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("dtype", [pl.Enum(["bar", "foo"]), pl.Categorical])
+def test_json_encode_categorical(dtype: pl.DataType) -> None:
+    s = pl.Series("a", ["foo", "bar"], dtype=dtype)
+    assert_series_equal(
+        s.to_frame().select(c=pl.struct("a").struct.json_encode()).to_series(),
+        pl.Series("c", ['{"a":"foo"}', '{"a":"bar"}'], pl.String),
+    )

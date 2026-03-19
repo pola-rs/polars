@@ -1,0 +1,388 @@
+from __future__ import annotations
+
+from datetime import timedelta
+from functools import partial
+from typing import TYPE_CHECKING, Any
+
+import pytest
+from hypothesis import assume, given
+
+import polars as pl
+from polars._utils.constants import I64_MAX, I64_MIN
+from polars.series.datetime import DateTimeNameSpace
+from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import series
+from tests.unit.conftest import FLOAT_DTYPES
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from polars._typing import TimeUnit
+
+
+def test_duration_cum_sum() -> None:
+    df = pl.DataFrame({"A": [timedelta(days=1), timedelta(days=2)]})
+
+    assert df.select(pl.col("A").cum_sum()).to_dict(as_series=False) == {
+        "A": [timedelta(days=1), timedelta(days=3)]
+    }
+    assert df.schema["A"].is_(pl.Duration(time_unit="us"))
+    for duration_dtype in (
+        pl.Duration,
+        pl.Duration(time_unit="ms"),
+        pl.Duration(time_unit="ns"),
+    ):
+        assert df.schema["A"].is_(duration_dtype) is False
+
+
+def test_duration_to_string() -> None:
+    df = pl.DataFrame(
+        {
+            "td": [
+                timedelta(days=180, seconds=56789, microseconds=987654),
+                timedelta(days=0, seconds=64875, microseconds=8884),
+                timedelta(days=2, hours=23, seconds=4975, milliseconds=1),
+                timedelta(hours=1, seconds=1, milliseconds=1, microseconds=1),
+                timedelta(seconds=-42, milliseconds=-42),
+                None,
+            ]
+        },
+        schema={"td": pl.Duration("us")},
+    )
+
+    df_str = df.select(
+        td_ms=pl.col("td").cast(pl.Duration("ms")),
+        td_int=pl.col("td").cast(pl.Int64),
+        td_str_iso=pl.col("td").dt.to_string(),
+        td_str_pl=pl.col("td").dt.to_string("polars"),
+    )
+    assert df_str.schema == {
+        "td_ms": pl.Duration(time_unit="ms"),
+        "td_int": pl.Int64,
+        "td_str_iso": pl.String,
+        "td_str_pl": pl.String,
+    }
+
+    expected = pl.DataFrame(
+        {
+            "td_ms": [
+                timedelta(days=180, seconds=56789, milliseconds=987),
+                timedelta(days=0, seconds=64875, milliseconds=8),
+                timedelta(days=2, hours=23, seconds=4975, milliseconds=1),
+                timedelta(hours=1, seconds=1, milliseconds=1),
+                timedelta(seconds=-42, milliseconds=-42),
+                None,
+            ],
+            "td_int": [
+                15608789987654,
+                64875008884,
+                260575001000,
+                3601001001,
+                -42042000,
+                None,
+            ],
+            "td_str_iso": [
+                "P180DT15H46M29.987654S",
+                "PT18H1M15.008884S",
+                "P3DT22M55.001S",
+                "PT1H1.001001S",
+                "-PT42.042S",
+                None,
+            ],
+            "td_str_pl": [
+                "180d 15h 46m 29s 987654µs",
+                "18h 1m 15s 8884µs",
+                "3d 22m 55s 1ms",
+                "1h 1s 1001µs",
+                "-42s -42ms",
+                None,
+            ],
+        },
+        schema_overrides={"td_ms": pl.Duration(time_unit="ms")},
+    )
+    assert_frame_equal(expected, df_str)
+
+    # individual +/- parts
+    df = pl.DataFrame(
+        {
+            "td_ns": [
+                timedelta(weeks=1),
+                timedelta(days=1),
+                timedelta(hours=1),
+                timedelta(minutes=1),
+                timedelta(seconds=1),
+                timedelta(milliseconds=1),
+                timedelta(microseconds=1),
+                timedelta(seconds=0),
+                timedelta(microseconds=-1),
+                timedelta(milliseconds=-1),
+                timedelta(seconds=-1),
+                timedelta(minutes=-1),
+                timedelta(hours=-1),
+                timedelta(days=-1),
+                timedelta(weeks=-1),
+            ]
+        },
+        schema={"td_ns": pl.Duration("ns")},
+    )
+    df_str = df.select(pl.col("td_ns").dt.to_string("iso"))
+    assert df_str["td_ns"].to_list() == [
+        "P7D",
+        "P1D",
+        "PT1H",
+        "PT1M",
+        "PT1S",
+        "PT0.001S",
+        "PT0.000001S",
+        "PT0S",
+        "-PT0.000001S",
+        "-PT0.001S",
+        "-PT1S",
+        "-PT1M",
+        "-PT1H",
+        "-P1D",
+        "-P7D",
+    ]
+
+
+def test_duration_std_var() -> None:
+    df = pl.DataFrame(
+        {"duration": [1000, 5000, 3000]}, schema={"duration": pl.Duration}
+    )
+
+    result = df.select(
+        pl.col("duration").std().name.suffix("_std"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series(
+                "duration_std",
+                [timedelta(microseconds=2000)],
+                dtype=pl.Duration(time_unit="us"),
+            ),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.select(pl.col("duration").var())
+
+
+def test_series_duration_std_var() -> None:
+    s = pl.Series([timedelta(days=1), timedelta(days=2), timedelta(days=4)])
+    assert s.std() == timedelta(days=1, seconds=45578, microseconds=180014)
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        s.var()
+
+
+@pytest.mark.parametrize("other", [24, pl.Series([24])])
+def test_series_duration_div_multiply(other: Any) -> None:
+    s = pl.Series([timedelta(hours=1)])
+    assert (s * other).to_list() == [timedelta(days=1)]
+    assert (other * s).to_list() == [timedelta(days=1)]
+    assert (s / other).to_list() == [timedelta(minutes=2, seconds=30)]
+
+
+def test_series_duration_units() -> None:
+    td = timedelta
+
+    assert_frame_equal(
+        pl.DataFrame({"x": [0, 1, 2, 3]}).select(x=pl.duration(weeks=pl.col("x"))),
+        pl.DataFrame({"x": [td(weeks=i) for i in range(4)]}),
+    )
+    assert_frame_equal(
+        pl.DataFrame({"x": [0, 1, 2, 3]}).select(x=pl.duration(days=pl.col("x"))),
+        pl.DataFrame({"x": [td(days=i) for i in range(4)]}),
+    )
+    assert_frame_equal(
+        pl.DataFrame({"x": [0, 1, 2, 3]}).select(x=pl.duration(hours=pl.col("x"))),
+        pl.DataFrame({"x": [td(hours=i) for i in range(4)]}),
+    )
+    assert_frame_equal(
+        pl.DataFrame({"x": [0, 1, 2, 3]}).select(x=pl.duration(minutes=pl.col("x"))),
+        pl.DataFrame({"x": [td(minutes=i) for i in range(4)]}),
+    )
+    assert_frame_equal(
+        pl.DataFrame({"x": [0, 1, 2, 3]}).select(
+            x=pl.duration(milliseconds=pl.col("x"))
+        ),
+        pl.DataFrame({"x": [td(milliseconds=i) for i in range(4)]}),
+    )
+    assert_frame_equal(
+        pl.DataFrame({"x": [0, 1, 2, 3]}).select(
+            x=pl.duration(microseconds=pl.col("x"))
+        ),
+        pl.DataFrame({"x": [td(microseconds=i) for i in range(4)]}),
+    )
+
+
+def test_comparison_with_string_raises_9461() -> None:
+    df = pl.DataFrame({"duration": [timedelta(hours=2)]})
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.filter(pl.col("duration") > "1h")
+
+
+def test_duration_invalid_cast_22258() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(a=pl.duration(days=[1, 2, 3, 4]))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("time_unit", ["ns", "us", "ms", None])
+@pytest.mark.parametrize(
+    ("digit", "digit_scale"),
+    [
+        ("weeks", 7 * 24 * 60 * 60 * 1e9),
+        ("days", 24 * 60 * 60 * 1e9),
+        ("hours", 60 * 60 * 1e9),
+        ("minutes", 60 * 1e9),
+        ("seconds", 1e9),
+        ("milliseconds", 1e6),
+        ("microseconds", 1e3),
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [0.5, 0.0625, 0.00390625, 0.000244140625],
+)
+def test_duration_float_types_11625(
+    time_unit: TimeUnit, digit: str, digit_scale: int, value: int | float
+) -> None:
+    s = pl.select(
+        pl.duration(**{digit: value}, time_unit=time_unit).alias("a")
+    ).to_series()
+    expected = pl.Series("a", [int(value * digit_scale)], dtype=pl.Duration("ns"))
+    assert_series_equal(s, expected, check_dtypes=False)
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "time_unit_scale"),
+    [("ns", 1), ("us", 1e3), ("ms", 1e6), (None, 1e3)],
+)
+@pytest.mark.parametrize(
+    ("digit", "digit_scale"),
+    [
+        ("weeks", 7 * 24 * 60 * 60 * 1e9),
+        ("days", 24 * 60 * 60 * 1e9),
+        ("hours", 60 * 60 * 1e9),
+        ("minutes", 60 * 1e9),
+        ("seconds", 1e9),
+        ("milliseconds", 1e6),
+        ("microseconds", 1e3),
+        ("nanoseconds", 1),
+    ],
+)
+@given(
+    s=series(
+        name="a",
+        allowed_dtypes=FLOAT_DTYPES + [pl.Int64],
+        allow_null=False,
+        allow_nan=False,
+        allow_infinity=False,
+        min_size=1,
+    )
+)
+def test_duration_float_types_series_11625(
+    time_unit: TimeUnit,
+    time_unit_scale: int,
+    digit: str,
+    digit_scale: int,
+    s: pl.Series,
+) -> None:
+    # Float16 does not have enough exponent bits to represent 1_000_000
+    assume(not (s.dtype == pl.Float16 and time_unit == "ms"))
+
+    # Exclude cases that could potentially overflow Int64
+    s = s.clip(
+        0.95 * I64_MIN / digit_scale / time_unit_scale,
+        0.95 * I64_MAX / digit_scale / time_unit_scale,
+    )
+
+    # Truncate any digits below the current time unit precision
+    if digit_scale < time_unit_scale:
+        s = (s / time_unit_scale).round() * time_unit_scale
+
+    expected = s.cast(pl.Float64) * digit_scale
+    expected_ns = (expected / time_unit_scale).cast(pl.Int64) * time_unit_scale
+    actual_ns = (
+        pl.select(pl.duration(**{digit: s}, time_unit=time_unit).alias("a"))  # type: ignore[arg-type]
+        .to_series()
+        .dt.total_nanoseconds()
+    )
+    assert_series_equal(actual_ns.cast(pl.Float64), expected_ns.cast(pl.Float64))
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "time_unit_kw", "time_unit_scale"),
+    [
+        (None, "microseconds", 1e3),
+        ("ns", "nanoseconds", 1),
+        ("us", "microseconds", 1e3),
+        ("ms", "milliseconds", 1e6),
+    ],
+)
+@pytest.mark.parametrize(
+    ("total_units_fn", "total_units_scale"),
+    [
+        (partial(DateTimeNameSpace.total_days, fractional=True), 24 * 60 * 60 * 1e9),
+        (partial(DateTimeNameSpace.total_hours, fractional=True), 60 * 60 * 1e9),
+        (partial(DateTimeNameSpace.total_minutes, fractional=True), 60 * 1e9),
+        (partial(DateTimeNameSpace.total_seconds, fractional=True), 1e9),
+        (partial(DateTimeNameSpace.total_milliseconds, fractional=True), 1e6),
+        (partial(DateTimeNameSpace.total_microseconds, fractional=True), 1e3),
+        (partial(DateTimeNameSpace.total_nanoseconds, fractional=True), 1),
+    ],
+)
+@given(
+    s=series(
+        name="a",
+        allowed_dtypes=[pl.Int64],
+        allow_null=False,
+        min_size=1,
+    )
+)
+def test_duration_total_units_fractional(
+    time_unit: TimeUnit,
+    time_unit_kw: str,
+    time_unit_scale: int,
+    total_units_fn: Callable[[pl.Series], pl.Series],
+    total_units_scale: int,
+    s: pl.Series,
+) -> None:
+    expected = s.cast(pl.Float64) * time_unit_scale / total_units_scale
+
+    actual = total_units_fn(
+        pl.select(pl.duration(**{time_unit_kw: s}, time_unit=time_unit).alias("a"))  # type: ignore[arg-type]
+        .to_series()
+        .dt,
+    )
+    assert_series_equal(actual, expected)
+
+    # Check scalar case separately, since it's handled separately
+    actual = total_units_fn(
+        pl.select(pl.duration(**{time_unit_kw: s[0]}, time_unit=time_unit).alias("a"))  # type: ignore[arg-type]
+        .to_series()
+        .dt,
+    )
+    assert_series_equal(actual, expected.slice(0, 1))
+
+
+def test_scalar_i64_overflow() -> None:
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="9223372036854775808",
+    ):
+        pl.select(pl.duration(nanoseconds=2**63))
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="18446744073709551616",
+    ):
+        pl.select(pl.duration(nanoseconds=2**64))
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="-9223372036854775809",
+    ):
+        pl.select(pl.duration(nanoseconds=-(2**63) - 1))

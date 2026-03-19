@@ -1,0 +1,146 @@
+[package]
+name = "polars-arrow"
+version = { workspace = true }
+authors = [
+  "Jorge C. Leitao <jorgecarleitao@gmail.com>",
+  "Apache Arrow <dev@arrow.apache.org>",
+  "Ritchie Vink <ritchie46@gmail.com>",
+]
+edition = { workspace = true }
+homepage = { workspace = true }
+license = "MIT AND Apache-2.0"
+repository = { workspace = true }
+description = "Minimal implementation of the Arrow specification forked from arrow2"
+
+[dependencies]
+bitflags = { workspace = true }
+bytemuck = { workspace = true, features = ["must_cast"] }
+bytes = { workspace = true }
+chrono = { workspace = true }
+# for timezone support
+chrono-tz = { workspace = true, optional = true }
+dyn-clone = { version = "1" }
+either = { workspace = true }
+half = { workspace = true, optional = false, features = ["num-traits", "bytemuck"] }
+hashbrown = { workspace = true }
+num-traits = { workspace = true }
+polars-buffer = { workspace = true }
+polars-error = { workspace = true }
+polars-schema = { workspace = true }
+polars-utils = { workspace = true }
+schemars = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+simdutf8 = { workspace = true }
+
+ethnum = { workspace = true }
+
+# To efficiently cast numbers to strings
+atoi_simd = { workspace = true, optional = true }
+itoa = { workspace = true, optional = true }
+streaming-iterator = { workspace = true }
+
+arrow-format = { workspace = true, optional = true, features = ["ipc"] }
+
+# for IPC compression
+lz4 = { version = "1.24", optional = true }
+zstd = { workspace = true, optional = true }
+
+# to write to parquet as a stream
+futures = { workspace = true, optional = true }
+
+# avro support
+avro-schema = { workspace = true, optional = true }
+
+# For async arrow flight conversion
+async-stream = { version = "0.3", optional = true }
+tokio = { workspace = true, optional = true, features = ["io-util"] }
+
+proptest = { workspace = true, optional = true }
+strum_macros = { workspace = true }
+
+[dev-dependencies]
+# used to run formal property testing
+polars-arrow = { path = ".", features = ["proptest"] }
+proptest = { workspace = true }
+
+# use for flaky testing
+rand = { workspace = true }
+# used to test async readers
+tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }
+
+[build-dependencies]
+version_check = { workspace = true }
+
+[target.wasm32-unknown-unknown.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+old_getrandom = { version = "0.2", features = ["js"], package = "getrandom" }
+
+[features]
+default = []
+full = [
+  "io_ipc",
+  "io_flight",
+  "io_ipc_compression",
+  "io_avro",
+  "io_avro_compression",
+  "io_avro_async",
+  "compute",
+  "serde",
+  # parses timezones used in timestamp conversions
+  "chrono-tz",
+]
+io_ipc = ["arrow-format", "polars-error/arrow-format"]
+io_ipc_compression = ["lz4", "zstd", "io_ipc"]
+io_flight = ["io_ipc", "arrow-format/flight-data", "async-stream", "futures", "tokio"]
+
+io_avro = ["avro-schema", "polars-error/avro-schema"]
+io_avro_compression = [
+  "avro-schema/compression",
+]
+io_avro_async = ["avro-schema/async"]
+
+# the compute kernels. Disabling this significantly reduces compile time.
+compute_aggregate = []
+compute_arithmetics_decimal = []
+compute_arithmetics = ["compute_arithmetics_decimal"]
+compute_bitwise = []
+compute_comparison = []
+compute_temporal = []
+compute = [
+  "compute_aggregate",
+  "compute_arithmetics",
+  "compute_bitwise",
+  "compute_comparison",
+  "compute_temporal",
+]
+serde = [
+  "dep:serde",
+  "polars-buffer/serde",
+  "polars-schema/serde",
+  "polars-utils/serde",
+  "half/serde",
+]
+dsl-schema = ["dep:schemars", "polars-schema/dsl-schema", "polars-utils/dsl-schema"]
+simd = []
+
+# polars-arrow
+timezones = [
+  "chrono-tz",
+]
+dtype-array = []
+dtype-decimal = ["atoi_simd", "itoa"]
+bigidx = ["polars-utils/bigidx"]
+nightly = []
+performant = []
+strings = []
+temporal = []
+
+[package.metadata.docs.rs]
+features = ["full"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[package.metadata.cargo-all-features]
+allowlist = ["compute", "compute_sort", "compute_nullif"]
+
+[lints]
+workspace = true

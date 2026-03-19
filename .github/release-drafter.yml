@@ -1,0 +1,132 @@
+exclude-labels:
+  - skip changelog
+  - release
+
+change-template: '- $TITLE (#$NUMBER)'
+change-title-escapes: '\<*_&'
+replacers:
+  # Remove conventional commits from titles
+  - search: '/- (build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)(\(.*\))?(\!)?\: /g'
+    replace: '- '
+
+autolabeler:
+  - label: rust
+    title:
+      # Example: feat(rust): ...
+      - '/^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)(\(.*rust.*\))?\!?\: /'
+  - label: python
+    title:
+      # Example: feat(python): ...
+      - '/^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)(\(.*python.*\))?\!?\: /'
+  - label: breaking
+    title:
+      # Example: feat!: ...
+      - '/^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)(\(.*\))?\!\: /'
+  - label: breaking rust
+    title:
+      # Example: feat(rust!, python): ...
+      - '/^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)\(.*rust\!.*\)\: /'
+  - label: breaking python
+    title:
+      # Example: feat(python!): ...
+      - '/^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)\(.*python\!.*\)\: /'
+  - label: build
+    title:
+      - '/^build/'
+  - label: internal
+    title:
+      - '/^(chore|ci|refactor|test)/'
+  - label: deprecation
+    title:
+      - '/^depr/'
+  - label: documentation
+    title:
+      - '/^docs/'
+  - label: enhancement
+    title:
+      - '/^feat/'
+  - label: fix
+    title:
+      - '/^fix/'
+  - label: performance
+    title:
+      - '/^perf/'
+  - label: regression
+    title:
+      - '/regression/'
+  - label: release
+    title:
+      - '/^release/'
+  - label: A-sql
+    title:
+      - '/\bsql\b|sqlcontext/i'
+  - label: A-dtype-categorical
+    title:
+      - '/categorical|categories/i'
+  - label: A-dtype-decimal
+    title:
+      - '/decimal/i'
+  - label: A-dtype-object
+    title:
+      - '/Object/'
+  - label: A-dtype-struct
+    title:
+      - '/struct/i'
+  - label: A-gpu
+    title:
+      - '/\bgpu\b/i'
+  - label: A-ide
+    title:
+      - '/\bide\b/i'
+  - label: A-io-avro
+    title:
+      - '/\bavro\b/i'
+  - label: A-io-catalog
+    title:
+      - '/catalog/i'
+  - label: A-io-cloud
+    title:
+      - '/azure|\baws\b|cloud|\bgcs\b|hugging|s3/i'
+  - label: A-io-csv
+    title:
+      - '/\bcsv\b/i'
+  - label: A-io-database
+    title:
+      - '/database/i'
+  - label: A-io-iceberg
+    title:
+      - '/iceberg/i'
+  - label: A-io-ipc
+    title:
+      - '/\bipc\b/i'
+  - label: A-io-json
+    title:
+      - '/json/i'
+  - label: A-io-parquet
+    title:
+      - '/parquet/i'
+  - label: A-io-spreadsheet
+    title:
+      - '/spreadsheet|excel/i'
+  - label: A-interop-numpy
+    title:
+      - '/numpy/i'
+  - label: A-interop-pandas
+    title:
+      - '/pandas/i'
+  - label: A-plugin
+    title:
+      - '/plugin/i'
+  - label: A-selectors
+    title:
+      - '/selector/i'
+  - label: A-streaming
+    title:
+      - '/streaming/i'
+
+
+template: |
+  $CHANGES
+
+  Thank you to all our contributors for making this release possible!
+  $CONTRIBUTORS

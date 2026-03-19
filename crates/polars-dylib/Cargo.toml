@@ -1,0 +1,28 @@
+[package]
+name = "polars-dylib"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["dylib", "rlib"]
+
+[dependencies]
+arrow = { workspace = true, optional = true, features = ["io_flight"] }
+polars = { workspace = true, features = ["full"] }
+polars-core = { workspace = true, optional = true }
+polars-expr = { workspace = true, optional = true }
+polars-lazy = { workspace = true, optional = true }
+polars-mem-engine = { workspace = true, optional = true }
+polars-plan = { workspace = true, optional = true }
+polars-python = { workspace = true, optional = true, default-features = true }
+
+[features]
+private = ["polars-plan", "arrow", "polars-core", "polars-lazy", "polars-expr", "polars-mem-engine"]
+python = ["polars-plan?/python", "polars-python", "polars-lazy?/python", "polars-mem-engine?/python"]
+
+[lints]
+workspace = true

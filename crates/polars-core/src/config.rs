@@ -1,0 +1,60 @@
+use polars_error::{PolarsResult, polars_ensure};
+
+// Formatting environment variables (typically referenced/set from the python-side Config object)
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+pub(crate) const FMT_MAX_COLS: &str = "POLARS_FMT_MAX_COLS";
+pub(crate) const FMT_MAX_ROWS: &str = "POLARS_FMT_MAX_ROWS";
+pub(crate) const FMT_STR_LEN: &str = "POLARS_FMT_STR_LEN";
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+pub(crate) const FMT_TABLE_CELL_ALIGNMENT: &str = "POLARS_FMT_TABLE_CELL_ALIGNMENT";
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+pub(crate) const FMT_TABLE_CELL_NUMERIC_ALIGNMENT: &str = "POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT";
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+pub(crate) const FMT_TABLE_DATAFRAME_SHAPE_BELOW: &str = "POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW";
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+pub(crate) const FMT_TABLE_FORMATTING: &str = "POLARS_FMT_TABLE_FORMATTING";
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+pub(crate) const FMT_TABLE_HIDE_COLUMN_DATA_TYPES: &str = "POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES";
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+pub(crate) const FMT_TABLE_HIDE_COLUMN_NAMES: &str = "POLARS_FMT_TABLE_HIDE_COLUMN_NAMES";
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+pub(crate) const FMT_TABLE_HIDE_COLUMN_SEPARATOR: &str = "POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR";
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+pub(crate) const FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION: &str =
+    "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION";
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+pub(crate) const FMT_TABLE_INLINE_COLUMN_DATA_TYPE: &str =
+    "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE";
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+pub(crate) const FMT_TABLE_ROUNDED_CORNERS: &str = "POLARS_FMT_TABLE_ROUNDED_CORNERS";
+pub(crate) const FMT_TABLE_CELL_LIST_LEN: &str = "POLARS_FMT_TABLE_CELL_LIST_LEN";
+
+pub fn verbose() -> bool {
+    polars_config::config().verbose()
+}
+
+/// Prints a log message if sensitive verbose logging has been enabled.
+pub fn verbose_print_sensitive<F: Fn() -> String>(create_log_message: F) {
+    fn do_log(create_log_message: &dyn Fn() -> String) {
+        if polars_config::config().verbose_sensitive() {
+            // Force the message to be a single line.
+            let msg = create_log_message().replace('\n', " ");
+            eprintln!("[SENSITIVE]: {msg}")
+        }
+    }
+
+    do_log(&create_log_message)
+}
+
+pub fn check_allow_importing_interval_as_struct(type_name: &'static str) -> PolarsResult<()> {
+    polars_ensure!(
+        polars_config::config().import_interval_as_struct(),
+        ComputeError:
+        "could not import from `{type_name}` type. \
+        Hint: This can be imported by setting \
+        POLARS_IMPORT_INTERVAL_AS_STRUCT=1 in the environment. \
+        Note however that this is unstable functionality \
+        that may change at any time."
+    );
+    Ok(())
+}

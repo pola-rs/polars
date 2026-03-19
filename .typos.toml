@@ -1,0 +1,49 @@
+[files]
+extend-exclude = [
+  ".git/",
+  "*.csv",
+  "*.gz",
+  "dists.dss",
+  "**/images/*",
+  "**/py-polars/src/polars/_utils/nest_asyncio.py",
+  "*.nix",
+  "**/crates/polars-plan/dsl-schema-hashes.json",
+  "**/_polars_runtime*/",
+]
+ignore-hidden = false
+
+[default]
+extend-ignore-re = [
+  '"Theatre": \[.+\],',
+  'HashiCorp',
+]
+
+[default.extend-words]
+arange = "arange"
+ser = "ser"
+splitted = "splitted"
+strat = "strat"
+typ = "typ"
+
+[type.py.extend-identifiers]
+ba = "ba"
+ody = "ody"
+ND = "ND"
+nd = "nd"
+NDArray1D = "NDArray1D"
+
+[type.rust.extend-identifiers]
+ANDed = "ANDed"
+bck = "bck"
+Fo = "Fo"
+ND = "ND"
+nd = "nd"
+NDJson = "NDJson"
+NDJsonSinkNode = "NDJsonSinkNode"
+NDJsonReaderBuilder = "NDJsonReaderBuilder"
+NDJsonReadOptions = "NDJsonReadOptions"
+NDJsonFileReader = "NDJsonFileReader"
+NDJsonWriterStarter = "NDJsonWriterStarter"
+NDJsonWriterOptions = "NDJsonWriterOptions"
+opt_nd = "opt_nd"
+tpe = "tpe"

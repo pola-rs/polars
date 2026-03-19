@@ -1,0 +1,109 @@
+from datetime import datetime
+
+import pytest
+
+import polars as pl
+from polars.testing import assert_frame_equal
+
+
+@pytest.mark.may_fail_cloud  # reason: with_context
+def test_with_context() -> None:
+    df_a = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "c", None]}).lazy()
+    df_b = pl.DataFrame({"c": ["foo", "ham"]})
+
+    with pytest.deprecated_call():
+        result = df_a.with_context(df_b.lazy()).select(
+            pl.col("b") + pl.col("c").first()
+        )
+    assert result.collect().to_dict(as_series=False) == {"b": ["afoo", "cfoo", None]}
+
+    with pytest.deprecated_call():
+        context = df_a.with_context(df_b.lazy())
+    with pytest.raises(pl.exceptions.ShapeError):
+        context.select("a", "c").collect()
+
+
+# https://github.com/pola-rs/polars/issues/5867
+@pytest.mark.may_fail_cloud  # reason: with_context
+def test_with_context_ignore_5867() -> None:
+    outer = pl.LazyFrame({"OtherCol": [1, 2, 3, 4]})
+    with pytest.deprecated_call():
+        lf = pl.LazyFrame(
+            {"Category": [1, 1, 2, 2], "Counts": [1, 2, 3, 4]}
+        ).with_context(outer)
+
+    result = lf.group_by("Category", maintain_order=True).agg(pl.col("Counts").sum())
+
+    expected = pl.LazyFrame({"Category": [1, 2], "Counts": [3, 7]})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.may_fail_cloud  # reason: with_context
+def test_predicate_pushdown_with_context_11014() -> None:
+    df1 = pl.LazyFrame(
+        {
+            "df1_c1": [1, 2, 3],
+            "df1_c2": [2, 3, 4],
+        }
+    )
+
+    df2 = pl.LazyFrame(
+        {
+            "df2_c1": [2, 3, 4],
+            "df2_c2": [3, 4, 5],
+        }
+    )
+
+    with pytest.deprecated_call():
+        out = (
+            df1.with_context(df2)
+            .filter(pl.col("df1_c1").is_in(pl.col("df2_c1")))
+            .collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True))
+        )
+
+    assert out.to_dict(as_series=False) == {"df1_c1": [2, 3], "df1_c2": [3, 4]}
+
+
+@pytest.mark.may_fail_cloud  # reason: with_context
+def test_no_cse_in_with_context() -> None:
+    df1 = pl.DataFrame(
+        {
+            "timestamp": [
+                datetime(2023, 1, 1, 0, 0),
+                datetime(2023, 5, 1, 0, 0),
+                datetime(2023, 10, 1, 0, 0),
+            ],
+            "value": [2, 5, 9],
+        }
+    )
+    df2 = pl.DataFrame(
+        {
+            "date_start": [
+                datetime(2022, 12, 31, 0, 0),
+                datetime(2023, 1, 2, 0, 0),
+            ],
+            "date_end": [
+                datetime(2023, 4, 30, 0, 0),
+                datetime(2023, 5, 5, 0, 0),
+            ],
+            "label": [0, 1],
+        }
+    )
+
+    with pytest.deprecated_call():
+        context = df1.lazy().with_context(df2.lazy())
+
+    assert (
+        context.select(
+            pl.col("date_start", "label").gather(
+                pl.col("date_start").search_sorted(pl.col("timestamp")) - 1
+            ),
+        )
+    ).collect().to_dict(as_series=False) == {
+        "date_start": [
+            datetime(2022, 12, 31, 0, 0),
+            datetime(2023, 1, 2, 0, 0),
+            datetime(2023, 1, 2, 0, 0),
+        ],
+        "label": [0, 1, 1],
+    }

@@ -1,0 +1,51 @@
+name: Pull request labeler
+
+on:
+  pull_request_target:
+    types: [opened, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  labeler:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Label pull request
+        uses: release-drafter/release-drafter@v6
+        with:
+          disable-releaser: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Label first-time contributors
+        # First-time contributor check from https://github.com/llvm/llvm-project/blob/0af2d43e06415ce1e8a5d49e864c3881048dd08b/.github/workflows/new-prs.yml#L22.
+        # Only label PRs opened for the first time by someone new to this repo
+        # or to GitHub as a whole. Ideally we'd look for FIRST_TIMER or
+        # FIRST_TIME_CONTRIBUTOR, but this does not appear to work. Instead
+        # check that we do not have any of the other author associations.
+        # See https://docs.github.com/en/webhooks/webhook-events-and-payloads?actionType=opened#pull_request
+        # for all the possible values.
+        if: >-
+          (github.event.action == 'opened') &&
+          (github.event.pull_request.author_association != 'COLLABORATOR') &&
+          (github.event.pull_request.author_association != 'CONTRIBUTOR') &&
+          (github.event.pull_request.author_association != 'MANNEQUIN') &&
+          (github.event.pull_request.author_association != 'MEMBER') &&
+          (github.event.pull_request.author_association != 'OWNER')
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              labels: ['first-contribution'],
+            });
+
+      - name: Check pull request title
+        uses: thehanimo/pr-title-checker@v1.4.2
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
