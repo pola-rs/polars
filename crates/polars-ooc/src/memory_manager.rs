@@ -481,6 +481,16 @@ impl MemoryManager {
                     return;
                 }
 
+                // Skip pinned or non-InMemory entries without entering
+                // try_spill's CAS loop.
+                let meta = self.df_store.load_meta(id.index);
+                if meta.generation() != id.generation
+                    || meta.spill() != SpillState::InMemory
+                    || meta.is_pinned()
+                {
+                    return;
+                }
+
                 if let Some((df, size, seq)) = self.df_store.try_spill(id.index, id.generation) {
                     self.track_bytes(-(size as isize));
                     pending.push((id.index, id.generation, seq, df));

@@ -89,12 +89,12 @@ impl SlotMeta {
     }
 
     #[inline]
-    fn is_pinned(self) -> bool {
+    pub(crate) fn is_pinned(self) -> bool {
         self.0 & PIN_BIT != 0
     }
 
     #[inline]
-    fn generation(self) -> u32 {
+    pub(crate) fn generation(self) -> u32 {
         (self.0 & GEN_MASK) as u32
     }
 
