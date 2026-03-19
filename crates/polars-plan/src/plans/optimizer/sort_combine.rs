@@ -1,22 +1,21 @@
-use IR::*;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
 use super::OptimizationRule;
-use crate::plans::{AExpr, ExprIR, is_sorted};
-use crate::prelude::IR;
+use crate::plans::{AExpr, is_sorted};
+use crate::prelude::*;
 
-pub struct CoalesceSort {}
+pub struct SortCombine {}
 
-impl OptimizationRule for CoalesceSort {
+impl OptimizationRule for SortCombine {
     fn optimize_plan(
         &mut self,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         node: Node,
     ) -> PolarsResult<Option<IR>> {
-        if let Some(result) = try_coalesce_sorts(node, lp_arena, expr_arena) {
+        if let Some(result) = try_combine_sorts(node, lp_arena, expr_arena) {
             return Ok(Some(result));
         }
         if let Some(result) = try_prune_sort_with_sortedness(node, lp_arena, expr_arena) {
@@ -28,7 +27,7 @@ impl OptimizationRule for CoalesceSort {
 
 /// If two consecutive sort nodes share a prefix of sort columns, replace them with
 /// the sort node that covers the most columns.
-fn try_coalesce_sorts(node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<IR> {
+fn try_combine_sorts(node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<IR> {
     let IR::Sort {
         input,
         by_column,
@@ -48,39 +47,65 @@ fn try_coalesce_sorts(node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr
         return None;
     };
 
-    let expr_eq = |e1: &&ExprIR, e2: &&ExprIR| {
-        AExpr::is_expr_equal_to(
-            expr_arena.get(e1.node()),
-            expr_arena.get(e2.node()),
-            expr_arena,
-        )
-    };
-
-    let node_sorts_most_columns = prefix_dominance(by_column.iter(), in_by_column.iter(), expr_eq)?;
-    let merged_options =
-        coalesce_sort_multiple_options(sort_options, in_sort_options, node_sorts_most_columns)?;
-
-    let slice = match (slice, in_slice) {
-        (s @ Some((_, _, None)), None) => s.to_owned(),
-        (None, s @ Some((_, _, None))) => s.to_owned(),
-        (Some((o1, l1, None)), Some((o2, l2, None))) => Some((o1 + o2, usize::min(*l1, *l2), None)),
-        _ => return None,
-    };
-
-    Some(if node_sorts_most_columns {
-        Sort {
+    if !sort_options.maintain_order {
+        return Some(IR::Sort {
             input: *in_input,
             by_column: by_column.clone(),
-            slice,
-            sort_options: merged_options,
+            slice: slice.clone(),
+            sort_options: sort_options.clone(),
+        });
+    }
+
+    let mut by_column = by_column.clone();
+    let mut descending = sort_options.descending.clone();
+    let mut nulls_last = sort_options.nulls_last.clone();
+    let in_so_iter = Iterator::zip(
+        in_sort_options.descending.iter(),
+        in_sort_options.nulls_last.iter(),
+    );
+    let mut l_stack = Default::default();
+    let mut r_stack = Default::default();
+    for (by, (d, nl)) in in_by_column.iter().zip(in_so_iter) {
+        let by_node = expr_arena.get(by.node());
+        let expr_is_eq = |x: &ExprIR| {
+            by_node.is_expr_equal_to_amortized(
+                expr_arena.get(x.node()),
+                expr_arena,
+                &mut l_stack,
+                &mut r_stack,
+            )
+        };
+        if !by_column.iter().any(expr_is_eq) {
+            by_column.push(by.clone());
+            descending.push(*d);
+            nulls_last.push(*nl);
         }
-    } else {
-        Sort {
-            input: *in_input,
-            by_column: in_by_column.clone(),
-            slice,
-            sort_options: merged_options,
-        }
+    }
+
+    let slice = match (slice, in_slice) {
+        (Some((o1, l1, None)), Some((o2, l2, None))) => Some((o1 + o2, usize::min(*l1, *l2), None)),
+        (s @ Some((_, _, None)), None) | (None, s @ Some((_, _, None))) => s.to_owned(),
+        (None, None) => None,
+        _ => return None, // TODO: Implement dynamic slices too
+    };
+    let maintain_order = in_sort_options.maintain_order;
+    let limit = match (sort_options.limit, in_sort_options.limit) {
+        (Some(l1), Some(l2)) => Some(IdxSize::min(l1, l2)),
+        (Some(l), None) | (None, Some(l)) => Some(l),
+        (None, None) => None,
+    };
+    let sort_options = SortMultipleOptions {
+        descending,
+        nulls_last,
+        maintain_order,
+        limit,
+        ..sort_options.clone()
+    };
+    Some(IR::Sort {
+        input: *in_input,
+        by_column,
+        slice,
+        sort_options,
     })
 }
 
@@ -156,35 +181,4 @@ where
             (None, Some(_)) => return Some(false),
         }
     }
-}
-
-fn coalesce_sort_multiple_options(
-    node: &SortMultipleOptions,
-    input: &SortMultipleOptions,
-    node_sorts_most_columns: bool,
-) -> Option<SortMultipleOptions> {
-    let node_sort_props = Iterator::zip(node.descending.iter(), node.nulls_last.iter());
-    let input_sort_propes: std::iter::Zip<std::slice::Iter<'_, bool>, std::slice::Iter<'_, bool>> =
-        Iterator::zip(input.descending.iter(), input.nulls_last.iter());
-    let node_sorts_most_columns2 =
-        prefix_dominance(node_sort_props, input_sort_propes, |n, i| n == i)?;
-    debug_assert!(node_sorts_most_columns2 == node_sorts_most_columns);
-
-    // We don't care about the multithreaded criterion
-
-    let maintain_order = node.maintain_order && input.maintain_order;
-    let limit = match (node.limit, input.limit) {
-        (Some(l1), Some(l2)) => Some(IdxSize::min(l1, l2)),
-        (Some(l), None) | (None, Some(l)) => Some(l),
-        (None, None) => None,
-    };
-    Some(SortMultipleOptions {
-        maintain_order,
-        limit,
-        ..if node_sorts_most_columns {
-            node.clone()
-        } else {
-            input.clone()
-        }
-    })
 }

@@ -14,40 +14,47 @@ from polars.testing.parametric.strategies.core import dataframes
 def test_sort_node_coalescence(
     df: pl.DataFrame, mo1: bool, mo2: bool, key1: str, key2: str
 ) -> None:
-    q = df.lazy().sort(key1, maintain_order=mo1).sort(key2, maintain_order=mo2)
+    q = (
+        df.with_row_index()
+        .lazy()
+        .sort(key1, maintain_order=mo1)
+        .sort(key2, maintain_order=mo2)
+        .select(pl.col("index"))
+    )
     lp = q.explain()
+    lp_expect = "SORT BY [maintain_order: true]" if mo1 and mo2 else "SORT BY"
+    assert lp.count("SORT BY") == 1
     if not mo2:
-        assert lp.count("SORT BY") == 1
-        assert "[maintain_order: true]" not in lp
+        assert f'{lp_expect} [col("{key2}")]' in lp
     elif key1 == key2:
-        assert lp.count("SORT BY") == 1
-        if mo1 and mo2:
-            assert "[maintain_order: true]" in lp
-        else:
-            assert "[maintain_order: true]" not in lp
+        assert f'{lp_expect} [col("{key1}")]' in lp
     else:
-        assert lp.count("SORT BY") == 2
+        assert f'{lp_expect} [col("{key2}"), col("{key1}")]' in lp
     actual = q.collect()
-    expected = df.sort(key1, maintain_order=mo1).sort(key2, maintain_order=mo2)
+    expected = (
+        df.with_row_index()
+        .sort(key1, maintain_order=mo1)
+        .sort(key2, maintain_order=mo2)
+        .select(pl.col("index"))
+    )
     assert_frame_equal(actual, expected, check_row_order=mo1 and mo2)
 
 
 @pytest.mark.parametrize("mo1", [False, True])
-@pytest.mark.parametrize("mo2", [False, True])
-def test_sort_node_coalescence_multiple(mo1: bool, mo2: bool) -> None:
+def test_sort_node_coalescence_multiple(mo1: bool) -> None:
     df = pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4]})
     for q in [
-        df.lazy().sort("a", "b", maintain_order=mo1).sort("a", maintain_order=mo2),
-        df.lazy().sort("a", maintain_order=mo1).sort("a", "b", maintain_order=mo2),
+        df.lazy().sort("a", "b", maintain_order=mo1).sort("a", maintain_order=True),
+        df.lazy().sort("a", maintain_order=mo1).sort("a", "b", maintain_order=True),
     ]:
         assert q.explain().count("SORT BY") == 1
-        if mo1 and mo2:
+        if mo1:
             assert 'SORT BY [maintain_order: true] [col("a"), col("b")]' in q.explain()
         else:
             assert 'SORT BY [col("a"), col("b")]' in q.explain()
         actual = q.collect()
-        expected = df.sort("a", "b", maintain_order=mo1 and mo2)
-        assert_frame_equal(actual, expected, check_row_order=mo1 and mo2)
+        expected = df.sort("a", "b", maintain_order=mo1)
+        assert_frame_equal(actual, expected, check_row_order=mo1)
 
 
 @pytest.mark.parametrize("key1", ["col0", "col1"])

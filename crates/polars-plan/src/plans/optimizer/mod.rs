@@ -19,13 +19,13 @@ pub(crate) use join_utils::ExprOrigin;
 mod expand_datasets;
 #[cfg(feature = "python")]
 pub use expand_datasets::ExpandedPythonScan;
-mod coalesce_sort;
 mod predicate_pushdown;
 mod projection_pushdown;
 pub mod set_order;
 mod simplify_expr;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
+mod sort_combine;
 mod sortedness;
 mod stack_opt;
 
@@ -156,7 +156,7 @@ pub fn optimize(
         };
     }
 
-    rules.push(Box::new(coalesce_sort::CoalesceSort {}));
+    rules.push(Box::new(sort_combine::SortCombine {}));
 
     // Run before slice pushdown
     if opt_flags.simplify_expr() {
