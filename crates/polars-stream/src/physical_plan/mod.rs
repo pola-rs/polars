@@ -681,7 +681,7 @@ pub fn build_physical_plan(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
-    ctx: StreamingLowerIRContext,
+    ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysNodeKey> {
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
     let mut expr_cache = ExprCache::with_capacity(expr_arena.len());

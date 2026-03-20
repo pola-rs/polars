@@ -18,10 +18,7 @@ use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{CallbackSinkType, ExtraColumnsPolicy, FileScanIR, SinkTypeIR};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{
-    AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, are_keys_sorted_any, is_sorted,
-    write_ir_non_recursive,
-};
+use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive};
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
@@ -81,7 +78,7 @@ pub(super) fn build_filter_stream(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
-    ctx: StreamingLowerIRContext,
+    ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
     let predicate = predicate;
     let cols_and_predicate = phys_sm[input.node]
@@ -144,9 +141,10 @@ pub fn build_row_idx_stream(
     PhysStream::first(with_row_idx_node_key)
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct StreamingLowerIRContext {
+#[derive(Clone, Copy)]
+pub struct StreamingLowerIRContext<'a> {
     pub prepare_visualization: bool,
+    pub sortedness: &'a IRPlanSorted,
 }
 
 #[recursive::recursive]
@@ -159,7 +157,7 @@ pub fn lower_ir(
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
     expr_cache: &mut ExprCache,
     cache_nodes: &mut PlHashMap<UniqueId, PhysStream>,
-    ctx: StreamingLowerIRContext,
+    ctx: StreamingLowerIRContext<'_>,
     mut disable_morsel_split: Option<bool>,
 ) -> PolarsResult<PhysStream> {
     // Helper macro to simplify recursive calls.
@@ -1092,13 +1090,10 @@ pub fn lower_ir(
             let phys_input = lower_ir!(input)?;
 
             let input_schema = &phys_sm[phys_input.node].output_schema;
-            let are_keys_sorted = are_keys_sorted_any(
-                is_sorted(input, ir_arena, expr_arena).as_ref(),
-                &keys,
-                expr_arena,
-                input_schema,
-            )
-            .is_some();
+            let are_keys_sorted = ctx
+                .sortedness
+                .are_keys_sorted_any(input, &keys, expr_arena, input_schema)
+                .is_some();
 
             return build_group_by_stream(
                 phys_input,
@@ -1189,6 +1184,7 @@ pub fn lower_ir(
                         ir_arena,
                         expr_arena,
                         schema_cache,
+                        ctx.sortedness,
                     );
                 } else {
                     input_right = insert_sort_node_if_not_sorted(
@@ -1198,6 +1194,7 @@ pub fn lower_ir(
                         ir_arena,
                         expr_arena,
                         schema_cache,
+                        ctx.sortedness,
                     );
                 }
             }
@@ -1205,16 +1202,14 @@ pub fn lower_ir(
             let phys_left = lower_ir!(input_left)?;
             let phys_right = lower_ir!(input_right)?;
 
-            let left_df_sortedness = is_sorted(input_left, ir_arena, expr_arena);
-            let left_on_sorted = are_keys_sorted_any(
-                left_df_sortedness.as_ref(),
+            let left_on_sorted = ctx.sortedness.are_keys_sorted_any(
+                input_left,
                 &left_on,
                 expr_arena,
                 &input_left_schema,
             );
-            let right_df_sortedness = is_sorted(input_right, ir_arena, expr_arena);
-            let right_on_sorted = are_keys_sorted_any(
-                right_df_sortedness.as_ref(),
+            let right_on_sorted = ctx.sortedness.are_keys_sorted_any(
+                input_right,
                 &right_on,
                 expr_arena,
                 &input_right_schema,
@@ -1345,14 +1340,14 @@ pub fn lower_ir(
                         };
 
                         let descending = match left_is_point(&left_on, &right_on, &args) {
-                            true => expr_is_sorted(
-                                left_df_sortedness.as_ref(),
+                            true => ctx.sortedness.is_expr_sorted(
+                                input_left,
                                 &left_on[0],
                                 expr_arena,
                                 &input_left_schema,
                             ),
-                            false => expr_is_sorted(
-                                right_df_sortedness.as_ref(),
+                            false => ctx.sortedness.is_expr_sorted(
+                                input_right,
                                 &right_on[0],
                                 expr_arena,
                                 &input_right_schema,
@@ -1548,13 +1543,10 @@ pub fn lower_ir(
                 ));
             }
 
-            let are_keys_sorted = are_keys_sorted_any(
-                is_sorted(input, ir_arena, expr_arena).as_ref(),
-                &keys,
-                expr_arena,
-                input_schema,
-            )
-            .is_some();
+            let are_keys_sorted = ctx
+                .sortedness
+                .are_keys_sorted_any(input, &keys, expr_arena, input_schema)
+                .is_some();
 
             let mut stream = build_group_by_stream(
                 phys_input,
@@ -1621,12 +1613,13 @@ fn insert_sort_node_if_not_sorted(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
+    sortedness: &IRPlanSorted,
 ) -> Node {
     use polars_core::prelude::SortMultipleOptions;
 
     let input_schema = IR::schema_with_cache(input, ir_arena, schema_cache);
-    let df_sortedness = is_sorted(input, ir_arena, expr_arena);
-    if expr_is_sorted(df_sortedness.as_ref(), on, expr_arena, &input_schema)
+    if sortedness
+        .is_expr_sorted(input, on, expr_arena, &input_schema)
         .and_then(|s| s.descending)
         .is_none()
     {
@@ -1654,7 +1647,7 @@ fn append_sorted_key_column(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
-    ctx: StreamingLowerIRContext,
+    ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<(PhysStream, Vec<ExprIR>, Option<PlSmallStr>)> {
     let input_schema = &phys_sm[phys_input.node].output_schema.clone();
     let use_row_encoding =

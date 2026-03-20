@@ -47,22 +47,25 @@ impl ExprCache {
 
 struct LowerExprContext<'a> {
     prepare_visualization: bool,
+    sortedness: &'a IRPlanSorted,
     expr_arena: &'a mut Arena<AExpr>,
     phys_sm: &'a mut SlotMap<PhysNodeKey, PhysNode>,
     cache: &'a mut ExprCache,
 }
 
-impl<'a> From<LowerExprContext<'a>> for StreamingLowerIRContext {
+impl<'a> From<LowerExprContext<'a>> for StreamingLowerIRContext<'a> {
     fn from(value: LowerExprContext<'a>) -> Self {
         Self {
             prepare_visualization: value.prepare_visualization,
+            sortedness: value.sortedness,
         }
     }
 }
-impl<'a> From<&LowerExprContext<'a>> for StreamingLowerIRContext {
+impl<'a> From<&LowerExprContext<'a>> for StreamingLowerIRContext<'a> {
     fn from(value: &LowerExprContext<'a>) -> Self {
         Self {
             prepare_visualization: value.prepare_visualization,
+            sortedness: value.sortedness,
         }
     }
 }
@@ -843,6 +846,7 @@ fn lower_exprs_with_ctx(
                     ctx.cache,
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
+                        sortedness: ctx.sortedness,
                     },
                     false,
                 )?;
@@ -906,6 +910,7 @@ fn lower_exprs_with_ctx(
                     ctx.cache,
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
+                        sortedness: ctx.sortedness,
                     },
                     false,
                 )?;
@@ -977,9 +982,7 @@ fn lower_exprs_with_ctx(
                     ctx.expr_arena,
                     ctx.phys_sm,
                     ctx.cache,
-                    StreamingLowerIRContext {
-                        prepare_visualization: ctx.prepare_visualization,
-                    },
+                    StreamingLowerIRContext::from(&*ctx),
                     false,
                 )?;
 
@@ -1050,9 +1053,7 @@ fn lower_exprs_with_ctx(
                     ctx.expr_arena,
                     ctx.phys_sm,
                     ctx.cache,
-                    StreamingLowerIRContext {
-                        prepare_visualization: ctx.prepare_visualization,
-                    },
+                    StreamingLowerIRContext::from(&*ctx),
                     false,
                 )?;
 
@@ -1648,9 +1649,7 @@ fn lower_exprs_with_ctx(
                     ctx.expr_arena,
                     ctx.phys_sm,
                     ctx.cache,
-                    StreamingLowerIRContext {
-                        prepare_visualization: ctx.prepare_visualization,
-                    },
+                    StreamingLowerIRContext::from(&*ctx),
                 )?;
 
                 // Rewrite any `StructField(x)`` expression into a `Col(prefix_x)`` expression.
@@ -1703,9 +1702,7 @@ fn lower_exprs_with_ctx(
                     ctx.expr_arena,
                     ctx.phys_sm,
                     ctx.cache,
-                    StreamingLowerIRContext {
-                        prepare_visualization: ctx.prepare_visualization,
-                    },
+                    StreamingLowerIRContext::from(&*ctx),
                 )?;
 
                 // Nest any column that belongs to the StructField namespace back into a Struct.
@@ -2078,9 +2075,7 @@ fn lower_exprs_with_ctx(
                     ctx.expr_arena,
                     ctx.phys_sm,
                     ctx.cache,
-                    StreamingLowerIRContext {
-                        prepare_visualization: ctx.prepare_visualization,
-                    },
+                    StreamingLowerIRContext::from(&*ctx),
                 )?;
                 input_streams.insert(filter_stream);
                 transformed_exprs.push(AExprBuilder::col(out_name.clone(), ctx.expr_arena).node());
@@ -2123,9 +2118,7 @@ fn lower_exprs_with_ctx(
                     ctx.expr_arena,
                     ctx.phys_sm,
                     ctx.cache,
-                    StreamingLowerIRContext {
-                        prepare_visualization: ctx.prepare_visualization,
-                    },
+                    StreamingLowerIRContext::from(&*ctx),
                 )?;
 
                 let first_node = AExprBuilder::col(idx_name, ctx.expr_arena)
@@ -2469,13 +2462,14 @@ pub fn lower_exprs(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
-    ctx: StreamingLowerIRContext,
+    ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<(PhysStream, Vec<ExprIR>)> {
     let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
         cache: expr_cache,
         prepare_visualization: ctx.prepare_visualization,
+        sortedness: ctx.sortedness,
     };
     let node_exprs = exprs.iter().map(|e| e.node()).collect_vec();
     let (transformed_input, transformed_exprs) =
@@ -2496,13 +2490,14 @@ pub fn build_select_stream(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
-    ctx: StreamingLowerIRContext,
+    ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
     let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
         cache: expr_cache,
         prepare_visualization: ctx.prepare_visualization,
+        sortedness: ctx.sortedness,
     };
     build_select_stream_with_ctx(input, exprs, &mut ctx)
 }
@@ -2514,7 +2509,7 @@ pub fn build_hstack_stream(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
-    ctx: StreamingLowerIRContext,
+    ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
     let input_schema = &phys_sm[input.node].output_schema;
     if exprs
@@ -2574,13 +2569,14 @@ pub fn build_length_preserving_select_stream(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
-    ctx: StreamingLowerIRContext,
+    ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
     let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
         cache: expr_cache,
         prepare_visualization: ctx.prepare_visualization,
+        sortedness: ctx.sortedness,
     };
     let already_length_preserving = exprs
         .iter()

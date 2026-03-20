@@ -39,7 +39,9 @@ pub use predicate_pushdown::{DynamicPred, PredicateExpr, PredicatePushDown, Triv
 pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
-pub use sortedness::{AExprSorted, IRSorted, are_keys_sorted_any, expr_is_sorted, is_sorted};
+pub use sortedness::{
+    AExprSorted, IRPlanSorted, IRSorted, are_keys_sorted_any, expr_is_sorted, is_sorted,
+};
 pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
 
 use self::flatten_union::FlattenUnionRule;
