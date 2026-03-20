@@ -62,8 +62,6 @@ impl Executor for PythonScanExec {
         let with_columns = self.options.with_columns.take();
         let n_rows = self.options.n_rows.take();
         Python::attach(|py| {
-            let pl = PyModule::import(py, intern!(py, "polars")).unwrap();
-
             let python_scan_function = self.options.scan_fn.take().unwrap().0;
             let python_scan_function = python_scan_function.bind(py);
 
