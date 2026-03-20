@@ -41,10 +41,9 @@ pub fn create_scan_predicate(
     let mut hive_predicate = None;
     let mut hive_predicate_is_full_predicate = false;
 
-    #[allow(clippy::never_loop, clippy::while_let_loop)]
-    loop {
+    's: {
         let Some(hive_schema) = hive_schema else {
-            break;
+            break 's;
         };
 
         let mut hive_predicate_parts = vec![];
@@ -61,12 +60,12 @@ pub fn create_scan_predicate(
         }
 
         if hive_predicate_parts.is_empty() {
-            break;
+            break 's;
         }
 
         if non_hive_predicate_parts.is_empty() {
             hive_predicate_is_full_predicate = true;
-            break;
+            break 's;
         }
 
         {
@@ -103,8 +102,6 @@ pub fn create_scan_predicate(
 
             predicate = ExprIR::from_node(node, expr_arena);
         }
-
-        break;
     }
 
     let phys_predicate = create_physical_expr(&predicate, expr_arena, schema, state)?;
@@ -214,10 +211,9 @@ pub fn initialize_scan_predicate<'a>(
     table_statistics: Option<&TableStatistics>,
     verbose: bool,
 ) -> PolarsResult<(Option<SkipFilesMask>, Option<&'a ScanIOPredicate>)> {
-    #[allow(clippy::never_loop, clippy::while_let_loop)]
-    loop {
+    's: {
         let Some(predicate) = predicate else {
-            break;
+            break 's;
         };
 
         let expected_mask_len: usize;
@@ -263,7 +259,7 @@ pub fn initialize_scan_predicate<'a>(
 
             (SkipFilesMask::Exclusion(exclusion_mask), true)
         } else {
-            break;
+            break 's;
         };
 
         if skip_files_mask.len() != expected_mask_len {

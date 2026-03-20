@@ -504,10 +504,9 @@ impl ProjectionPushDown {
                             FileScanIR::PythonDataset { .. } => true,
                         };
 
-                        #[expect(clippy::never_loop)]
-                        loop {
+                        's: {
                             if !do_optimization {
-                                break;
+                                break 's;
                             }
 
                             if self.is_count_star {
@@ -530,7 +529,7 @@ impl ProjectionPushDown {
 
                                     if projection.is_empty() {
                                         output_schema = Some(Default::default());
-                                        break;
+                                        break 's;
                                     }
 
                                     ctx.acc_projections.push(ColumnNode(
@@ -543,7 +542,7 @@ impl ProjectionPushDown {
                                     // from the file.
                                     unified_scan_args.projection = Some(Arc::from([]));
                                     output_schema = Some(Default::default());
-                                    break;
+                                    break 's;
                                 };
                             }
 
@@ -584,8 +583,6 @@ impl ProjectionPushDown {
                             } else {
                                 None
                             };
-
-                            break;
                         }
 
                         // File builder has a row index, but projected columns

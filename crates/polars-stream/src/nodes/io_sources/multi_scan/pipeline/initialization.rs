@@ -119,8 +119,7 @@ async fn finish_initialize_multi_scan_pipeline(
         )
     }
 
-    #[expect(clippy::never_loop)]
-    loop {
+    's: {
         if skip_files_mask
             .as_ref()
             .is_some_and(|x| x.num_skipped_files() == x.len())
@@ -137,7 +136,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 eprintln!("[MultiScanTaskInit]: early return (pre_slice.len == 0)")
             }
         } else {
-            break;
+            break 's;
         }
 
         return Ok(());

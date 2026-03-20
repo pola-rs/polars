@@ -84,8 +84,7 @@ fn compute_payload_selector(
 
     this.iter_names()
         .map(|c| {
-            #[expect(clippy::never_loop)]
-            loop {
+            's: {
                 let selector = if args.how == JoinType::Right {
                     if is_left {
                         if should_coalesce && this_key_schema.contains(c) {
@@ -94,10 +93,12 @@ fn compute_payload_selector(
                         } else {
                             Some(c.clone())
                         }
-                    } else if !other.contains(c) || (should_coalesce && other_key_schema.contains(c)) {
+                    } else if !other.contains(c)
+                        || (should_coalesce && other_key_schema.contains(c))
+                    {
                         Some(c.clone())
                     } else {
-                        break;
+                        break 's;
                     }
                 } else if should_coalesce && this_key_schema.contains(c) {
                     if is_left {
@@ -114,7 +115,7 @@ fn compute_payload_selector(
                 } else if !other.contains(c) || is_left {
                     Some(c.clone())
                 } else {
-                    break;
+                    break 's;
                 };
 
                 return Ok(selector);
@@ -122,10 +123,14 @@ fn compute_payload_selector(
 
             let suffixed = format_pl_smallstr!("{}{}", c, args.suffix());
             if other.contains(&suffixed) {
-                polars_bail!(Duplicate: "column with name '{suffixed}' already exists\n\n\
-                You may want to try:\n\
-                - renaming the column prior to joining\n\
-                - using the `suffix` parameter to specify a suffix different to the default one ('_right')")
+                polars_bail!(
+                    Duplicate:
+                    "column with name '{suffixed}' already exists\n\n\
+                    You may want to try:\n\
+                    - renaming the column prior to joining\n\
+                    - using the `suffix` parameter to specify \
+                    a suffix different to the default one ('_right')"
+                )
             }
 
             Ok(Some(suffixed))
