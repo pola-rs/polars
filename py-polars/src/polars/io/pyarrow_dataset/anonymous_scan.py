@@ -88,7 +88,10 @@ def _scan_pyarrow_dataset_impl(
 
     Returns
     -------
-    DataFrame or tuple[Iterator[DataFrame], bool]
+    tuple[Iterator[DataFrame], bool]
+    A generator over the DataFrames and a boolean indicating if the predicates could be parsed.
+    This boolean is always `False` as there might be some predicates that could not be converted
+    to pyarrow and need to be applied as post-predicate.
     """
     filter_ = None
     filter_post_slice_ = None
