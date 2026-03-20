@@ -67,7 +67,9 @@ impl Executor for PythonScanExec {
             let python_scan_function = self.options.scan_fn.take().unwrap().0;
             let python_scan_function = python_scan_function.bind(py);
 
-            let with_columns = with_columns.map(|cols| cols.iter().cloned().collect::<Vec<_>>());
+            let with_columns = with_columns
+                .as_ref()
+                .map(|cols| cols.iter().map(|s| s.as_str()).collect::<Vec<_>>());
             let mut could_serialize_predicate = true;
 
             let predicate = match &self.options.predicate {
@@ -89,8 +91,7 @@ impl Executor for PythonScanExec {
             match self.options.python_source {
                 PythonScanSource::Cuda => {
                     let args = (
-                        with_columns
-                            .map(|x| x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()),
+                        with_columns,
                         predicate,
                         n_rows,
                         // If this boolean is true, callback should return
@@ -110,12 +111,7 @@ impl Executor for PythonScanExec {
                     self.finish_df(py, df, state)
                 },
                 PythonScanSource::Pyarrow => {
-                    let args = (
-                        with_columns
-                            .map(|x| x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()),
-                        predicate,
-                        n_rows,
-                    );
+                    let args = (with_columns, predicate, n_rows);
                     let df = python_scan_function.call1(args)?;
                     self.finish_df(py, df, state)
                 },
@@ -127,13 +123,7 @@ impl Executor for PythonScanExec {
                     } else {
                         None
                     };
-                    let args = (
-                        with_columns
-                            .map(|x| x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()),
-                        predicate,
-                        n_rows,
-                        batch_size,
-                    );
+                    let args = (with_columns, predicate, n_rows, batch_size);
 
                     let generator_init = python_scan_function.call1(args)?;
                     let generator = generator_init.get_item(0).map_err(
