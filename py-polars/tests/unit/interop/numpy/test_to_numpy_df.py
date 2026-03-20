@@ -306,3 +306,14 @@ def test_to_numpy_array_shape_23426() -> None:
     )
 
     assert_frame_equal(df, pl.from_numpy(df.to_numpy(structured=True)))
+
+
+def test_to_numpy_c_order_matches_fortran_order() -> None:
+    df = pl.DataFrame({f"col_{i}": range(i, i + 100) for i in range(50)})
+
+    c_array = df.to_numpy(order="c")
+    f_array = df.to_numpy(order="fortran")
+
+    assert c_array.flags["C_CONTIGUOUS"]
+    assert f_array.flags["F_CONTIGUOUS"]
+    assert_array_equal(c_array, f_array)
