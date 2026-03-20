@@ -63,10 +63,9 @@ impl Executor for PythonScanExec {
         let n_rows = self.options.n_rows.take();
         Python::attach(|py| {
             let pl = PyModule::import(py, intern!(py, "polars")).unwrap();
-            let utils = pl.getattr(intern!(py, "_utils")).unwrap();
-            let callable = utils.getattr(intern!(py, "_execute_from_rust")).unwrap();
 
             let python_scan_function = self.options.scan_fn.take().unwrap().0;
+            let python_scan_function = python_scan_function.bind(py);
 
             let with_columns = with_columns.map(|cols| cols.iter().cloned().collect::<Vec<_>>());
             let mut could_serialize_predicate = true;
@@ -90,7 +89,6 @@ impl Executor for PythonScanExec {
             match self.options.python_source {
                 PythonScanSource::Cuda => {
                     let args = (
-                        python_scan_function,
                         with_columns
                             .map(|x| x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()),
                         predicate,
@@ -100,7 +98,7 @@ impl Executor for PythonScanExec {
                         // name)]
                         state.has_node_timer(),
                     );
-                    let result = callable.call1(args)?;
+                    let result = python_scan_function.call1(args)?;
                     let df = if state.has_node_timer() {
                         let df = result.get_item(0);
                         let timing_info: Vec<(u64, u64, String)> = result.get_item(1)?.extract()?;
@@ -113,13 +111,12 @@ impl Executor for PythonScanExec {
                 },
                 PythonScanSource::Pyarrow => {
                     let args = (
-                        python_scan_function,
                         with_columns
                             .map(|x| x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()),
                         predicate,
                         n_rows,
                     );
-                    let df = callable.call1(args)?;
+                    let df = python_scan_function.call1(args)?;
                     self.finish_df(py, df, state)
                 },
                 PythonScanSource::IOPlugin => {
@@ -131,7 +128,6 @@ impl Executor for PythonScanExec {
                         None
                     };
                     let args = (
-                        python_scan_function,
                         with_columns
                             .map(|x| x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()),
                         predicate,
@@ -139,7 +135,7 @@ impl Executor for PythonScanExec {
                         batch_size,
                     );
 
-                    let generator_init = callable.call1(args)?;
+                    let generator_init = python_scan_function.call1(args)?;
                     let generator = generator_init.get_item(0).map_err(
                         |_| polars_err!(ComputeError: "expected tuple got {}", generator_init),
                     )?;
