@@ -4,9 +4,12 @@ import os
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from hypothesis import given
+from hypothesis.strategies import booleans
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing.parametric.strategies import column, dataframes
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -71,3 +74,39 @@ def test_streaming_unique_list_of_struct_with_decimal_26505() -> None:
     )
     result = df.lazy().unique(maintain_order=True).collect(engine="streaming")
     assert_frame_equal(result, df)
+
+
+@given(
+    df=dataframes(cols=[column("key")]), descending=booleans(), nulls_last=booleans()
+)
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_sorted_streaming_unique_vs_in_memory(
+    df: pl.DataFrame, descending: bool, nulls_last: bool, maintain_order: bool
+) -> None:
+    df = df.sort("key", descending=descending, nulls_last=nulls_last)
+    lf = df.lazy().unique("key", maintain_order=maintain_order)
+
+    assert_frame_equal(
+        lf.collect(engine="streaming"),
+        lf.collect(engine="in-memory"),
+        check_row_order=maintain_order,
+    )
+
+
+@given(
+    df=dataframes(cols=[column("key1"), column("key2")]),
+    descending=booleans(),
+    nulls_last=booleans(),
+)
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_sorted_streaming_unique_vs_in_memory_multikey(
+    df: pl.DataFrame, descending: bool, nulls_last: bool, maintain_order: bool
+) -> None:
+    df = df.sort(["key1", "key2"], descending=descending, nulls_last=nulls_last)
+    lf = df.lazy().unique(["key1", "key2"], maintain_order=maintain_order)
+
+    assert_frame_equal(
+        lf.collect(engine="streaming"),
+        lf.collect(engine="in-memory"),
+        check_row_order=maintain_order,
+    )
