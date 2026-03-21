@@ -49,6 +49,11 @@ pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
             rle_lengths_helper_ca(ca, lengths);
             return Ok(());
         },
+        DataType::BinaryOffset => {
+            let ca: &BinaryOffsetChunked = s.as_ref().as_ref().as_ref();
+            rle_lengths_helper_ca(ca, lengths);
+            return Ok(());
+        },
         _ => {},
     }
 
