@@ -34,6 +34,7 @@ serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 slotmap = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
+uuid = { workspace = true }
 
 arrow = { workspace = true }
 memchr = { workspace = true }
@@ -77,6 +78,7 @@ ipc = [
   "polars-io/ipc",
   "dep:serde_json",
 ]
+index_of = ["polars-plan/index_of"]
 parquet = ["polars-mem-engine/parquet", "polars-plan/parquet", "cloud"]
 csv = ["polars-mem-engine/csv", "polars-plan/csv", "polars-io/csv"]
 json = [
@@ -122,6 +124,7 @@ python = [
   "polars-error/python",
 ]
 asof_join = ["polars-plan/asof_join", "polars-ops/asof_join"]
+iejoin = ["polars-plan/iejoin", "polars-ops/iejoin"]
 semi_anti_join = ["polars-plan/semi_anti_join", "polars-ops/semi_anti_join"]
 is_in = ["polars-ops/is_in", "polars-plan/is_in", "semi_anti_join"]
 replace = ["polars-ops/replace", "polars-plan/replace"]

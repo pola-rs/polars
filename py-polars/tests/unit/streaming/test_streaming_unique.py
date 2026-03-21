@@ -56,3 +56,18 @@ def test_streaming_unique() -> None:
 
     q = df.lazy().unique(subset=None, maintain_order=False).sort(["a", "b", "c"])
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+def test_streaming_unique_list_of_struct_with_decimal_26505() -> None:
+    df = pl.DataFrame(
+        {"a": [[{"f0": None, "f1": b"x"}]]},
+        schema={
+            "a": pl.List(
+                pl.Struct(
+                    [pl.Field("f0", pl.Decimal(10, 2)), pl.Field("f1", pl.Binary())]
+                )
+            )
+        },
+    )
+    result = df.lazy().unique(maintain_order=True).collect(engine="streaming")
+    assert_frame_equal(result, df)

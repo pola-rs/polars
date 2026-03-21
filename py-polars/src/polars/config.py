@@ -174,7 +174,7 @@ class Config(contextlib.ContextDecorator):
     Alternatively, you can use as a decorator in order to scope the duration of the
     selected options to a specific function:
 
-    >>> @pl.Config(verbose=True)
+    >>> @pl.Config(verbose=True, apply_on_context_enter=True)
     ... def test():
     ...     pass
     """
@@ -208,6 +208,13 @@ class Config(contextlib.ContextDecorator):
         **options
             keyword args that will set the option; equivalent to calling the
             named "set_<option>" method with the given value.
+
+        Notes
+        -----
+        The `apply_on_context_enter` parameter should almost *always* be set True
+        when using `Config` as a decorator to ensure that the options are applied
+        only within the scope of the decorated function (and not globally at
+        module import time).
 
         Examples
         --------

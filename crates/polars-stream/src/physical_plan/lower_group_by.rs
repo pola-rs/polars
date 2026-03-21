@@ -56,7 +56,7 @@ fn build_group_by_fallback(
         group_by_lp_node,
         &mut lp_arena,
         expr_arena,
-        Some(crate::dispatch::build_streaming_query_executor),
+        None,
     )?);
 
     let group_by_node = PhysNode {
@@ -241,7 +241,10 @@ fn try_lower_elementwise_scalar_agg_expr(
         if expr_arena.get(expr).is_scalar(expr_arena) {
             return Some(expr);
         } else {
-            let agg = IRAggExpr::Implode(expr);
+            let agg = IRAggExpr::Implode {
+                input: expr,
+                maintain_order: true,
+            };
             return Some(expr_arena.add(AExpr::Agg(agg)));
         }
     }
@@ -426,7 +429,11 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::Sum(_)
                 | IRAggExpr::Var(..)
                 | IRAggExpr::Std(..)
-                | IRAggExpr::Count { .. } => Some(replace_agg_uniq!(expr)),
+                | IRAggExpr::Count { .. }
+                | IRAggExpr::Implode {
+                    maintain_order: false,
+                    ..
+                } => Some(replace_agg_uniq!(expr)),
                 IRAggExpr::NUnique(uniq_input) => {
                     let function = IRFunctionExpr::Unique(false);
                     let uniq_input_expr = ExprIR::from_node(*uniq_input, expr_arena);
@@ -445,7 +452,10 @@ fn try_lower_elementwise_scalar_agg_expr(
                     Some(replace_agg_uniq!(count_node))
                 },
                 IRAggExpr::Median(..)
-                | IRAggExpr::Implode(..)
+                | IRAggExpr::Implode {
+                    maintain_order: true,
+                    ..
+                }
                 | IRAggExpr::Quantile { .. }
                 | IRAggExpr::AggGroups(..) => None, // TODO: allow all aggregates,
             }

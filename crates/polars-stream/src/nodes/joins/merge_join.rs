@@ -354,8 +354,12 @@ async fn find_mergeable_task(
 
     loop {
         if source_token.stop_requested() {
-            stop_and_buffer_pipe_contents(recv_build.as_mut(), build_unmerged).await;
-            stop_and_buffer_pipe_contents(recv_probe.as_mut(), probe_unmerged).await;
+            build_unmerged
+                .stop_and_buffer_from_pipe(recv_build.as_mut())
+                .await;
+            probe_unmerged
+                .stop_and_buffer_from_pipe(recv_probe.as_mut())
+                .await;
             return Ok(());
         }
 
@@ -391,14 +395,18 @@ async fn find_mergeable_task(
             },
             Err(NeedMore::Build | NeedMore::Both) if recv_build.is_some() => {
                 let Ok(m) = recv_build.as_mut().unwrap().recv().await else {
-                    stop_and_buffer_pipe_contents(recv_probe.as_mut(), probe_unmerged).await;
+                    probe_unmerged
+                        .stop_and_buffer_from_pipe(recv_probe.as_mut())
+                        .await;
                     return Ok(());
                 };
                 build_unmerged.push_df(m.into_df());
             },
             Err(NeedMore::Probe | NeedMore::Both) if recv_probe.is_some() => {
                 let Ok(m) = recv_probe.as_mut().unwrap().recv().await else {
-                    stop_and_buffer_pipe_contents(recv_build.as_mut(), build_unmerged).await;
+                    build_unmerged
+                        .stop_and_buffer_from_pipe(recv_build.as_mut())
+                        .await;
                     return Ok(());
                 };
                 probe_unmerged.push_df(m.into_df());
@@ -407,21 +415,6 @@ async fn find_mergeable_task(
                 unreachable!("unexpected NeedMore value: {other:?}");
             },
         }
-    }
-}
-
-/// Tell the sender to this port to stop, and buffer everything that is still in the pipe.
-async fn stop_and_buffer_pipe_contents(
-    port: Option<&mut PortReceiver>,
-    unmerged: &mut DataFrameSearchBuffer,
-) {
-    let Some(port) = port else {
-        return;
-    };
-
-    while let Ok(morsel) = port.recv().await {
-        morsel.source_token().stop();
-        unmerged.push_df(morsel.into_df());
     }
 }
 

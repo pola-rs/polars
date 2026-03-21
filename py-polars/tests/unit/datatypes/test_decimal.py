@@ -817,6 +817,38 @@ def test_decimal32_decimal64_22946() -> None:
     )
 
 
+def test_decimal32_decimal64_from_arrow_with_various_scales() -> None:
+    # Test decimal32/64 with different precision and scale combinations
+    tbl = pa.Table.from_pydict(
+        mapping={
+            "d32_no_frac": [D("100"), D("200"), D("300")],
+            "d32_high_scale": [D("1.2345"), D("6.7890"), D("0.1111")],
+            "d64_large": [D("123456.78"), D("999999.99"), D("000001.00")],
+        },
+        schema=pa.schema(
+            [
+                ("d32_no_frac", pa.decimal32(9, 0)),
+                ("d32_high_scale", pa.decimal32(9, 4)),
+                ("d64_large", pa.decimal64(18, 2)),
+            ]
+        ),
+    )
+
+    result = pl.DataFrame(tbl)
+    assert result.dtypes == [pl.Decimal(9, 0), pl.Decimal(9, 4), pl.Decimal(18, 2)]
+    assert result["d32_no_frac"].to_list() == [D("100"), D("200"), D("300")]
+    assert result["d32_high_scale"].to_list() == [
+        D("1.2345"),
+        D("6.7890"),
+        D("0.1111"),
+    ]
+    assert result["d64_large"].to_list() == [
+        D("123456.78"),
+        D("999999.99"),
+        D("1.00"),
+    ]
+
+
 def test_decimal_cast_limit() -> None:
     fits = pl.Series([10**38 - 1, -(10**38 - 1)])
     assert_series_equal(fits.cast(pl.Decimal(38, 0)).cast(pl.Int128), fits)

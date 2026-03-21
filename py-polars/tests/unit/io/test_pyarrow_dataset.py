@@ -37,10 +37,10 @@ def helper_dataset_test(
         assert "FILTER" not in q.explain()
 
 
-# @pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_pyarrow_dataset_source(df: pl.DataFrame, tmp_path: Path) -> None:
     file_path = tmp_path / "small.ipc"
-    df.write_ipc(file_path)
+    df.write_ipc(file_path, compat_level=pl.CompatLevel.oldest())
 
     helper_dataset_test(
         file_path,
@@ -247,6 +247,114 @@ def test_pyarrow_dataset_partial_predicate_pushdown(
         df.lazy().filter((pl.col("a") > 1) & (pl.col("a") * pl.col("b") > 25)).collect()
     )
     assert_frame_equal(result, expected)
+
+
+def test_pyarrow_dataset_is_in_predicate_pushdown(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+    df = pl.DataFrame({"id": [1, 2, 3, 4, 5], "val": [10, 20, 30, 40, 50]})
+    dset = ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
+
+    pred = pl.col("id").is_in([1, 3])
+    expected = pl.DataFrame({"id": [1, 3], "val": [10, 30]})
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "(pa.compute.field('id')).isin([1,3])" in capture
+    assert "residual predicate: None" in capture
+
+    assert_frame_equal(result, expected)
+    assert_frame_equal(df.filter(pred), expected)
+
+    pred = pl.col("id").is_in(range(1, 4))
+    expected = pl.DataFrame({"id": [1, 2, 3], "val": [10, 20, 30]})
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "0")
+
+    assert "(pa.compute.field('id')).isin([1,2,3])" in capture
+    assert "residual predicate: None" in capture
+
+    assert_frame_equal(result, expected)
+    assert_frame_equal(df.filter(pred), expected)
+
+
+def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+    df = pl.DataFrame({"id": [1, 2, 3, 4, None], "val": [10, 20, 30, 40, 50]})
+    dset = ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
+
+    pred = pl.col("id").is_in([1, None, 3])
+    expected = pl.DataFrame({"id": [1, 3], "val": [10, 30]})
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "(pa.compute.field('id')).isin([1,3])" in capture
+    assert "residual predicate: None" in capture
+
+    assert_frame_equal(result, expected)
+    assert_frame_equal(df.filter(pred), expected)
+
+    pred = pl.col("id").is_in([1, None, 3], nulls_equal=True)
+    expected = pl.DataFrame({"id": [1, 3, None], "val": [10, 30, 50]})
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "(pa.compute.field('id')).isin([1,None,3])" in capture
+    assert "residual predicate: None" in capture
+
+    assert_frame_equal(result, expected)
+    assert_frame_equal(df.filter(pred), expected)
+
+    pred = pl.col("id").is_in(pl.lit(None, dtype=pl.List(pl.Int64)))
+    expected = df.clear()
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "converted pyarrow predicate: pa.compute.scalar(False)" in capture
+    assert "residual predicate: None" in capture
+
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(df.filter(pred), expected)
+
+    pred = pl.col("id").is_in(pl.Series([None], dtype=pl.List(pl.Int64)))
+    expected = df.clear()
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "0")
+
+    assert "converted pyarrow predicate: pa.compute.scalar(False)" in capture
+    assert "residual predicate: None" in capture
+
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(df.filter(pred), expected)
 
 
 def test_pyarrow_dataset_comm_subplan_elim(tmp_path: Path) -> None:

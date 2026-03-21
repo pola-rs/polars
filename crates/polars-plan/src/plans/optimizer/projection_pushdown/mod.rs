@@ -393,12 +393,17 @@ impl ProjectionPushDown {
                     ctx.process_count_star_at_scan(&schema, expr_arena);
                 }
                 if ctx.has_pushed_down() {
-                    output_schema = Some(Arc::new(update_scan_schema(
+                    let new_schema = Arc::new(update_scan_schema(
                         &ctx.acc_projections,
                         expr_arena,
                         &schema,
                         false,
-                    )?));
+                    )?);
+                    // If the projected schema is identical to the full schema, there is no
+                    // need to keep an explicit output_schema — leave it as None (project all).
+                    if *new_schema != *schema {
+                        output_schema = Some(new_schema);
+                    }
                 }
                 let lp = DataFrameScan {
                     df,
@@ -441,12 +446,20 @@ impl ProjectionPushDown {
                         options.output_schema = if options.with_columns.is_none() {
                             None
                         } else {
-                            Some(Arc::new(update_scan_schema(
+                            let new_schema = Arc::new(update_scan_schema(
                                 &ctx.acc_projections,
                                 expr_arena,
                                 &options.schema,
                                 true,
-                            )?))
+                            )?);
+                            // If the projected schema equals the full schema, clear the
+                            // explicit projection — it is a no-op.
+                            if *new_schema == *options.schema {
+                                options.with_columns = None;
+                                None
+                            } else {
+                                Some(new_schema)
+                            }
                         };
                         Ok(PythonScan { options })
                     },
@@ -475,6 +488,7 @@ impl ProjectionPushDown {
                             FileScanIR::Anonymous { function, .. } => {
                                 function.allows_projection_pushdown()
                             },
+                            FileScanIR::ExpandedPaths { .. } => true,
                             #[cfg(feature = "json")]
                             FileScanIR::NDJson { .. } => true,
                             #[cfg(feature = "ipc")]
@@ -490,10 +504,9 @@ impl ProjectionPushDown {
                             FileScanIR::PythonDataset { .. } => true,
                         };
 
-                        #[expect(clippy::never_loop)]
-                        loop {
+                        's: {
                             if !do_optimization {
-                                break;
+                                break 's;
                             }
 
                             if self.is_count_star {
@@ -516,7 +529,7 @@ impl ProjectionPushDown {
 
                                     if projection.is_empty() {
                                         output_schema = Some(Default::default());
-                                        break;
+                                        break 's;
                                     }
 
                                     ctx.acc_projections.push(ColumnNode(
@@ -529,7 +542,7 @@ impl ProjectionPushDown {
                                     // from the file.
                                     unified_scan_args.projection = Some(Arc::from([]));
                                     output_schema = Some(Default::default());
-                                    break;
+                                    break 's;
                                 };
                             }
 
@@ -559,12 +572,17 @@ impl ProjectionPushDown {
                                     }
                                 }
 
-                                Some(Arc::new(schema))
+                                // If the projected schema is identical to the full file schema,
+                                // the projection is a no-op — clear it.
+                                if schema == *file_info.schema {
+                                    unified_scan_args.projection = None;
+                                    None
+                                } else {
+                                    Some(Arc::new(schema))
+                                }
                             } else {
                                 None
                             };
-
-                            break;
                         }
 
                         // File builder has a row index, but projected columns
@@ -741,6 +759,8 @@ impl ProjectionPushDown {
             },
             lp @ SinkMultiple { .. } => process_generic(self, lp, ctx, lp_arena, expr_arena, true),
             Cache { .. } => {
+                // Important: Stop optimization at cache, this behavior is relied on by set_cache_states.
+                //
                 // projections above this cache will be accumulated and pushed down
                 // later
                 // the redundant projection will be cleaned in the fast projection optimization

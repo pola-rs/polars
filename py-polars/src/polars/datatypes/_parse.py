@@ -92,7 +92,7 @@ def parse_py_type_into_dtype(input: PythonDataType | type[object]) -> PolarsData
         return Datetime("us")
     elif isinstance(input, type) and issubclass(input, date):  # type: ignore[redundant-expr]
         return Date()
-    elif input is timedelta:
+    elif isinstance(input, type) and issubclass(input, timedelta):  # type: ignore[redundant-expr]
         return Duration
     elif input is time:
         return Time()

@@ -475,7 +475,16 @@ impl Display for ExprIRDisplay<'_> {
                             write!(f, ".item()")
                         }
                     },
-                    Implode(expr) => write!(f, "{}.implode()", self.with_root(expr)),
+                    Implode {
+                        input,
+                        maintain_order,
+                    } => {
+                        if *maintain_order {
+                            write!(f, "{}.implode()", self.with_root(input))
+                        } else {
+                            write!(f, "{}.implode(maintain_order=false)", self.with_root(input))
+                        }
+                    },
                     NUnique(expr) => write!(f, "{}.n_unique()", self.with_root(expr)),
                     Sum(expr) => write!(f, "{}.sum()", self.with_root(expr)),
                     AggGroups(expr) => write!(f, "{}.groups()", self.with_root(expr)),

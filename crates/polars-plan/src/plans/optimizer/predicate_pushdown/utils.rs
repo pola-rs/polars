@@ -116,35 +116,6 @@ pub(super) fn predicate_at_scan(
 /// Evaluates a condition on the column name inputs of every predicate, where if
 /// the condition evaluates to true on any column name the predicate is
 /// transferred to local.
-pub(super) fn transfer_to_local_by_expr_ir<F>(
-    expr_arena: &Arena<AExpr>,
-    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
-    mut condition: F,
-) -> Vec<ExprIR>
-where
-    F: FnMut(&ExprIR) -> bool,
-{
-    let mut remove_keys = Vec::with_capacity(acc_predicates.len());
-
-    for predicate in acc_predicates.values() {
-        if condition(predicate) {
-            if let Some(name) = aexpr_to_leaf_names_iter(predicate.node(), expr_arena).next() {
-                remove_keys.push(name);
-            }
-        }
-    }
-    let mut local_predicates = Vec::with_capacity(remove_keys.len());
-    for key in remove_keys {
-        if let Some(pred) = acc_predicates.remove(key) {
-            local_predicates.push(pred)
-        }
-    }
-    local_predicates
-}
-
-/// Evaluates a condition on the column name inputs of every predicate, where if
-/// the condition evaluates to true on any column name the predicate is
-/// transferred to local.
 pub(super) fn transfer_to_local_by_name<F>(
     expr_arena: &Arena<AExpr>,
     acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
@@ -465,10 +436,6 @@ pub fn pushdown_eligibility(
 pub(crate) fn ir_removes_rows(ir: &IR) -> bool {
     use IR::*;
 
-    // NOTE
-    // At time of writing predicate pushdown runs before slice pushdown, so
-    // some of the below checks for slice may never be hit.
-
     match ir {
         DataFrameScan { .. }
         | SimpleProjection { .. }
@@ -492,6 +459,8 @@ pub(crate) fn ir_removes_rows(ir: &IR) -> bool {
         Scan {
             unified_scan_args, ..
         } => unified_scan_args.pre_slice.is_some(),
+
+        Union { options, .. } => options.slice.is_some(),
 
         _ => true,
     }

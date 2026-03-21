@@ -187,18 +187,23 @@ impl PredicatePushDown {
     fn no_pushdown_restart_opt(
         &mut self,
         lp: IR,
-        acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
+        mut acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
         let inputs = lp.inputs();
+
+        let local_predicates: Vec<ExprIR> = acc_predicates.drain().map(|x| x.1).collect();
+
+        assert!(acc_predicates.is_empty());
+        let mut reuse_hashmap: Option<PlHashMap<_, _>> = Some(acc_predicates);
 
         let new_inputs = inputs
             .map(|node| {
                 let alp = lp_arena.take(node);
                 let alp = self.push_down(
                     alp,
-                    init_hashmap(Some(acc_predicates.len())),
+                    reuse_hashmap.take().unwrap_or_else(|| init_hashmap(None)),
                     lp_arena,
                     expr_arena,
                 )?;
@@ -208,8 +213,6 @@ impl PredicatePushDown {
             .collect::<PolarsResult<Vec<_>>>()?;
         let lp = lp.with_inputs(new_inputs);
 
-        // all predicates are done locally
-        let local_predicates = acc_predicates.into_values().collect::<Vec<_>>();
         Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
     }
 
@@ -363,16 +366,17 @@ impl PredicatePushDown {
                 };
                 let predicate = predicate_at_scan(acc_predicates, predicate.clone(), expr_arena);
 
-                let mut do_optimization = match &*scan_type {
-                    #[cfg(feature = "csv")]
-                    FileScanIR::Csv { .. } => unified_scan_args.pre_slice.is_none(),
-                    FileScanIR::Anonymous { function, .. } => function.allows_predicate_pushdown(),
-                    #[cfg(feature = "json")]
-                    FileScanIR::NDJson { .. } => true,
-                    #[allow(unreachable_patterns)]
-                    _ => true,
-                };
-                do_optimization &= predicate.is_some();
+                let do_optimization = predicate.is_some()
+                    && match &*scan_type {
+                        #[cfg(feature = "csv")]
+                        FileScanIR::Csv { .. } => unified_scan_args.pre_slice.is_none(),
+                        FileScanIR::ExpandedPaths { .. } => false,
+                        FileScanIR::Anonymous { function, .. } => {
+                            function.allows_predicate_pushdown()
+                        },
+                        #[allow(unreachable_patterns)]
+                        _ => true,
+                    };
 
                 let hive_parts = scan_hive_parts;
 
@@ -409,6 +413,11 @@ impl PredicatePushDown {
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             },
             Distinct { input, options } => {
+                if options.slice.is_some() {
+                    let lp = Distinct { input, options };
+                    return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
+                }
+
                 let subset = if let Some(ref subset) = options.subset {
                     subset.as_ref()
                 } else {
@@ -420,20 +429,19 @@ impl PredicatePushDown {
                 }
 
                 let local_predicates = match options.keep_strategy {
-                    UniqueKeepStrategy::Any => {
-                        let condition = |e: &ExprIR| {
-                            // if not elementwise -> to local
-                            !is_elementwise_rec(e.node(), expr_arena)
-                        };
-                        transfer_to_local_by_expr_ir(expr_arena, &mut acc_predicates, condition)
-                    },
+                    UniqueKeepStrategy::Any => vec![],
                     UniqueKeepStrategy::First
                     | UniqueKeepStrategy::Last
                     | UniqueKeepStrategy::None => {
-                        let condition = |name: &PlSmallStr| {
-                            !subset.is_empty() && !names_set.contains(name.as_str())
-                        };
-                        transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition)
+                        if !subset.is_empty() {
+                            transfer_to_local_by_name(
+                                expr_arena,
+                                &mut acc_predicates,
+                                |name: &PlSmallStr| !names_set.contains(name.as_str()),
+                            )
+                        } else {
+                            vec![]
+                        }
                     },
                 };
 
@@ -572,8 +580,14 @@ impl PredicatePushDown {
                 options,
                 acc_predicates,
             ),
-            lp @ Union { .. } => {
-                self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
+            Union { inputs, options } => {
+                if options.slice.is_some() {
+                    let lp = Union { inputs, options };
+                    self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+                } else {
+                    let lp = Union { inputs, options };
+                    self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
+                }
             },
             Sort {
                 input,
@@ -581,6 +595,12 @@ impl PredicatePushDown {
                 mut slice,
                 sort_options,
             } => {
+                let mut local_predicates = Vec::new();
+
+                if slice.is_some() && !acc_predicates.is_empty() {
+                    local_predicates.extend(acc_predicates.drain().map(|x| x.1));
+                }
+
                 if let Some((offset, len, None)) = slice
                     && by_column.len() == 1
                 {
@@ -600,7 +620,9 @@ impl PredicatePushDown {
                     slice,
                     sort_options,
                 };
-                self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
+                let lp =
+                    self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)?;
+                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             },
             lp @ Sink { .. } | lp @ SinkMultiple { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)

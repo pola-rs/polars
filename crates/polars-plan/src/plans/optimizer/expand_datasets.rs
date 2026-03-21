@@ -309,6 +309,10 @@ pub(super) fn expand_datasets(
                             #[cfg(feature = "scan_lines")]
                             FileScanDsl::Lines { name } => FileScanIR::Lines { name },
 
+                            FileScanDsl::ExpandedPaths { name } => {
+                                FileScanIR::ExpandedPaths { name }
+                            },
+
                             FileScanDsl::Anonymous {
                                 options,
                                 function,

@@ -41,7 +41,10 @@ pub enum AggExpr {
         allow_empty: bool,
     },
     Mean(Arc<Expr>),
-    Implode(Arc<Expr>),
+    Implode {
+        input: Arc<Expr>,
+        maintain_order: bool,
+    },
     Count {
         input: Arc<Expr>,
         include_nulls: bool,
@@ -71,7 +74,7 @@ impl AsRef<Expr> for AggExpr {
             LastNonNull(e) => e,
             Item { input, .. } => input,
             Mean(e) => e,
-            Implode(e) => e,
+            Implode { input, .. } => input,
             Count { input, .. } => input,
             Quantile { expr, .. } => expr,
             Sum(e) => e,

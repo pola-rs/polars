@@ -232,3 +232,33 @@ def test_skip_batch_predicate_parametric(s: pl.Series) -> None:
                 print(s.to_frame().filter(expr))
 
                 raise
+
+
+def test_float_skip_batch_predicate() -> None:
+    schema = {"x": pl.Float64()}
+    NaN = float("nan")
+
+    def sbp(e: pl.Expr) -> pl.Expr | None:
+        return e._skip_batch_predicate(schema)
+
+    assert sbp(pl.col("x") < 5.0) is not None  # Can skip. NaN never satisfies <.
+    assert sbp(pl.col("x") < NaN) is not None  # Can skip. NaN never satisfies <.
+    assert sbp(pl.col("x") <= 5.0) is not None  # Can skip. NaN never satisfies <=.
+    assert sbp(pl.col("x") <= NaN) is not None  # Can skip. NaN never satisfies <=.
+    assert sbp(pl.col("x") == 5.0) is not None  # Can skip. NaN != 5.0.
+    assert sbp(pl.col("x") == NaN) is None  # No skip. Stats exclude NaN.
+    assert sbp(pl.col("x") != 5.0) is None  # No skip. Hidden NaN != x is true.
+    assert sbp(pl.col("x") != NaN) is None  # No skip. Stats exclude NaN.
+    assert sbp(pl.col("x") > 5.0) is None  # No skip. Hidden NaN satisfies >.
+    assert sbp(pl.col("x") > NaN) is not None  # Can skip. Nothing > NaN under TotalOrd.
+    assert sbp(pl.col("x") >= 5.0) is None  # No skip. Hidden NaN satisfies >=.
+    assert sbp(pl.col("x") >= NaN) is not None  # Can skip. Nothing > NaN.
+    assert (
+        sbp(pl.lit(5.0) > pl.col("x")) is not None
+    )  # Can skip. 5.0 > col is col < 5.0.
+    assert sbp(pl.lit(5.0) < pl.col("x")) is None  # No skip. 5.0 < col is col > 5.0.
+    assert (
+        sbp(pl.col("x").is_between(2.0, 4.0)) is not None
+    )  # Can skip. Non-NaN bounds.
+    assert sbp(pl.col("x").is_between(NaN, 4.0)) is None  # No skip. NaN left bound.
+    assert sbp(pl.col("x").is_between(1.0, NaN)) is None  # No skip. NaN right bound.

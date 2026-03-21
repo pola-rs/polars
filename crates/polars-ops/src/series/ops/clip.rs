@@ -2,6 +2,27 @@ use polars_core::prelude::arity::{binary_elementwise, ternary_elementwise, unary
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
+#[inline]
+fn clamp<T: PartialOrd>(input: T, min: T, max: T) -> T {
+    if input < min {
+        min
+    } else if input > max {
+        max
+    } else {
+        input
+    }
+}
+
+#[inline]
+fn clamp_min<T: PartialOrd>(input: T, min: T) -> T {
+    if input < min { min } else { input }
+}
+
+#[inline]
+fn clamp_max<T: PartialOrd>(input: T, max: T) -> T {
+    if input > max { max } else { input }
+}
+
 /// Set values outside the given boundaries to the boundary value.
 pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
     polars_ensure!(
@@ -74,7 +95,7 @@ pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
     with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
         let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
         let max: &ChunkedArray<$T> = max.as_ref().as_ref().as_ref();
-        let out = clip_helper_single_bound(ca, max, num_traits::clamp_max).into_series();
+        let out = clip_helper_single_bound(ca, max, clamp_max).into_series();
         match original_type {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
@@ -108,7 +129,7 @@ pub fn clip_min(s: &Series, min: &Series) -> PolarsResult<Series> {
     with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
         let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
         let min: &ChunkedArray<$T> = min.as_ref().as_ref().as_ref();
-        let out = clip_helper_single_bound(ca, min, num_traits::clamp_min).into_series();
+        let out = clip_helper_single_bound(ca, min, clamp_min).into_series();
         match original_type {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
@@ -132,18 +153,18 @@ where
 {
     match (min.len(), max.len()) {
         (1, 1) => match (min.get(0), max.get(0)) {
-            (Some(min), Some(max)) => clip_unary(ca, |v| num_traits::clamp(v, min, max)),
-            (Some(min), None) => clip_unary(ca, |v| num_traits::clamp_min(v, min)),
-            (None, Some(max)) => clip_unary(ca, |v| num_traits::clamp_max(v, max)),
+            (Some(min), Some(max)) => clip_unary(ca, |v| clamp(v, min, max)),
+            (Some(min), None) => clip_unary(ca, |v| clamp_min(v, min)),
+            (None, Some(max)) => clip_unary(ca, |v| clamp_max(v, max)),
             (None, None) => ca.clone(),
         },
         (1, _) => match min.get(0) {
-            Some(min) => clip_binary(ca, max, |v, b| num_traits::clamp(v, min, b)),
-            None => clip_binary(ca, max, num_traits::clamp_max),
+            Some(min) => clip_binary(ca, max, |v, b| clamp(v, min, b)),
+            None => clip_binary(ca, max, clamp_max),
         },
         (_, 1) => match max.get(0) {
-            Some(max) => clip_binary(ca, min, |v, b| num_traits::clamp(v, b, max)),
-            None => clip_binary(ca, min, num_traits::clamp_min),
+            Some(max) => clip_binary(ca, min, |v, b| clamp(v, b, max)),
+            None => clip_binary(ca, min, clamp_min),
         },
         _ => clip_ternary(ca, min, max),
     }
@@ -200,9 +221,9 @@ where
 {
     ternary_elementwise(ca, min, max, |opt_v, opt_min, opt_max| {
         match (opt_v, opt_min, opt_max) {
-            (Some(v), Some(min), Some(max)) => Some(num_traits::clamp(v, min, max)),
-            (Some(v), Some(min), None) => Some(num_traits::clamp_min(v, min)),
-            (Some(v), None, Some(max)) => Some(num_traits::clamp_max(v, max)),
+            (Some(v), Some(min), Some(max)) => Some(clamp(v, min, max)),
+            (Some(v), Some(min), None) => Some(clamp_min(v, min)),
+            (Some(v), None, Some(max)) => Some(clamp_max(v, max)),
             (Some(v), None, None) => Some(v),
             (None, _, _) => None,
         }

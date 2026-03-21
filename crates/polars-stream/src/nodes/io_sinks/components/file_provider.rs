@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_io::cloud::CloudOptions;
 use polars_io::metrics::IOMetrics;
 use polars_io::pl_async;
@@ -21,7 +21,8 @@ pub struct FileProvider {
 impl FileProvider {
     pub async fn open_file(&self, args: FileProviderArgs) -> PolarsResult<Writeable> {
         let provided_path: String = match &self.provider_type {
-            FileProviderType::Hive(v) => v.get_path(args)?,
+            FileProviderType::Hive(p) => p.get_path(args)?,
+            FileProviderType::Iceberg(p) => p.get_path(args)?,
             FileProviderType::Function(f) => {
                 let f = f.clone();
 
@@ -38,6 +39,24 @@ impl FileProvider {
         };
 
         let path = self.base_path.join(&provided_path);
+
+        polars_ensure!(
+            path.as_str().starts_with(self.base_path.as_str()),
+            ComputeError:
+            "provided path '{provided_path}' is absolute but does not start with base path '{}'",
+            self.base_path,
+        );
+
+        let has_parent_dir_component = provided_path
+            .as_bytes()
+            .split(|c| *c == b'/' || *c == b'\\')
+            .any(|bytes| bytes == b"..");
+
+        polars_ensure!(
+            !has_parent_dir_component,
+            ComputeError:
+            "provided path '{provided_path}' contained parent dir component '..'"
+        );
 
         if !path.has_scheme()
             && let Some(path) = path.parent()

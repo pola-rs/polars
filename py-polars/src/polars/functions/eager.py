@@ -17,7 +17,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars._plr as plr
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._typing import FrameType, JoinStrategy, PolarsType
@@ -205,20 +205,25 @@ def concat(
         join_method: JoinStrategy = (
             "full" if how == "align" else how.removeprefix("align_")  # type: ignore[assignment]
         )
-        lf: LazyFrame = (
-            reduce(
-                lambda x, y: x.join(
-                    y,
-                    on=common_cols,
-                    how=join_method,
-                    maintain_order="right_left",
-                    coalesce=True,
-                ),
-                [df.lazy() for df in elems],
+        join_frames = [df.lazy() for df in elems]
+
+        def join_fn(x: pl.LazyFrame, y: pl.LazyFrame) -> pl.LazyFrame:
+            return x.join(
+                y,
+                on=common_cols,
+                how=join_method,
+                maintain_order="right_left",
+                coalesce=True,
             )
-            .sort(by=common_cols, maintain_order=True)
-            .select(*output_column_order)
-        )
+
+        if join_method in ("full", "inner"):
+            # associative => balanced tree, recursion depth is O(log(n))
+            lf = _balanced_reduce(join_frames, join_fn)
+        else:
+            # not associative => linear chain, recursion depth is O(n)
+            lf = reduce(join_fn, join_frames)
+        lf = lf.sort(by=common_cols, maintain_order=True).select(*output_column_order)
+
         eager = isinstance(elems[0], pl.DataFrame)
         return lf.collect() if eager else lf  # type: ignore[return-value]
 
@@ -491,20 +496,25 @@ def union(
         join_method: JoinStrategy = (
             "full" if how == "align" else how.removeprefix("align_")  # type: ignore[assignment]
         )
-        lf: LazyFrame = (
-            reduce(
-                lambda x, y: x.join(
-                    y,
-                    on=common_cols,
-                    how=join_method,
-                    maintain_order="none",
-                    coalesce=True,
-                ),
-                [df.lazy() for df in elems],
+        join_frames = [df.lazy() for df in elems]
+
+        def join_fn(x: pl.LazyFrame, y: pl.LazyFrame) -> pl.LazyFrame:
+            return x.join(
+                y,
+                on=common_cols,
+                how=join_method,
+                maintain_order="none",
+                coalesce=True,
             )
-            .sort(by=common_cols, maintain_order=False)
-            .select(*output_column_order)
-        )
+
+        if join_method in ("full", "inner"):
+            # associative => balanced tree, recursion depth is O(log(n))
+            lf = _balanced_reduce(join_frames, join_fn)
+        else:
+            # not associative => linear chain, recursion depth is O(n)
+            lf = reduce(join_fn, join_frames)
+        lf = lf.sort(by=common_cols, maintain_order=False).select(*output_column_order)
+
         eager = isinstance(elems[0], pl.DataFrame)
         return lf.collect() if eager else lf  # type: ignore[return-value]
 
@@ -807,3 +817,18 @@ def align_frames(
         aligned_frames.append(f)
 
     return F.collect_all(aligned_frames) if eager else aligned_frames  # type: ignore[return-value]
+
+
+def _balanced_reduce(
+    frames: list[LazyFrame], join_fn: Callable[[LazyFrame, LazyFrame], LazyFrame]
+) -> LazyFrame:
+    """Reduce a list of frames into a single frame using a balanced binary tree."""
+    while len(frames) > 1:
+        next_level = []
+        for i in range(0, len(frames), 2):
+            if i + 1 < len(frames):
+                next_level.append(join_fn(frames[i], frames[i + 1]))
+            else:
+                next_level.append(frames[i])
+        frames = next_level
+    return frames[0]

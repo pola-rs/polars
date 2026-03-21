@@ -162,8 +162,14 @@ impl PlPath {
     pub fn join(&self, other: impl AsRef<str>) -> PlRefPath {
         let other = other.as_ref();
 
-        if CloudScheme::from_path(other).is_some() {
+        if CloudScheme::from_path(other).is_some()
+            || other.starts_with('/')
+            || other.starts_with('\\')
+        {
             PlRefPath::new(other)
+        } else if CloudScheme::from_path(self.as_str()).is_some() {
+            let lhs = self.as_str().trim_end_matches('/');
+            PlRefPath::new(format!("{lhs}/{other}"))
         } else {
             PlRefPath::try_from_pathbuf(self.as_std_path().join(other)).unwrap()
         }
@@ -531,6 +537,20 @@ mod tests {
         assert_eq!(
             PlRefPath::new("s3://.../...").join("az://.../...").as_str(),
             "az://.../..."
+        );
+
+        assert_eq!(
+            PlRefPath::new("s3://.../...")
+                .join("a=1/b=1/00000000.parquet")
+                .as_str(),
+            "s3://.../.../a=1/b=1/00000000.parquet"
+        );
+
+        assert_eq!(
+            PlRefPath::new("s3://.../...//")
+                .join("a=1/b=1/00000000.parquet")
+                .as_str(),
+            "s3://.../.../a=1/b=1/00000000.parquet"
         );
 
         fn _assert_plpath_join(base: &str, added: &str, expect: &str) {

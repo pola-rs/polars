@@ -28,3 +28,28 @@ def test_implode_explode_agg() -> None:
         .agg(pl.col.a.implode().explode().sum()),
         pl.DataFrame({"literal": [1], "a": [3]}),
     )
+
+
+def test_implode_unordered() -> None:
+    df = pl.DataFrame({"x": [5, 6, 7, 8, 9], "g": [1, 2, 3, 3, 3]})
+    out = (
+        df.group_by("g")
+        .agg(pl.col.x.implode(maintain_order=False))
+        .sort("g")
+        .to_dict(as_series=False)
+    )
+    out["x"] = [sorted(v) for v in out["x"]]
+    assert out == {"g": [1, 2, 3], "x": [[5], [6], [7, 8, 9]]}
+
+    df = pl.DataFrame({"x": [1, 2, 5], "y": [3, 4, 3]})
+    out = (
+        df.group_by("y")
+        .agg(pl.struct(pl.col.x, pl.col.y).implode(maintain_order=False))
+        .sort("y")
+        .to_dict(as_series=False)
+    )
+    out["x"] = [sorted(list(d.items()) for d in v) for v in out["x"]]
+    assert out == {
+        "y": [3, 4],
+        "x": [[[("x", 1), ("y", 3)], [("x", 5), ("y", 3)]], [[("x", 2), ("y", 4)]]],
+    }

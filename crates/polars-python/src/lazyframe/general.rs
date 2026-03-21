@@ -5,9 +5,12 @@ use std::num::NonZeroUsize;
 use arrow::ffi::export_iterator;
 use either::Either;
 use parking_lot::Mutex;
+#[cfg(feature = "pivot")]
+use polars::frame::PivotColumnNaming;
 use polars::io::RowIndex;
 use polars::time::*;
 use polars_core::prelude::*;
+use polars_core::query_result::QueryResult;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
@@ -151,7 +154,7 @@ impl PyLazyFrame {
         low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema,
-        cloud_options, credential_provider, include_file_paths
+        cloud_options, credential_provider, include_file_paths, missing_columns
     )
     )]
     fn new_from_csv(
@@ -186,6 +189,7 @@ impl PyLazyFrame {
         cloud_options: OptPyCloudOptions,
         credential_provider: Option<Py<PyAny>>,
         include_file_paths: Option<String>,
+        missing_columns: Option<Wrap<MissingColumnsPolicy>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let quote_char = quote_char.and_then(|s| s.as_bytes().first()).copied();
@@ -256,7 +260,8 @@ impl PyLazyFrame {
             .with_decimal_comma(decimal_comma)
             .with_glob(glob)
             .with_raise_if_empty(raise_if_empty)
-            .with_include_file_paths(include_file_paths.map(|x| x.into()));
+            .with_include_file_paths(include_file_paths.map(|x| x.into()))
+            .with_missing_columns_policy(missing_columns.map(|x| x.0));
 
         if let Some(lambda) = with_schema_modify {
             let f = |schema: Schema| {
@@ -361,6 +366,28 @@ impl PyLazyFrame {
             scan_options.extract_unified_scan_args(first_path.and_then(|x| x.scheme()))?;
 
         let dsl: DslPlan = DslBuilder::scan_lines(sources, unified_scan_args, (&*name).into())
+            .map_err(to_py_err)?
+            .build();
+        let lf: LazyFrame = dsl.into();
+
+        Ok(lf.into())
+    }
+
+    #[cfg(feature = "scan_lines")]
+    #[staticmethod]
+    #[pyo3(signature = (sources, scan_options, name))]
+    fn new_from_expand_paths(
+        sources: Wrap<ScanSources>,
+        scan_options: PyScanOptions,
+        name: PyBackedStr,
+    ) -> PyResult<Self> {
+        let sources = sources.0;
+        let first_path = sources.first_path();
+
+        let unified_scan_args =
+            scan_options.extract_unified_scan_args(first_path.and_then(|x| x.scheme()))?;
+
+        let dsl: DslPlan = DslBuilder::expand_paths(sources, unified_scan_args, (&*name).into())
             .map_err(to_py_err)?
             .build();
         let lf: LazyFrame = dsl.into();
@@ -576,7 +603,11 @@ impl PyLazyFrame {
                     post_opt_callback(&lambda, root, lp_arena, expr_arena, None)
                 })
             } else {
-                ldf.collect_with_engine(engine.0)
+                ldf.collect_with_engine(engine.0).map(|r| match r {
+                    QueryResult::Single(df) => df,
+                    // TODO: Should return query results
+                    QueryResult::Multiple(_) => DataFrame::empty(),
+                })
             }
         })
     }
@@ -597,6 +628,11 @@ impl PyLazyFrame {
             polars_io::pl_async::get_runtime().spawn_blocking(move || {
                 let result = ldf
                     .collect_with_engine(engine.0)
+                    .map(|r| match r {
+                        QueryResult::Single(df) => df,
+                        // TODO: Should return query results
+                        QueryResult::Multiple(_) => DataFrame::empty(),
+                    })
                     .map(PyDataFrame::new)
                     .map_err(PyPolarsErr::from);
 
@@ -1342,7 +1378,7 @@ impl PyLazyFrame {
     }
 
     #[cfg(feature = "pivot")]
-    #[pyo3(signature = (on, on_columns, index, values, agg, maintain_order, separator))]
+    #[pyo3(signature = (on, on_columns, index, values, agg, maintain_order, separator, column_naming))]
     fn pivot(
         &self,
         on: PySelector,
@@ -1352,6 +1388,7 @@ impl PyLazyFrame {
         agg: PyExpr,
         maintain_order: bool,
         separator: String,
+        column_naming: Wrap<PivotColumnNaming>,
     ) -> Self {
         let ldf = self.ldf.read().clone();
         ldf.pivot(
@@ -1362,6 +1399,7 @@ impl PyLazyFrame {
             agg.inner,
             maintain_order,
             separator.into(),
+            column_naming.0,
         )
         .into()
     }

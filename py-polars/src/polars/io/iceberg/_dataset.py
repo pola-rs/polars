@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import partial
 from time import perf_counter
-from typing import TYPE_CHECKING, Any, Final, Literal
+from typing import TYPE_CHECKING, Any, Final, Literal, TypeAlias
 
 import polars._reexport as pl
 from polars._utils.logging import eprint, verbose, verbose_print_sensitive
@@ -20,25 +20,194 @@ from polars.io.scan_options.cast_options import ScanCastOptions
 
 if TYPE_CHECKING:
     import pyarrow as pa
+    import pyiceberg.catalog
     import pyiceberg.schema
-    from pyiceberg.table import Table
+    import pyiceberg.table
+    import pyiceberg.typedef
 
     from polars._typing import StorageOptionsDict
     from polars.io.cloud._utils import NoPickleOption
     from polars.lazyframe.frame import LazyFrame
 
 
+class IcebergTableSerializer(ABC):
+    @staticmethod
+    @abstractmethod
+    def serialize_table(table: pyiceberg.table.Table) -> SerializedTableState: ...
+
+
+class IcebergScanTableSerializer(IcebergTableSerializer):
+    @staticmethod
+    def serialize_table(table: pyiceberg.table.Table) -> SerializedTableState:
+        return table.metadata_location
+
+
 @dataclass(kw_only=True)
-class IcebergDataset:
-    """Dataset interface for PyIceberg."""
+class IcebergCatalogTableDescriptor:
+    table_identifier: str | pyiceberg.typedef.Identifier
+    catalog_config: IcebergCatalogConfig
 
-    # We don't serialize the table object - the remote machine should use its
-    # own permissions to reconstruct the table object from the metadata path.
-    table_: NoPickleOption[Table]
-    metadata_path_: str | None
 
-    snapshot_id: int | None
+SerializedTableState: TypeAlias = str | IcebergCatalogTableDescriptor
+
+
+@dataclass(kw_only=True)
+class IcebergTableWrap:
+    table_: NoPickleOption[pyiceberg.table.Table]
+    table_descriptor_: SerializedTableState | None
+    serializer: IcebergTableSerializer
     iceberg_storage_properties: StorageOptionsDict | None
+
+    def get(self) -> pyiceberg.table.Table:
+        """Fetch the PyIceberg Table object."""
+        if self.table_.get() is None:
+            if verbose():
+                from_ = (
+                    "catalog table descriptor: "
+                    f"{self.table_descriptor_.table_identifier = }, "
+                    f"{self.table_descriptor_.catalog_config.class_ = }"
+                    if isinstance(self.table_descriptor_, IcebergCatalogTableDescriptor)
+                    else f"metadata path: {self.table_descriptor_}"
+                )
+
+                eprint(f"IcebergTableWrap: construct table from {from_}")
+
+            assert self.table_descriptor_ is not None
+
+            if isinstance(self.table_descriptor_, IcebergCatalogTableDescriptor):
+                catalog = self.table_descriptor_.catalog_config.class_(
+                    self.table_descriptor_.catalog_config.name,
+                    **self.table_descriptor_.catalog_config.properties,
+                )
+
+                table = catalog.load_table(self.table_descriptor_.table_identifier)
+            else:
+                from pyiceberg.table import StaticTable
+
+                table = StaticTable.from_metadata(
+                    metadata_location=self.table_descriptor_,
+                    properties=self.iceberg_storage_properties or {},
+                )
+
+            self.table_.set(table)
+
+        return self.table_.get()  # type: ignore[return-value]
+
+    def arrow_schema(self) -> pa.schema:
+        """Fetch the arrow schema of the table."""
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        return schema_to_pyarrow(self.get().schema())
+
+    def __getstate__(self) -> dict[str, Any]:
+        if (table := self.table_.get()) is not None:
+            self.table_descriptor_ = self.serializer.serialize_table(table)
+
+        assert self.table_descriptor_ is not None
+
+        return self.__dict__
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self.__dict__ = state
+
+
+@dataclass(kw_only=True)
+class IcebergCatalogConfig:
+    """
+    Configuration for constructing a PyIceberg catalog.
+
+    This is useful for constructing queries from a client that may not have
+    access to a catalog server.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+    """
+
+    class_: type[pyiceberg.catalog.Catalog]
+    name: str
+    properties: dict[str, str]
+
+    @staticmethod
+    def from_catalog(catalog: pyiceberg.catalog.Catalog) -> IcebergCatalogConfig:
+        """
+        Constructs an IcebergCatalogConfig from an instantiated PyIceberg catalog.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+        """
+        return IcebergCatalogConfig(
+            class_=type(catalog),
+            name=catalog.name,
+            properties=catalog.properties,
+        )
+
+    @staticmethod
+    def _from_api_parameter_or_environment_default(
+        catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None,
+        *,
+        fn_name: Literal["scan_iceberg", "sink_iceberg"],
+    ) -> IcebergCatalogConfig:
+        import pyiceberg.catalog
+        from pyiceberg.catalog.noop import NoopCatalog
+
+        import polars._utils.logging
+        from polars._utils.logging import eprint
+
+        if isinstance(catalog, IcebergCatalogConfig):
+            catalog_config = catalog
+        elif isinstance(catalog, pyiceberg.catalog.Catalog):
+            catalog_config = IcebergCatalogConfig.from_catalog(catalog)
+        elif catalog is not None:
+            msg = f"unknown type for `catalog` parameter: {type(catalog)}"
+            raise TypeError(msg)
+        else:
+            if polars._utils.logging.verbose():
+                eprint(f"{fn_name}(): calling pyiceberg.catalog.load_catalog()")
+
+            try:
+                default_catalog = pyiceberg.catalog.load_catalog()
+
+            except Exception as error:
+                static_metadata_hint = (
+                    (
+                        " "
+                        "If you intended to pass a static metadata path, "
+                        "ensure it is an absolute path."
+                    )
+                    if fn_name == "scan_iceberg"
+                    else ""
+                )
+
+                msg = (
+                    f"failed to load catalog for {fn_name}() ({error = }). "
+                    "Configure the default PyIceberg catalog, or pass "
+                    "a catalog via the 'catalog' parameter, or pass a PyIceberg "
+                    "table object instead of the name."
+                    f"{static_metadata_hint}"
+                )
+                raise ComputeError(msg) from error
+
+            catalog_config = IcebergCatalogConfig.from_catalog(default_catalog)
+
+        if catalog_config.class_ == NoopCatalog:
+            msg = f"cannot use NoopCatalog with {fn_name}()"
+            raise TypeError(msg)
+
+        return catalog_config
+
+
+@dataclass(kw_only=True)
+class IcebergScanResolver:
+    """
+    Iceberg scan resolver.
+
+    Defers scan resolution to run during IR resolution.
+    """
+
+    table: IcebergTableWrap
+    snapshot_id: int | None
     reader_override: Literal["native", "pyiceberg"] | None
     use_metadata_statistics: bool
     fast_deletion_count: bool
@@ -50,13 +219,7 @@ class IcebergDataset:
 
     def schema(self) -> pa.schema:
         """Fetch the schema of the table."""
-        return self.arrow_schema()
-
-    def arrow_schema(self) -> pa.schema:
-        """Fetch the arrow schema of the table."""
-        from pyiceberg.io.pyarrow import schema_to_pyarrow
-
-        return schema_to_pyarrow(self.table().schema())
+        return self.table.arrow_schema()
 
     def to_dataset_scan(
         self,
@@ -114,7 +277,7 @@ class IcebergDataset:
             )
 
             eprint(
-                "IcebergDataset: to_dataset_scan(): "
+                "IcebergScanResolver: to_dataset_scan(): "
                 f"snapshot ID: {self.snapshot_id}, "
                 f"limit: {limit}, "
                 f"projection: {projection}, "
@@ -126,15 +289,15 @@ class IcebergDataset:
 
         verbose_print_sensitive(
             lambda: (
-                f"IcebergDataset: to_dataset_scan(): {pyarrow_predicate = }, {iceberg_table_filter = }"
+                f"IcebergScanResolver: to_dataset_scan(): {pyarrow_predicate = }, {iceberg_table_filter = }"
             )
         )
 
-        tbl = self.table()
+        tbl = self.table.get()
 
         if verbose:
             eprint(
-                "IcebergDataset: to_dataset_scan(): "
+                "IcebergScanResolver: to_dataset_scan(): "
                 f"tbl.metadata.current_snapshot_id: {tbl.metadata.current_snapshot_id}"
             )
 
@@ -152,7 +315,7 @@ class IcebergDataset:
 
             if schema_id is None:
                 msg = (
-                    f"IcebergDataset: requested snapshot {snapshot_id} "
+                    f"IcebergScanResolver: requested snapshot {snapshot_id} "
                     "did not contain a schema ID"
                 )
                 raise ValueError(msg)
@@ -173,7 +336,7 @@ class IcebergDataset:
         ):
             if verbose:
                 eprint(
-                    "IcebergDataset: to_dataset_scan(): early return "
+                    "IcebergScanResolver: to_dataset_scan(): early return "
                     f"({snapshot_id_key = })"
                 )
 
@@ -225,7 +388,7 @@ class IcebergDataset:
             from pyiceberg.manifest import DataFileContent, FileFormat
 
             if verbose:
-                eprint("IcebergDataset: to_dataset_scan(): begin path expansion")
+                eprint("IcebergScanResolver: to_dataset_scan(): begin path expansion")
 
             start_time = perf_counter()
 
@@ -290,7 +453,7 @@ class IcebergDataset:
             if verbose:
                 elapsed = perf_counter() - start_time
                 eprint(
-                    "IcebergDataset: to_dataset_scan(): "
+                    "IcebergScanResolver: to_dataset_scan(): "
                     f"finish path expansion ({elapsed:.3f}s)"
                 )
 
@@ -300,7 +463,7 @@ class IcebergDataset:
                 s2 = "" if total_deletion_files == 1 else "s"
 
                 eprint(
-                    "IcebergDataset: to_dataset_scan(): "
+                    "IcebergScanResolver: to_dataset_scan(): "
                     f"native scan_parquet(): "
                     f"{len(sources)} source{s}, "
                     f"snapshot ID: {snapshot_id}, "
@@ -322,9 +485,9 @@ class IcebergDataset:
 
             storage_options = (
                 _convert_iceberg_to_object_store_storage_options(
-                    self.iceberg_storage_properties
+                    self.table.iceberg_storage_properties
                 )
-                if self.iceberg_storage_properties is not None
+                if self.table.iceberg_storage_properties is not None
                 else None
             )
 
@@ -354,7 +517,7 @@ class IcebergDataset:
 
         if verbose:
             eprint(
-                "IcebergDataset: to_dataset_scan(): "
+                "IcebergScanResolver: to_dataset_scan(): "
                 f"fallback to python[pyiceberg] scan: {fallback_reason}"
             )
 
@@ -379,49 +542,6 @@ class IcebergDataset:
         )
 
         return _PyIcebergScanData(lf=lf, snapshot_id_key=snapshot_id_key)
-
-    #
-    # Accessors
-    #
-
-    def metadata_path(self) -> str:
-        """Fetch the metadata path."""
-        if self.metadata_path_ is None:
-            if self.table_.get() is None:
-                msg = "impl error: both metadata_path and table are None"
-                raise ValueError(msg)
-
-            self.metadata_path_ = self.table().metadata_location
-
-        return self.metadata_path_
-
-    def table(self) -> Table:
-        """Fetch the PyIceberg Table object."""
-        if self.table_.get() is None:
-            if self.metadata_path_ is None:
-                msg = "impl error: both metadata_path and table are None"
-                raise ValueError(msg)
-
-            if verbose():
-                eprint(f"IcebergDataset: construct table from {self.metadata_path_ = }")
-
-            from pyiceberg.table import StaticTable
-
-            self.table_.set(
-                StaticTable.from_metadata(
-                    metadata_location=self.metadata_path_,
-                    properties=self.iceberg_storage_properties or {},
-                )
-            )
-
-        return self.table_.get()  # type: ignore[return-value]
-
-    def __getstate__(self) -> dict[str, Any]:
-        self.metadata_path()
-        return self.__dict__
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        self.__dict__ = state
 
 
 class _ResolvedScanDataBase(ABC):

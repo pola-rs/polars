@@ -5,6 +5,9 @@ use polars_core::prelude::*;
 use polars_core::schema::SchemaRef;
 use polars_core::series::Series;
 
+use crate::morsel::MorselSeq;
+use crate::pipe::PortReceiver;
+
 #[derive(Clone, Debug)]
 pub(super) struct DataFrameSearchBuffer {
     schema: SchemaRef,
@@ -128,6 +131,28 @@ impl DataFrameSearchBuffer {
             }
         }
         lower
+    }
+
+    pub(super) async fn stop_and_buffer_from_pipe(&mut self, port: Option<&mut PortReceiver>) {
+        stop_and_buffer_pipe_contents(port, &mut |df, _| self.push_df(df)).await
+    }
+}
+
+/// Tell the sender to this port to stop, and buffer everything that is still in the pipe.
+pub(super) async fn stop_and_buffer_pipe_contents<F>(
+    port: Option<&mut PortReceiver>,
+    buffer_morsel: &mut F,
+) where
+    F: FnMut(DataFrame, MorselSeq),
+{
+    let Some(port) = port else {
+        return;
+    };
+
+    while let Ok(morsel) = port.recv().await {
+        morsel.source_token().stop();
+        let (df, seq, _, _) = morsel.into_inner();
+        buffer_morsel(df, seq);
     }
 }
 

@@ -38,7 +38,7 @@ pub use predicate_pushdown::{DynamicPred, PredicateExpr, PredicatePushDown, Triv
 pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
-pub use sortedness::{AExprSorted, IRSorted, are_keys_sorted_any, is_sorted};
+pub use sortedness::{AExprSorted, IRSorted, are_keys_sorted_any, expr_is_sorted, is_sorted};
 pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
 
 use self::flatten_union::FlattenUnionRule;
@@ -197,18 +197,15 @@ pub fn optimize(
         true
     };
 
+    let mut repeat_slice_pd_after_filter_pd = false;
+
     if opt_flags.slice_pushdown() {
-        let mut slice_pushdown_opt = SlicePushDown::new(
-            // We don't maintain errors on slice as the behavior is much more predictable that way.
-            //
-            // Even if we enable maintain_errors (thereby preventing the slice from being pushed),
-            // the new-streaming engine still may not error due to early-stopping.
-            false, // maintain_errors
-        );
-        let ir = ir_arena.take(root);
-        let ir = slice_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
+        let mut slice_pushdown_opt = SlicePushDown::new();
+        let ir = slice_pushdown_opt.optimize(root, ir_arena, expr_arena)?;
 
         ir_arena.replace(root, ir);
+
+        repeat_slice_pd_after_filter_pd = slice_pushdown_opt.slice_node_in_optimized_plan;
 
         // Expressions use the stack optimizer.
         rules.push(Box::new(slice_pushdown_opt));
@@ -245,6 +242,13 @@ pub fn optimize(
     }
 
     root = opt.optimize_loop(&mut rules, expr_arena, ir_arena, root)?;
+
+    if repeat_slice_pd_after_filter_pd {
+        let mut slice_pushdown_opt = SlicePushDown::new();
+        let ir = slice_pushdown_opt.optimize(root, ir_arena, expr_arena)?;
+
+        ir_arena.replace(root, ir);
+    }
 
     if opt_flags.cluster_with_columns() && get_or_init_members!().with_columns_count > 1 {
         cluster_with_columns::optimize(root, ir_arena, expr_arena)

@@ -268,6 +268,14 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             to_dataset_scan: dataset_provider_funcs::to_dataset_scan,
         });
 
+        use crate::delta::dv_provider_funcs;
+
+        polars_plan::dsl::deletion::DELTA_DV_PROVIDER_VTABLE.get_or_init(|| {
+            polars_plan::dsl::deletion::DeltaDeletionVectorProviderVTable {
+                call: dv_provider_funcs::call,
+            }
+        });
+
         // Register SERIES UDF.
         python_dsl::CALL_COLUMNS_UDF_PYTHON = Some(python_function_caller_series);
         // Register DATAFRAME UDF.

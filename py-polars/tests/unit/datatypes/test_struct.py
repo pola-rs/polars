@@ -1108,6 +1108,12 @@ def test_zfs_unnest(size: int) -> None:
     assert a.width == 0
 
 
+def test_unnest_zero_field_struct_preserves_height() -> None:
+    df = pl.Series("a", [{}, {}, {}, {}, {}], pl.Struct([])).to_frame()
+    result = df.unnest("a")
+    assert result.shape == (5, 0)
+
+
 @pytest.mark.parametrize("size", [0, 1, 2, 13])
 def test_zfs_equality(size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([]))

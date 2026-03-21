@@ -1176,6 +1176,19 @@ impl DataType {
     pub fn is_numeric(&self) -> bool {
         self.is_integer() || self.is_float() || self.is_decimal()
     }
+
+    pub fn numeric_to_unsigned_bit_repr(&self) -> Option<DataType> {
+        use DataType::*;
+
+        Some(match self {
+            Int8 | UInt8 => UInt8,
+            Int16 | UInt16 | Float16 => UInt16,
+            Int32 | UInt32 | Float32 => UInt32,
+            Int64 | UInt64 | Float64 => UInt64,
+            Int128 | UInt128 => UInt128,
+            _ => return None,
+        })
+    }
 }
 
 impl Display for DataType {

@@ -568,6 +568,8 @@ def _xl_worksheet_in_workbook(
 def _xl_setup_workbook(
     workbook: Workbook | BytesIO | Path | str | None,
     worksheet: str | Worksheet | None = None,
+    *,
+    use_zip64: bool = False,
 ) -> tuple[Workbook, Worksheet, bool]:
     """Establish the target Excel workbook and worksheet."""
     from xlsxwriter import Workbook
@@ -588,6 +590,7 @@ def _xl_setup_workbook(
         raise TypeError(msg)
     else:
         workbook_options = {
+            "use_zip64": use_zip64,
             "nan_inf_to_errors": True,
             "strings_to_formulas": False,
             "default_date_format": _XL_DEFAULT_DTYPE_FORMATS_[Date],

@@ -242,13 +242,14 @@ impl BitmapBuilder {
         length: usize,
         repeats: usize,
     ) {
+        debug_assert!(8 * slice.len() >= offset + length);
         if repeats == 0 {
             return;
         }
         if repeats == 1 {
             return self.extend_from_slice_unchecked(slice, offset, length);
         }
-        for bit_idx in offset..length {
+        for bit_idx in offset..(offset + length) {
             let bit = (*slice.get_unchecked(bit_idx / 8) >> (bit_idx % 8)) & 1 != 0;
             self.extend_constant(repeats, bit);
         }

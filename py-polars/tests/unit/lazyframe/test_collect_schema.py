@@ -49,3 +49,19 @@ def test_collect_schema_unpivot_duplicate() -> None:
         pl.exceptions.DuplicateError, match="duplicate column name 'value'"
     ):
         _ = lf.collect_schema()
+
+
+def test_arr_get_oob_errors_at_schema_26088() -> None:
+    lf = pl.LazyFrame({"arr": [[1, 2, 3]]}).cast({"arr": pl.Array(pl.Int64, shape=3)})
+
+    with pytest.raises(pl.exceptions.ComputeError):
+        lf.select(pl.col("arr").arr.get(5)).collect_schema()
+
+    with pytest.raises(pl.exceptions.ComputeError):
+        lf.select(pl.col("arr").arr.get(-4)).collect_schema()
+
+    lf.select(pl.col("arr").arr.get(2)).collect_schema()
+
+    lf.select(pl.col("arr").arr.get(-1)).collect_schema()
+
+    lf.select(pl.col("arr").arr.get(5, null_on_oob=True)).collect_schema()

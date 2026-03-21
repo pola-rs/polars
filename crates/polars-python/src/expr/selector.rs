@@ -10,7 +10,7 @@ use pyo3::{PyResult, pyclass};
 
 use crate::prelude::Wrap;
 
-#[pyclass(frozen)]
+#[pyclass(frozen, from_py_object)]
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PySelector {

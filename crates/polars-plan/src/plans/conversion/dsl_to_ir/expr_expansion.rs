@@ -512,13 +512,21 @@ fn expand_expression_rec(
                     opt_flags,
                     |e| Expr::Agg(AggExpr::Mean(Arc::new(e))),
                 )?,
-                AggExpr::Implode(expr) => expand_single(
-                    expr.as_ref(),
+                AggExpr::Implode {
+                    input,
+                    maintain_order,
+                } => expand_single(
+                    input.as_ref(),
                     ignored_selector_columns,
                     schema,
                     out,
                     opt_flags,
-                    |e| Expr::Agg(AggExpr::Implode(Arc::new(e))),
+                    |e| {
+                        Expr::Agg(AggExpr::Implode {
+                            input: Arc::new(e),
+                            maintain_order: *maintain_order,
+                        })
+                    },
                 )?,
                 AggExpr::Count {
                     input,

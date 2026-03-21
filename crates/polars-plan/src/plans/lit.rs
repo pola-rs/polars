@@ -291,6 +291,10 @@ impl LiteralValue {
         !matches!(self, LiteralValue::Series(_) | LiteralValue::Range { .. })
     }
 
+    pub fn is_nan(&self) -> bool {
+        self.to_any_value().is_some_and(|av| av.is_nan())
+    }
+
     pub fn to_any_value(&self) -> Option<AnyValue<'_>> {
         let av = match self {
             Self::Scalar(sc) => sc.value().clone(),

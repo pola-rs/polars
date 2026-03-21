@@ -2,7 +2,6 @@
 use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
 use polars_core::chunked_array::ops::FillNullStrategy;
-use polars_core::series::IsSorted;
 #[cfg(feature = "string_normalize")]
 use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::prelude::RankMethod;
@@ -48,7 +47,7 @@ pub struct Literal {
     dtype: Py<PyAny>,
 }
 
-#[pyclass(name = "Operator", eq, frozen)]
+#[pyclass(name = "Operator", eq, frozen, skip_from_py_object)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyOperator {
     Eq,
@@ -129,7 +128,7 @@ impl<'py> IntoPyObject<'py> for Wrap<InequalityOperator> {
     }
 }
 
-#[pyclass(name = "StringFunction", eq, frozen)]
+#[pyclass(name = "StringFunction", eq, frozen, skip_from_py_object)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyStringFunction {
     ConcatHorizontal,
@@ -186,7 +185,7 @@ impl PyStringFunction {
     }
 }
 
-#[pyclass(name = "BooleanFunction", eq, frozen)]
+#[pyclass(name = "BooleanFunction", eq, frozen, skip_from_py_object)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyBooleanFunction {
     Any,
@@ -216,7 +215,7 @@ impl PyBooleanFunction {
     }
 }
 
-#[pyclass(name = "TemporalFunction", eq, frozen)]
+#[pyclass(name = "TemporalFunction", eq, frozen, skip_from_py_object)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyTemporalFunction {
     Millennium,
@@ -273,7 +272,7 @@ impl PyTemporalFunction {
     }
 }
 
-#[pyclass(name = "StructFunction", eq, frozen)]
+#[pyclass(name = "StructFunction", eq, frozen, skip_from_py_object)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyStructFunction {
     FieldByName,
@@ -740,10 +739,13 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 arguments: vec![n.0],
                 options: py.None(),
             },
-            IRAggExpr::Implode(n) => Agg {
+            IRAggExpr::Implode {
+                input: n,
+                maintain_order,
+            } => Agg {
                 name: "implode".into_py_any(py)?,
                 arguments: vec![n.0],
-                options: py.None(),
+                options: maintain_order.into_py_any(py)?,
             },
             IRAggExpr::Quantile {
                 expr,
@@ -1371,15 +1373,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Random { .. } => {
                     return Err(PyNotImplementedError::new_err("random"));
                 },
-                IRFunctionExpr::SetSortedFlag(sorted) => (
-                    "set_sorted",
-                    match sorted {
-                        IsSorted::Ascending => "ascending",
-                        IsSorted::Descending => "descending",
-                        IsSorted::Not => "not",
-                    },
-                )
-                    .into_py_any(py),
+                IRFunctionExpr::SetSortedFlag(sorted) => {
+                    ("set_sorted", sorted.descending, sorted.nulls_last).into_py_any(py)
+                },
                 #[cfg(feature = "ffi_plugin")]
                 IRFunctionExpr::FfiPlugin { .. } => {
                     return Err(PyNotImplementedError::new_err("ffi plugin"));
@@ -1445,7 +1441,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::GatherEvery { n, offset } => {
                     ("gather_every", offset, n).into_py_any(py)
                 },
-                IRFunctionExpr::Reinterpret(signed) => ("reinterpret", signed).into_py_any(py),
+                IRFunctionExpr::Reinterpret(dtype) => {
+                    ("reinterpret", &Wrap(dtype.clone())).into_py_any(py)
+                },
                 IRFunctionExpr::ExtendConstant => ("extend_constant",).into_py_any(py),
                 IRFunctionExpr::Business(_) => {
                     return Err(PyNotImplementedError::new_err("business"));

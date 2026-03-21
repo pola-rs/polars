@@ -486,6 +486,10 @@ pub fn get_supertype_with_options(
                             }
                         }
                     }
+                    UnknownKind::Int(v) if dt.is_bool() => {
+                        let int_dtype = materialize_dyn_int(*v).dtype();
+                        get_supertype(dt, &int_dtype)
+                    },
                     #[cfg(feature = "dtype-decimal")]
                     UnknownKind::Int(_) if dt.is_decimal() => {
                         let DataType::Decimal(_prec, scale) = dt else { unreachable!() };

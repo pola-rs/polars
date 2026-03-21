@@ -311,3 +311,27 @@ def test_arr_agg_with_filter_in_agg_25384(
     q = df.lazy().group_by(keys, maintain_order=True).agg(q_inner)
     out = q.collect().select(pl.col.a).explode("a")
     assert_series_equal(out.to_series(), result)
+
+
+def test_arr_eval_categorical_min_max_25906() -> None:
+    s = pl.Series(
+        "a",
+        [["c", "a", "b"], ["z", "m", "k"]],
+        dtype=pl.Array(pl.Categorical, 3),
+    )
+    assert_series_equal(
+        s.arr.agg(pl.element().min()),
+        pl.Series("a", ["a", "k"], dtype=pl.Categorical),
+    )
+    assert_series_equal(
+        s.arr.agg(pl.element().max()),
+        pl.Series("a", ["c", "z"], dtype=pl.Categorical),
+    )
+    assert_series_equal(
+        s.arr.agg(pl.element().arg_min()),
+        pl.Series("a", [1, 2], dtype=pl.get_index_type()),
+    )
+    assert_series_equal(
+        s.arr.agg(pl.element().arg_max()),
+        pl.Series("a", [0, 0], dtype=pl.get_index_type()),
+    )

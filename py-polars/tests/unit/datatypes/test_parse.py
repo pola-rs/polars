@@ -9,6 +9,7 @@ from typing import (
     NamedTuple,
 )
 
+import pandas as pd
 import pytest
 
 import polars as pl
@@ -19,6 +20,7 @@ from polars.datatypes._parse import (
     parse_into_dtype,
     parse_py_type_into_dtype,
 )
+from polars.datatypes.classes import Duration
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -153,3 +155,7 @@ def test_parse_dtype_namedtuple_fields() -> None:
 
     expected = pl.Schema({"a": pl.String(), "b": pl.Int64(), "c": pl.String()})
     assert schema == expected
+
+
+def test_parse_py_type_into_dtype_timedelta_subclass_26620() -> None:
+    assert parse_py_type_into_dtype(pd.Timedelta) == Duration

@@ -4,6 +4,7 @@ use polars_expr::state::ExecutionState;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::prelude::sink::CallbackSinkType;
 use polars_utils::unique_id::UniqueId;
+use rayon::iter::{IndexedParallelIterator as _, IntoParallelIterator as _, ParallelIterator as _};
 use recursive::recursive;
 
 #[cfg(feature = "python")]
@@ -102,6 +103,37 @@ pub struct MultiplePhysicalPlans {
     pub cache_prefiller: Option<Box<dyn Executor>>,
     pub physical_plans: Vec<Box<dyn Executor>>,
 }
+
+impl MultiplePhysicalPlans {
+    pub fn execute(mut self) -> PolarsResult<Vec<DataFrame>> {
+        let mut state = ExecutionState::new();
+        if let Some(mut cache_prefiller) = self.cache_prefiller {
+            cache_prefiller.execute(&mut state)?;
+        }
+        // Chunked iter to avoid rayon stack overflow.
+        let out = POOL.install(|| {
+            self.physical_plans
+                .chunks_mut(POOL.current_num_threads() * 3)
+                .map(|chunk| {
+                    chunk
+                        .into_par_iter()
+                        .enumerate()
+                        .map(|(idx, input)| {
+                            let mut input = std::mem::take(input);
+                            let mut state = state.split();
+                            state.branch_idx += idx;
+
+                            let df = input.execute(&mut state)?;
+                            Ok(df)
+                        })
+                        .collect::<PolarsResult<Vec<_>>>()
+                })
+                .collect::<PolarsResult<Vec<_>>>()
+        });
+        Ok(out?.into_iter().flatten().collect())
+    }
+}
+
 pub fn create_multiple_physical_plans(
     roots: &[Node],
     lp_arena: &mut Arena<IR>,
@@ -583,7 +615,7 @@ fn create_physical_plan_impl(
 
             // We first check if we can partition the group_by on the latest moment.
             let partitionable = partitionable_gb(&keys, &aggs, &input_schema, expr_arena, &apply);
-            if partitionable {
+            if partitionable && build_streaming_executor.is_some() {
                 let from_partitioned_ds = lp_arena.iter(input).any(|(_, lp)| {
                     if let Union { options, .. } = lp {
                         options.from_partitioned_ds

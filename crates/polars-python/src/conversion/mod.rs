@@ -11,6 +11,8 @@ use std::hash::{Hash, Hasher};
 pub use categorical::PyCategories;
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
+#[cfg(feature = "pivot")]
+use polars::frame::PivotColumnNaming;
 use polars::frame::row::Row;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
@@ -18,7 +20,7 @@ use polars::prelude::ColumnMapping;
 use polars::prelude::default_values::{
     DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
 };
-use polars::prelude::deletion::DeletionFilesList;
+use polars::prelude::deletion::{DeletionFilesList, DeltaDeletionVectorProvider};
 use polars::series::ops::NullBehavior;
 use polars_buffer::Buffer;
 use polars_compute::decimal::dec128_verify_prec_scale;
@@ -32,6 +34,7 @@ use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
 use polars_utils::compression::{BrotliLevel, GzipLevel, ZstdLevel};
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::python_function::PythonObject;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -1265,6 +1268,24 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<SearchSortedSide> {
     }
 }
 
+#[cfg(feature = "pivot")]
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PivotColumnNaming> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "auto" => PivotColumnNaming::Auto,
+            "combine" => PivotColumnNaming::Combine,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`column_naming` must be one of {{'auto', 'combine'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ClosedInterval> {
     type Error = PyErr;
 
@@ -1828,6 +1849,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DeletionFilesList> {
                 }
 
                 DeletionFilesList::IcebergPositionDelete(Arc::new(out))
+            },
+
+            "delta-deletion-vector" => {
+                let callback: Py<PyAny> = ob.extract()?;
+                DeletionFilesList::Delta(DeltaDeletionVectorProvider::new(PythonObject(callback)))
             },
 
             v => {

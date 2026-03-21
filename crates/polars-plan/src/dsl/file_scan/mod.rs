@@ -23,7 +23,10 @@ use super::*;
 use crate::dsl::default_values::DefaultFieldValues;
 pub mod default_values;
 pub mod deletion;
-
+#[cfg(feature = "python")]
+pub mod python_delta_dv_provider;
+#[cfg(feature = "python")]
+pub use python_delta_dv_provider::{DELTA_DV_PROVIDER_VTABLE, DeltaDeletionVectorProviderVTable};
 #[cfg(feature = "python")]
 pub mod python_dataset;
 #[cfg(feature = "python")]
@@ -46,16 +49,24 @@ const _: () = {
 /// Note: This is cheaply cloneable.
 pub enum FileScanDsl {
     #[cfg(feature = "csv")]
-    Csv { options: Arc<CsvReadOptions> },
+    Csv {
+        options: Arc<CsvReadOptions>,
+    },
 
     #[cfg(feature = "json")]
-    NDJson { options: NDJsonReadOptions },
+    NDJson {
+        options: NDJsonReadOptions,
+    },
 
     #[cfg(feature = "parquet")]
-    Parquet { options: ParquetOptions },
+    Parquet {
+        options: ParquetOptions,
+    },
 
     #[cfg(feature = "ipc")]
-    Ipc { options: IpcScanOptions },
+    Ipc {
+        options: IpcScanOptions,
+    },
 
     #[cfg(feature = "python")]
     PythonDataset {
@@ -63,7 +74,13 @@ pub enum FileScanDsl {
     },
 
     #[cfg(feature = "scan_lines")]
-    Lines { name: PlSmallStr },
+    Lines {
+        name: PlSmallStr,
+    },
+
+    ExpandedPaths {
+        name: PlSmallStr,
+    },
 
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Anonymous {
@@ -83,10 +100,14 @@ const _: () = {
 /// Note: This is cheaply cloneable.
 pub enum FileScanIR {
     #[cfg(feature = "csv")]
-    Csv { options: Arc<CsvReadOptions> },
+    Csv {
+        options: Arc<CsvReadOptions>,
+    },
 
     #[cfg(feature = "json")]
-    NDJson { options: NDJsonReadOptions },
+    NDJson {
+        options: NDJsonReadOptions,
+    },
 
     #[cfg(feature = "parquet")]
     Parquet {
@@ -109,7 +130,13 @@ pub enum FileScanIR {
     },
 
     #[cfg(feature = "scan_lines")]
-    Lines { name: PlSmallStr },
+    Lines {
+        name: PlSmallStr,
+    },
+
+    ExpandedPaths {
+        name: PlSmallStr,
+    },
 
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Anonymous {
@@ -364,7 +391,6 @@ mod _file_scan_eq_hash {
     use std::hash::{Hash, Hasher};
     use std::sync::Arc;
 
-    #[cfg(feature = "scan_lines")]
     use polars_utils::pl_str::PlSmallStr;
 
     use super::FileScanIR;
@@ -417,7 +443,13 @@ mod _file_scan_eq_hash {
         },
 
         #[cfg(feature = "scan_lines")]
-        Lines { name: &'a PlSmallStr },
+        Lines {
+            name: &'a PlSmallStr,
+        },
+
+        ExpandedPaths {
+            name: &'a PlSmallStr,
+        },
 
         Anonymous {
             options: &'a crate::dsl::AnonymousScanOptions,
@@ -461,6 +493,8 @@ mod _file_scan_eq_hash {
 
                 #[cfg(feature = "scan_lines")]
                 FileScanIR::Lines { name } => FileScanEqHashWrap::Lines { name },
+
+                FileScanIR::ExpandedPaths { name } => FileScanEqHashWrap::ExpandedPaths { name },
 
                 FileScanIR::Anonymous { options, function } => FileScanEqHashWrap::Anonymous {
                     options,

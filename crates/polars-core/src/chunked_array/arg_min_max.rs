@@ -7,7 +7,8 @@ use crate::chunked_array::ops::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
 use crate::datatypes::{
-    BinaryChunked, BooleanChunked, PolarsDataType, PolarsNumericType, StringChunked,
+    BinaryChunked, BinaryOffsetChunked, BooleanChunked, PolarsDataType, PolarsNumericType,
+    StringChunked,
 };
 #[cfg(feature = "dtype-categorical")]
 use crate::datatypes::{CategoricalChunked, PolarsCategoricalType};
@@ -118,6 +119,14 @@ pub fn arg_min_binary(ca: &BinaryChunked) -> Option<usize> {
 }
 
 pub fn arg_max_binary(ca: &BinaryChunked) -> Option<usize> {
+    arg_max_physical_generic(ca)
+}
+
+pub fn arg_min_binary_offset(ca: &BinaryOffsetChunked) -> Option<usize> {
+    arg_min_physical_generic(ca)
+}
+
+pub fn arg_max_binary_offset(ca: &BinaryOffsetChunked) -> Option<usize> {
     arg_max_physical_generic(ca)
 }
 

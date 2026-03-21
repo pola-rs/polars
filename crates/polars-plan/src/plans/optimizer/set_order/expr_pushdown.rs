@@ -231,7 +231,11 @@ impl<'a> ObservableOrdersResolver<'a> {
                 | IRAggExpr::Count { input: node, .. }
                 | IRAggExpr::Std(node, _)
                 | IRAggExpr::Var(node, _)
-                | IRAggExpr::Item { input: node, .. } => {
+                | IRAggExpr::Item { input: node, .. }
+                | IRAggExpr::Implode {
+                    input: node,
+                    maintain_order: false,
+                } => {
                     // Input order is disregarded, but must not observe order.
                     _ = rec!(*node);
                     O::None
@@ -244,7 +248,10 @@ impl<'a> ObservableOrdersResolver<'a> {
                 },
 
                 // Input order observing aggregations.
-                IRAggExpr::Implode(node)
+                IRAggExpr::Implode {
+                    input: node,
+                    maintain_order: true,
+                }
                 | IRAggExpr::First(node)
                 | IRAggExpr::FirstNonNull(node)
                 | IRAggExpr::Last(node)

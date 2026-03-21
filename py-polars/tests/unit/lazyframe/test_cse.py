@@ -190,7 +190,9 @@ def test_schema_row_index_cse(maintain_order: bool) -> None:
         df_a = pl.scan_csv(csv_a.name).with_row_index("Idx")
 
         result = (
-            df_a.join(df_a, on="B", maintain_order="left" if maintain_order else "none")
+            df_a.join(
+                df_a, on="B", maintain_order="left_right" if maintain_order else "none"
+            )
             .group_by("A", maintain_order=maintain_order)
             .all()
             .collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))
@@ -1238,6 +1240,50 @@ def test_csee_python_function() -> None:
     )
 
 
+def test_cse_map_batches_distinct_functions() -> None:
+    # Regression test for https://github.com/pola-rs/polars/issues/26808.
+    # Two map_batches with *different* functions on the same source should not be
+    # incorrectly merged by common subplan elimination.
+    src = pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    lf1 = src.map_batches(
+        lambda df: df.select(pl.col("a").alias("x")),
+        schema=pl.Schema({"x": pl.Int64}),
+    )
+    lf2 = src.map_batches(
+        lambda df: df.select(pl.col("b").alias("y")),
+        schema=pl.Schema({"y": pl.Int64}),
+    )
+    result = pl.concat([lf1, lf2], how="horizontal").collect(
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
+    )
+    assert result.columns == ["x", "y"]
+    assert result["x"].to_list() == [1, 2, 3]
+    assert result["y"].to_list() == [4, 5, 6]
+
+
+def test_cse_map_batches_same_function() -> None:
+    # The *same* function object used twice on the same source should still be
+    # eligible for common subplan elimination (i.e. executed only once).
+    src = pl.LazyFrame({"a": [1, 2, 3]})
+    call_count = 0
+
+    def fn(df: pl.DataFrame) -> pl.DataFrame:
+        nonlocal call_count
+        call_count += 1
+        return df.with_columns(pl.col("a") * 2)
+
+    lf1 = src.map_batches(fn, schema=pl.Schema({"a": pl.Int64}))
+    lf2 = src.map_batches(fn, schema=pl.Schema({"a": pl.Int64}))
+    # Vertical concat (union) works with identical schemas and lets CSE share
+    # the single cached execution across both branches.
+    result = pl.concat([lf1, lf2]).collect(
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
+    )
+    assert result["a"].to_list() == [2, 4, 6, 2, 4, 6]
+    # CSE should have executed fn only once.
+    assert call_count == 1
+
+
 def test_csee_streaming() -> None:
     lf = pl.LazyFrame({"a": [10], "b": [10]})
 
@@ -1286,3 +1332,64 @@ def test_cspe_map_groups_26547() -> None:
         schema={"A": pl.Int32, "PART": pl.Int32, "B": pl.Int32},
     )
     assert_frame_equal(out, expected)
+
+
+def test_cspe_projection_between_filter_and_cache_26916() -> None:
+    lf = pl.LazyFrame(
+        {
+            "VendorID": [1, 1, 2, 2, 2],
+            "total_amount": [10.0, 20.0, 30.0, 40.0, 50.0],
+            "passenger_count": [1, 2, 1, 3, 2],
+        }
+    )
+
+    g1 = lf.group_by("VendorID").agg(pl.mean("total_amount"))
+    g2 = lf.group_by("VendorID").agg(pl.mean("passenger_count"))
+
+    q = g1.join(g2, "VendorID").filter(VendorID=1)
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "VendorID": 1,
+                "total_amount": 15.0,
+                "passenger_count": 1.5,
+            }
+        ),
+    )
+
+
+def test_cspe_projection_between_filter_and_cache_drop_filter_column() -> None:
+    lf = pl.LazyFrame(
+        {
+            "VendorID": [1, 1, 2, 2, 2],
+            "total_amount": [10.0, 20.0, 30.0, 40.0, 50.0],
+            "passenger_count": [1, 2, 1, 3, 2],
+            "true": True,
+        }
+    )
+
+    g1 = lf.filter(pl.col("true")).group_by("VendorID").agg(pl.mean("total_amount"))
+    g2 = lf.group_by("VendorID").agg(pl.mean("passenger_count"))
+
+    q = g1.join(g2, "VendorID")
+
+    plan = q.explain()
+
+    assert (
+        plan.index("LEFT PLAN ON")
+        < plan.index('simple π 2/2 ["VendorID", "total_amount"]')
+        < plan.index("RIGHT PLAN ON")
+    )
+
+    assert_frame_equal(
+        q.collect().sort("VendorID"),
+        pl.DataFrame(
+            {
+                "VendorID": [1, 2],
+                "total_amount": [15.0, 40.0],
+                "passenger_count": [1.5, 2.0],
+            }
+        ),
+    )

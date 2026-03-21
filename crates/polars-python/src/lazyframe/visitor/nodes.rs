@@ -49,6 +49,9 @@ fn scan_type_to_pyobject(
         },
         #[cfg(feature = "scan_lines")]
         FileScanIR::Lines { name } => Ok(("lines", name.as_str()).into_py_any(py)?),
+        FileScanIR::ExpandedPaths { name } => {
+            Ok(("expanded-paths", name.as_str()).into_py_any(py)?)
+        },
         FileScanIR::PythonDataset { .. } => {
             Err(PyNotImplementedError::new_err("python dataset scan"))
         },
@@ -83,7 +86,7 @@ pub struct Filter {
     predicate: PyExprIR,
 }
 
-#[pyclass(frozen)]
+#[pyclass(frozen, skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyFileOptions {
     inner: UnifiedScanArgs,
@@ -139,15 +142,18 @@ impl PyFileOptions {
     fn deletion_files(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(match &self.inner.deletion_files {
             None => py.None().into_any(),
-
             Some(DeletionFilesList::IcebergPositionDelete(paths)) => {
                 let out = PyDict::new(py);
-
                 for (k, v) in paths.iter() {
                     out.set_item(*k, v.as_ref())?;
                 }
-
                 ("iceberg-position-delete", out)
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind()
+            },
+            Some(DeletionFilesList::Delta(provider)) => {
+                ("delta-deletion-vector", provider.callback().0.clone_ref(py))
                     .into_pyobject(py)?
                     .into_any()
                     .unbind()
@@ -655,6 +661,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     sources,
                     scan_type,
                     alias,
+                    ..
                 } => {
                     let sources = sources
                         .into_paths()

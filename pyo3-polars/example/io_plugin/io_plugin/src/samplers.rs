@@ -12,7 +12,7 @@ use rand::distributions::uniform::SampleUniform;
 use rand::distributions::{Bernoulli, Uniform};
 use rand::prelude::*;
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct PySampler(pub Arc<Mutex<Box<dyn Sampler>>>);
 
