@@ -1092,7 +1092,7 @@ pub fn lower_ir(
             let input_schema = &phys_sm[phys_input.node].output_schema;
             let are_keys_sorted = ctx
                 .sortedness
-                .are_keys_sorted_any(input, &keys, expr_arena, input_schema)
+                .are_keys_sorted_any(input, &keys, expr_arena, &input_schema)
                 .is_some();
 
             return build_group_by_stream(
@@ -1515,6 +1515,33 @@ pub fn lower_ir(
                 })
                 .collect_vec();
 
+            let are_keys_sorted = ctx
+                .sortedness
+                .are_keys_sorted_any(input, &keys, expr_arena, input_schema.as_ref())
+                .is_some();
+
+            // Sorted unique node.
+            if are_keys_sorted
+                && matches!(
+                    options.keep_strategy,
+                    UniqueKeepStrategy::First | UniqueKeepStrategy::Any
+                )
+            {
+                let sorted_uniq_node = phys_sm.insert(PhysNode::new(
+                    input_schema.clone(),
+                    PhysNodeKind::SortedUnique {
+                        input: phys_input,
+                        keys: key_name_set.into_iter().collect(),
+                    },
+                ));
+
+                let mut stream = PhysStream::first(sorted_uniq_node);
+                if let Some((offset, length)) = options.slice {
+                    stream = build_slice_stream(stream, offset, length, phys_sm);
+                }
+                return Ok(stream);
+            }
+
             let mut aggs = all_col_names
                 .iter()
                 .filter(|name| !key_name_set.contains(*name))
@@ -1542,11 +1569,6 @@ pub fn lower_ir(
                     OutputName::Alias(name),
                 ));
             }
-
-            let are_keys_sorted = ctx
-                .sortedness
-                .are_keys_sorted_any(input, &keys, expr_arena, input_schema)
-                .is_some();
 
             let mut stream = build_group_by_stream(
                 phys_input,

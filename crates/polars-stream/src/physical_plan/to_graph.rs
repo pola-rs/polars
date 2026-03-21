@@ -660,6 +660,15 @@ fn to_graph_rec<'a>(
             )
         },
 
+        SortedUnique { input, keys } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            ctx.graph.add_node(
+                nodes::sorted_unique::SortedUnique::new(&keys, input_schema),
+                [(input_key, input.port)],
+            )
+        },
+
         ForwardFill { input, limit } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             let input_schema = &ctx.phys_sm[input.node].output_schema;

@@ -35,6 +35,7 @@ pub mod select;
 pub mod shift;
 pub mod simple_projection;
 pub mod sorted_group_by;
+pub mod sorted_unique;
 pub mod streaming_slice;
 pub mod top_k;
 pub mod unordered_union;
