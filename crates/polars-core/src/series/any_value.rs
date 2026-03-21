@@ -868,8 +868,7 @@ fn any_values_to_struct(
 ) -> PolarsResult<Series> {
     // Fast path for structs with no fields.
     if fields.is_empty() {
-        let mut out =
-            StructChunked::from_series(PlSmallStr::EMPTY, values.len(), [].iter())?;
+        let mut out = StructChunked::from_series(PlSmallStr::EMPTY, values.len(), [].iter())?;
 
         if values.iter().any(|v| matches!(v, AnyValue::Null)) {
             let mut validity = MutableBitmap::new();
