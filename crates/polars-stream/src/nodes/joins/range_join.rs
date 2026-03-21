@@ -326,31 +326,11 @@ async fn compute_and_emit_task(
         .column(params.point_key_col())?
         .as_materialized_series();
 
-    let mut seq = MorselSeq::default();
-    let mut st = SourceToken::default();
     let wait_group = WaitGroup::default();
     let mut builder_point = DataFrameBuilder::new(params.point_schema.clone());
     let mut builder_interval = DataFrameBuilder::new(params.interval_schema.clone());
-
-    loop {
-        let interval_df;
-        if let Ok(morsel) = recv.recv().await {
-            (interval_df, seq, st, _) = morsel.into_inner();
-        } else {
-            if !builder_point.is_empty() {
-                freeze_builders_and_emit(
-                    &mut send,
-                    &mut builder_point,
-                    &mut builder_interval,
-                    params,
-                    seq,
-                    st.clone(),
-                    None,
-                )
-                .await?;
-            }
-            return Ok(());
-        };
+    while let Ok(morsel) = recv.recv().await {
+        let (interval_df, seq, st, _) = morsel.into_inner();
 
         // Range join is always an INNER join, so remove nulls first
         let mut acc: Option<BooleanChunked> = None;
@@ -428,7 +408,21 @@ async fn compute_and_emit_task(
                 wait_group.wait().await;
             }
         }
+        if !builder_point.is_empty() {
+            freeze_builders_and_emit(
+                &mut send,
+                &mut builder_point,
+                &mut builder_interval,
+                params,
+                seq,
+                st.clone(),
+                Some(wait_group.token()),
+            )
+            .await?;
+            wait_group.wait().await;
+        }
     }
+    Ok(())
 }
 
 async fn freeze_builders_and_emit(

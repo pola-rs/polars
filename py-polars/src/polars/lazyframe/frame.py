@@ -3372,9 +3372,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         record_batch_size
             Size of the record batches in number of rows.
 
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.

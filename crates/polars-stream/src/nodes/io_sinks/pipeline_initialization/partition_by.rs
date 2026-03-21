@@ -70,7 +70,7 @@ pub fn start_partition_sink_pipeline(
 
     if let Some(file_part_prefix) = file_path_provider.file_part_prefix_mut() {
         use std::fmt::Write as _;
-        let uuid = uuid::Uuid::new_v4();
+        let uuid = uuid::Uuid::now_v7();
         let uuid = uuid.as_simple();
         write!(file_part_prefix, "{uuid}").unwrap();
     }

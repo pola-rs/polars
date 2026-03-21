@@ -78,6 +78,7 @@ ipc = [
   "polars-io/ipc",
   "dep:serde_json",
 ]
+index_of = ["polars-plan/index_of"]
 parquet = ["polars-mem-engine/parquet", "polars-plan/parquet", "cloud"]
 csv = ["polars-mem-engine/csv", "polars-plan/csv", "polars-io/csv"]
 json = [

@@ -3960,9 +3960,9 @@ class DataFrame:
         record_batch_size
             Size of the record batches in number of rows.
 
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
         storage_options
             Options that indicate how to connect to a cloud provider.
 

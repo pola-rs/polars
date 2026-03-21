@@ -181,3 +181,9 @@ def test_nulls_last_over_24989() -> None:
     )
 
     assert_frame_equal(out, expected)
+
+
+def test_over_duplicate_partition_by_26921() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    with pytest.raises(pl.exceptions.DuplicateError):
+        df.with_columns(pl.len().over("x", "x"))

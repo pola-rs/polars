@@ -138,6 +138,14 @@ def test_quantile_error_checking() -> None:
         s.quantile([0.0, 1.2])
 
 
+def test_multi_quantile_group_by_unsupported_26956() -> None:
+    df = pl.DataFrame({"g": ["a", "a", "b", "b"], "v": [1, 2, 3, 4]})
+    with pytest.raises(
+        pl.exceptions.SchemaError, match="expected expression of dtype 'numeric'"
+    ):
+        df.group_by("g").agg(pl.col("v").quantile([0.25, 0.75]))
+
+
 def test_quantile_date() -> None:
     s = pl.Series(
         "a", [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3), date(2025, 1, 4)]

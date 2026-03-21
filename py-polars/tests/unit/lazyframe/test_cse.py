@@ -1332,3 +1332,64 @@ def test_cspe_map_groups_26547() -> None:
         schema={"A": pl.Int32, "PART": pl.Int32, "B": pl.Int32},
     )
     assert_frame_equal(out, expected)
+
+
+def test_cspe_projection_between_filter_and_cache_26916() -> None:
+    lf = pl.LazyFrame(
+        {
+            "VendorID": [1, 1, 2, 2, 2],
+            "total_amount": [10.0, 20.0, 30.0, 40.0, 50.0],
+            "passenger_count": [1, 2, 1, 3, 2],
+        }
+    )
+
+    g1 = lf.group_by("VendorID").agg(pl.mean("total_amount"))
+    g2 = lf.group_by("VendorID").agg(pl.mean("passenger_count"))
+
+    q = g1.join(g2, "VendorID").filter(VendorID=1)
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "VendorID": 1,
+                "total_amount": 15.0,
+                "passenger_count": 1.5,
+            }
+        ),
+    )
+
+
+def test_cspe_projection_between_filter_and_cache_drop_filter_column() -> None:
+    lf = pl.LazyFrame(
+        {
+            "VendorID": [1, 1, 2, 2, 2],
+            "total_amount": [10.0, 20.0, 30.0, 40.0, 50.0],
+            "passenger_count": [1, 2, 1, 3, 2],
+            "true": True,
+        }
+    )
+
+    g1 = lf.filter(pl.col("true")).group_by("VendorID").agg(pl.mean("total_amount"))
+    g2 = lf.group_by("VendorID").agg(pl.mean("passenger_count"))
+
+    q = g1.join(g2, "VendorID")
+
+    plan = q.explain()
+
+    assert (
+        plan.index("LEFT PLAN ON")
+        < plan.index('simple π 2/2 ["VendorID", "total_amount"]')
+        < plan.index("RIGHT PLAN ON")
+    )
+
+    assert_frame_equal(
+        q.collect().sort("VendorID"),
+        pl.DataFrame(
+            {
+                "VendorID": [1, 2],
+                "total_amount": [15.0, 40.0],
+                "passenger_count": [1.5, 2.0],
+            }
+        ),
+    )

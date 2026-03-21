@@ -1,3 +1,4 @@
+pub mod backward_fill;
 pub mod callback_sink;
 #[cfg(feature = "cum_agg")]
 pub mod cum_agg;
@@ -7,6 +8,7 @@ pub mod dynamic_slice;
 #[cfg(feature = "ewma")]
 pub mod ewm;
 pub mod filter;
+pub mod forward_fill;
 pub mod gather_every;
 pub mod group_by;
 pub mod in_memory_map;

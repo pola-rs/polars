@@ -260,6 +260,14 @@ pub enum PhysNodeKind {
         n: usize,
         offset: usize,
     },
+    ForwardFill {
+        input: PhysStream,
+        limit: Option<IdxSize>,
+    },
+    BackwardFill {
+        input: PhysStream,
+        limit: Option<IdxSize>,
+    },
     Rle(PhysStream),
     RleId(PhysStream),
     PeakMinMax {
@@ -483,6 +491,8 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }
             | PhysNodeKind::GatherEvery { input, .. }
+            | PhysNodeKind::ForwardFill { input, .. }
+            | PhysNodeKind::BackwardFill { input, .. }
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
             | PhysNodeKind::PeakMinMax { input, .. } => {

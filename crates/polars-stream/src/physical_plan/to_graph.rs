@@ -660,6 +660,28 @@ fn to_graph_rec<'a>(
             )
         },
 
+        ForwardFill { input, limit } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            assert_eq!(input_schema.len(), 1);
+            let (_, dtype) = input_schema.get_at_index(0).unwrap();
+            ctx.graph.add_node(
+                nodes::forward_fill::ForwardFillNode::new(*limit, dtype.clone()),
+                [(input_key, input.port)],
+            )
+        },
+
+        BackwardFill { input, limit } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            assert_eq!(input_schema.len(), 1);
+            let (name, dtype) = input_schema.get_at_index(0).unwrap();
+            ctx.graph.add_node(
+                nodes::backward_fill::BackwardFillNode::new(*limit, dtype.clone(), name.clone()),
+                [(input_key, input.port)],
+            )
+        },
+
         PeakMinMax { input, is_peak_max } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
@@ -1312,10 +1334,7 @@ fn to_graph_rec<'a>(
                     // Setup the IO plugin generator.
                     let (generator, can_parse_predicate) = {
                         Python::attach(|py| {
-                            let pl = PyModule::import(py, intern!(py, "polars")).unwrap();
-                            let utils = pl.getattr(intern!(py, "_utils")).unwrap();
-                            let callable =
-                                utils.getattr(intern!(py, "_execute_from_rust")).unwrap();
+                            let python_scan_function = python_scan_function.bind(py);
 
                             let mut could_serialize_predicate = true;
                             let predicate = match &options.predicate {
@@ -1333,15 +1352,9 @@ fn to_graph_rec<'a>(
                                 },
                             };
 
-                            let args = (
-                                python_scan_function,
-                                with_columns,
-                                predicate,
-                                n_rows,
-                                batch_size,
-                            );
+                            let args = (with_columns, predicate, n_rows, batch_size);
 
-                            let generator_init = callable.call1(args)?;
+                            let generator_init = python_scan_function.call1(args)?;
                             let generator = generator_init.get_item(0).map_err(
                                 |_| polars_err!(ComputeError: "expected tuple got {generator_init}"),
                             )?;
