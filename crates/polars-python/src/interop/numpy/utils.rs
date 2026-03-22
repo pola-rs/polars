@@ -46,7 +46,7 @@ where
     std::mem::forget(owner);
     PY_ARRAY_API.PyArray_SetBaseObject(py, array as *mut PyArrayObject, owner_ptr);
 
-    Py::from_owned_ptr(py, array)
+    Bound::from_owned_ptr(py, array).into()
 }
 
 /// Returns whether the data type supports creating a NumPy view.

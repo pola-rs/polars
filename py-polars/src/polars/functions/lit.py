@@ -16,6 +16,7 @@ from polars._dependencies import (
 )
 from polars._dependencies import numpy as np
 from polars._utils.wrap import wrap_expr
+from polars.datatype_expr import DataTypeExpr
 from polars.datatypes import BaseExtension, Date, Datetime, Duration, Object
 from polars.datatypes.convert import DataTypeMappings
 
@@ -42,7 +43,10 @@ def _datetime_to_timestamp(value: datetime, time_unit: TimeUnit) -> int:
 
 
 def lit(
-    value: Any, dtype: PolarsDataType | None = None, *, allow_object: bool = False
+    value: Any,
+    dtype: PolarsDataType | DataTypeExpr | None = None,
+    *,
+    allow_object: bool = False,
 ) -> Expr:
     """
     Return an expression representing a literal value.
@@ -97,6 +101,8 @@ def lit(
     elif isinstance(dtype, type) and issubclass(dtype, BaseExtension):
         msg = f"dtype '{dtype}' is a BaseExtension class, it should be an instance"
         raise TypeError(msg)
+    elif isinstance(dtype, DataTypeExpr):
+        return lit(value).cast(dtype)
     elif dtype == Object:
         value_s = pl.Series("literal", [value], dtype=dtype)
         return wrap_expr(plr.lit(value_s._s, allow_object, is_scalar=True))

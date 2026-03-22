@@ -504,10 +504,9 @@ impl ProjectionPushDown {
                             FileScanIR::PythonDataset { .. } => true,
                         };
 
-                        #[expect(clippy::never_loop)]
-                        loop {
+                        's: {
                             if !do_optimization {
-                                break;
+                                break 's;
                             }
 
                             if self.is_count_star {
@@ -530,7 +529,7 @@ impl ProjectionPushDown {
 
                                     if projection.is_empty() {
                                         output_schema = Some(Default::default());
-                                        break;
+                                        break 's;
                                     }
 
                                     ctx.acc_projections.push(ColumnNode(
@@ -543,7 +542,7 @@ impl ProjectionPushDown {
                                     // from the file.
                                     unified_scan_args.projection = Some(Arc::from([]));
                                     output_schema = Some(Default::default());
-                                    break;
+                                    break 's;
                                 };
                             }
 
@@ -584,8 +583,6 @@ impl ProjectionPushDown {
                             } else {
                                 None
                             };
-
-                            break;
                         }
 
                         // File builder has a row index, but projected columns
@@ -762,6 +759,8 @@ impl ProjectionPushDown {
             },
             lp @ SinkMultiple { .. } => process_generic(self, lp, ctx, lp_arena, expr_arena, true),
             Cache { .. } => {
+                // Important: Stop optimization at cache, this behavior is relied on by set_cache_states.
+                //
                 // projections above this cache will be accumulated and pushed down
                 // later
                 // the redundant projection will be cleaned in the fast projection optimization

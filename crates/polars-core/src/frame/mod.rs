@@ -2670,7 +2670,7 @@ impl DataFrame {
             }
         }
 
-        DataFrame::new_infer_height(new_cols)
+        DataFrame::new(self.height(), new_cols)
     }
 
     pub fn append_record_batch(&mut self, rb: RecordBatchT<ArrayRef>) -> PolarsResult<()> {

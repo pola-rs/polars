@@ -190,10 +190,9 @@ impl SlicePushDown {
         let new_inputs = inputs
             .into_iter()
             .map(|node| {
-                let alp = lp_arena.take(node);
                 // No state, so we do not push down the slice here.
                 let state = None;
-                let alp = self.pushdown(alp, state, lp_arena, expr_arena)?;
+                let alp = self.pushdown(node, state, lp_arena, expr_arena)?;
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
@@ -216,8 +215,7 @@ impl SlicePushDown {
         let new_inputs = inputs
             .into_iter()
             .map(|node| {
-                let alp = lp_arena.take(node);
-                let alp = self.pushdown(alp, state, lp_arena, expr_arena)?;
+                let alp = self.pushdown(node, state, lp_arena, expr_arena)?;
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
@@ -225,17 +223,29 @@ impl SlicePushDown {
         Ok(lp.with_inputs(new_inputs))
     }
 
+    /// This will take the `ir_node` from the `lp_arena`, replacing it with `IR::Invalid` (except if
+    /// `ir_node` is a `IR::Cache`).
     #[recursive]
     fn pushdown(
         &mut self,
-        lp: IR,
+        ir_node: Node,
         state: Option<State>,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
         use IR::*;
 
-        match (lp, state) {
+        // Don't take this, the node can be referenced multiple times in the tree.
+        if let IR::Cache { .. } = lp_arena.get(ir_node) {
+            return self.no_pushdown_restart_opt(
+                lp_arena.get(ir_node).clone(),
+                state,
+                lp_arena,
+                expr_arena,
+            );
+        }
+
+        match (lp_arena.take(ir_node), state) {
             #[cfg(feature = "python")]
             (
                 PythonScan { mut options },
@@ -305,7 +315,8 @@ impl SlicePushDown {
                             predicate_file_skip_applied,
                         };
 
-                        self.pushdown(lp, None, lp_arena, expr_arena)
+                        lp_arena.replace(ir_node, lp);
+                        self.pushdown(ir_node, None, lp_arena, expr_arena)
                     } else {
                         let lp = Scan {
                             sources,
@@ -385,8 +396,7 @@ impl SlicePushDown {
                     .map(|len| State { offset: 0, len });
 
                 for input in &mut inputs {
-                    let input_lp = lp_arena.take(*input);
-                    let input_lp = self.pushdown(input_lp, subplan_slice, lp_arena, expr_arena)?;
+                    let input_lp = self.pushdown(*input, subplan_slice, lp_arena, expr_arena)?;
                     lp_arena.replace(*input, input_lp);
                 }
                 options.slice = opt_state.map(|x| (x.offset, x.len.try_into().unwrap()));
@@ -440,12 +450,10 @@ impl SlicePushDown {
                 }
 
                 // first restart optimization in both inputs and get the updated LP
-                let lp_left = lp_arena.take(input_left);
-                let lp_left = self.pushdown(lp_left, None, lp_arena, expr_arena)?;
+                let lp_left = self.pushdown(input_left, None, lp_arena, expr_arena)?;
                 let input_left = lp_arena.add(lp_left);
 
-                let lp_right = lp_arena.take(input_right);
-                let lp_right = self.pushdown(lp_right, None, lp_arena, expr_arena)?;
+                let lp_right = self.pushdown(input_right, None, lp_arena, expr_arena)?;
                 let input_right = lp_arena.add(lp_right);
 
                 // then assign the slice state to the join operation
@@ -476,8 +484,7 @@ impl SlicePushDown {
                 Some(state),
             ) => {
                 // first restart optimization in inputs and get the updated LP
-                let input_lp = lp_arena.take(input);
-                let input_lp = self.pushdown(input_lp, None, lp_arena, expr_arena)?;
+                let input_lp = self.pushdown(input, None, lp_arena, expr_arena)?;
                 let input = lp_arena.add(input_lp);
 
                 if let Some(existing_slice) = &mut Arc::make_mut(&mut options).slice {
@@ -528,8 +535,7 @@ impl SlicePushDown {
             },
             (Distinct { input, mut options }, Some(state)) => {
                 // first restart optimization in inputs and get the updated LP
-                let input_lp = lp_arena.take(input);
-                let input_lp = self.pushdown(input_lp, None, lp_arena, expr_arena)?;
+                let input_lp = self.pushdown(input, None, lp_arena, expr_arena)?;
                 let input = lp_arena.add(input_lp);
 
                 if let Some(existing_slice) = &mut options.slice {
@@ -594,8 +600,7 @@ impl SlicePushDown {
                 assert!(slice.is_none() || slice == new_slice);
 
                 // first restart optimization in inputs and get the updated LP
-                let input_lp = lp_arena.take(input);
-                let input_lp = self.pushdown(input_lp, None, lp_arena, expr_arena)?;
+                let input_lp = self.pushdown(input, None, lp_arena, expr_arena)?;
                 let input = lp_arena.add(input_lp);
 
                 Ok(Sort {
@@ -613,8 +618,6 @@ impl SlicePushDown {
                 },
                 Some(outer_slice),
             ) => {
-                let alp = lp_arena.take(input);
-
                 // If offset is negative the length can never be greater than it.
                 if offset < 0 {
                     #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u64.
@@ -626,10 +629,10 @@ impl SlicePushDown {
                 if let Some(combined) =
                     combine_outer_inner_slice(outer_slice, State { offset, len })
                 {
-                    self.pushdown(alp, Some(combined), lp_arena, expr_arena)
+                    self.pushdown(input, Some(combined), lp_arena, expr_arena)
                 } else {
                     let lp =
-                        self.pushdown(alp, Some(State { offset, len }), lp_arena, expr_arena)?;
+                        self.pushdown(input, Some(State { offset, len }), lp_arena, expr_arena)?;
                     let input = lp_arena.add(lp);
                     self.slice_node_in_optimized_plan = true;
                     Ok(Slice {
@@ -647,8 +650,6 @@ impl SlicePushDown {
                 },
                 None,
             ) => {
-                let alp = lp_arena.take(input);
-
                 // If offset is negative the length can never be greater than it.
                 if offset < 0 {
                     #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u64.
@@ -658,7 +659,7 @@ impl SlicePushDown {
                 }
 
                 let state = Some(State { offset, len });
-                self.pushdown(alp, state, lp_arena, expr_arena)
+                self.pushdown(input, state, lp_arena, expr_arena)
             },
             m @ (Filter { .. }, _)
             | m @ (DataFrameScan { .. }, _)
@@ -809,7 +810,7 @@ impl SlicePushDown {
 
     pub fn optimize(
         &mut self,
-        logical_plan: IR,
+        logical_plan: Node,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {

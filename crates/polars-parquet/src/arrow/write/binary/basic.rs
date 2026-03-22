@@ -8,7 +8,10 @@ use crate::arrow::read::schema::is_nullable;
 use crate::parquet::encoding::{Encoding, delta_bitpacked};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{BinaryStatistics, ParquetStatistics};
-use crate::write::utils::invalid_encoding;
+use crate::write::utils::{
+    invalid_encoding, is_utf8_type, truncate_max_binary_statistics_value,
+    truncate_min_binary_statistics_value,
+};
 use crate::write::{EncodeNullability, Page, StatisticsOptions};
 
 pub(crate) fn encode_non_null_values<'a, I: Iterator<Item = &'a [u8]>>(
@@ -107,18 +110,27 @@ pub(crate) fn build_statistics<O: Offset>(
 ) -> ParquetStatistics {
     use polars_compute::min_max::MinMaxKernel;
 
+    let mut min_value = options
+        .min_value
+        .then(|| array.min_propagate_nan_kernel().map(<[u8]>::to_vec))
+        .flatten();
+    let mut max_value = options
+        .max_value
+        .then(|| array.max_propagate_nan_kernel().map(<[u8]>::to_vec))
+        .flatten();
+
+    if let Some(len) = options.binary_statistics_truncate_length_usize() {
+        let is_utf8 = is_utf8_type(&primitive_type);
+        min_value = min_value.map(|v| truncate_min_binary_statistics_value(v, len, is_utf8));
+        max_value = max_value.map(|v| truncate_max_binary_statistics_value(v, len, is_utf8));
+    }
+
     BinaryStatistics {
         primitive_type,
         null_count: options.null_count.then_some(array.null_count() as i64),
         distinct_count: None,
-        max_value: options
-            .max_value
-            .then(|| array.max_propagate_nan_kernel().map(<[u8]>::to_vec))
-            .flatten(),
-        min_value: options
-            .min_value
-            .then(|| array.min_propagate_nan_kernel().map(<[u8]>::to_vec))
-            .flatten(),
+        max_value,
+        min_value,
     }
     .serialize()
 }

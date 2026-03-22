@@ -38,7 +38,12 @@ pub fn page_iter_to_array(
     let physical_type = &type_.physical_type;
     let logical_type = &type_.logical_type;
     let is_pl_empty_struct = field.is_pl_pq_empty_struct();
-    let dtype = field.dtype;
+    // Normalize Decimal32/Decimal64 to Decimal (128-bit) since Polars
+    // represents all decimals as i128 internally.
+    let dtype = match field.dtype {
+        Decimal32(p, s) | Decimal64(p, s) => Decimal(p, s),
+        other => other,
+    };
 
     Ok(match (physical_type, dtype.to_storage()) {
         (_, Null) => PageDecoder::new(&field.name, pages, dtype, null::NullDecoder, init_nested)?

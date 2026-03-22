@@ -54,6 +54,7 @@ impl LogicalType for DurationChunked {
                 };
                 Ok(out.into_duration(to_unit).into_series())
             },
+            String => Ok(self.to_string("iso")?.into_series()),
             dt if dt.is_primitive_numeric() => self.phys.cast_with_options(dtype, cast_options),
             dt => {
                 polars_bail!(

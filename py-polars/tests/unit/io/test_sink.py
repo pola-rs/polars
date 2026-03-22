@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import os
+from itertools import permutations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
@@ -9,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -376,3 +378,56 @@ def test_sink_metrics(
     assert logged_bytes_sent == path.stat().st_size
 
     assert_frame_equal(getattr(pl, f"scan_{file_format}")(path).collect(), df)
+
+
+@pytest.mark.parametrize(
+    ("base_path", "provided_path"),
+    [
+        *permutations(["/", "s3://", "file:///"], 2),
+        ("/a/", "/b/"),
+    ],
+)
+def test_sink_file_provider_absolute_path_not_under_base_path(
+    base_path: str, provided_path: str
+) -> None:
+    df = pl.DataFrame({"a": 1})
+
+    with pytest.raises(
+        ComputeError,
+        match=r"provided path.*is absolute but does not start with base path",
+    ):
+        df.lazy().sink_parquet(
+            pl.PartitionBy(
+                base_path,
+                file_path_provider=lambda _: provided_path,
+                max_rows_per_file=1,
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "s",
+    ["/", "\\"],
+)
+def test_sink_file_provider_forbid_parent_dir_component(s: str) -> None:
+    df = pl.DataFrame({"a": 1})
+
+    err_cx = pytest.raises(
+        ComputeError,
+        match=r"provided path.*contained parent dir component",
+    )
+
+    def expect_err(p: str) -> None:
+        with err_cx:
+            df.lazy().sink_parquet(
+                pl.PartitionBy(
+                    "",
+                    file_path_provider=lambda _: p,
+                    max_rows_per_file=1,
+                )
+            )
+
+    expect_err("..")
+    expect_err(f"{s}..")
+    expect_err(f"..{s}")
+    expect_err(f"{s}..{s}")

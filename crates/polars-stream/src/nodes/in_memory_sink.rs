@@ -8,6 +8,7 @@ use polars_ooc::AccessPattern::NoPattern;
 use super::compute_node_prelude::*;
 use crate::utils::in_memory_linearize::linearize;
 
+#[derive(Debug)]
 pub struct InMemorySinkNode {
     morsels_per_pipe: Mutex<Vec<Vec<(MorselSeq, Token)>>>,
     schema: Arc<Schema>,
