@@ -94,7 +94,7 @@ impl ComputeNode for SortedUnique {
                     let column = &df[*key];
                     is_first_new_run |= last
                         .take()
-                        .is_none_or(|last| column.get(0).unwrap() != last);
+                        .is_none_or(|last| column.get(0).unwrap().into_static() != last);
                     *last = Some(column.get(height - 1).unwrap().into_static());
                 }
 
