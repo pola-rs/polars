@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.util
-import uuid
 from dataclasses import dataclass
 from time import perf_counter
 from typing import TYPE_CHECKING, ClassVar, Literal
@@ -18,6 +18,9 @@ from polars.io.iceberg._dataset import (
 )
 from polars.io.iceberg._utils import _normalize_windows_iceberg_file_uri
 from polars.io.partition import _InternalPlPathProviderConfig
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars._plr import gen_uuid_v7
 
 if TYPE_CHECKING:
     import pyiceberg.catalog
@@ -105,7 +108,7 @@ class IcebergSinkState:
             iceberg_storage_properties=storage_options,
         )
         self.mode = mode
-        self.sink_uuid_str = uuid.uuid4().bytes.hex()
+        self.sink_uuid_str = gen_uuid_v7().hex()
         self._output_base_path: str | None = None
 
     def _get_converted_storage_options(self) -> dict[str, str] | None:

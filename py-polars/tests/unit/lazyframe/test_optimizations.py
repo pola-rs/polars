@@ -618,3 +618,13 @@ def test_scan_select_all_columns_no_projection_pyarrow() -> None:
     ds = pad.dataset(pa.table({"a": [1, 2, 3], "b": [4, 5, 6]}))
     plan = pl.scan_pyarrow_dataset(ds).select(pl.col("a"), pl.col("b")).explain()
     assert "PROJECT */2 COLUMNS" in plan
+
+
+def test_slice_pushdown_with_cache_arena_take_panic_26905() -> None:
+    lf = pl.LazyFrame({"x": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]})
+    q = pl.concat([lf, lf]).select(pl.all()).filter(pl.col("x") > 3).head(2)
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"x": [4, 5]}),
+    )

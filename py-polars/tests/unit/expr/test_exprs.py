@@ -11,6 +11,8 @@ import pytest
 
 import polars as pl
 from polars._plr import InvalidOperationError
+from polars.exceptions import ChronoFormatWarning
+from polars.expr.string import _validate_format_argument
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import (
     DATETIME_DTYPES,
@@ -787,6 +789,23 @@ def test_function_expr_scalar_identification_18755() -> None:
             ),
             pl.DataFrame({"a": [1, 2], "b": pl.Series([5, 5], dtype=pl.Int64)}),
         )
+
+
+@pytest.mark.parametrize(
+    ("format", "bad_pattern"),
+    [
+        ("%Y-%m-%d %H:%M:%S.%f", ".%f"),
+        ("%Y-%m-%d %H:%M:%S%f", "%f"),
+    ],
+)
+def test_validate_format_argument_raises_chrono_format_warning(
+    format: str, bad_pattern: str
+) -> None:
+    with pytest.raises(
+        ChronoFormatWarning,
+        match=rf"Detected the pattern `{re.escape(bad_pattern)}`",
+    ):
+        _validate_format_argument(format)
 
 
 def test_concat_deprecation() -> None:

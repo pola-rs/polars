@@ -1338,3 +1338,26 @@ def test_list_get_decimal_25830() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    "fraction",
+    [
+        1.2,
+        -0.1,
+        pl.Series([0.5, 1.5]),
+        pl.Series([0.5, -0.1]),
+    ],
+)
+def test_list_sample_fraction_out_of_range_22024(fraction: Any) -> None:
+    s = pl.Series("a", [["a"], ["eb", "d"]], pl.List(pl.String))
+    with pytest.raises(ComputeError, match=r"fraction must be between 0.0 and 1.0"):
+        s.list.sample(fraction=fraction)
+
+
+def test_list_sample_fraction_boundary_values_22024() -> None:
+    s = pl.Series("a", [["a"], ["eb", "d"]], pl.List(pl.String))
+
+    s.list.sample(fraction=0.0)
+    s.list.sample(fraction=1.0)
+    s.list.sample(fraction=pl.Series([0.0, 1.0]))

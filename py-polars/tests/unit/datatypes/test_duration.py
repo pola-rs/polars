@@ -224,6 +224,12 @@ def test_comparison_with_string_raises_9461() -> None:
         df.filter(pl.col("duration") > "1h")
 
 
+def test_comparison_with_timedelta() -> None:
+    df = pl.DataFrame({"duration": [timedelta(hours=2)]})
+    result = df.filter(pl.col("duration") > timedelta(hours=1))
+    assert_frame_equal(result, df)
+
+
 def test_duration_invalid_cast_22258() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.select(a=pl.duration(days=[1, 2, 3, 4]))  # type: ignore[arg-type]
@@ -386,3 +392,116 @@ def test_scalar_i64_overflow() -> None:
         match="-9223372036854775809",
     ):
         pl.select(pl.duration(nanoseconds=-(2**63) - 1))
+
+
+@pytest.mark.parametrize("time_unit", ["ns", "us", "ms"])
+def test_duration_cast_null_to_string(time_unit: TimeUnit) -> None:
+    s = pl.Series([None], dtype=pl.Duration(time_unit))
+    assert s.cast(pl.String)[0] is None
+
+
+@pytest.mark.parametrize(
+    ("value", "time_unit", "expected"),
+    [
+        (0, "ns", "PT0S"),
+        (0, "us", "PT0S"),
+        (0, "ms", "PT0S"),
+        (7 * 86_400_000_000_000, "ns", "P7D"),
+        (3_600_000_000_000, "ns", "PT1H"),
+        (1_000_000, "ns", "PT0.001S"),
+        (1_000, "ns", "PT0.000001S"),
+        (1, "ns", "PT0.000000001S"),
+        (1_001_000, "ns", "PT0.001001S"),
+        (1_000_001, "ns", "PT0.001000001S"),
+        (1_001, "ns", "PT0.000001001S"),
+        (
+            (8 * 86_400 + 3600 + 60 + 1) * 1_000_000_000 + 1_001_000,
+            "ns",
+            "P8DT1H1M1.001001S",
+        ),
+        (
+            (8 * 86_400 + 3600 + 60 + 1) * 1_000_000_000 + 1_001_001,
+            "ns",
+            "P8DT1H1M1.001001001S",
+        ),
+        (-1_000_000_000, "ns", "-PT1S"),
+        (1, "us", "PT0.000001S"),
+        (1_000, "us", "PT0.001S"),
+        (1_001, "us", "PT0.001001S"),
+        (1, "ms", "PT0.001S"),
+        (1_001, "ms", "PT1.001S"),
+    ],
+)
+def test_duration_cast_to_string(
+    value: int, time_unit: TimeUnit, expected: str
+) -> None:
+
+    s = pl.Series([value], dtype=pl.Duration(time_unit))
+    assert s.cast(pl.String)[0] == expected
+
+
+@pytest.mark.parametrize("time_unit", ["ns", "us", "ms"])
+def test_duration_cast_to_string_matches_dt_to_string_iso(
+    time_unit: TimeUnit,
+) -> None:
+    s = pl.Series(
+        [timedelta(days=3, seconds=7, milliseconds=5)],
+        dtype=pl.Duration(time_unit),
+    )
+    assert_series_equal(s.cast(pl.String), s.dt.to_string("iso"))
+
+
+@pytest.mark.parametrize("time_unit", ["ns", "us", "ms"])
+def test_duration_cast_to_string_lazyframe_schema(time_unit: TimeUnit) -> None:
+    lf = pl.LazyFrame(
+        {"duration": [timedelta(seconds=1)]},
+        schema={"duration": pl.Duration(time_unit)},
+    )
+    schema = lf.select(pl.col("duration").cast(pl.String)).collect_schema()
+    assert schema["duration"] == pl.String
+
+
+@pytest.mark.parametrize(
+    ("op", "expected_durations"),
+    [
+        pytest.param(
+            lambda col, val: col > val,
+            [timedelta(hours=3)],
+            id="gt",
+        ),
+        pytest.param(
+            lambda col, val: col < val,
+            [timedelta(hours=1)],
+            id="lt",
+        ),
+        pytest.param(
+            lambda col, val: col >= val,
+            [timedelta(hours=2), timedelta(hours=3)],
+            id="ge",
+        ),
+        pytest.param(
+            lambda col, val: col <= val,
+            [timedelta(hours=1), timedelta(hours=2)],
+            id="le",
+        ),
+        pytest.param(
+            lambda col, val: col == val,
+            [timedelta(hours=2)],
+            id="eq",
+        ),
+        pytest.param(
+            lambda col, val: col != val,
+            [timedelta(hours=1), timedelta(hours=3)],
+            id="ne",
+        ),
+    ],
+)
+def test_duration_comparison_with_timedelta(
+    op: Any, expected_durations: list[timedelta]
+) -> None:
+    df = pl.DataFrame(
+        {"duration": [timedelta(hours=1), timedelta(hours=2), timedelta(hours=3)]}
+    )
+    result = df.filter(op(pl.col("duration"), timedelta(hours=2)))
+    expected = pl.DataFrame({"duration": expected_durations})
+    assert_frame_equal(result, expected)

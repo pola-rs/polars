@@ -32,7 +32,7 @@ result = (
 This example demonstrates running query 3 of the PDS-H benchmarkon scale factor 100 (approx. 100GB
 of data) using Polars Cloud distributed engine.
 
-!!! note "Run the example yourself"
+!!! example "Run the example yourself"
 
     Copy and paste the code to you environment and run it. The data is hosted in S3 buckets that use [AWS Requester Pays](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RequesterPaysBuckets.html), meaning you pay only for pays the cost of the request and the data download from the bucket. The storage costs are covered.
 

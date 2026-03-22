@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_dtype::categorical::{CatSize, Categories};
 use pyo3::{pyclass, pymethods};
 
-#[pyclass(frozen)]
+#[pyclass(frozen, from_py_object)]
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PyCategories {

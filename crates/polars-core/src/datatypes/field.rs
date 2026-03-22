@@ -278,7 +278,10 @@ impl DataType {
                 }
             },
             #[cfg(feature = "dtype-decimal")]
-            ArrowDataType::Decimal(precision, scale) => DataType::Decimal(*precision, *scale),
+            ArrowDataType::Decimal(precision, scale)
+            | ArrowDataType::Decimal32(precision, scale)
+            | ArrowDataType::Decimal64(precision, scale)
+            | ArrowDataType::Decimal256(precision, scale) => DataType::Decimal(*precision, *scale),
             ArrowDataType::Utf8View | ArrowDataType::LargeUtf8 | ArrowDataType::Utf8 => {
                 DataType::String
             },

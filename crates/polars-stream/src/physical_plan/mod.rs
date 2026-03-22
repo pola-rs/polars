@@ -260,6 +260,14 @@ pub enum PhysNodeKind {
         n: usize,
         offset: usize,
     },
+    ForwardFill {
+        input: PhysStream,
+        limit: Option<IdxSize>,
+    },
+    BackwardFill {
+        input: PhysStream,
+        limit: Option<IdxSize>,
+    },
     Rle(PhysStream),
     RleId(PhysStream),
     PeakMinMax {
@@ -393,6 +401,19 @@ pub enum PhysNodeKind {
         args: JoinArgs,
     },
 
+    #[cfg(feature = "iejoin")]
+    RangeJoin {
+        input_left: PhysStream,
+        input_right: PhysStream,
+        left_on: Vec<PlSmallStr>,
+        right_on: Vec<PlSmallStr>,
+        tmp_left_key_cols: Vec<Option<PlSmallStr>>,
+        tmp_right_key_cols: Vec<Option<PlSmallStr>>,
+        descending: bool,
+        args: JoinArgs,
+        options: polars_ops::frame::IEJoinOptions,
+    },
+
     /// Generic fallback for (as-of-yet) unsupported streaming joins.
     /// Fully sinks all data to in-memory data frames and uses the in-memory
     /// engine to perform the join.
@@ -470,6 +491,8 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }
             | PhysNodeKind::GatherEvery { input, .. }
+            | PhysNodeKind::ForwardFill { input, .. }
+            | PhysNodeKind::BackwardFill { input, .. }
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
             | PhysNodeKind::PeakMinMax { input, .. } => {
@@ -520,6 +543,18 @@ fn visit_node_inputs_mut(
                 ..
             }
             | PhysNodeKind::AsOfJoin {
+                input_left,
+                input_right,
+                ..
+            } => {
+                rec!(input_left.node);
+                rec!(input_right.node);
+                visit(input_left);
+                visit(input_right);
+            },
+
+            #[cfg(feature = "iejoin")]
+            PhysNodeKind::RangeJoin {
                 input_left,
                 input_right,
                 ..

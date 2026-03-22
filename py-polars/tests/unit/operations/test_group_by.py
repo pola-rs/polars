@@ -2401,7 +2401,7 @@ def test_group_by_drop_nans(s: pl.Series) -> None:
             True,
         ),
         (
-            lambda e: e.fill_null(strategy="forward").over([e, e]),
+            lambda e: e.fill_null(strategy="forward").over([e]),
             True,
             False,
             True,

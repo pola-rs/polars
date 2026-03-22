@@ -3924,7 +3924,7 @@ class Series:
     @overload
     def search_sorted(
         self,
-        element: list_[NonNestedLiteral | None] | np.ndarray[Any, Any] | Expr | Series,
+        element: list_[Any] | np.ndarray[Any, Any] | Expr | Series,
         side: SearchSortedSide = ...,
         *,
         descending: bool = ...,
