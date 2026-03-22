@@ -456,7 +456,7 @@ fn visualize_plan_rec(
         PhysNodeKind::Rle(input) => ("rle".to_owned(), &[*input][..]),
         PhysNodeKind::RleId(input) => ("rle_id".to_owned(), &[*input][..]),
         PhysNodeKind::SortedUnique { input, keys } => {
-            let mut out = format!("sorted-unique\n");
+            let mut out = String::from("sorted-unique\n");
             for key in keys.iter() {
                 writeln!(&mut out, "{key}",).unwrap();
             }

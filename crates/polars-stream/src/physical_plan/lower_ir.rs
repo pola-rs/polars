@@ -1092,7 +1092,7 @@ pub fn lower_ir(
             let input_schema = &phys_sm[phys_input.node].output_schema;
             let are_keys_sorted = ctx
                 .sortedness
-                .are_keys_sorted_any(input, &keys, expr_arena, &input_schema)
+                .are_keys_sorted_any(input, &keys, expr_arena, input_schema)
                 .is_some();
 
             return build_group_by_stream(

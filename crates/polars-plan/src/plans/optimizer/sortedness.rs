@@ -185,6 +185,7 @@ pub fn is_sorted(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) ->
     )
 }
 
+#[expect(clippy::too_many_arguments)]
 #[recursive::recursive]
 fn is_sorted_rec(
     root: Node,

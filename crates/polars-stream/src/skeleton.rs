@@ -44,7 +44,7 @@ pub fn visualize_physical_plan(
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<String> {
     let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
-    let sortedness = IRPlanSorted::resolve(node, &ir_arena, &expr_arena);
+    let sortedness = IRPlanSorted::resolve(node, ir_arena, expr_arena);
 
     let ctx = StreamingLowerIRContext {
         prepare_visualization: true,
@@ -101,7 +101,7 @@ impl StreamingQuery {
             std::fs::write(visual_path, visualization).unwrap();
         }
         let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
-        let sortedness = IRPlanSorted::resolve(node, &ir_arena, &expr_arena);
+        let sortedness = IRPlanSorted::resolve(node, ir_arena, expr_arena);
         let ctx = StreamingLowerIRContext {
             prepare_visualization: cfg_prepare_visualization_data(),
             sortedness: &sortedness,
