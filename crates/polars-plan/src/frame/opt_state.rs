@@ -37,6 +37,8 @@ bitflags! {
         /// Check if operations are order dependent and unset maintaining_order if
         /// the order would not be observed.
         const CHECK_ORDER_OBSERVE = 1 << 15;
+        /// Collapse consecutive sort nodes and pull them up through selecting nodes.
+        const SORT_COLLAPSE = 1 << 16;
     }
 }
 

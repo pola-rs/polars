@@ -61,4 +61,5 @@ flag_getter_setters! {
 
     (EAGER, get_eager, set_eager, clear=true)
     (NEW_STREAMING, get_streaming, set_streaming, clear=true)
+    (SORT_COLLAPSE, get_sort_collapse, set_sort_collapse, clear=true)
 }

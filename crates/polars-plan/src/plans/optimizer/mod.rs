@@ -228,7 +228,7 @@ pub fn optimize(
         )));
     }
 
-    if !opt_flags.eager() {
+    if opt_flags.contains(OptFlags::SORT_COLLAPSE) {
         rules.push(Box::new(collapse_sort::CollapseSort {}));
     }
 

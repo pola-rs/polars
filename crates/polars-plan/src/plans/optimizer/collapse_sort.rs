@@ -15,7 +15,7 @@ impl OptimizationRule for CollapseSort {
         expr_arena: &mut Arena<AExpr>,
         node: Node,
     ) -> PolarsResult<Option<IR>> {
-        if let Some(result) = try_collapso_sorts(node, lp_arena, expr_arena) {
+        if let Some(result) = try_collapse_sorts(node, lp_arena, expr_arena) {
             return Ok(Some(result));
         }
         if let Some(result) = try_prune_sort_with_sortedness(node, lp_arena, expr_arena) {
@@ -27,7 +27,7 @@ impl OptimizationRule for CollapseSort {
 
 /// If two consecutive sort nodes share a prefix of sort columns, replace them with
 /// the sort node that covers the most columns.
-fn try_collapso_sorts(node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<IR> {
+fn try_collapse_sorts(node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<IR> {
     let IR::Sort {
         input,
         by_column,
