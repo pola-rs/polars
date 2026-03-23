@@ -40,7 +40,7 @@ fn try_collapse_sorts(node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr
     let IR::Sort {
         input: in_input,
         by_column: in_by_column,
-        slice: in_slice,
+        slice: None,
         sort_options: in_sort_options,
     } = lp_arena.get(*input)
     else {
@@ -82,12 +82,6 @@ fn try_collapse_sorts(node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr
         }
     }
 
-    let slice = match (slice, in_slice) {
-        (Some((o1, l1, None)), Some((o2, l2, None))) => Some((o1 + o2, usize::min(*l1, *l2), None)),
-        (s @ Some((_, _, None)), None) | (None, s @ Some((_, _, None))) => s.to_owned(),
-        (None, None) => None,
-        _ => return None, // TODO: Implement dynamic slices too
-    };
     let maintain_order = in_sort_options.maintain_order;
     let limit = match (sort_options.limit, in_sort_options.limit) {
         (Some(l1), Some(l2)) => Some(IdxSize::min(l1, l2)),
@@ -104,7 +98,7 @@ fn try_collapse_sorts(node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr
     Some(IR::Sort {
         input: *in_input,
         by_column,
-        slice,
+        slice: slice.clone(),
         sort_options,
     })
 }
