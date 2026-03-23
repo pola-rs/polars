@@ -147,6 +147,7 @@ async fn finish_initialize_multi_scan_pipeline(
     let num_pipelines = config.num_pipelines();
     let reader_capabilities = config.reader_capabilities();
 
+    #[cfg(feature = "cloud")]
     if config.sources.first().is_some_and(|x| x.run_async())
         && reader_capabilities.contains(ReaderCapabilities::NEEDS_FILE_CACHE_INIT)
     {
