@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::Bitmap;
 use num_traits::AsPrimitive;
 use polars_compute::cast::SerPrimitive;
 
@@ -869,18 +869,7 @@ fn any_values_to_struct(
     // Fast path for structs with no fields.
     if fields.is_empty() {
         let mut out = StructChunked::from_series(PlSmallStr::EMPTY, values.len(), [].iter())?;
-
-        if values.iter().any(|v| matches!(v, AnyValue::Null)) {
-            let mut validity = MutableBitmap::new();
-            validity.extend_constant(values.len(), true);
-            for (i, v) in values.iter().enumerate() {
-                if matches!(v, AnyValue::Null) {
-                    unsafe { validity.set_unchecked(i, false) }
-                }
-            }
-            out.set_outer_validity(Some(validity.freeze()));
-        }
-
+        out.set_outer_validity(Bitmap::opt_from_iter(values.iter().map(|v| v.is_null())));
         return Ok(out.into_series());
     }
 
@@ -942,14 +931,7 @@ fn any_values_to_struct(
     let mut out =
         StructChunked::from_series(PlSmallStr::EMPTY, values.len(), series_fields.iter())?;
     if has_outer_validity {
-        let mut validity = MutableBitmap::new();
-        validity.extend_constant(values.len(), true);
-        for (i, v) in values.iter().enumerate() {
-            if matches!(v, AnyValue::Null) {
-                unsafe { validity.set_unchecked(i, false) }
-            }
-        }
-        out.set_outer_validity(Some(validity.freeze()))
+        out.set_outer_validity(Bitmap::opt_from_iter(values.iter().map(|v| v.is_null())));
     }
     Ok(out.into_series())
 }

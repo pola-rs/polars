@@ -393,6 +393,7 @@ impl<'a> AnyValue<'a> {
         }
     }
 
+    #[inline(always)]
     pub fn is_null(&self) -> bool {
         matches!(self, AnyValue::Null)
     }
