@@ -869,7 +869,7 @@ fn any_values_to_struct(
     // Fast path for structs with no fields.
     if fields.is_empty() {
         let mut out = StructChunked::from_series(PlSmallStr::EMPTY, values.len(), [].iter())?;
-        out.set_outer_validity(Bitmap::opt_from_iter(values.iter().map(|v| v.is_null())));
+        out.set_outer_validity(Bitmap::opt_from_iter(values.iter().map(|av| !av.is_null())));
         return Ok(out.into_series());
     }
 
@@ -931,7 +931,7 @@ fn any_values_to_struct(
     let mut out =
         StructChunked::from_series(PlSmallStr::EMPTY, values.len(), series_fields.iter())?;
     if has_outer_validity {
-        out.set_outer_validity(Bitmap::opt_from_iter(values.iter().map(|v| v.is_null())));
+        out.set_outer_validity(Bitmap::opt_from_iter(values.iter().map(|av| !av.is_null())));
     }
     Ok(out.into_series())
 }
