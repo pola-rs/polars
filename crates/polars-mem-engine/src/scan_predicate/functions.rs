@@ -41,9 +41,9 @@ pub fn create_scan_predicate(
     let mut hive_predicate = None;
     let mut hive_predicate_is_full_predicate = false;
 
-    's: {
+    'set_scan_predicate: {
         let Some(hive_schema) = hive_schema else {
-            break 's;
+            break 'set_scan_predicate;
         };
 
         let mut hive_predicate_parts = vec![];
@@ -60,12 +60,12 @@ pub fn create_scan_predicate(
         }
 
         if hive_predicate_parts.is_empty() {
-            break 's;
+            break 'set_scan_predicate;
         }
 
         if non_hive_predicate_parts.is_empty() {
             hive_predicate_is_full_predicate = true;
-            break 's;
+            break 'set_scan_predicate;
         }
 
         {
@@ -211,9 +211,9 @@ pub fn initialize_scan_predicate<'a>(
     table_statistics: Option<&TableStatistics>,
     verbose: bool,
 ) -> PolarsResult<(Option<SkipFilesMask>, Option<&'a ScanIOPredicate>)> {
-    's: {
+    'create_skip_files_mask: {
         let Some(predicate) = predicate else {
-            break 's;
+            break 'create_skip_files_mask;
         };
 
         let expected_mask_len: usize;
@@ -259,7 +259,7 @@ pub fn initialize_scan_predicate<'a>(
 
             (SkipFilesMask::Exclusion(exclusion_mask), true)
         } else {
-            break 's;
+            break 'create_skip_files_mask;
         };
 
         if skip_files_mask.len() != expected_mask_len {

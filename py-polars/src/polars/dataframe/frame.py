@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import random
 from collections import defaultdict
 from collections.abc import (
     Generator,
@@ -4170,15 +4169,18 @@ class DataFrame:
         data_page_size
             Size of the data page in bytes. Defaults to 1024^2 bytes.
         use_pyarrow
-            Use C++ parquet implementation vs Rust parquet implementation.
-            At the moment C++ supports more features.
+            Use PyArrow's C++ parquet implementation instead of Polars' native
+            Rust implementation. This may be useful when specific PyArrow features
+            are needed via ``pyarrow_options``. Some options are not supported when
+            enabled (e.g. ``statistics="full"``, ``metadata``, ``mkdir``).
         pyarrow_options
             Arguments passed to `pyarrow.parquet.write_table`.
 
             If you pass `partition_cols` here, the dataset will be written
             using `pyarrow.parquet.write_to_dataset`.
             The `partition_cols` parameter leads to write the dataset to a directory.
-            Similar to Spark's partitioned datasets.
+            Similar to Spark's partitioned datasets. For native partitioned
+            writes, consider using ``partition_by`` instead.
         partition_by
             Column(s) to partition by. A partitioned dataset will be written if this is
             specified. This parameter is considered unstable and is subject to change.
@@ -4251,17 +4253,15 @@ class DataFrame:
         >>> path: pathlib.Path = dirpath / "new_file.parquet"
         >>> df.write_parquet(path)
 
-        We can use pyarrow with use_pyarrow_write_to_dataset=True
-        to write partitioned datasets. The following example will
-        write the first row to ../watermark=1/*.parquet and the
-        other rows to ../watermark=2/*.parquet.
+        We can write partitioned datasets. The following example will write
+        the first row to ../watermark=1/*.parquet and the other rows to
+        ../watermark=2/*.parquet.
 
         >>> df = pl.DataFrame({"a": [1, 2, 3], "watermark": [1, 2, 2]})
         >>> path: pathlib.Path = dirpath / "partitioned_object"
         >>> df.write_parquet(
         ...     path,
-        ...     use_pyarrow=True,
-        ...     pyarrow_options={"partition_cols": ["watermark"]},
+        ...     partition_by=["watermark"],
         ... )
         """
         if compression is None:
@@ -11414,7 +11414,7 @@ class DataFrame:
             neither stable nor fully random.
         seed
             Seed for the random number generator. If set to None (default), a
-            random seed is generated for each sample operation.
+            random seed is generated for each time the sample is called.
 
         Examples
         --------
@@ -11439,9 +11439,6 @@ class DataFrame:
         if n is not None and fraction is not None:
             msg = "cannot specify both `n` and `fraction`"
             raise ValueError(msg)
-
-        if seed is None:
-            seed = random.randint(0, 10000)
 
         if n is None and fraction is not None:
             if not isinstance(fraction, pl.Series):

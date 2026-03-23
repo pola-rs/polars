@@ -364,19 +364,19 @@ impl ReaderStarter {
             if let Some(current_row_position) = current_row_position.as_mut() {
                 let mut row_position_this_file = RowCounter::default();
 
-                's: {
+                'set_row_position_this_file: {
                     if let Some(v) = n_rows_in_file {
                         row_position_this_file = v;
-                        break 's;
+                        break 'set_row_position_this_file;
                     };
 
                     // Note, can be None on the last scan source.
                     let Some(rx) = row_position_on_end_rx else {
-                        break 's;
+                        break 'set_row_position_this_file;
                     };
 
                     let Ok(num_physical_rows) = rx.recv().await else {
-                        break 's;
+                        break 'set_row_position_this_file;
                     };
 
                     let num_deleted_rows = external_filter_mask.map_or(0, |external_filter_mask| {

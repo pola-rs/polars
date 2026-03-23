@@ -2973,3 +2973,33 @@ def test_group_by_agg_get_oob_error_26747() -> None:
 
     with pytest.raises(ComputeError, match="get index is out of bounds"):
         df.group_by("x").agg(y=pl.col.x.get(100))
+
+
+def test_group_by_arg_max_boolean_26978() -> None:
+    # https://github.com/pola-rs/polars/issues/26978
+    df = pl.DataFrame(
+        {
+            "group": ["A"] * 5,
+            "val": [False, False, True, True, True],
+        }
+    )
+
+    result = df.group_by("group").agg(pl.col("val").arg_max())
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {"group": ["A"], "val": pl.Series([2], dtype=pl.get_index_type())}
+        ),
+    )
+
+    result = df.with_columns(pl.row_index().max_by("val").over("group"))
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {
+                "group": ["A", "A", "A", "A", "A"],
+                "val": [False, False, True, True, True],
+                "index": pl.Series([2, 2, 2, 2, 2], dtype=pl.get_index_type()),
+            }
+        ),
+    )

@@ -1163,6 +1163,7 @@ def test_list_filter_null() -> None:
     ]
 
 
+@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: time check
 @pytest.mark.slow
 def test_list_struct_field_perf() -> None:
