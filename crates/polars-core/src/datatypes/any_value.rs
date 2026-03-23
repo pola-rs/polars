@@ -188,6 +188,8 @@ impl AnyValue<'static> {
                     *width,
                 )
             },
+            #[cfg(feature = "dtype-map")]
+            DT::Map(key_dtype, value_dtype) => AV::Null,
             DT::List(inner_dtype) => AV::List(if num_list_values == 0 {
                 Series::new_empty(PlSmallStr::EMPTY, inner_dtype.as_ref())
             } else {

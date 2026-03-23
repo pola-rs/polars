@@ -5,6 +5,8 @@
 *.ipynb
 .ENV
 .env
+.envrc
+.direnv
 .ipynb_checkpoints/
 .python-version
 .yarn/

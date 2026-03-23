@@ -367,7 +367,10 @@ impl ArrowDataType {
             ),
             Dictionary(keys, _, _) => (*keys).into(),
             Union(_) => unimplemented!(),
-            Map(_, _) => unimplemented!(),
+            Map(field, is_sorted) => Map(
+                Box::new(field.with_dtype(field.dtype.underlying_physical_type())),
+                *is_sorted,
+            ),
             Extension(ext) => ext.inner.underlying_physical_type(),
         }
     }
@@ -417,7 +420,10 @@ impl ArrowDataType {
                 Dictionary(*keys, Box::new(values.to_storage_recursive()), *is_sorted)
             },
             Union(_) => unimplemented!(),
-            Map(_, _) => unimplemented!(),
+            Map(f, is_sorted) => Map(
+                Box::new(f.with_dtype(f.dtype.to_storage_recursive())),
+                *is_sorted,
+            ),
             _ => self.clone(),
         }
     }

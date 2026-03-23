@@ -120,6 +120,8 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
 
         #[cfg(feature = "dtype-array")]
         DataType::Array(dtype, _) => get_row_encoding_context(dtype),
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(_, _) => todo!(),
         DataType::List(dtype) => get_row_encoding_context(dtype),
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(fs) => {

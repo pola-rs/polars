@@ -188,6 +188,19 @@ impl DataType {
             ArrowDataType::FixedSizeList(f, size) => {
                 DataType::Array(DataType::from_arrow_field(f).boxed(), *size)
             },
+            #[cfg(feature = "dtype-map")]
+            ArrowDataType::Map(f, _) => match f.dtype() {
+                ArrowDataType::Struct(fields) => {
+                    let [key_f, value_f] = fields.as_slice() else {
+                        panic!("expected 2 fields in Map's Struct, got {}", fields.len())
+                    };
+                    DataType::Map(
+                        DataType::from_arrow_field(key_f).boxed(),
+                        DataType::from_arrow_field(value_f).boxed(),
+                    )
+                },
+                dt => panic!("expected a Struct inside Map, got {dt:?}"),
+            },
             ArrowDataType::LargeList(f) | ArrowDataType::List(f) => {
                 DataType::List(DataType::from_arrow_field(f).boxed())
             },
@@ -296,9 +309,6 @@ impl DataType {
             },
             ArrowDataType::LargeBinary | ArrowDataType::Binary => DataType::Binary,
             ArrowDataType::FixedSizeBinary(_) => DataType::Binary,
-            ArrowDataType::Map(inner, _is_sorted) => {
-                DataType::List(Self::from_arrow_field(inner).boxed())
-            },
             ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
                 check_allow_importing_interval_as_struct("month_day_nano_interval").unwrap();
                 feature_gated!("dtype-struct", DataType::_month_days_ns_struct_type())

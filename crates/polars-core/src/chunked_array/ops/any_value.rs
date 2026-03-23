@@ -81,6 +81,8 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
                 AnyValue::Array(s, *width)
             }
         },
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(_, _) => AnyValue::Null,
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(cats, mapping) => {
             with_match_categorical_physical_type!(cats.physical(), |$C| {

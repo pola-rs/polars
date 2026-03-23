@@ -124,6 +124,9 @@ pub enum DataType {
     /// A nested list with a fixed size in each row
     #[cfg(feature = "dtype-array")]
     Array(Box<DataType>, usize),
+    /// A mapping of keys to values
+    #[cfg(feature = "dtype-map")]
+    Map(Box<DataType>, Box<DataType>),
     /// A nested list with a variable size in each row
     List(Box<DataType>),
     /// A generic type that can be used in a `Series`
@@ -179,6 +182,10 @@ impl PartialEq for DataType {
                 (Array(left_inner, left_width), Array(right_inner, right_width)) => {
                     left_width == right_width && left_inner == right_inner
                 },
+                #[cfg(feature = "dtype-map")]
+                (Map(left_key, left_value), Map(right_key, right_value)) => {
+                    left_key == right_key && left_value == right_value
+                },
                 (Unknown(l), Unknown(r)) => match (l, r) {
                     (UnknownKind::Int(_), UnknownKind::Int(_)) => true,
                     _ => l == r,
@@ -222,6 +229,12 @@ impl DataType {
             Self::Array(inner_dtype, size) => {
                 let formatted_dtype = inner_dtype.pretty_format();
                 format!("array[{}, {}]", formatted_dtype, size)
+            },
+            #[cfg(feature = "dtype-map")]
+            Self::Map(key_type, value_type) => {
+                let key_formatted_dtype = key_type.pretty_format();
+                let value_formatted_dtype = value_type.pretty_format();
+                format!("map[{}, {}]", key_formatted_dtype, value_formatted_dtype)
             },
             _ => {
                 format!("{}", self)
@@ -270,6 +283,8 @@ impl DataType {
             DataType::List(inner) => inner.is_known(),
             #[cfg(feature = "dtype-array")]
             DataType::Array(inner, _) => inner.is_known(),
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(_, value) => value.is_known(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => fields.iter().all(|fld| fld.dtype.is_known()),
             DataType::Unknown(_) => false,
@@ -298,6 +313,11 @@ impl DataType {
             DataType::Array(inner, size) => Ok(DataType::Array(
                 Box::new(inner.materialize_unknown(allow_unknown)?),
                 size,
+            )),
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(key, value) => Ok(DataType::Map(
+                Box::new(key.materialize_unknown(allow_unknown)?),
+                Box::new(value.materialize_unknown(allow_unknown)?),
             )),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => Ok(DataType::Struct(
@@ -340,6 +360,8 @@ impl DataType {
             DataType::List(inner) => Some(inner),
             #[cfg(feature = "dtype-array")]
             DataType::Array(inner, _) => Some(inner),
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(_, value) => Some(value),
             _ => None,
         }
     }
@@ -350,6 +372,8 @@ impl DataType {
             DataType::List(inner) => Some(*inner),
             #[cfg(feature = "dtype-array")]
             DataType::Array(inner, _) => Some(*inner),
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(_, value) => Some(*value),
             _ => None,
         }
     }
@@ -360,6 +384,8 @@ impl DataType {
             DataType::List(inner) => Ok(*inner),
             #[cfg(feature = "dtype-array")]
             DataType::Array(inner, _) => Ok(*inner),
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(_, value) => Ok(*value),
             dt => polars_bail!(InvalidOperation: "cannot get inner datatype of `{dt}`"),
         }
     }
@@ -388,18 +414,38 @@ impl DataType {
         }
     }
 
-    /// Cast the leaf types of Lists/Arrays and keep the nesting.
+    #[cfg(feature = "dtype-map")]
+    /// Get the key data type of a map.
+    pub fn map_key_dtype(&self) -> Option<&DataType> {
+        match self {
+            DataType::Map(k, _) => Some(k),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "dtype-map")]
+    /// Get the value data type of a map.
+    pub fn map_value_dtype(&self) -> Option<&DataType> {
+        match self {
+            DataType::Map(_, v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// Cast the leaf types of Lists/Arrays/Maps and keep the nesting.
     pub fn cast_leaf(&self, to: DataType) -> DataType {
         use DataType::*;
         match self {
             List(inner) => List(Box::new(inner.cast_leaf(to))),
             #[cfg(feature = "dtype-array")]
             Array(inner, size) => Array(Box::new(inner.cast_leaf(to)), *size),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => Map(key.clone(), Box::new(value.cast_leaf(to))),
             _ => to,
         }
     }
 
-    /// Map all leaf types of nested dtypes (list, array, struct) using the
+    /// Map all leaf types of nested dtypes (list, array, struct, map) using the
     /// supplied function.
     pub fn map_leaves<F: FnMut(DataType) -> DataType>(self, f: &mut F) -> DataType {
         use DataType::*;
@@ -407,6 +453,8 @@ impl DataType {
             List(inner) => List(Box::new(inner.map_leaves(f))),
             #[cfg(feature = "dtype-array")]
             Array(inner, size) => Array(Box::new(inner.map_leaves(f)), size),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => Map(key, Box::new(value.map_leaves(f))),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
                 let new_fields = fields
@@ -505,6 +553,8 @@ impl DataType {
             Enum(fcats, _) => fcats.physical().dtype(),
             #[cfg(feature = "dtype-array")]
             Array(dt, width) => Array(Box::new(dt.to_physical()), *width),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => Map(Box::new(key.to_physical()), Box::new(value.to_physical())),
             List(dt) => List(Box::new(dt.to_physical())),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
@@ -587,6 +637,8 @@ impl DataType {
             DataType::List(_) => true,
             #[cfg(feature = "dtype-array")]
             DataType::Array(_, _) => true,
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(_, _) => true,
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(_) => true,
             #[cfg(feature = "dtype-extension")]
@@ -644,6 +696,8 @@ impl DataType {
             List(inner) => inner.contains_views(),
             #[cfg(feature = "dtype-array")]
             Array(inner, _) => inner.contains_views(),
+            #[cfg(feature = "dtype-map")]
+            Map(_, value) => value.contains_views(),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => fields.iter().any(|field| field.dtype.contains_views()),
             _ => false,
@@ -658,6 +712,8 @@ impl DataType {
             List(inner) => inner.contains_categoricals(),
             #[cfg(feature = "dtype-array")]
             Array(inner, _) => inner.contains_categoricals(),
+            #[cfg(feature = "dtype-map")]
+            Map(_, value) => value.contains_categoricals(),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => fields
                 .iter()
@@ -674,6 +730,8 @@ impl DataType {
             List(inner) => inner.contains_enums(),
             #[cfg(feature = "dtype-array")]
             Array(inner, _) => inner.contains_enums(),
+            #[cfg(feature = "dtype-map")]
+            Map(_, value) => value.contains_enums(),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => fields.iter().any(|field| field.dtype.contains_enums()),
             _ => false,
@@ -688,6 +746,8 @@ impl DataType {
             List(inner) => inner.contains_objects(),
             #[cfg(feature = "dtype-array")]
             Array(inner, _) => inner.contains_objects(),
+            #[cfg(feature = "dtype-map")]
+            Map(_, value) => value.contains_objects(),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => fields.iter().any(|field| field.dtype.contains_objects()),
             _ => false,
@@ -700,6 +760,8 @@ impl DataType {
             D::List(_) => true,
             #[cfg(feature = "dtype-array")]
             D::Array(inner, _) => inner.contains_list_recursive(),
+            #[cfg(feature = "dtype-map")]
+            D::Map(_, value) => value.contains_list_recursive(),
             #[cfg(feature = "dtype-struct")]
             D::Struct(fields) => fields
                 .iter()
@@ -715,6 +777,8 @@ impl DataType {
             D::List(inner) => inner.contains_unknown(),
             #[cfg(feature = "dtype-array")]
             D::Array(inner, _) => inner.contains_unknown(),
+            #[cfg(feature = "dtype-map")]
+            D::Map(_, value) => value.contains_unknown(),
             #[cfg(feature = "dtype-struct")]
             D::Struct(fields) => fields.iter().any(|field| field.dtype.contains_unknown()),
             _ => false,
@@ -730,6 +794,8 @@ impl DataType {
             D::List(inner) => inner.contains_dtype_recursive(dtype),
             #[cfg(feature = "dtype-array")]
             D::Array(inner, _) => inner.contains_dtype_recursive(dtype),
+            #[cfg(feature = "dtype-map")]
+            D::Map(_, value) => value.contains_dtype_recursive(dtype),
             #[cfg(feature = "dtype-struct")]
             D::Struct(fields) => fields
                 .iter()
@@ -1005,6 +1071,22 @@ impl DataType {
                 Box::new(dt.to_arrow_field(LIST_VALUES_NAME, compat_level)),
                 *width,
             )),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => Ok(ArrowDataType::Map(
+                Box::new(ArrowField::new(
+                    MAP_ENTRIES_NAME,
+                    ArrowDataType::Struct(vec![
+                        ArrowField::new(MAP_ENTRY_KEY_NAME, key.try_to_arrow(compat_level)?, false),
+                        ArrowField::new(
+                            MAP_ENTRY_VALUE_NAME,
+                            value.try_to_arrow(compat_level)?,
+                            true,
+                        ),
+                    ]),
+                    false,
+                )),
+                false,
+            )),
             List(dt) => Ok(ArrowDataType::LargeList(Box::new(
                 dt.to_arrow_field(LIST_VALUES_NAME, compat_level),
             ))),
@@ -1069,6 +1151,8 @@ impl DataType {
             List(field) => field.is_nested_null(),
             #[cfg(feature = "dtype-array")]
             Array(field, _) => field.is_nested_null(),
+            #[cfg(feature = "dtype-map")]
+            Map(_, value) => value.is_nested_null(),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => fields.iter().all(|fld| fld.dtype.is_nested_null()),
             _ => false,
@@ -1087,6 +1171,10 @@ impl DataType {
             #[cfg(feature = "dtype-array")]
             (DataType::Array(l, sl), DataType::Array(r, sr)) => {
                 Ok(l.matches_schema_type(r)? && sl == sr)
+            },
+            #[cfg(feature = "dtype-map")]
+            (DataType::Map(kl, vl), DataType::Map(kr, vr)) => {
+                Ok(kl.matches_schema_type(kr)? && vl.matches_schema_type(vr)?)
             },
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(l), DataType::Struct(r)) => {
@@ -1231,6 +1319,12 @@ impl Display for DataType {
                 };
                 return write!(f, "array[{tp}, {shape}]");
             },
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(_, _) => {
+                let kt = self.map_key_dtype().unwrap();
+                let vt = self.map_value_dtype().unwrap();
+                return write!(f, "map[{kt}, {vt}]");
+            },
             DataType::List(tp) => return write!(f, "list[{tp}]"),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
@@ -1288,6 +1382,8 @@ impl std::fmt::Debug for DataType {
             Decimal(p, s) => write!(f, "Decimal({p}, {s})"),
             #[cfg(feature = "dtype-array")]
             Array(inner, size) => write!(f, "Array({inner:?}, {size})"),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => write!(f, "Array({key:?}, {value:?})"),
             List(inner) => write!(f, "List({inner:?})"),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
@@ -1387,6 +1483,13 @@ fn collect_nested_types(
                 result.insert(dtype.clone());
             }
             collect_nested_types(inner, result, include_compound_types);
+        },
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(_, value) => {
+            if include_compound_types {
+                result.insert(dtype.clone());
+            }
+            collect_nested_types(value, result, include_compound_types);
         },
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(fields) => {
@@ -1617,6 +1720,22 @@ mod tests {
         let mut expected = PlHashSet::new();
         expected.insert(list_type);
         expected.insert(array_type);
+        expected.insert(DataType::Float64);
+
+        assert_eq!(result, expected)
+    }
+
+    #[cfg(feature = "dtype-map")]
+    #[test]
+    fn test_map_unpack_primitive_dtypes() {
+        let key_type = DataType::String;
+        let value_type = DataType::Float64;
+
+        let map_type = DataType::Map(key_type.boxed(), value_type.boxed());
+
+        let result = unpack_dtypes(&map_type, false);
+
+        let mut expected = PlHashSet::new();
         expected.insert(DataType::Float64);
 
         assert_eq!(result, expected)

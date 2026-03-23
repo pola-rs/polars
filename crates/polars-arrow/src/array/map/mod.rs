@@ -9,6 +9,12 @@ pub(super) mod fmt;
 mod iterator;
 
 use polars_error::{PolarsResult, polars_bail};
+use polars_utils::pl_str::PlSmallStr;
+
+/// Names used for the contents of Map (a list of structs).
+pub const MAP_ENTRIES_NAME: PlSmallStr = PlSmallStr::from_static("entries");
+pub const MAP_ENTRY_KEY_NAME: PlSmallStr = PlSmallStr::from_static("key");
+pub const MAP_ENTRY_VALUE_NAME: PlSmallStr = PlSmallStr::from_static("value");
 
 /// An array representing a (key, value), both of arbitrary logical types.
 #[derive(Clone)]
