@@ -2,6 +2,7 @@ use arrow::bitmap::bitmask::BitMask;
 
 use super::*;
 use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::{arg_max_bool, arg_min_bool};
 
 pub fn _agg_helper_idx_bool<F>(groups: &GroupsIdx, f: F) -> Series
 where
@@ -97,9 +98,11 @@ impl BooleanChunked {
                 } else if idx.len() == 1 {
                     arr.get(first as usize)
                 } else if no_nulls {
-                    take_min_bool_iter_unchecked_no_nulls(arr, idx2usize(idx))
+                    take_arg_min_bool_iter_unchecked_no_nulls(arr, idx2usize(idx))
+                        .map(|p| arr.value_unchecked(idx[p] as usize))
                 } else {
-                    take_min_bool_iter_unchecked_nulls(arr, idx2usize(idx), idx.len() as IdxSize)
+                    take_arg_min_bool_iter_unchecked_nulls(arr, idx2usize(idx))
+                        .map(|p| arr.value_unchecked(idx[p] as usize))
                 }
             }),
             GroupsType::Slice {
@@ -141,9 +144,11 @@ impl BooleanChunked {
                 } else if idx.len() == 1 {
                     self.get(first as usize)
                 } else if no_nulls {
-                    take_max_bool_iter_unchecked_no_nulls(arr, idx2usize(idx))
+                    take_arg_max_bool_iter_unchecked_no_nulls(arr, idx2usize(idx))
+                        .map(|p| arr.value_unchecked(idx[p] as usize))
                 } else {
-                    take_max_bool_iter_unchecked_nulls(arr, idx2usize(idx), idx.len() as IdxSize)
+                    take_arg_max_bool_iter_unchecked_nulls(arr, idx2usize(idx))
+                        .map(|p| arr.value_unchecked(idx[p] as usize))
                 }
             }),
             GroupsType::Slice {
@@ -157,6 +162,104 @@ impl BooleanChunked {
                     _ => {
                         let arr_group = _slice_from_offsets(self, first, len);
                         arr_group.max()
+                    },
+                }
+            }),
+        }
+    }
+
+    pub(crate) unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        // faster paths
+        if groups.is_sorted_flag() {
+            match self.is_sorted_flag() {
+                IsSorted::Ascending => {
+                    return self.clone().into_series().agg_arg_first_non_null(groups);
+                },
+                IsSorted::Descending => {
+                    return self.clone().into_series().agg_arg_last_non_null(groups);
+                },
+                _ => {},
+            }
+        }
+
+        let ca_self = self.rechunk();
+        let arr = ca_self.downcast_iter().next().unwrap();
+        let no_nulls = arr.null_count() == 0;
+        match groups {
+            GroupsType::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
+                debug_assert!(idx.len() <= ca_self.len());
+                if idx.is_empty() {
+                    None
+                } else if idx.len() == 1 {
+                    arr.get(idx[0] as usize).map(|_| 0)
+                } else if no_nulls {
+                    take_arg_min_bool_iter_unchecked_no_nulls(arr, idx2usize(idx))
+                        .map(|p| p as IdxSize)
+                } else {
+                    take_arg_min_bool_iter_unchecked_nulls(arr, idx2usize(idx))
+                        .map(|p| p as IdxSize)
+                }
+            }),
+            GroupsType::Slice {
+                groups: groups_slice,
+                ..
+            } => _agg_helper_slice::<IdxType, _>(groups_slice, |[first, len]| {
+                debug_assert!(len <= self.len() as IdxSize);
+                match len {
+                    0 => None,
+                    1 => self.get(first as usize).map(|_| 0),
+                    _ => {
+                        let group_ca = _slice_from_offsets(self, first, len);
+                        arg_min_bool(&group_ca).map(|p| p as IdxSize)
+                    },
+                }
+            }),
+        }
+    }
+
+    pub(crate) unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        // faster paths
+        if groups.is_sorted_flag() {
+            match self.is_sorted_flag() {
+                IsSorted::Ascending => {
+                    return self.clone().into_series().agg_arg_last_non_null(groups);
+                },
+                IsSorted::Descending => {
+                    return self.clone().into_series().agg_arg_first_non_null(groups);
+                },
+                _ => {},
+            }
+        }
+
+        let ca_self = self.rechunk();
+        let arr = ca_self.downcast_iter().next().unwrap();
+        let no_nulls = arr.null_count() == 0;
+        match groups {
+            GroupsType::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
+                debug_assert!(idx.len() <= ca_self.len());
+                if idx.is_empty() {
+                    None
+                } else if idx.len() == 1 {
+                    arr.get(idx[0] as usize).map(|_| 0)
+                } else if no_nulls {
+                    take_arg_max_bool_iter_unchecked_no_nulls(arr, idx2usize(idx))
+                        .map(|p| p as IdxSize)
+                } else {
+                    take_arg_max_bool_iter_unchecked_nulls(arr, idx2usize(idx))
+                        .map(|p| p as IdxSize)
+                }
+            }),
+            GroupsType::Slice {
+                groups: groups_slice,
+                ..
+            } => _agg_helper_slice::<IdxType, _>(groups_slice, |[first, len]| {
+                debug_assert!(len <= self.len() as IdxSize);
+                match len {
+                    0 => None,
+                    1 => self.get(first as usize).map(|_| 0),
+                    _ => {
+                        let group_ca = _slice_from_offsets(self, first, len);
+                        arg_max_bool(&group_ca).map(|p| p as IdxSize)
                     },
                 }
             }),
