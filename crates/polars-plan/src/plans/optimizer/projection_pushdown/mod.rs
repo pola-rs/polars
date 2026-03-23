@@ -504,9 +504,9 @@ impl ProjectionPushDown {
                             FileScanIR::PythonDataset { .. } => true,
                         };
 
-                        's: {
+                        'set_projection: {
                             if !do_optimization {
-                                break 's;
+                                break 'set_projection;
                             }
 
                             if self.is_count_star {
@@ -529,7 +529,7 @@ impl ProjectionPushDown {
 
                                     if projection.is_empty() {
                                         output_schema = Some(Default::default());
-                                        break 's;
+                                        break 'set_projection;
                                     }
 
                                     ctx.acc_projections.push(ColumnNode(
@@ -542,7 +542,7 @@ impl ProjectionPushDown {
                                     // from the file.
                                     unified_scan_args.projection = Some(Arc::from([]));
                                     output_schema = Some(Default::default());
-                                    break 's;
+                                    break 'set_projection;
                                 };
                             }
 

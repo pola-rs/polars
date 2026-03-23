@@ -84,7 +84,7 @@ fn compute_payload_selector(
 
     this.iter_names()
         .map(|c| {
-            's: {
+            'create_and_return_selector: {
                 let selector = if args.how == JoinType::Right {
                     if is_left {
                         if should_coalesce && this_key_schema.contains(c) {
@@ -98,7 +98,7 @@ fn compute_payload_selector(
                     {
                         Some(c.clone())
                     } else {
-                        break 's;
+                        break 'create_and_return_selector;
                     }
                 } else if should_coalesce && this_key_schema.contains(c) {
                     if is_left {
@@ -115,7 +115,7 @@ fn compute_payload_selector(
                 } else if !other.contains(c) || is_left {
                     Some(c.clone())
                 } else {
-                    break 's;
+                    break 'create_and_return_selector;
                 };
 
                 return Ok(selector);
