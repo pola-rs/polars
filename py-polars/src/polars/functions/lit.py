@@ -156,14 +156,12 @@ def lit(
 
         dt_utc = value.replace(tzinfo=timezone.utc)
         dt_utc_int = _datetime_to_timestamp(dt_utc, time_unit)
-        expr = wrap_expr(plr.lit(dt_utc_int, allow_object=False, is_scalar=True)).cast(
-            Datetime(time_unit)
-        )
+        dt_utc_s = pl.Series("literal", [dt_utc_int]).cast(Datetime(time_unit))
         if tz is not None:
-            expr = expr.dt.replace_time_zone(
+            dt_utc_s = dt_utc_s.dt.replace_time_zone(
                 tz, ambiguous="earliest" if value.fold == 0 else "latest"
             )
-        return expr
+        return wrap_expr(plr.lit(dt_utc_s._s, allow_object=False, is_scalar=True))
 
     elif isinstance(value, timedelta):
         value_s = pl.Series("literal", [value])

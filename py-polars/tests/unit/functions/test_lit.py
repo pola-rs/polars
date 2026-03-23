@@ -98,9 +98,13 @@ def test_lit_datetime_after_datetime_monkeypatch_26698() -> None:
             pass
 
         datetime_module.datetime = FakeDatetime
-        pl.lit(datetime_module.datetime(2026, 1, 1, 12))
+        fake_expr = pl.lit(datetime_module.datetime(2026, 1, 1, 12))
+        assert fake_expr.meta.is_literal()
+        assert pl.select(fake_expr).item() == datetime(2026, 1, 1, 12)
         datetime_module.datetime = datetime
-        pl.lit(datetime(2026, 1, 1, 12))
+        real_expr = pl.lit(datetime(2026, 1, 1, 12))
+        assert real_expr.meta.is_literal()
+        assert pl.select(real_expr).item() == datetime(2026, 1, 1, 12)
         """
     )
 
