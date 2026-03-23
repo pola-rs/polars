@@ -87,16 +87,10 @@ fn try_collapse_sorts(node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr
     }
 
     let maintain_order = in_sort_options.maintain_order;
-    let limit = match (sort_options.limit, in_sort_options.limit) {
-        (Some(l1), Some(l2)) => Some(IdxSize::min(l1, l2)),
-        (Some(l), None) | (None, Some(l)) => Some(l),
-        (None, None) => None,
-    };
     let sort_options = SortMultipleOptions {
         descending,
         nulls_last,
         maintain_order,
-        limit,
         ..sort_options.clone()
     };
     Some(IR::Sort {
