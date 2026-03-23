@@ -1,10 +1,9 @@
-use std::collections::HashMap;
-
 use polars_core::POOL;
 use polars_core::fmt::FloatFmt;
 use polars_core::prelude::IDX_DTYPE;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
 use crate::conversion::Wrap;
 
@@ -104,18 +103,34 @@ pub fn get_trim_decimal_zeros() -> PyResult<Option<bool>> {
     not(target_os = "emscripten"),
 ))]
 #[pyfunction]
-pub fn jemalloc_stats() -> PyResult<HashMap<&'static str, usize>> {
+pub fn jemalloc_stats(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     use tikv_jemalloc_ctl::{epoch, stats};
 
-    epoch::advance().map_err(|e| PyRuntimeError::new_err(format!("jemalloc epoch advance: {e}")))?;
+    epoch::advance()
+        .map_err(|e| PyRuntimeError::new_err(format!("jemalloc epoch advance: {e}")))?;
 
-    let mut map = HashMap::new();
-    map.insert("allocated", stats::allocated::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?);
-    map.insert("active", stats::active::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?);
-    map.insert("resident", stats::resident::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?);
-    map.insert("mapped", stats::mapped::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?);
-    map.insert("retained", stats::retained::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?);
-    Ok(map)
+    let dict = PyDict::new(py);
+    dict.set_item(
+        "allocated",
+        stats::allocated::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
+    )?;
+    dict.set_item(
+        "active",
+        stats::active::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
+    )?;
+    dict.set_item(
+        "resident",
+        stats::resident::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
+    )?;
+    dict.set_item(
+        "mapped",
+        stats::mapped::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
+    )?;
+    dict.set_item(
+        "retained",
+        stats::retained::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
+    )?;
+    Ok(dict)
 }
 
 #[cfg(not(all(
@@ -124,6 +139,8 @@ pub fn jemalloc_stats() -> PyResult<HashMap<&'static str, usize>> {
     not(target_os = "emscripten"),
 )))]
 #[pyfunction]
-pub fn jemalloc_stats() -> PyResult<HashMap<&'static str, usize>> {
-    Err(PyRuntimeError::new_err("jemalloc is not available on this platform"))
+pub fn jemalloc_stats() -> PyResult<Bound<'_, PyDict>> {
+    Err(PyRuntimeError::new_err(
+        "jemalloc is not available on this platform",
+    ))
 }
