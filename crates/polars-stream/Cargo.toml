@@ -60,6 +60,7 @@ version_check = { workspace = true }
 [features]
 nightly = ["polars-expr/nightly"]
 approx_unique = ["polars-plan/approx_unique", "polars-expr/approx_unique"]
+cov = ["polars-plan/cov", "polars-expr/cov"]
 bigidx = ["polars-core/bigidx"]
 bitwise = ["polars-core/bitwise", "polars-plan/bitwise", "polars-expr/bitwise"]
 merge_sorted = ["polars-plan/merge_sorted", "polars-mem-engine/merge_sorted"]

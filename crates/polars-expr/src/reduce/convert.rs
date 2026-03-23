@@ -11,6 +11,8 @@ use crate::reduce::bitwise::{
     new_bitwise_and_reduction, new_bitwise_or_reduction, new_bitwise_xor_reduction,
 };
 use crate::reduce::count::{CountReduce, NullCountReduce};
+#[cfg(feature = "cov")]
+use crate::reduce::cov::{new_cov_reduction, new_pearson_corr_reduction};
 use crate::reduce::first_last::{new_first_reduction, new_item_reduction, new_last_reduction};
 use crate::reduce::first_last_nonnull::{new_first_nonnull_reduction, new_last_nonnull_reduction};
 use crate::reduce::implode::new_unordered_implode_reduction;
@@ -232,6 +234,34 @@ pub fn into_reduction(
                 .unwrap();
             (reduction.new_empty(), input)
         },
+
+        #[cfg(feature = "cov")]
+        AExpr::Function {
+            input: inner_exprs,
+            function:
+                IRFunctionExpr::Correlation {
+                    method:
+                        method @ (polars_plan::plans::IRCorrelationMethod::Covariance(_)
+                        | polars_plan::plans::IRCorrelationMethod::Pearson),
+                },
+            options: _,
+        } => {
+            use polars_plan::plans::IRCorrelationMethod;
+            assert!(inner_exprs.len() == 2);
+            let input_x = inner_exprs[0].node();
+            let input_y = inner_exprs[1].node();
+            let dtype_x = get_dt(input_x)?;
+            let dtype_y = get_dt(input_y)?;
+            let gr: Box<dyn GroupedReduction> = match method {
+                IRCorrelationMethod::Covariance(ddof) => {
+                    new_cov_reduction(dtype_x, dtype_y, *ddof)?
+                },
+                IRCorrelationMethod::Pearson => new_pearson_corr_reduction(dtype_x, dtype_y)?,
+                _ => unreachable!(),
+            };
+            return Ok((gr, vec![input_x, input_y]));
+        },
+
         _ => unreachable!(),
     };
     Ok((gr, vec![in_node]))

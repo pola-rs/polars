@@ -2035,6 +2035,21 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(trans_expr);
             },
 
+            #[cfg(feature = "cov")]
+            AExpr::Function {
+                function:
+                    IRFunctionExpr::Correlation {
+                        method:
+                            polars_plan::plans::IRCorrelationMethod::Pearson
+                            | polars_plan::plans::IRCorrelationMethod::Covariance(_),
+                    },
+                ..
+            } => {
+                let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
+                input_streams.insert(trans_stream);
+                transformed_exprs.push(trans_expr);
+            },
+
             // Length-based expressions.
             AExpr::Len => {
                 let out_name = unique_column_name();

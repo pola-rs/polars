@@ -143,6 +143,10 @@ impl VarState {
 }
 
 impl CovState {
+    pub fn weight(&self) -> f64 {
+        self.weight
+    }
+
     fn new(x: &[f64], y: &[f64]) -> Self {
         assert!(x.len() == y.len());
         if x.is_empty() {
@@ -163,6 +167,18 @@ impl CovState {
                     .map(|(&xi, &yi)| (xi - mean_x) * (yi - mean_y)),
             ),
         }
+    }
+
+    pub fn insert_one(&mut self, x: f64, y: f64) {
+        let new_weight = self.weight + 1.0;
+        let dx = x - self.mean_x;
+        let new_mean_x = self.mean_x + dx / new_weight;
+        let dy = y - self.mean_y;
+        let new_mean_y = self.mean_y + dy / new_weight;
+        self.dp_xy += dx * (y - new_mean_y);
+        self.weight = new_weight;
+        self.mean_x = new_mean_x;
+        self.mean_y = new_mean_y;
     }
 
     pub fn combine(&mut self, other: &Self) {
@@ -195,6 +211,10 @@ impl CovState {
 }
 
 impl PearsonState {
+    pub fn weight(&self) -> f64 {
+        self.weight
+    }
+
     fn new(x: &[f64], y: &[f64]) -> Self {
         assert!(x.len() == y.len());
         if x.is_empty() {
@@ -221,6 +241,20 @@ impl PearsonState {
             dp_xy,
             dp_yy,
         }
+    }
+
+    pub fn insert_one(&mut self, x: f64, y: f64) {
+        let new_weight = self.weight + 1.0;
+        let dx = x - self.mean_x;
+        let new_mean_x = self.mean_x + dx / new_weight;
+        let dy = y - self.mean_y;
+        let new_mean_y = self.mean_y + dy / new_weight;
+        self.dp_xx += dx * (x - new_mean_x);
+        self.dp_xy += dx * (y - new_mean_y);
+        self.dp_yy += dy * (y - new_mean_y);
+        self.weight = new_weight;
+        self.mean_x = new_mean_x;
+        self.mean_y = new_mean_y;
     }
 
     pub fn combine(&mut self, other: &Self) {

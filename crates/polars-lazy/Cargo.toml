@@ -329,7 +329,7 @@ cutqcut = ["polars-expr/cutqcut", "polars-ops/cutqcut"]
 rle = ["polars-expr/rle", "polars-ops/rle"]
 extract_groups = ["polars-expr/extract_groups"]
 peaks = ["polars-expr/peaks"]
-cov = ["polars-ops/cov", "polars-expr/cov"]
+cov = ["polars-ops/cov", "polars-expr/cov", "polars-stream?/cov"]
 hist = ["polars-expr/hist"]
 replace = ["polars-expr/replace", "polars-stream?/replace"]
 
