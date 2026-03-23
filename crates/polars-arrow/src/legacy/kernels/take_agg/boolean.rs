@@ -37,12 +37,10 @@ pub unsafe fn take_arg_min_bool_iter_unchecked_no_nulls<I: IntoIterator<Item = u
         return None;
     }
 
-    Some(
-        indices
-            .into_iter()
-            .position(|idx| !arr.value_unchecked(idx))
-            .unwrap_or(0),
-    )
+    indices
+        .into_iter()
+        .position(|idx| !arr.value_unchecked(idx))
+        .or(Some(0))
 }
 
 /// Take kernel for single chunk and an iterator as index.
@@ -81,10 +79,8 @@ pub unsafe fn take_arg_max_bool_iter_unchecked_no_nulls<I: IntoIterator<Item = u
         return None;
     }
 
-    Some(
-        indices
-            .into_iter()
-            .position(|idx| arr.value_unchecked(idx))
-            .unwrap_or(0),
-    )
+    indices
+        .into_iter()
+        .position(|idx| arr.value_unchecked(idx))
+        .or(Some(0))
 }
