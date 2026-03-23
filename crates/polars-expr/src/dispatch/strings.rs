@@ -2,7 +2,9 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_core::prelude::*;
-use polars_core::utils::{CustomIterTools, handle_casting_failures};
+#[cfg(feature = "regex")]
+use polars_core::ternary_output_height;
+use polars_core::utils::handle_casting_failures;
 #[cfg(feature = "regex")]
 use polars_ops::chunked_array::strings::split_regex_helper;
 use polars_ops::prelude::{BinaryNameSpaceImpl, StringNameSpaceImpl};
@@ -584,152 +586,150 @@ fn get_pat(pat: &StringChunked) -> PolarsResult<&str> {
     )
 }
 
-// used only if feature="regex"
-#[allow(dead_code)]
-fn iter_and_replace<'a, F>(ca: &'a StringChunked, val: &'a StringChunked, f: F) -> StringChunked
-where
-    F: Fn(&'a str, &'a str) -> Cow<'a, str>,
-{
-    let mut out: StringChunked = ca
-        .into_iter()
-        .zip(val)
-        .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
-            (Some(src), Some(val)) => Some(f(src, val)),
-            (Some(src), None) => Some(Cow::from(src)),
-            _ => None,
-        })
-        .collect_trusted();
-
-    out.rename(ca.name().clone());
-    out
-}
-
 #[cfg(feature = "regex")]
 fn is_literal_pat(pat: &str) -> bool {
     pat.chars().all(|c| !c.is_ascii_punctuation())
 }
 
 #[cfg(feature = "regex")]
-fn replace_n<'a>(
-    ca: &'a StringChunked,
-    pat: &'a StringChunked,
-    val: &'a StringChunked,
+fn replace_broadcast<F>(
+    ca: &StringChunked,
+    pat: &StringChunked,
+    val: &StringChunked,
     literal: bool,
-    n: usize,
-) -> PolarsResult<StringChunked> {
-    match (pat.len(), val.len()) {
-        (1, 1) => {
-            let pat = get_pat(pat)?;
-            let Some(val) = val.get(0) else {
-                return Ok(ca.clone());
-            };
-            let literal = literal || is_literal_pat(pat);
+    apply_regex: F,
+) -> PolarsResult<StringChunked>
+where
+    F: Fn(&regex::Regex, &str, &str, bool) -> String,
+{
+    let output_height = ternary_output_height!(ca, pat, val, op = "str.replace")?;
 
-            match literal {
-                true => ca.replace_literal(pat, val, n),
-                false => {
-                    if n > 1 {
-                        polars_bail!(ComputeError: "regex replacement with 'n > 1' not yet supported")
-                    }
-                    ca.replace(pat, val)
-                },
+    if pat.len() == 1 {
+        let mut pat_str = get_pat(pat)?.to_string();
+        let literal_pat = literal || is_literal_pat(&pat_str);
+        if literal_pat {
+            pat_str = escape(&pat_str);
+        }
+        let reg = polars_utils::regex_cache::compile_regex(&pat_str)?;
+
+        let ca = ca.rechunk();
+        let val = val.rechunk();
+        let mut builder = StringChunkedBuilder::new(ca.name().clone(), output_height);
+        for i in 0..output_height {
+            let src = ca.get(if ca.len() == 1 { 0 } else { i });
+            let v = val.get(if val.len() == 1 { 0 } else { i });
+            match (src, v) {
+                (Some(s), Some(v)) => builder.append_value(apply_regex(&reg, s, v, literal_pat)),
+                (Some(s), None) => builder.append_value(s),
+                _ => builder.append_null(),
             }
-        },
-        (1, len_val) => {
-            if n > 1 {
-                polars_bail!(ComputeError: "multivalue replacement with 'n > 1' not yet supported")
-            }
-
-            if n == 0 {
-                return Ok(ca.clone());
-            };
-
-            // from here on, we know that n == 1
-            let mut pat = get_pat(pat)?.to_string();
-            polars_ensure!(
-                len_val == ca.len(),
-                ComputeError:
-                "replacement value length ({}) does not match string column length ({})",
-                len_val, ca.len(),
-            );
-            let lit = is_literal_pat(&pat);
-            let literal_pat = literal || lit;
-
-            if literal_pat {
-                pat = escape(&pat)
-            }
-
-            let reg = polars_utils::regex_cache::compile_regex(&pat)?;
-
-            let f = |s: &'a str, val: &'a str| {
-                if literal {
-                    reg.replace(s, NoExpand(val))
-                } else {
-                    reg.replace(s, val)
-                }
-            };
-
-            Ok(iter_and_replace(ca, val, f))
-        },
-        _ => polars_bail!(
-            ComputeError: "dynamic pattern length in 'str.replace' expressions is not supported yet"
-        ),
+        }
+        return Ok(builder.finish());
     }
+
+    let ca = ca.rechunk();
+    let pat = pat.rechunk();
+    let val = val.rechunk();
+    let mut builder = StringChunkedBuilder::new(ca.name().clone(), output_height);
+    for i in 0..output_height {
+        let src = ca.get(if ca.len() == 1 { 0 } else { i });
+        let p = pat.get(if pat.len() == 1 { 0 } else { i });
+        let v = val.get(if val.len() == 1 { 0 } else { i });
+        match (src, p, v) {
+            (Some(s), Some(p), Some(v)) => {
+                let literal_pat = literal || is_literal_pat(p);
+                let pat_str = if literal_pat {
+                    Cow::Owned(escape(p))
+                } else {
+                    Cow::Borrowed(p)
+                };
+                let reg = polars_utils::regex_cache::compile_regex(&pat_str)?;
+                builder.append_value(apply_regex(&reg, s, v, literal_pat));
+            },
+            (Some(s), None, _) | (Some(s), _, None) => builder.append_value(s),
+            _ => builder.append_null(),
+        }
+    }
+    Ok(builder.finish())
 }
 
 #[cfg(feature = "regex")]
-fn replace_all<'a>(
-    ca: &'a StringChunked,
-    pat: &'a StringChunked,
-    val: &'a StringChunked,
+fn replace_n(
+    ca: &StringChunked,
+    pat: &StringChunked,
+    val: &StringChunked,
+    literal: bool,
+    n: usize,
+) -> PolarsResult<StringChunked> {
+    if pat.len() == 1 && val.len() == 1 {
+        let pat_str = get_pat(pat)?;
+        let Some(val_str) = val.get(0) else {
+            return Ok(ca.clone());
+        };
+        let literal = literal || is_literal_pat(pat_str);
+
+        return match literal {
+            true => ca.replace_literal(pat_str, val_str, n),
+            false => {
+                if n > 1 {
+                    polars_bail!(ComputeError: "regex replacement with 'n > 1' not yet supported")
+                }
+                ca.replace(pat_str, val_str)
+            },
+        };
+    }
+
+    if n > 1 {
+        polars_bail!(ComputeError: "multivalue replacement with 'n > 1' not yet supported")
+    }
+    if n == 0 {
+        let output_height = ternary_output_height!(ca, pat, val, op = "str.replace")?;
+        if ca.len() == output_height {
+            return Ok(ca.clone());
+        }
+        let mut out = ca.new_from_index(0, output_height);
+        out.rename(ca.name().clone());
+        return Ok(out);
+    }
+
+    replace_broadcast(ca, pat, val, literal, |reg, src, v, literal_pat| {
+        let result = if literal_pat {
+            reg.replace(src, NoExpand(v))
+        } else {
+            reg.replace(src, v)
+        };
+        result.into_owned()
+    })
+}
+
+#[cfg(feature = "regex")]
+fn replace_all(
+    ca: &StringChunked,
+    pat: &StringChunked,
+    val: &StringChunked,
     literal: bool,
 ) -> PolarsResult<StringChunked> {
-    match (pat.len(), val.len()) {
-        (1, 1) => {
-            let pat = get_pat(pat)?;
-            let val = val.get(0).ok_or_else(
-                || polars_err!(ComputeError: "value cannot be 'null' in 'replace' expression"),
-            )?;
-            let literal = literal || is_literal_pat(pat);
+    if pat.len() == 1 && val.len() == 1 {
+        let pat_str = get_pat(pat)?;
+        let val_str = val.get(0).ok_or_else(
+            || polars_err!(ComputeError: "value cannot be 'null' in 'replace' expression"),
+        )?;
+        let literal = literal || is_literal_pat(pat_str);
 
-            match literal {
-                true => ca.replace_literal_all(pat, val),
-                false => ca.replace_all(pat, val),
-            }
-        },
-        (1, len_val) => {
-            let mut pat = get_pat(pat)?.to_string();
-            polars_ensure!(
-                len_val == ca.len(),
-                ComputeError:
-                "replacement value length ({}) does not match string column length ({})",
-                len_val, ca.len(),
-            );
-
-            let literal_pat = literal || is_literal_pat(&pat);
-
-            if literal_pat {
-                pat = escape(&pat)
-            }
-
-            let reg = polars_utils::regex_cache::compile_regex(&pat)?;
-
-            let f = |s: &'a str, val: &'a str| {
-                // According to the docs for replace_all
-                // when literal = True then capture groups are ignored.
-                if literal {
-                    reg.replace_all(s, NoExpand(val))
-                } else {
-                    reg.replace_all(s, val)
-                }
-            };
-
-            Ok(iter_and_replace(ca, val, f))
-        },
-        _ => polars_bail!(
-            ComputeError: "dynamic pattern length in 'str.replace' expressions is not supported yet"
-        ),
+        return match literal {
+            true => ca.replace_literal_all(pat_str, val_str),
+            false => ca.replace_all(pat_str, val_str),
+        };
     }
+
+    replace_broadcast(ca, pat, val, literal, |reg, src, v, literal_pat| {
+        let result = if literal_pat {
+            reg.replace_all(src, NoExpand(v))
+        } else {
+            reg.replace_all(src, v)
+        };
+        result.into_owned()
+    })
 }
 
 pub(super) fn format(s: &mut [Column], format: &str, insertions: &[usize]) -> PolarsResult<Column> {

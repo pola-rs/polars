@@ -2315,3 +2315,130 @@ def test_str_split_regex_scalar_string_expr() -> None:
     )
 
     assert_frame_equal(out, expected)
+
+
+def test_str_replace_broadcast_26789() -> None:
+    lf = pl.LazyFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"], "value": ["A", "B"]})
+    q = lf.select(pl.col("foo").str.replace(pl.col("foo").first(), pl.col("value")))
+    expected = pl.DataFrame({"foo": ["A", "xyz 678 910t"]})
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def test_str_replace_scalar_source_broadcast_26789() -> None:
+    df = pl.DataFrame({"a": ["A", "B"]})
+    q = df.lazy().select(pl.lit("A").str.replace(pl.col("a"), "X"))
+    expected = pl.DataFrame({"literal": ["X", "A"]})
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def test_str_replace_scalar_pat_column_val_26789() -> None:
+    df = pl.DataFrame({"foo": ["hello world", "foo bar"], "val": ["X", "Y"]})
+    q = df.lazy().select(pl.col("foo").str.replace(pl.lit("o"), pl.col("val")))
+    expected = pl.DataFrame({"foo": ["hellX world", "fYo bar"]})
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def test_str_replace_scalar_val_column_pat_26789() -> None:
+    df = pl.DataFrame({"foo": ["abc def", "ghi jkl"], "pat": ["abc", "jkl"]})
+    q = df.lazy().select(pl.col("foo").str.replace(pl.col("pat"), pl.lit("Z")))
+    expected = pl.DataFrame({"foo": ["Z def", "ghi Z"]})
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def test_str_replace_all_broadcast_26789() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["aaa bbb aaa", "ccc ddd ccc"],
+            "pat": ["aaa", "ccc"],
+            "val": ["X", "Y"],
+        }
+    )
+    q = df.lazy().select(pl.col("foo").str.replace_all(pl.col("pat"), pl.col("val")))
+    expected = pl.DataFrame({"foo": ["X bbb X", "Y ddd Y"]})
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def test_str_replace_all_scalar_source_26789() -> None:
+    df = pl.DataFrame({"pat": ["A", "B"], "val": ["X", "Y"]})
+    q = df.lazy().select(pl.lit("A B A").str.replace_all(pl.col("pat"), pl.col("val")))
+    expected = pl.DataFrame({"literal": ["X B X", "A Y A"]})
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def test_str_replace_broadcast_regex_pattern_26789() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["abc123", "def456"],
+            "pat": [r"\d+", r"[a-z]+"],
+            "val": ["NUM", "ALPHA"],
+        }
+    )
+    q = df.lazy().select(pl.col("foo").str.replace(pl.col("pat"), pl.col("val")))
+    expected = pl.DataFrame({"foo": ["abcNUM", "ALPHA456"]})
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def test_str_replace_broadcast_with_nulls_26789() -> None:
+    df = pl.DataFrame(
+        {"foo": ["abc", "def", None], "pat": ["a", None, "d"], "val": ["X", "Y", "Z"]}
+    )
+    result = df.select(pl.col("foo").str.replace(pl.col("pat"), pl.col("val")))
+    expected = pl.DataFrame({"foo": ["Xbc", "def", None]})
+    assert_frame_equal(result, expected)
+
+
+def test_str_replace_broadcast_null_val_preserves_26789() -> None:
+    df = pl.DataFrame({"foo": ["abc", "def"], "val": [None, "X"]})
+    q = df.lazy().select(pl.col("foo").str.replace(pl.lit("d"), pl.col("val")))
+    expected = pl.DataFrame({"foo": ["abc", "Xef"]})
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def test_str_replace_broadcast_no_match_26789() -> None:
+    df = pl.DataFrame(
+        {"foo": ["hello", "world"], "pat": ["zzz", "qqq"], "val": ["X", "Y"]}
+    )
+    q = df.lazy().select(pl.col("foo").str.replace(pl.col("pat"), pl.col("val")))
+    expected = pl.DataFrame({"foo": ["hello", "world"]})
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def test_str_replace_broadcast_empty_strings_26789() -> None:
+    df = pl.DataFrame(
+        {"foo": ["", "abc", ""], "pat": ["", "a", "x"], "val": ["Y", "Z", "W"]}
+    )
+    q = df.lazy().select(pl.col("foo").str.replace(pl.col("pat"), pl.col("val")))
+    expected = pl.DataFrame({"foo": ["Y", "Zbc", ""]})
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def test_str_replace_all_broadcast_regex_26789() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["abc123abc", "def456def"],
+            "pat": [r"\d+", r"[a-z]+"],
+            "val": ["N", "A"],
+        }
+    )
+    q = df.lazy().select(pl.col("foo").str.replace_all(pl.col("pat"), pl.col("val")))
+    expected = pl.DataFrame({"foo": ["abcNabc", "A456A"]})
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def test_str_replace_all_scalar_pat_column_val_26789() -> None:
+    df = pl.DataFrame({"foo": ["aXa", "bXb"], "val": ["1", "2"]})
+    q = df.lazy().select(pl.col("foo").str.replace_all(pl.lit("X"), pl.col("val")))
+    expected = pl.DataFrame({"foo": ["a1a", "b2b"]})
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(engine="streaming"), expected)
