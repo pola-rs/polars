@@ -2874,6 +2874,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3512,6 +3518,7 @@ dependencies = [
  "rayon",
  "recursive",
  "serde_json",
+ "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "uuid",
  "version_check",
@@ -5029,6 +5036,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.116",
+]
+
+[[package]]
+name = "tikv-jemalloc-ctl"
+version = "0.6.0"
+source = "git+https://github.com/pola-rs/jemallocator?rev=c7991e5bb6b3e9f79db6b0f48dcda67c5c3d2936#c7991e5bb6b3e9f79db6b0f48dcda67c5c3d2936"
+dependencies = [
+ "libc",
+ "paste",
+ "tikv-jemalloc-sys",
 ]
 
 [[package]]

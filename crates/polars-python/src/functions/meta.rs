@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+
 use polars_core::POOL;
 use polars_core::fmt::FloatFmt;
 use polars_core::prelude::IDX_DTYPE;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
@@ -94,4 +96,34 @@ pub fn set_trim_decimal_zeros(trim: Option<bool>) -> PyResult<()> {
 pub fn get_trim_decimal_zeros() -> PyResult<Option<bool>> {
     use polars_core::fmt::get_trim_decimal_zeros;
     Ok(Some(get_trim_decimal_zeros()))
+}
+
+#[cfg(all(
+    not(feature = "default_alloc"),
+    target_family = "unix",
+    not(target_os = "emscripten"),
+))]
+#[pyfunction]
+pub fn jemalloc_stats() -> PyResult<HashMap<&'static str, usize>> {
+    use tikv_jemalloc_ctl::{epoch, stats};
+
+    epoch::advance().map_err(|e| PyRuntimeError::new_err(format!("jemalloc epoch advance: {e}")))?;
+
+    let mut map = HashMap::new();
+    map.insert("allocated", stats::allocated::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?);
+    map.insert("active", stats::active::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?);
+    map.insert("resident", stats::resident::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?);
+    map.insert("mapped", stats::mapped::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?);
+    map.insert("retained", stats::retained::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?);
+    Ok(map)
+}
+
+#[cfg(not(all(
+    not(feature = "default_alloc"),
+    target_family = "unix",
+    not(target_os = "emscripten"),
+)))]
+#[pyfunction]
+pub fn jemalloc_stats() -> PyResult<HashMap<&'static str, usize>> {
+    Err(PyRuntimeError::new_err("jemalloc is not available on this platform"))
 }
