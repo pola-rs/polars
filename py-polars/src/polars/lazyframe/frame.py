@@ -3206,7 +3206,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         stream = self.collect_batches(
             engine="streaming",
-            maintain_order=True,
+            maintain_order=False,
             chunk_size=None,
             lazy=True,
             optimizations=optimizations,
