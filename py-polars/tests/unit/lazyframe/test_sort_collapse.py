@@ -11,7 +11,7 @@ from polars.testing.parametric.strategies.core import dataframes
 @pytest.mark.parametrize("mo1", [False, True])
 @pytest.mark.parametrize("mo2", [False, True])
 @given(df=dataframes(min_cols=2, max_cols=2))
-def test_sort_node_coalescence(
+def test_sort_node_collapse(
     df: pl.DataFrame, mo1: bool, mo2: bool, key1: str, key2: str
 ) -> None:
     q = (
@@ -41,7 +41,7 @@ def test_sort_node_coalescence(
 
 
 @pytest.mark.parametrize("mo1", [False, True])
-def test_sort_node_coalescence_multiple(mo1: bool) -> None:
+def test_sort_node_collapse_multiple(mo1: bool) -> None:
     df = pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4]})
     for q in [
         df.lazy().sort("a", "b", maintain_order=mo1).sort("a", maintain_order=True),

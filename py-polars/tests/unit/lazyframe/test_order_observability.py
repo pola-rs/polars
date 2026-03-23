@@ -414,6 +414,9 @@ def test_group_by_key_sensitivity(
 def test_sort_key_sensitivity(expr: pl.Expr, is_ordered: bool) -> None:
     lf = pl.LazyFrame({"a": [2, 2, 1, 3], "b": ["A", "B", "C", "D"]}).sort(pl.all())
     q = lf.sort(expr)
+    print()
+    print(q.explain())
+    print()
     assert (q.explain().count("SORT BY") == 2) is is_ordered
     assert_frame_equal(q.collect(), lf.sort("a").collect())
 

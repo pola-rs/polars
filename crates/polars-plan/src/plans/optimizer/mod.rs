@@ -19,13 +19,13 @@ pub(crate) use join_utils::ExprOrigin;
 mod expand_datasets;
 #[cfg(feature = "python")]
 pub use expand_datasets::ExpandedPythonScan;
+mod collapse_sort;
 mod predicate_pushdown;
 mod projection_pushdown;
 pub mod set_order;
 mod simplify_expr;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
-mod sort_combine;
 mod sortedness;
 mod stack_opt;
 
@@ -156,8 +156,6 @@ pub fn optimize(
         };
     }
 
-    rules.push(Box::new(sort_combine::SortCombine {}));
-
     // Run before slice pushdown
     if opt_flags.simplify_expr() {
         #[cfg(feature = "fused")]
@@ -228,6 +226,10 @@ pub fn optimize(
         rules.push(Box::new(SimpleProjectionAndCollapse::new(
             opt_flags.eager(),
         )));
+    }
+
+    if !opt_flags.eager() {
+        rules.push(Box::new(collapse_sort::CollapseSort {}));
     }
 
     if !opt_flags.eager() {
