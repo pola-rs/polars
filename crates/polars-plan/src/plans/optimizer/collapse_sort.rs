@@ -9,6 +9,10 @@ use crate::prelude::*;
 pub struct CollapseSort {}
 
 impl OptimizationRule for CollapseSort {
+    /// Try to collapse multiple consecutive Sort nodes into one; or prune it
+    /// altogether if we can determine that a Sort node is redundant; or push
+    /// projections nodes down through sort nodes, so that the sort nodes will
+    /// operate on less data.
     fn optimize_plan(
         &mut self,
         lp_arena: &mut Arena<IR>,
