@@ -9192,7 +9192,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Run a query on a cloud instance.
 
         >>> lf = pl.LazyFrame([1, 2, 3]).sum()
-        >>> in_progress = lf.remote().collect()  # doctest: +SKIP
+        >>> in_progress = lf.remote().execute(blocking=False)  # doctest: +SKIP
         >>> # do some other work
         >>> in_progress.await_result()  # doctest: +SKIP
         shape: (1, 1)
@@ -9209,8 +9209,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = (
         ...     pl.scan_parquet("s3://my_bucket/").group_by("key").agg(pl.sum("values"))
         ... )
-        >>> in_progress = lf.remote().distributed().collect()  # doctest: +SKIP
-        >>> in_progress.await_result()  # doctest: +SKIP
+        >>> in_progress = lf.remote().distributed().execute()  # doctest: +SKIP
         shape: (1, 1)
         ┌──────────┐
         │ column_0 │

@@ -19,5 +19,5 @@ query = (
     .distributed()
     .execute()
 )
-print(query.await_result())
+print(query)
 ```
