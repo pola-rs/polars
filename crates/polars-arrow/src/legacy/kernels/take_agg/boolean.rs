@@ -2,7 +2,7 @@
 use super::*;
 
 /// Take kernel for single chunk and an iterator as index.
-/// Returns the position of the minimum value within the group.
+/// Returns the position of the minimum value within the iterator.
 /// # Safety
 /// caller must ensure iterators indexes are in bounds
 #[inline]
@@ -18,16 +18,14 @@ pub unsafe fn take_arg_min_bool_iter_unchecked_nulls<I: IntoIterator<Item = usiz
             if !arr.value_unchecked(idx) {
                 return Some(pos);
             }
-            if first_non_null_pos.is_none() {
-                first_non_null_pos = Some(pos);
-            }
+            first_non_null_pos.get_or_insert(pos);
         }
     }
     first_non_null_pos
 }
 
 /// Take kernel for single chunk and an iterator as index.
-/// Returns the position of the minimum value within the group.
+/// Returns the position of the minimum value within the iterator.
 /// # Safety
 /// caller must ensure iterators indexes are in bounds
 #[inline]
@@ -39,16 +37,16 @@ pub unsafe fn take_arg_min_bool_iter_unchecked_no_nulls<I: IntoIterator<Item = u
         return None;
     }
 
-    for (pos, idx) in indices.into_iter().enumerate() {
-        if !arr.value_unchecked(idx) {
-            return Some(pos);
-        }
-    }
-    Some(0)
+    Some(
+        indices
+            .into_iter()
+            .position(|idx| !arr.value_unchecked(idx))
+            .unwrap_or(0),
+    )
 }
 
 /// Take kernel for single chunk and an iterator as index.
-/// Returns the position of the maximum value within the group.
+/// Returns the position of the maximum value within the iterator.
 /// # Safety
 /// caller must ensure iterators indexes are in bounds
 #[inline]
@@ -64,16 +62,14 @@ pub unsafe fn take_arg_max_bool_iter_unchecked_nulls<I: IntoIterator<Item = usiz
             if arr.value_unchecked(idx) {
                 return Some(pos);
             }
-            if first_non_null_pos.is_none() {
-                first_non_null_pos = Some(pos);
-            }
+            first_non_null_pos.get_or_insert(pos);
         }
     }
     first_non_null_pos
 }
 
 /// Take kernel for single chunk and an iterator as index.
-/// Returns the position of the maximum value within the group.
+/// Returns the position of the maximum value within the iterator.
 /// # Safety
 /// caller must ensure iterators indexes are in bounds
 #[inline]
@@ -85,10 +81,10 @@ pub unsafe fn take_arg_max_bool_iter_unchecked_no_nulls<I: IntoIterator<Item = u
         return None;
     }
 
-    for (pos, idx) in indices.into_iter().enumerate() {
-        if arr.value_unchecked(idx) {
-            return Some(pos);
-        }
-    }
-    Some(0)
+    Some(
+        indices
+            .into_iter()
+            .position(|idx| arr.value_unchecked(idx))
+            .unwrap_or(0),
+    )
 }
