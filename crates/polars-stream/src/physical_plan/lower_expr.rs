@@ -1773,6 +1773,7 @@ fn lower_exprs_with_ctx(
                 let unnest_fn = FunctionIR::Unnest {
                     columns: Arc::new([out_name.clone()]),
                     separator: Some(separator.clone()),
+                    max_depth: Some(1),
                 };
                 let input_schema = stream.output_schema(ctx.phys_sm).clone();
                 let output_schema = unnest_fn.schema(&input_schema)?.into_owned();

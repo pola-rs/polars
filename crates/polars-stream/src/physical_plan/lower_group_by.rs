@@ -1161,8 +1161,9 @@ pub fn try_build_sorted_group_by(
                 output_schema.clone(),
                 PhysNodeKind::Map {
                     input,
-                    map: Arc::new(move |df: DataFrame| df.unnest([input_column.clone()], None))
-                        as _,
+                    map: Arc::new(move |df: DataFrame| {
+                        df.unnest([input_column.clone()], None, Some(1))
+                    }) as _,
                     format_str: ctx.prepare_visualization.then(|| "UNNEST".to_string()),
                 },
             )));
