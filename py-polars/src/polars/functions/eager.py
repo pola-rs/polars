@@ -602,6 +602,79 @@ def union(
     return out
 
 
+def merge_sorted(items: Iterable[PolarsType], key: str) -> PolarsType:
+    """
+    Merge multiple sorted DataFrames or LazyFrames by the sorted key.
+
+    The output of this operation will also be sorted.
+    It is the callers responsibility that the frames
+    are sorted in ascending order by that key otherwise
+    the output will not make sense.
+
+    Parameters
+    ----------
+    items
+        DataFrames or LazyFrames to merge.
+    key
+        Key that is sorted.
+
+    Examples
+    --------
+    >>> df0 = pl.DataFrame(
+    ...     {"name": ["steve", "elise", "bob"], "age": [42, 44, 18]}
+    ... ).sort("age")
+    >>> df1 = pl.DataFrame(
+    ...     {"name": ["anna", "megan", "steve", "thomas"], "age": [21, 33, 17, 20]}
+    ... ).sort("age")
+    >>> df2 = pl.DataFrame({"name": ["ida", "maya"], "age": [37, 27]}).sort("age")
+    >>> pl.merge_sorted([df0, df1, df2], key="age")
+    shape: (9, 2)
+    ┌────────┬─────┐
+    │ name   ┆ age │
+    │ ---    ┆ --- │
+    │ str    ┆ i64 │
+    ╞════════╪═════╡
+    │ steve  ┆ 17  │
+    │ bob    ┆ 18  │
+    │ thomas ┆ 20  │
+    │ anna   ┆ 21  │
+    │ maya   ┆ 27  │
+    │ megan  ┆ 33  │
+    │ ida    ┆ 37  │
+    │ steve  ┆ 42  │
+    │ elise  ┆ 44  │
+    └────────┴─────┘
+
+
+    Notes
+    -----
+    No guarantee is given over the output row order when the key is equal
+    between dataframes.
+
+    The key must be sorted in ascending order.
+    """
+    elems = list(items)
+
+    if not elems:
+        msg = "cannot merge_sort empty list"
+        raise ValueError(msg)
+    if len(elems) == 1 and isinstance(elems[0], (pl.DataFrame, pl.LazyFrame)):
+        return elems[0]
+
+    if not isinstance(elems[0], (pl.DataFrame, pl.LazyFrame)):
+        msg = f"merge_sorted is not supported for {qualified_type_name(elems[0])!r}"
+        raise TypeError(msg)
+
+    frames = [df.lazy() for df in elems]
+
+    def reduce_fn(x: pl.LazyFrame, y: pl.LazyFrame) -> pl.LazyFrame:
+        return x.merge_sorted(y, key=key)
+
+    lf = _balanced_reduce(frames, reduce_fn)
+    eager = isinstance(elems[0], pl.DataFrame)
+    return lf.collect() if eager else lf  # type: ignore[return-value]
+
+
 def _alignment_join(
     *idx_frames: tuple[int, LazyFrame],
     align_on: list[str],
