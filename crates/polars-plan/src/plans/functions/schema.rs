@@ -45,26 +45,52 @@ impl FunctionIR {
                 Ok(Cow::Owned(Arc::new(schema)))
             },
             Rechunk => Ok(Cow::Borrowed(input_schema)),
-            Unnest { columns, separator } => {
+            Unnest {
+                columns,
+                separator,
+                recursive,
+            } => {
                 #[cfg(feature = "dtype-struct")]
                 {
+                    fn unnest_fields(
+                        flds: &[Field],
+                        prefix: &str,
+                        separator: Option<&str>,
+                        recursive: bool,
+                        schema: &mut Schema,
+                    ) {
+                        for fld in flds {
+                            let fld_name = match separator {
+                                None => fld.name().clone(),
+                                Some(sep) => {
+                                    polars_utils::format_pl_smallstr!("{prefix}{sep}{}", fld.name())
+                                },
+                            };
+
+                            if recursive {
+                                if let DataType::Struct(inner_flds) = fld.dtype() {
+                                    unnest_fields(
+                                        inner_flds, &fld_name, separator, recursive, schema,
+                                    );
+                                    continue;
+                                }
+                            }
+                            schema.with_column(fld_name, fld.dtype().clone());
+                        }
+                    }
+
                     let mut new_schema = Schema::with_capacity(input_schema.len() * 2);
                     for (name, dtype) in input_schema.iter() {
                         if columns.iter().any(|item| item == name) {
                             match dtype {
                                 DataType::Struct(flds) => {
-                                    for fld in flds {
-                                        let fld_name = match separator {
-                                            None => fld.name().clone(),
-                                            Some(sep) => {
-                                                polars_utils::format_pl_smallstr!(
-                                                    "{name}{sep}{}",
-                                                    fld.name()
-                                                )
-                                            },
-                                        };
-                                        new_schema.with_column(fld_name, fld.dtype().clone());
-                                    }
+                                    unnest_fields(
+                                        flds,
+                                        name,
+                                        separator.as_ref().map(|s| s.as_str()),
+                                        *recursive,
+                                        &mut new_schema,
+                                    );
                                 },
                                 DataType::Unknown(_) => {
                                     // pass through unknown

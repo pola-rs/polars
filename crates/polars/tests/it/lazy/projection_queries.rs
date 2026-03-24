@@ -160,7 +160,7 @@ fn test_unnest_pushdown() -> PolarsResult<()> {
                 keep_nulls: true,
             },
         )
-        .unnest(by_name(["users"], true, false), None)
+        .unnest(by_name(["users"], true, false), None, false)
         .select([col("email")])
         .collect()?;
 

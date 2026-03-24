@@ -525,6 +525,7 @@ impl PredicatePushDown {
                         FunctionIR::Unnest {
                             columns,
                             separator: _,
+                            recursive: _,
                         } => {
                             let exclude = columns.iter().cloned().collect::<PlHashSet<_>>();
 

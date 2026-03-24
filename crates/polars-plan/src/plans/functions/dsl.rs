@@ -48,6 +48,7 @@ pub enum DslFunction {
     Unnest {
         columns: Selector,
         separator: Option<PlSmallStr>,
+        recursive: bool,
     },
     Stats(StatsFunction),
     /// FillValue
@@ -148,7 +149,11 @@ impl DslFunction {
                     schema: Default::default(),
                 }
             },
-            DslFunction::Unnest { columns, separator } => {
+            DslFunction::Unnest {
+                columns,
+                separator,
+                recursive,
+            } => {
                 let columns = columns.into_columns(input_schema, &Default::default())?;
                 let columns: Arc<[PlSmallStr]> = columns.into_iter().collect();
                 for col in columns.iter() {
@@ -158,7 +163,11 @@ impl DslFunction {
                         InvalidOperation: "invalid dtype: expected 'Struct', got '{:?}' for '{}'", dtype, col
                     );
                 }
-                FunctionIR::Unnest { columns, separator }
+                FunctionIR::Unnest {
+                    columns,
+                    separator,
+                    recursive,
+                }
             },
             DslFunction::Hint(h) => FunctionIR::Hint(h),
             #[cfg(feature = "python")]

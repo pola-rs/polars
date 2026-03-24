@@ -49,6 +49,7 @@ pub enum FunctionIR {
     Unnest {
         columns: Arc<[PlSmallStr]>,
         separator: Option<PlSmallStr>,
+        recursive: bool,
     },
     Rechunk,
     Explode {
@@ -102,9 +103,14 @@ impl Hash for FunctionIR {
                 scan_type.hash(state);
                 alias.hash(state);
             },
-            FunctionIR::Unnest { columns, separator } => {
+            FunctionIR::Unnest {
+                columns,
+                separator,
+                recursive,
+            } => {
                 columns.hash(state);
                 separator.hash(state);
+                recursive.hash(state);
             },
             FunctionIR::Rechunk => {},
             FunctionIR::Explode {
@@ -214,10 +220,14 @@ impl FunctionIR {
                 df.rechunk_mut_par();
                 Ok(df)
             },
-            Unnest { columns, separator } => {
+            Unnest {
+                columns,
+                separator,
+                recursive,
+            } => {
                 feature_gated!(
                     "dtype-struct",
-                    df.unnest(columns.iter().cloned(), separator.as_deref())
+                    df.unnest(columns.iter().cloned(), separator.as_deref(), *recursive)
                 )
             },
             Explode {
@@ -317,12 +327,19 @@ impl Display for FunctionIR {
                 write!(f, "hint.{hint}")
             },
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
-            Unnest { columns, separator } => {
+            Unnest {
+                columns,
+                separator,
+                recursive,
+            } => {
                 write!(f, "UNNEST by:")?;
                 let columns = columns.as_ref();
                 fmt_column_delimited(f, columns, "[", "]")?;
                 if let Some(separator) = separator {
                     write!(f, ", separator: {separator}")?;
+                }
+                if *recursive {
+                    write!(f, ", recursive: true")?;
                 }
                 Ok(())
             },

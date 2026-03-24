@@ -1871,3 +1871,35 @@ def test_join_struct_error_lazy_26276() -> None:
 
     with pytest.raises(pl.exceptions.SchemaError, match=r"struct \{.*\}"):
         lhs.join(rhs, on="x").collect()
+
+
+def test_unnest_recursive_12353() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [{"foo": {"a": 1, "b": 2}}, {"foo": {"a": 3, "b": 4}}],
+            "y": [{"bar": {"a": 5, "b": 6}}, {"bar": {"a": 7, "b": 8}}],
+        }
+    )
+
+    # Test recursive unnest on single column
+    result = df.unnest("x", separator=".", recursive=True)
+    assert result.columns == ["x.foo.a", "x.foo.b", "y"]
+    assert result["x.foo.a"].to_list() == [1, 3]
+    assert result["x.foo.b"].to_list() == [2, 4]
+
+    # Test recursive unnest on all columns
+    result = df.unnest("x", "y", separator=".", recursive=True)
+    assert result.columns == ["x.foo.a", "x.foo.b", "y.bar.a", "y.bar.b"]
+    assert result["x.foo.a"].to_list() == [1, 3]
+    assert result["y.bar.a"].to_list() == [5, 7]
+
+
+def test_unnest_recursive_deeply_nested() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [{"a": {"b": {"c": 1}}}],
+        }
+    )
+    result = df.unnest("x", recursive=True)
+    assert result.columns == ["c"]
+    assert result["c"].to_list() == [1]

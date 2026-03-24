@@ -1489,11 +1489,15 @@ impl PyLazyFrame {
         Ok(schema_dict)
     }
 
-    fn unnest(&self, columns: PySelector, separator: Option<&str>) -> Self {
+    fn unnest(&self, columns: PySelector, separator: Option<&str>, recursive: bool) -> Self {
         self.ldf
             .read()
             .clone()
-            .unnest(columns.inner, separator.map(PlSmallStr::from_str))
+            .unnest(
+                columns.inner,
+                separator.map(PlSmallStr::from_str),
+                recursive,
+            )
             .into()
     }
 

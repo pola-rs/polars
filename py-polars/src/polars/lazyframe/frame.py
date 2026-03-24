@@ -8634,6 +8634,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
         separator: str | None = None,
+        recursive: bool = False,
     ) -> LazyFrame:
         """
         Decompose struct columns into separate columns for each of their fields.
@@ -8650,6 +8651,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         separator
             Rename output column names as combination of the struct column name,
             name separator and field name.
+        recursive
+            If True, recursively unnest nested struct columns.
 
         Examples
         --------
@@ -8707,11 +8710,31 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ foo    ┆ 1    ┆ a    ┆ true ┆ [1, 2]    ┆ baz   │
         │ bar    ┆ 2    ┆ b    ┆ null ┆ [3]       ┆ womp  │
         └────────┴──────┴──────┴──────┴───────────┴───────┘
+
+        Use ``recursive=True`` to unnest nested struct columns:
+
+        >>> df = pl.LazyFrame(
+        ...     {
+        ...         "x": [{"foo": {"a": 1, "b": 2}}, {"foo": {"a": 3, "b": 4}}],
+        ...     }
+        ... )
+        >>> df.unnest("x", separator=".", recursive=True).collect()
+        shape: (2, 2)
+        ┌─────────┬─────────┐
+        │ x.foo.a ┆ x.foo.b │
+        │ ---     ┆ ---     │
+        │ i64     ┆ i64     │
+        ╞═════════╪═════════╡
+        │ 1       ┆ 2       │
+        │ 3       ┆ 4       │
+        └─────────┴─────────┘
         """
         subset = parse_list_into_selector(columns) | parse_list_into_selector(
             more_columns
         )
-        return self._from_pyldf(self._ldf.unnest(subset._pyselector, separator))
+        return self._from_pyldf(
+            self._ldf.unnest(subset._pyselector, separator, recursive)
+        )
 
     def merge_sorted(self, other: LazyFrame, key: str) -> LazyFrame:
         """

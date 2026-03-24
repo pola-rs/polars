@@ -2628,8 +2628,13 @@ impl DataFrame {
         &self,
         cols: impl IntoIterator<Item = impl Into<PlSmallStr>>,
         separator: Option<&str>,
+        recursive: bool,
     ) -> PolarsResult<DataFrame> {
-        self.unnest_impl(cols.into_iter().map(Into::into).collect(), separator)
+        self.unnest_impl(
+            cols.into_iter().map(Into::into).collect(),
+            separator,
+            recursive,
+        )
     }
 
     #[cfg(feature = "dtype-struct")]
@@ -2637,23 +2642,47 @@ impl DataFrame {
         &self,
         cols: PlHashSet<PlSmallStr>,
         separator: Option<&str>,
+        recursive: bool,
     ) -> PolarsResult<DataFrame> {
+        fn unnest_series(
+            s: &Series,
+            prefix: &str,
+            separator: Option<&str>,
+            recursive: bool,
+            out: &mut Vec<Column>,
+        ) {
+            if let Ok(ca) = s.struct_() {
+                for f in ca.fields_as_series() {
+                    let fld_name = match separator {
+                        Some(sep) => {
+                            polars_utils::format_pl_smallstr!("{}{}{}", prefix, sep, f.name())
+                        },
+                        None => f.name().clone(),
+                    };
+
+                    if recursive && f.dtype().is_struct() {
+                        unnest_series(&f, &fld_name, separator, recursive, out);
+                    } else {
+                        let mut f = f;
+                        f.rename(fld_name);
+                        out.push(Column::from(f));
+                    }
+                }
+            }
+        }
+
         let mut new_cols = Vec::with_capacity(std::cmp::min(self.width() * 2, self.width() + 128));
         let mut count = 0;
         for s in self.columns() {
             if cols.contains(s.name()) {
                 let ca = s.struct_()?.clone();
-                new_cols.extend(ca.fields_as_series().into_iter().map(|mut f| {
-                    if let Some(separator) = &separator {
-                        f.rename(polars_utils::format_pl_smallstr!(
-                            "{}{}{}",
-                            s.name(),
-                            separator,
-                            f.name()
-                        ));
-                    }
-                    Column::from(f)
-                }));
+                unnest_series(
+                    &ca.into_series(),
+                    s.name(),
+                    separator,
+                    recursive,
+                    &mut new_cols,
+                );
                 count += 1;
             } else {
                 new_cols.push(s.clone())

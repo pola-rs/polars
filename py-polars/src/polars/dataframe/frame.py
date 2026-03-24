@@ -12294,6 +12294,7 @@ class DataFrame:
         columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
         separator: str | None = None,
+        recursive: bool = False,
     ) -> DataFrame:
         """
         Decompose struct columns into separate columns for each of their fields.
@@ -12310,6 +12311,8 @@ class DataFrame:
         separator
             Rename output column names as combination of the struct column name,
             name separator and field name.
+        recursive
+            If True, recursively unnest nested struct columns.
 
         Examples
         --------
@@ -12367,12 +12370,30 @@ class DataFrame:
         │ foo    ┆ 1    ┆ a    ┆ true ┆ [1, 2]    ┆ baz   │
         │ bar    ┆ 2    ┆ b    ┆ null ┆ [3]       ┆ womp  │
         └────────┴──────┴──────┴──────┴───────────┴───────┘
+
+        Use ``recursive=True`` to unnest nested struct columns:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "x": [{"foo": {"a": 1, "b": 2}}, {"foo": {"a": 3, "b": 4}}],
+        ...     }
+        ... )
+        >>> df.unnest("x", separator=".", recursive=True)
+        shape: (2, 2)
+        ┌─────────┬─────────┐
+        │ x.foo.a ┆ x.foo.b │
+        │ ---     ┆ ---     │
+        │ i64     ┆ i64     │
+        ╞═════════╪═════════╡
+        │ 1       ┆ 2       │
+        │ 3       ┆ 4       │
+        └─────────┴─────────┘
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         return (
             self.lazy()
-            .unnest(columns, *more_columns, separator=separator)
+            .unnest(columns, *more_columns, separator=separator, recursive=recursive)
             .collect(optimizations=QueryOptFlags._eager())
         )
 
