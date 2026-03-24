@@ -48,7 +48,7 @@ pub fn jemalloc_stats(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     not(target_os = "emscripten"),
 )))]
 #[pyfunction]
-pub fn jemalloc_stats() -> PyResult<Bound<'_, PyDict>> {
+pub fn jemalloc_stats(_py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     Err(PyRuntimeError::new_err(
         "jemalloc is not available on this platform",
     ))
@@ -66,8 +66,8 @@ use std::ffi::{c_char, c_void};
 
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::ffi::PyCapsule_New;
-use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use pyo3::{pyfunction, Bound, PyAny, PyResult, Python};
 
 unsafe extern "C" fn alloc(size: usize, align: usize) -> *mut u8 {
     unsafe { std::alloc::alloc(Layout::from_size_align_unchecked(size, align)) }
