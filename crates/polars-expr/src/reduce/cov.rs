@@ -291,7 +291,7 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
         let ca: Float64Chunked = v
             .into_iter()
             .map(|s| {
-                if s.weight() < 2.0 {
+                if s.weight() == 0.0 {
                     None
                 } else {
                     Some(s.finalize())
