@@ -14,6 +14,7 @@ from polars.testing.parametric.strategies import column, dataframes
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from polars._typing import UniqueKeepStrategy
     from tests.conftest import PlMonkeyPatch
 
 pytestmark = pytest.mark.xdist_group("streaming")
@@ -80,11 +81,22 @@ def test_streaming_unique_list_of_struct_with_decimal_26505() -> None:
     df=dataframes(cols=[column("key")]), descending=booleans(), nulls_last=booleans()
 )
 @pytest.mark.parametrize("maintain_order", [False, True])
+@pytest.mark.parametrize("keep", ["any", "first"])
 def test_sorted_streaming_unique_vs_in_memory(
-    df: pl.DataFrame, descending: bool, nulls_last: bool, maintain_order: bool
+    df: pl.DataFrame,
+    descending: bool,
+    nulls_last: bool,
+    maintain_order: bool,
+    keep: UniqueKeepStrategy,
 ) -> None:
     df = df.sort("key", descending=descending, nulls_last=nulls_last)
-    lf = df.lazy().unique("key", maintain_order=maintain_order)
+    lf = (
+        df.lazy()
+        .set_sorted("key", descending=descending, nulls_last=nulls_last)
+        .unique("key", keep=keep, maintain_order=maintain_order)
+    )
+    dot = lf.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "sorted-unique" in dot
 
     assert_frame_equal(
         lf.collect(engine="streaming"),
@@ -99,11 +111,22 @@ def test_sorted_streaming_unique_vs_in_memory(
     nulls_last=booleans(),
 )
 @pytest.mark.parametrize("maintain_order", [False, True])
+@pytest.mark.parametrize("keep", ["any", "first"])
 def test_sorted_streaming_unique_vs_in_memory_multikey(
-    df: pl.DataFrame, descending: bool, nulls_last: bool, maintain_order: bool
+    df: pl.DataFrame,
+    descending: bool,
+    nulls_last: bool,
+    maintain_order: bool,
+    keep: UniqueKeepStrategy,
 ) -> None:
     df = df.sort(["key1", "key2"], descending=descending, nulls_last=nulls_last)
-    lf = df.lazy().unique(["key1", "key2"], maintain_order=maintain_order)
+    lf = (
+        df.lazy()
+        .set_sorted(["key1", "key2"], descending=descending, nulls_last=nulls_last)
+        .unique(["key1", "key2"], keep=keep, maintain_order=maintain_order)
+    )
+    dot = lf.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "sorted-unique" in dot
 
     assert_frame_equal(
         lf.collect(engine="streaming"),
