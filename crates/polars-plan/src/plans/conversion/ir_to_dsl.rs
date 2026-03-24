@@ -1014,7 +1014,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 FusedOperator::MultiplySub => (fst * snd) - trd,
             };
         },
-        IF::ConcatExpr { rechunk } => F::ConcatExpr { rechunk },
+        IF::ConcatExpr { rechunk } => F::ConcatExpr(rechunk),
         #[cfg(feature = "cov")]
         IF::Correlation { method } => {
             use {CorrelationMethod as C, IRCorrelationMethod as IC};

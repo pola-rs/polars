@@ -910,7 +910,7 @@ pub(super) fn convert_functions(
                 field.name,
             ));
         },
-        F::ConcatExpr { rechunk } => I::ConcatExpr { rechunk },
+        F::ConcatExpr(rechunk) => I::ConcatExpr { rechunk },
         #[cfg(feature = "cov")]
         F::Correlation { method } => {
             use {CorrelationMethod as C, IRCorrelationMethod as IC};
