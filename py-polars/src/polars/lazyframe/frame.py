@@ -9209,7 +9209,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = (
         ...     pl.scan_parquet("s3://my_bucket/").group_by("key").agg(pl.sum("values"))
         ... )
-        >>> in_progress = lf.remote().distributed().execute()  # doctest: +SKIP
+        >>> result = lf.remote().distributed().execute()  # doctest: +SKIP
         shape: (1, 1)
         ┌──────────┐
         │ column_0 │
