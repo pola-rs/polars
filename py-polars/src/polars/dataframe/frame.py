@@ -12130,6 +12130,47 @@ class DataFrame:
             df._df.shrink_to_fit()
             return df
 
+    def gather(
+        self,
+        indices: int | Sequence[int] | Series | np.ndarray[Any, Any],
+    ) -> DataFrame:
+        """
+        Take rows at the given indices.
+
+        Parameters
+        ----------
+        indices
+            Row indices to gather.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+        >>> df.gather([0, 2])
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 5   │
+        │ 3   ┆ 7   │
+        └─────┴─────┘
+
+        Negative indices are also supported:
+
+        >>> df.gather([0, -1])
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 5   │
+        │ 4   ┆ 8   │
+        └─────┴─────┘
+        """
+        return self.select(F.col("*").gather(indices))
+
     def gather_every(self, n: int, offset: int = 0) -> DataFrame:
         """
         Take every nth row in the DataFrame and return as a new DataFrame.

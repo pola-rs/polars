@@ -472,3 +472,31 @@ def test_get_typed_index_default_raises_out_of_bounds(idx_dtype: pl.DataType) ->
 
     with pytest.raises(OutOfBoundsError, match="gather indices are out of bounds"):
         df.select(pl.col("value").get(pl.lit(5, dtype=idx_dtype)))
+
+
+def test_dataframe_gather() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+
+    # Test with list
+    result = df.gather([0, 2])
+    expected = pl.DataFrame({"a": [1, 3], "b": [5, 7]})
+    assert_frame_equal(result, expected)
+
+    # Test with negative indices
+    result = df.gather([0, -1])
+    expected = pl.DataFrame({"a": [1, 4], "b": [5, 8]})
+    assert_frame_equal(result, expected)
+
+
+def test_lazyframe_gather() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+
+    # Test with list
+    result = lf.gather([0, 2]).collect()
+    expected = pl.DataFrame({"a": [1, 3], "b": [5, 7]})
+    assert_frame_equal(result, expected)
+
+    # Test with negative indices
+    result = lf.gather([0, -1]).collect()
+    expected = pl.DataFrame({"a": [1, 4], "b": [5, 8]})
+    assert_frame_equal(result, expected)
