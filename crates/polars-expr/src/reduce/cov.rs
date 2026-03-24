@@ -90,23 +90,31 @@ impl GroupedReduction for CovGroupedReduction {
     ) -> PolarsResult<()> {
         assert!(values.len() == 2);
         assert!(subset.len() == group_idxs.len());
-        let sx = values[0].cast(&DataType::Float64)?;
-        let sy = values[1].cast(&DataType::Float64)?;
+        let sx = values[0].take_slice_unchecked(subset).cast(&DataType::Float64)?;
+        let sy = values[1].take_slice_unchecked(subset).cast(&DataType::Float64)?;
         let cx = sx.f64().unwrap();
         let cy = sy.f64().unwrap();
-        // Both must be single-chunk (trait precondition).
         let ax = cx.downcast_as_array();
         let ay = cy.downcast_as_array();
-        for (i, g) in subset.iter().zip(group_idxs) {
-            let vx = ax.get(*i as usize);
-            let vy = ay.get(*i as usize);
-            let grp = self.values.get_unchecked_mut(g.idx());
-            if g.should_evict() {
-                let old = core::mem::take(grp);
-                self.evicted_values.push(old);
+        if ax.has_nulls() || ay.has_nulls() {
+            for ((ox, oy), g) in ax.iter().zip(ay.iter()).zip(group_idxs) {
+                let grp = self.values.get_unchecked_mut(g.idx());
+                if g.should_evict() {
+                    let old = core::mem::take(grp);
+                    self.evicted_values.push(old);
+                }
+                if let (Some(x), Some(y)) = (ox, oy) {
+                    grp.insert_one(*x, *y);
+                }
             }
-            if let (Some(x), Some(y)) = (vx, vy) {
-                grp.insert_one(x, y);
+        } else {
+            for ((x, y), g) in ax.values().iter().zip(ay.values().iter()).zip(group_idxs) {
+                let grp = self.values.get_unchecked_mut(g.idx());
+                if g.should_evict() {
+                    let old = core::mem::take(grp);
+                    self.evicted_values.push(old);
+                }
+                grp.insert_one(*x, *y);
             }
         }
         Ok(())
@@ -224,22 +232,31 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
     ) -> PolarsResult<()> {
         assert!(values.len() == 2);
         assert!(subset.len() == group_idxs.len());
-        let sx = values[0].cast(&DataType::Float64)?;
-        let sy = values[1].cast(&DataType::Float64)?;
+        let sx = values[0].take_slice_unchecked(subset).cast(&DataType::Float64)?;
+        let sy = values[1].take_slice_unchecked(subset).cast(&DataType::Float64)?;
         let cx = sx.f64().unwrap();
         let cy = sy.f64().unwrap();
         let ax = cx.downcast_as_array();
         let ay = cy.downcast_as_array();
-        for (i, g) in subset.iter().zip(group_idxs) {
-            let vx = ax.get(*i as usize);
-            let vy = ay.get(*i as usize);
-            let grp = self.values.get_unchecked_mut(g.idx());
-            if g.should_evict() {
-                let old = core::mem::take(grp);
-                self.evicted_values.push(old);
+        if ax.has_nulls() || ay.has_nulls() {
+            for ((ox, oy), g) in ax.iter().zip(ay.iter()).zip(group_idxs) {
+                let grp = self.values.get_unchecked_mut(g.idx());
+                if g.should_evict() {
+                    let old = core::mem::take(grp);
+                    self.evicted_values.push(old);
+                }
+                if let (Some(x), Some(y)) = (ox, oy) {
+                    grp.insert_one(*x, *y);
+                }
             }
-            if let (Some(x), Some(y)) = (vx, vy) {
-                grp.insert_one(x, y);
+        } else {
+            for ((x, y), g) in ax.values().iter().zip(ay.values().iter()).zip(group_idxs) {
+                let grp = self.values.get_unchecked_mut(g.idx());
+                if g.should_evict() {
+                    let old = core::mem::take(grp);
+                    self.evicted_values.push(old);
+                }
+                grp.insert_one(*x, *y);
             }
         }
         Ok(())
