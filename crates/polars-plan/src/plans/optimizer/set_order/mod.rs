@@ -10,8 +10,8 @@
 //! When the two passes are done, we are left with a map from all nodes to the ordering status of
 //! their inputs.
 
-mod expr_pullup;
-mod expr_pushdown;
+// mod expr_pullup;
+// mod expr_pushdown;
 mod ir_pullup;
 mod ir_pushdown;
 

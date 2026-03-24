@@ -23,6 +23,7 @@ mod predicate_pushdown;
 mod projection_pushdown;
 pub mod set_order;
 mod simplify_expr;
+pub mod simplify_ordering;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod sortedness;
@@ -285,6 +286,7 @@ pub fn optimize(
                             });
                         }
                     }
+                    simplify_ordering::simplify_ir_ordering(&roots, ir_arena, expr_arena);
                     set_order::simplify_and_fetch_orderings(&roots, ir_arena, expr_arena);
                 },
                 ir => {
@@ -295,7 +297,10 @@ pub fn optimize(
                             payload: SinkTypeIR::Memory,
                         });
                     }
-                    _ = set_order::simplify_and_fetch_orderings(&[tmp_top], ir_arena, expr_arena)
+                    _ = {
+                        simplify_ordering::simplify_ir_ordering(&[tmp_top], ir_arena, expr_arena);
+                        set_order::simplify_and_fetch_orderings(&[tmp_top], ir_arena, expr_arena)
+                    }
                 },
             }
         }

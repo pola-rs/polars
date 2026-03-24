@@ -9,16 +9,15 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unique_id::UniqueId;
 
-use super::expr_pushdown::{adjust_for_with_columns_context, resolve_observable_orders, zip};
 use crate::dsl::sink::PartitionStrategyIR;
 use crate::dsl::{SinkTypeIR, UnionOptions};
-use crate::plans::set_order::expr_pushdown::ColumnOrderObserved;
+use crate::plans::simplify_ordering::expr::{ExprOrderSimplifier, ObservableOrders, ZipState};
 use crate::plans::{AExpr, IR, is_scalar_ae};
 
 pub(super) fn pushdown_orders(
     roots: &[Node],
     ir_arena: &mut Arena<IR>,
-    expr_arena: &Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
     outputs: &mut PlHashMap<Node, Vec<(Node, usize)>>,
     cache_proxy: &PlHashMap<UniqueId, Vec<Node>>,
 ) -> PlHashMap<Node, UnitVec<bool>> {
@@ -93,12 +92,32 @@ pub(super) fn pushdown_orders(
                 sort_options,
                 ..
             } => {
-                let is_order_observing = sort_options.maintain_order || {
-                    adjust_for_with_columns_context(zip(by_column
+                let mut zs = ZipState::default();
+                let mut eos = ExprOrderSimplifier::new(None, expr_arena);
+
+                let mut expr_observable_orders =
+                    by_column
                         .iter()
-                        .map(|e| resolve_observable_orders(expr_arena.get(e.node()), expr_arena))))
-                    .is_err()
-                };
+                        .fold(ObservableOrders::empty(), |acc, eir| {
+                            zs.reduce(
+                                acc,
+                                eos.simplify_and_resolve_observable_orderings(
+                                    eir.node(),
+                                    Some(!all_outputs_unordered),
+                                ),
+                            )
+                        });
+                expr_observable_orders =
+                    zs.reduce(expr_observable_orders, ObservableOrders::COLUMN);
+
+                let is_order_observing = sort_options.maintain_order
+                    | zs.saw_mixed_inputs
+                    | eos
+                        .internally_observed_orders()
+                        .contains(ObservableOrders::COLUMN)
+                    | (sort_options.maintain_order
+                        && expr_observable_orders.contains(ObservableOrders::COLUMN));
+
                 [is_order_observing].into()
             },
             IR::GroupBy {
@@ -111,29 +130,41 @@ pub(super) fn pushdown_orders(
             } => {
                 *maintain_order &= !all_outputs_unordered;
 
+                let exprs_observe_column_order = {
+                    {
+                        let mut zs = ZipState::default();
+                        let mut eos = ExprOrderSimplifier::new(None, expr_arena);
+
+                        let mut expr_observable_orders = keys.iter().chain(aggs.iter()).fold(
+                            ObservableOrders::empty(),
+                            |acc, eir| {
+                                zs.reduce(
+                                    acc,
+                                    eos.simplify_and_resolve_observable_orderings(
+                                        eir.node(),
+                                        Some(!all_outputs_unordered),
+                                    ),
+                                )
+                            },
+                        );
+                        expr_observable_orders =
+                            zs.reduce(expr_observable_orders, ObservableOrders::COLUMN);
+
+                        zs.saw_mixed_inputs
+                            | eos
+                                .internally_observed_orders()
+                                .contains(ObservableOrders::COLUMN)
+                            | aggs.iter().any(|agg| !is_scalar_ae(agg.node(), expr_arena))
+                            | ((!all_outputs_unordered && *maintain_order)
+                                && expr_observable_orders.contains(ObservableOrders::COLUMN))
+                    }
+                };
+
                 let is_order_observing = apply.is_some()
                     || options.is_dynamic()
                     || options.is_rolling()
                     || *maintain_order
-                    || {
-                        // _ -> Unordered
-                        //   to
-                        // maintain_order = false
-                        // and
-                        // Unordered -> Unordered (if no order sensitive expressions)
-
-                        let expr_observing = adjust_for_with_columns_context(zip(keys
-                            .iter()
-                            .chain(aggs.iter())
-                            .map(|e| {
-                                resolve_observable_orders(expr_arena.get(e.node()), expr_arena)
-                            })))
-                        .is_err();
-
-                        expr_observing
-                            // The auto-implode is also other sensitive.
-                            || aggs.iter().any(|agg| !is_scalar_ae(agg.node(), expr_arena))
-                    };
+                    || exprs_observe_column_order;
                 [is_order_observing].into()
             },
             #[cfg(feature = "merge_sorted")]
@@ -221,41 +252,60 @@ pub(super) fn pushdown_orders(
             },
             IR::SimpleProjection { .. } => [!all_outputs_unordered].into(),
             IR::Slice { .. } => [true].into(),
-            IR::HStack { input, exprs, .. } => {
-                let input = *input;
-                let mut observing = zip(exprs
-                    .iter()
-                    .map(|e| resolve_observable_orders(expr_arena.get(e.node()), expr_arena)));
+            IR::HStack {
+                input,
+                exprs,
+                schema,
+                ..
+            } => {
+                let mut zs = ZipState::default();
+                let mut eos = ExprOrderSimplifier::new(None, expr_arena);
 
-                let input_schema = ir_arena.get(input).schema(ir_arena).as_ref().clone();
-                ir = ir_arena.get_mut(node);
-                let IR::HStack { exprs, .. } = ir else {
-                    unreachable!()
-                };
+                let mut expr_observable_orders =
+                    exprs.iter().fold(ObservableOrders::empty(), |acc, eir| {
+                        zs.reduce(
+                            acc,
+                            eos.simplify_and_resolve_observable_orderings(
+                                eir.node(),
+                                Some(!all_outputs_unordered),
+                            ),
+                        )
+                    });
 
-                let mut hits = 0;
-                for expr in exprs {
-                    hits += usize::from(input_schema.contains(expr.output_name()));
+                if exprs.len() != schema.len() {
+                    expr_observable_orders =
+                        zs.reduce(expr_observable_orders, ObservableOrders::COLUMN);
                 }
 
-                if hits < input_schema.len() {
-                    observing = adjust_for_with_columns_context(observing);
-                }
+                let is_order_observing = ((zs.saw_mixed_inputs | !all_outputs_unordered)
+                    && expr_observable_orders.contains(ObservableOrders::COLUMN))
+                    | eos
+                        .internally_observed_orders()
+                        .contains(ObservableOrders::COLUMN);
 
-                let is_order_observing = match observing {
-                    Ok(o) => o.column_ordering_observable() && !all_outputs_unordered,
-                    Err(ColumnOrderObserved) => true,
-                };
                 [is_order_observing].into()
             },
             IR::Select { expr: exprs, .. } => {
-                let observing = zip(exprs
-                    .iter()
-                    .map(|e| resolve_observable_orders(expr_arena.get(e.node()), expr_arena)));
-                let is_order_observing = match observing {
-                    Ok(o) => o.column_ordering_observable() && !all_outputs_unordered,
-                    Err(ColumnOrderObserved) => true,
-                };
+                let mut zs = ZipState::default();
+                let mut eos = ExprOrderSimplifier::new(None, expr_arena);
+
+                let mut expr_observable_orders =
+                    exprs.iter().fold(ObservableOrders::empty(), |acc, eir| {
+                        zs.reduce(
+                            acc,
+                            eos.simplify_and_resolve_observable_orderings(
+                                eir.node(),
+                                Some(!all_outputs_unordered),
+                            ),
+                        )
+                    });
+
+                let is_order_observing = ((zs.saw_mixed_inputs || !all_outputs_unordered)
+                    && expr_observable_orders.contains(ObservableOrders::COLUMN))
+                    | eos
+                        .internally_observed_orders()
+                        .contains(ObservableOrders::COLUMN);
+
                 [is_order_observing].into()
             },
 
@@ -263,14 +313,27 @@ pub(super) fn pushdown_orders(
                 input: _,
                 predicate,
             } => {
-                let observing = adjust_for_with_columns_context(resolve_observable_orders(
-                    expr_arena.get(predicate.node()),
-                    expr_arena,
-                ));
-                let is_order_observing = match observing {
-                    Ok(o) => o.column_ordering_observable() && !all_outputs_unordered,
-                    Err(ColumnOrderObserved) => true,
-                };
+                let mut zs = ZipState::default();
+                let mut eos = ExprOrderSimplifier::new(None, expr_arena);
+
+                let mut expr_observable_orders = zs.reduce(
+                    ObservableOrders::empty(),
+                    eos.simplify_and_resolve_observable_orderings(
+                        predicate.node(),
+                        Some(!all_outputs_unordered),
+                    ),
+                );
+
+                expr_observable_orders =
+                    zs.reduce(expr_observable_orders, ObservableOrders::COLUMN);
+
+                let is_order_observing = zs.saw_mixed_inputs
+                    | eos
+                        .internally_observed_orders()
+                        .contains(ObservableOrders::COLUMN)
+                    | (!all_outputs_unordered
+                        && expr_observable_orders.contains(ObservableOrders::COLUMN));
+
                 [is_order_observing].into()
             },
 
@@ -304,10 +367,34 @@ pub(super) fn pushdown_orders(
                                     include_keys: _,
                                     keys_pre_grouped: true,
                                 }
-                            ) || adjust_for_with_columns_context(zip(options.expr_irs_iter().map(
-                                |e| resolve_observable_orders(expr_arena.get(e.node()), expr_arena),
-                            )))
-                            .is_err()
+                            ) || {
+                                let mut zs = ZipState::default();
+                                let mut eos = ExprOrderSimplifier::new(None, expr_arena);
+
+                                let mut expr_observable_orders = options.expr_irs_iter().fold(
+                                    ObservableOrders::empty(),
+                                    |acc, eir| {
+                                        zs.reduce(
+                                            acc,
+                                            eos.simplify_and_resolve_observable_orderings(
+                                                eir.node(),
+                                                Some(!all_outputs_unordered),
+                                            ),
+                                        )
+                                    },
+                                );
+
+                                expr_observable_orders =
+                                    zs.reduce(expr_observable_orders, ObservableOrders::COLUMN);
+
+                                zs.saw_mixed_inputs
+                                    | eos
+                                        .internally_observed_orders()
+                                        .contains(ObservableOrders::COLUMN)
+                                    | (!all_outputs_unordered
+                                        && expr_observable_orders
+                                            .contains(ObservableOrders::COLUMN))
+                            }
                         },
                     };
 

@@ -9,8 +9,8 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unique_id::UniqueId;
 
-use super::expr_pullup::is_output_ordered;
 use crate::dsl::{FileSinkOptions, PartitionedSinkOptionsIR, SinkTypeIR};
+use crate::plans::simplify_ordering::expr::{ExprOrderSimplifier, ObservableOrders, ZipState};
 use crate::plans::{AExpr, IR};
 
 pub(super) fn pullup_orders(
@@ -74,10 +74,15 @@ pub(super) fn pullup_orders(
                     // and
                     // Unordered -> Unordered
 
-                    let keys_produce_order = keys
-                        .iter()
-                        .any(|k| is_output_ordered(expr_arena.get(k.node()), expr_arena, false));
-                    if !keys_produce_order {
+                    let mut eos = ExprOrderSimplifier::new(Some(inputs_ordered[0]), expr_arena);
+
+                    let observable_orders =
+                        keys.iter().fold(ObservableOrders::empty(), |acc, eir| {
+                            acc | eos
+                                .simplify_and_resolve_observable_orderings(eir.node(), Some(true))
+                        });
+
+                    if observable_orders.is_empty() {
                         *maintain_order = false;
                     }
                 }
@@ -171,33 +176,35 @@ pub(super) fn pullup_orders(
             },
 
             IR::Select { expr, .. } => {
-                if !expr.iter().any(|e| {
-                    is_output_ordered(expr_arena.get(e.node()), expr_arena, inputs_ordered[0])
-                }) {
+                let mut eos = ExprOrderSimplifier::new(Some(inputs_ordered[0]), expr_arena);
+
+                let observable_orders = expr.iter().fold(ObservableOrders::empty(), |acc, eir| {
+                    acc | eos.simplify_and_resolve_observable_orderings(eir.node(), Some(true))
+                });
+
+                if observable_orders.is_empty() {
                     set_unordered_output!();
                 }
             },
 
-            IR::HStack { input, .. } => {
-                let input = *input;
-                let input_schema = ir_arena.get(input).schema(ir_arena).as_ref().clone();
-                ir = ir_arena.get_mut(node);
-                let IR::HStack { exprs, .. } = ir else {
-                    unreachable!()
-                };
+            IR::HStack {
+                input,
+                exprs,
+                schema,
+                ..
+            } => {
+                let mut eos = ExprOrderSimplifier::new(Some(inputs_ordered[0]), expr_arena);
 
-                let has_any_ordered_expression = exprs.iter().any(|e| {
-                    is_output_ordered(expr_arena.get(e.node()), expr_arena, inputs_ordered[0])
-                });
-                let only_overwrites_existing_columns = exprs
-                    .iter()
-                    .filter(|e| input_schema.contains(e.output_name()))
-                    .count()
-                    == input_schema.len();
-                let is_output_unordered =
-                    !has_any_ordered_expression && only_overwrites_existing_columns;
+                let mut observable_orders =
+                    exprs.iter().fold(ObservableOrders::empty(), |acc, eir| {
+                        acc | eos.simplify_and_resolve_observable_orderings(eir.node(), Some(true))
+                    });
 
-                if is_output_unordered {
+                if exprs.len() != schema.len() && inputs_ordered[0] {
+                    observable_orders |= ObservableOrders::COLUMN;
+                }
+
+                if observable_orders.is_empty() {
                     set_unordered_output!();
                 }
             },
