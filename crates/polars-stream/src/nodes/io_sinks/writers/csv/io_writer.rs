@@ -1,10 +1,13 @@
+use std::io::Write;
 use std::sync::Arc;
 
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::prelude::{CsvWriterOptions, ExternalCompression, UTF8_BOM, csv_header};
 use polars_io::utils::compression::CompressedWriter;
+#[cfg(feature = "cloud")]
 use polars_io::utils::file::{AsyncDynWriteable, AsyncWriteable};
+#[cfg(feature = "cloud")]
 use tokio::io::AsyncWriteExt as _;
 
 use crate::async_executor;
@@ -25,6 +28,18 @@ pub struct IOWriter {
 
 impl IOWriter {
     pub async fn run(self) -> PolarsResult<()> {
+        #[cfg(feature = "cloud")]
+        {
+            self.run_cloud().await
+        }
+        #[cfg(not(feature = "cloud"))]
+        {
+            self.run_without_cloud().await
+        }
+    }
+
+    #[cfg(feature = "cloud")]
+    async fn run_cloud(self) -> PolarsResult<()> {
         let Self {
             file,
             mut filled_serializer_rx,
@@ -74,6 +89,85 @@ impl IOWriter {
         }
 
         writer.close(sync_on_close).await?;
+
+        Ok(())
+    }
+
+    #[cfg(not(feature = "cloud"))]
+    async fn run_without_cloud(self) -> PolarsResult<()> {
+        let Self {
+            file,
+            mut filled_serializer_rx,
+            reuse_serializer_tx,
+            schema,
+            options,
+        } = self;
+
+        let (mut writable, sync_on_close) = file.await?;
+
+        match options.compression {
+            ExternalCompression::Uncompressed => {
+                let mut w = writable.as_buffered();
+                if options.include_bom {
+                    tokio::task::block_in_place(|| w.write_all(&UTF8_BOM))?;
+                }
+                if options.include_header {
+                    let names: Vec<&str> = schema.iter_names().map(|s| s.as_str()).collect();
+                    let header = csv_header(names.as_slice(), &options.serialize_options)?;
+                    tokio::task::block_in_place(|| w.write_all(&header))?;
+                }
+                while let Some((handle, permit)) = filled_serializer_rx.recv().await {
+                    let mut serializer = handle.await?;
+                    tokio::task::block_in_place(|| w.write_all(&serializer.serialized_data))?;
+                    drop(permit);
+                    let _ = reuse_serializer_tx.send(serializer).await;
+                }
+                drop(w);
+                writable.close(sync_on_close)?;
+            },
+            ExternalCompression::Gzip { level } => {
+                let cw = CompressedWriter::gzip(writable, level);
+                let mut file = polars_io::utils::file::Writeable::Dyn(Box::new(cw));
+                let mut w = file.as_buffered();
+                if options.include_bom {
+                    tokio::task::block_in_place(|| w.write_all(&UTF8_BOM))?;
+                }
+                if options.include_header {
+                    let names: Vec<&str> = schema.iter_names().map(|s| s.as_str()).collect();
+                    let header = csv_header(names.as_slice(), &options.serialize_options)?;
+                    tokio::task::block_in_place(|| w.write_all(&header))?;
+                }
+                while let Some((handle, permit)) = filled_serializer_rx.recv().await {
+                    let mut serializer = handle.await?;
+                    tokio::task::block_in_place(|| w.write_all(&serializer.serialized_data))?;
+                    drop(permit);
+                    let _ = reuse_serializer_tx.send(serializer).await;
+                }
+                drop(w);
+                file.close(sync_on_close)?;
+            },
+            ExternalCompression::Zstd { level } => {
+                let cw = CompressedWriter::zstd(writable, level)?;
+                let mut file = polars_io::utils::file::Writeable::Dyn(Box::new(cw));
+                let mut w = file.as_buffered();
+                if options.include_bom {
+                    tokio::task::block_in_place(|| w.write_all(&UTF8_BOM))?;
+                }
+                if options.include_header {
+                    let names: Vec<&str> = schema.iter_names().map(|s| s.as_str()).collect();
+                    let header = csv_header(names.as_slice(), &options.serialize_options)?;
+                    tokio::task::block_in_place(|| w.write_all(&header))?;
+                }
+                while let Some((handle, permit)) = filled_serializer_rx.recv().await {
+                    let mut serializer = handle.await?;
+                    tokio::task::block_in_place(|| w.write_all(&serializer.serialized_data))?;
+                    drop(permit);
+                    let _ = reuse_serializer_tx.send(serializer).await;
+                }
+                drop(w);
+                file.close(sync_on_close)?;
+            },
+        }
 
         Ok(())
     }
