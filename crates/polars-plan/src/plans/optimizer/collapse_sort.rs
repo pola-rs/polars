@@ -36,7 +36,13 @@ fn try_collapse_sorts(node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr
         input,
         by_column,
         slice,
-        sort_options,
+        sort_options:
+            sort_options @ SortMultipleOptions {
+                descending,
+                nulls_last,
+                maintain_order,
+                ..
+            },
     } = lp_arena.get(node)
     else {
         return None;
@@ -45,13 +51,22 @@ fn try_collapse_sorts(node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr
         input: in_input,
         by_column: in_by_column,
         slice: None,
-        sort_options: in_sort_options,
+        sort_options:
+            SortMultipleOptions {
+                descending: in_descending,
+                nulls_last: in_nulls_last,
+                maintain_order: in_maintain_order,
+                ..
+            },
     } = lp_arena.get(*input)
     else {
         return None;
     };
 
-    if !sort_options.maintain_order {
+    assert!(descending.len() == by_column.len() && nulls_last.len() == by_column.len());
+    assert!(in_descending.len() == in_by_column.len() && in_nulls_last.len() == in_by_column.len());
+
+    if !maintain_order {
         return Some(IR::Sort {
             input: *in_input,
             by_column: by_column.clone(),
@@ -61,19 +76,16 @@ fn try_collapse_sorts(node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr
     }
 
     let mut by_column = by_column.clone();
-    let mut descending = sort_options.descending.clone();
-    let mut nulls_last = sort_options.nulls_last.clone();
-    let in_so_iter = Iterator::zip(
-        in_sort_options.descending.iter(),
-        in_sort_options.nulls_last.iter(),
-    );
+    let mut descending = descending.clone();
+    let mut nulls_last = nulls_last.clone();
+    let in_ordering_iter = Iterator::zip(in_descending.iter(), in_nulls_last.iter());
     let mut l_stack = Default::default();
     let mut r_stack = Default::default();
-    for (by, (d, nl)) in in_by_column.iter().zip(in_so_iter) {
+    for (by, (d, nl)) in in_by_column.iter().zip(in_ordering_iter) {
         let by_node = expr_arena.get(by.node());
-        let expr_is_eq = |x: &ExprIR| {
+        let expr_is_eq = |e: &ExprIR| {
             by_node.is_expr_equal_to_amortized(
-                expr_arena.get(x.node()),
+                expr_arena.get(e.node()),
                 expr_arena,
                 &mut l_stack,
                 &mut r_stack,
@@ -86,11 +98,10 @@ fn try_collapse_sorts(node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr
         }
     }
 
-    let maintain_order = in_sort_options.maintain_order;
     let sort_options = SortMultipleOptions {
         descending,
         nulls_last,
-        maintain_order,
+        maintain_order: *in_maintain_order,
         ..sort_options.clone()
     };
     Some(IR::Sort {
@@ -115,7 +126,7 @@ fn try_prune_sort_with_sortedness(
     else {
         return None;
     };
-    if by_column.iter().any(|e| !expr_arena.get(e.node()).is_col()) {
+    if !by_column.iter().all(|e| expr_arena.get(e.node()).is_col()) {
         return None;
     }
     let by = by_column
@@ -125,16 +136,15 @@ fn try_prune_sort_with_sortedness(
         sort_options.descending.iter(),
         sort_options.nulls_last.iter(),
     );
-    let node_sortedness_props = by.zip(sort_props);
-
+    let node_sortedness = by.zip(sort_props).map(|(col, (d, nl))| Sorted {
+        column: col,
+        descending: Some(*d),
+        nulls_last: Some(*nl),
+    });
     let input_sortedness = is_sorted(*input, lp_arena, expr_arena)?;
-    let input_sortedness_props = input_sortedness
-        .0
-        .iter()
-        .map(|s| (&s.column, s.descending, s.nulls_last));
     let node_sorts_most_columns =
-        prefix_dominance(input_sortedness_props, node_sortedness_props, |n1, n2| {
-            *n1.0 == n2.0 && n1.1 == Some(*n2.1.0) && n1.2 == Some(*n2.1.1)
+        prefix_dominance(input_sortedness.0.iter(), node_sortedness, |n1, n2| {
+            *n1 == n2
         })?;
     if !node_sorts_most_columns {
         return None;
