@@ -2,12 +2,24 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+use polars_core::prelude::DataType;
 use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+use polars_plan::dsl::StrptimeOptions;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
     CastColumnsPolicy, FileSinkOptions, JoinTypeOptionsIR, MissingColumnsPolicy,
@@ -218,6 +230,23 @@ pub enum PhysNodeKind {
 
         /// A formatted explain of what the in-memory map. This usually calls format on the IR.
         format_str: Option<String>,
+    },
+
+    /// Streaming strptime without an explicit format. Phase 1 buffers morsels
+    /// until the first non-null value is found and a format string is inferred.
+    /// Phase 2 applies strptime with the inferred format in parallel.
+    /// Only supports `exact=true` (the default); `exact=false` falls back to InMemoryMap.
+    #[cfg(any(
+        feature = "dtype-date",
+        feature = "dtype-datetime",
+        feature = "dtype-time"
+    ))]
+    StrptimeInfer {
+        input: PhysStream,
+        /// The target dtype (Date / Datetime / Time).
+        dtype: DataType,
+        /// Original strptime options (format is None; the node fills it in).
+        options: StrptimeOptions,
     },
 
     SortedGroupBy {
@@ -514,6 +543,16 @@ fn visit_node_inputs_mut(
 
             #[cfg(feature = "is_first_distinct")]
             PhysNodeKind::IsFirstDistinct { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
+
+            #[cfg(any(
+                feature = "dtype-date",
+                feature = "dtype-datetime",
+                feature = "dtype-time"
+            ))]
+            PhysNodeKind::StrptimeInfer { input, .. } => {
                 rec!(input.node);
                 visit(input);
             },

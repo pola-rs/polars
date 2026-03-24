@@ -397,6 +397,51 @@ pub fn infer_pattern_single(val: &str) -> Option<Pattern> {
         .or_else(|| infer_pattern_datetime_single(val))
 }
 
+/// Given the first non-null string value from a column, return the first
+/// format string from the standard static arrays that successfully parses it
+/// for the target dtype. Mirrors what `to_date`/`to_datetime`/`to_time` infer
+/// for `exact=true`: they find a Pattern then `DatetimeInfer` tries `patterns[0]`
+/// first and scans in order.
+pub fn infer_format_for_dtype(val: &str, dtype: &DataType) -> Option<&'static str> {
+    match dtype {
+        #[cfg(feature = "dtype-date")]
+        DataType::Date => {
+            let pattern = infer_pattern_date_single(val)?;
+            let arr = match pattern {
+                Pattern::DateDMY => patterns::DATE_D_M_Y,
+                Pattern::DateYMD => patterns::DATE_Y_M_D,
+                _ => return None,
+            };
+            arr.iter()
+                .copied()
+                .find(|fmt| NaiveDate::parse_from_str(val, fmt).is_ok())
+        },
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(_, _) => {
+            let pattern = infer_pattern_datetime_single(val)?;
+            let arr = match pattern {
+                Pattern::DatetimeDMY | Pattern::DateDMY => patterns::DATETIME_D_M_Y,
+                Pattern::DatetimeYMD | Pattern::DateYMD => patterns::DATETIME_Y_M_D,
+                Pattern::DatetimeYMDZ => patterns::DATETIME_Y_M_D_Z,
+                _ => return None,
+            };
+            arr.iter().copied().find(|fmt| {
+                NaiveDateTime::parse_from_str(val, fmt).is_ok()
+                    || NaiveDate::parse_from_str(val, fmt).is_ok()
+            })
+        },
+        #[cfg(feature = "dtype-time")]
+        DataType::Time => {
+            infer_pattern_time_single(val)?;
+            patterns::TIME_H_M_S
+                .iter()
+                .copied()
+                .find(|fmt| NaiveTime::parse_from_str(val, fmt).is_ok())
+        },
+        _ => None,
+    }
+}
+
 fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
     if patterns::DATETIME_D_M_Y.iter().any(|fmt| {
         NaiveDateTime::parse_from_str(val, fmt).is_ok()
