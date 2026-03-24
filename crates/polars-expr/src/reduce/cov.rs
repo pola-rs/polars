@@ -1,7 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use polars_compute::moment::{CovState, PearsonState};
 use polars_core::prelude::*;
-use polars_core::utils::try_get_supertype;
+use polars_core::utils::{align_chunks_binary, try_get_supertype};
 
 use super::*;
 
@@ -73,6 +73,7 @@ impl GroupedReduction for CovGroupedReduction {
         let sy = values[1].cast(&DataType::Float64)?;
         let cx = sx.f64().unwrap();
         let cy = sy.f64().unwrap();
+        let (cx, cy) = align_chunks_binary(cx, cy);
         let state = &mut self.values[group_idx as usize];
         for (ax, ay) in cx.downcast_iter().zip(cy.downcast_iter()) {
             state.combine(&polars_compute::moment::cov(ax, ay));
@@ -206,6 +207,7 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
         let sy = values[1].cast(&DataType::Float64)?;
         let cx = sx.f64().unwrap();
         let cy = sy.f64().unwrap();
+        let (cx, cy) = align_chunks_binary(cx, cy);
         let state = &mut self.values[group_idx as usize];
         for (ax, ay) in cx.downcast_iter().zip(cy.downcast_iter()) {
             state.combine(&polars_compute::moment::pearson_corr(ax, ay));
