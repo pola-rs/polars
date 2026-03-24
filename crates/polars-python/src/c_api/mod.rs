@@ -287,9 +287,11 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "catalog")]
     m.add_class::<PyCatalogClient>().unwrap();
 
-    // Functions - meta
-    m.add_wrapped(wrap_pyfunction!(functions::jemalloc_stats))
+    // Functions - allocator
+    m.add_wrapped(wrap_pyfunction!(allocator::jemalloc_stats))
         .unwrap();
+
+    // Functions - meta
     m.add_wrapped(wrap_pyfunction!(functions::get_index_type))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::thread_pool_size))

@@ -8,6 +8,54 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 #[cfg(all(
     not(feature = "default_alloc"),
+    target_family = "unix",
+    not(target_os = "emscripten"),
+))]
+#[pyfunction]
+pub fn jemalloc_stats(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
+    use tikv_jemalloc_ctl::{epoch, stats};
+
+    epoch::advance()
+        .map_err(|e| PyRuntimeError::new_err(format!("jemalloc epoch advance: {e}")))?;
+
+    let dict = PyDict::new(py);
+    dict.set_item(
+        "allocated",
+        stats::allocated::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
+    )?;
+    dict.set_item(
+        "active",
+        stats::active::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
+    )?;
+    dict.set_item(
+        "resident",
+        stats::resident::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
+    )?;
+    dict.set_item(
+        "mapped",
+        stats::mapped::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
+    )?;
+    dict.set_item(
+        "retained",
+        stats::retained::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
+    )?;
+    Ok(dict)
+}
+
+#[cfg(not(all(
+    not(feature = "default_alloc"),
+    target_family = "unix",
+    not(target_os = "emscripten"),
+)))]
+#[pyfunction]
+pub fn jemalloc_stats() -> PyResult<Bound<'_, PyDict>> {
+    Err(PyRuntimeError::new_err(
+        "jemalloc is not available on this platform",
+    ))
+}
+
+#[cfg(all(
+    not(feature = "default_alloc"),
     any(not(target_family = "unix"), target_os = "emscripten"),
 ))]
 #[global_allocator]
@@ -16,8 +64,10 @@ static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use std::alloc::Layout;
 use std::ffi::{c_char, c_void};
 
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::ffi::PyCapsule_New;
-use pyo3::{Bound, PyAny, PyResult, Python};
+use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
 unsafe extern "C" fn alloc(size: usize, align: usize) -> *mut u8 {
     unsafe { std::alloc::alloc(Layout::from_size_align_unchecked(size, align)) }

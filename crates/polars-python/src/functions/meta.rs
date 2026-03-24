@@ -1,9 +1,8 @@
 use polars_core::POOL;
 use polars_core::fmt::FloatFmt;
 use polars_core::prelude::IDX_DTYPE;
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
 
 use crate::conversion::Wrap;
 
@@ -95,52 +94,4 @@ pub fn set_trim_decimal_zeros(trim: Option<bool>) -> PyResult<()> {
 pub fn get_trim_decimal_zeros() -> PyResult<Option<bool>> {
     use polars_core::fmt::get_trim_decimal_zeros;
     Ok(Some(get_trim_decimal_zeros()))
-}
-
-#[cfg(all(
-    not(feature = "default_alloc"),
-    target_family = "unix",
-    not(target_os = "emscripten"),
-))]
-#[pyfunction]
-pub fn jemalloc_stats(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
-    use tikv_jemalloc_ctl::{epoch, stats};
-
-    epoch::advance()
-        .map_err(|e| PyRuntimeError::new_err(format!("jemalloc epoch advance: {e}")))?;
-
-    let dict = PyDict::new(py);
-    dict.set_item(
-        "allocated",
-        stats::allocated::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
-    )?;
-    dict.set_item(
-        "active",
-        stats::active::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
-    )?;
-    dict.set_item(
-        "resident",
-        stats::resident::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
-    )?;
-    dict.set_item(
-        "mapped",
-        stats::mapped::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
-    )?;
-    dict.set_item(
-        "retained",
-        stats::retained::read().map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
-    )?;
-    Ok(dict)
-}
-
-#[cfg(not(all(
-    not(feature = "default_alloc"),
-    target_family = "unix",
-    not(target_os = "emscripten"),
-)))]
-#[pyfunction]
-pub fn jemalloc_stats() -> PyResult<Bound<'_, PyDict>> {
-    Err(PyRuntimeError::new_err(
-        "jemalloc is not available on this platform",
-    ))
 }
