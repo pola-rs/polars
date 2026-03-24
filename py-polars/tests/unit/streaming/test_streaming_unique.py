@@ -96,6 +96,7 @@ def test_sorted_streaming_unique_vs_in_memory(
         .unique("key", keep=keep, maintain_order=maintain_order)
     )
     dot = lf.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert isinstance(dot, str)
     assert "sorted-unique" in dot
 
     assert_frame_equal(
@@ -126,6 +127,7 @@ def test_sorted_streaming_unique_vs_in_memory_multikey(
         .unique(["key1", "key2"], keep=keep, maintain_order=maintain_order)
     )
     dot = lf.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert isinstance(dot, str)
     assert "sorted-unique" in dot
 
     assert_frame_equal(
