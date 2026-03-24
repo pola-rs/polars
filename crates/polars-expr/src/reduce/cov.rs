@@ -90,8 +90,12 @@ impl GroupedReduction for CovGroupedReduction {
     ) -> PolarsResult<()> {
         assert!(values.len() == 2);
         assert!(subset.len() == group_idxs.len());
-        let sx = values[0].take_slice_unchecked(subset).cast(&DataType::Float64)?;
-        let sy = values[1].take_slice_unchecked(subset).cast(&DataType::Float64)?;
+        let sx = values[0]
+            .take_slice_unchecked(subset)
+            .cast(&DataType::Float64)?;
+        let sy = values[1]
+            .take_slice_unchecked(subset)
+            .cast(&DataType::Float64)?;
         let cx = sx.f64().unwrap();
         let cy = sy.f64().unwrap();
         let ax = cx.downcast_as_array();
@@ -232,8 +236,12 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
     ) -> PolarsResult<()> {
         assert!(values.len() == 2);
         assert!(subset.len() == group_idxs.len());
-        let sx = values[0].take_slice_unchecked(subset).cast(&DataType::Float64)?;
-        let sy = values[1].take_slice_unchecked(subset).cast(&DataType::Float64)?;
+        let sx = values[0]
+            .take_slice_unchecked(subset)
+            .cast(&DataType::Float64)?;
+        let sy = values[1]
+            .take_slice_unchecked(subset)
+            .cast(&DataType::Float64)?;
         let cx = sx.f64().unwrap();
         let cy = sy.f64().unwrap();
         let ax = cx.downcast_as_array();
