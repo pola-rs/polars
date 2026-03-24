@@ -36,14 +36,16 @@ impl Int64Chunked {
 
         debug_assert!(null_count >= self.null_count);
 
-        // @TODO: We throw away metadata here. That is mostly not needed.
         // SAFETY: We calculated the null_count again. And we are taking the rest from the previous
         // Int64Chunked.
-        let int64chunked =
+        let mut ca =
             unsafe { Self::new_with_dims(self.field.clone(), chunks, self.length, null_count) };
+        if null_count == self.null_count {
+            ca.set_sorted_flag(self.is_sorted_flag());
+        }
 
         // SAFETY: no invalid states.
-        unsafe { TimeChunked::new_logical(int64chunked, DataType::Time) }
+        unsafe { TimeChunked::new_logical(ca, DataType::Time) }
     }
 }
 
