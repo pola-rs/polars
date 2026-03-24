@@ -562,6 +562,11 @@ pub(super) fn fill_null(s: &[Column]) -> PolarsResult<Column> {
 
             let fill_value = s[1].clone();
 
+            // Handle Null dtype columns: fill with the fill value (changes dtype)
+            if series.dtype() == &DataType::Null {
+                return Ok(fill_value.new_from_index(0, series.len()));
+            }
+
             // default branch
             fn default(series: Column, fill_value: Column) -> PolarsResult<Column> {
                 let mask = series.is_not_null();

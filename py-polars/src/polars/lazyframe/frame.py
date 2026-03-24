@@ -7468,7 +7468,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             if dtypes:
                 return self.with_columns(
-                    F.col(dtypes).fill_null(value, strategy, limit)
+                    F.col([*dtypes, Null]).fill_null(value, strategy, limit)
                 )
 
         return self.select(F.all().fill_null(value, strategy, limit))
