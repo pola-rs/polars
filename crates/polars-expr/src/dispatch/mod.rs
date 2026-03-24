@@ -273,7 +273,6 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             map_as_slice!(misc::hist, bin_count, include_category, include_breakpoint)
         },
         F::Rechunk => map!(misc::rechunk),
-        F::Append { upcast } => map_as_slice!(misc::append, upcast),
         F::ShiftAndFill => {
             map_as_slice!(shift_and_fill::shift_and_fill)
         },
@@ -371,7 +370,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::Ceil => map!(round::ceil),
         #[cfg(feature = "fused")]
         F::Fused(op) => map_as_slice!(misc::fused, op),
-        F::ConcatExpr(rechunk) => map_as_slice!(misc::concat_expr, rechunk),
+        F::ConcatExpr { rechunk } => map_as_slice!(misc::concat_expr, rechunk),
         #[cfg(feature = "cov")]
         F::Correlation { method } => map_as_slice!(misc::corr, method),
         #[cfg(feature = "peaks")]

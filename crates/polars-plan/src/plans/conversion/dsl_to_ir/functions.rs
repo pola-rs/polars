@@ -1,4 +1,5 @@
 use arrow::legacy::error::PolarsResult;
+use polars_core::utils::try_get_supertype;
 use polars_utils::arena::Node;
 use polars_utils::format_pl_smallstr;
 use polars_utils::option::OptionTry;
@@ -19,7 +20,7 @@ pub(super) fn convert_functions(
 
     // Converts inputs
     let input_is_empty = input.is_empty();
-    let e = to_expr_irs(input, ctx)?;
+    let mut e = to_expr_irs(input, ctx)?;
     let mut set_elementwise = false;
 
     // Return before converting inputs
@@ -765,7 +766,27 @@ pub(super) fn convert_functions(
             }
         },
         F::Rechunk => I::Rechunk,
-        F::Append { upcast } => I::Append { upcast },
+        F::Append { upcast } => {
+            if upcast {
+                let dtypes = [
+                    e[0].dtype(ctx.schema, ctx.arena)?.clone(),
+                    e[1].dtype(ctx.schema, ctx.arena)?.clone(),
+                ];
+                let supertype = try_get_supertype(&dtypes[0], &dtypes[1])?;
+
+                for i in 0..2 {
+                    if dtypes[i] != supertype {
+                        let node = ctx.arena.add(AExpr::Cast {
+                            expr: e[i].node(),
+                            dtype: supertype.clone(),
+                            options: CastOptions::NonStrict,
+                        });
+                        e[i] = ExprIR::new(node, e[i].output_name_inner().clone());
+                    }
+                }
+            }
+            I::ConcatExpr { rechunk: false }
+        },
         F::ShiftAndFill => {
             polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
             polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'fill_value' must be a scalar value");
@@ -889,7 +910,7 @@ pub(super) fn convert_functions(
                 field.name,
             ));
         },
-        F::ConcatExpr(v) => I::ConcatExpr(v),
+        F::ConcatExpr { rechunk } => I::ConcatExpr { rechunk },
         #[cfg(feature = "cov")]
         F::Correlation { method } => {
             use {CorrelationMethod as C, IRCorrelationMethod as IC};

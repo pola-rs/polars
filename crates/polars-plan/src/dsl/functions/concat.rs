@@ -134,5 +134,5 @@ pub fn concat_expr<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
 ) -> PolarsResult<Expr> {
     let s: Vec<_> = s.as_ref().iter().map(|e| e.clone().into()).collect();
     polars_ensure!(!s.is_empty(), ComputeError: "`concat_expr` needs one or more expressions");
-    Ok(Expr::n_ary(FunctionExpr::ConcatExpr(rechunk), s))
+    Ok(Expr::n_ary(FunctionExpr::ConcatExpr { rechunk }, s))
 }

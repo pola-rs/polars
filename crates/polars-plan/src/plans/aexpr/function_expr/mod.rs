@@ -156,9 +156,6 @@ pub enum IRFunctionExpr {
         options: RollingOptionsDynamicWindow,
     },
     Rechunk,
-    Append {
-        upcast: bool,
-    },
     ShiftAndFill,
     Shift,
     DropNans,
@@ -278,7 +275,9 @@ pub enum IRFunctionExpr {
     Ceil,
     #[cfg(feature = "fused")]
     Fused(fused::FusedOperator),
-    ConcatExpr(bool),
+    ConcatExpr {
+        rechunk: bool,
+    },
     #[cfg(feature = "cov")]
     Correlation {
         method: correlation::IRCorrelationMethod,
@@ -501,9 +500,6 @@ impl Hash for IRFunctionExpr {
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
             | ArgMax | Product | Shift | ShiftAndFill | Rechunk | MinBy | MaxBy => {},
-            Append { upcast } => {
-                upcast.hash(state);
-            },
             ArgSort {
                 descending,
                 nulls_last,
@@ -617,7 +613,7 @@ impl Hash for IRFunctionExpr {
             IRFunctionExpr::Floor => {},
             #[cfg(feature = "round_series")]
             Ceil => {},
-            ConcatExpr(a) => a.hash(state),
+            ConcatExpr { rechunk } => rechunk.hash(state),
             #[cfg(feature = "peaks")]
             PeakMin => {},
             #[cfg(feature = "peaks")]
@@ -759,7 +755,6 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "rolling_window_by")]
             RollingExprBy { function_by, .. } => return write!(f, "{function_by}"),
             Rechunk => "rechunk",
-            Append { .. } => "append",
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
@@ -858,7 +853,7 @@ impl Display for IRFunctionExpr {
             Ceil => "ceil",
             #[cfg(feature = "fused")]
             Fused(fused) => return Display::fmt(fused, f),
-            ConcatExpr(_) => "concat_expr",
+            ConcatExpr { .. } => "concat_expr",
             #[cfg(feature = "cov")]
             Correlation { method, .. } => return Display::fmt(method, f),
             #[cfg(feature = "peaks")]
@@ -1066,7 +1061,6 @@ impl IRFunctionExpr {
             #[cfg(feature = "rolling_window_by")]
             F::RollingExprBy { .. } => FunctionOptions::length_preserving(),
             F::Rechunk => FunctionOptions::length_preserving(),
-            F::Append { .. } => FunctionOptions::groupwise(),
             F::ShiftAndFill => FunctionOptions::length_preserving(),
             F::Shift => FunctionOptions::length_preserving(),
             F::DropNans => {
@@ -1176,7 +1170,7 @@ impl IRFunctionExpr {
             },
             #[cfg(feature = "fused")]
             F::Fused(_) => FunctionOptions::elementwise(),
-            F::ConcatExpr(_) => FunctionOptions::groupwise()
+            F::ConcatExpr { .. } => FunctionOptions::groupwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION)
                 .with_supertyping(Default::default()),
             #[cfg(feature = "cov")]

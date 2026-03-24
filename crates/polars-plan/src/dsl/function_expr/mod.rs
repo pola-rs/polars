@@ -264,7 +264,9 @@ pub enum FunctionExpr {
     Ceil,
     UpperBound,
     LowerBound,
-    ConcatExpr(bool),
+    ConcatExpr {
+        rechunk: bool,
+    },
     #[cfg(feature = "cov")]
     Correlation {
         method: correlation::CorrelationMethod,
@@ -595,7 +597,7 @@ impl Hash for FunctionExpr {
             Ceil => {},
             UpperBound => {},
             LowerBound => {},
-            ConcatExpr(a) => a.hash(state),
+            ConcatExpr { rechunk } => rechunk.hash(state),
             #[cfg(feature = "peaks")]
             PeakMin => {},
             #[cfg(feature = "peaks")]
@@ -833,7 +835,7 @@ impl Display for FunctionExpr {
             Ceil => "ceil",
             UpperBound => "upper_bound",
             LowerBound => "lower_bound",
-            ConcatExpr(_) => "concat_expr",
+            ConcatExpr { .. } => "concat_expr",
             #[cfg(feature = "cov")]
             Correlation { method, .. } => return Display::fmt(method, f),
             #[cfg(feature = "peaks")]

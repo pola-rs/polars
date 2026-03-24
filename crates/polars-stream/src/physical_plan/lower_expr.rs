@@ -738,7 +738,7 @@ fn lower_exprs_with_ctx(
 
             AExpr::Function {
                 input: ref inner_exprs,
-                function: IRFunctionExpr::ConcatExpr(_rechunk),
+                function: IRFunctionExpr::ConcatExpr { rechunk: _ },
                 options: _,
             } => {
                 // We have to lower each expression separately as they might have different lengths.
