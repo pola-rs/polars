@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import math
 from datetime import timedelta
-from typing import cast
 
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_corr() -> None:
@@ -69,7 +68,10 @@ def test_cov_corr_f32_type() -> None:
 def test_cov(fruits_cars: pl.DataFrame) -> None:
     ldf = fruits_cars.lazy()
     for cov_ab in (pl.cov(pl.col("A"), pl.col("B")), pl.cov("A", "B")):
-        assert cast("float", ldf.select(cov_ab).collect().item()) == -2.5
+        assert_series_equal(
+            ldf.select(cov_ab).collect().to_series(),
+            pl.Series("A", [-2.5], pl.Float64()),
+        )
 
 
 def test_std(fruits_cars: pl.DataFrame) -> None:
