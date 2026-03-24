@@ -8634,6 +8634,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
         *more_columns: ColumnNameOrSelector,
         separator: str | None = None,
+        max_depth: int | None = 1,
     ) -> LazyFrame:
         """
         Decompose struct columns into separate columns for each of their fields.
@@ -8652,6 +8653,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         separator
             Rename output column names as combination of the struct column name,
             name separator and field name.
+        max_depth
+            Maximum depth to unnest. ``None`` means unlimited (fully recursive).
+            Default is 1 (unnest only one level).
 
         Examples
         --------
@@ -8723,6 +8727,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ foo    ┆ 1    ┆ a    ┆ true ┆ [1, 2]    ┆ baz   │
         │ bar    ┆ 2    ┆ b    ┆ null ┆ [3]       ┆ womp  │
         └────────┴──────┴──────┴──────┴───────────┴───────┘
+
+        Use ``max_depth=None`` to fully unnest nested struct columns:
+
+        >>> df = pl.LazyFrame(
+        ...     {
+        ...         "x": [{"foo": {"a": 1, "b": 2}}, {"foo": {"a": 3, "b": 4}}],
+        ...     }
+        ... )
+        >>> df.unnest("x", separator=".", max_depth=None).collect()
+        shape: (2, 2)
+        ┌─────────┬─────────┐
+        │ x.foo.a ┆ x.foo.b │
+        │ ---     ┆ ---     │
+        │ i64     ┆ i64     │
+        ╞═════════╪═════════╡
+        │ 1       ┆ 2       │
+        │ 3       ┆ 4       │
+        └─────────┴─────────┘
         """
         if columns is None and not more_columns:
             subset = cs.struct()
@@ -8731,7 +8753,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 cs.empty() if columns is None else parse_list_into_selector(columns)
             ) | parse_list_into_selector(more_columns)
 
-        return self._from_pyldf(self._ldf.unnest(subset._pyselector, separator))
+        return self._from_pyldf(self._ldf.unnest(subset._pyselector, separator, max_depth))
 
     def merge_sorted(self, other: LazyFrame, key: str) -> LazyFrame:
         """

@@ -625,10 +625,15 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     streamable: _,
                     fmt_str: _,
                 } => return Err(PyNotImplementedError::new_err("opaque rust mapfunction")),
-                FunctionIR::Unnest { columns, separator } => (
+                FunctionIR::Unnest {
+                    columns,
+                    separator,
+                    max_depth,
+                } => (
                     "unnest",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
                     separator.as_ref().map(|s| s.to_string()),
+                    *max_depth,
                 )
                     .into_py_any(py)?,
                 FunctionIR::Rechunk => ("rechunk",).into_py_any(py)?,

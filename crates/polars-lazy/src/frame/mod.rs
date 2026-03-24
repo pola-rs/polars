@@ -1925,11 +1925,22 @@ impl LazyFrame {
 
     /// Unnest the given `Struct` columns: the fields of the `Struct` type will be
     /// inserted as columns.
+    ///
+    /// # Arguments
+    /// * `cols` - The struct columns to unnest
+    /// * `separator` - Optional separator for nested field names
+    /// * `max_depth` - Maximum depth to unnest. `None` means unlimited, `Some(1)` unnests one level.
     #[cfg(feature = "dtype-struct")]
-    pub fn unnest(self, cols: Selector, separator: Option<PlSmallStr>) -> Self {
+    pub fn unnest(
+        self,
+        cols: Selector,
+        separator: Option<PlSmallStr>,
+        max_depth: Option<usize>,
+    ) -> Self {
         self.map_private(DslFunction::Unnest {
             columns: cols,
             separator,
+            max_depth,
         })
     }
 
