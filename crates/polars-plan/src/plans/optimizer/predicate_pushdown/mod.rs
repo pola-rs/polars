@@ -539,6 +539,7 @@ impl PredicatePushDown {
                         FunctionIR::Unnest {
                             columns,
                             separator: _,
+                            max_depth: _,
                         } => {
                             let exclude = columns.iter().cloned().collect::<PlIndexSet<_>>();
 
