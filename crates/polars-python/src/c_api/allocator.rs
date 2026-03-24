@@ -67,7 +67,7 @@ use std::ffi::{c_char, c_void};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::ffi::PyCapsule_New;
 use pyo3::types::PyDict;
-use pyo3::{pyfunction, Bound, PyAny, PyResult, Python};
+use pyo3::{Bound, PyAny, PyResult, Python, pyfunction}
 
 unsafe extern "C" fn alloc(size: usize, align: usize) -> *mut u8 {
     unsafe { std::alloc::alloc(Layout::from_size_align_unchecked(size, align)) }
