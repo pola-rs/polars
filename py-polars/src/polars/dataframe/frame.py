@@ -63,7 +63,7 @@ from polars._utils.deprecation import (
     deprecated,
     issue_deprecation_warning,
 )
-from polars._utils.getitem import get_df_item_by_key
+from polars._utils.getitem import _select_rows, get_df_item_by_key
 from polars._utils.parse import parse_into_expression
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
@@ -12169,7 +12169,9 @@ class DataFrame:
         │ 4   ┆ 8   │
         └─────┴─────┘
         """
-        return self.select(F.col("*").gather(indices))
+        if isinstance(indices, int):
+            indices = [indices]
+        return _select_rows(self, indices)
 
     def gather_every(self, n: int, offset: int = 0) -> DataFrame:
         """
