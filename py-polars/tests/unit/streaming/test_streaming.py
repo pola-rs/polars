@@ -448,7 +448,9 @@ def test_streaming_strptime_infer_all_null() -> None:
     assert result["s"].dtype == pl.Date
 
 
-def test_streaming_strptime_infer_leading_nulls(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_streaming_strptime_infer_leading_nulls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
     df = pl.DataFrame({"s": [None, None, "2020-01-01", "2021-06-15"]})
     result = df.lazy().select(pl.col("s").str.to_date()).collect(engine="streaming")
