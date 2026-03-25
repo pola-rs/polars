@@ -4,7 +4,8 @@ use polars_time::chunkedarray::StringMethods;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::compute_node_prelude::*;
-use crate::pipe::{PortReceiver, PortSender};
+use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
+use crate::async_primitives::distributor_channel::distributor_channel;
 
 fn apply_strptime(
     col: &Column,
@@ -23,14 +24,11 @@ fn apply_strptime(
 
         #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(time_unit, time_zone) => {
-            #[cfg(all(feature = "regex", feature = "timezones"))]
             let tz_aware = options
                 .format
                 .as_deref()
                 .map(|f| polars_plan::plans::TZ_AWARE_RE.is_match(f))
                 .unwrap_or(false);
-            #[cfg(not(all(feature = "regex", feature = "timezones")))]
-            let tz_aware = false;
 
             let ambiguous = StringChunked::full(PlSmallStr::EMPTY, "raise", str_col.len());
             str_col
@@ -112,10 +110,46 @@ impl ComputeNode for StrptimeInferNode {
     ) {
         assert!(recv_ports.len() == 1 && send_ports.len() == 1);
 
+        let senders = send_ports[0].take().unwrap().parallel();
+
         match self.phase {
             Phase::Inferring => {
                 let mut recv = recv_ports[0].take().unwrap().serial();
-                let mut send = send_ports[0].take().unwrap().serial();
+
+                let (mut distributor, distr_receivers) =
+                    distributor_channel::<(Option<PlSmallStr>, Morsel)>(
+                        senders.len(),
+                        *DEFAULT_DISTRIBUTOR_BUFFER_SIZE,
+                    );
+
+                // Parallel workers. For flushing out in-flight morsels. 
+                for (mut recv, mut send) in distr_receivers.into_iter().zip(senders) {
+                    let dtype = &self.dtype;
+                    let mut options = self.options.clone();
+                    join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+                        while let Ok((format, morsel)) = recv.recv().await {
+                            options.format = format;
+                            let morsel = morsel.try_map(|df| {
+                                let col = &df.columns()[0];
+                                PolarsResult::Ok(
+                                    if options.format.is_some() {
+                                        apply_strptime(col, dtype, &options)?
+                                    } else {
+                                        Column::full_null(col.name().clone(), col.len(), dtype)
+                                    }
+                                    .into_frame(),
+                                )
+                            })?;
+
+                            if send.send(morsel).await.is_err() {
+                                break;
+                            }
+                        }
+                        Ok(())
+                    }));
+                }
+
+                // Serial receiver to infer format.
                 let dtype = &self.dtype;
                 let options = &mut self.options;
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
@@ -141,14 +175,11 @@ impl ComputeNode for StrptimeInferNode {
                             }
                         }
 
-                        let out_morsel = if options.format.is_some() {
+                        if options.format.is_some() {
                             morsel.source_token().stop();
-                            morsel.try_map(|df| apply_strptime(&df.columns()[0], dtype, options).map(Column::into_frame))?
-                        } else {
-                            morsel.try_map(|df| df.columns()[0].cast(dtype).map(Column::into_frame))?
                         };
 
-                        if send.send(out_morsel).await.is_err() {
+                        if distributor.send((options.format.clone(), morsel)).await.is_err() {
                             break;
                         }
                     }
@@ -158,13 +189,15 @@ impl ComputeNode for StrptimeInferNode {
 
             Phase::Parsing => {
                 let receivers = recv_ports[0].take().unwrap().parallel();
-                let senders = send_ports[0].take().unwrap().parallel();
                 for (mut recv, mut send) in receivers.into_iter().zip(senders) {
                     let dtype = &self.dtype;
                     let options = &self.options;
                     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                         while let Ok(morsel) = recv.recv().await {
-                            let out = morsel.try_map(|df| apply_strptime(&df.columns()[0], dtype, options).map(Column::into_frame))?;
+                            let out = morsel.try_map(|df| {
+                                apply_strptime(&df.columns()[0], dtype, options)
+                                    .map(Column::into_frame)
+                            })?;
                             if send.send(out).await.is_err() {
                                 break;
                             }
