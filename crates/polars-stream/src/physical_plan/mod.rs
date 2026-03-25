@@ -359,6 +359,12 @@ pub enum PhysNodeKind {
         aggs: Vec<ExprIR>,
     },
 
+    IsFirstDistinct {
+        input: PhysStream,
+        out_name: PlSmallStr,
+        columns: Vec<PlSmallStr>,
+    },
+
     EquiJoin {
         input_left: PhysStream,
         input_right: PhysStream,
@@ -491,6 +497,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::PartitionedSink { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
             | PhysNodeKind::SortedGroupBy { input, .. }
+            | PhysNodeKind::IsFirstDistinct { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }
