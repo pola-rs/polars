@@ -12301,11 +12301,12 @@ class DataFrame:
         The new columns will be inserted into the dataframe at the location of the
         struct column.
 
+        If no columns are provided, all struct columns are unnested.
+
         Parameters
         ----------
         columns
-            Name of the struct column(s) that should be unnested. If not provided,
-            all struct columns are unnested.
+            Name of the struct column(s) that should be unnested.
         *more_columns
             Additional columns to unnest, specified as positional arguments.
         separator

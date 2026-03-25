@@ -8641,11 +8641,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         The new columns will be inserted into the DataFrame at the location of the
         struct column.
 
+        If no columns are provided, all struct columns are unnested.
+
         Parameters
         ----------
         columns
-            Name of the struct column(s) that should be unnested. If not provided,
-            all struct columns are unnested.
+            Name of the struct column(s) that should be unnested.
         *more_columns
             Additional columns to unnest, specified as positional arguments.
         separator
@@ -8723,8 +8724,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ bar    ┆ 2    ┆ b    ┆ null ┆ [3]       ┆ womp  │
         └────────┴──────┴──────┴──────┴───────────┴───────┘
         """
-        subset = cs.struct() if columns is None else parse_list_into_selector(columns)
-        subset = subset | parse_list_into_selector(more_columns)
+        if columns is None and not more_columns:
+            subset = cs.struct()
+        else:
+            subset = (
+                cs.empty() if columns is None else parse_list_into_selector(columns)
+            ) | parse_list_into_selector(more_columns)
+
         return self._from_pyldf(self._ldf.unnest(subset._pyselector, separator))
 
     def merge_sorted(self, other: LazyFrame, key: str) -> LazyFrame:
