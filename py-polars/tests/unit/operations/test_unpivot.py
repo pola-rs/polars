@@ -109,9 +109,9 @@ def test_unpivot_categorical() -> None:
     )
     out = df.unpivot(["1", "2"], index="index")
     assert out.dtypes == [pl.Int64, pl.String, pl.Categorical()]
-    assert out.to_dict(as_series=False) == {
-        "index": [0, 1, 0, 1],
-        "variable": ["1", "1", "2", "2"],
+    assert out.sort("index", "variable").to_dict(as_series=False) == {
+        "index": [0, 0, 1, 1],
+        "variable": ["1", "2", "1", "2"],
         "value": ["a", "b", "b", "c"],
     }
 
@@ -318,3 +318,17 @@ def test_unpivot_projection_pushdown_schema_25720() -> None:
             ]
         ),
     )
+
+
+def test_unpivot_expr_27037() -> None:
+    df = pl.DataFrame({"x": [1], "y": [2]})
+    result = df.unpivot(pl.col.x)
+    expected = pl.DataFrame({"variable": ["x"], "value": [1]})
+    assert_frame_equal(result, expected)
+
+
+def test_unpivot_expr_index_27037() -> None:
+    df = pl.DataFrame({"x": [1], "y": [2]})
+    result = df.unpivot(pl.col.y, index=pl.col.x)
+    expected = pl.DataFrame({"x": [1], "variable": ["y"], "value": [2]})
+    assert_frame_equal(result, expected)

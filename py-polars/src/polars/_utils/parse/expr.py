@@ -121,7 +121,7 @@ def parse_into_list_of_expressions(
 
 @overload
 def parse_into_selector(
-    i: ColumnNameOrSelector,
+    i: Expr | ColumnNameOrSelector,
     *,
     strict: bool = ...,
     raise_if_not_selector: Literal[False] = False,
@@ -130,7 +130,7 @@ def parse_into_selector(
 
 @overload
 def parse_into_selector(
-    i: ColumnNameOrSelector,
+    i: Expr | ColumnNameOrSelector,
     *,
     strict: bool = ...,
     raise_if_not_selector: Literal[True],
@@ -138,7 +138,7 @@ def parse_into_selector(
 
 
 def parse_into_selector(
-    i: ColumnNameOrSelector,
+    i: Expr | ColumnNameOrSelector,
     *,
     strict: bool = True,
     raise_if_not_selector: bool = True,
@@ -160,7 +160,7 @@ def parse_into_selector(
 
 
 def parse_list_into_selector(
-    inputs: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
+    inputs: Expr | ColumnNameOrSelector | Collection[Expr | ColumnNameOrSelector],
     *,
     strict: bool = True,
 ) -> pl.Selector:
