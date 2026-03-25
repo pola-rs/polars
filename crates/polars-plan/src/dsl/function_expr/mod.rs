@@ -224,6 +224,9 @@ pub enum FunctionExpr {
     #[cfg(feature = "repeat_by")]
     RepeatBy,
     ArgUnique,
+    UniqueId {
+        maintain_order: bool,
+    },
     ArgMin,
     ArgMax,
     ArgSort {
@@ -580,6 +583,9 @@ impl Hash for FunctionExpr {
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
             | ArgMax | Product | Shift | ShiftAndFill | MinBy | MaxBy => {},
+            UniqueId { maintain_order } => {
+                maintain_order.hash(state);
+            },
             Append { upcast } => upcast.hash(state),
             ArgSort {
                 descending,
@@ -881,6 +887,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "moment")]
             Kurtosis(..) => "kurtosis",
             ArgUnique => "arg_unique",
+            UniqueId { .. } => "unique_id",
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             ArgSort { .. } => "arg_sort",

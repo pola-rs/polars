@@ -1874,6 +1874,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 #[cfg(feature = "repeat_by")]
                 IRFunctionExpr::RepeatBy => ("repeat_by",).into_py_any(py),
                 IRFunctionExpr::ArgUnique => ("arg_unique",).into_py_any(py),
+                IRFunctionExpr::UniqueId { maintain_order } => {
+                    ("unique_id", maintain_order).into_py_any(py)
+                },
                 IRFunctionExpr::ArgMin => ("arg_min",).into_py_any(py),
                 IRFunctionExpr::ArgMax => ("arg_max",).into_py_any(py),
                 IRFunctionExpr::MinBy {

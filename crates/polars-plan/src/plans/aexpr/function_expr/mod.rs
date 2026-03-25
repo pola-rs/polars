@@ -197,6 +197,9 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "repeat_by")]
     RepeatBy,
     ArgUnique,
+    UniqueId {
+        maintain_order: bool,
+    },
     ArgMin,
     ArgMax,
     ArgSort {
@@ -569,6 +572,9 @@ impl Hash for IRFunctionExpr {
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
             | ArgMax | Product | Shift | ShiftAndFill => {},
             MinBy { order } | MaxBy { order } => order.hash(state),
+            UniqueId { maintain_order } => {
+                maintain_order.hash(state);
+            },
             ArgSort {
                 descending,
                 nulls_last,
@@ -900,6 +906,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "moment")]
             Kurtosis(..) => "kurtosis",
             ArgUnique => "arg_unique",
+            UniqueId { .. } => "unique_id",
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             ArgSort { .. } => "arg_sort",
@@ -1292,6 +1299,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "repeat_by")]
             F::RepeatBy => FunctionOptions::elementwise(),
             F::ArgUnique => FunctionOptions::groupwise(),
+            F::UniqueId { .. } => FunctionOptions::length_preserving(),
             F::ArgMin | F::ArgMax => FunctionOptions::aggregation(),
             F::ArgSort { .. } => FunctionOptions::length_preserving(),
             F::MinBy { .. } | F::MaxBy { .. } => FunctionOptions::aggregation(),
