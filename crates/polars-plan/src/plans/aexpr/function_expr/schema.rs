@@ -141,7 +141,9 @@ impl IRFunctionExpr {
             Skew(_) => mapper.with_dtype(DataType::Float64),
             #[cfg(feature = "moment")]
             Kurtosis(..) => mapper.with_dtype(DataType::Float64),
-            ArgUnique | ArgMin | ArgMax | ArgSort { .. } => mapper.with_dtype(IDX_DTYPE),
+            ArgUnique | UniqueId { .. } | ArgMin | ArgMax | ArgSort { .. } => {
+                mapper.with_dtype(IDX_DTYPE)
+            },
             MinBy | MaxBy => mapper.with_same_dtype(),
             Product => mapper.map_dtype(|dtype| {
                 use DataType as T;

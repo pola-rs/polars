@@ -38,6 +38,7 @@ pub mod sorted_group_by;
 pub mod sorted_unique;
 pub mod streaming_slice;
 pub mod top_k;
+pub mod unique_id;
 pub mod unordered_union;
 pub mod with_row_index;
 pub mod zip;
