@@ -289,3 +289,61 @@ def test_replace_single_argument_not_mapping() -> None:
         match="`new` argument is required if `old` argument is not a Mapping type",
     ):
         df.select(pl.col("a").replace("b"))
+
+
+def test_replace_expr_in_sequence() -> None:
+    s = pl.Series([1, 2, 3])
+
+    result = s.replace([pl.lit(1)], [10])
+    expected = pl.Series([10, 2, 3])
+    assert_series_equal(result, expected)
+
+    result = s.replace([1], [pl.lit(10)])
+    expected = pl.Series([10, 2, 3])
+    assert_series_equal(result, expected)
+
+    result = s.replace([pl.lit(1), 2], [10, pl.lit(20)])
+    expected = pl.Series([10, 20, 3])
+    assert_series_equal(result, expected)
+
+    result = s.replace(pl.lit(1), pl.lit(10))
+    expected = pl.Series([10, 2, 3])
+    assert_series_equal(result, expected)
+
+
+def test_replace_expr_in_sequence_with_column_refs() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]})
+
+    result = df.select(
+        pl.col("a").replace([pl.col("a").min(), pl.col("a").max()], [100, 300])
+    )
+    expected = pl.DataFrame({"a": [100, 2, 300]})
+    assert_frame_equal(result, expected)
+
+    result = df.select(
+        pl.col("a").replace([1, 2], [pl.col("b").first(), pl.col("b").sum()])
+    )
+    expected = pl.DataFrame({"a": [10, 60, 3]})
+    assert_frame_equal(result, expected)
+
+
+def test_replace_expr_in_sequence_many_to_one() -> None:
+    s = pl.Series([1, 2, 3])
+    result = s.replace([pl.lit(1), 2], [10])
+    expected = pl.Series([10, 10, 3])
+    assert_series_equal(result, expected)
+
+
+def test_replace_expr_in_sequence_null_in_old() -> None:
+    s = pl.Series([1, None, 3])
+    result = s.replace([pl.lit(1), None], [10, 99])
+    expected = pl.Series([10, 99, 3])
+    assert_series_equal(result, expected)
+
+
+def test_replace_expr_in_sequence_length_mismatch() -> None:
+    s = pl.Series([1, 2, 3])
+    with pytest.raises(
+        ValueError, match=r"lengths of `old` \(2\) and `new` \(3\) must match"
+    ):
+        s.replace([pl.lit(1), 2], [10, 20, 30])
