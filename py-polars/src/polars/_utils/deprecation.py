@@ -98,7 +98,9 @@ def _forward_deprecated_warning(function: Callable[P, T]) -> Callable[P, T]:
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
         issue_deprecation_warning(deprecated_msg)
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message=re.escape(deprecated_msg), category=DeprecationWarning)
+            warnings.filterwarnings(
+                "ignore", message=re.escape(deprecated_msg), category=DeprecationWarning
+            )
             return function(*args, **kwargs)
 
     wrapper.__deprecated__ = deprecated_msg  # type: ignore[attr-defined]

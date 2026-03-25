@@ -116,6 +116,7 @@ def test_identify_deprecations() -> None:
 
 def test_deprecated_under_deprecate_renamed_parameter() -> None:
     """Test that @deprecated fires even when below @deprecate_renamed_parameter."""
+
     # @deprecated on top (outermost) -- always worked
     @deprecated("`top_hello` is deprecated.")
     @deprecate_renamed_parameter("foo", "oof", version="1.0.0")
