@@ -61,7 +61,7 @@ def _patched_cloud(
             return prev_collect(
                 with_timeout(
                     lambda: lf.remote(plan_type="plain").distributed().execute()
-                ).lazy()
+                ).lazy()  # type: ignore[union-attr]
             )
 
         class LazyExe:
