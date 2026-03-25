@@ -1542,7 +1542,7 @@ fn lower_exprs_with_ctx(
             } if options.format.is_none()
                 && options.exact
                 && options.strict
-                && (!matches!(dtype.as_ref(), DataType::Datetime(_, Some(_)))
+                && (!matches!(dtype, DataType::Datetime(_, Some(_)))
                     || matches!(&ctx.expr_arena.get(inner_exprs[0].node()), AExpr::Literal(s) if s.extract_str() == Some("raise"))) =>
             {
                 let inner_nodes = inner_exprs.iter().map(|e| e.node()).collect_vec();
