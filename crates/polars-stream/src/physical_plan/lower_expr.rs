@@ -1542,16 +1542,14 @@ fn lower_exprs_with_ctx(
             } if options.format.is_none()
                 && options.exact
                 && options.strict
-                && (!matches!(dtype, DataType::Datetime(_, Some(_)))
-                    || matches!(&ctx.expr_arena.get(inner_exprs[0].node()), AExpr::Literal(s) if s.extract_str() == Some("raise"))) =>
+                && matches!(&ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Literal(s) if s.extract_str() == Some("raise")) =>
             {
-                let inner_nodes = inner_exprs.iter().map(|e| e.node()).collect_vec();
-                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &inner_nodes, ctx)?;
-
-                // Materialise the input expression as a single-column stream.
                 let col_name = unique_column_name();
-                let expr_ir = ExprIR::new(trans_exprs[0], OutputName::Alias(col_name.clone()));
-                let select_stream = build_select_stream_with_ctx(trans_input, &[expr_ir], ctx)?;
+                let select_stream = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(col_name.clone())],
+                    ctx,
+                )?;
 
                 let output_schema = Arc::new(Schema::from_iter([(
                     col_name.clone(),
