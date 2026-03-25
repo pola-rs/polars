@@ -342,7 +342,10 @@ impl<'a> TreeFmtNode<'a> {
                         vec![self.lp_node(None, *input)],
                     ),
                     Gather { input, indices } => ND(
-                        wh(h, &format!("GATHER[indices: {:?}]", indices)),
+                        wh(
+                            h,
+                            &format!("GATHER[indices: {}]", format_list_truncated!(indices, 4)),
+                        ),
                         vec![self.lp_node(None, *input)],
                     ),
                     MapFunction { input, function } => ND(

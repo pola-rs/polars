@@ -29,7 +29,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
-use polars_utils::{IdxSize, format_pl_smallstr, unique_column_name};
+use polars_utils::{IdxSize, format_list_truncated, format_pl_smallstr, unique_column_name};
 use slotmap::SlotMap;
 
 use super::lower_expr::build_hstack_stream;
@@ -1629,7 +1629,7 @@ pub fn lower_ir(
             // Fall back to in-memory execution for gather
             let format_str = ctx
                 .prepare_visualization
-                .then(|| format!("GATHER[indices: {:?}]", indices));
+                .then(|| format!("GATHER[indices: {:?}]", format_list_truncated!(indices, 4)));
             let map = Arc::new(move |df: DataFrame| {
                 check_bounds(&indices, df.height() as IdxSize)?;
                 // SAFETY: bounds checked above
