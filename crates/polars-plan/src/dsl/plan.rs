@@ -137,6 +137,11 @@ pub enum DslPlan {
         offset: i64,
         len: IdxSize,
     },
+    /// Gather rows by index
+    Gather {
+        input: Arc<DslPlan>,
+        indices: Arc<[IdxSize]>,
+    },
     /// A (User Defined) Function
     MapFunction {
         input: Arc<DslPlan>,
@@ -202,6 +207,7 @@ impl Clone for DslPlan {
             Self::Distinct { input, options } => Self::Distinct { input: input.clone(), options: options.clone() },
             Self::Sort {input,by_column, slice, sort_options } => Self::Sort { input: input.clone(), by_column: by_column.clone(), slice: slice.clone(), sort_options: sort_options.clone() },
             Self::Slice { input, offset, len } => Self::Slice { input: input.clone(), offset: offset.clone(), len: len.clone() },
+            Self::Gather { input, indices } => Self::Gather { input: input.clone(), indices: indices.clone() },
             Self::MapFunction { input, function } => Self::MapFunction { input: input.clone(), function: function.clone() },
             Self::Union { inputs, args} => Self::Union { inputs: inputs.clone(), args: args.clone() },
             Self::HConcat { inputs, options } => Self::HConcat { inputs: inputs.clone(), options: options.clone() },

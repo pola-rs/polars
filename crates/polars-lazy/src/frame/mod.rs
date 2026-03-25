@@ -1744,6 +1744,13 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    /// Select rows by index.
+    pub fn gather(self, indices: Arc<[IdxSize]>) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().gather(indices).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     /// Remove all the rows of the LazyFrame.
     pub fn clear(self) -> LazyFrame {
         self.slice(0, 0)

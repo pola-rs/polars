@@ -185,6 +185,10 @@ impl<'a> IRDotDisplay<'a> {
                 recurse!(*input);
                 write_label(f, id, |f| write!(f, "SLICE offset: {offset}; len: {len}"))?;
             },
+            Gather { input, indices } => {
+                recurse!(*input);
+                write_label(f, id, |f| write!(f, "GATHER indices: {:?}", indices))?;
+            },
             Distinct { input, options, .. } => {
                 recurse!(*input);
                 write_label(f, id, |f| {

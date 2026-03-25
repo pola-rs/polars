@@ -496,7 +496,34 @@ def test_lazyframe_gather() -> None:
     expected = pl.DataFrame({"a": [1, 3], "b": [5, 7]})
     assert_frame_equal(result, expected)
 
-    # Test with negative indices
-    result = lf.gather([0, -1]).collect()
-    expected = pl.DataFrame({"a": [1, 4], "b": [5, 8]})
-    assert_frame_equal(result, expected)
+
+def test_lazyframe_gather_negative_indices() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+
+    # LazyFrame.gather does not support negative indices
+    with pytest.raises(ValueError, match="negative indices are not supported"):
+        lf.gather([0, -1])
+
+
+def test_dataframe_gather_out_of_bounds() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+
+    # Out-of-bounds index should raise an error
+    with pytest.raises(pl.exceptions.OutOfBoundsError):
+        df.gather([0, 100])
+
+
+def test_lazyframe_gather_out_of_bounds() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+
+    # Out-of-bounds index should raise an error at collect time
+    with pytest.raises(pl.exceptions.OutOfBoundsError):
+        lf.gather([0, 100]).collect()
+
+
+def test_lazyframe_gather_out_of_bounds_streaming() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+
+    # Out-of-bounds index should raise an error in streaming engine too
+    with pytest.raises(pl.exceptions.OutOfBoundsError):
+        lf.gather([0, 100]).collect(engine="streaming")

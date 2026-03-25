@@ -635,8 +635,8 @@ impl PredicatePushDown {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
             },
             // NOT Pushed down passed these nodes
-            // predicates influence slice sizes
-            lp @ Slice { .. } => {
+            // predicates influence slice/gather results
+            lp @ Slice { .. } | lp @ Gather { .. } => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             },
             lp @ HConcat { .. } => {

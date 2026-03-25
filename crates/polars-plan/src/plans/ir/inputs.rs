@@ -37,6 +37,7 @@ impl IR {
         use IR::*;
         match self {
             Slice { .. } => Exprs::Empty,
+            Gather { .. } => Exprs::Empty,
             Cache { .. } => Exprs::Empty,
             Distinct { .. } => Exprs::Empty,
             Union { .. } => Exprs::Empty,
@@ -109,6 +110,7 @@ impl IR {
         use IR::*;
         match self {
             Slice { .. } => ExprsMut::Empty,
+            Gather { .. } => ExprsMut::Empty,
             Cache { .. } => ExprsMut::Empty,
             Distinct { .. } => ExprsMut::Empty,
             Union { .. } => ExprsMut::Empty,
@@ -192,6 +194,7 @@ impl IR {
                 Inputs::slice(inputs)
             },
             Slice { input, .. } => Inputs::single(*input),
+            Gather { input, .. } => Inputs::single(*input),
             Filter { input, .. } => Inputs::single(*input),
             Select { input, .. } => Inputs::single(*input),
             SimpleProjection { input, .. } => Inputs::single(*input),
@@ -231,6 +234,7 @@ impl IR {
                 InputsMut::slice(inputs)
             },
             Slice { input, .. } => InputsMut::single(input),
+            Gather { input, .. } => InputsMut::single(input),
             Filter { input, .. } => InputsMut::single(input),
             Select { input, .. } => InputsMut::single(input),
             SimpleProjection { input, .. } => InputsMut::single(input),

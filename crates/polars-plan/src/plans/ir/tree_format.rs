@@ -341,6 +341,10 @@ impl<'a> TreeFmtNode<'a> {
                         wh(h, &format!("SLICE[offset: {offset}, len: {len}]")),
                         vec![self.lp_node(None, *input)],
                     ),
+                    Gather { input, indices } => ND(
+                        wh(h, &format!("GATHER[indices: {:?}]", indices)),
+                        vec![self.lp_node(None, *input)],
+                    ),
                     MapFunction { input, function } => ND(
                         wh(h, &format!("{function}")),
                         vec![self.lp_node(None, *input)],

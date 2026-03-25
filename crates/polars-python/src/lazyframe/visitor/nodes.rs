@@ -78,6 +78,15 @@ pub struct Slice {
 }
 
 #[pyclass(frozen)]
+/// Gather rows by index
+pub struct Gather {
+    #[pyo3(get)]
+    input: usize,
+    #[pyo3(get)]
+    indices: Vec<IdxSize>,
+}
+
+#[pyclass(frozen)]
 /// Filter the table with a boolean expression
 pub struct Filter {
     #[pyo3(get)]
@@ -393,6 +402,11 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             input: input.0,
             offset: *offset,
             len: *len,
+        }
+        .into_py_any(py),
+        IR::Gather { input, indices } => Gather {
+            input: input.0,
+            indices: indices.to_vec(),
         }
         .into_py_any(py),
         IR::Filter { input, predicate } => Filter {

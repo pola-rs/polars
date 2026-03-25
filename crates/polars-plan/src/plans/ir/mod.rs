@@ -48,6 +48,10 @@ pub enum IR {
         offset: i64,
         len: IdxSize,
     },
+    Gather {
+        input: Node,
+        indices: Arc<[IdxSize]>,
+    },
     Filter {
         input: Node,
         predicate: ExprIR,

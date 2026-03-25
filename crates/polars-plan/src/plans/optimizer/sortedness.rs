@@ -234,6 +234,7 @@ fn is_sorted_rec(
             offset: _,
             len: _,
         } => rec!(*input),
+        IR::Gather { .. } => None,
         IR::Filter {
             input,
             predicate: _,

@@ -662,6 +662,7 @@ impl SlicePushDown {
                 self.pushdown(input, state, lp_arena, expr_arena)
             },
             m @ (Filter { .. }, _)
+            | m @ (Gather { .. }, _)
             | m @ (DataFrameScan { .. }, _)
             | m @ (Sort { .. }, _)
             | m @ (

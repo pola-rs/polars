@@ -393,6 +393,14 @@ impl DslBuilder {
         .into()
     }
 
+    pub fn gather(self, indices: Arc<[IdxSize]>) -> Self {
+        DslPlan::Gather {
+            input: Arc::new(self.0),
+            indices,
+        }
+        .into()
+    }
+
     pub fn join(
         self,
         other: DslPlan,

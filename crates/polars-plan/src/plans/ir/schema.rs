@@ -22,6 +22,7 @@ impl IR {
             #[cfg(feature = "python")]
             PythonScan { .. } => "python_scan",
             Slice { .. } => "slice",
+            Gather { .. } => "gather",
             Filter { .. } => "filter",
             DataFrameScan { .. } => "df",
             Select { .. } => "projection",
@@ -97,7 +98,7 @@ impl IR {
                 payload: SinkTypeIR::Memory,
             } => return arena.get(*input).schema(arena),
             Sink { .. } | SinkMultiple { .. } => return Cow::Owned(Arc::new(Schema::default())),
-            Slice { input, .. } => return arena.get(*input).schema(arena),
+            Slice { input, .. } | Gather { input, .. } => return arena.get(*input).schema(arena),
             MapFunction { input, function } => {
                 let input_schema = arena.get(*input).schema(arena);
 
@@ -145,7 +146,8 @@ impl IR {
                 input,
                 payload: SinkTypeIR::Memory,
             }
-            | Slice { input, .. } => IR::schema_with_cache(*input, arena, cache),
+            | Slice { input, .. }
+            | Gather { input, .. } => IR::schema_with_cache(*input, arena, cache),
             Sink { .. } | SinkMultiple { .. } => Arc::new(Schema::default()),
             Scan {
                 output_schema,

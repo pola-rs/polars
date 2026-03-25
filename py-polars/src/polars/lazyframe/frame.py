@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 import warnings
-from collections.abc import Collection, Iterable, Iterator, Mapping
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, partial, reduce
@@ -7327,7 +7327,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def gather(
         self,
-        indices: int | Sequence[int] | IntoExpr,
+        indices: int | Sequence[int],
     ) -> LazyFrame:
         """
         Take rows at the given indices.
@@ -7335,7 +7335,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         indices
-            Row indices to gather.
+            Row indices to gather. Must be non-negative.
 
         Examples
         --------
@@ -7350,21 +7350,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 5   │
         │ 3   ┆ 7   │
         └─────┴─────┘
-
-        Negative indices are also supported:
-
-        >>> lf.gather([0, -1]).collect()
-        shape: (2, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 1   ┆ 5   │
-        │ 4   ┆ 8   │
-        └─────┴─────┘
         """
-        return self.select(F.col("*").gather(indices))
+        if isinstance(indices, int):
+            indices = [indices]
+        return self._from_pyldf(self._ldf.gather(list(indices)))
 
     def gather_every(self, n: int, offset: int = 0) -> LazyFrame:
         """

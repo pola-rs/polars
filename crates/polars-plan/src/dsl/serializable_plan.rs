@@ -118,6 +118,10 @@ pub(crate) enum SerializableDslPlanNode {
         offset: i64,
         len: IdxSize,
     },
+    Gather {
+        input: DslPlanKey,
+        indices: Arc<[IdxSize]>,
+    },
     MapFunction {
         input: DslPlanKey,
         function: DslFunction,
@@ -319,6 +323,10 @@ fn convert_dsl_plan_to_serializable_plan(
             input: dsl_plan_key(input, arenas),
             offset: *offset,
             len: *len,
+        },
+        DP::Gather { input, indices } => SP::Gather {
+            input: dsl_plan_key(input, arenas),
+            indices: indices.clone(),
         },
         DP::MapFunction { input, function } => SP::MapFunction {
             input: dsl_plan_key(input, arenas),
@@ -567,6 +575,10 @@ fn try_convert_serializable_plan_to_dsl_plan(
             input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             offset: *offset,
             len: *len,
+        }),
+        SP::Gather { input, indices } => Ok(DP::Gather {
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
+            indices: indices.clone(),
         }),
         SP::MapFunction { input, function } => Ok(DP::MapFunction {
             input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,

@@ -21,6 +21,7 @@ use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive};
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
+use polars_utils::index::check_bounds;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(any(feature = "parquet", feature = "csv", feature = "json"))]
@@ -1620,6 +1621,25 @@ pub fn lower_ir(
             }
 
             return Ok(stream);
+        },
+        IR::Gather { input, indices } => {
+            let indices = indices.clone();
+            let phys_input = lower_ir!(*input)?;
+
+            // Fall back to in-memory execution for gather
+            let format_str = ctx
+                .prepare_visualization
+                .then(|| format!("GATHER[indices: {:?}]", indices));
+            let map = Arc::new(move |df: DataFrame| {
+                check_bounds(&indices, df.height() as IdxSize)?;
+                // SAFETY: bounds checked above
+                Ok(unsafe { df.take_slice_unchecked(&indices) })
+            });
+            PhysNodeKind::InMemoryMap {
+                input: phys_input,
+                map,
+                format_str,
+            }
         },
         IR::ExtContext { .. } => todo!(),
         IR::Invalid => unreachable!(),
