@@ -112,3 +112,31 @@ def test_identify_deprecations() -> None:
         match="unrecognised deprecation type 'bitterballen'",
     ):
         identify_deprecations("bitterballen")  # type: ignore[arg-type]
+
+
+def test_deprecated_under_deprecate_renamed_parameter() -> None:
+    """Test that @deprecated fires even when below @deprecate_renamed_parameter."""
+    # @deprecated on top (outermost) -- always worked
+    @deprecated("`top_hello` is deprecated.")
+    @deprecate_renamed_parameter("foo", "oof", version="1.0.0")
+    def top_hello(oof: str) -> None: ...
+
+    with pytest.deprecated_call(match=r"`top_hello` is deprecated\."):
+        top_hello(oof="x")
+
+    # @deprecated on bottom (innermost) -- previously broken on Python 3.13+
+    @deprecate_renamed_parameter("foo", "oof", version="1.0.0")
+    @deprecated("`bottom_hello` is deprecated.")
+    def bottom_hello(oof: str) -> None: ...
+
+    with pytest.deprecated_call(match=r"`bottom_hello` is deprecated\."):
+        bottom_hello(oof="x")
+
+    # @deprecated sandwiched between two @deprecate_renamed_parameter
+    @deprecate_renamed_parameter("foo", "oof", version="1.0.0")
+    @deprecated("`mid_hello` is deprecated.")
+    @deprecate_renamed_parameter("bar", "rab", version="2.0.0")
+    def mid_hello(oof: str, rab: str) -> None: ...
+
+    with pytest.deprecated_call(match=r"`mid_hello` is deprecated\."):
+        mid_hello(oof="x", rab="y")
