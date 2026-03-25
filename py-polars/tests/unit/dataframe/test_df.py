@@ -3365,3 +3365,17 @@ def test_sample_respects_global_seed_26973() -> None:
     result2 = df.sample(1)
 
     assert_frame_equal(result1, result2)
+
+
+def test_transpose_mixed_list_and_non_list_columns_no_panic_26538() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2], [3, 4]],
+            "b": [[5, 6], [7, 8]],
+            "c": ["foo", "bar"],
+            "d": [["baz"], ["qux"]],
+        }
+    )
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.transpose()
