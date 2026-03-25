@@ -62,8 +62,8 @@ impl DataFrame {
                 let columns = self
                     .materialized_column_iter()
                     // first cast to supertype before casting to physical to ensure units are correct
-                    .map(|s| s.cast(dtype).unwrap().cast(&phys_dtype).unwrap())
-                    .collect::<Vec<_>>();
+                    .map(|s| s.cast(dtype)?.cast(&phys_dtype))
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
                 // this is very expensive. A lot of cache misses here.
                 // This is the part that is performance critical.
