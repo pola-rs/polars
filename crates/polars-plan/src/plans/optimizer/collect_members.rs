@@ -34,6 +34,8 @@ pub(super) struct MemberCollector {
     pub(crate) has_sort: bool,
     pub(crate) has_group_by: bool,
     pub(crate) has_hint: bool,
+    #[cfg(feature = "merge_sorted")]
+    pub(crate) has_merge_sorted: bool,
     pub(crate) with_columns_count: u32,
     #[cfg(feature = "cse")]
     scans: UniqueScans,
@@ -51,6 +53,8 @@ impl MemberCollector {
             has_sort: false,
             has_group_by: false,
             has_hint: false,
+            #[cfg(feature = "merge_sorted")]
+            has_merge_sorted: false,
             with_columns_count: 0,
             #[cfg(feature = "cse")]
             scans: UniqueScans::default(),
@@ -98,6 +102,8 @@ impl MemberCollector {
                     function: FunctionIR::Hint(_),
                     ..
                 } => self.has_hint = true,
+                #[cfg(feature = "merge_sorted")]
+                MergeSorted { .. } => self.has_merge_sorted = true,
                 _ => {},
             }
         }

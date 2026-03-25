@@ -11,6 +11,8 @@ mod collect_members;
 mod count_star;
 #[cfg(feature = "cse")]
 mod cse;
+#[cfg(feature = "merge_sorted")]
+mod flatten_merge_sorted;
 mod flatten_union;
 #[cfg(feature = "fused")]
 mod fused;
@@ -272,6 +274,13 @@ pub fn optimize(
             let rewritten = ir_node.rewrite(&mut optimizer, arena)?;
             Ok(rewritten.node())
         })?;
+    }
+
+    // Deep MergeSorted chains cause stack overflows and poor parallelism.
+    // Must run before CHECK_ORDER_OBSERVE, which may convert MergeSorted to Union.
+    #[cfg(feature = "merge_sorted")]
+    if get_or_init_members!().has_merge_sorted {
+        flatten_merge_sorted::optimize(root, ir_arena);
     }
 
     if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {

@@ -304,7 +304,6 @@ def test_merge_sorted_chain_streaming_21789_b(streaming: bool) -> None:
 
     assert_frame_equal(out, expected)
 
-
 @pytest.mark.parametrize("n_dfs", [3, 4, 5])  # balanced tree +/- 1
 @pytest.mark.parametrize("lazy", [True, False])
 def test_merge_sorted_multiple_associativity(n_dfs: int, lazy: bool) -> None:
@@ -377,3 +376,34 @@ def test_merge_sorted_maintain_order_parametric(lhs: pl.Series, rhs: pl.Series) 
     expected = pl.concat([left, right]).sort(["key", "df"], maintain_order=True)
 
     assert_frame_equal(actual, expected)
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_merge_sorted_deep_chain_with_sort_collect(streaming: bool) -> None:
+    dfs = [
+        pl.DataFrame(
+            {
+                "foo": [f"lazy-bear-{i}", f"eager-bear-{i}"],
+                "n": [10 + i, 110 + i],
+            }
+        )
+        for i in range(64)
+    ]
+    lfs = [df.lazy() for df in dfs]
+
+    chained = lfs[0]
+    for lf in lfs[1:]:
+        chained = chained.merge_sorted(lf, key="n")
+
+    expected = pl.DataFrame(
+        {
+            "foo": [f"lazy-bear-{i}" for i in range(64)]
+            + [f"eager-bear-{i}" for i in range(64)],
+            "n": [10 + i for i in range(64)] + [110 + i for i in range(64)],
+        }
+    )
+    result = chained.sort("n", "foo").collect(
+        engine="streaming" if streaming else "in-memory"
+    )
+
+    assert_frame_equal(result, expected)

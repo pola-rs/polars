@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 from typing import Any
 
 import pytest
@@ -162,6 +163,51 @@ def test_merge_sorted_to_union() -> None:
     explain = lf.explain()
     assert "MERGE_SORTED" not in explain
     assert "UNION" in explain
+
+
+def test_merge_sorted_deep_chain_to_union() -> None:
+    lfs = [pl.LazyFrame({"a": [i], "b": [i]}) for i in range(64)]
+    lf = functools.reduce(
+        lambda left, right: left.merge_sorted(right, "a"), lfs
+    ).unique()
+
+    explain = lf.explain(optimizations=pl.QueryOptFlags(check_order_observe=False))
+    assert "MERGE_SORTED" in explain
+    assert "UNION" not in explain
+
+    explain = lf.explain()
+    assert "MERGE_SORTED" not in explain
+    assert "UNION" in explain
+
+
+def test_merge_sorted_deep_chain_explain_matches_balanced() -> None:
+    def balanced_merge_sorted(lfs: list[pl.LazyFrame]) -> pl.LazyFrame:
+        items = lfs[:]
+
+        while len(items) > 1:
+            items = [
+                items[i].merge_sorted(items[i + 1], "a")
+                if i + 1 < len(items)
+                else items[i]
+                for i in range(0, len(items), 2)
+            ]
+
+        return items[0]
+
+    lfs = [pl.LazyFrame({"a": [i], "b": [i]}) for i in range(64)]
+
+    chained = functools.reduce(lambda left, right: left.merge_sorted(right, "a"), lfs)
+    balanced = balanced_merge_sorted(lfs)
+
+    assert chained.sort("a").explain() == balanced.sort("a").explain()
+
+    opts = pl.QueryOptFlags(check_order_observe=False)
+    chained_explain = chained.explain(optimizations=opts)
+    balanced_explain = balanced.explain(optimizations=opts)
+
+    assert chained_explain == balanced_explain
+    assert "MERGE_SORTED" in chained_explain
+    assert "UNION" not in chained_explain
 
 
 @pytest.mark.parametrize(
