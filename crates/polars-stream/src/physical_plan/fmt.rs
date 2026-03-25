@@ -811,7 +811,11 @@ fn visualize_plan_rec(
         PhysNodeKind::EwmVar { input, options: _ } => ("ewm-var".to_string(), &[*input][..]),
         #[cfg(feature = "ewma")]
         PhysNodeKind::EwmStd { input, options: _ } => ("ewm-std".to_string(), &[*input][..]),
-        #[cfg(any(feature = "dtype-date", feature = "dtype-datetime", feature = "dtype-time"))]
+        #[cfg(any(
+            feature = "dtype-date",
+            feature = "dtype-datetime",
+            feature = "dtype-time"
+        ))]
         PhysNodeKind::StrptimeInfer { input, .. } => ("strptime-infer".to_string(), &[*input][..]),
     };
 

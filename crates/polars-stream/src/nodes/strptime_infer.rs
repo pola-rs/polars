@@ -122,7 +122,7 @@ impl ComputeNode for StrptimeInferNode {
                         *DEFAULT_DISTRIBUTOR_BUFFER_SIZE,
                     );
 
-                // Parallel workers. For flushing out in-flight morsels. 
+                // Parallel workers. For flushing out in-flight morsels.
                 for (mut recv, mut send) in distr_receivers.into_iter().zip(senders) {
                     let dtype = &self.dtype;
                     let mut options = self.options.clone();

@@ -36,11 +36,15 @@ pub mod rolling_group_by;
 pub mod select;
 pub mod shift;
 pub mod simple_projection;
-#[cfg(any(feature = "dtype-date", feature = "dtype-datetime", feature = "dtype-time"))]
-pub mod strptime_infer;
 pub mod sorted_group_by;
 pub mod sorted_unique;
 pub mod streaming_slice;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+pub mod strptime_infer;
 pub mod top_k;
 pub mod unordered_union;
 pub mod with_row_index;
