@@ -1529,31 +1529,29 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(row_idx_col_aexpr);
             },
 
-            // Lower strptime without an explicit format: needs format inference.
-            // Only exact=true is supported here; exact=false falls through to InMemoryMap.
-            #[cfg(any(feature = "dtype-date", feature = "dtype-datetime", feature = "dtype-time"))]
+            #[cfg(any(
+                feature = "dtype-date",
+                feature = "dtype-datetime",
+                feature = "dtype-time"
+            ))]
             AExpr::Function {
                 input: ref inner_exprs,
                 function:
-                    IRFunctionExpr::StringExpr(IRStringFunction::Strptime(
-                        ref dtype,
-                        ref options,
-                    )),
+                    IRFunctionExpr::StringExpr(IRStringFunction::Strptime(ref dtype, ref options)),
                 ..
             } if options.format.is_none()
                 && options.exact
                 && options.strict
-                && !matches!(dtype.as_ref(), DataType::Datetime(_, Some(_))) =>
+                && (!matches!(dtype.as_ref(), DataType::Datetime(_, Some(_)))
+                    || matches!(&ctx.expr_arena.get(inner_exprs[0].node()), AExpr::Literal(s) if s.extract_str() == Some("raise"))) =>
             {
                 let inner_nodes = inner_exprs.iter().map(|e| e.node()).collect_vec();
-                let (trans_input, trans_exprs) =
-                    lower_exprs_with_ctx(input, &inner_nodes, ctx)?;
+                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &inner_nodes, ctx)?;
 
                 // Materialise the input expression as a single-column stream.
                 let col_name = unique_column_name();
                 let expr_ir = ExprIR::new(trans_exprs[0], OutputName::Alias(col_name.clone()));
-                let select_stream =
-                    build_select_stream_with_ctx(trans_input, &[expr_ir], ctx)?;
+                let select_stream = build_select_stream_with_ctx(trans_input, &[expr_ir], ctx)?;
 
                 let output_schema = Arc::new(Schema::from_iter([(
                     col_name.clone(),
