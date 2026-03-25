@@ -350,40 +350,39 @@ pub fn cum_sum(s: &Series, reverse: bool) -> PolarsResult<Series> {
     cum_sum_with_init(s, reverse, &AnyValue::Null)
 }
 
-fn cum_mean_update<T, F>(
+fn cum_mean_update<T>(
     state: &mut CumMeanState,
     opt_v: Option<T::Native>,
-    cast: F,
-) -> Option<Option<T::Native>>
+) -> Option<Option<f64>>
 where
     T: PolarsNumericType,
-    F: Fn(T::Native) -> f64 + Copy,
+    T::Native: NumCast,
 {
     match opt_v {
         Some(v) => {
-            state.sum += cast(v);
+            let v_f64: f64 = NumCast::from(v)?;
+            state.sum += v_f64;
             state.count += 1;
             let mean = state.sum.sum() / state.count as f64;
-            Some(NumCast::from(mean))
+            Some(Some(mean))
         }
         None => Some(None),
     }
 }
 
-fn cum_mean_scan_numeric<T, F>(
+fn cum_mean_scan_numeric<T>(
     ca: &ChunkedArray<T>,
     reverse: bool,
     state: &mut CumMeanState,
-    cast: F,
-) -> ChunkedArray<T>
+) -> Float64Chunked
 where
     T: PolarsNumericType,
-    F: Fn(T::Native) -> f64 + Copy,
+    T::Native: NumCast,
 {
-    let out: ChunkedArray<T> = if reverse {
-        ca.iter().rev().scan(state, |s, v| cum_mean_update::<T, F>(s, v, cast)).collect_reversed()
+    let out: Float64Chunked = if reverse {
+        ca.iter().rev().scan(state, |s, v| cum_mean_update::<T>(s, v)).collect_reversed()
     } else {
-        ca.iter().scan(state, |s, v| cum_mean_update::<T, F>(s, v, cast)).collect_trusted()
+        ca.iter().scan(state, |s, v| cum_mean_update::<T>(s, v)).collect_trusted()
     };
     out.with_name(ca.name().clone())
 }
@@ -421,26 +420,26 @@ pub fn cum_mean_with_init(
         }
         #[cfg(feature = "dtype-duration")]
         Duration(tu) => {
-            let ct = s.cast(&Int64)?;
-            let ca = ct.i64()?;
-            cum_mean_scan_numeric::<Int64Type, _>(ca, reverse, state, |v| v as f64).into_duration(*tu).into_series()
+            let ca = s.cast(&Int64)?.i64()?.clone();
+            let out = cum_mean_scan_numeric::<Int64Type>(&ca, reverse, state);
+            out.cast(&Int64)?.i64()?.clone().into_duration(*tu).into_series()
         }
         #[cfg(feature = "dtype-datetime")]
         Datetime(tu, tz) => {
-            let ct = s.cast(&Int64)?;
-            let ca = ct.i64()?;
-            cum_mean_scan_numeric::<Int64Type, _>(ca, reverse, state, |v| v as f64).into_datetime(*tu, tz.clone()).into_series()
+            let ca = s.cast(&Int64)?.i64()?.clone();
+            let out = cum_mean_scan_numeric::<Int64Type>(&ca, reverse, state);
+            out.cast(&Int64)?.i64()?.clone().into_datetime(*tu, tz.clone()).into_series()
         }
         #[cfg(feature = "dtype-date")]
         Date => {
-            let ct = s.cast(&Int32)?;
-            let ca = ct.i32()?;
-            cum_mean_scan_numeric::<Int32Type, _>(ca, reverse, state, |v| v as f64).into_date().into_series()
+            let ca = s.cast(&Int32)?.i32()?.clone();
+            let out = cum_mean_scan_numeric::<Int32Type>(&ca, reverse, state);
+            out.cast(&Int32)?.i32()?.clone().into_date().into_series()
         }
         _ => {
             let ct = s.cast(&Float64)?;
             let ca = ct.f64()?;
-            cum_mean_scan_numeric::<Float64Type, _>(ca, reverse, state, |v| v).into_series()
+            cum_mean_scan_numeric::<Float64Type>(ca, reverse, state).into_series()
         }
     };
     Ok(out)

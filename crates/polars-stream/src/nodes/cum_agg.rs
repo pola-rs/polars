@@ -17,7 +17,7 @@ pub struct CumAggNode {
     kind: CumAggKind,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CumAggState {
     Scalar(AnyValue<'static>),
     MeanState(CumMeanState),
