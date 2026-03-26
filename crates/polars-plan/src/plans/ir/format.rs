@@ -746,7 +746,10 @@ pub fn write_ir_non_recursive(
         } => {
             write!(f, "{:indent$}SLICE[offset: {offset}, len: {len}]", "")
         },
-        IR::Gather { input: _, indices: _ } => {
+        IR::Gather {
+            input: _,
+            indices: _,
+        } => {
             write!(f, "{:indent$}GATHER", "")
         },
         IR::Filter {

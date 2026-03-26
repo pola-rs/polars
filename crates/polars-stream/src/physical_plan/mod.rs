@@ -655,10 +655,7 @@ fn visit_node_inputs_mut(
                 visit(input_right);
             },
 
-            PhysNodeKind::Gather {
-                input,
-                indices,
-            } => {
+            PhysNodeKind::Gather { input, indices } => {
                 rec!(input.node);
                 rec!(indices.node);
                 visit(input);

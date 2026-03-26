@@ -810,10 +810,7 @@ fn visualize_plan_rec(
             input_left,
             input_right,
         } => ("merge-sorted".to_string(), &[*input_left, *input_right][..]),
-        PhysNodeKind::Gather {
-            input,
-            indices,
-        } => ("gather".to_string(), &[*input, *indices][..]),
+        PhysNodeKind::Gather { input, indices } => ("gather".to_string(), &[*input, *indices][..]),
         #[cfg(feature = "ewma")]
         PhysNodeKind::EwmMean { input, options: _ } => ("ewm-mean".to_string(), &[*input][..]),
         #[cfg(feature = "ewma")]

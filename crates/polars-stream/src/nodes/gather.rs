@@ -159,9 +159,7 @@ impl ComputeNode for GatherNode {
                 let mut indices_recv = [recv_ports[1].take()];
                 indices_sink.spawn(scope, &mut indices_recv, &mut [], state, join_handles);
             },
-            Self::Source(source) => {
-                source.spawn(scope, &mut [], send_ports, state, join_handles)
-            },
+            Self::Source(source) => source.spawn(scope, &mut [], send_ports, state, join_handles),
             Self::Done => unreachable!(),
         }
     }

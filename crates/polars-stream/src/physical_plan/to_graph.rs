@@ -1349,20 +1349,14 @@ fn to_graph_rec<'a>(
             )
         },
 
-        Gather {
-            input,
-            indices,
-        } => {
+        Gather { input, indices } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             let indices_key = to_graph_rec(indices.node, ctx)?;
             let data_schema = ctx.phys_sm[input.node].output_schema.clone();
             let indices_schema = ctx.phys_sm[indices.node].output_schema.clone();
             ctx.graph.add_node(
                 nodes::gather::GatherNode::new(data_schema, indices_schema),
-                [
-                    (input_key, input.port),
-                    (indices_key, indices.port),
-                ],
+                [(input_key, input.port), (indices_key, indices.port)],
             )
         },
 

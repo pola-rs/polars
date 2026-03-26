@@ -1,5 +1,5 @@
-use polars_core::prelude::IdxSize;
 use polars_core::POOL;
+use polars_core::prelude::IdxSize;
 use polars_utils::index::check_bounds;
 use recursive::recursive;
 
