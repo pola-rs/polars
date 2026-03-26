@@ -363,22 +363,34 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
         },
         DslPlan::Gather { input, indices } => {
-            let input =
+            // Convert input twice: once for data, once for indices computation
+            // This avoids sharing nodes which confuses the optimizer
+            let data_input =
+                to_alp_impl(input.as_ref().clone(), ctxt).map_err(|e| e.context(failed_here!(gather)))?;
+            let indices_base =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(gather)))?;
 
-            // Build indices plan: empty DataFrame with Select of indices expression
-            let indices_plan = DslPlan::Select {
-                expr: vec![indices],
-                input: Arc::new(DslPlan::DataFrameScan {
-                    df: Arc::new(Default::default()),
-                    schema: Arc::new(Default::default()),
-                }),
-                options: Default::default(),
-            };
-            let indices =
-                to_alp_impl(indices_plan, ctxt).map_err(|e| e.context(failed_here!(gather)))?;
+            let input_schema = ctxt.lp_arena.get(indices_base).schema(ctxt.lp_arena);
 
-            IR::Gather { input, indices }
+            // Build indices as a Select on top of the indices_base
+            let (exprs, schema) = prepare_projection(vec![indices], &input_schema, ctxt.opt_flags)
+                .map_err(|e| e.context(failed_here!(gather)))?;
+            let eirs = to_expr_irs(
+                exprs,
+                &mut ExprToIRContext::new_with_opt_eager(
+                    ctxt.expr_arena,
+                    &input_schema,
+                    ctxt.opt_flags,
+                ),
+            )?;
+            let indices_node = ctxt.lp_arena.add(IR::Select {
+                expr: eirs,
+                input: indices_base,
+                schema: Arc::new(schema),
+                options: Default::default(),
+            });
+
+            IR::Gather { input: data_input, indices: indices_node }
         },
         DslPlan::DataFrameScan { df, schema } => IR::DataFrameScan {
             df,
