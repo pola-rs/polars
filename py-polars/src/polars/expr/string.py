@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Mapping
+from functools import reduce
+from operator import or_
 from typing import TYPE_CHECKING
 
 import polars._reexport as pl
@@ -1009,8 +1011,8 @@ class ExprStringNameSpace:
 
         See Also
         --------
-        starts_with : Check if string values start with a substring.
-        ends_with : Check if string values end with a substring.
+        starts_with : Check if string values start with any provided substrings.
+        ends_with : Check if string values end with any provided substrings.
         find: Return the index of the first substring matching a pattern.
 
         Examples
@@ -1129,19 +1131,19 @@ class ExprStringNameSpace:
         pattern_pyexpr = parse_into_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_find(pattern_pyexpr, literal, strict))
 
-    def ends_with(self, suffix: str | Expr) -> Expr:
+    def ends_with(self, *suffix: str | Expr) -> Expr:
         """
-        Check if string values end with a substring.
+        Check if string values end with any of the provided substrings.
 
         Parameters
         ----------
         suffix
-            Suffix substring.
+            Suffix substrings.
 
         See Also
         --------
         contains : Check if the string contains a substring that matches a pattern.
-        starts_with : Check if string values start with a substring.
+        starts_with : Check if string values start with any provided substrings.
 
         Examples
         --------
@@ -1177,6 +1179,22 @@ class ExprStringNameSpace:
         │ banana ┆ nu     ┆ false      │
         └────────┴────────┴────────────┘
 
+        >>> df = pl.DataFrame({"fruits": ["apple", "mango", "orange", None]})
+        >>> df.with_columns(
+        ...     pl.col("fruits").str.ends_with("go", "ge").alias("has_suffix"),
+        ... )
+        shape: (3, 2)
+        ┌────────┬────────────┐
+        │ fruits ┆ has_suffix │
+        │ ---    ┆ ---        │
+        │ str    ┆ bool       │
+        ╞════════╪════════════╡
+        │ apple  ┆ false      │
+        │ mango  ┆ true       │
+        | orange ┆ true       |
+        │ null   ┆ null       │
+        └────────┴────────────┘
+
         Using `ends_with` as a filter condition:
 
         >>> df.filter(pl.col("fruits").str.ends_with("go"))
@@ -1189,22 +1207,36 @@ class ExprStringNameSpace:
         │ mango  ┆ go     │
         └────────┴────────┘
         """
-        suffix_pyexpr = parse_into_expression(suffix, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_ends_with(suffix_pyexpr))
+        if len(prefix) == 0:
+            raise ValueError("ends_with requires at least one prefix")
 
-    def starts_with(self, prefix: str | Expr) -> Expr:
+        exprs = (
+                wrap_expr(
+                    self._pyexpr.str_ends_with(
+                        parse_into_expression(s, str_as_lit=True)
+                    )
+                )
+                for s in suffix
+            )
+            
+        return reduce(
+            operator.or_,
+            exprs,
+        )
+
+    def starts_with(self, *prefix: str | Expr) -> Expr:
         """
-        Check if string values start with a substring.
+        Check if string values start with any of the provided substrings.
 
         Parameters
         ----------
-        prefix
-            Prefix substring.
+        prefixes
+            Prefix substrings.
 
         See Also
         --------
         contains : Check if the string contains a substring that matches a pattern.
-        ends_with : Check if string values end with a substring.
+        ends_with : Check if string values end with any provided substrings.
 
         Examples
         --------
@@ -1240,6 +1272,22 @@ class ExprStringNameSpace:
         │ banana ┆ ba     ┆ true       │
         └────────┴────────┴────────────┘
 
+        >>> df = pl.DataFrame({"fruits": ["apple", "mango", "orange", None]})
+        >>> df.with_columns(
+        ...     pl.col("fruits").str.starts_with("app", "man").alias("has_prefix"),
+        ... )
+        shape: (4, 2)
+        ┌────────┬────────────┐
+        │ fruits ┆ has_prefix │
+        │ ---    ┆ ---        │
+        │ str    ┆ bool       │
+        ╞════════╪════════════╡
+        │ apple  ┆ true       │
+        │ mango  ┆ true       │
+        │ orange ┆ false      │
+        │ null   ┆ null       │
+        └────────┴────────────┘
+
         Using `starts_with` as a filter condition:
 
         >>> df.filter(pl.col("fruits").str.starts_with("app"))
@@ -1252,8 +1300,22 @@ class ExprStringNameSpace:
         │ apple  ┆ app    │
         └────────┴────────┘
         """
-        prefix_pyexpr = parse_into_expression(prefix, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_starts_with(prefix_pyexpr))
+        if len(prefix) == 0:
+            raise ValueError("starts_with requires at least one prefix")
+
+        exprs = (
+                wrap_expr(
+                    self._pyexpr.str_starts_with(
+                        parse_into_expression(p, str_as_lit=True)
+                    )
+                )
+                for p in prefix
+            )
+
+        return reduce(
+            operator.or_,
+            exprs,
+        )
 
     def json_decode(
         self,

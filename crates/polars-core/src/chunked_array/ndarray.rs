@@ -127,35 +127,16 @@ impl DataFrame {
                 let ca = s.unpack::<N>()?;
 
                 let mut chunk_offset = 0;
+
                 for arr in ca.downcast_iter() {
                     let vals = arr.values();
 
-                    // Depending on the desired order, we add items to the buffer.
-                    // SAFETY:
-                    // We get parallel access to the vector by offsetting index access accordingly.
-                    // For C-order, we only operate on every num-col-th element, starting from the
-                    // column index. For Fortran-order we only operate on n contiguous elements,
-                    // offset by n * the column index.
-                    match ordering {
-                        IndexOrder::C => unsafe {
-                            let num_cols = columns.len();
-                            let mut offset =
-                                (ptr as *mut N::Native).add(col_idx + chunk_offset * num_cols);
-                            for v in vals.iter() {
-                                *offset = *v;
-                                offset = offset.add(num_cols);
-                            }
-                        },
-                        IndexOrder::Fortran => unsafe {
-                            let offset_ptr =
-                                (ptr as *mut N::Native).add(col_idx * height + chunk_offset);
-                            // SAFETY:
-                            // this is uninitialized memory, so we must never read from this data
-                            // copy_from_slice does not read
-                            let buf = std::slice::from_raw_parts_mut(offset_ptr, vals.len());
-                            buf.copy_from_slice(vals)
-                        },
+                    unsafe {
+                        let offset_ptr = (ptr as *mut N::Native).add(col_idx * height _ chunk_offset);
+                        let buf = std::slice::from_raw_parts_mut(offset_ptr, vals.len());
+                        buf.copy_from_slice(vals);
                     }
+
                     chunk_offset += vals.len();
                 }
 
@@ -171,7 +152,13 @@ impl DataFrame {
         // Depending on the desired order, we can either return the array buffer as-is or reverse
         // the axes.
         match ordering {
-            IndexOrder::C => Ok(Array2::from_shape_vec((shape.0, shape.1), membuf).unwrap()),
+            IndexOrder::C => {
+                // Treat `membuf` as (width, height) in Fortran-style order,
+                // then transpose into a standard-layout C array
+                let ndarr_f = Array2::from_shape_vec((shape.1, shape.0), membuf).unwrap();
+                let ndarr_c = ndarr_f.reversed_axes().to_owned();
+                Ok(ndarr_c)
+            }
             IndexOrder::Fortran => {
                 let ndarr = Array2::from_shape_vec((shape.1, shape.0), membuf).unwrap();
                 Ok(ndarr.reversed_axes())

@@ -1561,18 +1561,30 @@ def test_starts_ends_with() -> None:
 
     assert df.select(
         pl.col("a").str.ends_with("pop").alias("ends_pop"),
+        pl.col("a").str.ends_with("pop", "ts").alias("ends_pop_or_ts"),
+        pl.col("a").str.ends_with(pl.col("sub"), "pop").alias(
+            "ends_sub_or_pop"
+        ),
         pl.col("a").str.ends_with(pl.lit(None)).alias("ends_None"),
         pl.col("a").str.ends_with(pl.col("sub")).alias("ends_sub"),
         pl.col("a").str.starts_with("ham").alias("starts_ham"),
         pl.col("a").str.starts_with(pl.lit(None)).alias("starts_None"),
         pl.col("a").str.starts_with(pl.col("sub")).alias("starts_sub"),
+        pl.col("a").str.starts_with("ham", "nut").alias("starts_ham_or_nut"),
+        pl.col("a").str.starts_with(pl.col("sub"), "lolly").alias(
+            "starts_sub_or_lolly"
+        ),
     ).to_dict(as_series=False) == {
         "ends_pop": [False, False, True, None],
+        "ends_pop_or_ts": [False, True, True, None],
+        "ends_sub_or_pop": [False, True, True, None],
         "ends_None": [None, None, None, None],
         "ends_sub": [False, True, None, None],
         "starts_ham": [True, False, False, None],
         "starts_None": [None, None, None, None],
         "starts_sub": [True, False, None, None],
+        "starts_ham_or_nut": [True, True, False, None],
+        "starts_sub_or_lolly": [True, False, True, None],
     }
 
 
