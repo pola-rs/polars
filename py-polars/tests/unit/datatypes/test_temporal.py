@@ -186,7 +186,7 @@ def test_diff_datetime() -> None:
     out = df.with_columns(
         pl.col("timestamp").diff().over("char", mapping_strategy="join")
     )["timestamp"]
-    assert_series_equal(out[0], out[1])
+    assert out[0] == out[1]
 
 
 def test_from_pydatetime() -> None:

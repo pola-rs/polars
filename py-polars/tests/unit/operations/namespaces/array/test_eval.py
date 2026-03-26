@@ -162,16 +162,21 @@ def test_arr_agg_parametric(
 ) -> None:
     def test_case(s: pl.Series) -> None:
         out = s.arr.agg(expr(pl.element()))
+        inner_dtype = s.dtype.inner  # type: ignore[attr-defined]
 
         for i, v in enumerate(s):
             if v is None:
                 assert out[i] is None
                 continue
 
-            assert isinstance(v, pl.Series)
+            assert isinstance(v, list)
 
-            v = v.rename("")
-            v = v.to_frame().select(expr(pl.col(""))).to_series()
+            v = (
+                pl.Series("", v, dtype=inner_dtype)
+                .to_frame()
+                .select(expr(pl.col("")))
+                .to_series()
+            )
 
             if not is_scalar:
                 v = v.implode()

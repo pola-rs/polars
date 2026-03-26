@@ -757,17 +757,17 @@ def test_str_strip_suffix_wrong_length() -> None:
 def test_str_split() -> None:
     a = pl.Series("a", ["a, b", "a", "ab,c,de"])
     for out in [a.str.split(","), pl.select(pl.lit(a).str.split(",")).to_series()]:
-        assert out[0].to_list() == ["a", " b"]
-        assert out[1].to_list() == ["a"]
-        assert out[2].to_list() == ["ab", "c", "de"]
+        assert out[0] == ["a", " b"]
+        assert out[1] == ["a"]
+        assert out[2] == ["ab", "c", "de"]
 
     for out in [
         a.str.split(",", inclusive=True),
         pl.select(pl.lit(a).str.split(",", inclusive=True)).to_series(),
     ]:
-        assert out[0].to_list() == ["a,", " b"]
-        assert out[1].to_list() == ["a"]
-        assert out[2].to_list() == ["ab,", "c,", "de"]
+        assert out[0] == ["a,", " b"]
+        assert out[1] == ["a"]
+        assert out[2] == ["ab,", "c,", "de"]
 
 
 def test_json_decode_series() -> None:

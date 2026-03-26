@@ -128,8 +128,8 @@ def test_init_inputs(plmonkeypatch: PlMonkeyPatch) -> None:
         ),
     ):
         assert res.dtype == pl.Array(pl.Float32, shape=2)
-        assert res[0].to_list() == [1.0, 2.0]
-        assert res[1].to_list() == [3.0, None]
+        assert res[0] == [1.0, 2.0]
+        assert res[1] == [3.0, None]
 
     # numpy from arange, with/without dtype
     two_ints = np.arange(2, dtype=np.int64)
@@ -1006,9 +1006,9 @@ def test_round_sig_figs_raises_exc() -> None:
 def test_apply_list_out() -> None:
     s = pl.Series("count", [3, 2, 2])
     out = s.map_elements(lambda val: pl.repeat(val, val, eager=True))
-    assert out[0].to_list() == [3, 3, 3]
-    assert out[1].to_list() == [2, 2]
-    assert out[2].to_list() == [2, 2]
+    assert out[0] == [3, 3, 3]
+    assert out[1] == [2, 2]
+    assert out[2] == [2, 2]
 
 
 def test_reinterpret_signed() -> None:
@@ -1688,17 +1688,15 @@ def test_init_categorical() -> None:
 
 def test_iter_nested_list() -> None:
     elems = list(pl.Series("s", [[1, 2], [3, 4]]))
-    assert_series_equal(elems[0], pl.Series([1, 2]))
-    assert_series_equal(elems[1], pl.Series([3, 4]))
+    assert elems[0] == [1, 2]
+    assert elems[1] == [3, 4]
 
     rev_elems = list(reversed(pl.Series("s", [[1, 2], [3, 4]])))
-    assert_series_equal(rev_elems[0], pl.Series([3, 4]))
-    assert_series_equal(rev_elems[1], pl.Series([1, 2]))
+    assert rev_elems[0] == [3, 4]
+    assert rev_elems[1] == [1, 2]
 
 
 def test_iter_nested_struct() -> None:
-    # note: this feels inconsistent with the above test for nested list, but
-    # let's ensure the behaviour is codified before potentially modifying...
     elems = list(pl.Series("s", [{"a": 1, "b": 2}, {"a": 3, "b": 4}]))
     assert elems[0] == {"a": 1, "b": 2}
     assert elems[1] == {"a": 3, "b": 4}
@@ -1721,8 +1719,12 @@ def test_iter_nested_struct() -> None:
 )
 def test_nested_list_types_preserved(dtype: pl.DataType) -> None:
     srs = pl.Series([pl.Series([], dtype=dtype) for _ in range(5)])
-    for srs_nested in srs:
-        assert srs_nested.dtype == dtype
+    # Check that the inner dtype is preserved
+    assert srs.dtype.inner == dtype  # type: ignore[attr-defined]
+    # Elements are now Python lists
+    for elem in srs:
+        assert isinstance(elem, list)
+        assert elem == []
 
 
 def test_to_physical() -> None:

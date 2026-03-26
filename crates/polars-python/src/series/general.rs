@@ -11,7 +11,6 @@ use super::PySeries;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
-use crate::py_modules::polars;
 use crate::utils::EnterPolarsExt;
 
 #[pymethods]
@@ -125,13 +124,7 @@ impl PySeries {
             Err(e) => return Err(PyPolarsErr::from(e).into()),
         };
 
-        match av {
-            AnyValue::List(s) | AnyValue::Array(s, _) => {
-                let pyseries = PySeries::new(s);
-                polars(py).getattr(py, "wrap_s")?.call1(py, (pyseries,))
-            },
-            _ => Wrap(av).into_py_any(py),
-        }
+        Wrap(av).into_py_any(py)
     }
 
     /// Get a value by index, allowing negative indices.

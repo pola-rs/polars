@@ -609,8 +609,8 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
             "fruits",
         )
 
-        assert out[0, "B"].to_list() == [2, 3]
-        assert out[4, "B"].to_list() == [1, 4]
+        assert out[0, "B"] == [2, 3]
+        assert out[4, "B"] == [1, 4]
 
     out = df.sort("fruits").select(
         pl.col("B").reverse().get(pl.lit(1)).over("fruits"),

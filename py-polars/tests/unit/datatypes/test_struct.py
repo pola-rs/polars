@@ -222,15 +222,17 @@ def test_struct_cols() -> None:
 
     # struct in list
     df = build_struct_df([{"list_of_struct_col": [{"inner": 1}]}])
-    assert df["list_of_struct_col"][0].struct.field("inner").to_list() == [1]
+    # Accessing list element returns Python list of dicts
+    assert df["list_of_struct_col"][0] == [{"inner": 1}]
 
     # struct in list in struct
     df = build_struct_df(
         [{"struct_list_struct_col": {"list_struct_col": [{"inner": 1}]}}]
     )
-    assert df["struct_list_struct_col"].struct.field("list_struct_col")[0].struct.field(
-        "inner"
-    ).to_list() == [1]
+    # Accessing list element returns Python list of dicts
+    assert df["struct_list_struct_col"].struct.field("list_struct_col")[0] == [
+        {"inner": 1}
+    ]
 
 
 def test_struct_with_validity() -> None:
