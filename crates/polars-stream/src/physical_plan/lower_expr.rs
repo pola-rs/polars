@@ -1418,14 +1418,10 @@ fn lower_exprs_with_ctx(
             {
                 let out_name = unique_column_name();
                 let row_idx_col_aexpr = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
-                let row_idx_col_expr_ir =
-                    ExprIR::new(row_idx_col_aexpr, OutputName::ColumnLhs(out_name.clone()));
-                let row_idx_stream = build_select_stream_with_ctx(
-                    build_row_idx_stream(input, out_name, None, ctx.phys_sm),
-                    &[row_idx_col_expr_ir],
-                    ctx,
-                )?;
-                input_streams.insert(row_idx_stream);
+                // Keep the original input columns available on this stream.
+                // `lower_exprs()` callers like IR::Sort rely on that to preserve the
+                // data columns while only lowering the key expressions.
+                input_streams.insert(build_row_idx_stream(input, out_name, None, ctx.phys_sm));
                 transformed_exprs.push(row_idx_col_aexpr);
             },
 
