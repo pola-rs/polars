@@ -17,6 +17,9 @@ use crate::nodes::io_sinks::components::partition_morsel_sender::PartitionMorsel
 use crate::nodes::io_sinks::components::partition_sink_starter::PartitionSinkStarter;
 use crate::nodes::io_sinks::components::partitioner::Partitioner;
 use crate::nodes::io_sinks::components::partitioner_pipeline::PartitionerPipeline;
+use crate::nodes::io_sinks::components::sinked_path_info_list::{
+    SinkedPathInfoList, call_sinked_paths_callback,
+};
 use crate::nodes::io_sinks::components::size::NonZeroRowCountAndSize;
 use crate::nodes::io_sinks::config::{IOSinkNodeConfig, IOSinkTarget, PartitionedTarget};
 use crate::nodes::io_sinks::writers::create_file_writer_starter;
@@ -46,6 +49,7 @@ pub fn start_partition_sink_pipeline(
                 maintain_order: _,
                 sync_on_close,
                 cloud_options,
+                sinked_paths_callback,
             },
         input_schema: _,
     } = config
@@ -75,6 +79,10 @@ pub fn start_partition_sink_pipeline(
         write!(file_part_prefix, "{uuid}").unwrap();
     }
 
+    let sinked_path_info_list: Option<SinkedPathInfoList> = sinked_paths_callback
+        .is_some()
+        .then(SinkedPathInfoList::default);
+
     let file_provider = Arc::new(FileProvider {
         base_path,
         cloud_options,
@@ -82,6 +90,7 @@ pub fn start_partition_sink_pipeline(
         upload_chunk_size,
         upload_max_concurrency: upload_max_concurrency.get(),
         io_metrics,
+        sinked_path_info_list: sinked_path_info_list.clone(),
     });
 
     let file_writer_starter: Arc<dyn FileWriterStarter> =
@@ -105,7 +114,8 @@ pub fn start_partition_sink_pipeline(
             file_size_limit: {:?}, \
             upload_chunk_size: {}, \
             upload_concurrency: {}, \
-            io_metrics: {}",
+            io_metrics: {}, \
+            build_sinked_path_info_list: {}",
             partitioner.verbose_display(),
             file_writer_starter.writer_name(),
             &file_provider.provider_type,
@@ -116,6 +126,7 @@ pub fn start_partition_sink_pipeline(
             upload_chunk_size,
             upload_max_concurrency,
             io_metrics_is_some,
+            sinked_path_info_list.is_some(),
         );
     }
 
@@ -164,7 +175,7 @@ pub fn start_partition_sink_pipeline(
         async_executor::AbortOnDropHandle::new(async_executor::spawn(
             TaskPriority::High,
             PartitionDistributor {
-                node_name,
+                node_name: node_name.clone(),
                 partitioned_dfs_rx,
                 partition_morsel_sender,
                 error_capture,
@@ -183,6 +194,16 @@ pub fn start_partition_sink_pipeline(
         async move {
             partitioner_handle.await;
             partition_distributor_handle.await?;
+
+            if let Some(sinked_paths_callback) = sinked_paths_callback {
+                if verbose {
+                    eprintln!("{node_name}: Call sinked path info callback");
+                }
+
+                call_sinked_paths_callback(sinked_paths_callback, sinked_path_info_list.unwrap())
+                    .await?;
+            }
+
             Ok(())
         },
     ));

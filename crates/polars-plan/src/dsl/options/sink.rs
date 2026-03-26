@@ -33,6 +33,7 @@ pub struct UnifiedSinkArgs {
     pub maintain_order: bool,
     pub sync_on_close: SyncOnCloseType,
     pub cloud_options: Option<Arc<CloudOptions>>,
+    pub sinked_paths_callback: Option<SinkedPathsCallback>,
 }
 
 impl Default for UnifiedSinkArgs {
@@ -42,6 +43,7 @@ impl Default for UnifiedSinkArgs {
             maintain_order: true,
             sync_on_close: SyncOnCloseType::None,
             cloud_options: None,
+            sinked_paths_callback: None,
         }
     }
 }
@@ -448,4 +450,59 @@ pub struct FileSinkOptions {
     pub target: SinkTarget,
     pub file_format: FileWriteFormat,
     pub unified_sink_args: UnifiedSinkArgs,
+}
+
+pub type SinkedPathsCallback = PlanCallback<SinkedPathsCallbackArgs, ()>;
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Hash, PartialEq)]
+pub struct SinkedPathsCallbackArgs {
+    pub path_info_list: Vec<SinkedPathInfo>,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Hash, PartialEq)]
+pub struct SinkedPathInfo {
+    pub path: PlRefPath,
+}
+
+impl SinkedPathsCallback {
+    pub fn call_(&self, args: SinkedPathsCallbackArgs) -> PolarsResult<()> {
+        match self {
+            Self::Rust(func) => (func)(args),
+            #[cfg(feature = "python")]
+            Self::Python(object) => pyo3::Python::attach(|py| {
+                use pyo3::intern;
+                use pyo3::types::{PyAnyMethods, PyDict, PyList};
+
+                let SinkedPathsCallbackArgs { path_info_list } = args;
+
+                let convert_registry =
+                    polars_utils::python_convert_registry::get_python_convert_registry();
+
+                let py_paths = PyList::empty(py);
+
+                for SinkedPathInfo { path } in path_info_list {
+                    use pyo3::types::PyListMethods;
+
+                    let path: &str = path.as_str();
+
+                    py_paths.append(path)?;
+                }
+
+                let kwargs = PyDict::new(py);
+                kwargs.set_item(intern!(py, "paths"), py_paths)?;
+
+                let args_dataclass = convert_registry
+                    .py_sinked_paths_callback_args_dataclass()
+                    .call(py, (), Some(&kwargs))?;
+
+                object.call1(py, (args_dataclass,))?;
+
+                Ok(())
+            }),
+        }
+    }
 }
