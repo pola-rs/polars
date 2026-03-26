@@ -491,6 +491,11 @@ def test_dataframe_gather() -> None:
 def test_lazyframe_gather() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
 
+    # Test with int
+    result = lf.gather(0).collect()
+    expected = pl.DataFrame({"a": [1], "b": [5]})
+    assert_frame_equal(result, expected)
+
     # Test with list
     result = lf.gather([0, 2]).collect()
     expected = pl.DataFrame({"a": [1, 3], "b": [5, 7]})
@@ -500,9 +505,9 @@ def test_lazyframe_gather() -> None:
 def test_lazyframe_gather_negative_indices() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
 
-    # LazyFrame.gather does not support negative indices
-    with pytest.raises(ValueError, match="negative indices are not supported"):
-        lf.gather([0, -1])
+    # LazyFrame.gather does not support negative indices (strict cast fails)
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="conversion from"):
+        lf.gather([0, -1]).collect()
 
 
 def test_dataframe_gather_out_of_bounds() -> None:

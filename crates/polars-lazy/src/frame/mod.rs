@@ -1748,10 +1748,10 @@ impl LazyFrame {
     ///
     /// The `indices` expression should evaluate to a single column containing
     /// the row indices to gather. The indices will be cast to the platform's
-    /// index type (UInt32 or UInt64).
+    /// index type (UInt32 or UInt64). Negative indices are not supported.
     pub fn gather(self, indices: Expr) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let indices = indices.cast(IDX_DTYPE);
+        let indices = indices.strict_cast(IDX_DTYPE);
         let lp = self.get_plan_builder().gather(indices).build();
         Self::from_logical_plan(lp, opt_state)
     }
