@@ -1207,20 +1207,19 @@ class ExprStringNameSpace:
         │ mango  ┆ go     │
         └────────┴────────┘
         """
-        if len(prefix) == 0:
-            raise ValueError("ends_with requires at least one prefix")
+        if len(suffix) == 0:
+            msg = "ends_with requires at least one suffix"
+            raise ValueError(msg)
 
         exprs = (
-                wrap_expr(
-                    self._pyexpr.str_ends_with(
-                        parse_into_expression(s, str_as_lit=True)
-                    )
-                )
-                for s in suffix
+            wrap_expr(
+                self._pyexpr.str_ends_with(parse_into_expression(s, str_as_lit=True))
             )
-            
+            for s in suffix
+        )
+
         return reduce(
-            operator.or_,
+            or_,
             exprs,
         )
 
@@ -1230,7 +1229,7 @@ class ExprStringNameSpace:
 
         Parameters
         ----------
-        prefixes
+        prefix
             Prefix substrings.
 
         See Also
@@ -1301,19 +1300,18 @@ class ExprStringNameSpace:
         └────────┴────────┘
         """
         if len(prefix) == 0:
-            raise ValueError("starts_with requires at least one prefix")
+            msg = "starts_with requires at least one prefix"
+            raise ValueError(msg)
 
         exprs = (
-                wrap_expr(
-                    self._pyexpr.str_starts_with(
-                        parse_into_expression(p, str_as_lit=True)
-                    )
-                )
-                for p in prefix
+            wrap_expr(
+                self._pyexpr.str_starts_with(parse_into_expression(p, str_as_lit=True))
             )
+            for p in prefix
+        )
 
         return reduce(
-            operator.or_,
+            or_,
             exprs,
         )
 
