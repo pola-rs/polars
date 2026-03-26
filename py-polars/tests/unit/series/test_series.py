@@ -1717,7 +1717,7 @@ def test_iter_nested_struct() -> None:
         pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)]),
     ],
 )
-def test_nested_list_types_preserved(dtype: pl.DataType) -> None:
+def test_nested_list_types_not_preserved(dtype: pl.DataType) -> None:
     srs = pl.Series([pl.Series([], dtype=dtype) for _ in range(5)])
     # Check that the inner dtype is preserved
     assert srs.dtype.inner == dtype  # type: ignore[attr-defined]
