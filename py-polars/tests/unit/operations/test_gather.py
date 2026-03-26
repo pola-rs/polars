@@ -528,5 +528,3 @@ def test_gather_out_of_bounds() -> None:
     # Out-of-bounds index should raise an error in streaming engine too
     with pytest.raises(pl.exceptions.OutOfBoundsError):
         df.lazy().gather([0, 100]).collect(engine="streaming")
-
-
