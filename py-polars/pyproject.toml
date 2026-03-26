@@ -275,9 +275,6 @@ filterwarnings = [
   # Introspection under PyCharm IDE can generate this in Python 3.12
   "ignore:.*co_lnotab is deprecated, use co_lines.*:DeprecationWarning",
   "ignore:the argument `return_as_string` for `DataFrame.glimpse` is deprecated",
-  # TODO: Excel tests lead to unclosed file warnings
-  # https://github.com/pola-rs/polars/issues/14466
-  "ignore:unclosed file.*:ResourceWarning",
   # TODO: Database tests lead to unclosed database warnings
   # https://github.com/pola-rs/polars/issues/20296
   "ignore:unclosed database.*:ResourceWarning",
