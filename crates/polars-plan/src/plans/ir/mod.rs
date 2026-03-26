@@ -50,7 +50,7 @@ pub enum IR {
     },
     Gather {
         input: Node,
-        indices: Arc<[IdxSize]>,
+        indices: Node,
     },
     Filter {
         input: Node,

@@ -83,7 +83,7 @@ pub struct Gather {
     #[pyo3(get)]
     input: usize,
     #[pyo3(get)]
-    indices: Vec<IdxSize>,
+    indices: usize,
 }
 
 #[pyclass(frozen)]
@@ -406,7 +406,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         .into_py_any(py),
         IR::Gather { input, indices } => Gather {
             input: input.0,
-            indices: indices.to_vec(),
+            indices: indices.0,
         }
         .into_py_any(py),
         IR::Filter { input, predicate } => Filter {

@@ -123,8 +123,8 @@ impl Hash for IRHashWrap<'_> {
                 len.hash(state);
                 offset.hash(state);
             },
-            IR::Gather { input: _, indices } => {
-                indices.hash(state);
+            IR::Gather { input: _, indices: _ } => {
+                
             },
             IR::Filter {
                 input: _,

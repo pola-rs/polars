@@ -1745,8 +1745,13 @@ impl LazyFrame {
     }
 
     /// Select rows by index.
-    pub fn gather(self, indices: Arc<[IdxSize]>) -> LazyFrame {
+    ///
+    /// The `indices` expression should evaluate to a single column containing
+    /// the row indices to gather. The indices will be cast to the platform's
+    /// index type (UInt32 or UInt64).
+    pub fn gather(self, indices: Expr) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let indices = indices.cast(IDX_DTYPE);
         let lp = self.get_plan_builder().gather(indices).build();
         Self::from_logical_plan(lp, opt_state)
     }

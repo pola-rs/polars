@@ -413,6 +413,7 @@ fn create_physical_plan_impl(
         },
         Gather { input, indices } => {
             let input = recurse!(input, state)?;
+            let indices = recurse!(indices, state)?;
             Ok(Box::new(executors::GatherExec { input, indices }))
         },
         Filter { input, predicate } => {

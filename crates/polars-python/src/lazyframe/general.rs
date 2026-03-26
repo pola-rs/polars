@@ -1372,25 +1372,9 @@ impl PyLazyFrame {
         ldf.slice(offset, len.unwrap_or(IdxSize::MAX)).into()
     }
 
-    fn gather(&self, indices: Vec<i64>) -> PyResult<Self> {
-        // Validate and convert indices
-        let indices: Vec<IdxSize> = indices
-            .into_iter()
-            .map(|i| {
-                if i < 0 {
-                    Err(PyValueError::new_err(
-                        "negative indices are not supported for LazyFrame.gather",
-                    ))
-                } else {
-                    IdxSize::try_from(i).map_err(|_| {
-                        PyValueError::new_err(format!("index {i} is out of range for IdxSize"))
-                    })
-                }
-            })
-            .collect::<PyResult<Vec<_>>>()?;
-
+    fn gather(&self, indices: PyExpr) -> Self {
         let ldf = self.ldf.read().clone();
-        Ok(ldf.gather(indices.into()).into())
+        ldf.gather(indices.inner).into()
     }
 
     fn tail(&self, n: IdxSize) -> Self {

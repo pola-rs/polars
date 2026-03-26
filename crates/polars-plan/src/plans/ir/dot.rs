@@ -3,7 +3,6 @@ use std::path::PathBuf;
 
 use polars_core::prelude::{InitHashMaps, PlHashSet};
 use polars_core::schema::Schema;
-use polars_utils::format_list_truncated;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
@@ -188,9 +187,8 @@ impl<'a> IRDotDisplay<'a> {
             },
             Gather { input, indices } => {
                 recurse!(*input);
-                write_label(f, id, |f| {
-                    write!(f, "GATHER {}", format_list_truncated!(indices, 4))
-                })?;
+                recurse!(*indices);
+                write_label(f, id, |f| write!(f, "GATHER"))?;
             },
             Distinct { input, options, .. } => {
                 recurse!(*input);

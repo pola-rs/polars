@@ -393,7 +393,7 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn gather(self, indices: Arc<[IdxSize]>) -> Self {
+    pub fn gather(self, indices: Expr) -> Self {
         DslPlan::Gather {
             input: Arc::new(self.0),
             indices,

@@ -120,7 +120,7 @@ pub(crate) enum SerializableDslPlanNode {
     },
     Gather {
         input: DslPlanKey,
-        indices: Arc<[IdxSize]>,
+        indices: Expr,
     },
     MapFunction {
         input: DslPlanKey,

@@ -480,6 +480,13 @@ pub enum PhysNodeKind {
         input_right: PhysStream,
     },
 
+    /// Gather rows from input using indices from indices.
+    /// Falls back to in-memory execution.
+    Gather {
+        input: PhysStream,
+        indices: PhysStream,
+    },
+
     #[cfg(feature = "ewma")]
     EwmMean {
         input: PhysStream,
@@ -646,6 +653,16 @@ fn visit_node_inputs_mut(
                 rec!(input_right.node);
                 visit(input_left);
                 visit(input_right);
+            },
+
+            PhysNodeKind::Gather {
+                input,
+                indices,
+            } => {
+                rec!(input.node);
+                rec!(indices.node);
+                visit(input);
+                visit(indices);
             },
 
             PhysNodeKind::TopK { input, k, .. } => {

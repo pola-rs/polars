@@ -10,12 +10,12 @@ impl DslPlan {
             | Distinct { input, .. }
             | Sort { input, .. }
             | Slice { input, .. }
-            | Gather { input, .. }
             | HStack { input, .. }
             | MatchToSchema { input, .. }
             | MapFunction { input, .. }
             | Sink { input, .. }
             | Cache { input, .. } => scratch.push(input),
+            Gather { input, .. } => scratch.push(input),
             Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
                 scratch.extend(inputs)
             },

@@ -366,22 +366,19 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(gather)))?;
 
-            if indices.is_empty() {
-                let input_schema = ctxt
-                    .lp_arena
-                    .get(input)
-                    .schema(ctxt.lp_arena)
-                    .as_ref()
-                    .clone();
+            // Build indices plan: empty DataFrame with Select of indices expression
+            let indices_plan = DslPlan::Select {
+                expr: vec![indices],
+                input: Arc::new(DslPlan::DataFrameScan {
+                    df: Arc::new(Default::default()),
+                    schema: Arc::new(Default::default()),
+                }),
+                options: Default::default(),
+            };
+            let indices =
+                to_alp_impl(indices_plan, ctxt).map_err(|e| e.context(failed_here!(gather)))?;
 
-                IR::DataFrameScan {
-                    df: Arc::new(DataFrame::empty_with_schema(&input_schema)),
-                    schema: input_schema.clone(),
-                    output_schema: None,
-                }
-            } else {
-                IR::Gather { input, indices }
-            }
+            IR::Gather { input, indices }
         },
         DslPlan::DataFrameScan { df, schema } => IR::DataFrameScan {
             df,

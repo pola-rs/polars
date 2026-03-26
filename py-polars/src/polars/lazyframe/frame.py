@@ -7327,7 +7327,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def gather(
         self,
-        indices: int | Sequence[int],
+        indices: IntoExpr,
     ) -> LazyFrame:
         """
         Take rows at the given indices.
@@ -7335,12 +7335,28 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         indices
-            Row indices to gather. Must be non-negative.
+            An expression that evaluates to row indices. The expression must evaluate
+            to a column of unsigned integer type (UInt32 or UInt64 depending on the
+            platform). Indices must be non-negative and contain no null values.
 
         Examples
         --------
         >>> lf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-        >>> lf.gather([0, 2]).collect()
+        >>> lf.gather(pl.lit([0, 2])).collect()
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 5   │
+        │ 3   ┆ 7   │
+        └─────┴─────┘
+
+        Using a Series:
+
+        >>> idx = pl.Series("idx", [0, 2])
+        >>> lf.gather(pl.lit(idx)).collect()
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -7351,9 +7367,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ 7   │
         └─────┴─────┘
         """
-        if isinstance(indices, int):
-            indices = [indices]
-        return self._from_pyldf(self._ldf.gather(list(indices)))
+        indices_expr = wrap_expr(parse_into_expression(indices, list_as_series=True))
+        return self._from_pyldf(self._ldf.gather(indices_expr._pyexpr))
 
     def gather_every(self, n: int, offset: int = 0) -> LazyFrame:
         """

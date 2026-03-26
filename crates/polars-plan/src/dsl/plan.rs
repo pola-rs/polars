@@ -140,7 +140,7 @@ pub enum DslPlan {
     /// Gather rows by index
     Gather {
         input: Arc<DslPlan>,
-        indices: Arc<[IdxSize]>,
+        indices: Expr,
     },
     /// A (User Defined) Function
     MapFunction {

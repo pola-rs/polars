@@ -21,7 +21,6 @@ use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive};
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
-use polars_utils::index::check_bounds;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(any(feature = "parquet", feature = "csv", feature = "json"))]
@@ -29,7 +28,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
-use polars_utils::{IdxSize, format_list_truncated, format_pl_smallstr, unique_column_name};
+use polars_utils::{IdxSize, format_pl_smallstr, unique_column_name};
 use slotmap::SlotMap;
 
 use super::lower_expr::build_hstack_stream;
@@ -1623,22 +1622,16 @@ pub fn lower_ir(
             return Ok(stream);
         },
         IR::Gather { input, indices } => {
-            let indices = indices.clone();
-            let phys_input = lower_ir!(*input)?;
+            let input = *input;
+            let indices = *indices;
+
+            let phys_input = lower_ir!(input)?;
+            let phys_indices = lower_ir!(indices)?;
 
             // Fall back to in-memory execution for gather
-            let format_str = ctx
-                .prepare_visualization
-                .then(|| format!("GATHER[indices: {:?}]", format_list_truncated!(indices, 4)));
-            let map = Arc::new(move |df: DataFrame| {
-                check_bounds(&indices, df.height() as IdxSize)?;
-                // SAFETY: bounds checked above
-                Ok(unsafe { df.take_slice_unchecked(&indices) })
-            });
-            PhysNodeKind::InMemoryMap {
+            PhysNodeKind::Gather {
                 input: phys_input,
-                map,
-                format_str,
+                indices: phys_indices,
             }
         },
         IR::ExtContext { .. } => todo!(),
