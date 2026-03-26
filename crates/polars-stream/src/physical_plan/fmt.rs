@@ -665,6 +665,8 @@ fn visualize_plan_rec(
 
             (s, from_ref(input))
         },
+
+        #[cfg(feature = "is_first_distinct")]
         PhysNodeKind::IsFirstDistinct {
             input,
             out_name,

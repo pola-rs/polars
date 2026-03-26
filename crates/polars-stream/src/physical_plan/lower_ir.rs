@@ -1498,6 +1498,7 @@ pub fn lower_ir(
             }
 
             // Lower memory pressure option using is_first_distinct + filter.
+            #[cfg(feature = "is_first_distinct")]
             if options.maintain_order
                 && matches!(
                     options.keep_strategy,

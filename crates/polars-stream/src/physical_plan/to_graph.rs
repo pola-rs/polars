@@ -978,6 +978,7 @@ fn to_graph_rec<'a>(
             )
         },
 
+        #[cfg(feature = "is_first_distinct")]
         IsFirstDistinct {
             input,
             out_name,

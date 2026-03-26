@@ -7,7 +7,7 @@ use polars_core::prelude::{
 };
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaExt};
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, feature_gated};
 use polars_expr::state::ExecutionState;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_ops::frame::{JoinArgs, JoinType};
@@ -779,33 +779,39 @@ fn lower_exprs_with_ctx(
 
                 // TODO: lower through IR instead of duplicating logic here, need to pass ir_arena here.
                 if maintain_order {
-                    let distinct_name = unique_column_name();
-                    let tmp_expr = inner_exprs[0].with_alias(tmp_name.clone());
-                    let input_stream =
-                        build_select_stream_with_ctx(input, std::slice::from_ref(&tmp_expr), ctx)?;
+                    feature_gated!("is_first_distinct", {
+                        let distinct_name = unique_column_name();
+                        let tmp_expr = inner_exprs[0].with_alias(tmp_name.clone());
+                        let input_stream = build_select_stream_with_ctx(
+                            input,
+                            std::slice::from_ref(&tmp_expr),
+                            ctx,
+                        )?;
 
-                    let mut distinct_out_schema =
-                        (*ctx.phys_sm[input_stream.node].output_schema).clone();
-                    distinct_out_schema.insert(distinct_name.clone(), DataType::Boolean);
-                    let is_first_distinct_node = ctx.phys_sm.insert(PhysNode::new(
-                        Arc::new(distinct_out_schema),
-                        PhysNodeKind::IsFirstDistinct {
-                            input: input_stream,
-                            out_name: distinct_name.clone(),
-                            columns: vec![tmp_name.clone()],
-                        },
-                    ));
+                        let mut distinct_out_schema =
+                            (*ctx.phys_sm[input_stream.node].output_schema).clone();
+                        distinct_out_schema.insert(distinct_name.clone(), DataType::Boolean);
+                        let is_first_distinct_node = ctx.phys_sm.insert(PhysNode::new(
+                            Arc::new(distinct_out_schema),
+                            PhysNodeKind::IsFirstDistinct {
+                                input: input_stream,
+                                out_name: distinct_name.clone(),
+                                columns: vec![tmp_name.clone()],
+                            },
+                        ));
 
-                    let predicate = ExprIR::from_column_name(distinct_name.clone(), ctx.expr_arena);
-                    let uniq_stream = build_filter_stream(
-                        PhysStream::first(is_first_distinct_node),
-                        predicate,
-                        ctx.expr_arena,
-                        ctx.phys_sm,
-                        ctx.cache,
-                        StreamingLowerIRContext::from(&*ctx),
-                    )?;
-                    input_streams.insert(uniq_stream);
+                        let predicate =
+                            ExprIR::from_column_name(distinct_name.clone(), ctx.expr_arena);
+                        let uniq_stream = build_filter_stream(
+                            PhysStream::first(is_first_distinct_node),
+                            predicate,
+                            ctx.expr_arena,
+                            ctx.phys_sm,
+                            ctx.cache,
+                            StreamingLowerIRContext::from(&*ctx),
+                        )?;
+                        input_streams.insert(uniq_stream);
+                    });
                 } else {
                     // Lower to no-aggregate group-by with unique name.
                     let (trans_input, trans_inner_exprs) =
@@ -1950,6 +1956,7 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
+            #[cfg(feature = "is_first_distinct")]
             AExpr::Function {
                 input: ref inner_exprs,
                 function: IRFunctionExpr::Boolean(IRBooleanFunction::IsFirstDistinct),
