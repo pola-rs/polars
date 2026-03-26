@@ -442,6 +442,9 @@ impl DataType {
             (D::Categorical(_, _) | D::Enum(_, _), D::Binary)
             | (D::Binary, D::Categorical(_, _) | D::Enum(_, _)) => false, // TODO @ cat-rework: why can we not cast to Binary?
 
+            (D::Categorical(_, _) | D::Enum(_, _), D::String)
+            | (D::String, D::Categorical(_, _) | D::Enum(_, _)) => true,
+
             #[cfg(feature = "object")]
             (D::Object(_), D::Object(_)) => true,
             #[cfg(feature = "object")]
