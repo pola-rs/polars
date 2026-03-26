@@ -1938,6 +1938,12 @@ def test_unnest_max_depth_deeply_nested() -> None:
         {"a": pl.Struct({"b": pl.Struct({"c": pl.Int64})})}
     )
 
+    # max_depth=-1 raises ValueError
+    with pytest.raises(
+        ValueError, match="`max_depth` must be a positive integer or None"
+    ):
+        df.unnest("x", max_depth=-1)
+
     # max_depth=1 (default) - only unnest one level
     result = df.unnest("x", max_depth=1)
     assert result.columns == ["a"]

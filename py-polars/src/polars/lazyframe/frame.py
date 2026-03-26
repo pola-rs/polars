@@ -8746,6 +8746,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3       ┆ 4       │
         └─────────┴─────────┘
         """
+        if max_depth is not None and max_depth < 0:
+            msg = "`max_depth` must be a positive integer or None"
+            raise ValueError(msg)
+
         if columns is None and not more_columns:
             subset = cs.struct()
         else:
@@ -8753,7 +8757,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 cs.empty() if columns is None else parse_list_into_selector(columns)
             ) | parse_list_into_selector(more_columns)
 
-        return self._from_pyldf(self._ldf.unnest(subset._pyselector, separator, max_depth))
+        return self._from_pyldf(
+            self._ldf.unnest(subset._pyselector, separator, max_depth)
+        )
 
     def merge_sorted(self, other: LazyFrame, key: str) -> LazyFrame:
         """
