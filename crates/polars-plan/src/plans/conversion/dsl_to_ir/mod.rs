@@ -365,8 +365,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::Gather { input, indices } => {
             // Convert input twice: once for data, once for indices computation
             // This avoids sharing nodes which confuses the optimizer
-            let data_input =
-                to_alp_impl(input.as_ref().clone(), ctxt).map_err(|e| e.context(failed_here!(gather)))?;
+            let data_input = to_alp_impl(input.as_ref().clone(), ctxt)
+                .map_err(|e| e.context(failed_here!(gather)))?;
             let indices_base =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(gather)))?;
 
@@ -390,7 +390,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 options: Default::default(),
             });
 
-            IR::Gather { input: data_input, indices: indices_node }
+            IR::Gather {
+                input: data_input,
+                indices: indices_node,
+            }
         },
         DslPlan::DataFrameScan { df, schema } => IR::DataFrameScan {
             df,

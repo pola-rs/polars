@@ -503,8 +503,9 @@ def test_lazyframe_gather() -> None:
 
     # Test with expr
     result = lf.gather(pl.col.a.arg_max()).collect()
-    expected = pl.LazyFrame({"a": [4], "b": [8]})
+    expected = pl.DataFrame({"a": [4], "b": [8]})
     assert_frame_equal(result, expected)
+
 
 def test_lazyframe_gather_negative_indices() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
