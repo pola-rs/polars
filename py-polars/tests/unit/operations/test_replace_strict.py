@@ -434,4 +434,3 @@ def test_replace_strict_str_enum_27060() -> None:
     enum = pl.Enum(["A", "B"])
     out = pl.Series(["A", "B"]).cast(enum).replace_strict({"A": "X", "B": "Y"})
     assert_series_equal(out, pl.Series(["X", "Y"]))
-
