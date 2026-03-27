@@ -247,6 +247,7 @@ pub enum PhysNodeKind {
         dtype: DataType,
         /// Original strptime options (format is None; the node fills it in).
         options: StrptimeOptions,
+        ambiguous_is_raise: bool,
     },
 
     SortedGroupBy {

@@ -1539,15 +1539,15 @@ fn lower_exprs_with_ctx(
                 function:
                     IRFunctionExpr::StringExpr(IRStringFunction::Strptime(ref dtype, ref options)),
                 ..
-            } if options.format.is_none()
-                && options.exact
-                && options.strict
-                && matches!(&ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Literal(s) if s.extract_str() == Some("raise")) =>
-            {
+            } if options.format.is_none() => {
                 let col_name = unique_column_name();
+                let ambiguous_name = unique_column_name();
                 let select_stream = build_select_stream_with_ctx(
                     input,
-                    &[inner_exprs[0].with_alias(col_name.clone())],
+                    &[
+                        inner_exprs[0].with_alias(col_name.clone()),
+                        inner_exprs[1].with_alias(ambiguous_name.clone()),
+                    ],
                     ctx,
                 )?;
 
@@ -1556,10 +1556,12 @@ fn lower_exprs_with_ctx(
                     dtype.as_ref().clone(),
                 )]));
 
+                let ambiguous_is_raise = matches!(&ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Literal(s) if s.extract_str() == Some("raise"));
                 let kind = PhysNodeKind::StrptimeInfer {
                     input: select_stream,
                     dtype: dtype.as_ref().clone(),
                     options: options.clone(),
+                    ambiguous_is_raise,
                 };
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
                 input_streams.insert(PhysStream::first(node_key));
