@@ -20,6 +20,14 @@ use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
 use crate::{PyDataType, PyExpr};
 
+fn broadcast_bools(flags: &[bool], n: usize) -> Vec<bool> {
+    if flags.len() == 1 {
+        vec![flags[0]; n]
+    } else {
+        flags.to_vec()
+    }
+}
+
 #[pymethods]
 impl PyExpr {
     fn __richcmp__(&self, other: Self, op: CompareOp) -> Self {
@@ -622,8 +630,8 @@ impl PyExpr {
         &self,
         partition_by: Option<Vec<Self>>,
         order_by: Option<Vec<Self>>,
-        order_by_descending: bool,
-        order_by_nulls_last: bool,
+        order_by_descending: Vec<bool>,
+        order_by_nulls_last: Vec<bool>,
         mapping_strategy: Wrap<WindowMapping>,
     ) -> PyResult<Self> {
         let partition_by = partition_by.map(|partition_by| {
@@ -633,17 +641,44 @@ impl PyExpr {
                 .collect::<Vec<Expr>>()
         });
 
-        let order_by = order_by.map(|order_by| {
-            (
-                order_by.into_iter().map(|e| e.inner).collect::<Vec<Expr>>(),
-                SortOptions {
-                    descending: order_by_descending,
-                    nulls_last: order_by_nulls_last,
-                    maintain_order: false,
-                    ..Default::default()
-                },
-            )
-        });
+        let order_by = order_by
+            .map(|order_by| {
+                let n = order_by.len();
+                let descending = broadcast_bools(&order_by_descending, n);
+                let nulls_last = broadcast_bools(&order_by_nulls_last, n);
+
+                if n > 1 && !descending.windows(2).all(|w| w[0] == w[1]) {
+                    return Err(PyErr::from(PyPolarsErr::from(
+                        polars_err!(
+                            InvalidOperation:
+                            "`.over()` with multiple `order_by` columns requires all `descending` \
+                             values to be the same; mixed per-column sort directions are not yet \
+                             supported"
+                        ),
+                    )));
+                }
+                if n > 1 && !nulls_last.windows(2).all(|w| w[0] == w[1]) {
+                    return Err(PyErr::from(PyPolarsErr::from(
+                        polars_err!(
+                            InvalidOperation:
+                            "`.over()` with multiple `order_by` columns requires all `nulls_last` \
+                             values to be the same; mixed per-column null positions are not yet \
+                             supported"
+                        ),
+                    )));
+                }
+
+                Ok((
+                    order_by.into_iter().map(|e| e.inner).collect::<Vec<Expr>>(),
+                    SortOptions {
+                        descending: descending[0],
+                        nulls_last: nulls_last[0],
+                        maintain_order: false,
+                        ..Default::default()
+                    },
+                ))
+            })
+            .transpose()?;
 
         Ok(self
             .inner
