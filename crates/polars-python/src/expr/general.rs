@@ -648,24 +648,20 @@ impl PyExpr {
                 let nulls_last = broadcast_bools(&order_by_nulls_last, n);
 
                 if n > 1 && !descending.windows(2).all(|w| w[0] == w[1]) {
-                    return Err(PyErr::from(PyPolarsErr::from(
-                        polars_err!(
-                            InvalidOperation:
-                            "`.over()` with multiple `order_by` columns requires all `descending` \
-                             values to be the same; mixed per-column sort directions are not yet \
-                             supported"
-                        ),
-                    )));
+                    return Err(PyErr::from(PyPolarsErr::from(polars_err!(
+                        InvalidOperation:
+                        "`.over()` with multiple `order_by` columns requires all `descending` \
+                         values to be the same; mixed per-column sort directions are not yet \
+                         supported"
+                    ))));
                 }
                 if n > 1 && !nulls_last.windows(2).all(|w| w[0] == w[1]) {
-                    return Err(PyErr::from(PyPolarsErr::from(
-                        polars_err!(
-                            InvalidOperation:
-                            "`.over()` with multiple `order_by` columns requires all `nulls_last` \
-                             values to be the same; mixed per-column null positions are not yet \
-                             supported"
-                        ),
-                    )));
+                    return Err(PyErr::from(PyPolarsErr::from(polars_err!(
+                        InvalidOperation:
+                        "`.over()` with multiple `order_by` columns requires all `nulls_last` \
+                         values to be the same; mixed per-column null positions are not yet \
+                         supported"
+                    ))));
                 }
 
                 Ok((
