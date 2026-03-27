@@ -553,3 +553,61 @@ def test_scan_pyarrow_dataset_filter_slice_order() -> None:
         with_columns=None,
         allow_pyarrow_filter=False,
     )[1]
+
+
+_PREDICATE_AST_CASES: dict[str, tuple[pl.Expr, int]] = {
+    "eq": (pl.col("int") == 2, 1),
+    "neq": (pl.col("int") != 2, 2),
+    "lt": (pl.col("int") < 2, 1),
+    "lte": (pl.col("int") <= 2, 2),
+    "gt": (pl.col("int") > 2, 1),
+    "gte": (pl.col("int") >= 2, 2),
+    "bitand": ((pl.col("int") > 1) & (pl.col("int") < 3), 1),
+    "bitor": ((pl.col("int") == 1) | (pl.col("int") == 3), 2),
+    "invert_not": (~pl.col("bool"), 2),
+    "bool_true": (pl.col("bool") == True, 1),  # noqa: E712
+    "bool_false": (pl.col("bool") == False, 2),  # noqa: E712
+    "is_null": (pl.col("nullable").is_null(), 1),
+    "is_not_null": (pl.col("nullable").is_not_null(), 2),
+    "is_in": (pl.col("int").is_in([1, 3]), 2),
+    "is_between": (pl.col("int").is_between(1, 2, closed="both"), 2),
+    "string_literal": (pl.col("str") == "a", 1),
+    "date_literal": (pl.col("date") == date(2020, 1, 1), 1),
+    "datetime_literal": (pl.col("datetime") == datetime(2020, 1, 1), 1),
+    "float_literal": (pl.col("float") > 1.5, 2),
+}
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("expr", "expected_len"),
+    _PREDICATE_AST_CASES.values(),
+    ids=_PREDICATE_AST_CASES.keys(),
+)
+def test_pyarrow_dataset_predicate_ast_nodes(
+    tmp_path: Path, expr: pl.Expr, expected_len: int
+) -> None:
+    df = pl.DataFrame(
+        {
+            "int": [1, 2, 3],
+            "float": [0.5, 1.5, 2.5],
+            "bool": [True, False, False],
+            "str": ["a", "b", "c"],
+            "nullable": [1, None, 3],
+            "date": [date(2020, 1, 1), date(2021, 1, 1), date(2022, 1, 1)],
+            "datetime": [
+                datetime(2020, 1, 1),
+                datetime(2021, 1, 1),
+                datetime(2022, 1, 1),
+            ],
+        }
+    )
+    path = tmp_path / "test.parquet"
+    df.write_parquet(path)
+
+    dset = ds.dataset(path, format="parquet")
+    result = pl.scan_pyarrow_dataset(dset).filter(expr).collect()
+    expected = df.lazy().filter(expr).collect()
+
+    assert_frame_equal(result, expected)
+    assert len(result) == expected_len
