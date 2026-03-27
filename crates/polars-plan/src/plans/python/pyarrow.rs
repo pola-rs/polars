@@ -83,7 +83,10 @@ fn series_to_pyarrow_list(s: &polars_core::prelude::Series) -> Option<String> {
     Some(list_repr)
 }
 
-// convert to a pyarrow expression that can be evaluated with pythons eval
+// Convert to a pyarrow expression string that is parsed and evaluated on the
+// Python side in `py-polars/src/polars/io/pyarrow_dataset/anonymous_scan.py`.
+// The Python code validates the AST against a whitelist of allowed node types. If you
+// add new expression forms here, update that whitelist to accept the corresponding AST nodes.
 pub fn predicate_to_pa(
     predicate: Node,
     expr_arena: &Arena<AExpr>,
