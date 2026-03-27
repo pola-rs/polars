@@ -4,19 +4,30 @@ use polars_time::chunkedarray::StringMethods;
 use polars_time::chunkedarray::string::Pattern;
 use polars_time::chunkedarray::string::infer::{
     DatetimeInfer, TryFromWithUnit, coerce_string_to_date, coerce_string_to_datetime,
-    infer_pattern_date_single, infer_pattern_datetime_single, infer_pattern_time_single,
-    sniff_time_fmt,
+    infer_pattern_date_single, infer_pattern_datetime_single, sniff_time_fmt,
 };
-use polars_utils::pl_str::PlSmallStr;
 
 use super::compute_node_prelude::*;
-use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
-use crate::async_primitives::distributor_channel::distributor_channel;
 
 pub struct StrptimeInferNode {
     dtype: DataType,
     options: StrptimeOptions,
     infer: Option<FormatInfer>,
+    phase: Phase,
+
+    /// Ambiguous can be `raise`, `earliest`, `latest` and `null`.
+    ///
+    /// If it is a broadcasted value and it is not `latest`, we can start parallel parsing
+    /// after finding the first format.
+    ambiguous_can_be_parallel: bool,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Phase {
+    /// Serially receiving, infer the format and serially send morsel.
+    Inferring,
+    /// Format known and operation is row separable. Converting morsels in parallel.
+    Parsing,
 }
 
 #[derive(Clone)]
@@ -24,17 +35,27 @@ enum FormatInfer {
     #[cfg(feature = "dtype-date")]
     Date(DatetimeInfer<Int32Type>),
     #[cfg(feature = "dtype-datetime")]
-    Datetime(DatetimeInfer<Int64Type>, Option<TimeZone>),
+    Datetime(DatetimeInfer<Int64Type>),
     #[cfg(feature = "dtype-time")]
-    Time(&'static str, bool), // (fmt, use_cache)
+    /// (fmt, use_cache)
+    Time(&'static str, bool),
 }
 
 impl StrptimeInferNode {
-    pub fn new(dtype: DataType, options: StrptimeOptions, _ambiguous_is_raise: bool) -> Self {
+    pub fn new(
+        dtype: DataType,
+        options: StrptimeOptions,
+        ambiguous_broadcast: Option<&str>,
+    ) -> Self {
         Self {
             dtype,
             options,
             infer: None,
+            phase: Phase::Inferring,
+            ambiguous_can_be_parallel: matches!(
+                ambiguous_broadcast,
+                Some("raise" | "earliest" | "null")
+            ),
         }
     }
 }
@@ -63,7 +84,7 @@ impl FormatInfer {
                     polars_bail!(to_datetime_tz_mismatch);
                 }
                 let infer = DatetimeInfer::<Int64Type>::try_from_with_unit(pattern, Some(*tu))?;
-                Ok(Some(FormatInfer::Datetime(infer, tz.clone())))
+                Ok(Some(FormatInfer::Datetime(infer)))
             },
             #[cfg(feature = "dtype-time")]
             DataType::Time => Ok(sniff_time_fmt(val).map(|f| FormatInfer::Time(f, options.cache))),
@@ -88,15 +109,10 @@ impl FormatInfer {
                 .into_column(),
 
             #[cfg(feature = "dtype-datetime")]
-            FormatInfer::Datetime(infer, tz) => {
-                let DataType::Datetime(tu, _) = infer.logical_type else {
-                    unreachable!()
-                };
-                coerce_string_to_datetime(infer, ca, tu, tz.as_ref(), ambiguous)?
-                    .into_series()
-                    .with_name(name)
-                    .into_column()
-            },
+            FormatInfer::Datetime(infer) => coerce_string_to_datetime(infer, ca, ambiguous)?
+                .into_series()
+                .with_name(name)
+                .into_column(),
 
             #[cfg(feature = "dtype-time")]
             FormatInfer::Time(fmt, use_cache) => ca
@@ -117,7 +133,6 @@ impl FormatInfer {
     }
 }
 
-
 impl ComputeNode for StrptimeInferNode {
     fn name(&self) -> &str {
         "strptime-infer"
@@ -130,6 +145,11 @@ impl ComputeNode for StrptimeInferNode {
         _state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
+
+        if self.ambiguous_can_be_parallel && self.infer.is_some() {
+            self.phase = Phase::Parsing;
+        }
+
         recv.swap_with_slice(send);
         Ok(())
     }
@@ -144,65 +164,74 @@ impl ComputeNode for StrptimeInferNode {
     ) {
         assert!(recv_ports.len() == 1 && send_ports.len() == 1);
 
-        let mut recv = recv_ports[0].take().unwrap().serial();
-        let senders = send_ports[0].take().unwrap().parallel();
+        match self.phase {
+            Phase::Inferring => {
+                let mut recv = recv_ports[0].take().unwrap().serial();
+                let mut send = send_ports[0].take().unwrap().serial();
 
-        let (mut distributor, distr_receivers) = distributor_channel::<(Option<FormatInfer>, Morsel)>(
-            senders.len(),
-            *DEFAULT_DISTRIBUTOR_BUFFER_SIZE,
-        );
-
-        // Parallel workers: process morsels with the (possibly not-yet-known) infer.
-        for (mut recv, mut send) in distr_receivers.into_iter().zip(senders) {
-            let dtype = &self.dtype;
-            let strict = self.options.strict;
-            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                while let Ok((infer, morsel)) = recv.recv().await {
-                    let morsel = morsel.try_map(|df| {
-                        let cols = &df.columns();
-                        if let Some(mut infer) = infer {
-                            infer
-                                .apply(&cols[0], cols[1].str()?, strict)
-                                .map(Column::into_frame)
-                        } else {
-                            Ok(
-                                Column::full_null(cols[0].name().clone(), cols[0].len(), dtype)
-                                    .into_frame(),
-                            )
+                let dtype = &self.dtype;
+                let options = &self.options;
+                let ambiguous_is_row_separable = self.ambiguous_can_be_parallel;
+                let infer_slot = &mut self.infer;
+                join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+                    while let Ok(morsel) = recv.recv().await {
+                        if infer_slot.is_none() {
+                            let ca = morsel.df().columns()[0].str()?;
+                            if ca.null_count() < ca.len()
+                                && let Some(val) = ca.into_iter().flatten().next()
+                            {
+                                *infer_slot = FormatInfer::try_new(val, dtype, options)?;
+                            }
                         }
-                    })?;
-                    if send.send(morsel).await.is_err() {
-                        break;
+
+                        // Request a stop, so switch to parsing in parallel.
+                        if !ambiguous_is_row_separable && infer_slot.is_some() {
+                            morsel.source_token().stop();
+                        }
+
+                        let morsel = morsel.try_map(|df| {
+                            let cols = df.columns();
+                            if let Some(ref mut infer) = *infer_slot {
+                                infer
+                                    .apply(&cols[0], cols[1].str()?, options.strict)
+                                    .map(Column::into_frame)
+                            } else {
+                                Ok(
+                                    Column::full_null(cols[0].name().clone(), cols[0].len(), dtype)
+                                        .into_frame(),
+                                )
+                            }
+                        })?;
+                        if send.send(morsel).await.is_err() {
+                            break;
+                        }
                     }
+                    Ok(())
+                }));
+            },
+
+            Phase::Parsing => {
+                let receivers = recv_ports[0].take().unwrap().parallel();
+                let senders = send_ports[0].take().unwrap().parallel();
+                for (mut recv, mut send) in receivers.into_iter().zip(senders) {
+                    let strict = self.options.strict;
+                    let mut infer = self.infer.clone().unwrap();
+                    join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+                        while let Ok(morsel) = recv.recv().await {
+                            let morsel = morsel.try_map(|df| {
+                                let cols = df.columns();
+                                infer
+                                    .apply(&cols[0], cols[1].str()?, strict)
+                                    .map(Column::into_frame)
+                            })?;
+                            if send.send(morsel).await.is_err() {
+                                break;
+                            }
+                        }
+                        Ok(())
+                    }));
                 }
-                Ok(())
-            }));
+            },
         }
-
-        // Serial receiver: scan for first non-null and build FormatInfer.
-        let dtype = &self.dtype;
-        let options = &self.options;
-        let infer_slot = &mut self.infer;
-        join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            while let Ok(morsel) = recv.recv().await {
-                if infer_slot.is_none() {
-                    let ca = morsel.df().columns()[0].str()?;
-                    if ca.null_count() < ca.len() {
-                        if let Some(val) = ca.into_iter().flatten().next() {
-                            *infer_slot = FormatInfer::try_new(val, dtype, options)?;
-                        }
-                    }
-                }
-
-                if distributor
-                    .send((infer_slot.clone(), morsel))
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
-            }
-            Ok(())
-        }));
     }
 }

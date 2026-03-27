@@ -232,10 +232,7 @@ pub enum PhysNodeKind {
         format_str: Option<String>,
     },
 
-    /// Streaming strptime without an explicit format. Phase 1 buffers morsels
-    /// until the first non-null value is found and a format string is inferred.
-    /// Phase 2 applies strptime with the inferred format in parallel.
-    /// Only supports `exact=true` (the default); `exact=false` falls back to InMemoryMap.
+    /// Streaming strptime without an explicit format.
     #[cfg(any(
         feature = "dtype-date",
         feature = "dtype-datetime",
@@ -243,11 +240,12 @@ pub enum PhysNodeKind {
     ))]
     StrptimeInfer {
         input: PhysStream,
-        /// The target dtype (Date / Datetime / Time).
         dtype: DataType,
-        /// Original strptime options (format is None; the node fills it in).
         options: StrptimeOptions,
-        ambiguous_is_raise: bool,
+
+        /// An `ambiguous` that will be broadcast over the entire stream, this may help
+        /// parallelization of the parsing.
+        ambiguous_broadcast: Option<PlSmallStr>,
     },
 
     SortedGroupBy {

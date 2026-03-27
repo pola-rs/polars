@@ -1556,12 +1556,17 @@ fn lower_exprs_with_ctx(
                     dtype.as_ref().clone(),
                 )]));
 
-                let ambiguous_is_raise = matches!(&ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Literal(s) if s.extract_str() == Some("raise"));
+                let ambiguous_broadcast =
+                    if let AExpr::Literal(s) = &ctx.expr_arena.get(inner_exprs[1].node()) {
+                        s.extract_str().map(Into::into)
+                    } else {
+                        None
+                    };
                 let kind = PhysNodeKind::StrptimeInfer {
                     input: select_stream,
                     dtype: dtype.as_ref().clone(),
                     options: options.clone(),
-                    ambiguous_is_raise,
+                    ambiguous_broadcast,
                 };
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
                 input_streams.insert(PhysStream::first(node_key));

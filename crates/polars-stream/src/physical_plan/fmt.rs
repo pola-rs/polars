@@ -816,7 +816,21 @@ fn visualize_plan_rec(
             feature = "dtype-datetime",
             feature = "dtype-time"
         ))]
-        PhysNodeKind::StrptimeInfer { input, .. } => ("strptime-infer".to_string(), &[*input][..]),
+        PhysNodeKind::StrptimeInfer {
+            input,
+            dtype,
+            ambiguous_broadcast,
+            ..
+        } => {
+            let mut s = String::new();
+            let mut f = EscapeLabel(&mut s);
+            writeln!(f, "strptime-infer").unwrap();
+            writeln!(f, "dtype: {dtype}").unwrap();
+            if let Some(ambiguous) = ambiguous_broadcast {
+                write!(f, "ambiguous: {ambiguous}").unwrap();
+            }
+            (s, &[*input][..])
+        },
     };
 
     let node_id = node_key.data().as_ffi();

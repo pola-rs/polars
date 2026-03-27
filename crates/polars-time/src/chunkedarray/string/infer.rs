@@ -499,7 +499,7 @@ pub fn to_datetime(
                     to_datetime_tz_mismatch
                 );
             }
-            coerce_string_to_datetime(&mut infer, ca, tu, tz, ambiguous)
+            coerce_string_to_datetime(&mut infer, ca, ambiguous)
         },
     }
 }
@@ -518,15 +518,17 @@ pub fn coerce_string_to_date(
 pub fn coerce_string_to_datetime(
     infer: &mut DatetimeInfer<Int64Type>,
     ca: &StringChunked,
-    tu: TimeUnit,
-    tz: Option<&TimeZone>,
     ambiguous: &StringChunked,
 ) -> PolarsResult<DatetimeChunked> {
+    let DataType::Datetime(tu, tz) = &infer.logical_type else {
+        unreachable!()
+    };
+    let (tu, tz) = (*tu, tz.clone());
     match infer.pattern {
         #[cfg(feature = "timezones")]
         Pattern::DatetimeYMDZ => infer.coerce_string(ca).datetime().map(|ca| {
             let mut ca = ca.clone();
-            ca.set_time_unit_and_time_zone(tu, tz.cloned().unwrap_or(TimeZone::UTC))?;
+            ca.set_time_unit_and_time_zone(tu, tz.unwrap_or(TimeZone::UTC))?;
             Ok(ca)
         })?,
         _ => infer.coerce_string(ca).datetime().map(|ca| {
@@ -536,7 +538,7 @@ pub fn coerce_string_to_datetime(
                 #[cfg(feature = "timezones")]
                 Some(tz) => polars_ops::prelude::replace_time_zone(
                     &ca,
-                    Some(tz),
+                    Some(&tz),
                     ambiguous,
                     NonExistent::Raise,
                 ),
