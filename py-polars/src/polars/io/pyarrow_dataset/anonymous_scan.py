@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal, overload
 
@@ -10,6 +11,44 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from polars import DataFrame, LazyFrame
+
+# Allowed AST node types for predicate validation. The Rust function `predicate_to_pa`
+# in `crates/polars-plan/src/plans/python/pyarrow.rs` generates the expression strings
+# that are parsed here. If new node types are added on the Rust side, this whitelist
+#  must be updated to match.
+_ALLOWED_PREDICATE_NODES: set[ast.AST] = {
+    ast.Expression,
+    ast.Constant,
+    ast.List,
+    ast.Tuple,
+    ast.Name,
+    ast.Attribute,
+    ast.Call,
+    ast.Load,
+    ast.Compare,
+    ast.BinOp,
+    ast.UnaryOp,
+    ast.BoolOp,
+    ast.Eq,
+    ast.NotEq,
+    ast.Lt,
+    ast.LtE,
+    ast.Gt,
+    ast.GtE,
+    ast.BitAnd,
+    ast.BitOr,
+    ast.Invert,
+    ast.And,
+    ast.Or,
+}
+
+
+def _validate_predicate_ast(tree: ast.AST) -> None:
+    """Validate that a predicate AST only contains allowed node types."""
+    for node in ast.walk(tree):
+        if type(node) not in _ALLOWED_PREDICATE_NODES:
+            msg = f"disallowed node type in predicate: {type(node).__name__}"
+            raise ValueError(msg)
 
 
 def _scan_pyarrow_dataset(
@@ -109,9 +148,9 @@ def _scan_pyarrow_dataset_impl(
 
     Warnings
     --------
-    Don't use this if you accept untrusted user inputs. Predicates will be evaluated
-    with python 'eval'. There is sanitation in place, but it is a possible attack
-    vector.
+    Predicates are sanitized in multiple places using multiple methods, but a
+    attacker could probably circumvent them all. Avoid using this path if untrusted
+    user inputs could land here.
 
     Returns
     -------
@@ -129,8 +168,10 @@ def _scan_pyarrow_dataset_impl(
         )
         from polars.datatypes import Date, Datetime, Duration
 
-        v = eval(
-            predicate,
+        tree = ast.parse(predicate, mode="eval")
+        _validate_predicate_ast(tree)
+        _filter = eval(
+            compile(tree, "<predicate>", "eval"),
             {
                 "pa": pa,
                 "Date": Date,
@@ -144,9 +185,9 @@ def _scan_pyarrow_dataset_impl(
         )
 
         if n_rows is None:
-            filter_ = v
+            filter_ = _filter
         else:
-            filter_post_slice_ = v
+            filter_post_slice_ = _filter
 
     common_params: dict[str, Any] = {"columns": with_columns, "filter": filter_}
     batch_size = user_batch_size if user_batch_size is not None else batch_size
@@ -170,3 +211,5 @@ def _scan_pyarrow_dataset_impl(
 
     else:
         return frames(), False
+
+
