@@ -436,10 +436,12 @@ pub fn cum_mean_with_init(
             let out = cum_mean_scan_numeric::<Int32Type>(&ca, reverse, state);
             out.cast(&Int32)?.i32()?.clone().into_date().into_series()
         }
+        Float64 => {
+            cum_mean_scan_numeric::<Float64Type>(s.f64()?, reverse, state).into_series()
+        }
         _ => {
-            let ct = s.cast(&Float64)?;
-            let ca = ct.f64()?;
-            cum_mean_scan_numeric::<Float64Type>(ca, reverse, state).into_series()
+            let ca = s.cast(&Float64)?;
+            cum_mean_scan_numeric::<Float64Type>(ca.f64()?, reverse, state).into_series()
         }
     };
     Ok(out)

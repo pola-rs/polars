@@ -3188,7 +3188,7 @@ class Series:
         >>> s = pl.Series("a", values=[-32.5, 1.75, None, 6.0, 24.5], dtype=pl.Float32)
         >>> s.cum_mean()
         shape: (5,)
-        Series: 'a' [f32]
+        Series: 'a' [f64]
         [
                 -32.5
                 -15.375
