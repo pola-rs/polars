@@ -604,6 +604,7 @@ def _sequence_of_sequence_to_pydf(
                 data,
                 schema=local_schema_override or None,
                 infer_schema_length=infer_schema_length,
+                strict=strict,
             )
         if column_names or schema_overrides:
             pydf = _post_apply_columns(
@@ -829,6 +830,7 @@ def _sequence_of_dataclasses_to_pydf(
             rows,  # type: ignore[arg-type]
             schema=overrides or None,
             infer_schema_length=infer_schema_length,
+            strict=strict,
         )
 
     if overrides:
@@ -888,7 +890,10 @@ def _sequence_of_pydantic_models_to_pydf(
         get_values = itemgetter(*model_fields)
         rows = [get_values(md.__dict__) for md in data]
         pydf = PyDataFrame.from_rows(
-            rows, schema=overrides, infer_schema_length=infer_schema_length
+            rows,
+            schema=overrides,
+            infer_schema_length=infer_schema_length,
+            strict=strict,
         )
     else:
         # ...and 'from_dicts' is faster otherwise
