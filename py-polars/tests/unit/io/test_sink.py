@@ -118,16 +118,17 @@ def test_sink_to_memory(sink: Any, scan: Any) -> None:
 
 def test_sink_parquet_sort_row_index_expr_maintains_columns() -> None:
     q = pl.select(x=1).lazy().sort(pl.row_index()).head()
+    expected = pl.select(x=1)
 
     f = io.BytesIO()
     q.sink_parquet(f)
     f.seek(0)
-    assert_frame_equal(pl.scan_parquet(f).collect(), pl.DataFrame({"x": [1]}))
+    assert_frame_equal(pl.scan_parquet(f).collect(), expected)
 
     f = io.BytesIO()
     q.sink_parquet(f, optimizations=pl.QueryOptFlags.none())
     f.seek(0)
-    assert_frame_equal(pl.scan_parquet(f).collect(), pl.DataFrame({"x": [1]}))
+    assert_frame_equal(pl.scan_parquet(f).collect(), expected)
 
 
 @pytest.mark.parametrize(("scan", "sink"), SINKS)
