@@ -1152,7 +1152,8 @@ fn lower_exprs_with_ctx(
                     | IRFunctionExpr::CumMax { reverse }
                     | IRFunctionExpr::CumSum { reverse }
                     | IRFunctionExpr::CumCount { reverse }
-                    | IRFunctionExpr::CumProd { reverse }),
+                    | IRFunctionExpr::CumProd { reverse }
+                    | IRFunctionExpr::CumMean { reverse }),
                 options: _,
             } if !reverse => {
                 use crate::nodes::cum_agg::CumAggKind;
@@ -1176,6 +1177,7 @@ fn lower_exprs_with_ctx(
                     IRFunctionExpr::CumSum { .. } => CumAggKind::Sum,
                     IRFunctionExpr::CumCount { .. } => CumAggKind::Count,
                     IRFunctionExpr::CumProd { .. } => CumAggKind::Prod,
+                    IRFunctionExpr::CumMean { .. } => CumAggKind::Mean,
                     _ => unreachable!(),
                 };
                 let node_kind = PhysNodeKind::CumAgg { input, kind };

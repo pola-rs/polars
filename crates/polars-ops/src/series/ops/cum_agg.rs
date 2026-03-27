@@ -9,6 +9,7 @@ use polars_core::series::IsSorted;
 use polars_core::utils::{CustomIterTools, NoNull};
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::float::IsFloat;
+use polars_utils::kahan_sum::KahanSum;
 use polars_utils::min_max::MinMax;
 
 fn det_max<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
@@ -240,6 +241,59 @@ fn cum_sum_decimal(
     }
 }
 
+#[cfg(feature = "dtype-decimal")]
+fn cum_mean_decimal(
+    ca: &DecimalChunked,
+    reverse: bool,
+    init_sum: Option<i128>,
+    init_count: Option<u64>,
+) -> PolarsResult<(DecimalChunked, i128, u64)> {
+    use polars_compute::decimal::{DEC128_MAX_PREC, dec128_add, dec128_div};
+
+    let mut sum = init_sum.unwrap_or(0);
+    let mut count = init_count.unwrap_or(0);
+    let update = |opt_v| -> PolarsResult<Option<i128>> {
+        if let Some(v) = opt_v {
+            sum = dec128_add(sum, v, DEC128_MAX_PREC).ok_or_else(
+                || polars_err!(ComputeError: "overflow in decimal addition in cum_mean"),
+            )?;
+            count += 1;
+            let mean = dec128_div(sum, count as i128, DEC128_MAX_PREC, 0).ok_or_else(
+                || polars_err!(ComputeError: "overflow in decimal division in cum_mean"),
+            )?;
+            Ok(Some(mean))
+        } else {
+            Ok(None)
+        }
+    };
+    let precision = ca.precision();
+    let scale = ca.scale();
+    let phys = ca.physical();
+    let out = if reverse {
+        phys.iter()
+            .rev()
+            .map(update)
+            .try_collect_ca_trusted_like(phys)?
+    } else {
+        phys.iter().map(update).try_collect_ca_trusted_like(phys)?
+    };
+    Ok((out.into_decimal_unchecked(precision, scale), sum, count))
+}
+
+/// Cumulative mean for Decimal with i128 state (for streaming).
+/// Returns (output_series, final_sum_i128, final_count).
+#[cfg(feature = "dtype-decimal")]
+pub fn cum_mean_decimal_with_init(
+    s: &Series,
+    reverse: bool,
+    init_sum: Option<i128>,
+    init_count: Option<u64>,
+) -> PolarsResult<(Series, i128, u64)> {
+    let ca = s.decimal()?;
+    let (out, sum, count) = cum_mean_decimal(ca, reverse, init_sum, init_count)?;
+    Ok((out.into_series(), sum, count))
+}
+
 fn cum_prod_numeric<T>(
     ca: &ChunkedArray<T>,
     reverse: bool,
@@ -417,6 +471,7 @@ pub fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
     cum_max_with_init(s, reverse, &AnyValue::Null)
 }
 
+/// Get an array with the cumulative count computed at every element.
 pub fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
     cum_count_with_init(s, reverse, 0)
 }
@@ -466,4 +521,122 @@ fn cum_count_no_nulls(name: PlSmallStr, len: usize, reverse: bool, init: IdxSize
     let mut ca = ca.into_inner();
     ca.rename(name);
     ca.into_series()
+}
+
+/// Get an array with the cumulative mean computed at every element.
+pub fn cum_mean(s: &Series, reverse: bool) -> PolarsResult<Series> {
+    #[cfg(feature = "dtype-decimal")]
+    if matches!(s.dtype(), DataType::Decimal(_, _)) {
+        return cum_mean_decimal_with_init(s, reverse, None, None).map(|(s, _, _)| s);
+    }
+    cum_mean_with_init(s, reverse, None, None, None).map(|(s, _, _, _)| s)
+}
+
+fn cum_mean_numeric<T>(
+    ca: &ChunkedArray<T>,
+    reverse: bool,
+    init_sum: Option<f64>,
+    init_count: Option<u64>,
+    init_err: Option<f64>,
+) -> (Float64Chunked, f64, u64, f64)
+where
+    T: PolarsNumericType,
+{
+    let mut ksum = KahanSum::new(init_sum.unwrap_or(0.0));
+    if let Some(err) = init_err {
+        ksum.set_err(err);
+    }
+    let mut count = init_count.unwrap_or(0);
+    let update = |opt_v: Option<T::Native>| -> Option<f64> {
+        opt_v.map(|v| {
+            ksum += num_traits::ToPrimitive::to_f64(&v).unwrap();
+            count += 1;
+            ksum.sum() / count as f64
+        })
+    };
+    let out: Float64Chunked = if reverse {
+        ca.iter().rev().map(update).collect_reversed()
+    } else {
+        ca.iter().map(update).collect_trusted()
+    };
+    (
+        out.with_name(ca.name().clone()),
+        ksum.sum(),
+        count,
+        ksum.err(),
+    )
+}
+
+fn cum_mean_temporal(
+    s: &Series,
+    reverse: bool,
+    init_sum: Option<f64>,
+    init_count: Option<u64>,
+    init_err: Option<f64>,
+    target_dtype: &DataType,
+) -> PolarsResult<(Series, f64, u64, f64)> {
+    use DataType::*;
+
+    let phys = s.to_physical_repr();
+    let (out, sum, count, err) =
+        cum_mean_numeric(phys.i64()?, reverse, init_sum, init_count, init_err);
+    let out = out.cast(&Int64)?.cast(target_dtype)?;
+    Ok((out, sum, count, err))
+}
+
+/// Get an array with the cumulative mean computed at every element.
+/// Also returns the final (sum, count, kahan_err) state for streaming.
+pub fn cum_mean_with_init(
+    s: &Series,
+    reverse: bool,
+    init_sum: Option<f64>,
+    init_count: Option<u64>,
+    init_err: Option<f64>,
+) -> PolarsResult<(Series, f64, u64, f64)> {
+    use DataType::*;
+
+    match s.dtype() {
+        Boolean => {
+            let s = s.cast(&UInt8)?;
+            let (out, sum, count, err) =
+                cum_mean_numeric(s.u8()?, reverse, init_sum, init_count, init_err);
+            Ok((out.into_series(), sum, count, err))
+        },
+        #[cfg(feature = "dtype-duration")]
+        dt @ Duration(_) => cum_mean_temporal(s, reverse, init_sum, init_count, init_err, dt),
+        #[cfg(feature = "dtype-datetime")]
+        dt @ Datetime(_, _) => cum_mean_temporal(s, reverse, init_sum, init_count, init_err, dt),
+        #[cfg(feature = "dtype-date")]
+        Date => {
+            let target = Datetime(polars_core::prelude::TimeUnit::Microseconds, None);
+            cum_mean_temporal(
+                &s.cast(&target)?,
+                reverse,
+                init_sum,
+                init_count,
+                init_err,
+                &target,
+            )
+        },
+        Float32 => {
+            let (out, sum, count, err) =
+                cum_mean_numeric(s.f32()?, reverse, init_sum, init_count, init_err);
+            Ok((out.cast(&Float32)?, sum, count, err))
+        },
+        #[cfg(feature = "dtype-f16")]
+        Float16 => {
+            let (out, sum, count, err) =
+                cum_mean_numeric(s.f16()?, reverse, init_sum, init_count, init_err);
+            Ok((out.cast(&Float16)?, sum, count, err))
+        },
+        dt if dt.is_primitive_numeric() => {
+            with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                let (out, sum, count, err) =
+                    cum_mean_numeric(ca, reverse, init_sum, init_count, init_err);
+                Ok((out.into_series(), sum, count, err))
+            })
+        },
+        dt => polars_bail!(opq = cum_mean, dt),
+    }
 }

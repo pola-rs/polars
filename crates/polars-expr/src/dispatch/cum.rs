@@ -25,3 +25,8 @@ pub(super) fn cum_max(s: &Column, reverse: bool) -> PolarsResult<Column> {
     // @scalar-opt
     polars_ops::prelude::cum_max(s.as_materialized_series(), reverse).map(Column::from)
 }
+
+pub(super) fn cum_mean(s: &Column, reverse: bool) -> PolarsResult<Column> {
+    // @scalar-opt
+    polars_ops::prelude::cum_mean(s.as_materialized_series(), reverse).map(Column::from)
+}
