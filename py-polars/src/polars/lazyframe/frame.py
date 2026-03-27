@@ -3283,7 +3283,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         from polars.io.iceberg._sink import IcebergSinkState
 
-        sink_state = IcebergSinkState(
+        sink_state = IcebergSinkState.new(
             target=target,
             catalog=catalog,
             mode=mode,
@@ -3292,7 +3292,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         sink_state.attach_sink(self).collect(engine="streaming")
 
-        return sink_state.commit()
+        assert sink_state.commit_result_df is not None
+
+        return sink_state.commit_result_df
 
     @overload
     def sink_ipc(

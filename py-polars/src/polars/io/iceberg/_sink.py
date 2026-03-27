@@ -3,11 +3,11 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 from dataclasses import dataclass
+import sys
 from time import perf_counter
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from polars._utils.logging import eprint
-from polars.io._expand_paths import _expand_paths
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.iceberg._dataset import (
     IcebergCatalogConfig,
@@ -48,7 +48,7 @@ class IcebergSinkTableSerializer(IcebergTableSerializer):
         _ensure_table_has_catalog(table)
 
         return IcebergCatalogTableDescriptor(
-            table_identifier=table.name(),
+            table_identifier=".".join(table.name()),
             catalog_config=IcebergCatalogConfig.from_catalog(table.catalog),
         )
 
@@ -66,15 +66,22 @@ class AttachSink:
         return self.sink_state._attach_sink_impl(lf)
 
 
+@dataclass(kw_only=True)
 class IcebergSinkState:
-    def __init__(
-        self,
+    table: IcebergTableWrap
+    mode: Literal["append", "overwrite"]
+    sink_uuid_str: str
+    output_base_path_: str | None = None
+    commit_result_df: pl.DataFrame | None = None
+
+    @staticmethod
+    def new(
         target: str | pyiceberg.table.Table,
         *,
         catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None = None,
         mode: Literal["append", "overwrite"] = "append",
         storage_options: StorageOptionsDict | None = None,
-    ) -> None:
+    ) -> IcebergSinkState:
         table: pyiceberg.table.Table | None = None
 
         if importlib.util.find_spec("pyiceberg.table") is not None:
@@ -101,15 +108,16 @@ class IcebergSinkState:
         if table is not None:
             _ensure_table_has_catalog(table)
 
-        self.table = IcebergTableWrap(
-            table_=NoPickleOption(table),
-            table_descriptor_=table_descriptor,
-            serializer=IcebergSinkTableSerializer(),
-            iceberg_storage_properties=storage_options,
+        return IcebergSinkState(
+            table=IcebergTableWrap(
+                table_=NoPickleOption(table),
+                table_descriptor_=table_descriptor,
+                serializer=IcebergSinkTableSerializer(),
+                iceberg_storage_properties=storage_options,
+            ),
+            mode=mode,
+            sink_uuid_str=gen_uuid_v7().hex(),
         )
-        self.mode = mode
-        self.sink_uuid_str = gen_uuid_v7().hex()
-        self._output_base_path: str | None = None
 
     def _get_converted_storage_options(self) -> dict[str, str] | None:
         return (
@@ -169,6 +177,8 @@ class IcebergSinkState:
                 estimated_compression_ratio * v, (1 << 64) - 1
             )
 
+        self.table.__getstate__()
+
         return lf.sink_parquet(
             pl.PartitionBy(
                 _normalize_windows_iceberg_file_uri(self.output_base_path()),
@@ -178,9 +188,14 @@ class IcebergSinkState:
             arrow_schema=arrow_schema,
             storage_options=self._get_converted_storage_options(),
             lazy=True,
+            _sinked_paths_callback=("iceberg-commit", self),
         )
 
-    def commit(self) -> pl.DataFrame:
+    def commit(
+        self,
+        *,
+        data_file_paths: list[str],
+    ) -> pl.DataFrame:
         import polars as pl
         import polars._utils.logging
 
@@ -191,37 +206,17 @@ class IcebergSinkState:
             eprint(f"IcebergSinkState[commit]: mode: '{self.mode}'")
 
         table = self.table.get()
-
-        if verbose:
-            eprint("IcebergSinkState[commit]: begin path expansion")
-
-        start_instant = perf_counter()
-
-        output_base_path = self.output_base_path()
-
-        data_file_paths_q = _expand_paths(
-            _normalize_windows_iceberg_file_uri(output_base_path),
-            storage_options=self._get_converted_storage_options(),
-        )
-
-        if output_base_path.startswith("file://") and not output_base_path.startswith(
-            "file:///"
-        ):
-            data_file_paths_q = data_file_paths_q.with_columns(
-                pl.col("path").str.replace(r"^file:///", "file://")
-            )
-
-        data_file_paths = data_file_paths_q.collect().to_series().to_list()
-
-        if verbose:
-            elapsed = perf_counter() - start_instant
-            n_files = len(data_file_paths)
-            eprint(
-                f"IcebergSinkState[commit]: finish path expansion ({elapsed:.3f}s): "
-                f"{n_files = }"
-            )
-
         original_metadata_location = table.metadata_location
+
+        if sys.platform == "win32":
+            data_file_paths = [
+                (
+                    f"file://{p.strip_prefix('file:///')}"
+                    if p.startswith("file:///")
+                    else p
+                )
+                for p in data_file_paths
+            ]
 
         with table.transaction() as tx:
             if self.mode == "overwrite":
@@ -257,7 +252,7 @@ class IcebergSinkState:
 
         assert new_metadata_location != original_metadata_location
 
-        out_df = pl.DataFrame(
+        self.commit_result_df = pl.DataFrame(
             {"metadata_path": new_metadata_location},
             schema={"metadata_path": pl.String},
             height=1,
@@ -270,10 +265,10 @@ class IcebergSinkState:
                 f"IcebergSinkState[commit]: finished, total elapsed time: {total_elapsed:.3f}s"
             )
 
-        return out_df
+        return self.commit_result_df
 
     def output_base_path(self) -> str:
-        if self._output_base_path is None:
+        if self.output_base_path_ is None:
             from pyiceberg.table import TableProperties
 
             table = self.table.get()
@@ -287,9 +282,28 @@ class IcebergSinkState:
             )
 
             output_base_path = f"{output_base_path}/{self.sink_uuid_str}/"
-            self._output_base_path = output_base_path
+            self.output_base_path_ = output_base_path
 
-        return self._output_base_path
+        return self.output_base_path_
+
+    @staticmethod
+    def _from_data_dict(data_dict: dict[str, Any]) -> IcebergSinkState:
+        table_wrap_dict = data_dict.pop("table")
+        table_descriptor_dict = table_wrap_dict.pop("table_descriptor_")
+        catalog_config_dict = table_descriptor_dict.pop("catalog_config")
+
+        return IcebergSinkState(
+            table=IcebergTableWrap(
+                table_=NoPickleOption(),
+                table_descriptor_=IcebergCatalogTableDescriptor(
+                    catalog_config=IcebergCatalogConfig(**catalog_config_dict),
+                    **table_descriptor_dict,
+                ),
+                serializer=IcebergSinkTableSerializer(),
+                **table_wrap_dict,
+            ),
+            **data_dict,
+        )
 
 
 class PlIcebergPathProviderConfig(_InternalPlPathProviderConfig):

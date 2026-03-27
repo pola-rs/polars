@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeAlias
 
 from polars._utils.parse.expr import parse_into_list_of_expressions
 from polars._utils.unstable import issue_unstable_warning
@@ -175,7 +175,9 @@ class SinkedPathsCallbackArgs:
     paths: list[str]
 
 
-SinkedPathsCallback: TypeAlias = Callable[[SinkedPathsCallbackArgs], None]
+SinkedPathsCallback: TypeAlias = (
+    Callable[[SinkedPathsCallbackArgs], None] | tuple[Literal["iceberg-commit"], Any]
+)
 
 
 @dataclass(kw_only=True)

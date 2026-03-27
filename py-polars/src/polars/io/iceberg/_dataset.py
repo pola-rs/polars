@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -23,7 +24,6 @@ if TYPE_CHECKING:
     import pyiceberg.catalog
     import pyiceberg.schema
     import pyiceberg.table
-    import pyiceberg.typedef
 
     from polars._typing import StorageOptionsDict
     from polars.io.cloud._utils import NoPickleOption
@@ -44,7 +44,7 @@ class IcebergScanTableSerializer(IcebergTableSerializer):
 
 @dataclass(kw_only=True)
 class IcebergCatalogTableDescriptor:
-    table_identifier: str | pyiceberg.typedef.Identifier
+    table_identifier: str
     catalog_config: IcebergCatalogConfig
 
 
@@ -65,7 +65,8 @@ class IcebergTableWrap:
                 from_ = (
                     "catalog table descriptor: "
                     f"{self.table_descriptor_.table_identifier = }, "
-                    f"{self.table_descriptor_.catalog_config.class_ = }"
+                    f"{self.table_descriptor_.catalog_config.class_module = }, "
+                    f"{self.table_descriptor_.catalog_config.class_qualname = }"
                     if isinstance(self.table_descriptor_, IcebergCatalogTableDescriptor)
                     else f"metadata path: {self.table_descriptor_}"
                 )
@@ -75,9 +76,11 @@ class IcebergTableWrap:
             assert self.table_descriptor_ is not None
 
             if isinstance(self.table_descriptor_, IcebergCatalogTableDescriptor):
-                catalog = self.table_descriptor_.catalog_config.class_(
-                    self.table_descriptor_.catalog_config.name,
-                    **self.table_descriptor_.catalog_config.properties,
+                catalog = (
+                    self.table_descriptor_.catalog_config.load_catalog_class_object()(
+                        self.table_descriptor_.catalog_config.name,
+                        **self.table_descriptor_.catalog_config.properties,
+                    )
                 )
 
                 table = catalog.load_table(self.table_descriptor_.table_identifier)
@@ -124,9 +127,21 @@ class IcebergCatalogConfig:
         at any point without it being considered a breaking change.
     """
 
-    class_: type[pyiceberg.catalog.Catalog]
+    class_module: str
+    class_qualname: str
     name: str
     properties: dict[str, str]
+
+    def load_catalog_class_object(self) -> type[pyiceberg.catalog.Catalog]:
+        module = importlib.import_module(self.class_module)
+        qualname_split = self.class_qualname.split(".")
+
+        catalog_class = getattr(module, qualname_split[0])
+
+        for part in qualname_split[1:]:
+            catalog_class = getattr(catalog_class, part)
+
+        return catalog_class
 
     @staticmethod
     def from_catalog(catalog: pyiceberg.catalog.Catalog) -> IcebergCatalogConfig:
@@ -138,7 +153,8 @@ class IcebergCatalogConfig:
             at any point without it being considered a breaking change.
         """
         return IcebergCatalogConfig(
-            class_=type(catalog),
+            class_module=type(catalog).__module__,
+            class_qualname=type(catalog).__qualname__,
             name=catalog.name,
             properties=catalog.properties,
         )
@@ -191,7 +207,7 @@ class IcebergCatalogConfig:
 
             catalog_config = IcebergCatalogConfig.from_catalog(default_catalog)
 
-        if catalog_config.class_ == NoopCatalog:
+        if catalog_config.load_catalog_class_object() == NoopCatalog:
             msg = f"cannot use NoopCatalog with {fn_name}()"
             raise TypeError(msg)
 
