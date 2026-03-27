@@ -211,5 +211,3 @@ def _scan_pyarrow_dataset_impl(
 
     else:
         return frames(), False
-
-
