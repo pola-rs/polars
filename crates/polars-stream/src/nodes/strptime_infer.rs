@@ -72,7 +72,7 @@ impl FormatInfer {
                 let Some(pattern) = infer_pattern_date_single(val) else {
                     return Ok(None);
                 };
-                let infer = DatetimeInfer::<Int32Type>::try_from_with_unit(pattern, None)?;
+                let infer = DatetimeInfer::<Int32Type>::try_from_with_unit(pattern, None, None)?;
                 Ok(Some(FormatInfer::Date(infer)))
             },
             #[cfg(feature = "dtype-datetime")]
@@ -83,7 +83,8 @@ impl FormatInfer {
                 if matches!(pattern, Pattern::DatetimeYMDZ) && tz.is_none() {
                     polars_bail!(to_datetime_tz_mismatch);
                 }
-                let infer = DatetimeInfer::<Int64Type>::try_from_with_unit(pattern, Some(*tu))?;
+                let infer =
+                    DatetimeInfer::<Int64Type>::try_from_with_unit(pattern, Some(*tu), tz.clone())?;
                 Ok(Some(FormatInfer::Datetime(infer)))
             },
             #[cfg(feature = "dtype-time")]

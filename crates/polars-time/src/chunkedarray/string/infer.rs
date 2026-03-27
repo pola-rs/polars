@@ -221,14 +221,22 @@ pub struct DatetimeInfer<T: PolarsNumericType> {
 
 pub trait TryFromWithUnit<T>: Sized {
     type Error;
-    fn try_from_with_unit(pattern: T, unit: Option<TimeUnit>) -> PolarsResult<Self>;
+    fn try_from_with_unit(
+        pattern: T,
+        time_unit: Option<TimeUnit>,
+        time_zone: Option<TimeZone>,
+    ) -> PolarsResult<Self>;
 }
 
 #[cfg(feature = "dtype-datetime")]
 impl TryFromWithUnit<Pattern> for DatetimeInfer<Int64Type> {
     type Error = PolarsError;
 
-    fn try_from_with_unit(value: Pattern, time_unit: Option<TimeUnit>) -> PolarsResult<Self> {
+    fn try_from_with_unit(
+        value: Pattern,
+        time_unit: Option<TimeUnit>,
+        time_zone: Option<TimeZone>,
+    ) -> PolarsResult<Self> {
         let time_unit = time_unit.expect("time_unit must be provided for datetime");
 
         let transform = match (time_unit, value) {
@@ -257,7 +265,7 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int64Type> {
             transform,
             transform_bytes: StrpTimeState::default(),
             fmt_len: 0,
-            logical_type: DataType::Datetime(time_unit, None),
+            logical_type: DataType::Datetime(time_unit, time_zone),
         })
     }
 }
@@ -266,7 +274,11 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int64Type> {
 impl TryFromWithUnit<Pattern> for DatetimeInfer<Int32Type> {
     type Error = PolarsError;
 
-    fn try_from_with_unit(value: Pattern, _time_unit: Option<TimeUnit>) -> PolarsResult<Self> {
+    fn try_from_with_unit(
+        value: Pattern,
+        _time_unit: Option<TimeUnit>,
+        _time_zone: Option<TimeZone>,
+    ) -> PolarsResult<Self> {
         match value {
             Pattern::DateDMY => Ok(DatetimeInfer {
                 pattern: Pattern::DateDMY,
@@ -491,7 +503,8 @@ pub fn to_datetime(
                 .into_iter()
                 .find_map(|opt_val| opt_val.and_then(infer_pattern_datetime_single))
                 .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
-            let mut infer = DatetimeInfer::<Int64Type>::try_from_with_unit(pattern, Some(tu))?;
+            let mut infer =
+                DatetimeInfer::<Int64Type>::try_from_with_unit(pattern, Some(tu), tz.cloned())?;
             #[cfg(feature = "timezones")]
             if matches!(pattern, Pattern::DatetimeYMDZ) {
                 polars_ensure!(
@@ -558,7 +571,8 @@ pub(crate) fn to_date(ca: &StringChunked) -> PolarsResult<DateChunked> {
                 .into_iter()
                 .find_map(|opt_val| opt_val.and_then(infer_pattern_date_single))
                 .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
-            let mut infer = DatetimeInfer::<Int32Type>::try_from_with_unit(pattern, None).unwrap();
+            let mut infer =
+                DatetimeInfer::<Int32Type>::try_from_with_unit(pattern, None, None).unwrap();
             coerce_string_to_date(&mut infer, ca)
         },
     }
