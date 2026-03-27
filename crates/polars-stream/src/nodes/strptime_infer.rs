@@ -35,7 +35,7 @@ enum FormatInfer {
     #[cfg(feature = "dtype-date")]
     Date(DatetimeInfer<Int32Type>),
     #[cfg(feature = "dtype-datetime")]
-    Datetime(DatetimeInfer<Int64Type>),
+    Datetime(DatetimeInfer<Int64Type>, Option<TimeZone>),
     #[cfg(feature = "dtype-time")]
     /// (fmt, use_cache)
     Time(&'static str, bool),
@@ -72,7 +72,7 @@ impl FormatInfer {
                 let Some(pattern) = infer_pattern_date_single(val) else {
                     return Ok(None);
                 };
-                let infer = DatetimeInfer::<Int32Type>::try_from_with_unit(pattern, None, None)?;
+                let infer = DatetimeInfer::<Int32Type>::try_from_with_unit(pattern, None)?;
                 Ok(Some(FormatInfer::Date(infer)))
             },
             #[cfg(feature = "dtype-datetime")]
@@ -83,9 +83,8 @@ impl FormatInfer {
                 if matches!(pattern, Pattern::DatetimeYMDZ) && tz.is_none() {
                     polars_bail!(to_datetime_tz_mismatch);
                 }
-                let infer =
-                    DatetimeInfer::<Int64Type>::try_from_with_unit(pattern, Some(*tu), tz.clone())?;
-                Ok(Some(FormatInfer::Datetime(infer)))
+                let infer = DatetimeInfer::<Int64Type>::try_from_with_unit(pattern, Some(*tu))?;
+                Ok(Some(FormatInfer::Datetime(infer, tz.clone())))
             },
             #[cfg(feature = "dtype-time")]
             DataType::Time => Ok(sniff_time_fmt(val).map(|f| FormatInfer::Time(f, options.cache))),
@@ -110,10 +109,12 @@ impl FormatInfer {
                 .into_column(),
 
             #[cfg(feature = "dtype-datetime")]
-            FormatInfer::Datetime(infer) => coerce_string_to_datetime(infer, ca, ambiguous)?
-                .into_series()
-                .with_name(name)
-                .into_column(),
+            FormatInfer::Datetime(infer, tz) => {
+                coerce_string_to_datetime(infer, ca, tz.as_ref(), ambiguous)?
+                    .into_series()
+                    .with_name(name)
+                    .into_column()
+            },
 
             #[cfg(feature = "dtype-time")]
             FormatInfer::Time(fmt, use_cache) => ca

@@ -492,7 +492,7 @@ where
             },
         },
     };
-    match DatetimeInfer::try_from_with_unit(pattern, time_unit, None) {
+    match DatetimeInfer::try_from_with_unit(pattern, time_unit) {
         Ok(mut infer) => {
             let parsed = infer.parse(val);
             let Some(parsed) = parsed else {
