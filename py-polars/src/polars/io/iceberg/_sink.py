@@ -210,11 +210,7 @@ class IcebergSinkState:
 
         if sys.platform == "win32":
             data_file_paths = [
-                (
-                    f"file://{p.strip_prefix('file:///')}"
-                    if p.startswith("file:///")
-                    else p
-                )
+                (f"file://{p[8:]}" if p.startswith("file:///") else p)
                 for p in data_file_paths
             ]
 
