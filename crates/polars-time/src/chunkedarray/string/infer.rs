@@ -539,7 +539,7 @@ pub fn coerce_string_to_datetime(
                 #[cfg(feature = "timezones")]
                 Some(tz) => polars_ops::prelude::replace_time_zone(
                     &ca,
-                    Some(&tz),
+                    Some(tz),
                     ambiguous,
                     NonExistent::Raise,
                 ),
