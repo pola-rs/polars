@@ -243,9 +243,13 @@ pub enum PhysNodeKind {
         dtype: DataType,
         options: StrptimeOptions,
 
-        /// An `ambiguous` that will be broadcast over the entire stream, this may help
-        /// parallelization of the parsing.
-        ambiguous_broadcast: Option<PlSmallStr>,
+        /// Ambiguous can be `raise`, `earliest`, `latest` and `null`.
+        ///
+        /// If it is broadcast and it is `raise` or `null`, we can actually execute it in this
+        /// node. So
+        /// - `false` -> "null"
+        /// - `true`  -> "raise"
+        ambiguous_is_raise: bool,
     },
 
     SortedGroupBy {

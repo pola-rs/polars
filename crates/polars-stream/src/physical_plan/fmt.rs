@@ -819,16 +819,15 @@ fn visualize_plan_rec(
         PhysNodeKind::StrptimeInfer {
             input,
             dtype,
-            ambiguous_broadcast,
+            ambiguous_is_raise,
             ..
         } => {
             let mut s = String::new();
             let mut f = EscapeLabel(&mut s);
             writeln!(f, "strptime-infer").unwrap();
             writeln!(f, "dtype: {dtype}").unwrap();
-            if let Some(ambiguous) = ambiguous_broadcast {
-                write!(f, "ambiguous: {ambiguous}").unwrap();
-            }
+            let ambiguous = if *ambiguous_is_raise { "raise" } else { "null" };
+            write!(f, "ambiguous: {ambiguous}").unwrap();
             (s, &[*input][..])
         },
     };

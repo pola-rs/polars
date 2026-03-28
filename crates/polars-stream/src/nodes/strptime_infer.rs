@@ -17,9 +17,10 @@ pub struct StrptimeInferNode {
 
     /// Ambiguous can be `raise`, `earliest`, `latest` and `null`.
     ///
-    /// If it is a broadcasted value and it is not `latest`, we can start parallel parsing
-    /// after finding the first format.
-    ambiguous_can_be_parallel: bool,
+    /// If it broadcast and it is `raise` or `null`, we can actually execute it here. So
+    /// - `false` -> "null"
+    /// - `true`  -> "raise"
+    ambiguous_is_raise: bool,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -42,20 +43,13 @@ enum FormatInfer {
 }
 
 impl StrptimeInferNode {
-    pub fn new(
-        dtype: DataType,
-        options: StrptimeOptions,
-        ambiguous_broadcast: Option<&str>,
-    ) -> Self {
+    pub fn new(dtype: DataType, options: StrptimeOptions, ambiguous_is_raise: bool) -> Self {
         Self {
             dtype,
             options,
             infer: None,
             phase: Phase::Inferring,
-            ambiguous_can_be_parallel: matches!(
-                ambiguous_broadcast,
-                Some("raise" | "earliest" | "null")
-            ),
+            ambiguous_is_raise,
         }
     }
 }
@@ -148,7 +142,7 @@ impl ComputeNode for StrptimeInferNode {
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
 
-        if self.ambiguous_can_be_parallel && self.infer.is_some() {
+        if self.infer.is_some() {
             self.phase = Phase::Parsing;
         }
 
@@ -166,6 +160,13 @@ impl ComputeNode for StrptimeInferNode {
     ) {
         assert!(recv_ports.len() == 1 && send_ports.len() == 1);
 
+        let ambiguous = if self.ambiguous_is_raise {
+            "raise"
+        } else {
+            "null"
+        };
+        let ambiguous = StringChunked::new(PlSmallStr::EMPTY, vec![ambiguous]);
+
         match self.phase {
             Phase::Inferring => {
                 let mut recv = recv_ports[0].take().unwrap().serial();
@@ -173,7 +174,6 @@ impl ComputeNode for StrptimeInferNode {
 
                 let dtype = &self.dtype;
                 let options = &self.options;
-                let ambiguous_is_row_separable = self.ambiguous_can_be_parallel;
                 let infer_slot = &mut self.infer;
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = recv.recv().await {
@@ -187,7 +187,7 @@ impl ComputeNode for StrptimeInferNode {
                         }
 
                         // Request a stop, so switch to parsing in parallel.
-                        if !ambiguous_is_row_separable && infer_slot.is_some() {
+                        if infer_slot.is_some() {
                             morsel.source_token().stop();
                         }
 
@@ -195,7 +195,7 @@ impl ComputeNode for StrptimeInferNode {
                             let cols = df.columns();
                             if let Some(ref mut infer) = *infer_slot {
                                 infer
-                                    .apply(&cols[0], cols[1].str()?, options.strict)
+                                    .apply(&cols[0], &ambiguous, options.strict)
                                     .map(Column::into_frame)
                             } else {
                                 Ok(
@@ -217,13 +217,14 @@ impl ComputeNode for StrptimeInferNode {
                 let senders = send_ports[0].take().unwrap().parallel();
                 for (mut recv, mut send) in receivers.into_iter().zip(senders) {
                     let strict = self.options.strict;
+                    let ambiguous = ambiguous.clone();
                     let mut infer = self.infer.clone().unwrap();
                     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                         while let Ok(morsel) = recv.recv().await {
                             let morsel = morsel.try_map(|df| {
                                 let cols = df.columns();
                                 infer
-                                    .apply(&cols[0], cols[1].str()?, strict)
+                                    .apply(&cols[0], &ambiguous, strict)
                                     .map(Column::into_frame)
                             })?;
                             if send.send(morsel).await.is_err() {

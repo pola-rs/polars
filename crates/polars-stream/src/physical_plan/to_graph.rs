@@ -512,14 +512,14 @@ fn to_graph_rec<'a>(
             input,
             dtype,
             options,
-            ambiguous_broadcast,
+            ambiguous_is_raise,
         } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
                 nodes::strptime_infer::StrptimeInferNode::new(
                     dtype.clone(),
                     options.clone(),
-                    ambiguous_broadcast.as_deref(),
+                    *ambiguous_is_raise,
                 ),
                 [(input_key, input.port)],
             )
