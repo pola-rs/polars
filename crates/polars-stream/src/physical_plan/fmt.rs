@@ -665,6 +665,20 @@ fn visualize_plan_rec(
 
             (s, from_ref(input))
         },
+
+        #[cfg(feature = "is_first_distinct")]
+        PhysNodeKind::IsFirstDistinct {
+            input,
+            out_name,
+            columns,
+        } => {
+            let mut s = String::new();
+            let mut f = EscapeLabel(&mut s);
+            writeln!(f, "is-first-distinct").unwrap();
+            writeln!(f, "key: {}", columns.join(", ")).unwrap();
+            write!(f, "out: {out_name}").unwrap();
+            (s, from_ref(input))
+        },
         PhysNodeKind::MergeJoin {
             input_left,
             input_right,

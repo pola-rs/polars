@@ -6,6 +6,8 @@ mod approx_n_unique;
 mod bitwise;
 mod convert;
 mod count;
+#[cfg(feature = "cov")]
+mod cov;
 mod first_last;
 mod first_last_nonnull;
 mod implode;

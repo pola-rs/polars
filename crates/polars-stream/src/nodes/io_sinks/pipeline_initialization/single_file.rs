@@ -5,7 +5,8 @@ use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
 use polars_io::metrics::IOMetrics;
 use polars_io::pl_async;
-use polars_plan::dsl::UnifiedSinkArgs;
+use polars_plan::dsl::sink::SinkedPathInfo;
+use polars_plan::dsl::{SinkTarget, UnifiedSinkArgs};
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::async_executor::{self, TaskPriority};
@@ -13,6 +14,9 @@ use crate::async_primitives::connector;
 use crate::execute::StreamingExecutionState;
 use crate::morsel::Morsel;
 use crate::nodes::io_sinks::components::morsel_resize_pipeline::MorselResizePipeline;
+use crate::nodes::io_sinks::components::sinked_path_info_list::{
+    SinkedPathInfoList, call_sinked_paths_callback,
+};
 use crate::nodes::io_sinks::config::{IOSinkNodeConfig, IOSinkTarget};
 use crate::nodes::io_sinks::writers::create_file_writer_starter;
 use crate::nodes::io_sinks::writers::interface::{FileOpenTaskHandle, FileWriterStarter};
@@ -41,11 +45,28 @@ pub fn start_single_file_sink_pipeline(
                 maintain_order: _,
                 sync_on_close,
                 cloud_options,
+                sinked_paths_callback,
             },
         input_schema,
     } = config
     else {
         unreachable!()
+    };
+
+    let sinked_path_info_list: Option<SinkedPathInfoList> = if sinked_paths_callback.is_some() {
+        let v = SinkedPathInfoList::default();
+
+        match &target {
+            SinkTarget::Path(path) => v
+                .path_info_list
+                .lock()
+                .push(SinkedPathInfo { path: path.clone() }),
+            SinkTarget::Dyn(_) => return Err(v.non_path_error()),
+        };
+
+        Some(v)
+    } else {
+        None
     };
 
     let file_schema = input_schema;
@@ -79,13 +100,15 @@ pub fn start_single_file_sink_pipeline(
             inflight_morsel_limit: {}, \
             upload_chunk_size: {}, \
             upload_concurrency: {}, \
-            io_metrics: {}",
+            io_metrics: {}, \
+            build_sinked_path_info_list: {}",
             file_writer_starter.writer_name(),
             takeable_rows_provider,
             inflight_morsel_limit,
             upload_chunk_size,
             upload_max_concurrency,
             io_metrics.is_some(),
+            sinked_path_info_list.is_some(),
         )
     }
 
@@ -118,6 +141,15 @@ pub fn start_single_file_sink_pipeline(
 
             if verbose {
                 eprintln!("{node_name}: Statistics: total_size: {sent_size:?}");
+            }
+
+            if let Some(sinked_paths_callback) = sinked_paths_callback {
+                if verbose {
+                    eprintln!("{node_name}: Call sinked path info callback");
+                }
+
+                call_sinked_paths_callback(sinked_paths_callback, sinked_path_info_list.unwrap())
+                    .await?;
             }
 
             Ok(())

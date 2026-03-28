@@ -1114,6 +1114,32 @@ def test_unnest_zero_field_struct_preserves_height() -> None:
     assert result.shape == (5, 0)
 
 
+def test_unnest_all_struct_columns() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [{"x": 1, "y": 2}, {"x": 3, "y": 4}],
+            "c": ["foo", "bar"],
+            "d": [{"z": 5}, {"z": 6}],
+        }
+    )
+    # Unnest all struct columns by calling without arguments
+    result = df.unnest()
+    assert result.columns == ["a", "x", "y", "c", "z"]
+    assert result["x"].to_list() == [1, 3]
+    assert result["y"].to_list() == [2, 4]
+    assert result["z"].to_list() == [5, 6]
+
+    # LazyFrame should work the same way
+    result_lazy = df.lazy().unnest().collect()
+    assert_frame_equal(result, result_lazy)
+
+    # Unnesting when there are no struct columns should return the same dataframe
+    df_no_structs = pl.DataFrame({"a": [1, 2], "b": ["foo", "bar"]})
+    result = df_no_structs.unnest()
+    assert_frame_equal(result, df_no_structs)
+
+
 @pytest.mark.parametrize("size", [0, 1, 2, 13])
 def test_zfs_equality(size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([]))

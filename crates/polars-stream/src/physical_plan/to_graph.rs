@@ -978,6 +978,24 @@ fn to_graph_rec<'a>(
             )
         },
 
+        #[cfg(feature = "is_first_distinct")]
+        IsFirstDistinct {
+            input,
+            out_name,
+            columns,
+        } => {
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::is_first_distinct::IsFirstDistinctNode::new(
+                    Arc::new(input_schema.try_project(columns)?),
+                    out_name.clone(),
+                    PlRandomState::default(),
+                ),
+                [(input_key, input.port)],
+            )
+        },
+
         InMemoryJoin {
             input_left,
             input_right,

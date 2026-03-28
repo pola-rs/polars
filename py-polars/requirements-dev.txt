@@ -6,7 +6,7 @@
 # BUILD
 # -----
 
-maturin
+maturin<=1.12.4  # https://github.com/PyO3/maturin/issues/3106
 # extra dependency for maturin (linux-only)
 patchelf; platform_system == 'Linux'
 pip

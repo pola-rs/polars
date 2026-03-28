@@ -370,6 +370,17 @@ fn try_lower_elementwise_scalar_agg_expr(
             ..
         } => Some(replace_agg_uniq!(expr)),
 
+        #[cfg(feature = "cov")]
+        AExpr::Function {
+            function:
+                IRFunctionExpr::Correlation {
+                    method:
+                        polars_plan::plans::IRCorrelationMethod::Pearson
+                        | polars_plan::plans::IRCorrelationMethod::Covariance(_),
+                },
+            ..
+        } => Some(replace_agg_uniq!(expr)),
+
         AExpr::AnonymousAgg { .. } => Some(replace_agg_uniq!(expr)),
 
         node @ AExpr::Function { input, options, .. }

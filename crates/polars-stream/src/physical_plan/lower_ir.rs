@@ -72,7 +72,7 @@ pub fn build_slice_stream(
 }
 
 /// Creates a new PhysStream which is filters the input stream.
-pub(super) fn build_filter_stream(
+pub fn build_filter_stream(
     input: PhysStream,
     predicate: ExprIR,
     expr_arena: &mut Arena<AExpr>,
@@ -1437,8 +1437,8 @@ pub fn lower_ir(
         },
 
         IR::Distinct { input, options } => {
-            let options = options.clone();
             let input = *input;
+            let options = options.clone();
             let phys_input = lower_ir!(input)?;
 
             // We don't have a dedicated distinct operator (yet), lower to group
@@ -1447,6 +1447,92 @@ pub fn lower_ir(
             if input_schema.is_empty() {
                 // Can't group (or have duplicates) if dataframe has zero-width.
                 return Ok(phys_input);
+            }
+
+            // Create the key expressions.
+            let all_col_names = input_schema.iter_names().cloned().collect_vec();
+            let key_names = if let Some(subset) = &options.subset {
+                subset.to_vec()
+            } else {
+                all_col_names.clone()
+            };
+            let key_name_set: PlHashSet<_> = key_names.iter().cloned().collect();
+            let mut group_by_output_schema = Schema::with_capacity(all_col_names.len() + 1);
+            let keys = key_names
+                .iter()
+                .map(|name| {
+                    group_by_output_schema
+                        .insert(name.clone(), input_schema.get(name).unwrap().clone());
+                    ExprIR::from_column_name(name.clone(), expr_arena)
+                })
+                .collect_vec();
+            let orig_col_exprs = all_col_names
+                .iter()
+                .map(|name| ExprIR::from_column_name(name.clone(), expr_arena))
+                .collect_vec();
+
+            // Sorted unique node, the fastest strategy.
+            let are_keys_sorted = ctx
+                .sortedness
+                .are_keys_sorted_any(input, &keys, expr_arena, input_schema.as_ref())
+                .is_some();
+            if are_keys_sorted
+                && matches!(
+                    options.keep_strategy,
+                    UniqueKeepStrategy::First | UniqueKeepStrategy::Any
+                )
+            {
+                let sorted_uniq_node = phys_sm.insert(PhysNode::new(
+                    input_schema.clone(),
+                    PhysNodeKind::SortedUnique {
+                        input: phys_input,
+                        keys: key_name_set.into_iter().collect(),
+                    },
+                ));
+
+                let mut stream = PhysStream::first(sorted_uniq_node);
+                if let Some((offset, length)) = options.slice {
+                    stream = build_slice_stream(stream, offset, length, phys_sm);
+                }
+                return Ok(stream);
+            }
+
+            // Lower memory pressure option using is_first_distinct + filter.
+            #[cfg(feature = "is_first_distinct")]
+            if options.maintain_order
+                && matches!(
+                    options.keep_strategy,
+                    UniqueKeepStrategy::First | UniqueKeepStrategy::Any
+                )
+            {
+                let distinct_name = unique_column_name();
+                let mut distinct_out_schema = (**input_schema).clone();
+                distinct_out_schema.insert(distinct_name.clone(), DataType::Boolean);
+                let is_first_distinct_node = phys_sm.insert(PhysNode::new(
+                    Arc::new(distinct_out_schema),
+                    PhysNodeKind::IsFirstDistinct {
+                        input: phys_input,
+                        out_name: distinct_name.clone(),
+                        columns: key_names,
+                    },
+                ));
+
+                let predicate = ExprIR::from_column_name(distinct_name.clone(), expr_arena);
+                let mut stream = PhysStream::first(is_first_distinct_node);
+                stream =
+                    build_filter_stream(stream, predicate, expr_arena, phys_sm, expr_cache, ctx)?;
+                stream = build_select_stream(
+                    stream,
+                    &orig_col_exprs,
+                    expr_arena,
+                    phys_sm,
+                    expr_cache,
+                    ctx,
+                )?;
+                if let Some((offset, length)) = options.slice {
+                    stream = build_slice_stream(stream, offset, length, phys_sm);
+                }
+                return Ok(stream);
             }
 
             if options.maintain_order && options.keep_strategy == UniqueKeepStrategy::Last {
@@ -1495,53 +1581,7 @@ pub fn lower_ir(
                 return Ok(PhysStream::first(phys_sm.insert(distinct_node)));
             }
 
-            // Create the key and aggregate expressions.
-            let all_col_names = input_schema.iter_names().cloned().collect_vec();
-            let key_names = if let Some(subset) = options.subset {
-                subset.to_vec()
-            } else {
-                all_col_names.clone()
-            };
-            let key_name_set: PlHashSet<_> = key_names.iter().cloned().collect();
-
-            let mut group_by_output_schema = Schema::with_capacity(all_col_names.len() + 1);
-            let keys = key_names
-                .iter()
-                .map(|name| {
-                    group_by_output_schema
-                        .insert(name.clone(), input_schema.get(name).unwrap().clone());
-                    let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-                    ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone()))
-                })
-                .collect_vec();
-
-            let are_keys_sorted = ctx
-                .sortedness
-                .are_keys_sorted_any(input, &keys, expr_arena, input_schema.as_ref())
-                .is_some();
-
-            // Sorted unique node.
-            if are_keys_sorted
-                && matches!(
-                    options.keep_strategy,
-                    UniqueKeepStrategy::First | UniqueKeepStrategy::Any
-                )
-            {
-                let sorted_uniq_node = phys_sm.insert(PhysNode::new(
-                    input_schema.clone(),
-                    PhysNodeKind::SortedUnique {
-                        input: phys_input,
-                        keys: key_name_set.into_iter().collect(),
-                    },
-                ));
-
-                let mut stream = PhysStream::first(sorted_uniq_node);
-                if let Some((offset, length)) = options.slice {
-                    stream = build_slice_stream(stream, offset, length, phys_sm);
-                }
-                return Ok(stream);
-            }
-
+            // Create aggregate expressions.
             let mut aggs = all_col_names
                 .iter()
                 .filter(|name| !key_name_set.contains(*name))
@@ -1602,14 +1642,14 @@ pub fn lower_ir(
             }
 
             // Restore column order and drop the temporary length column if any.
-            let exprs = all_col_names
-                .iter()
-                .map(|name| {
-                    let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-                    ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone()))
-                })
-                .collect_vec();
-            stream = build_select_stream(stream, &exprs, expr_arena, phys_sm, expr_cache, ctx)?;
+            stream = build_select_stream(
+                stream,
+                &orig_col_exprs,
+                expr_arena,
+                phys_sm,
+                expr_cache,
+                ctx,
+            )?;
 
             // We didn't pass the slice earlier to build_group_by_stream because
             // we might have the intermediate keep = "none" filter.
