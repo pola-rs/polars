@@ -384,7 +384,7 @@ _STATIC_STRATEGIES: dict[DataTypeClass, SearchStrategy[Any]] = {
     Object: objects(),
 }
 
-_DTYPE_BIN_WIDTHS: Mapping[type[FloatType], int] = {
+_DTYPE_BIT_WIDTHS: Mapping[type[FloatType], int] = {
     Float16: 16,
     Float32: 32,
     Float64: 64,
@@ -411,7 +411,7 @@ def data(
         strategy = strategy
     elif dtype.is_float():
         dtype = cast("FloatType", dtype)
-        bit_width = _DTYPE_BIN_WIDTHS[type(dtype)]
+        bit_width = _DTYPE_BIT_WIDTHS[type(dtype)]
         strategy = floats(
             bit_width=cast("Literal[16, 32, 64]", bit_width),
             allow_nan=kwargs.pop("allow_nan", True),
