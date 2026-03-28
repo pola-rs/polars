@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from datetime import date, datetime, time, timezone
 from typing import TYPE_CHECKING
 
@@ -8,6 +9,7 @@ import pyarrow.dataset as ds
 import pytest
 
 import polars as pl
+from polars.io.pyarrow_dataset.anonymous_scan import _validate_predicate_ast
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -611,3 +613,12 @@ def test_pyarrow_dataset_predicate_ast_nodes(
 
     assert_frame_equal(result, expected)
     assert len(result) == expected_len
+
+
+def test_pyarrow_dataset_predicate_rejects_code_injection_26591() -> None:
+    # Regression test for https://github.com/pola-rs/polars/issues/26591
+    # # The payload from the issue: exec() hidden inside a predicate string.
+    malicious = "pa.compute.field('col') == exec(\"print('PWND')\") or 'x'"
+    tree = ast.parse(malicious, mode="eval")
+    with pytest.raises(ValueError, match="disallowed name in predicate"):
+        _validate_predicate_ast(tree)

@@ -42,12 +42,33 @@ _ALLOWED_PREDICATE_NODES: set[type[ast.AST]] = {
     ast.Or,
 }
 
+# Only these top-level names may appear in predicate expressions.
+# This blocks calls to builtins like exec, eval, __import__, etc.
+# This is only a guard, there's only so much you can do with python's
+# dynamism.
+_ALLOWED_PREDICATE_NAMES: set[str] = {
+    "pa",
+    "Date",
+    "Datetime",
+    "Duration",
+    "to_py_date",
+    "to_py_datetime",
+    "to_py_time",
+    "to_py_timedelta",
+    "True",
+    "False",
+    "None",
+}
+
 
 def _validate_predicate_ast(tree: ast.AST) -> None:
-    """Validate that a predicate AST only contains allowed node types."""
+    """Validate that a predicate AST only contains allowed node types and names."""
     for node in ast.walk(tree):
         if type(node) not in _ALLOWED_PREDICATE_NODES:
             msg = f"disallowed node type in predicate: {type(node).__name__}"
+            raise ValueError(msg)
+        if isinstance(node, ast.Name) and node.id not in _ALLOWED_PREDICATE_NAMES:
+            msg = f"disallowed name in predicate: {node.id!r}"
             raise ValueError(msg)
 
 

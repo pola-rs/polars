@@ -435,7 +435,6 @@ def test_duration_cast_null_to_string(time_unit: TimeUnit) -> None:
 def test_duration_cast_to_string(
     value: int, time_unit: TimeUnit, expected: str
 ) -> None:
-
     s = pl.Series([value], dtype=pl.Duration(time_unit))
     assert s.cast(pl.String)[0] == expected
 

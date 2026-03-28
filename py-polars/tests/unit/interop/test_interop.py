@@ -1315,7 +1315,6 @@ def pyarrow_table_to_ipc_bytes(tbl: pa.Table) -> bytes:
 
 @pytest.mark.write_disk
 def test_month_day_nano_from_ffi_15969(plmonkeypatch: PlMonkeyPatch) -> None:
-
     def new_interval_scalar(months: int, days: int, nanoseconds: int) -> pa.Scalar:
         return pa.scalar((months, days, nanoseconds), type=pa.month_day_nano_interval())
 
