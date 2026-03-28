@@ -843,7 +843,8 @@ impl Expr {
         order_by: Option<(E, SortOptions)>,
         mapping: WindowMapping,
     ) -> PolarsResult<Self> {
-        polars_ensure!(partition_by.is_some() || order_by.is_some(), InvalidOperation: "At least one of `partition_by` and `order_by` must be specified in `over`");
+        let order_by_is_set = order_by.as_ref().is_some_and(|(e, _)| !e.as_ref().is_empty());
+        polars_ensure!(partition_by.is_some() || order_by_is_set, InvalidOperation: "At least one of `partition_by` and `order_by` must be specified in `over`");
         let partition_by = if let Some(partition_by) = partition_by {
             partition_by
                 .as_ref()
@@ -854,8 +855,11 @@ impl Expr {
             vec![lit(1)]
         };
 
-        let order_by = order_by.map(|(e, options)| {
+        let order_by = order_by.and_then(|(e, options)| {
             let e = e.as_ref();
+            if e.is_empty() {
+                return None;
+            }
             let e = if e.len() == 1 {
                 Arc::new(e[0].clone().into())
             } else {
@@ -864,7 +868,7 @@ impl Expr {
                     Arc::new(functions::as_struct(e))
                 }]
             };
-            (e, options)
+            Some((e, options))
         });
 
         Ok(Expr::Over {
