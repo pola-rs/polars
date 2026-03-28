@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 # in `crates/polars-plan/src/plans/python/pyarrow.rs` generates the expression strings
 # that are parsed here. If new node types are added on the Rust side, this whitelist
 #  must be updated to match.
-_ALLOWED_PREDICATE_NODES: set[ast.AST] = {
+_ALLOWED_PREDICATE_NODES: set[type[ast.AST]] = {
     ast.Expression,
     ast.Constant,
     ast.List,
