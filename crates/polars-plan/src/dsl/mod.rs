@@ -843,7 +843,9 @@ impl Expr {
         order_by: Option<(E, SortOptions)>,
         mapping: WindowMapping,
     ) -> PolarsResult<Self> {
-        let order_by_is_set = order_by.as_ref().is_some_and(|(e, _)| !e.as_ref().is_empty());
+        let order_by_is_set = order_by
+            .as_ref()
+            .is_some_and(|(e, _)| !e.as_ref().is_empty());
         polars_ensure!(partition_by.is_some() || order_by_is_set, InvalidOperation: "At least one of `partition_by` and `order_by` must be specified in `over`");
         let partition_by = if let Some(partition_by) = partition_by {
             partition_by
