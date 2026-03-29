@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import ast
+import json
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal, overload
 
@@ -12,64 +12,82 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, LazyFrame
 
-# Allowed AST node types for predicate validation. The Rust function `predicate_to_pa`
-# in `crates/polars-plan/src/plans/python/pyarrow.rs` generates the expression strings
-# that are parsed here. If new node types are added on the Rust side, this whitelist
-#  must be updated to match.
-_ALLOWED_PREDICATE_NODES: set[type[ast.AST]] = {
-    ast.Expression,
-    ast.Constant,
-    ast.List,
-    ast.Tuple,
-    ast.Name,
-    ast.Attribute,
-    ast.Call,
-    ast.Load,
-    ast.Compare,
-    ast.BinOp,
-    ast.UnaryOp,
-    ast.BoolOp,
-    ast.Eq,
-    ast.NotEq,
-    ast.Lt,
-    ast.LtE,
-    ast.Gt,
-    ast.GtE,
-    ast.BitAnd,
-    ast.BitOr,
-    ast.Invert,
-    ast.And,
-    ast.Or,
-}
 
-# Only these top-level names may appear in predicate expressions.
-# This blocks calls to builtins like exec, eval, __import__, etc.
-# This is only a guard, there's only so much you can do with python's
-# dynamism.
-_ALLOWED_PREDICATE_NAMES: set[str] = {
-    "pa",
-    "Date",
-    "Datetime",
-    "Duration",
-    "to_py_date",
-    "to_py_datetime",
-    "to_py_time",
-    "to_py_timedelta",
-    "True",
-    "False",
-    "None",
+_BINOP_DISPATCH = {
+    "eq": "__eq__",
+    "neq": "__ne__",
+    "lt": "__lt__",
+    "lte": "__le__",
+    "gt": "__gt__",
+    "gte": "__ge__",
+    "and": "__and__",
+    "or": "__or__",
+    "xor": "__xor__",
 }
 
 
-def _validate_predicate_ast(tree: ast.AST) -> None:
-    """Validate that a predicate AST only contains allowed node types and names."""
-    for node in ast.walk(tree):
-        if type(node) not in _ALLOWED_PREDICATE_NODES:
-            msg = f"disallowed node type in predicate: {type(node).__name__}"
-            raise ValueError(msg)
-        if isinstance(node, ast.Name) and node.id not in _ALLOWED_PREDICATE_NAMES:
-            msg = f"disallowed name in predicate: {node.id!r}"
-            raise ValueError(msg)
+def _build_pyarrow_expr(node: list) -> Any:
+    """Recursively build a PyArrow Expression from a JSON predicate node."""
+    tag = node[0]
+
+    if tag == "field":
+        return pa.compute.field(node[1])
+    elif tag == "binop":
+        left = _build_pyarrow_expr(node[2])
+        right = _build_pyarrow_expr(node[3])
+        return getattr(left, _BINOP_DISPATCH[node[1]])(right)
+    elif tag == "not":
+        return ~_build_pyarrow_expr(node[1])
+    elif tag == "is_null":
+        return _build_pyarrow_expr(node[1]).is_null()
+    elif tag == "is_not_null":
+        return _build_pyarrow_expr(node[1]).is_valid()
+    elif tag == "is_in":
+        expr = _build_pyarrow_expr(node[1])
+        values = [_resolve_literal(v) for v in node[2]]
+        return expr.isin(values)
+    elif tag == "lit_str":
+        return pa.compute.scalar(node[1])
+    elif tag == "lit_bool":
+        return pa.compute.scalar(node[1])
+    elif tag == "lit_i64" or tag == "lit_f64":
+        return pa.compute.scalar(node[1])
+    elif tag == "lit_null":
+        return pa.compute.scalar(None)
+    elif tag == "lit_date":
+        from polars._utils.convert import to_py_date
+
+        return pa.compute.scalar(to_py_date(node[1]))
+    elif tag == "lit_datetime":
+        from polars._utils.convert import to_py_datetime
+
+        v, tu = node[1], node[2]
+        tz = node[3] if len(node) > 3 and node[3] is not None else None
+        return pa.compute.scalar(to_py_datetime(v, tu, tz))
+    else:
+        msg = f"unknown predicate node tag: {tag!r}"
+        raise ValueError(msg)
+
+
+def _resolve_literal(node: list) -> Any:
+    """Convert a literal JSON node to a plain Python value for isin() lists."""
+    tag = node[0]
+    if tag in ("lit_str", "lit_bool", "lit_i64", "lit_f64"):
+        return node[1]
+    if tag == "lit_null":
+        return None
+    if tag == "lit_date":
+        from polars._utils.convert import to_py_date
+
+        return to_py_date(node[1])
+    if tag == "lit_datetime":
+        from polars._utils.convert import to_py_datetime
+
+        v, tu = node[1], node[2]
+        tz = node[3] if len(node) > 3 and node[3] is not None else None
+        return to_py_datetime(v, tu, tz)
+    msg = f"unknown literal node tag: {tag!r}"
+    raise ValueError(msg)
 
 
 def _scan_pyarrow_dataset(
@@ -167,12 +185,6 @@ def _scan_pyarrow_dataset_impl(
     user_batch_size
         User-specified `batch_size` (takes precedence over Rust-provided `batch_size`).
 
-    Warnings
-    --------
-    Predicates are sanitized in multiple places using multiple methods, but a
-    attacker could probably circumvent them all. Avoid using this path if untrusted
-    user inputs could land here.
-
     Returns
     -------
     DataFrame or tuple[Iterator[DataFrame], bool]
@@ -181,29 +193,7 @@ def _scan_pyarrow_dataset_impl(
     filter_post_slice_ = None
 
     if allow_pyarrow_filter and predicate is not None:
-        from polars._utils.convert import (
-            to_py_date,
-            to_py_datetime,
-            to_py_time,
-            to_py_timedelta,
-        )
-        from polars.datatypes import Date, Datetime, Duration
-
-        tree = ast.parse(predicate, mode="eval")
-        _validate_predicate_ast(tree)
-        _filter = eval(
-            compile(tree, "<predicate>", "eval"),
-            {
-                "pa": pa,
-                "Date": Date,
-                "Datetime": Datetime,
-                "Duration": Duration,
-                "to_py_date": to_py_date,
-                "to_py_datetime": to_py_datetime,
-                "to_py_time": to_py_time,
-                "to_py_timedelta": to_py_timedelta,
-            },
-        )
+        _filter = _build_pyarrow_expr(json.loads(predicate))
 
         if n_rows is None:
             filter_ = _filter
