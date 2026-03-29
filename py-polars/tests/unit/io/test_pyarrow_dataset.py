@@ -615,10 +615,22 @@ def test_pyarrow_dataset_predicate_ast_nodes(
     assert len(result) == expected_len
 
 
-def test_pyarrow_dataset_predicate_rejects_code_injection_26591() -> None:
+def test_pyarrow_dataset_predicate_no_eval_26591() -> None:
     # Regression test for https://github.com/pola-rs/polars/issues/26591
-    # # The payload from the issue: exec() hidden inside a predicate string.
+
+    # A raw Python expression string is not valid JSON — it simply fails to parse.
     malicious = "pa.compute.field('col') == exec(\"print('PWND')\") or 'x'"
-    tree = ast.parse(malicious, mode="eval")
-    with pytest.raises(ValueError, match="disallowed name in predicate"):
-        _validate_predicate_ast(tree)
+    with pytest.raises(json.JSONDecodeError):
+        _build_pyarrow_expr(json.loads(malicious))
+
+
+@pytest.mark.write_disk
+def test_pyarrow_dataset_predicate_special_characters_24255(tmp_path: Path) -> None:
+    # Regression test for https://github.com/pola-rs/polars/issues/24255
+    df = pl.DataFrame({"col": ["a", "it's", 'say "hi"', "back\\slash"]})
+    path = tmp_path / "special.parquet"
+    df.write_parquet(path)
+
+    dset = ds.dataset(path, format="parquet")
+    result = pl.scan_pyarrow_dataset(dset).filter(pl.col("col") == "it's").collect()
+    assert_frame_equal(result, pl.DataFrame({"col": ["it's"]}))
