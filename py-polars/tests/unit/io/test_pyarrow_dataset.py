@@ -576,7 +576,7 @@ _PREDICATE_AST_CASES: dict[str, tuple[pl.Expr, int]] = {
     "string_literal": (pl.col("str") == "a", 1),
     "date_literal": (pl.col("date") == date(2020, 1, 1), 1),
     "datetime_literal": (pl.col("datetime") == datetime(2020, 1, 1), 1),
-    "float_literal": (pl.col("float") > 1.5, 2),
+    "float_literal": (pl.col("float") > 1.5, 1),
 }
 
 
