@@ -6,6 +6,7 @@ from polars._utils.wrap import wrap_df
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
+    from polars._plr import PyOptimizedTemplate
 
 
 class OptimizedTemplate:
@@ -17,7 +18,7 @@ class OptimizedTemplate:
     data repeatedly without re-optimization.
     """
 
-    _ot: object  # PyOptimizedTemplate
+    _ot: PyOptimizedTemplate
 
     def __init__(self) -> None:
         msg = (
@@ -27,7 +28,7 @@ class OptimizedTemplate:
         raise TypeError(msg)
 
     @classmethod
-    def _from_pyot(cls, pyot: object) -> OptimizedTemplate:
+    def _from_pyot(cls, pyot: PyOptimizedTemplate) -> OptimizedTemplate:
         self = cls.__new__(cls)
         self._ot = pyot
         return self

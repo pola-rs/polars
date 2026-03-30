@@ -1,8 +1,8 @@
 mod exitable;
 #[cfg(feature = "pymethods")]
 mod general;
-mod optimized_template;
 mod optflags;
+mod optimized_template;
 #[cfg(feature = "pymethods")]
 mod serde;
 mod sink;

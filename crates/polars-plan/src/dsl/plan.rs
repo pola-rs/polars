@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 #[cfg(feature = "pivot")]
 use polars_core::frame::PivotColumnNaming;
+use polars_utils::aliases::PlHashMap;
 use polars_utils::arena::Node;
 #[cfg(feature = "serde")]
 use polars_utils::pl_serialize;
@@ -248,20 +249,17 @@ impl DslPlan {
     /// PlaceholderScan node is not found in bindings or if the bound plan's schema
     /// doesn't match the placeholder's declared schema.
     #[recursive]
-    pub fn bind(
-        self,
-        bindings: &std::collections::HashMap<PlSmallStr, DslPlan>,
-    ) -> PolarsResult<Self> {
+    pub fn bind(self, bindings: &PlHashMap<PlSmallStr, DslPlan>) -> PolarsResult<Self> {
         use DslPlan::*;
 
         // Helper to bind an Arc<DslPlan> child node.
         let bind_arc = |input: Arc<DslPlan>,
-                        bindings: &std::collections::HashMap<PlSmallStr, DslPlan>|
+                        bindings: &PlHashMap<PlSmallStr, DslPlan>|
          -> PolarsResult<Arc<DslPlan>> {
             Ok(Arc::new(Arc::unwrap_or_clone(input).bind(bindings)?))
         };
 
-        let result = match self {
+        match self {
             PlaceholderScan { name, schema: _ } => {
                 let bound = bindings.get(&name).ok_or_else(|| {
                     polars_err!(
@@ -456,9 +454,7 @@ impl DslPlan {
                 version,
                 node,
             }),
-        };
-
-        result
+        }
     }
 
     pub fn describe(&self) -> PolarsResult<String> {

@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 
 use polars::prelude::{LazyFrame, OptimizedTemplate};
+use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
 
 use super::PyLazyFrame;
+use crate::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
-use crate::PyDataFrame;
 
 #[pyclass(frozen)]
 #[repr(transparent)]
@@ -32,7 +33,7 @@ impl PyOptimizedTemplate {
         py: Python<'_>,
         bindings: HashMap<String, PyLazyFrame>,
     ) -> PyResult<PyDataFrame> {
-        let plan_bindings: HashMap<PlSmallStr, LazyFrame> = bindings
+        let plan_bindings: PlHashMap<PlSmallStr, LazyFrame> = bindings
             .into_iter()
             .map(|(k, v)| (PlSmallStr::from(k.as_str()), v.ldf.read().clone()))
             .collect();
@@ -46,7 +47,7 @@ impl PyOptimizedTemplate {
 
     /// Bind concrete LazyFrames to placeholders, returning a LazyFrame.
     fn bind(&self, bindings: HashMap<String, PyLazyFrame>) -> PyResult<PyLazyFrame> {
-        let plan_bindings: HashMap<PlSmallStr, LazyFrame> = bindings
+        let plan_bindings: PlHashMap<PlSmallStr, LazyFrame> = bindings
             .into_iter()
             .map(|(k, v)| (PlSmallStr::from(k.as_str()), v.ldf.read().clone()))
             .collect();

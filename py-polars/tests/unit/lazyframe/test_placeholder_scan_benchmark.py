@@ -7,6 +7,7 @@ Compares two approaches:
   1. Direct: build full pipeline from scratch each iteration
   2. PlaceholderScan: build template once, bind different data each iteration
 """
+
 from __future__ import annotations
 
 import random
@@ -32,48 +33,425 @@ RECENCY_BUCKETS = ["recent", "mid", "all"]
 
 # ~419 word vocabulary pool for synthetic text generation
 VOCAB_POOL = [
-    "account", "active", "address", "admin", "advance", "alert", "amount", "annual", "api", "app",
-    "apply", "approve", "archive", "audit", "balance", "bank", "batch", "billing", "block", "bonus",
-    "budget", "bulk", "cache", "cancel", "card", "cash", "catalog", "change", "charge", "check",
-    "claim", "clear", "click", "close", "code", "collect", "comment", "commit", "complete", "config",
-    "confirm", "connect", "contact", "convert", "copy", "count", "coupon", "create", "credit", "custom",
-    "daily", "data", "date", "debit", "decline", "default", "delay", "delete", "deliver", "demo",
-    "deploy", "deposit", "detail", "device", "direct", "disable", "discount", "display", "done", "download",
-    "draft", "due", "duration", "edit", "email", "enable", "encrypt", "end", "engine", "entry",
-    "error", "estimate", "event", "execute", "expire", "export", "extend", "fail", "feature", "fee",
-    "fetch", "field", "file", "filter", "final", "flag", "flow", "folder", "follow", "force",
-    "format", "forward", "free", "fund", "generate", "global", "grant", "group", "guide", "handle",
-    "hash", "header", "health", "help", "hide", "history", "hold", "host", "icon", "image",
-    "import", "inactive", "index", "info", "initial", "input", "insert", "install", "instant", "integrate",
-    "interest", "internal", "invalid", "invite", "invoice", "issue", "item", "job", "journal", "keep",
-    "key", "label", "language", "last", "launch", "layer", "lead", "leave", "legacy", "level",
-    "library", "limit", "link", "list", "load", "local", "lock", "log", "login", "lookup",
-    "maintain", "manage", "manual", "map", "mark", "match", "media", "merge", "message", "method",
-    "metric", "migrate", "minimum", "mobile", "mode", "model", "modify", "module", "money", "monitor",
-    "month", "move", "multi", "name", "network", "new", "next", "node", "note", "notice",
-    "notify", "number", "object", "offer", "offset", "online", "open", "operate", "option", "order",
-    "origin", "output", "override", "owner", "package", "page", "paid", "panel", "parameter", "parse",
-    "partner", "password", "path", "pause", "pay", "penalty", "pending", "percent", "period", "permit",
-    "person", "phone", "plan", "platform", "point", "policy", "pool", "port", "position", "post",
-    "power", "prefix", "premium", "prepare", "preview", "price", "primary", "print", "priority", "private",
-    "process", "product", "profile", "program", "project", "promote", "proof", "protect", "provide", "publish",
-    "purchase", "push", "quality", "query", "queue", "quick", "quota", "random", "range", "rate",
-    "reach", "read", "ready", "reason", "receive", "recent", "record", "recover", "redirect", "reduce",
-    "refer", "refresh", "refund", "register", "reject", "release", "remain", "remind", "remove", "renew",
-    "rent", "repair", "repeat", "replace", "report", "request", "require", "reserve", "reset", "resolve",
-    "resource", "respond", "restore", "result", "retail", "retain", "retrieve", "return", "review", "revise",
-    "reward", "role", "rollback", "root", "route", "rule", "safe", "salary", "sample", "save",
-    "scale", "scan", "schedule", "score", "screen", "script", "search", "secure", "select", "send",
-    "sequence", "server", "service", "session", "setup", "share", "shift", "show", "sign", "simple",
-    "site", "size", "skip", "smart", "sort", "source", "space", "split", "stable", "stage",
-    "standard", "start", "state", "static", "status", "step", "stock", "stop", "store", "stream",
-    "string", "strong", "submit", "success", "summary", "support", "suspend", "switch", "sync", "system",
-    "table", "tag", "target", "task", "team", "template", "tenant", "term", "test", "text",
-    "theme", "ticket", "time", "title", "token", "tool", "total", "touch", "track", "trade",
-    "traffic", "train", "transfer", "transform", "trend", "trial", "trigger", "trust", "type", "unique",
-    "unit", "update", "upgrade", "upload", "usage", "user", "valid", "value", "vendor", "verify",
-    "version", "view", "virtual", "visit", "volume", "wait", "wallet", "warning", "watch", "webhook",
-    "weight", "window", "withdraw", "work", "write", "yearly", "yield", "zero", "zone",
+    "account",
+    "active",
+    "address",
+    "admin",
+    "advance",
+    "alert",
+    "amount",
+    "annual",
+    "api",
+    "app",
+    "apply",
+    "approve",
+    "archive",
+    "audit",
+    "balance",
+    "bank",
+    "batch",
+    "billing",
+    "block",
+    "bonus",
+    "budget",
+    "bulk",
+    "cache",
+    "cancel",
+    "card",
+    "cash",
+    "catalog",
+    "change",
+    "charge",
+    "check",
+    "claim",
+    "clear",
+    "click",
+    "close",
+    "code",
+    "collect",
+    "comment",
+    "commit",
+    "complete",
+    "config",
+    "confirm",
+    "connect",
+    "contact",
+    "convert",
+    "copy",
+    "count",
+    "coupon",
+    "create",
+    "credit",
+    "custom",
+    "daily",
+    "data",
+    "date",
+    "debit",
+    "decline",
+    "default",
+    "delay",
+    "delete",
+    "deliver",
+    "demo",
+    "deploy",
+    "deposit",
+    "detail",
+    "device",
+    "direct",
+    "disable",
+    "discount",
+    "display",
+    "done",
+    "download",
+    "draft",
+    "due",
+    "duration",
+    "edit",
+    "email",
+    "enable",
+    "encrypt",
+    "end",
+    "engine",
+    "entry",
+    "error",
+    "estimate",
+    "event",
+    "execute",
+    "expire",
+    "export",
+    "extend",
+    "fail",
+    "feature",
+    "fee",
+    "fetch",
+    "field",
+    "file",
+    "filter",
+    "final",
+    "flag",
+    "flow",
+    "folder",
+    "follow",
+    "force",
+    "format",
+    "forward",
+    "free",
+    "fund",
+    "generate",
+    "global",
+    "grant",
+    "group",
+    "guide",
+    "handle",
+    "hash",
+    "header",
+    "health",
+    "help",
+    "hide",
+    "history",
+    "hold",
+    "host",
+    "icon",
+    "image",
+    "import",
+    "inactive",
+    "index",
+    "info",
+    "initial",
+    "input",
+    "insert",
+    "install",
+    "instant",
+    "integrate",
+    "interest",
+    "internal",
+    "invalid",
+    "invite",
+    "invoice",
+    "issue",
+    "item",
+    "job",
+    "journal",
+    "keep",
+    "key",
+    "label",
+    "language",
+    "last",
+    "launch",
+    "layer",
+    "lead",
+    "leave",
+    "legacy",
+    "level",
+    "library",
+    "limit",
+    "link",
+    "list",
+    "load",
+    "local",
+    "lock",
+    "log",
+    "login",
+    "lookup",
+    "maintain",
+    "manage",
+    "manual",
+    "map",
+    "mark",
+    "match",
+    "media",
+    "merge",
+    "message",
+    "method",
+    "metric",
+    "migrate",
+    "minimum",
+    "mobile",
+    "mode",
+    "model",
+    "modify",
+    "module",
+    "money",
+    "monitor",
+    "month",
+    "move",
+    "multi",
+    "name",
+    "network",
+    "new",
+    "next",
+    "node",
+    "note",
+    "notice",
+    "notify",
+    "number",
+    "object",
+    "offer",
+    "offset",
+    "online",
+    "open",
+    "operate",
+    "option",
+    "order",
+    "origin",
+    "output",
+    "override",
+    "owner",
+    "package",
+    "page",
+    "paid",
+    "panel",
+    "parameter",
+    "parse",
+    "partner",
+    "password",
+    "path",
+    "pause",
+    "pay",
+    "penalty",
+    "pending",
+    "percent",
+    "period",
+    "permit",
+    "person",
+    "phone",
+    "plan",
+    "platform",
+    "point",
+    "policy",
+    "pool",
+    "port",
+    "position",
+    "post",
+    "power",
+    "prefix",
+    "premium",
+    "prepare",
+    "preview",
+    "price",
+    "primary",
+    "print",
+    "priority",
+    "private",
+    "process",
+    "product",
+    "profile",
+    "program",
+    "project",
+    "promote",
+    "proof",
+    "protect",
+    "provide",
+    "publish",
+    "purchase",
+    "push",
+    "quality",
+    "query",
+    "queue",
+    "quick",
+    "quota",
+    "random",
+    "range",
+    "rate",
+    "reach",
+    "read",
+    "ready",
+    "reason",
+    "receive",
+    "recent",
+    "record",
+    "recover",
+    "redirect",
+    "reduce",
+    "refer",
+    "refresh",
+    "refund",
+    "register",
+    "reject",
+    "release",
+    "remain",
+    "remind",
+    "remove",
+    "renew",
+    "rent",
+    "repair",
+    "repeat",
+    "replace",
+    "report",
+    "request",
+    "require",
+    "reserve",
+    "reset",
+    "resolve",
+    "resource",
+    "respond",
+    "restore",
+    "result",
+    "retail",
+    "retain",
+    "retrieve",
+    "return",
+    "review",
+    "revise",
+    "reward",
+    "role",
+    "rollback",
+    "root",
+    "route",
+    "rule",
+    "safe",
+    "salary",
+    "sample",
+    "save",
+    "scale",
+    "scan",
+    "schedule",
+    "score",
+    "screen",
+    "script",
+    "search",
+    "secure",
+    "select",
+    "send",
+    "sequence",
+    "server",
+    "service",
+    "session",
+    "setup",
+    "share",
+    "shift",
+    "show",
+    "sign",
+    "simple",
+    "site",
+    "size",
+    "skip",
+    "smart",
+    "sort",
+    "source",
+    "space",
+    "split",
+    "stable",
+    "stage",
+    "standard",
+    "start",
+    "state",
+    "static",
+    "status",
+    "step",
+    "stock",
+    "stop",
+    "store",
+    "stream",
+    "string",
+    "strong",
+    "submit",
+    "success",
+    "summary",
+    "support",
+    "suspend",
+    "switch",
+    "sync",
+    "system",
+    "table",
+    "tag",
+    "target",
+    "task",
+    "team",
+    "template",
+    "tenant",
+    "term",
+    "test",
+    "text",
+    "theme",
+    "ticket",
+    "time",
+    "title",
+    "token",
+    "tool",
+    "total",
+    "touch",
+    "track",
+    "trade",
+    "traffic",
+    "train",
+    "transfer",
+    "transform",
+    "trend",
+    "trial",
+    "trigger",
+    "trust",
+    "type",
+    "unique",
+    "unit",
+    "update",
+    "upgrade",
+    "upload",
+    "usage",
+    "user",
+    "valid",
+    "value",
+    "vendor",
+    "verify",
+    "version",
+    "view",
+    "virtual",
+    "visit",
+    "volume",
+    "wait",
+    "wallet",
+    "warning",
+    "watch",
+    "webhook",
+    "weight",
+    "window",
+    "withdraw",
+    "work",
+    "write",
+    "yearly",
+    "yield",
+    "zero",
+    "zone",
 ]
 
 
@@ -82,24 +460,23 @@ VOCAB_POOL = [
 # ---------------------------------------------------------------------------
 
 
-def generate_data(
-    n_rows: int, n_users: int, seed: int = 42
-) -> pl.DataFrame:
+def generate_data(n_rows: int, n_users: int, seed: int = 42) -> pl.DataFrame:
     """Generate synthetic text data with user_id, recency, and text columns."""
     rng = random.Random(seed)
 
     user_ids = [rng.randint(0, n_users - 1) for _ in range(n_rows)]
     recencies = [rng.randint(0, 365) for _ in range(n_rows)]
     texts = [
-        " ".join(rng.choices(VOCAB_POOL, k=rng.randint(5, 30)))
-        for _ in range(n_rows)
+        " ".join(rng.choices(VOCAB_POOL, k=rng.randint(5, 30))) for _ in range(n_rows)
     ]
 
-    return pl.DataFrame({
-        "user_id": user_ids,
-        "recency": recencies,
-        "text": texts,
-    }).cast({"user_id": pl.Int64, "recency": pl.Int64})
+    return pl.DataFrame(
+        {
+            "user_id": user_ids,
+            "recency": recencies,
+            "text": texts,
+        }
+    ).cast({"user_id": pl.Int64, "recency": pl.Int64})
 
 
 def extract_top_keywords(texts: list[str], n: int = 500) -> list[str]:
@@ -119,15 +496,13 @@ def get_recency_bucket_columns() -> list[pl.Expr]:
     """Create boolean columns for recency buckets."""
     r = pl.col("recency")
     return [
-        (r <= 30).alias("recent"),   # last 30 days
-        (r <= 90).alias("mid"),      # last 90 days
-        pl.lit(True).alias("all"),   # everything
+        (r <= 30).alias("recent"),  # last 30 days
+        (r <= 90).alias("mid"),  # last 90 days
+        pl.lit(True).alias("all"),  # everything
     ]
 
 
-def get_agg_list(
-    bucket_name: str, keyword: str | None = None
-) -> list[pl.Expr]:
+def get_agg_list(bucket_name: str, keyword: str | None = None) -> list[pl.Expr]:
     """Build aggregation expressions for a given bucket and optional keyword."""
     text = pl.col("text")
     cond = pl.col(bucket_name)
@@ -151,9 +526,7 @@ def get_agg_list(
 # ---------------------------------------------------------------------------
 
 
-def build_text_pipeline(
-    lf: pl.LazyFrame, keywords: list[str]
-) -> pl.LazyFrame:
+def build_text_pipeline(lf: pl.LazyFrame, keywords: list[str]) -> pl.LazyFrame:
     """
     Full text feature pipeline. Works with both concrete LazyFrame and placeholder.
 
@@ -165,10 +538,7 @@ def build_text_pipeline(
     """
     # 1. Keyword contains
     lf = lf.with_columns(
-        *[
-            pl.col("text").str.contains(kw).alias(f"kw_{kw}")
-            for kw in keywords
-        ]
+        *[pl.col("text").str.contains(kw).alias(f"kw_{kw}") for kw in keywords]
     )
 
     # 2. Recency buckets
@@ -188,9 +558,7 @@ def build_text_pipeline(
 
     # 4. Rename with prefix
     rename_map = {
-        c: f"feat_{c}"
-        for c in features.collect_schema().names()
-        if c != "user_id"
+        c: f"feat_{c}" for c in features.collect_schema().names() if c != "user_id"
     }
     return features.rename(rename_map)
 
@@ -211,14 +579,10 @@ def test_pipeline_correctness() -> None:
     df = generate_data(n_rows=1000, n_users=50)
     keywords = extract_top_keywords(df["text"].to_list(), n=20)
 
-    direct_result = (
-        build_text_pipeline(df.lazy(), keywords).sort("user_id").collect()
-    )
+    direct_result = build_text_pipeline(df.lazy(), keywords).sort("user_id").collect()
 
     template = build_text_template(keywords)
-    placeholder_result = (
-        template.bind({"input": df.lazy()}).sort("user_id").collect()
-    )
+    placeholder_result = template.bind({"input": df.lazy()}).sort("user_id").collect()
 
     assert_frame_equal(direct_result, placeholder_result)
 
@@ -317,20 +681,14 @@ def test_benchmark_direct_vs_placeholder(
     ph_avg = ph_bind_total / n_iterations
 
     print(f"\n{'=' * 70}")
-    print(
-        f"Benchmark: n_rows={n_rows}, n_keywords={n_keywords}, "
-        f"n_iter={n_iterations}"
-    )
+    print(f"Benchmark: n_rows={n_rows}, n_keywords={n_keywords}, n_iter={n_iterations}")
     print(f"{'=' * 70}")
     print("Direct approach:")
     print(f"  Total:   {direct_total:.4f}s")
     print(f"  Average: {direct_avg:.4f}s per iteration")
     print("PlaceholderScan approach:")
     print(f"  Template build:  {template_build_time:.4f}s (one-time)")
-    print(
-        f"  Bind+collect:    {ph_bind_total:.4f}s "
-        f"({n_iterations} iterations)"
-    )
+    print(f"  Bind+collect:    {ph_bind_total:.4f}s ({n_iterations} iterations)")
     print(f"  Average:         {ph_avg:.4f}s per bind+collect")
     print(f"  Total:           {ph_total:.4f}s (including template build)")
     if ph_avg > 0:
@@ -341,9 +699,7 @@ def test_benchmark_direct_vs_placeholder(
 
     # Correctness check on last dataset
     direct_result = (
-        build_text_pipeline(datasets[-1].lazy(), keywords)
-        .sort("user_id")
-        .collect()
+        build_text_pipeline(datasets[-1].lazy(), keywords).sort("user_id").collect()
     )
     placeholder_result = (
         template.bind({"input": datasets[-1].lazy()}).sort("user_id").collect()

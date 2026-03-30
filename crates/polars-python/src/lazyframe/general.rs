@@ -575,7 +575,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (bindings))]
     fn bind(&self, bindings: HashMap<String, Self>) -> PyResult<Self> {
         let ldf = self.ldf.read().clone();
-        let plan_bindings: HashMap<PlSmallStr, LazyFrame> = bindings
+        let plan_bindings: PlHashMap<PlSmallStr, LazyFrame> = bindings
             .into_iter()
             .map(|(k, v)| (PlSmallStr::from(k.as_str()), v.ldf.read().clone()))
             .collect();
@@ -586,9 +586,7 @@ impl PyLazyFrame {
     /// Optimize and return a reusable template for repeated bind+collect.
     fn optimize_template(&self) -> PyResult<super::PyOptimizedTemplate> {
         let ldf = self.ldf.read().clone();
-        let template = ldf
-            .optimize_template()
-            .map_err(PyPolarsErr::from)?;
+        let template = ldf.optimize_template().map_err(PyPolarsErr::from)?;
         Ok(template.into())
     }
 

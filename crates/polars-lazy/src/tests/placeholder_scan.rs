@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
@@ -24,7 +23,7 @@ fn test_placeholder_scan_basic() -> PolarsResult<()> {
         "b" => ["x", "y", "z"],
     ]?;
 
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("input"), df.lazy());
 
     let result = template.bind(bindings)?.collect()?;
@@ -46,14 +45,14 @@ fn test_placeholder_scan_template_reuse() -> PolarsResult<()> {
 
     // First binding
     let df1 = df!["a" => [1i64, -2, 3], "b" => ["x", "y", "z"]]?;
-    let mut bindings1 = HashMap::new();
+    let mut bindings1 = PlHashMap::new();
     bindings1.insert(PlSmallStr::from("input"), df1.lazy());
     let result1 = template.clone().bind(bindings1)?.collect()?;
     assert_eq!(result1.height(), 2);
 
     // Second binding with different data
     let df2 = df!["a" => [-1i64, 5, 10, -3], "b" => ["a", "b", "c", "d"]]?;
-    let mut bindings2 = HashMap::new();
+    let mut bindings2 = PlHashMap::new();
     bindings2.insert(PlSmallStr::from("input"), df2.lazy());
     let result2 = template.bind(bindings2)?.collect()?;
     assert_eq!(result2.height(), 2);
@@ -94,7 +93,7 @@ fn test_placeholder_scan_multi_placeholder_join() -> PolarsResult<()> {
         "name" => ["bob", "charlie", "dave"],
     ]?;
 
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("left"), left_df.lazy());
     bindings.insert(PlSmallStr::from("right"), right_df.lazy());
 
@@ -125,7 +124,7 @@ fn test_placeholder_scan_missing_binding_errors() {
     let template = LazyFrame::placeholder("input", schema);
 
     let df = df!["a" => [1i64], "b" => ["x"]].unwrap();
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("wrong_name"), df.lazy());
 
     let result = template.bind(bindings);
@@ -141,7 +140,7 @@ fn test_placeholder_scan_with_projection() -> PolarsResult<()> {
     let template = LazyFrame::placeholder("input", schema).select([col("a")]); // only select column "a"
 
     let df = df!["a" => [1i64, 2, 3], "b" => ["x", "y", "z"]]?;
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("input"), df.lazy());
 
     let result = template.bind(bindings)?.collect()?;
@@ -160,7 +159,7 @@ fn test_placeholder_scan_with_sort() -> PolarsResult<()> {
         LazyFrame::placeholder("input", schema).sort(["a"], SortMultipleOptions::default());
 
     let df = df!["a" => [3i64, 1, 2], "b" => ["c", "a", "b"]]?;
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("input"), df.lazy());
 
     let result = template.bind(bindings)?.collect()?;
@@ -184,7 +183,7 @@ fn test_placeholder_scan_with_groupby() -> PolarsResult<()> {
         "a" => [1i64, 2, 3, 4],
         "b" => ["x", "y", "x", "y"],
     ]?;
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("input"), df.lazy());
 
     let result = template
@@ -207,7 +206,7 @@ fn test_placeholder_scan_with_slice() -> PolarsResult<()> {
     let template = LazyFrame::placeholder("input", schema).slice(0, 2);
 
     let df = df!["a" => [1i64, 2, 3], "b" => ["x", "y", "z"]]?;
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("input"), df.lazy());
 
     let result = template.bind(bindings)?.collect()?;
@@ -224,7 +223,7 @@ fn test_placeholder_scan_with_with_columns() -> PolarsResult<()> {
         LazyFrame::placeholder("input", schema).with_column((col("a") * lit(2)).alias("a_doubled"));
 
     let df = df!["a" => [1i64, 2, 3], "b" => ["x", "y", "z"]]?;
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("input"), df.lazy());
 
     let result = template.bind(bindings)?.collect()?;
@@ -250,7 +249,7 @@ fn test_placeholder_scan_union() -> PolarsResult<()> {
     let df1 = df!["a" => [1i64, 2], "b" => ["x", "y"]]?;
     let df2 = df!["a" => [3i64, 4], "b" => ["z", "w"]]?;
 
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("part1"), df1.lazy());
     bindings.insert(PlSmallStr::from("part2"), df2.lazy());
 
@@ -269,7 +268,7 @@ fn test_placeholder_scan_ir_conversion() -> PolarsResult<()> {
     let template = LazyFrame::placeholder("input", schema).filter(col("a").gt(lit(0)));
 
     let df = df!["a" => [1i64, -2, 3], "b" => ["x", "y", "z"]]?;
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("input"), df.lazy());
 
     let bound = template.bind(bindings)?;
@@ -293,7 +292,7 @@ fn test_optimize_template_basic() -> PolarsResult<()> {
     let template = lf.optimize_template()?;
 
     let df = df!["a" => [1i64, -2, 3], "b" => ["x", "y", "z"]]?;
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("input"), df.lazy());
 
     let result = template.bind_and_collect(bindings)?;
@@ -314,14 +313,14 @@ fn test_optimize_template_reuse() -> PolarsResult<()> {
 
     // First bind
     let df1 = df!["a" => [1i64, -2, 3], "b" => ["x", "y", "z"]]?;
-    let mut b1 = HashMap::new();
+    let mut b1 = PlHashMap::new();
     b1.insert(PlSmallStr::from("input"), df1.lazy());
     let r1 = template.bind_and_collect(b1)?;
     assert_eq!(r1.height(), 2);
 
     // Second bind with different data
     let df2 = df!["a" => [-1i64, 5, 10, -3], "b" => ["a", "b", "c", "d"]]?;
-    let mut b2 = HashMap::new();
+    let mut b2 = PlHashMap::new();
     b2.insert(PlSmallStr::from("input"), df2.lazy());
     let r2 = template.bind_and_collect(b2)?;
     assert_eq!(r2.height(), 2);
@@ -331,7 +330,7 @@ fn test_optimize_template_reuse() -> PolarsResult<()> {
 
     // Third bind
     let df3 = df!["a" => [100i64], "b" => ["only"]]?;
-    let mut b3 = HashMap::new();
+    let mut b3 = PlHashMap::new();
     b3.insert(PlSmallStr::from("input"), df3.lazy());
     let r3 = template.bind_and_collect(b3)?;
     assert_eq!(r3.height(), 1);
@@ -347,7 +346,7 @@ fn test_optimize_template_projection_pushdown() -> PolarsResult<()> {
     let template = lf.optimize_template()?;
 
     let df = df!["a" => [1i64, 2, 3], "b" => ["x", "y", "z"]]?;
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("input"), df.lazy());
 
     let result = template.bind_and_collect(bindings)?;
@@ -366,7 +365,7 @@ fn test_optimize_template_with_filter() -> PolarsResult<()> {
     let template = lf.optimize_template()?;
 
     let df = df!["a" => [1i64, 2, 3, 4], "b" => ["w", "x", "y", "z"]]?;
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("input"), df.lazy());
 
     let result = template.bind_and_collect(bindings)?;
@@ -402,7 +401,7 @@ fn test_optimize_template_multi_placeholder_join() -> PolarsResult<()> {
     let left_df = df!["id" => [1i64, 2, 3], "value" => [10.0, 20.0, 30.0]]?;
     let right_df = df!["id" => [2i64, 3, 4], "name" => ["bob", "charlie", "dave"]]?;
 
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("left"), left_df.lazy());
     bindings.insert(PlSmallStr::from("right"), right_df.lazy());
 
@@ -421,7 +420,7 @@ fn test_optimize_template_schema_mismatch_error() {
 
     // Binding with wrong type
     let df = df!["a" => ["not_int"], "b" => ["x"]].unwrap();
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("input"), df.lazy());
 
     let result = template.bind_and_collect(bindings);
@@ -435,7 +434,7 @@ fn test_optimize_template_missing_binding_error() {
     let template = lf.optimize_template().unwrap();
 
     let df = df!["a" => [1i64], "b" => ["x"]].unwrap();
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("wrong_name"), df.lazy());
 
     let result = template.bind_and_collect(bindings);
@@ -451,7 +450,7 @@ fn test_optimize_template_bind_returns_lazyframe() -> PolarsResult<()> {
     let template = lf.optimize_template()?;
 
     let df = df!["a" => [1i64, -2, 3], "b" => ["x", "y", "z"]]?;
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("input"), df.lazy());
 
     // Use bind() instead of bind_and_collect()
@@ -470,7 +469,7 @@ fn test_optimize_template_with_groupby() -> PolarsResult<()> {
     let template = lf.optimize_template()?;
 
     let df = df!["a" => [1i64, 2, 3, 4], "b" => ["x", "y", "x", "y"]]?;
-    let mut bindings = HashMap::new();
+    let mut bindings = PlHashMap::new();
     bindings.insert(PlSmallStr::from("input"), df.lazy());
 
     let result = template.bind_and_collect(bindings)?;

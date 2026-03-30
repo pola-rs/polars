@@ -1,8 +1,7 @@
-use std::collections::HashMap;
-
 use polars_core::prelude::*;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
+use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::BUILD_STREAMING_EXECUTOR;
@@ -28,12 +27,12 @@ pub struct OptimizedTemplate {
     /// The optimized IR plan (contains PlaceholderScan nodes as leaves).
     ir_plan: IRPlan,
     /// Map from placeholder name to info about each occurrence in the IR arena.
-    placeholder_info: HashMap<PlSmallStr, Vec<PlaceholderInfo>>,
+    placeholder_info: PlHashMap<PlSmallStr, Vec<PlaceholderInfo>>,
 }
 
 /// Find all PlaceholderScan nodes in the IR arena.
-fn find_placeholder_nodes(arena: &Arena<IR>) -> HashMap<PlSmallStr, Vec<PlaceholderInfo>> {
-    let mut result: HashMap<PlSmallStr, Vec<PlaceholderInfo>> = HashMap::new();
+fn find_placeholder_nodes(arena: &Arena<IR>) -> PlHashMap<PlSmallStr, Vec<PlaceholderInfo>> {
+    let mut result: PlHashMap<PlSmallStr, Vec<PlaceholderInfo>> = PlHashMap::new();
     for idx in 0..arena.len() {
         let node = Node(idx);
         if let IR::PlaceholderScan {
@@ -111,7 +110,7 @@ impl OptimizedTemplate {
     /// skipping optimization entirely.
     pub fn bind_and_collect(
         &self,
-        bindings: HashMap<PlSmallStr, LazyFrame>,
+        bindings: PlHashMap<PlSmallStr, LazyFrame>,
     ) -> PolarsResult<DataFrame> {
         let mut ir_plan = self.bind_ir(bindings)?;
         ir_plan.ensure_root_node_is_sink();
@@ -131,10 +130,7 @@ impl OptimizedTemplate {
     /// The returned LazyFrame wraps the already-optimized IR. Calling `.collect()` on it
     /// will re-run optimization passes (which should be fast since the plan is already
     /// optimized). For maximum performance, prefer [`bind_and_collect()`].
-    pub fn bind(
-        &self,
-        bindings: HashMap<PlSmallStr, LazyFrame>,
-    ) -> PolarsResult<LazyFrame> {
+    pub fn bind(&self, bindings: PlHashMap<PlSmallStr, LazyFrame>) -> PolarsResult<LazyFrame> {
         let ir_plan = self.bind_ir(bindings)?;
         let version = ir_plan.lp_arena.version();
         let node = ir_plan.lp_top;
@@ -156,10 +152,7 @@ impl OptimizedTemplate {
     ///
     /// Clones the template arenas, converts each binding's DslPlan to IR in the
     /// cloned arenas, then replaces PlaceholderScan nodes in-place.
-    fn bind_ir(
-        &self,
-        bindings: HashMap<PlSmallStr, LazyFrame>,
-    ) -> PolarsResult<IRPlan> {
+    fn bind_ir(&self, bindings: PlHashMap<PlSmallStr, LazyFrame>) -> PolarsResult<IRPlan> {
         // 1. Clone arenas (template stays reusable).
         let mut lp_arena = self.ir_plan.lp_arena.clone();
         let mut expr_arena = self.ir_plan.expr_arena.clone();

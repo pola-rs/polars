@@ -11,9 +11,7 @@ def test_placeholder_scan_basic() -> None:
     """Basic placeholder: create template, bind, collect."""
     schema = {"a": pl.Int64, "b": pl.String}
     template = (
-        pl.scan_placeholder("input", schema)
-        .filter(pl.col("a") > 0)
-        .select(["a", "b"])
+        pl.scan_placeholder("input", schema).filter(pl.col("a") > 0).select(["a", "b"])
     )
 
     df = pl.DataFrame({"a": [1, -2, 3], "b": ["x", "y", "z"]})
@@ -49,10 +47,12 @@ def test_placeholder_scan_multi_placeholder_join() -> None:
     left_df = pl.DataFrame({"id": [1, 2, 3], "value": [10.0, 20.0, 30.0]})
     right_df = pl.DataFrame({"id": [2, 3, 4], "name": ["bob", "charlie", "dave"]})
 
-    result = template.bind({
-        "left": left_df.lazy(),
-        "right": right_df.lazy(),
-    }).collect()
+    result = template.bind(
+        {
+            "left": left_df.lazy(),
+            "right": right_df.lazy(),
+        }
+    ).collect()
 
     assert result.height == 2  # id 2 and 3 match
     assert set(result.columns) == {"id", "value", "name"}
@@ -102,11 +102,7 @@ def test_placeholder_scan_with_sort() -> None:
 
 def test_placeholder_scan_with_group_by() -> None:
     schema = {"a": pl.Int64, "b": pl.String}
-    template = (
-        pl.scan_placeholder("input", schema)
-        .group_by("b")
-        .agg(pl.col("a").sum())
-    )
+    template = pl.scan_placeholder("input", schema).group_by("b").agg(pl.col("a").sum())
 
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["x", "y", "x", "y"]})
     result = template.bind({"input": df.lazy()}).sort("b").collect()
@@ -136,7 +132,9 @@ def test_placeholder_scan_with_with_columns() -> None:
 
     assert result.width == 3
     expected_doubled = pl.Series("a_doubled", [2, 4, 6])
-    assert_frame_equal(result.get_column("a_doubled").to_frame(), expected_doubled.to_frame())
+    assert_frame_equal(
+        result.get_column("a_doubled").to_frame(), expected_doubled.to_frame()
+    )
 
 
 def test_placeholder_scan_concat() -> None:
@@ -149,10 +147,12 @@ def test_placeholder_scan_concat() -> None:
     df1 = pl.DataFrame({"a": [1, 2], "b": ["x", "y"]})
     df2 = pl.DataFrame({"a": [3, 4], "b": ["z", "w"]})
 
-    result = template.bind({
-        "part1": df1.lazy(),
-        "part2": df2.lazy(),
-    }).collect()
+    result = template.bind(
+        {
+            "part1": df1.lazy(),
+            "part2": df2.lazy(),
+        }
+    ).collect()
 
     assert result.height == 4
 
@@ -168,11 +168,13 @@ def test_placeholder_scan_chained_operations() -> None:
         .sort("a")
     )
 
-    df = pl.DataFrame({
-        "a": [3, -1, 1, 2],
-        "b": ["c", "x", "a", "b"],
-        "c": [0.3, 0.1, 0.1, 0.2],
-    })
+    df = pl.DataFrame(
+        {
+            "a": [3, -1, 1, 2],
+            "b": ["c", "x", "a", "b"],
+            "c": [0.3, 0.1, 0.1, 0.2],
+        }
+    )
     result = template.bind({"input": df.lazy()}).collect()
 
     assert result.height == 3
@@ -212,9 +214,9 @@ def test_optimize_template_basic() -> None:
 def test_optimize_template_reuse() -> None:
     """Same template can be bound to different data multiple times."""
     schema = {"a": pl.Int64, "b": pl.String}
-    template = pl.scan_placeholder("input", schema).filter(
-        pl.col("a") > 0
-    ).optimize_template()
+    template = (
+        pl.scan_placeholder("input", schema).filter(pl.col("a") > 0).optimize_template()
+    )
 
     df1 = pl.DataFrame({"a": [1, -2, 3], "b": ["x", "y", "z"]})
     r1 = template.bind_and_collect({"input": df1.lazy()})
@@ -229,9 +231,7 @@ def test_optimize_template_reuse() -> None:
 def test_optimize_template_projection_pushdown() -> None:
     """Projection pushdown should work through PlaceholderScan."""
     schema = {"a": pl.Int64, "b": pl.String}
-    template = pl.scan_placeholder("input", schema).select(
-        "a"
-    ).optimize_template()
+    template = pl.scan_placeholder("input", schema).select("a").optimize_template()
 
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
     result = template.bind_and_collect({"input": df.lazy()})
@@ -243,9 +243,9 @@ def test_optimize_template_projection_pushdown() -> None:
 def test_optimize_template_with_filter() -> None:
     """Predicate pushdown + optimize_template."""
     schema = {"a": pl.Int64, "b": pl.String}
-    template = pl.scan_placeholder("input", schema).filter(
-        pl.col("a") > 2
-    ).optimize_template()
+    template = (
+        pl.scan_placeholder("input", schema).filter(pl.col("a") > 2).optimize_template()
+    )
 
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["w", "x", "y", "z"]})
     result = template.bind_and_collect({"input": df.lazy()})
@@ -267,10 +267,12 @@ def test_optimize_template_multi_placeholder_join() -> None:
     left_df = pl.DataFrame({"id": [1, 2, 3], "value": [10.0, 20.0, 30.0]})
     right_df = pl.DataFrame({"id": [2, 3, 4], "name": ["bob", "charlie", "dave"]})
 
-    result = template.bind_and_collect({
-        "left": left_df.lazy(),
-        "right": right_df.lazy(),
-    })
+    result = template.bind_and_collect(
+        {
+            "left": left_df.lazy(),
+            "right": right_df.lazy(),
+        }
+    )
     assert result.shape[0] == 2  # id 2 and 3 match
     assert result.shape[1] == 3  # id, value, name
 
@@ -278,9 +280,9 @@ def test_optimize_template_multi_placeholder_join() -> None:
 def test_optimize_template_bind_returns_lazyframe() -> None:
     """bind() returns a LazyFrame that can be further operated on."""
     schema = {"a": pl.Int64, "b": pl.String}
-    template = pl.scan_placeholder("input", schema).filter(
-        pl.col("a") > 0
-    ).optimize_template()
+    template = (
+        pl.scan_placeholder("input", schema).filter(pl.col("a") > 0).optimize_template()
+    )
 
     df = pl.DataFrame({"a": [1, -2, 3], "b": ["x", "y", "z"]})
     result = template.bind({"input": df.lazy()}).collect()
@@ -314,7 +316,7 @@ def test_optimize_template_schema_mismatch_errors() -> None:
     template = pl.scan_placeholder("input", schema).optimize_template()
 
     df = pl.DataFrame({"a": ["not_int"], "b": ["x"]})
-    with pytest.raises(Exception):
+    with pytest.raises(pl.exceptions.SchemaError):
         template.bind_and_collect({"input": df.lazy()})
 
 

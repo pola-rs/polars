@@ -120,6 +120,7 @@ if TYPE_CHECKING:
     import polars.io.iceberg
     from polars.io.partition import PartitionBy, SinkedPathsCallback
     from polars.lazyframe.opt_flags import QueryOptFlags
+    from polars.lazyframe.opt_template import OptimizedTemplate
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars._plr import PyExpr, PySelector
