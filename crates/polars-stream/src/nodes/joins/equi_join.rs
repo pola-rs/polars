@@ -255,6 +255,16 @@ fn estimate_cardinality(
     })
 }
 
+fn estimate_size_per_row(morsels: &[Morsel]) -> f64 {
+    let mut total_size = 0;
+    let mut total_height = 0;
+    for m in morsels {
+        total_size += m.df().estimated_size();
+        total_height += m.df().height();
+    }
+    total_size as f64 / total_height as f64
+}
+
 #[derive(Default)]
 struct SampleState {
     left: Vec<Morsel>,
@@ -351,9 +361,11 @@ impl SampleState {
                     Some(JoinBuildSide::PreferRight) => false,
                     Some(JoinBuildSide::ForceLeft | JoinBuildSide::ForceRight) => unreachable!(),
                     None => {
-                        // Estimate cardinality and choose smaller.
+                        // Estimate cardinality and choose smaller, minimizing expected memory usage.
                         let (lc, rc) = estimate_cardinalities()?;
-                        lc < rc
+                        let ls = estimate_size_per_row(&self.left);
+                        let rs = estimate_size_per_row(&self.right);
+                        lc * ls < rc * rs
                     },
                 }
             },
