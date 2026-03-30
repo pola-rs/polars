@@ -1,6 +1,7 @@
 use std::cell::LazyCell;
 use std::sync::Arc;
 
+use arrow::bitmap::Bitmap;
 use polars_core::config;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{IDX_DTYPE, IdxCa, InitHashMaps, PlHashMap, PlIndexMap, PlIndexSet};
@@ -216,7 +217,7 @@ pub fn initialize_scan_predicate<'a>(
     };
 
     let mut send_predicate_to_readers = true;
-    let mut skip_files_mask: Option<SkipFilesMask> = None;
+    let mut exclusion_mask: Option<Bitmap> = None;
     let mut hive_len: Option<usize> = None;
     let mut stats_len: Option<usize> = None;
 
@@ -229,10 +230,8 @@ pub fn initialize_scan_predicate<'a>(
                 "initialize_scan_predicate: Source filter mask initialization via hive partitions"
             );
         }
-
         hive_len = Some(hive_parts.df().height());
-
-        let mask = hive_predicate
+        let hive_inclusion = hive_predicate
             .evaluate_io(hive_parts.df())?
             .bool()?
             .rechunk()
@@ -242,9 +241,7 @@ pub fn initialize_scan_predicate<'a>(
             .unwrap()
             .values()
             .clone();
-
-        skip_files_mask = Some(SkipFilesMask::Inclusion(mask));
-
+        exclusion_mask = Some(!&hive_inclusion);
         if predicate.hive_predicate_is_full_predicate {
             send_predicate_to_readers = false;
         }
@@ -259,22 +256,23 @@ pub fn initialize_scan_predicate<'a>(
                 "initialize_scan_predicate: Source filter mask initialization via table statistics"
             );
         }
-        stats_len = Some(table_statistics.0.height());
-        let exclusion_mask = skip_batch_predicate.evaluate_with_stat_df(&table_statistics.0)?;
-        let stats_mask = SkipFilesMask::Exclusion(exclusion_mask);
 
-        // Merge with mask from hive partitioning.
-        skip_files_mask = Some(match skip_files_mask {
-            Some(existing) => existing.merge(&stats_mask),
-            None => stats_mask,
+        stats_len = Some(table_statistics.0.height());
+        let stats_exclusion = skip_batch_predicate.evaluate_with_stat_df(&table_statistics.0)?;
+
+        // Merge masks.
+        exclusion_mask = Some(match exclusion_mask {
+            Some(ref hive_exclusion) => hive_exclusion | &stats_exclusion,
+            None => stats_exclusion,
         });
         send_predicate_to_readers = true;
     }
 
     // Finish.
-    let Some(skip_files_mask) = skip_files_mask else {
+    let Some(exclusion_mask) = exclusion_mask else {
         return Ok((None, Some(predicate)));
     };
+    let skip_files_mask = SkipFilesMask::Exclusion(exclusion_mask);
 
     let mask_len = skip_files_mask.len();
     if hive_len.is_some_and(|l| l != mask_len)

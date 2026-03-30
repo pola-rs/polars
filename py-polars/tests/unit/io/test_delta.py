@@ -1367,24 +1367,23 @@ def test_scan_delta_filter_combined_predicates_statistics_27072(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    df = pl.DataFrame({"p": [10, 10, 20, 20]})
+    df = pl.DataFrame({"p": [10, 10, 20, 20, 30, 30]})
 
-    df1 = df.with_columns(pl.lit(1).alias("a"))
-    df2 = df.with_columns(pl.lit(2).alias("a"))
+    dfs = [df.with_columns(pl.lit(i).alias("a")) for i in range(3)]
 
     root = tmp_path / "delta"
-    df1.write_delta(root, delta_write_options={"partition_by": "p"}, mode="append")
-    df2.write_delta(root, delta_write_options={"partition_by": "p"}, mode="append")
+    for df in dfs:
+        df.write_delta(root, delta_write_options={"partition_by": "p"}, mode="append")
 
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
 
-    filter = (pl.col("p") == 10) & (pl.col("a") <= 1)
+    filter = (pl.col("p") == 10) & (pl.col("a") == 1)
 
     assert_frame_equal(
         pl.scan_delta(root).filter(filter).collect(),
-        pl.concat([df1, df2]).filter(filter),
+        pl.concat(dfs).filter(filter),
         check_column_order=False,
         check_row_order=False,
     )
-    assert "skipping 3 / 4 files" in capfd.readouterr().err
+    assert "skipping 8 / 9 files" in capfd.readouterr().err
