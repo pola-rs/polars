@@ -4,7 +4,7 @@ from typing import TypeVar
 T = TypeVar("T")
 
 
-def balanced_reduce(function: Callable[[T, T], T], values: list[T]) -> T | None:
+def reduce_balanced(function: Callable[[T, T], T], values: list[T]) -> T | None:
     """Applies a reduction in a balanced tree pattern."""
     if not values:
         return None

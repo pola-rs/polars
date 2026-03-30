@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars._utils.balanced_reduce import balanced_reduce
+from polars._utils.reduce_balanced import reduce_balanced
 from polars._utils.convert import (
     date_to_int,
     datetime_to_int,
@@ -299,7 +299,7 @@ def test_is_str_sequence_check(
         assert is_sequence(sequence, include_series=include_series)
 
 
-def test_balanced_reduce() -> None:
+def test_reduce_balanced() -> None:
     values = [[0], [1], [2], [3], [4]]
 
     seen = []
@@ -308,7 +308,7 @@ def test_balanced_reduce() -> None:
         seen.append((left, right))
         return left + right
 
-    acc = balanced_reduce(reducer, values)
+    acc = reduce_balanced(reducer, values)
 
     assert acc == [0, 1, 2, 3, 4]
     assert seen == [
