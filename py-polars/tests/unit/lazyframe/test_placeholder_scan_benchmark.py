@@ -713,6 +713,7 @@ def test_benchmark_direct_vs_placeholder(
 
 
 @pytest.mark.slow
+@pytest.mark.benchmark
 def test_large_scale() -> None:
     """Stress test with 100K rows and 500 keywords."""
     df = generate_data(n_rows=100_000, n_users=5000, seed=99)
