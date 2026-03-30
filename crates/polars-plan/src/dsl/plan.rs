@@ -257,7 +257,7 @@ impl DslPlan {
         };
 
         let result = match self {
-            PlaceholderScan { name, schema } => {
+            PlaceholderScan { name, schema: _ } => {
                 let bound = bindings.get(&name).ok_or_else(|| {
                     polars_err!(
                         InvalidOperation:

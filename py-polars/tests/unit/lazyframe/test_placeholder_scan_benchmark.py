@@ -30,43 +30,51 @@ INPUT_SCHEMA = {
 
 RECENCY_BUCKETS = ["recent", "mid", "all"]
 
-# ~1000 word vocabulary pool for synthetic text generation
-VOCAB_POOL = (
-    "account active address admin advance alert amount annual api app apply approve "
-    "archive audit balance bank batch billing block bonus budget bulk cache cancel card "
-    "cash catalog change charge check claim clear click close code collect comment commit "
-    "complete config confirm connect contact convert copy count coupon create credit "
-    "custom daily data date debit decline default delay delete deliver demo deploy "
-    "deposit detail device direct disable discount display done download draft due "
-    "duration edit email enable encrypt end engine entry error estimate event execute "
-    "expire export extend fail feature fee fetch field file filter final flag flow "
-    "folder follow force format forward free fund generate global grant group guide "
-    "handle hash header health help hide history hold host icon image import inactive "
-    "index info initial input insert install instant integrate interest internal invalid "
-    "invite invoice issue item job journal keep key label language last launch layer "
-    "lead leave legacy level library limit link list load local lock log login lookup "
-    "maintain manage manual map mark match media merge message method metric migrate "
-    "minimum mobile mode model modify module money monitor month move multi name network "
-    "new next node note notice notify number object offer offset online open operate "
-    "option order origin output override owner package page paid panel parameter parse "
-    "partner password path pause pay penalty pending percent period permit person phone "
-    "plan platform point policy pool port position post power prefix premium prepare "
-    "preview price primary print priority private process product profile program project "
-    "promote proof protect provide publish purchase push quality query queue quick quota "
-    "random range rate reach read ready reason receive recent record recover redirect "
-    "reduce refer refresh refund register reject release remain remind remove renew rent "
-    "repair repeat replace report request require reserve reset resolve resource respond "
-    "restore result retail retain retrieve return review revise reward role rollback root "
-    "route rule safe salary sample save scale scan schedule score screen script search "
-    "secure select send sequence server service session setup share shift show sign simple "
-    "site size skip smart sort source space split stable stage standard start state static "
-    "status step stock stop store stream string strong submit success summary support "
-    "suspend switch sync system table tag target task team template tenant term test text "
-    "theme ticket time title token tool total touch track trade traffic train transfer "
-    "transform trend trial trigger trust type unique unit update upgrade upload usage "
-    "user valid value vendor verify version view virtual visit volume wait wallet warning "
-    "watch webhook weight window withdraw work write yearly yield zero zone"
-).split()
+# ~419 word vocabulary pool for synthetic text generation
+VOCAB_POOL = [
+    "account", "active", "address", "admin", "advance", "alert", "amount", "annual", "api", "app",
+    "apply", "approve", "archive", "audit", "balance", "bank", "batch", "billing", "block", "bonus",
+    "budget", "bulk", "cache", "cancel", "card", "cash", "catalog", "change", "charge", "check",
+    "claim", "clear", "click", "close", "code", "collect", "comment", "commit", "complete", "config",
+    "confirm", "connect", "contact", "convert", "copy", "count", "coupon", "create", "credit", "custom",
+    "daily", "data", "date", "debit", "decline", "default", "delay", "delete", "deliver", "demo",
+    "deploy", "deposit", "detail", "device", "direct", "disable", "discount", "display", "done", "download",
+    "draft", "due", "duration", "edit", "email", "enable", "encrypt", "end", "engine", "entry",
+    "error", "estimate", "event", "execute", "expire", "export", "extend", "fail", "feature", "fee",
+    "fetch", "field", "file", "filter", "final", "flag", "flow", "folder", "follow", "force",
+    "format", "forward", "free", "fund", "generate", "global", "grant", "group", "guide", "handle",
+    "hash", "header", "health", "help", "hide", "history", "hold", "host", "icon", "image",
+    "import", "inactive", "index", "info", "initial", "input", "insert", "install", "instant", "integrate",
+    "interest", "internal", "invalid", "invite", "invoice", "issue", "item", "job", "journal", "keep",
+    "key", "label", "language", "last", "launch", "layer", "lead", "leave", "legacy", "level",
+    "library", "limit", "link", "list", "load", "local", "lock", "log", "login", "lookup",
+    "maintain", "manage", "manual", "map", "mark", "match", "media", "merge", "message", "method",
+    "metric", "migrate", "minimum", "mobile", "mode", "model", "modify", "module", "money", "monitor",
+    "month", "move", "multi", "name", "network", "new", "next", "node", "note", "notice",
+    "notify", "number", "object", "offer", "offset", "online", "open", "operate", "option", "order",
+    "origin", "output", "override", "owner", "package", "page", "paid", "panel", "parameter", "parse",
+    "partner", "password", "path", "pause", "pay", "penalty", "pending", "percent", "period", "permit",
+    "person", "phone", "plan", "platform", "point", "policy", "pool", "port", "position", "post",
+    "power", "prefix", "premium", "prepare", "preview", "price", "primary", "print", "priority", "private",
+    "process", "product", "profile", "program", "project", "promote", "proof", "protect", "provide", "publish",
+    "purchase", "push", "quality", "query", "queue", "quick", "quota", "random", "range", "rate",
+    "reach", "read", "ready", "reason", "receive", "recent", "record", "recover", "redirect", "reduce",
+    "refer", "refresh", "refund", "register", "reject", "release", "remain", "remind", "remove", "renew",
+    "rent", "repair", "repeat", "replace", "report", "request", "require", "reserve", "reset", "resolve",
+    "resource", "respond", "restore", "result", "retail", "retain", "retrieve", "return", "review", "revise",
+    "reward", "role", "rollback", "root", "route", "rule", "safe", "salary", "sample", "save",
+    "scale", "scan", "schedule", "score", "screen", "script", "search", "secure", "select", "send",
+    "sequence", "server", "service", "session", "setup", "share", "shift", "show", "sign", "simple",
+    "site", "size", "skip", "smart", "sort", "source", "space", "split", "stable", "stage",
+    "standard", "start", "state", "static", "status", "step", "stock", "stop", "store", "stream",
+    "string", "strong", "submit", "success", "summary", "support", "suspend", "switch", "sync", "system",
+    "table", "tag", "target", "task", "team", "template", "tenant", "term", "test", "text",
+    "theme", "ticket", "time", "title", "token", "tool", "total", "touch", "track", "trade",
+    "traffic", "train", "transfer", "transform", "trend", "trial", "trigger", "trust", "type", "unique",
+    "unit", "update", "upgrade", "upload", "usage", "user", "valid", "value", "vendor", "verify",
+    "version", "view", "virtual", "visit", "volume", "wait", "wallet", "warning", "watch", "webhook",
+    "weight", "window", "withdraw", "work", "write", "yearly", "yield", "zero", "zone",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -314,10 +322,10 @@ def test_benchmark_direct_vs_placeholder(
         f"n_iter={n_iterations}"
     )
     print(f"{'=' * 70}")
-    print(f"Direct approach:")
+    print("Direct approach:")
     print(f"  Total:   {direct_total:.4f}s")
     print(f"  Average: {direct_avg:.4f}s per iteration")
-    print(f"PlaceholderScan approach:")
+    print("PlaceholderScan approach:")
     print(f"  Template build:  {template_build_time:.4f}s (one-time)")
     print(
         f"  Bind+collect:    {ph_bind_total:.4f}s "
