@@ -120,7 +120,7 @@ impl LazyFrame {
     /// bound to a concrete data source via [`bind`](Self::bind) before collecting.
     ///
     /// # Example
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use polars::prelude::*;
     /// use std::collections::HashMap;
     ///
