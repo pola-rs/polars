@@ -2692,7 +2692,7 @@ def rolling_corr(
     *,
     window_size: int,
     min_samples: int | None = None,
-    ddof: int | None = 1,
+    ddof: int = 1,
 ) -> Expr:
     """
     Compute the rolling correlation between two columns/ expressions.
