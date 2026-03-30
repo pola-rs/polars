@@ -15,6 +15,7 @@ from polars._utils.convert import (
     time_to_int,
     timedelta_to_int,
 )
+from polars._utils.tree_reduce import tree_reduce
 from polars._utils.various import (
     _in_notebook,
     is_bool_sequence,
@@ -24,7 +25,6 @@ from polars._utils.various import (
     parse_percentiles,
     parse_version,
 )
-from polars._utils.tree_reduce import tree_reduce
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -304,9 +304,9 @@ def test_tree_reduce() -> None:
 
     seen = []
 
-    def reducer(l: list[int], r: list[int]) -> list[int]:
-        seen.append((l, r))
-        return l + r
+    def reducer(left: list[int], right: list[int]) -> list[int]:
+        seen.append((left, right))
+        return left + right
 
     acc = tree_reduce(reducer, values)
 
