@@ -190,24 +190,16 @@ pub(super) fn rolling_corr_cov(
 
     let mean_x = x.rolling_mean(rolling_options.clone())?;
     let mean_y = y.rolling_mean(rolling_options.clone())?;
+
+    let ddof_value = if is_corr { 1u8 } else { cov_options.ddof };
     let ddof = Series::new(
         PlSmallStr::EMPTY,
-        &[AnyValue::from(cov_options.ddof).cast(&dtype)],
+        &[AnyValue::from(ddof_value).cast(&dtype)],
     );
 
-    let numerator = if is_corr {
-        ((mean_x_y - (mean_x * mean_y).unwrap()).unwrap()
-            * (count_x_y.clone()
-                / (count_x_y
-                    - Series::new(PlSmallStr::EMPTY, &[AnyValue::from(1u8).cast(&dtype)]))
-                .unwrap())
-            .unwrap())
-        .unwrap()
-    } else {
-        ((mean_x_y - (mean_x * mean_y).unwrap()).unwrap()
-            * (count_x_y.clone() / (count_x_y - ddof).unwrap()).unwrap())
-        .unwrap()
-    };
+    let numerator = ((mean_x_y - (mean_x * mean_y).unwrap()).unwrap()
+        * (count_x_y.clone() / (count_x_y - ddof).unwrap()).unwrap())
+    .unwrap();
 
     if is_corr {
         let var_x = x.rolling_var(rolling_options.clone())?;
