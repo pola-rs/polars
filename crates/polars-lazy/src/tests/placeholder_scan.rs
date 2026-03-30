@@ -42,8 +42,7 @@ fn test_placeholder_scan_basic() -> PolarsResult<()> {
 fn test_placeholder_scan_template_reuse() -> PolarsResult<()> {
     // The same template can be bound to different data multiple times
     let schema = make_schema();
-    let template = LazyFrame::placeholder("input", schema)
-        .filter(col("a").gt(lit(0)));
+    let template = LazyFrame::placeholder("input", schema).filter(col("a").gt(lit(0)));
 
     // First binding
     let df1 = df!["a" => [1i64, -2, 3], "b" => ["x", "y", "z"]]?;
@@ -139,8 +138,7 @@ fn test_placeholder_scan_missing_binding_errors() {
 fn test_placeholder_scan_with_projection() -> PolarsResult<()> {
     // Test that projection pushdown works with placeholder
     let schema = make_schema();
-    let template = LazyFrame::placeholder("input", schema)
-        .select([col("a")]); // only select column "a"
+    let template = LazyFrame::placeholder("input", schema).select([col("a")]); // only select column "a"
 
     let df = df!["a" => [1i64, 2, 3], "b" => ["x", "y", "z"]]?;
     let mut bindings = HashMap::new();
@@ -158,8 +156,8 @@ fn test_placeholder_scan_with_projection() -> PolarsResult<()> {
 #[test]
 fn test_placeholder_scan_with_sort() -> PolarsResult<()> {
     let schema = make_schema();
-    let template = LazyFrame::placeholder("input", schema)
-        .sort(["a"], SortMultipleOptions::default());
+    let template =
+        LazyFrame::placeholder("input", schema).sort(["a"], SortMultipleOptions::default());
 
     let df = df!["a" => [3i64, 1, 2], "b" => ["c", "a", "b"]]?;
     let mut bindings = HashMap::new();
@@ -222,8 +220,8 @@ fn test_placeholder_scan_with_slice() -> PolarsResult<()> {
 #[test]
 fn test_placeholder_scan_with_with_columns() -> PolarsResult<()> {
     let schema = make_schema();
-    let template = LazyFrame::placeholder("input", schema)
-        .with_column((col("a") * lit(2)).alias("a_doubled"));
+    let template =
+        LazyFrame::placeholder("input", schema).with_column((col("a") * lit(2)).alias("a_doubled"));
 
     let df = df!["a" => [1i64, 2, 3], "b" => ["x", "y", "z"]]?;
     let mut bindings = HashMap::new();
@@ -268,8 +266,7 @@ fn test_placeholder_scan_ir_conversion() -> PolarsResult<()> {
     // Verify that PlaceholderScan properly converts to IR and the optimizer
     // handles it (predicate stays as Filter node, not pushed into scan)
     let schema = make_schema();
-    let template = LazyFrame::placeholder("input", schema)
-        .filter(col("a").gt(lit(0)));
+    let template = LazyFrame::placeholder("input", schema).filter(col("a").gt(lit(0)));
 
     let df = df!["a" => [1i64, -2, 3], "b" => ["x", "y", "z"]]?;
     let mut bindings = HashMap::new();

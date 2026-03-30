@@ -158,7 +158,10 @@ impl LazyFrame {
     /// LazyFrame's plan from the bindings map. This must be called before `collect()`.
     ///
     /// Returns an error if any PlaceholderScan node has no corresponding binding.
-    pub fn bind(self, bindings: std::collections::HashMap<PlSmallStr, LazyFrame>) -> PolarsResult<Self> {
+    pub fn bind(
+        self,
+        bindings: std::collections::HashMap<PlSmallStr, LazyFrame>,
+    ) -> PolarsResult<Self> {
         let plan_bindings: std::collections::HashMap<PlSmallStr, DslPlan> = bindings
             .into_iter()
             .map(|(k, v)| (k, v.logical_plan))

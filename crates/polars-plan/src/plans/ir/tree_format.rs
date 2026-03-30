@@ -400,10 +400,7 @@ impl<'a> TreeFmtNode<'a> {
                         let (n_columns, projected) = if let Some(os) = output_schema {
                             (
                                 format!("{}", os.len()),
-                                format!(
-                                    ": {};",
-                                    format_list_truncated!(os.iter_names(), 4, '"')
-                                ),
+                                format!(": {};", format_list_truncated!(os.iter_names(), 4, '"')),
                             )
                         } else {
                             ("*".to_string(), "".to_string())
