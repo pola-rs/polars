@@ -10,7 +10,7 @@ def reduce_balanced(function: Callable[[T, T], T], iterable: Iterable[T]) -> T:
 
     if not values:
         msg = "reduce_balanced() of empty iterable"
-        return TypeError(msg)
+        raise TypeError(msg)
 
     last = [values.pop()] if len(values) > 1 and len(values) % 2 != 0 else []
 
