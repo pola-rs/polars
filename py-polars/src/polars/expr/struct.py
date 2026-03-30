@@ -36,9 +36,9 @@ class ExprStructNameSpace:
         --------
         Access by field name:
 
-        >>> df = pl.DataFrame(
-        ...     {"x": [1, 2], "y": ["a", "b"]}
-        ... ).select(pl.struct("x", "y").alias("s"))
+        >>> df = pl.DataFrame({"x": [1, 2], "y": ["a", "b"]}).select(
+        ...     pl.struct("x", "y").alias("s")
+        ... )
         >>> df.select(pl.col("s").struct["x"])
         shape: (2, 1)
         ┌─────┐
