@@ -1504,6 +1504,49 @@ class Series:
         key: int | Series | np.ndarray[Any, Any] | Sequence[object] | tuple[object],
         value: Any,
     ) -> None:
+        """
+        Set Series values in-place using a single index, boolean mask, or index array.
+
+        Parameters
+        ----------
+        key
+            Determines which elements to update:
+
+            - ``int``: a single row index.
+            - ``Series`` (Boolean): a boolean mask.
+            - ``Series`` (UInt32/UInt64): an index array.
+            - ``ndarray``: a NumPy boolean mask or integer index array.
+            - ``list`` / ``tuple``: an index sequence (cast to UInt32).
+        value
+            Scalar or sequence of values to assign.
+
+        Examples
+        --------
+        Set a single element by index:
+
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s[0] = 10
+        >>> s
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            10
+            2
+            3
+        ]
+
+        Set elements with a boolean mask:
+
+        >>> s[pl.Series([False, True, True])] = 99
+        >>> s
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            10
+            99
+            99
+        ]
+        """
         # do the single idx as first branch as those are likely in a tight loop
         if isinstance(key, int) and not isinstance(key, bool):
             self.scatter(key, value)
