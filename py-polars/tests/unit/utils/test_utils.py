@@ -15,7 +15,7 @@ from polars._utils.convert import (
     time_to_int,
     timedelta_to_int,
 )
-from polars._utils.tree_reduce import tree_reduce
+from polars._utils.balanced_reduce import balanced_reduce
 from polars._utils.various import (
     _in_notebook,
     is_bool_sequence,
@@ -299,7 +299,7 @@ def test_is_str_sequence_check(
         assert is_sequence(sequence, include_series=include_series)
 
 
-def test_tree_reduce() -> None:
+def test_balanced_reduce() -> None:
     values = [[0], [1], [2], [3], [4]]
 
     seen = []
@@ -308,7 +308,7 @@ def test_tree_reduce() -> None:
         seen.append((left, right))
         return left + right
 
-    acc = tree_reduce(reducer, values)
+    acc = balanced_reduce(reducer, values)
 
     assert acc == [0, 1, 2, 3, 4]
     assert seen == [

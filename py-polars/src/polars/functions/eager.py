@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, get_args
 import polars._reexport as pl
 from polars import functions as F
 from polars._typing import ConcatMethod
-from polars._utils.tree_reduce import tree_reduce
+from polars._utils.balanced_reduce import balanced_reduce
 from polars._utils.various import ordered_unique, qualified_type_name
 from polars._utils.wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.exceptions import InvalidOperationError
@@ -219,7 +219,7 @@ def concat(
 
         if join_method in ("full", "inner"):
             # associative => balanced tree, recursion depth is O(log(n))
-            lf = tree_reduce(join_fn, join_frames)
+            lf = balanced_reduce(join_fn, join_frames)
             assert lf is not None
         else:
             # not associative => linear chain, recursion depth is O(n)
@@ -511,7 +511,7 @@ def union(
 
         if join_method in ("full", "inner"):
             # associative => balanced tree, recursion depth is O(log(n))
-            lf = tree_reduce(join_fn, join_frames)
+            lf = balanced_reduce(join_fn, join_frames)
             assert lf is not None
         else:
             # not associative => linear chain, recursion depth is O(n)
