@@ -24,6 +24,7 @@ from polars._utils.various import (
     parse_percentiles,
     parse_version,
 )
+from polars._utils.tree_reduce import tree_reduce
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -296,3 +297,23 @@ def test_is_str_sequence_check(
     assert is_str_sequence(sequence, include_series=include_series) == expected
     if expected:
         assert is_sequence(sequence, include_series=include_series)
+
+
+def test_tree_reduce() -> None:
+    values = [[0], [1], [2], [3], [4]]
+
+    seen = []
+
+    def reducer(l: list[int], r: list[int]) -> list[int]:
+        seen.append((l, r))
+        return l + r
+
+    acc = tree_reduce(reducer, values)
+
+    assert acc == [0, 1, 2, 3, 4]
+    assert seen == [
+        ([0], [1]),
+        ([2], [3]),
+        ([0, 1], [2, 3]),
+        ([0, 1, 2, 3], [4]),
+    ]
