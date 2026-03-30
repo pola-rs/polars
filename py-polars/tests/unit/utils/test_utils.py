@@ -8,7 +8,6 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars._utils.reduce_balanced import reduce_balanced
 from polars._utils.convert import (
     date_to_int,
     datetime_to_int,
@@ -16,6 +15,7 @@ from polars._utils.convert import (
     time_to_int,
     timedelta_to_int,
 )
+from polars._utils.reduce_balanced import reduce_balanced
 from polars._utils.various import (
     _in_notebook,
     is_bool_sequence,

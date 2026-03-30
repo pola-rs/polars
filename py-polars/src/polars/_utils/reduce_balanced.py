@@ -1,11 +1,13 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import TypeVar
 
 T = TypeVar("T")
 
 
-def reduce_balanced(function: Callable[[T, T], T], values: list[T]) -> T | None:
+def reduce_balanced(function: Callable[[T, T], T], iterable: Iterable[T]) -> T | None:
     """Applies a reduction in a balanced tree pattern."""
+    values = list(iterable)
+
     if not values:
         return None
 
