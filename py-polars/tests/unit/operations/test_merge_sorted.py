@@ -313,7 +313,12 @@ def test_merge_sorted_streaming_preserves_tie_order_27097() -> None:
 
     q = left.merge_sorted(right, "k")
 
-    expected = pl.DataFrame({"index": list(range(10)), "k": [1] * 10})
+    expected = pl.DataFrame(
+        {
+            "index": pl.Series("index", list(range(10)), dtype=pl.UInt32),
+            "k": [1] * 10,
+        }
+    )
     out = q.collect(engine="streaming")
 
     assert_frame_equal(out, expected)
