@@ -1,4 +1,4 @@
-use arrow::bitmap::Bitmap;
+use arrow::bitmap::{Bitmap, binary};
 
 #[derive(Debug, Clone)]
 pub enum SkipFilesMask {
@@ -65,5 +65,19 @@ impl SkipFilesMask {
         };
 
         (range_start..range_end).filter(|i| !self.is_skipped_file(*i))
+    }
+
+    /// Merge two masks: skip a file if either side says to skip it.
+    pub fn merge(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Inclusion(a), Self::Inclusion(b)) => Self::Inclusion(a & b),
+            (Self::Exclusion(a), Self::Exclusion(b)) => Self::Exclusion(a | b),
+            (Self::Inclusion(a), Self::Exclusion(b)) => {
+                Self::Inclusion(binary(a, b, |x, y| x & !y))
+            },
+            (Self::Exclusion(a), Self::Inclusion(b)) => {
+                Self::Inclusion(binary(b, a, |x, y| x & !y))
+            },
+        }
     }
 }

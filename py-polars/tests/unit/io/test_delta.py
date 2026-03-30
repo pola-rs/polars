@@ -1359,3 +1359,32 @@ def test_scan_delta_filter_delta_log_statistics_missing_26444(tmp_path: Path) ->
             )
             is None
         )
+
+
+@pytest.mark.write_disk
+def test_scan_delta_filter_combined_predicates_statistics_27072(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    df = pl.DataFrame({"p": [10, 10, 20, 20]})
+
+    df1 = df.with_columns(pl.lit(1).alias("a"))
+    df2 = df.with_columns(pl.lit(2).alias("a"))
+
+    root = tmp_path / "delta"
+    df1.write_delta(root, delta_write_options={"partition_by": "p"}, mode="append")
+    df2.write_delta(root, delta_write_options={"partition_by": "p"}, mode="append")
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+
+    filter = (pl.col("p") == 10) & (pl.col("a") <= 1)
+
+    assert_frame_equal(
+        pl.scan_delta(root).filter(filter).collect(),
+        pl.concat([df1, df2]).filter(filter),
+        check_column_order=False,
+        check_row_order=False,
+    )
+    assert "skipping 3 / 4 files" in capfd.readouterr().err
