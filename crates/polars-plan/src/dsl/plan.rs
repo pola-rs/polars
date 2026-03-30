@@ -177,6 +177,13 @@ pub enum DslPlan {
         #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
         node: Option<Node>,
     },
+    /// A placeholder scan node for building reusable computation graph templates.
+    /// This node represents a named data source with a known schema that can be
+    /// bound to a concrete LazyFrame at execution time via `bind()`.
+    PlaceholderScan {
+        name: PlSmallStr,
+        schema: SchemaRef,
+    },
 }
 
 impl Clone for DslPlan {
@@ -213,6 +220,7 @@ impl Clone for DslPlan {
             #[cfg(feature = "merge_sorted")]
             Self::MergeSorted { input_left, input_right, key } => Self::MergeSorted { input_left: input_left.clone(), input_right: input_right.clone(), key: key.clone() },
             Self::IR {node, dsl, version} => Self::IR {node: *node, dsl: dsl.clone(), version: *version},
+            Self::PlaceholderScan { name, schema } => Self::PlaceholderScan { name: name.clone(), schema: schema.clone() },
         }
     }
 }
@@ -234,6 +242,73 @@ pub struct PlanSerializationContext {
 }
 
 impl DslPlan {
+    /// Replace all `PlaceholderScan` nodes in this plan with concrete plans from `bindings`.
+    ///
+    /// The `bindings` map keys are the placeholder names. Returns an error if any
+    /// PlaceholderScan node is not found in bindings or if the bound plan's schema
+    /// doesn't match the placeholder's declared schema.
+    #[recursive]
+    pub fn bind(self, bindings: &std::collections::HashMap<PlSmallStr, DslPlan>) -> PolarsResult<Self> {
+        use DslPlan::*;
+
+        // Helper to bind an Arc<DslPlan> child node.
+        let bind_arc = |input: Arc<DslPlan>, bindings: &std::collections::HashMap<PlSmallStr, DslPlan>| -> PolarsResult<Arc<DslPlan>> {
+            Ok(Arc::new(Arc::unwrap_or_clone(input).bind(bindings)?))
+        };
+
+        let result = match self {
+            PlaceholderScan { name, schema } => {
+                let bound = bindings.get(&name).ok_or_else(|| {
+                    polars_err!(
+                        InvalidOperation:
+                        "PlaceholderScan '{}' has no binding. Available bindings: {:?}",
+                        name,
+                        bindings.keys().collect::<Vec<_>>()
+                    )
+                })?;
+                return Ok(bound.clone());
+            },
+            // Leaf nodes - no children to recurse into.
+            lp @ Scan { .. }
+            | lp @ DataFrameScan { .. }
+            => Ok(lp),
+            #[cfg(feature = "python")]
+            lp @ PythonScan { .. } => Ok(lp),
+
+            // Single-input nodes.
+            Filter { input, predicate } => Ok(Filter { input: bind_arc(input, bindings)?, predicate }),
+            Cache { input, id } => Ok(Cache { input: bind_arc(input, bindings)?, id }),
+            Select { expr, input, options } => Ok(Select { expr, input: bind_arc(input, bindings)?, options }),
+            GroupBy { input, keys, predicates, aggs, maintain_order, options, apply } => Ok(GroupBy { input: bind_arc(input, bindings)?, keys, predicates, aggs, maintain_order, options, apply }),
+            HStack { input, exprs, options } => Ok(HStack { input: bind_arc(input, bindings)?, exprs, options }),
+            MatchToSchema { input, match_schema, per_column, extra_columns } => Ok(MatchToSchema { input: bind_arc(input, bindings)?, match_schema, per_column, extra_columns }),
+            PipeWithSchema { input, callback } => Ok(PipeWithSchema { input: Arc::from(input.iter().cloned().map(|p| p.bind(bindings)).collect::<PolarsResult<Vec<_>>>()?), callback }),
+            Distinct { input, options } => Ok(Distinct { input: bind_arc(input, bindings)?, options }),
+            Sort { input, by_column, slice, sort_options } => Ok(Sort { input: bind_arc(input, bindings)?, by_column, slice, sort_options }),
+            Slice { input, offset, len } => Ok(Slice { input: bind_arc(input, bindings)?, offset, len }),
+            MapFunction { input, function } => Ok(MapFunction { input: bind_arc(input, bindings)?, function }),
+            Sink { input, payload } => Ok(Sink { input: bind_arc(input, bindings)?, payload }),
+            #[cfg(feature = "pivot")]
+            Pivot { input, on, on_columns, index, values, agg, separator, maintain_order, column_naming } => Ok(Pivot { input: bind_arc(input, bindings)?, on, on_columns, index, values, agg, separator, maintain_order, column_naming }),
+
+            // Two-input nodes.
+            Join { input_left, input_right, left_on, right_on, predicates, options } => Ok(Join { input_left: bind_arc(input_left, bindings)?, input_right: bind_arc(input_right, bindings)?, left_on, right_on, predicates, options }),
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { input_left, input_right, key } => Ok(MergeSorted { input_left: bind_arc(input_left, bindings)?, input_right: bind_arc(input_right, bindings)?, key }),
+
+            // Multi-input nodes.
+            Union { inputs, args } => Ok(Union { inputs: inputs.into_iter().map(|p| p.bind(bindings)).collect::<PolarsResult<_>>()?, args }),
+            HConcat { inputs, options } => Ok(HConcat { inputs: inputs.into_iter().map(|p| p.bind(bindings)).collect::<PolarsResult<_>>()?, options }),
+            SinkMultiple { inputs } => Ok(SinkMultiple { inputs: inputs.into_iter().map(|p| p.bind(bindings)).collect::<PolarsResult<_>>()? }),
+            ExtContext { input, contexts } => Ok(ExtContext { input: bind_arc(input, bindings)?, contexts: contexts.into_iter().map(|p| p.bind(bindings)).collect::<PolarsResult<_>>()? }),
+
+            // IR wrapper node.
+            IR { dsl, version, node } => Ok(IR { dsl: bind_arc(dsl, bindings)?, version, node }),
+        };
+
+        result
+    }
+
     pub fn describe(&self) -> PolarsResult<String> {
         Ok(self.clone().to_alp()?.describe())
     }

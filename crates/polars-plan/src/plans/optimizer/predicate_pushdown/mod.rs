@@ -686,6 +686,25 @@ impl PredicatePushDown {
             lp @ MergeSorted { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
+            PlaceholderScan {
+                name,
+                schema,
+                output_schema,
+            } => {
+                let selection = predicate_at_scan(acc_predicates, None, expr_arena);
+                let mut lp = PlaceholderScan {
+                    name,
+                    schema,
+                    output_schema,
+                };
+
+                if let Some(predicate) = selection {
+                    let input = lp_arena.add(lp);
+                    lp = IR::Filter { input, predicate }
+                }
+
+                Ok(lp)
+            },
             Invalid => unreachable!(),
         }
     }

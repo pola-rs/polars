@@ -227,6 +227,11 @@ pub(super) fn pullup_orders(
                 }
             },
 
+            // PlaceholderScan is a leaf node; sortedness is unknown.
+            IR::PlaceholderScan { .. } => {
+                set_unordered_output!();
+            },
+
             IR::SinkMultiple { .. } | IR::Invalid => unreachable!(),
         }
 

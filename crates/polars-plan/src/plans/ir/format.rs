@@ -1003,6 +1003,23 @@ pub fn write_ir_non_recursive(
             input_right: _,
             key,
         } => write!(f, "{:indent$}MERGE SORTED ON '{key}'", ""),
+        IR::PlaceholderScan {
+            name,
+            schema,
+            output_schema,
+        } => {
+            let total_columns = schema.len();
+            let n_columns = if let Some(os) = output_schema {
+                format!("{}", os.len())
+            } else {
+                "*".to_string()
+            };
+            write!(
+                f,
+                "{:indent$}PLACEHOLDER SCAN [{}]; PROJECT {}/{} COLUMNS",
+                "", name, n_columns, total_columns,
+            )
+        },
         IR::Invalid => write!(f, "{:indent$}INVALID", ""),
     }
 }

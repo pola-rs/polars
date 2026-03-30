@@ -564,6 +564,25 @@ impl PyLazyFrame {
         ldf.cache().into()
     }
 
+    /// Create a placeholder LazyFrame with a given name and schema.
+    #[staticmethod]
+    #[pyo3(signature = (name, schema))]
+    fn placeholder(name: &str, schema: Wrap<Schema>) -> Self {
+        LazyFrame::placeholder(name, schema.0).into()
+    }
+
+    /// Bind placeholder scan nodes to concrete LazyFrames.
+    #[pyo3(signature = (bindings))]
+    fn bind(&self, bindings: HashMap<String, Self>) -> PyResult<Self> {
+        let ldf = self.ldf.read().clone();
+        let plan_bindings: HashMap<PlSmallStr, LazyFrame> = bindings
+            .into_iter()
+            .map(|(k, v)| (PlSmallStr::from(k.as_str()), v.ldf.read().clone()))
+            .collect();
+        let result = ldf.bind(plan_bindings).map_err(PyPolarsErr::from)?;
+        Ok(result.into())
+    }
+
     #[pyo3(signature = (optflags))]
     fn with_optimizations(&self, optflags: PyOptFlags) -> Self {
         let ldf = self.ldf.read().clone();

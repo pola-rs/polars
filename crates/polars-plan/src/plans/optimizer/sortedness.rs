@@ -488,6 +488,7 @@ fn is_sorted_rec(
             let input = *input;
             rec!(input)
         },
+        IR::PlaceholderScan { .. } => None,
         IR::Invalid => unreachable!(),
     };
 

@@ -367,6 +367,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             schema,
             output_schema: None,
         },
+        DslPlan::PlaceholderScan { name, schema } => IR::PlaceholderScan {
+            name,
+            schema,
+            output_schema: None,
+        },
         DslPlan::Select {
             expr,
             input,

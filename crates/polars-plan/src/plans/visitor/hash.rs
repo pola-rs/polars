@@ -264,6 +264,17 @@ impl Hash for IRHashWrap<'_> {
             } => {
                 key.hash(state);
             },
+            IR::PlaceholderScan {
+                name,
+                schema,
+                output_schema,
+            } => {
+                name.hash(state);
+                schema.len().hash(state);
+                if let Some(os) = output_schema {
+                    os.len().hash(state);
+                }
+            },
             IR::Invalid => unreachable!(),
         }
     }

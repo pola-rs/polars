@@ -201,6 +201,15 @@ pub struct DataFrameScan {
 }
 
 #[pyclass(frozen)]
+/// A placeholder scan node for reusable computation graph templates
+pub struct PlaceholderScan {
+    #[pyo3(get)]
+    name: String,
+    #[pyo3(get)]
+    projection: Py<PyAny>,
+}
+
+#[pyclass(frozen)]
 /// Project out columns from a table
 pub struct SimpleProjection {
     #[pyo3(get)]
@@ -748,6 +757,23 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             input_left: input_left.0,
             input_right: input_right.0,
             key: key.to_string(),
+        }
+        .into_py_any(py),
+        IR::PlaceholderScan {
+            name,
+            schema: _,
+            output_schema,
+        } => PlaceholderScan {
+            name: name.to_string(),
+            projection: output_schema.as_ref().map_or_else(
+                || Ok(py.None()),
+                |s| {
+                    s.iter_names()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .into_py_any(py)
+                },
+            )?,
         }
         .into_py_any(py),
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),

@@ -32,7 +32,7 @@ impl DslPlan {
                 scratch.extend(contexts);
             },
             IR { dsl, .. } => scratch.push(dsl),
-            Scan { .. } | DataFrameScan { .. } => (),
+            Scan { .. } | DataFrameScan { .. } | PlaceholderScan { .. } => (),
             #[cfg(feature = "pivot")]
             Pivot { input, .. } => scratch.push(input),
             #[cfg(feature = "python")]

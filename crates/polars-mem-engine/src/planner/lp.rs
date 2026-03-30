@@ -815,6 +815,14 @@ fn create_physical_plan_impl(
             };
             Ok(Box::new(exec))
         },
+        PlaceholderScan { name, .. } => {
+            polars_bail!(
+                InvalidOperation:
+                "PlaceholderScan '{}' was not bound to a concrete data source. \
+                Call `.bind(bindings)` on the LazyFrame before collecting.",
+                name
+            )
+        },
         Invalid => unreachable!(),
     }
 }

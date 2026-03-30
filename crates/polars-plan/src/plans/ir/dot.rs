@@ -326,6 +326,17 @@ impl<'a> IRDotDisplay<'a> {
 
                 write_label(f, id, |f| write!(f, "MERGE_SORTED ON '{key}'",))?;
             },
+            PlaceholderScan {
+                name,
+                schema,
+                output_schema,
+            } => {
+                let total_columns = schema.len();
+                let num_columns = NumColumnsSchema(output_schema.as_ref().map(|p| p.as_ref()));
+                write_label(f, id, |f| {
+                    write!(f, "PLACEHOLDER [{name}]\nπ {num_columns}/{total_columns}")
+                })?;
+            },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,
         }
 

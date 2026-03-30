@@ -487,6 +487,77 @@ class LazyFrame:
         return self
 
     @classmethod
+    def placeholder(
+        cls,
+        name: str,
+        schema: SchemaDict,
+    ) -> LazyFrame:
+        """
+        Create a placeholder LazyFrame with a given name and schema.
+
+        This creates a reusable computation graph template. The placeholder must be
+        bound to a concrete data source via :meth:`bind` before collecting.
+
+        Parameters
+        ----------
+        name
+            Name of the placeholder. Used as a key when binding.
+        schema
+            Schema of the placeholder as a dictionary of column names to dtypes.
+
+        Returns
+        -------
+        LazyFrame
+            A LazyFrame containing a PlaceholderScan node.
+
+        Examples
+        --------
+        >>> template = pl.LazyFrame.placeholder(
+        ...     "input",
+        ...     {"a": pl.Int64, "b": pl.String},
+        ... ).filter(pl.col("a") > 0)
+        >>> df = pl.DataFrame({"a": [1, -2, 3], "b": ["x", "y", "z"]})
+        >>> result = template.bind({"input": df.lazy()}).collect()
+        """
+        self = cls.__new__(cls)
+        self._ldf = PyLazyFrame.placeholder(name, schema)
+        return self
+
+    def bind(
+        self,
+        bindings: dict[str, LazyFrame],
+    ) -> LazyFrame:
+        """
+        Bind placeholder scan nodes to concrete LazyFrames.
+
+        Replaces all ``PlaceholderScan`` nodes in the plan tree with the
+        corresponding LazyFrame's plan from the bindings map.
+        This must be called before :meth:`collect`.
+
+        Parameters
+        ----------
+        bindings
+            A dictionary mapping placeholder names to concrete LazyFrames.
+
+        Returns
+        -------
+        LazyFrame
+            A new LazyFrame with all placeholders replaced.
+
+        Examples
+        --------
+        >>> template = pl.LazyFrame.placeholder(
+        ...     "input",
+        ...     {"a": pl.Int64, "b": pl.String},
+        ... ).filter(pl.col("a") > 0)
+        >>> df = pl.DataFrame({"a": [1, -2, 3], "b": ["x", "y", "z"]})
+        >>> result = template.bind({"input": df.lazy()}).collect()
+        """
+        rust_bindings = {k: v._ldf for k, v in bindings.items()}
+        result_ldf = self._ldf.bind(rust_bindings)
+        return self._from_pyldf(result_ldf)
+
+    @classmethod
     def deserialize(
         cls,
         source: str | bytes | Path | IOBase,

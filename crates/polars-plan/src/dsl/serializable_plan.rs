@@ -151,6 +151,10 @@ pub(crate) enum SerializableDslPlanNode {
         dsl: DslPlanKey,
         version: u32,
     },
+    PlaceholderScan {
+        name: PlSmallStr,
+        schema: SchemaRef,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -369,6 +373,10 @@ fn convert_dsl_plan_to_serializable_plan(
             version: _,
             node: _,
         } => convert_dsl_plan_to_serializable_plan(dsl.as_ref(), arenas),
+        DP::PlaceholderScan { name, schema } => SP::PlaceholderScan {
+            name: name.clone(),
+            schema: schema.clone(),
+        },
     }
 }
 
@@ -615,6 +623,10 @@ fn try_convert_serializable_plan_to_dsl_plan(
             dsl: dsl_key,
             version: _,
         } => get_dsl_plan(*dsl_key, ser_dsl_plan, arenas).map(Arc::unwrap_or_clone),
+        SP::PlaceholderScan { name, schema } => Ok(DP::PlaceholderScan {
+            name: name.clone(),
+            schema: schema.clone(),
+        }),
     }
 }
 

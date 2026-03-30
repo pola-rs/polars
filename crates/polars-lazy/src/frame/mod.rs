@@ -112,6 +112,65 @@ impl LazyFrame {
         }
     }
 
+    /// Create a placeholder LazyFrame with a given name and schema.
+    ///
+    /// This creates a reusable computation graph template. The placeholder must be
+    /// bound to a concrete data source via [`bind`](Self::bind) before collecting.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use polars::prelude::*;
+    /// use std::collections::HashMap;
+    ///
+    /// // Create a template with placeholders
+    /// let schema = Schema::from_iter([
+    ///     Field::new("a".into(), DataType::Int64),
+    ///     Field::new("b".into(), DataType::String),
+    /// ]);
+    /// let template = LazyFrame::placeholder("input", schema)
+    ///     .filter(col("a").gt(lit(0)))
+    ///     .select([col("a"), col("b")]);
+    ///
+    /// // Bind concrete data and collect
+    /// let df = DataFrame::new(vec![
+    ///     Column::new("a".into(), &[1i64, -2, 3]),
+    ///     Column::new("b".into(), &["x", "y", "z"]),
+    /// ]).unwrap();
+    /// let mut bindings = HashMap::new();
+    /// bindings.insert("input".into(), df.lazy());
+    /// let result = template.bind(bindings).unwrap().collect().unwrap();
+    /// ```
+    pub fn placeholder(name: impl Into<PlSmallStr>, schema: Schema) -> Self {
+        let plan = DslPlan::PlaceholderScan {
+            name: name.into(),
+            schema: Arc::new(schema),
+        };
+        LazyFrame {
+            logical_plan: plan,
+            opt_state: Default::default(),
+            cached_arena: Default::default(),
+        }
+    }
+
+    /// Bind placeholder scan nodes to concrete LazyFrames.
+    ///
+    /// Replaces all `PlaceholderScan` nodes in the plan tree with the corresponding
+    /// LazyFrame's plan from the bindings map. This must be called before `collect()`.
+    ///
+    /// Returns an error if any PlaceholderScan node has no corresponding binding.
+    pub fn bind(self, bindings: std::collections::HashMap<PlSmallStr, LazyFrame>) -> PolarsResult<Self> {
+        let plan_bindings: std::collections::HashMap<PlSmallStr, DslPlan> = bindings
+            .into_iter()
+            .map(|(k, v)| (k, v.logical_plan))
+            .collect();
+        let new_plan = self.logical_plan.bind(&plan_bindings)?;
+        Ok(LazyFrame {
+            logical_plan: new_plan,
+            opt_state: self.opt_state,
+            cached_arena: Default::default(),
+        })
+    }
+
     /// Get current optimizations.
     pub fn get_current_optimizations(&self) -> OptFlags {
         self.opt_state

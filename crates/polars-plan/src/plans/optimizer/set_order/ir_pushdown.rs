@@ -320,6 +320,9 @@ pub(super) fn pushdown_orders(
                 std::iter::repeat_n(true, contexts.len() + 1).collect()
             },
 
+            // PlaceholderScan is a leaf node with no inputs, so no ordering to push down.
+            IR::PlaceholderScan { .. } => UnitVec::new(),
+
             IR::SinkMultiple { .. } | IR::Invalid => unreachable!(),
         };
 

@@ -1660,6 +1660,16 @@ pub fn lower_ir(
             return Ok(stream);
         },
         IR::ExtContext { .. } => todo!(),
+        IR::PlaceholderScan { name, .. } => {
+            polars_ensure!(
+                false,
+                InvalidOperation:
+                "PlaceholderScan '{}' was not bound to a concrete data source. \
+                Call `.bind(bindings)` on the LazyFrame before collecting.",
+                name
+            );
+            unreachable!()
+        },
         IR::Invalid => unreachable!(),
     };
 

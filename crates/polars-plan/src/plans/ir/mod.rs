@@ -159,6 +159,14 @@ pub enum IR {
         input_right: Node,
         key: PlSmallStr,
     },
+    /// A placeholder scan node for reusable computation graph templates.
+    /// Must be bound to a concrete data source via `bind()` before execution.
+    PlaceholderScan {
+        name: PlSmallStr,
+        schema: SchemaRef,
+        /// Projected schema after projection pushdown.
+        output_schema: Option<SchemaRef>,
+    },
     #[default]
     Invalid,
 }

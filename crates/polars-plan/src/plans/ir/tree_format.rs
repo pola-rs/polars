@@ -391,6 +391,33 @@ impl<'a> TreeFmtNode<'a> {
                             .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
                             .collect(),
                     ),
+                    PlaceholderScan {
+                        name,
+                        schema,
+                        output_schema,
+                    } => {
+                        let total_columns = schema.len();
+                        let (n_columns, projected) = if let Some(os) = output_schema {
+                            (
+                                format!("{}", os.len()),
+                                format!(
+                                    ": {};",
+                                    format_list_truncated!(os.iter_names(), 4, '"')
+                                ),
+                            )
+                        } else {
+                            ("*".to_string(), "".to_string())
+                        };
+                        ND(
+                            wh(
+                                h,
+                                &format!(
+                                    "PLACEHOLDER [{name}]\nPROJECT{projected} {n_columns}/{total_columns} COLUMNS"
+                                ),
+                            ),
+                            vec![],
+                        )
+                    },
                     Invalid => ND(wh(h, "INVALID"), vec![]),
                 }
             },
