@@ -195,9 +195,19 @@ pub(super) fn rolling_corr_cov(
         &[AnyValue::from(cov_options.ddof).cast(&dtype)],
     );
 
-    let numerator = ((mean_x_y - (mean_x * mean_y).unwrap()).unwrap()
-        * (count_x_y.clone() / (count_x_y - ddof).unwrap()).unwrap())
-    .unwrap();
+    let numerator = if is_corr {
+        ((mean_x_y - (mean_x * mean_y).unwrap()).unwrap()
+            * (count_x_y.clone()
+                / (count_x_y
+                    - Series::new(PlSmallStr::EMPTY, &[AnyValue::from(1u8).cast(&dtype)]))
+                .unwrap())
+            .unwrap())
+        .unwrap()
+    } else {
+        ((mean_x_y - (mean_x * mean_y).unwrap()).unwrap()
+            * (count_x_y.clone() / (count_x_y - ddof).unwrap()).unwrap())
+        .unwrap()
+    };
 
     if is_corr {
         let var_x = x.rolling_var(rolling_options.clone())?;

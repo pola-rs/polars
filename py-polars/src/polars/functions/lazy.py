@@ -2692,7 +2692,7 @@ def rolling_corr(
     *,
     window_size: int,
     min_samples: int | None = None,
-    ddof: int = 1,
+    ddof: int | None = 1,
 ) -> Expr:
     """
     Compute the rolling correlation between two columns/ expressions.
@@ -2718,6 +2718,13 @@ def rolling_corr(
         Delta degrees of freedom. The divisor used in calculations
         is `N - ddof`, where `N` represents the number of elements.
     """
+    if ddof != 1:
+        issue_deprecation_warning(
+            "the `ddof` parameter for `rolling_corr` is deprecated."
+            " Correlation is invariant of `ddof`.",
+            version="1.39.4",
+        )
+
     if min_samples is None:
         min_samples = window_size
     if isinstance(a, str):
