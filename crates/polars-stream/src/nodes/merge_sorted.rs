@@ -140,6 +140,11 @@ fn find_mergeable(
             // support categoricals at moment.
             let gt_mask = left_key.gt(&right_key_last)?;
             left_cutoff = gt_mask.first_true_idx().unwrap_or(gt_mask.len());
+        } else {
+            // Equal maxima: delay right-side ties so left-side ties stay first
+            // across merge chunks, matching stable merge semantics.
+            let ge_mask = right_key.gt_eq(&left_key_last)?;
+            right_cutoff = ge_mask.first_true_idx().unwrap_or(ge_mask.len());
         }
 
         let left_mergeable: DataFrame;

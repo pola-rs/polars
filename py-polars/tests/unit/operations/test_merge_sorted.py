@@ -303,3 +303,17 @@ def test_merge_sorted_chain_streaming_21789_b(streaming: bool) -> None:
     out = pq.collect(engine="streaming" if streaming else "in-memory")
 
     assert_frame_equal(out, expected)
+
+
+def test_merge_sorted_streaming_preserves_tie_order_27097() -> None:
+    lf = pl.LazyFrame({"k": [1, 1, 1, 1, 1]})
+
+    left = lf.with_row_index(offset=0)
+    right = lf.with_row_index(offset=5)
+
+    q = left.merge_sorted(right, "k")
+
+    expected = pl.DataFrame({"index": list(range(10)), "k": [1] * 10})
+    out = q.collect(engine="streaming")
+
+    assert_frame_equal(out, expected)
