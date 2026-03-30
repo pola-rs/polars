@@ -19,6 +19,6 @@ def reduce_balanced(function: Callable[[T, T], T], iterable: Iterable[T]) -> T:
             v = function(values[i], values[i + 1])
             values[i // 2] = v
 
-        values = values[: len(values) // 2]
+        del values[len(values) // 2 :]
 
     return function(values[0], last[0]) if last else values[0]
