@@ -767,6 +767,18 @@ fn to_graph_rec<'a>(
             )
         },
 
+        IsSorted {
+            input,
+            descending,
+            nulls_last,
+        } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::is_sorted::IsSortedNode::new(*descending, *nulls_last),
+                [(input_key, input.port)],
+            )
+        },
+
         OrderedUnion { inputs } => {
             let input_keys = inputs
                 .iter()
