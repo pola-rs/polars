@@ -317,3 +317,6 @@ def test_reduce_balanced() -> None:
         ([0, 1], [2, 3]),
         ([0, 1, 2, 3], [4]),
     ]
+
+    with pytest.raises(TypeError):
+        reduce_balanced(reducer, [])

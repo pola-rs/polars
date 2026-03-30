@@ -4,12 +4,13 @@ from typing import TypeVar
 T = TypeVar("T")
 
 
-def reduce_balanced(function: Callable[[T, T], T], iterable: Iterable[T]) -> T | None:
+def reduce_balanced(function: Callable[[T, T], T], iterable: Iterable[T]) -> T:
     """Applies a reduction in a balanced tree pattern."""
     values = list(iterable)
 
     if not values:
-        return None
+        msg = "reduce_balanced() of empty iterable"
+        return TypeError(msg)
 
     last = [values.pop()] if len(values) > 1 and len(values) % 2 != 0 else []
 
