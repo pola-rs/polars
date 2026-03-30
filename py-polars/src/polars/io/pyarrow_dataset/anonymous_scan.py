@@ -27,7 +27,7 @@ _BINOP_DISPATCH = {
 
 
 def _build_pyarrow_expr(node: list) -> Any:
-    """Recursively build a PyArrow Expression from a JSON predicate node."""
+    """Recursively build pyarrow expr from json."""
     tag = node[0]
 
     if tag == "field":
@@ -42,10 +42,6 @@ def _build_pyarrow_expr(node: list) -> Any:
         return _build_pyarrow_expr(node[1]).is_null()
     elif tag == "is_not_null":
         return _build_pyarrow_expr(node[1]).is_valid()
-    elif tag == "is_in":
-        expr = _build_pyarrow_expr(node[1])
-        values = [_resolve_literal(v) for v in node[2]]
-        return expr.isin(values)
     elif tag == "lit_str":
         return pa.compute.scalar(node[1])
     elif tag == "lit_bool":
@@ -68,26 +64,6 @@ def _build_pyarrow_expr(node: list) -> Any:
         msg = f"unknown predicate node tag: {tag!r}"
         raise ValueError(msg)
 
-
-def _resolve_literal(node: list) -> Any:
-    """Convert a literal JSON node to a plain Python value for isin() lists."""
-    tag = node[0]
-    if tag in ("lit_str", "lit_bool", "lit_i64", "lit_f64"):
-        return node[1]
-    if tag == "lit_null":
-        return None
-    if tag == "lit_date":
-        from polars._utils.convert import to_py_date
-
-        return to_py_date(node[1])
-    if tag == "lit_datetime":
-        from polars._utils.convert import to_py_datetime
-
-        v, tu = node[1], node[2]
-        tz = node[3] if len(node) > 3 and node[3] is not None else None
-        return to_py_datetime(v, tu, tz)
-    msg = f"unknown literal node tag: {tag!r}"
-    raise ValueError(msg)
 
 
 def _scan_pyarrow_dataset(
