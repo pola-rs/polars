@@ -220,6 +220,7 @@ def concat(
         if join_method in ("full", "inner"):
             # associative => balanced tree, recursion depth is O(log(n))
             lf = tree_reduce(join_fn, join_frames)
+            assert lf is not None
         else:
             # not associative => linear chain, recursion depth is O(n)
             lf = reduce(join_fn, join_frames)
@@ -511,6 +512,7 @@ def union(
         if join_method in ("full", "inner"):
             # associative => balanced tree, recursion depth is O(log(n))
             lf = tree_reduce(join_fn, join_frames)
+            assert lf is not None
         else:
             # not associative => linear chain, recursion depth is O(n)
             lf = reduce(join_fn, join_frames)
