@@ -619,15 +619,7 @@ async fn start_reader_impl(
         callbacks,
     };
 
-    // Run `begin_read` on the elastic blocking pool to avoid thread pool starvation on
-    // the polars-stream async executor.
-    // Context: CSV has a StreamBufReader with a synchronous `blocking_recv` per reader.
-    // If `begin_read` was not on the blocking pool and we have more files than threads,
-    // this could potentially lead to thread pool starvation.
-    let (mut reader_output_port, reader_handle) = polars_io::pl_async::get_runtime()
-        .spawn_blocking(move || reader.begin_read(begin_read_args))
-        .await
-        .unwrap()?;
+    let (mut reader_output_port, reader_handle) = reader.begin_read(begin_read_args)?;
 
     let reader_handle = AbortOnDropHandle::new(reader_handle);
 

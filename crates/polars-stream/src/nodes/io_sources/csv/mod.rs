@@ -2,12 +2,14 @@ pub mod builder;
 mod chunk_reader;
 mod line_batch_source;
 
+use std::io::Cursor;
 use std::iter::Iterator;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use chunk_reader::ChunkReader;
+use futures::FutureExt;
 use line_batch_source::{LineBatch, LineBatchSource};
 use polars_error::{PolarsResult, polars_err};
 use polars_io::cloud::CloudOptions;
@@ -30,6 +32,7 @@ use super::shared::chunk_data_fetch::ChunkDataFetcher;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::distributor_channel::distributor_channel;
+use crate::async_primitives::oneshot_channel;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::morsel::SourceToken;
 use crate::nodes::TaskPriority;
@@ -126,7 +129,6 @@ impl FileReader for CsvFileReader {
             compression,
             byte_source,
         });
-
         Ok(())
     }
 
@@ -143,7 +145,6 @@ impl FileReader for CsvFileReader {
 
         self.chunk_prefetch_sync.prev_all_spawned = prev_wait_group;
         self.chunk_prefetch_sync.current_all_spawned = Some(prefetch_all_spawned_token);
-
         Ok(())
     }
 
@@ -210,9 +211,9 @@ impl FileReader for CsvFileReader {
             Some(_) => Some(file_size * ASSUMED_COMPRESSION_RATIO),
         };
 
-        // Unify the two source options (uncompressed local file mmapp'ed, or streaming async with transparent
-        // decompression), into one unified reader object.
-        let mut reader: ByteSourceReader<ReaderSource> = if use_async_prefetch {
+        // Unify the two source options (uncompressed local file mmapp'ed, or streaming async with
+        // transparent decompression), into one unified reader source.
+        let reader_source = if use_async_prefetch {
             // Prepare parameters for Prefetch task.
             const DEFAULT_CSV_CHUNK_SIZE: usize = 32 * 1024 * 1024;
             let memory_prefetch_func = get_memory_prefetch_func(verbose);
@@ -233,7 +234,7 @@ impl FileReader for CsvFileReader {
             let (prefetch_send, prefetch_recv) = tokio::sync::mpsc::channel(prefetch_limit);
 
             // Task: Prefetch.
-            // Initiate parallel downloads of raw data chunks.
+            // Initiate parallel downloads of raw chunks.
             let byte_source = byte_source.clone();
             let prefetch_task = {
                 let io_runtime = polars_io::pl_async::get_runtime();
@@ -265,83 +266,126 @@ impl FileReader for CsvFileReader {
                 }))
             };
 
-            // Wrap into ByteSourceReader to enable sync `BufRead` access.
             let stream_buf_reader = StreamBufReader::new(prefetch_recv, prefetch_task);
-            ByteSourceReader::try_new(ReaderSource::Streaming(stream_buf_reader), compression)?
+            ReaderSource::Streaming(stream_buf_reader)
         } else {
             let memslice = self
                 .scan_source
                 .as_scan_source_ref()
                 .to_buffer_async_assume_latest(self.scan_source.run_async())?;
 
-            ByteSourceReader::from_memory(memslice)?
+            ReaderSource::Memory(Cursor::new(memslice))
         };
 
-        let (inferred_schema, base_leftover) = read_until_start_and_infer_schema(
-            &self.options,
-            Some(projected_schema.clone()),
-            decompressed_file_size_hint,
-            None,
-            &mut reader,
-        )?;
-
-        let used_schema = Arc::new(inferred_schema);
-
-        if let Some(tx) = file_schema_tx {
-            _ = tx.send(used_schema.clone())
-        }
-
-        let projection: Vec<usize> = projected_schema
-            .iter_names()
-            .filter_map(|name| used_schema.index_of(name))
-            .collect();
-
-        if verbose {
-            eprintln!(
-                "[CsvFileReader]: project: {} / {}, \
-                slice: {:?}, \
-                use_async_prefetch: {}",
-                projection.len(),
-                used_schema.len(),
-                &pre_slice,
-                use_async_prefetch
-            )
-        }
-
-        let quote_char = self.options.parse_options.quote_char;
-        let eol_char = self.options.parse_options.eol_char;
-        let comment_prefix = self.options.parse_options.comment_prefix.clone();
-
-        let line_counter = CountLines::new(quote_char, eol_char, comment_prefix.clone());
-
-        let chunk_reader = Arc::new(ChunkReader::try_new(
-            self.options.clone(),
-            used_schema.clone(),
-            projection,
-        )?);
-
+        let options = self.options.clone();
         let needs_full_row_count = n_rows_in_file_tx.is_some();
 
+        // Create all channels.
+        let (infer_schema_tx, infer_schema_rx) = oneshot_channel::channel();
+        let (chunk_reader_tx, chunk_reader_rx) =
+            tokio::sync::oneshot::channel::<PolarsResult<Arc<ChunkReader>>>();
+        let chunk_reader_shared = chunk_reader_rx.shared();
         let (line_batch_tx, line_batch_receivers) =
             distributor_channel(num_pipelines, *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
-
-        let line_batch_source_handle = AbortOnDropHandle::new(spawn(
-            TaskPriority::Low,
-            LineBatchSource {
-                base_leftover,
-                reader,
-                line_counter,
-                line_batch_tx,
-                pre_slice,
-                needs_full_row_count,
-                verbose,
-            }
-            .run(),
-        ));
-
-        let n_workers = line_batch_receivers.len();
-
         let (morsel_senders, rx) = FileReaderOutputSend::new_parallel(num_pipelines);
+
+        // Task: Pre-read and infer schema.
+        // Because StreamBufReader uses `blocking_recv`, this runs on tokio's elastic blocking pool.
+        let infer_schema_handle = tokio_handle_ext::AbortOnDropHandle(
+            pl_async::get_runtime().spawn_blocking(move || {
+                let mut reader = ByteSourceReader::try_new(reader_source, compression)?;
+                let result = read_until_start_and_infer_schema(
+                    &options,
+                    Some(projected_schema.clone()),
+                    decompressed_file_size_hint,
+                    None,
+                    &mut reader,
+                )
+                .map(|(inferred_schema, base_leftover)| {
+                    (
+                        inferred_schema,
+                        base_leftover,
+                        reader,
+                        options,
+                        projected_schema,
+                    )
+                });
+                _ = infer_schema_tx.send(result);
+                PolarsResult::Ok(())
+            }),
+        );
+
+        // Task: Line batch source.
+        // Create and send newline-aligned batches. Create chunk_reader for decoder.
+        let line_batch_source_handle =
+            AbortOnDropHandle::new(spawn(TaskPriority::Low, async move {
+                let pre_read_result = infer_schema_rx.recv().await.map_err(
+                    |_| polars_err!(ComputeError: "CSV pre-read task panicked or was dropped"),
+                )?;
+
+                let (inferred_schema, base_leftover, reader, options, projected_schema) =
+                    match pre_read_result {
+                        Ok(v) => v,
+                        Err(e) => {
+                            _ = chunk_reader_tx.send(Err(e.clone()));
+                            return Err(e);
+                        },
+                    };
+
+                let used_schema = Arc::new(inferred_schema);
+
+                if let Some(tx) = file_schema_tx {
+                    _ = tx.send(used_schema.clone())
+                }
+
+                let projection: Vec<usize> = projected_schema
+                    .iter_names()
+                    .filter_map(|name| used_schema.index_of(name))
+                    .collect();
+
+                if verbose {
+                    eprintln!(
+                        "[CsvFileReader]: project: {} / {}, \
+                        slice: {:?}, \
+                        use_async_prefetch: {}",
+                        projection.len(),
+                        used_schema.len(),
+                        &pre_slice,
+                        use_async_prefetch
+                    )
+                }
+
+                let quote_char = options.parse_options.quote_char;
+                let eol_char = options.parse_options.eol_char;
+                let comment_prefix = options.parse_options.comment_prefix.clone();
+
+                let line_counter = CountLines::new(quote_char, eol_char, comment_prefix);
+
+                let chunk_reader_result =
+                    ChunkReader::try_new(options, used_schema, projection).map(Arc::new);
+                _ = chunk_reader_tx.send(chunk_reader_result.clone());
+
+                match chunk_reader_result {
+                    Ok(_) => {
+                        LineBatchSource {
+                            base_leftover,
+                            reader,
+                            line_counter,
+                            line_batch_tx,
+                            pre_slice,
+                            needs_full_row_count,
+                            use_async_prefetch,
+                            verbose,
+                        }
+                        .run()
+                        .await
+                    },
+                    Err(e) => Err(e),
+                }
+            }));
+
+        // Task: Decode chunks.
+        let n_workers = line_batch_receivers.len();
 
         let line_batch_decode_handles = line_batch_receivers
             .into_iter()
@@ -351,11 +395,16 @@ impl FileReader for CsvFileReader {
                 // Only verbose log from the last worker to avoid flooding output.
                 let verbose = verbose && worker_idx == n_workers - 1;
                 let mut n_rows_processed: usize = 0;
-                let chunk_reader = chunk_reader.clone();
+                let chunk_reader_shared = chunk_reader_shared.clone();
+
                 // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
                 let source_token = SourceToken::new();
 
                 AbortOnDropHandle::new(spawn(TaskPriority::Low, async move {
+                    let chunk_reader = chunk_reader_shared.await.map_err(
+                        |_| polars_err!(ComputeError: "CSV pipeline dropped unexpectedly"),
+                    )??;
+
                     while let Ok(LineBatch {
                         mem_slice,
                         n_lines,
@@ -383,7 +432,6 @@ impl FileReader for CsvFileReader {
                         }
 
                         let morsel = Morsel::new(df, morsel_seq, source_token.clone());
-
                         if morsel_tx.send_morsel(morsel).await.is_err() {
                             break;
                         }
@@ -431,6 +479,8 @@ impl FileReader for CsvFileReader {
                     let rows_skipped = line_batch_source_handle.await?;
                     row_position.saturating_add(rows_skipped)
                 };
+
+                infer_schema_handle.await.unwrap()?;
 
                 let row_position = IdxSize::try_from(row_position)
                     .map_err(|_| polars_err!(bigidx, ctx = "csv file", size = row_position))?;
