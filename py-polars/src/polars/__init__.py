@@ -250,7 +250,13 @@ from polars.io.cloud import (
     CredentialProviderFunctionReturn,
     CredentialProviderGCP,
 )
-from polars.lazyframe import GPUEngine, LazyFrame, QueryOptFlags
+from polars.lazyframe import (
+    GPUEngine,
+    LazyFrame,
+    OptimizedTemplate,
+    QueryOptFlags,
+    scan_placeholder,
+)
 from polars.meta import (
     build_info,
     get_index_type,
@@ -281,6 +287,7 @@ __all__ = [
     "DataFrame",
     "Expr",
     "LazyFrame",
+    "OptimizedTemplate",
     "Series",
     # Engine configuration
     "GPUEngine",
@@ -358,6 +365,7 @@ __all__ = [
     "scan_lines",
     "scan_ndjson",
     "scan_parquet",
+    "scan_placeholder",
     "scan_pyarrow_dataset",
     "Catalog",
     # polars.io.cloud

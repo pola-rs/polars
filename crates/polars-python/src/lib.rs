@@ -57,6 +57,6 @@ pub type PyDataType = Wrap<polars_core::datatypes::DataType>;
 pub type PySchema = Wrap<polars_core::schema::Schema>;
 pub use crate::dataframe::PyDataFrame;
 pub use crate::expr::PyExpr;
-pub use crate::lazyframe::PyLazyFrame;
+pub use crate::lazyframe::{PyLazyFrame, PyOptimizedTemplate};
 pub use crate::lazygroupby::PyLazyGroupBy;
 pub use crate::series::PySeries;

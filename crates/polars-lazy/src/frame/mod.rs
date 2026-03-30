@@ -4,6 +4,8 @@ mod python;
 
 mod cached_arenas;
 mod err;
+mod optimized_template;
+pub use optimized_template::OptimizedTemplate;
 #[cfg(not(target_arch = "wasm32"))]
 mod exitable;
 
@@ -172,6 +174,16 @@ impl LazyFrame {
             opt_state: self.opt_state,
             cached_arena: Default::default(),
         })
+    }
+
+    /// Optimize this LazyFrame into a reusable [`OptimizedTemplate`].
+    ///
+    /// The LazyFrame must contain at least one `PlaceholderScan` node. The plan is
+    /// optimized once at creation time. The returned template can be bound to different
+    /// concrete data sources repeatedly without re-running optimization.
+    pub fn optimize_template(self) -> PolarsResult<OptimizedTemplate> {
+        let ir_plan = self.to_alp_optimized()?;
+        OptimizedTemplate::new(ir_plan)
     }
 
     /// Get current optimizations.

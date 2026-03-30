@@ -583,6 +583,15 @@ impl PyLazyFrame {
         Ok(result.into())
     }
 
+    /// Optimize and return a reusable template for repeated bind+collect.
+    fn optimize_template(&self) -> PyResult<super::PyOptimizedTemplate> {
+        let ldf = self.ldf.read().clone();
+        let template = ldf
+            .optimize_template()
+            .map_err(PyPolarsErr::from)?;
+        Ok(template.into())
+    }
+
     #[pyo3(signature = (optflags))]
     fn with_optimizations(&self, optflags: PyOptFlags) -> Self {
         let ldf = self.ldf.read().clone();

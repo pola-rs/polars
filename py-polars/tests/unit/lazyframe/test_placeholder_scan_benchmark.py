@@ -197,7 +197,7 @@ def build_text_pipeline(
 
 def build_text_template(keywords: list[str]) -> pl.LazyFrame:
     """Build the pipeline template once using PlaceholderScan."""
-    lf = pl.LazyFrame.placeholder("input", INPUT_SCHEMA)
+    lf = pl.scan_placeholder("input", INPUT_SCHEMA)
     return build_text_pipeline(lf, keywords)
 
 

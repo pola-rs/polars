@@ -1,6 +1,7 @@
 mod exitable;
 #[cfg(feature = "pymethods")]
 mod general;
+mod optimized_template;
 mod optflags;
 #[cfg(feature = "pymethods")]
 mod serde;
@@ -10,6 +11,7 @@ pub mod visitor;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use exitable::PyInProcessQuery;
+pub use optimized_template::PyOptimizedTemplate;
 use parking_lot::RwLock;
 use polars::prelude::{Engine, LazyFrame, OptFlags};
 use pyo3::exceptions::PyValueError;

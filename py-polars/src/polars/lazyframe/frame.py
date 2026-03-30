@@ -486,43 +486,6 @@ class LazyFrame:
             )
         return self
 
-    @classmethod
-    def placeholder(
-        cls,
-        name: str,
-        schema: SchemaDict,
-    ) -> LazyFrame:
-        """
-        Create a placeholder LazyFrame with a given name and schema.
-
-        This creates a reusable computation graph template. The placeholder must be
-        bound to a concrete data source via :meth:`bind` before collecting.
-
-        Parameters
-        ----------
-        name
-            Name of the placeholder. Used as a key when binding.
-        schema
-            Schema of the placeholder as a dictionary of column names to dtypes.
-
-        Returns
-        -------
-        LazyFrame
-            A LazyFrame containing a PlaceholderScan node.
-
-        Examples
-        --------
-        >>> template = pl.LazyFrame.placeholder(
-        ...     "input",
-        ...     {"a": pl.Int64, "b": pl.String},
-        ... ).filter(pl.col("a") > 0)
-        >>> df = pl.DataFrame({"a": [1, -2, 3], "b": ["x", "y", "z"]})
-        >>> result = template.bind({"input": df.lazy()}).collect()
-        """
-        self = cls.__new__(cls)
-        self._ldf = PyLazyFrame.placeholder(name, schema)
-        return self
-
     def bind(
         self,
         bindings: dict[str, LazyFrame],
@@ -544,9 +507,14 @@ class LazyFrame:
         LazyFrame
             A new LazyFrame with all placeholders replaced.
 
+        See Also
+        --------
+        scan_placeholder : Create a placeholder LazyFrame.
+        optimize_template : Optimize the template for repeated use.
+
         Examples
         --------
-        >>> template = pl.LazyFrame.placeholder(
+        >>> template = pl.scan_placeholder(
         ...     "input",
         ...     {"a": pl.Int64, "b": pl.String},
         ... ).filter(pl.col("a") > 0)
@@ -556,6 +524,39 @@ class LazyFrame:
         rust_bindings = {k: v._ldf for k, v in bindings.items()}
         result_ldf = self._ldf.bind(rust_bindings)
         return self._from_pyldf(result_ldf)
+
+    def optimize_template(self) -> OptimizedTemplate:
+        """
+        Optimize this LazyFrame into a reusable :class:`OptimizedTemplate`.
+
+        The LazyFrame must contain at least one ``PlaceholderScan`` node
+        (created via :func:`scan_placeholder`). The plan is optimized once.
+        The returned template can be bound to different data repeatedly
+        without re-running optimization.
+
+        Returns
+        -------
+        OptimizedTemplate
+            A pre-optimized template that can be bound to different data.
+
+        See Also
+        --------
+        scan_placeholder : Create a placeholder LazyFrame.
+        bind : Bind placeholders at the DSL level (re-optimizes every time).
+
+        Examples
+        --------
+        >>> template_lf = pl.scan_placeholder(
+        ...     "input",
+        ...     {"a": pl.Int64, "b": pl.String},
+        ... ).filter(pl.col("a") > 0)
+        >>> template = template_lf.optimize_template()
+        >>> df = pl.DataFrame({"a": [1, -2, 3], "b": ["x", "y", "z"]})
+        >>> result = template.bind_and_collect({"input": df.lazy()})
+        """
+        from polars.lazyframe.opt_template import OptimizedTemplate
+
+        return OptimizedTemplate._from_pyot(self._ldf.optimize_template())
 
     @classmethod
     def deserialize(

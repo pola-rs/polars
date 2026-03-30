@@ -38,7 +38,7 @@ use crate::expr::selector::PySelector;
 use crate::functions::PyStringCacheHolder;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::lazyframe::PyInProcessQuery;
-use crate::lazyframe::{PyLazyFrame, PyOptFlags};
+use crate::lazyframe::{PyLazyFrame, PyOptFlags, PyOptimizedTemplate};
 use crate::lazygroupby::PyLazyGroupBy;
 use crate::series::PySeries;
 #[cfg(feature = "sql")]
@@ -111,6 +111,7 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
     m.add_class::<PyLazyFrame>().unwrap();
+    m.add_class::<PyOptimizedTemplate>().unwrap();
     m.add_class::<PyOptFlags>().unwrap();
     #[cfg(not(target_arch = "wasm32"))]
     m.add_class::<PyInProcessQuery>().unwrap();
