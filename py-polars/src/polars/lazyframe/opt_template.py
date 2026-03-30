@@ -18,7 +18,7 @@ class OptimizedTemplate:
     data repeatedly without re-optimization.
     """
 
-    _ot: PyOptimizedTemplate
+    _opt_template: PyOptimizedTemplate
 
     def __init__(self) -> None:
         msg = (
@@ -30,7 +30,7 @@ class OptimizedTemplate:
     @classmethod
     def _from_pyot(cls, pyot: PyOptimizedTemplate) -> OptimizedTemplate:
         self = cls.__new__(cls)
-        self._ot = pyot
+        self._opt_template = pyot
         return self
 
     def bind_and_collect(self, bindings: dict[str, LazyFrame]) -> DataFrame:
@@ -50,7 +50,7 @@ class OptimizedTemplate:
             The collected result.
         """
         rust_bindings = {k: v._ldf for k, v in bindings.items()}
-        return wrap_df(self._ot.bind_and_collect(rust_bindings))
+        return wrap_df(self._opt_template.bind_and_collect(rust_bindings))
 
     def bind(self, bindings: dict[str, LazyFrame]) -> LazyFrame:
         """Bind concrete LazyFrames to placeholders, returning a LazyFrame.
@@ -68,7 +68,7 @@ class OptimizedTemplate:
         from polars.lazyframe.frame import LazyFrame
 
         rust_bindings = {k: v._ldf for k, v in bindings.items()}
-        result_ldf = self._ot.bind(rust_bindings)
+        result_ldf = self._opt_template.bind(rust_bindings)
         return LazyFrame._from_pyldf(result_ldf)
 
     def placeholder_names(self) -> list[str]:
@@ -79,4 +79,4 @@ class OptimizedTemplate:
         list[str]
             List of placeholder names.
         """
-        return self._ot.placeholder_names()
+        return self._opt_template.placeholder_names()

@@ -129,7 +129,7 @@ impl OptimizedTemplate {
     ///
     /// The returned LazyFrame wraps the already-optimized IR. Calling `.collect()` on it
     /// will re-run optimization passes (which should be fast since the plan is already
-    /// optimized). For maximum performance, prefer [`bind_and_collect()`].
+    /// optimized). For maximum performance, prefer `bind_and_collect()`.
     pub fn bind(&self, bindings: PlHashMap<PlSmallStr, LazyFrame>) -> PolarsResult<LazyFrame> {
         let ir_plan = self.bind_ir(bindings)?;
         let version = ir_plan.lp_arena.version();
