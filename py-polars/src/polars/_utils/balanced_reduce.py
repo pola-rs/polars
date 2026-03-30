@@ -9,15 +9,13 @@ def balanced_reduce(function: Callable[[T, T], T], values: list[T]) -> T | None:
     if not values:
         return None
 
+    last = [values.pop()] if len(values) > 1 and len(values) % 2 != 0 else []
+
     while len(values) > 1:
         for i in range(0, len(values), 2):
-            v = values[i]
-
-            if i + 1 < len(values):
-                v = function(v, values[i + 1])
-
+            v = function(values[i], values[i + 1])
             values[i // 2] = v
 
-        values = values[: -(len(values) // -2)]
+        values = values[: len(values) // 2]
 
-    return values[0]
+    return function(values[0], last[0]) if last else values[0]
