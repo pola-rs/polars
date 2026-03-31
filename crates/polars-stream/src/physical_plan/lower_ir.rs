@@ -38,7 +38,7 @@ use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::Forb
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::ZipBehavior;
-use crate::physical_plan::lower_expr::{ExprCache, build_select_stream, lower_exprs};
+use crate::physical_plan::lower_expr::{ExprCache, build_select_stream};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -493,15 +493,24 @@ pub fn lower_ir(
                     },
                 ));
 
-                let mut trans_by_column;
-                (stream, trans_by_column) =
-                    lower_exprs(stream, &by_column, expr_arena, phys_sm, expr_cache, ctx)?;
-
-                trans_by_column = trans_by_column
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, expr)| expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{}", i)))
+                let key_col_names = (0..by_column.len())
+                    .map(|i| format_pl_smallstr!("__POLARS_KEYCOL_{}", i))
                     .collect_vec();
+                let key_exprs = by_column
+                    .iter()
+                    .cloned()
+                    .zip(key_col_names.iter().cloned())
+                    .map(|(expr, name)| expr.with_alias(name))
+                    .collect_vec();
+                stream = build_hstack_stream(stream, &key_exprs, expr_arena, phys_sm, expr_cache, ctx)?;
+                let trans_by_column = key_col_names
+                    .into_iter()
+                    .map(|name| {
+                        let node = expr_arena.add(AExpr::Column(name.clone()));
+                        ExprIR::new(node, OutputName::Alias(name))
+                    })
+                    .collect_vec();
+                by_column = trans_by_column.clone();
 
                 stream = PhysStream::first(phys_sm.insert(PhysNode {
                     output_schema: phys_sm[stream.node].output_schema.clone(),

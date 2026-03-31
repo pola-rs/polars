@@ -1425,9 +1425,6 @@ fn lower_exprs_with_ctx(
                     &[row_idx_col_expr_ir],
                     ctx,
                 )?;
-                // Ensure original input columns remain available if this is the only
-                // lowered expression stream (e.g. sorting by `pl.row_index()`).
-                input_streams.insert(input);
                 input_streams.insert(row_idx_stream);
                 transformed_exprs.push(row_idx_col_aexpr);
             },
