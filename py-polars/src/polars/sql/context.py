@@ -157,12 +157,13 @@ class SQLContext(Generic[FrameType]):
         ----------
         frames
             A `{name:frame, ...}` mapping which can include Polars frames *and*
-            pandas DataFrames, Series and pyarrow Table and RecordBatch objects.
+            :class:`pandas.DataFrame`, :class:`pandas.Series`, :class:`pyarrow.Table`,
+            and :class:`pyarrow.RecordBatch` objects.
         register_globals
-            Register compatible objects (polars DataFrame, LazyFrame, and Series) found
-            in the globals, automatically mapping their variable name to a table name.
-            To register other objects (pandas/pyarrow data) pass them explicitly, or
-            call the `execute_global` classmethod. If given an integer then only the
+            Register compatible objects (Polars `DataFrame`, `LazyFrame`, and `Series`)
+            found in the globals, automatically mapping their variable name to a table
+            name. To register other objects (Pandas/PyArrow data) pass them explicitly,
+            or call the `execute_global` classmethod. If given an integer then only the
             most recent "n" objects found will be registered.
         eager
             If True, returns execution results as `DataFrame` instead of `LazyFrame`.
@@ -229,13 +230,13 @@ class SQLContext(Generic[FrameType]):
 
         Notes
         -----
-        * This convenience method automatically registers all compatible objects in
-          the local stack that are referenced in the query, mapping their variable name
-          to a table name. Note that in addition to polars DataFrame, LazyFrame, and
-          Series this method *also* registers pandas DataFrame, Series, and pyarrow
-          Table and RecordBatch objects.
+        * This convenience method automatically registers all compatible objects in the
+          local stack that are referenced in the query, mapping their variable name to a
+          table name. Note that in addition to polars DataFrame, LazyFrame, and Series
+          this method also registers :class:`pandas.DataFrame`, :class:`pandas.Series`,
+          :class:`pyarrow.Table`, and :class:`pyarrow.RecordBatch` objects.
         * Instead of calling this classmethod you should consider using `pl.sql`,
-          which will use this code internally.
+          which uses this code internally.
 
         Parameters
         ----------
@@ -482,8 +483,9 @@ class SQLContext(Generic[FrameType]):
         n
             Register only the most recent "n" frames.
         all_compatible
-            Control whether we *also* register pandas DataFrame, Series, and
-            pyarrow Table and RecordBatch objects. If False, only Polars
+            Control whether we *also* register :class:`pandas.DataFrame`,
+            :class:`pandas.Series`, and :class:`pyarrow.Table` and
+            :class:`pyarrow.RecordBatch` objects. If False, only Polars
             classes are registered with the SQL engine.
 
         Examples

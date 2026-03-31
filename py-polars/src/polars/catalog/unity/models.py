@@ -65,7 +65,7 @@ class TableInfo:
 
     def get_polars_schema(self) -> Schema | None:
         """
-        Get the native polars schema of this table.
+        Get the native Polars schema of this table.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -102,7 +102,7 @@ class ColumnInfo:
 
     def get_polars_dtype(self) -> DataType:
         """
-        Get the native polars datatype of this column.
+        Get the native Polars datatype of this column.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed

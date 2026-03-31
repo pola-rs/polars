@@ -335,16 +335,16 @@ class Catalog:
             - If 'append', will add new data.
             - If 'overwrite', will replace table with new data.
             - If 'ignore', will not write anything if table already exists.
-            - If 'merge', return a `TableMerger` object to merge data from the DataFrame
-              with the existing data.
+            - If 'merge', return a :class:`~deltalake.table.TableMerger` object to merge
+              data from the DataFrame with the existing data.
         delta_write_options
             (For delta tables) Additional keyword arguments while writing a
-            Delta lake Table.
-            See a list of supported write options `here <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__.
+            Delta Lake Table.
+            See a list of supported write options in :func:`~deltalake.write_deltalake`.
         delta_merge_options
             (For delta tables) Keyword arguments which are required to `MERGE` a
-            Delta lake Table.
-            See a list of supported merge options `here <https://delta-io.github.io/delta-rs/api/delta_table/#deltalake.DeltaTable.merge>`__.
+            Delta Lake Table. See a list of supported merge options in
+            :meth:`~deltalake.table.DeltaTable.merge`.
         storage_options
             Options that indicate how to connect to a cloud provider.
 

@@ -76,11 +76,40 @@ overloads_location = ["bottom"]
 
 # sphinx.ext.intersphinx - link to other projects' documentation
 # https://www.sphinx-doc.org/en/master/usage/extensions/intersphinx.html
+inv = str(Path(__file__).resolve().parent.parent / "_intersphinx")
 intersphinx_mapping = {
-    "numpy": ("https://numpy.org/doc/stable/", None),
-    "pandas": ("https://pandas.pydata.org/docs/", None),
-    "pyarrow": ("https://arrow.apache.org/docs/", None),
-    "python": ("https://docs.python.org/3", None),
+    "deltalake": (
+        "https://delta-io.github.io/delta-rs/python/",
+        (f"{inv}/deltalake.inv", None),
+    ),
+    "jax": (
+        "https://jax.readthedocs.io/en/latest/",
+        (f"{inv}/jax.inv", None),
+    ),
+    "numpy": (
+        "https://numpy.org/doc/stable/",
+        (f"{inv}/numpy.inv", None),
+    ),
+    "pandas": (
+        "https://pandas.pydata.org/docs/",
+        (f"{inv}/pandas.inv", None),
+    ),
+    "pyarrow": (
+        "https://arrow.apache.org/docs/",
+        (f"{inv}/pyarrow.inv", None),
+    ),
+    "python": (
+        "https://docs.python.org/3",
+        (f"{inv}/python.inv", None),
+    ),
+    "sqlalchemy": (
+        "https://docs.sqlalchemy.org/en/stable/",
+        (f"{inv}/sqlalchemy.inv", None),
+    ),
+    "torch": (
+        "https://pytorch.org/docs/stable/",
+        (f"{inv}/torch.inv", None),
+    ),
 }
 
 # numpydoc - parse numpy docstrings
