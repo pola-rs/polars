@@ -16,6 +16,13 @@ class OptimizedTemplate:
     containing ``PlaceholderScan`` nodes (created via :func:`scan_placeholder`).
     The plan is optimized once at creation time and can be bound to different
     data repeatedly without re-optimization.
+
+    .. warning::
+        Designed for **in-memory data sources**. When binding file-based scans
+        (``scan_parquet``, ``scan_csv``, etc.), scan-level optimizations
+        (predicate pushdown into the reader, Hive partition pruning, slice
+        pushdown) are skipped. For file-based sources, use
+        :meth:`LazyFrame.bind` + :meth:`LazyFrame.collect` instead.
     """
 
     _opt_template: PyOptimizedTemplate
@@ -38,6 +45,12 @@ class OptimizedTemplate:
 
         This is the fast path: replaces placeholders in the already-optimized
         IR and goes straight to execution, skipping re-optimization.
+
+        .. warning::
+            Scan-level optimizations (predicate pushdown into readers, Hive
+            partition pruning, slice pushdown) are not applied to file-based
+            bindings. For file-based sources, use :meth:`LazyFrame.bind` +
+            :meth:`LazyFrame.collect` instead.
 
         Parameters
         ----------

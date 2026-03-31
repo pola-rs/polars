@@ -178,6 +178,12 @@ impl LazyFrame {
     /// The LazyFrame must contain at least one `PlaceholderScan` node. The plan is
     /// optimized once at creation time. The returned template can be bound to different
     /// concrete data sources repeatedly without re-running optimization.
+    ///
+    /// **Note:** Designed for in-memory data sources. When binding file-based scans
+    /// (e.g., Parquet, CSV), scan-level optimizations (predicate pushdown into readers,
+    /// Hive partition pruning, slice pushdown) are skipped because the plan is already
+    /// optimized before the concrete source is known. For file-based sources, prefer
+    /// [`LazyFrame::bind`] + `collect()` instead.
     pub fn optimize_template(self) -> PolarsResult<OptimizedTemplate> {
         let ir_plan = self.to_alp_optimized()?;
         OptimizedTemplate::new(ir_plan)

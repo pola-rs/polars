@@ -108,6 +108,10 @@ impl OptimizedTemplate {
     /// This is the fast path: clones the optimized IR, replaces PlaceholderScan nodes
     /// with the bindings' IR, then goes directly to physical planning + execution,
     /// skipping optimization entirely.
+    ///
+    /// **Note:** Because optimization is skipped, scan-level rewrites (predicate pushdown
+    /// into readers, Hive partition pruning, slice pushdown) are not applied to bindings.
+    /// For file-based sources, prefer [`LazyFrame::bind`] + `collect()` instead.
     pub fn bind_and_collect(
         &self,
         bindings: PlHashMap<PlSmallStr, LazyFrame>,

@@ -535,6 +535,14 @@ class LazyFrame:
         The returned template can be bound to different data repeatedly
         without re-running optimization.
 
+        .. warning::
+            This method is designed for **in-memory data sources**. When binding
+            file-based scans (e.g., ``scan_parquet``, ``scan_csv``), scan-level
+            optimizations such as predicate pushdown into the reader, Hive
+            partition pruning, and slice pushdown are skipped because the plan
+            is already optimized before the concrete source is known. For
+            file-based sources, use :meth:`bind` + :meth:`collect` instead.
+
         Returns
         -------
         OptimizedTemplate
