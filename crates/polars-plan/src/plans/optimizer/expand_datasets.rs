@@ -133,7 +133,12 @@ pub(super) fn expand_datasets(
                     match parts.len() {
                         0 => None,
                         1 => Some(parts.into_iter().next().unwrap()),
-                        _ => Some(parts.into_iter().reduce(|a, b| format!(r#"["binop","and",{a},{b}]"#)).unwrap()),
+                        _ => Some(
+                            parts
+                                .into_iter()
+                                .reduce(|a, b| format!(r#"["binop","and",{a},{b}]"#))
+                                .unwrap(),
+                        ),
                     }
                 } else {
                     None

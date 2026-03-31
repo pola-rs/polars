@@ -104,7 +104,6 @@ fn predicate_to_pa_json(
 ) -> Option<()> {
     match expr_arena.get(predicate) {
         AExpr::BinaryExpr { left, right, op } => {
-            
             // Only built to support comparison and bool operators. I can't really see
             // a reason to support math ops at this time.
             if !op.is_comparison_or_bitwise() {

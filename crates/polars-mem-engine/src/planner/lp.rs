@@ -202,10 +202,8 @@ pub fn python_scan_predicate(
             let mut residual_predicate_nodes: Vec<Node> = vec![];
             let parts: Vec<String> = MintermIter::new(e.node(), expr_arena)
                 .filter_map(|node| {
-                    let result = polars_plan::plans::python::pyarrow::predicate_to_pa(
-                        node,
-                        expr_arena,
-                    );
+                    let result =
+                        polars_plan::plans::python::pyarrow::predicate_to_pa(node, expr_arena);
                     if result.is_none() {
                         residual_predicate_nodes.push(node);
                     }
@@ -216,7 +214,12 @@ pub fn python_scan_predicate(
             let predicate_pa = match parts.len() {
                 0 => None,
                 1 => Some(parts.into_iter().next().unwrap()),
-                _ => Some(parts.into_iter().reduce(|a, b| format!(r#"["binop","and",{a},{b}]"#)).unwrap()),
+                _ => Some(
+                    parts
+                        .into_iter()
+                        .reduce(|a, b| format!(r#"["binop","and",{a},{b}]"#))
+                        .unwrap(),
+                ),
             };
 
             let residual_predicate_expr_ir = if let Some(eval_str) = predicate_pa {
