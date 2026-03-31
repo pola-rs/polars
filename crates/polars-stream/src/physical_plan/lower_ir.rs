@@ -38,7 +38,7 @@ use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::Forb
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::ZipBehavior;
-use crate::physical_plan::lower_expr::{ExprCache, build_select_stream};
+use crate::physical_plan::lower_expr::{ExprCache, build_select_stream, lower_exprs};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -502,7 +502,8 @@ pub fn lower_ir(
                     .zip(key_col_names.iter().cloned())
                     .map(|(expr, name)| expr.with_alias(name))
                     .collect_vec();
-                stream = build_hstack_stream(stream, &key_exprs, expr_arena, phys_sm, expr_cache, ctx)?;
+                stream =
+                    build_hstack_stream(stream, &key_exprs, expr_arena, phys_sm, expr_cache, ctx)?;
                 let trans_by_column = key_col_names
                     .into_iter()
                     .map(|name| {
