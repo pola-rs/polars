@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import ast
 import inspect
-import re
 import sys
-import warnings
 from collections import defaultdict
 from collections.abc import Sequence
 from functools import wraps
@@ -81,29 +79,41 @@ def _deprecate_function(message: str) -> IdentityFunction:
 
 def _forward_deprecated_warning(function: Callable[P, T]) -> Callable[P, T]:
     """
-    Call a function that may carry a ``__deprecated__`` warning.
+    Re-emit a ``@deprecated`` warning with correct stack-level attribution.
 
-    If `function` (or its inner wrapper) has a ``__deprecated__`` attribute
-    (set by ``typing_extensions.deprecated`` / ``warnings.deprecated``), this
-    helper emits the deprecation warning via `issue_deprecation_warning` (which
-    uses `find_stacklevel` for correct stack-level attribution) and then calls
-    the function with the original ``DeprecationWarning`` suppressed so the
-    same message is not emitted twice.
+    When ``typing_extensions.deprecated`` / ``warnings.deprecated`` is stacked
+    below a Polars deprecation decorator, its hard-coded ``stacklevel=2``
+    causes the warning to be attributed to internal library code and silently
+    suppressed by Python's default warning filter.
+
+    This helper detects the ``__deprecated__`` attribute, bypasses the original
+    ``@deprecated`` wrapper (via ``__wrapped__``), and re-emits the warning
+    through ``issue_deprecation_warning`` which uses ``find_stacklevel`` to
+    attribute it to user code.
     """
     deprecated_msg: str | None = getattr(function, "__deprecated__", None)
     if deprecated_msg is None:
         return function
 
+    # Already forwarded by an inner Polars decorator — skip to avoid duplicates.
+    if getattr(function, "_polars_deprecated_forwarded", False):
+        return function
+
+    # Both typing_extensions.deprecated and warnings.deprecated use
+    # functools.wraps, which sets __wrapped__ to the original function.
+    # Calling __wrapped__ directly bypasses the @deprecated wrapper
+    # (and its broken stacklevel) entirely.
+    unwrapped: Callable[P, T] | None = getattr(function, "__wrapped__", None)
+    if unwrapped is None:
+        return function
+
     @wraps(function)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
         issue_deprecation_warning(deprecated_msg)
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", message=re.escape(deprecated_msg), category=DeprecationWarning
-            )
-            return function(*args, **kwargs)
+        return unwrapped(*args, **kwargs)
 
     wrapper.__deprecated__ = deprecated_msg  # type: ignore[attr-defined]
+    wrapper._polars_deprecated_forwarded = True  # type: ignore[attr-defined]
     return wrapper
 
 
