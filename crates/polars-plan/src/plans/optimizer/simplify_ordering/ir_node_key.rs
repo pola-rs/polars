@@ -11,10 +11,10 @@ enum Inner {
 
 /// IR node key that uses the cache ID for cache nodes.
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
-pub(crate) struct IRNodeKey(Inner);
+pub struct IRNodeKey(Inner);
 
 impl IRNodeKey {
-    pub(crate) fn new(ir_node: Node, ir_arena: &Arena<IR>) -> Self {
+    pub fn new(ir_node: Node, ir_arena: &Arena<IR>) -> Self {
         Self(match ir_arena.get(ir_node) {
             IR::Cache { id, .. } => Inner::CacheId(*id),
             _ => Inner::Node(ir_node),

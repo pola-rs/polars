@@ -9,10 +9,10 @@ use crate::plans::simplify_ordering::ir_node_key::IRNodeKey;
 use crate::prelude::IR;
 
 #[derive(Default, Debug)]
-pub(crate) struct IRNodeEdgeKeys<EdgeKey> {
-    pub(crate) in_edges: UnitVec<EdgeKey>,
-    pub(crate) out_edges: UnitVec<EdgeKey>,
-    pub(crate) out_nodes: UnitVec<Node>,
+pub struct IRNodeEdgeKeys<EdgeKey> {
+    pub in_edges: UnitVec<EdgeKey>,
+    pub out_edges: UnitVec<EdgeKey>,
+    pub out_nodes: UnitVec<Node>,
 }
 
 /// Cache nodes that share a cache ID.

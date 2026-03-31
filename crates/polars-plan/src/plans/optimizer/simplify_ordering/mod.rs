@@ -18,28 +18,31 @@ use crate::plans::{IRAggExpr, is_scalar_ae};
 use crate::prelude::{AExpr, IR};
 
 #[derive(Default, Debug, Clone)]
-enum Edge {
+pub enum Edge {
     #[default]
     Ordered,
     Unordered,
 }
 
 impl Edge {
-    fn is_unordered(&self) -> bool {
+    pub fn is_unordered(&self) -> bool {
         matches!(self, Self::Unordered)
     }
 }
 
 new_key_type! {
-    struct EdgeKey;
+    pub struct EdgeKey;
 }
 
 type EdgesMap = SlotMap<EdgeKey, Edge>;
 
-pub fn simplify_ir_ordering(
+pub fn simplify_and_fetch_orderings(
     roots: &[Node],
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+) -> (
+    PlHashMap<IRNodeKey, IRNodeEdgeKeys<EdgeKey>>,
+    SlotMap<EdgeKey, Edge>,
 ) {
     let (mut ir_nodes_stack, mut ir_node_to_edges_map, mut all_edges_map, cache_updater) =
         build_ir_traversal_graph(roots, ir_arena);
@@ -73,6 +76,8 @@ pub fn simplify_ir_ordering(
     }
 
     cache_updater.update_cache_nodes(ir_arena);
+
+    (ir_node_to_edges_map, all_edges_map)
 }
 
 struct SimplifyIRNodeOrder<'a> {

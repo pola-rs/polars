@@ -286,7 +286,7 @@ pub fn optimize(
                         });
                     }
                 }
-                simplify_ordering::simplify_ir_ordering(&roots, ir_arena, expr_arena);
+                simplify_ordering::simplify_and_fetch_orderings(&roots, ir_arena, expr_arena);
             },
             ir => {
                 let mut tmp_top = root;
@@ -296,7 +296,7 @@ pub fn optimize(
                         payload: SinkTypeIR::Memory,
                     });
                 }
-                simplify_ordering::simplify_ir_ordering(&[tmp_top], ir_arena, expr_arena);
+                simplify_ordering::simplify_and_fetch_orderings(&[tmp_top], ir_arena, expr_arena);
             },
         }
     }
