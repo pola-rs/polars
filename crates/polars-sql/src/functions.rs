@@ -2179,9 +2179,14 @@ impl SQLFunctionVisitor<'_> {
             if let Some(WindowType::WindowSpec(spec)) = &self.func.over {
                 self.validate_window_frame(&spec.window_frame)?;
 
+                let is_count_star = match args.as_slice() {
+                    [FunctionArgExpr::Wildcard] | [] => true,
+                    [FunctionArgExpr::Expr(e)] => is_non_null_literal(e),
+                    _ => false,
+                };
                 match args.as_slice() {
-                    [FunctionArgExpr::Wildcard] | [] => {
-                        // COUNT(*) with ORDER BY -> map to `int_range`
+                    _ if is_count_star => {
+                        // COUNT(*) / COUNT(1) with ORDER BY -> map to `int_range`
                         let (order_by_exprs, all_desc) =
                             self.parse_order_by_in_window(&spec.order_by)?;
                         let partition_by_exprs = if spec.partition_by.is_empty() {
@@ -2217,6 +2222,8 @@ impl SQLFunctionVisitor<'_> {
         let count_expr = match (is_distinct, args.as_slice()) {
             // COUNT(*), COUNT()
             (false, [FunctionArgExpr::Wildcard] | []) => len(),
+            // COUNT(<non-null literal>) is equivalent to COUNT(*)
+            (false, [FunctionArgExpr::Expr(sql_expr)]) if is_non_null_literal(sql_expr) => len(),
             // COUNT(col)
             (false, [FunctionArgExpr::Expr(sql_expr)]) => {
                 let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
@@ -2345,6 +2352,17 @@ impl SQLFunctionVisitor<'_> {
             self.func.to_string()
         );
     }
+}
+
+/// Returns true if the SQL expression is a non-null literal value (e.g. `1`, `'hello'`, `TRUE`).
+fn is_non_null_literal(expr: &SQLExpr) -> bool {
+    matches!(
+        expr,
+        SQLExpr::Value(ValueWithSpan {
+            value: v,
+            ..
+        }) if !matches!(v, SQLValue::Null)
+    )
 }
 
 fn extract_args(func: &SQLFunction) -> PolarsResult<Vec<&FunctionArgExpr>> {

@@ -8337,20 +8337,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ b    ┆ 0.964028 ┆ 0.999954 │
         └──────┴──────────┴──────────┘
         """  # noqa: W505
-        if index is None and values is None:
+        on_selector = parse_list_into_selector(on)
+
+        if index is not None and values is not None:
+            index_selector = parse_list_into_selector(index)
+            values_selector = parse_list_into_selector(values)
+        elif index is not None:
+            index_selector = parse_list_into_selector(index)
+            values_selector = cs.all() - on_selector - index_selector
+        elif values is not None:
+            values_selector = parse_list_into_selector(values)
+            index_selector = cs.all() - on_selector - values_selector
+        else:
             msg = "`pivot` needs either `index or `values` needs to be specified"
             raise InvalidOperationError(msg)
-
-        on_selector = parse_list_into_selector(on)
-        if values is not None:
-            values_selector = parse_list_into_selector(values)
-        if index is not None:
-            index_selector = parse_list_into_selector(index)
-
-        if values is None:
-            values_selector = cs.all() - on_selector - index_selector
-        if index is None:
-            index_selector = cs.all() - on_selector - values_selector
 
         agg = F.element()
         if isinstance(aggregate_function, str):
@@ -9259,7 +9259,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         schema: SchemaDict | Schema,
         *,
         missing_columns: Literal["insert", "raise"]
-        | Mapping[str, Literal["insert", "raise"] | Expr] = "raise",
+        | Mapping[str, Literal["insert", "raise"] | Expr]
+        | Expr = "raise",
         missing_struct_fields: Literal["insert", "raise"]
         | Mapping[str, Literal["insert", "raise"]] = "raise",
         extra_columns: Literal["ignore", "raise"] = "raise",
@@ -9425,7 +9426,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             schema_prep = schema
 
         missing_columns_pyexpr: (
-            Literal["insert", "raise"] | dict[str, Literal["insert", "raise"] | PyExpr]
+            Literal["insert", "raise"]
+            | dict[str, Literal["insert", "raise"] | PyExpr]
+            | PyExpr
         )
         if isinstance(missing_columns, Mapping):
             missing_columns_pyexpr = {
