@@ -277,7 +277,6 @@ fn top_k_by_impl(
         nulls_last: vec![true; by.len()],
         multithreaded,
         maintain_order: false,
-        limit: None,
     };
 
     let idx = _arg_bottom_k(k, by, &mut sort_options)?;

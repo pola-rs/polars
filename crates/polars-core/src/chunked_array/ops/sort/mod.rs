@@ -843,7 +843,7 @@ pub fn arg_sort(columns: &[Column], mut sort_options: SortMultipleOptions) -> Po
             nulls_last: sort_options.nulls_last[0],
             multithreaded: sort_options.multithreaded,
             maintain_order: sort_options.maintain_order,
-            limit: sort_options.limit,
+            limit: None,
         }))
     } else if sort_options.nulls_last.iter().all(|&x| x)
         || columns.iter().any(|c| c.dtype().is_nested())

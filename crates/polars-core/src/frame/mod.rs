@@ -1527,7 +1527,7 @@ impl DataFrame {
                     nulls_last: sort_options.nulls_last[0],
                     multithreaded: sort_options.multithreaded,
                     maintain_order: sort_options.maintain_order,
-                    limit: sort_options.limit,
+                    limit: None,
                 };
                 // fast path for a frame with a single series
                 // no need to compute the sort indices and then take by these indices

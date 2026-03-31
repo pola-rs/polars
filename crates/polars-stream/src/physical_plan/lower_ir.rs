@@ -453,13 +453,9 @@ pub fn lower_ir(
             let phys_input = lower_ir!(*input)?;
 
             // See if we can insert a top k.
-            let mut limit = u64::MAX;
-            if let Some((0, l, _)) = slice {
-                limit = limit.min(l as u64);
-            }
-            #[allow(clippy::unnecessary_cast)]
-            if let Some(l) = sort_options.limit {
-                limit = limit.min(l as u64);
+            let limit = match slice {
+                Some((0, limit, _)) => limit as u64,
+                _ => u64::MAX,
             };
 
             let mut stream = phys_input;

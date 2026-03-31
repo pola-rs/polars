@@ -508,7 +508,6 @@ impl PyLazyFrame {
                 nulls_last: vec![nulls_last],
                 multithreaded,
                 maintain_order,
-                limit: None,
             },
         )
         .into()
@@ -531,7 +530,6 @@ impl PyLazyFrame {
                 nulls_last,
                 maintain_order,
                 multithreaded,
-                limit: None,
             },
         )
         .into()

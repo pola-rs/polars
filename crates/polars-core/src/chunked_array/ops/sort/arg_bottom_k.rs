@@ -40,8 +40,18 @@ pub fn _arg_bottom_k(
     _broadcast_bools(by_column.len(), &mut sort_options.nulls_last);
 
     // Don't go into row encoding.
-    if by_column.len() == 1 && sort_options.limit.is_some() && !sort_options.maintain_order {
-        return Ok(NoNull::new(by_column[0].arg_sort((&*sort_options).into())));
+    if by_column.len() == 1 && !sort_options.maintain_order {
+        let sort_single_options = SortOptions {
+            limit: Some(k as IdxSize),
+            ..(&*sort_options).into()
+        };
+        let mut sorted = by_column[0].arg_sort((sort_single_options).into());
+        // SortOptions::limit may be ignored so we have to make sure that the
+        // array is properly truncated.
+        if k < sorted.len() {
+            sorted = sorted.slice(0, k)
+        }
+        return Ok(NoNull::new(sorted));
     }
 
     let encoded = _get_rows_encoded(
