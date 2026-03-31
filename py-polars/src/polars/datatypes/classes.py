@@ -233,6 +233,11 @@ class DataType(metaclass=DataTypeClass):
         return issubclass(cls, NestedType)
 
     @classmethod
+    def is_extension(cls) -> bool:
+        """Check whether the data type is an extension type."""
+        return issubclass(cls, BaseExtension)
+
+    @classmethod
     def from_python(cls, py_type: PythonDataType) -> PolarsDataType:
         """
         Return the Polars data type corresponding to a given Python type.

@@ -1160,7 +1160,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         @lru_cache
         def skip_minmax(dt: PolarsDataType) -> bool:
-            return dt.is_nested() or dt in (Categorical, Enum, Null, Object, Unknown)
+            return (
+                dt.is_nested()
+                or dt.is_extension()
+                or dt in (Categorical, Enum, Null, Object, Unknown)
+            )
 
         # determine which columns will produce std/mean/percentile/etc
         # statistics in a single pass over the frame schema
