@@ -111,6 +111,10 @@ class DataTypeClass(type):
         ...
 
     @classmethod
+    def is_extension(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
     def from_python(cls, py_type: PythonDataType) -> PolarsDataType:  # noqa: D102
         ...
 
