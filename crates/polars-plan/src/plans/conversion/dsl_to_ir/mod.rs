@@ -1324,6 +1324,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::Sink { input, payload } => {
             if let SinkType::Iceberg {
                 state,
+                #[cfg(feature = "python")]
                 orig_sink_state_obj,
             } = payload
             {
