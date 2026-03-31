@@ -51,7 +51,10 @@ recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
 uuid = { workspace = true }
 
-[target.'cfg(any(not(target_family = "unix"), target_os = "emscripten"))'.dependencies]
+[target.'cfg(target_os = "windows")'.dependencies]
+mimalloc = { version = "0.1", default-features = false, features = ["v3"] }
+
+[target.'cfg(any(all(not(target_family = "unix"), not(target_os = "windows")), target_os = "emscripten"))'.dependencies]
 mimalloc = { version = "0.1", default-features = false }
 
 # Feature background_threads is unsupported on MacOS (https://github.com/jemalloc/jemalloc/issues/843).
