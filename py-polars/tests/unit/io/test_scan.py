@@ -1531,6 +1531,21 @@ def test_scan_sink_metrics_multiple_phases(
     plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "1")
 
     df.write_parquet(path, row_group_size=1)
+    expected_read_amount_bytes = 44000
+
+    capfd.readouterr()
+    pl.scan_parquet(path).collect()
+    capture = capfd.readouterr().err
+
+    assert (
+        sum(
+            1
+            for line in capture.splitlines()
+            if line.startswith("multi-scan[parquet]")
+            and f"total_bytes_received={expected_read_amount_bytes}" in line
+        )
+        == 1
+    )
 
     capfd.readouterr()
     (
@@ -1563,8 +1578,8 @@ def test_scan_sink_metrics_multiple_phases(
         .collect(),
         pl.DataFrame(
             {
-                "io_total_bytes_requested": ["44000", "0"],
-                "io_total_bytes_received": ["44000", "0"],
+                "io_total_bytes_requested": [f"{expected_read_amount_bytes}", "0"],
+                "io_total_bytes_received": [f"{expected_read_amount_bytes}", "0"],
                 "io_total_bytes_sent": ["0", "137260"],
                 "node_name": ["multi-scan[parquet]", "io-sink[single-file[parquet]]"],
             }
