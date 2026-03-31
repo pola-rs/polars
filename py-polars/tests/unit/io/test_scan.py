@@ -1541,7 +1541,7 @@ def test_scan_sink_metrics_multiple_phases(
     capture = capfd.readouterr().err
 
     assert_frame_equal(
-        pl.scan_lines(io.StringIO(capture), name="line")
+        pl.scan_lines(io.StringIO(capture))
         .select(
             node_name=pl.col("line").str.extract(r"^([^:]*)"),
             io_total_bytes_requested=pl.col("line").str.extract(
