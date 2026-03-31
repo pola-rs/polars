@@ -1247,7 +1247,7 @@ def test_scan_negative_slice_decompress(format_name: str) -> None:
 
     lf = getattr(pl, f"scan_{format_name}")(compressed_data).slice(-9, 5)
     if format_name == "lines":
-        lf = lf.select(pl.col("lines").alias(col_name).str.to_integer())
+        lf = lf.select(pl.col("line").alias(col_name).str.to_integer())
 
     expected = [pl.Series("x", [38, 39, 40, 41, 42])]
     got = lf.collect(engine="streaming")
