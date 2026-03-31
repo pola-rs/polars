@@ -738,10 +738,11 @@ def test_set_invalid_key(key: Any) -> None:
         pl.Series([False, True, True]),
         pl.Series([1, 2], dtype=UInt32),
         pl.Series([1, 2], dtype=UInt64),
+        pl.Series([1, 2]),
     ],
 )
 def test_set_key_series(key: pl.Series) -> None:
-    """Only UInt32/UInt64/bool are allowed."""
+    """Boolean and integer index Series are allowed."""
     s = pl.Series("a", [1, 2, 3])
     s[key] = 4
     assert_series_equal(s, pl.Series("a", [1, 4, 4]))
