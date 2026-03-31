@@ -32,38 +32,25 @@ def _build_pyarrow_expr(node: list) -> Any:
 
     if tag == "field":
         return pa.compute.field(node[1])
-    elif tag == "binop":
+    if tag == "binop":
         left = _build_pyarrow_expr(node[2])
         right = _build_pyarrow_expr(node[3])
         return getattr(left, _BINOP_DISPATCH[node[1]])(right)
-    elif tag == "not":
-        return ~_build_pyarrow_expr(node[1])
-    elif tag == "is_null":
+    if tag == "is_null":
         return _build_pyarrow_expr(node[1]).is_null()
-    elif tag == "is_not_null":
+    if tag == "is_not_null":
         return _build_pyarrow_expr(node[1]).is_valid()
-    elif tag == "lit_str":
+    if tag == "lit_str":
         return pa.compute.scalar(node[1])
-    elif tag == "lit_bool":
+    if tag == "lit_bool":
         return pa.compute.scalar(node[1])
-    elif tag == "lit_i64" or tag == "lit_f64":
+    if tag == "lit_i64" or tag == "lit_f64":
         return pa.compute.scalar(node[1])
-    elif tag == "lit_null":
+    if tag == "lit_null":
         return pa.compute.scalar(None)
-    elif tag == "lit_date":
-        from polars._utils.convert import to_py_date
 
-        return pa.compute.scalar(to_py_date(node[1]))
-    elif tag == "lit_datetime":
-        from polars._utils.convert import to_py_datetime
-
-        v, tu = node[1], node[2]
-        tz = node[3] if len(node) > 3 and node[3] is not None else None
-        return pa.compute.scalar(to_py_datetime(v, tu, tz))
-    else:
-        msg = f"unknown predicate node tag: {tag!r}"
-        raise ValueError(msg)
-
+    msg = f"unknown predicate node tag: {tag!r}"
+    raise ValueError(msg)
 
 
 def _scan_pyarrow_dataset(
