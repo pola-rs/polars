@@ -38,7 +38,13 @@ pub fn python_dataset_scan_to_reader_builder(
                                 Ok(None)
                             },
                             Err(err) => {
-                                polars_bail!(ComputeError: "caught exception during execution of a Python source, exception: {}", err)
+                                let mut msg = format!(
+                                    "caught exception during execution of a Python source, exception: {err}"
+                                );
+                                if let Some(Ok(tbk)) = err.traceback(py).map(|tbk| tbk.format()) {
+                                    msg = format!("{msg}\n{tbk}");
+                                };
+                                polars_bail!(ComputeError: "caught exception during execution of a Python source, exception")
                             },
                         }
                     })
