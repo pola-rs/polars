@@ -75,6 +75,8 @@ from polars.testing import assert_frame_equal
 from tests.unit.io.conftest import normalize_path_separator_pl
 
 if TYPE_CHECKING:
+    AlwaysFalse = Any
+    AlwaysTrue = Any
     from tests.conftest import PlMonkeyPatch
 
     # Mypy does not understand the constructors and we can't construct the inputs
@@ -92,6 +94,8 @@ if TYPE_CHECKING:
     Reference = Any
 else:
     from pyiceberg.expressions import (
+        AlwaysFalse,
+        AlwaysTrue,
         And,
         EqualTo,
         GreaterThan,
@@ -321,6 +325,14 @@ class TestIcebergExpressions:
     def test_bare_boolean_field_negated(self) -> None:
         expr = try_convert_pyarrow_predicate("~pa.compute.field('is_active')")
         assert expr == Not(EqualTo("is_active", True))
+
+    def test_scalar_false_expression(self) -> None:
+        expr = try_convert_pyarrow_predicate("pa.compute.scalar(False)")
+        assert expr == AlwaysFalse()
+
+    def test_scalar_true_expression(self) -> None:
+        expr = try_convert_pyarrow_predicate("pa.compute.scalar(True)")
+        assert expr == AlwaysTrue()
 
 
 @dataclass(kw_only=True)
