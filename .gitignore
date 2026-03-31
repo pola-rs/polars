@@ -46,7 +46,6 @@ target/
 !/docs/assets/data/alltypes_plain.parquet
 !/docs/assets/data/apple_stock.csv
 !/docs/assets/data/iris.csv
-!/docs/assets/data/legislators-historical.csv
 !/docs/assets/data/monopoly_props_groups.csv
 !/docs/assets/data/monopoly_props_prices.csv
 !/docs/assets/data/pokemon.csv

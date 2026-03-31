@@ -1,7 +1,7 @@
 # --8<-- [start:dataframe]
 import polars as pl
 
-path = "docs/assets/data/legislators-historical.csv"
+path = "hf://datasets/nameexhaustion/polars-docs/legislators-historical.csv"
 
 schema_overrides = {
     "first_name": pl.Categorical,
