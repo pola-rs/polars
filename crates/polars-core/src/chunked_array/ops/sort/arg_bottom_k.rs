@@ -45,7 +45,7 @@ pub fn _arg_bottom_k(
             limit: Some(k as IdxSize),
             ..(&*sort_options).into()
         };
-        let mut sorted = by_column[0].arg_sort((sort_single_options).into());
+        let mut sorted = by_column[0].arg_sort(sort_single_options);
         // SortOptions::limit may be ignored so we have to make sure that the
         // array is properly truncated.
         if k < sorted.len() {
