@@ -1,0 +1,10 @@
+Name,Type 1,Type 2,Speed,Attack,Defense
+Bulbasaur,Grass,Poison,45,49,49
+Ivysaur,Grass,Poison,60,62,63
+Venusaur,Grass,Poison,80,82,83
+Charmander,Fire,Normal,65,52,43
+Charmeleon,Fire,Normal,80,64,58
+Charizard,Fire,Flying,100,84,78
+Squirtle,Water,Normal,43,48,65
+Starmie,Water,Psychic,115,75,85
+Slowbro,Water,Psychic,30,75,110

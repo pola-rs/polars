@@ -1,25 +1,17 @@
 # --8<-- [start:prep-data]
 import pathlib
-import requests
 
 
 DATA = [
-    (
-        "https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/data/monopoly_props_groups.csv",
-        "docs/assets/data/monopoly_props_groups.csv",
-    ),
-    (
-        "https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/data/monopoly_props_prices.csv",
-        "docs/assets/data/monopoly_props_prices.csv",
-    ),
+    pathlib.Path("docs/assets/data/monopoly_props_groups.csv"),
+    pathlib.Path("docs/assets/data/monopoly_props_prices.csv"),
 ]
 
 
-for url, dest in DATA:
-    if pathlib.Path(dest).exists():
-        continue
-    with open(dest, "wb") as f:
-        f.write(requests.get(url, timeout=10).content)
+for path in DATA:
+    if not path.exists():
+        msg = f"missing docs fixture: {path}"
+        raise FileNotFoundError(msg)
 # --8<-- [end:prep-data]
 
 # --8<-- [start:props_groups]
