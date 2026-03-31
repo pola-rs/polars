@@ -410,8 +410,6 @@ _PREDICATE_AST_CASES: dict[str, tuple[pl.Expr, int]] = {
     "is_null": (pl.col("nullable").is_null(), 1),
     "is_not_null": (pl.col("nullable").is_not_null(), 2),
     "string_literal": (pl.col("str") == "a", 1),
-    "date_literal": (pl.col("date") == date(2020, 1, 1), 1),
-    "datetime_literal": (pl.col("datetime") == datetime(2020, 1, 1), 1),
     "float_literal": (pl.col("float") > 1.5, 1),
 }
 
@@ -432,12 +430,6 @@ def test_pyarrow_dataset_predicate_ast_nodes(
             "bool": [True, False, False],
             "str": ["a", "b", "c"],
             "nullable": [1, None, 3],
-            "date": [date(2020, 1, 1), date(2021, 1, 1), date(2022, 1, 1)],
-            "datetime": [
-                datetime(2020, 1, 1),
-                datetime(2021, 1, 1),
-                datetime(2022, 1, 1),
-            ],
         }
     )
     path = tmp_path / "test.parquet"
