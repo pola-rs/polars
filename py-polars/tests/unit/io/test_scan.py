@@ -1560,6 +1560,7 @@ def test_scan_sink_metrics_multiple_phases(
             ),
             on="node_name",
             how="right",
+            maintain_order="right",
         )
         .collect(),
         pl.DataFrame(
