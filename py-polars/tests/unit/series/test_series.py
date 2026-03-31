@@ -732,6 +732,12 @@ def test_set_invalid_key(key: Any) -> None:
         s[key] = 1
 
 
+def test_set_invalid_series_key() -> None:
+    s = pl.Series("a", [1, 2, 3])
+    with pytest.raises(TypeError):
+        s[pl.Series([1.0, 2.0])] = 4
+
+
 @pytest.mark.parametrize(
     "key",
     [
