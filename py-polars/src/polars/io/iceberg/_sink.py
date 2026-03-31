@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
+from polars._plr import PyLazyFrame
 from polars._utils.logging import eprint
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.iceberg._dataset import (
@@ -51,19 +52,6 @@ class IcebergSinkTableSerializer(IcebergTableSerializer):
             table_identifier=".".join(table.name()),
             catalog_config=IcebergCatalogConfig.from_catalog(table.catalog),
         )
-
-
-# Passed to `pipe_with_schema` to defer sink resolution logic until IR resolution.
-@dataclass(kw_only=True)
-class AttachSink:
-    sink_state: IcebergSinkState
-
-    def __call__(
-        self,
-        lf: pl.LazyFrame,
-        schema: pl.Schema,  # noqa: ARG002
-    ) -> pl.LazyFrame:
-        return self.sink_state._attach_sink_impl(lf)
 
 
 @dataclass(kw_only=True)
@@ -129,13 +117,19 @@ class IcebergSinkState:
         )
 
     def attach_sink(self, lf: pl.LazyFrame) -> pl.LazyFrame:
-        return lf.pipe_with_schema(AttachSink(sink_state=self))
+        import polars as pl
 
-    def _attach_sink_impl(self, lf: pl.LazyFrame) -> pl.LazyFrame:
+        self.table.__getstate__()
+
+        return pl.LazyFrame._from_pyldf(lf._ldf.sink_iceberg(self))
+
+    def _attach_sink_impl(self, plf: PyLazyFrame) -> PyLazyFrame:
         from pyiceberg.table import TableProperties
         from pyiceberg.utils.properties import property_as_bool, property_as_int
 
         import polars as pl
+
+        lf = pl.LazyFrame._from_pyldf(plf)
 
         table = self.table.get()
         table_metadata = table.metadata
@@ -188,8 +182,7 @@ class IcebergSinkState:
             arrow_schema=arrow_schema,
             storage_options=self._get_converted_storage_options(),
             lazy=True,
-            _sinked_paths_callback=("iceberg-commit", self),
-        )
+        )._ldf
 
     def commit(
         self,

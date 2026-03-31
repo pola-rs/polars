@@ -8,6 +8,7 @@ use parking_lot::Mutex;
 #[cfg(feature = "pivot")]
 use polars::frame::PivotColumnNaming;
 use polars::io::RowIndex;
+use polars::prelude::iceberg_sink_state::IcebergSinkState;
 use polars::time::*;
 use polars_core::prelude::*;
 use polars_core::query_result::QueryResult;
@@ -881,6 +882,21 @@ impl PyLazyFrame {
         })
         .map(Into::into)
         .map_err(Into::into)
+    }
+
+    pub fn sink_iceberg(&self, py: Python<'_>, sink_state_obj: Py<PyAny>) -> PyResult<PyLazyFrame> {
+        let state: IcebergSinkState = sink_state_obj.extract(py)?;
+        let mut ldf = self.ldf.read().clone();
+
+        ldf.logical_plan = DslPlan::Sink {
+            input: Arc::new(ldf.logical_plan),
+            payload: SinkType::Iceberg {
+                state,
+                orig_sink_state_obj: Some(SpecialEq::new(Arc::new(PythonObject(sink_state_obj)))),
+            },
+        };
+
+        Ok(ldf.into())
     }
 
     fn filter(&self, predicate: PyExpr) -> Self {

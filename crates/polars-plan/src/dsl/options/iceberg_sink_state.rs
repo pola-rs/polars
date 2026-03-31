@@ -59,9 +59,48 @@ mod _python_impl {
     use pyo3::exceptions::PyValueError;
     use pyo3::pybacked::PyBackedStr;
     use pyo3::types::PyString;
-    use pyo3::{Borrowed, Bound, FromPyObject, IntoPyObject, PyAny, PyErr, PyResult};
+    use pyo3::{
+        Borrowed, Bound, FromPyObject, IntoPyObject, Py, PyAny, PyErr, PyResult, Python, intern,
+    };
 
-    use super::IcebergCommitMode;
+    use super::{IcebergCommitMode, IcebergSinkState};
+
+    impl IcebergSinkState {
+        pub(crate) fn get_py_iceberg_sink_state(
+            self,
+            orig_sink_state_obj: Option<&Py<PyAny>>,
+        ) -> PyResult<Py<PyAny>> {
+            Python::attach(|py| {
+                let py_iceberg_sink_state =
+                    polars_utils::python_convert_registry::get_python_convert_registry()
+                        .py_iceberg_sink_state_class()
+                        .call_method1(
+                            py,
+                            intern!(py, "_from_data_dict"),
+                            (self.into_pyobject(py)?,),
+                        )?;
+
+                if let Some(orig_sink_state_obj) = orig_sink_state_obj {
+                    let table_str = intern!(py, "table");
+
+                    py_iceberg_sink_state
+                        .getattr(py, table_str)?
+                        .getattr(py, intern!(py, "table_"))?
+                        .call_method1(
+                            py,
+                            intern!(py, "set"),
+                            ({
+                                orig_sink_state_obj
+                                    .getattr(py, table_str)?
+                                    .call_method0(py, intern!(py, "get"))?
+                            },),
+                        )?;
+                }
+
+                Ok(py_iceberg_sink_state)
+            })
+        }
+    }
 
     impl<'py> IntoPyObject<'py> for IcebergCommitMode {
         type Target = PyString;

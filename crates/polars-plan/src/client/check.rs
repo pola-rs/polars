@@ -51,7 +51,9 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan, allow_local_scans: bool) -> P
                     SinkType::Callback(_) => {
                         return ineligible_error("contains callback sink");
                     },
-                    SinkType::File { .. } | SinkType::Partitioned { .. } => {
+                    SinkType::File { .. }
+                    | SinkType::Partitioned { .. }
+                    | SinkType::Iceberg { .. } => {
                         // The sink destination is passed around separately, can't check the
                         // eligibility here.
                     },

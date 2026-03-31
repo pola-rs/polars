@@ -229,6 +229,13 @@ pub enum SinkType {
     Callback(CallbackSinkType),
     File(FileSinkOptions),
     Partitioned(PartitionedSinkOptions),
+    Iceberg {
+        state: IcebergSinkState,
+
+        #[cfg(feature = "python")]
+        #[cfg_attr(feature = "serde", serde(skip, default))]
+        orig_sink_state_obj: Option<SpecialEq<Arc<polars_utils::python_function::PythonObject>>>,
+    },
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -489,7 +496,7 @@ impl SinkedPathsCallback {
         match self {
             Self::IcebergCommit { .. } => {
                 feature_gated!("python", {
-                    use pyo3::{IntoPyObject, Python};
+                    use pyo3::Python;
 
                     let Self::IcebergCommit {
                         state,
@@ -503,31 +510,9 @@ impl SinkedPathsCallback {
                         use pyo3::intern;
                         use pyo3::types::{PyAnyMethods, PyDict, PyList};
 
-                        let py_iceberg_sink_state =
-                            polars_utils::python_convert_registry::get_python_convert_registry()
-                                .py_iceberg_sink_state_class()
-                                .call_method1(
-                                    py,
-                                    intern!(py, "_from_data_dict"),
-                                    (state.clone().into_pyobject(py)?,),
-                                )?;
-
-                        if let Some(orig_sink_state_obj) = orig_sink_state_obj {
-                            let table_str = intern!(py, "table");
-
-                            py_iceberg_sink_state
-                                .getattr(py, table_str)?
-                                .getattr(py, intern!(py, "table_"))?
-                                .call_method1(
-                                    py,
-                                    intern!(py, "set"),
-                                    ({
-                                        orig_sink_state_obj
-                                            .getattr(py, table_str)?
-                                            .call_method0(py, intern!(py, "get"))?
-                                    },),
-                                )?;
-                        }
+                        let py_iceberg_sink_state = state.clone().get_py_iceberg_sink_state(
+                            orig_sink_state_obj.as_ref().map(|x| x.as_ref().as_ref()),
+                        )?;
 
                         let py_paths = PyList::empty(py);
 
