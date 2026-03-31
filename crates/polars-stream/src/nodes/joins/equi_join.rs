@@ -25,7 +25,7 @@ use polars_utils::sparse_init_vec::SparseInitVec;
 use polars_utils::{IdxSize, format_pl_smallstr};
 use rayon::prelude::*;
 
-use super::{BufferedStream, JOIN_SAMPLE_LIMIT, LOPSIDED_SAMPLE_FACTOR};
+use super::{BufferedStream, LOPSIDED_SAMPLE_FACTOR};
 use crate::async_executor;
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::expression::StreamExpr;
@@ -48,6 +48,7 @@ struct EquiJoinParams {
     right_payload_schema: Arc<Schema>,
     args: JoinArgs,
     random_state: PlRandomState,
+    sample_limit: usize,
 }
 
 impl EquiJoinParams {
@@ -212,7 +213,7 @@ fn estimate_cardinality(
     params: &EquiJoinParams,
     state: &ExecutionState,
 ) -> PolarsResult<f64> {
-    let sample_limit = *JOIN_SAMPLE_LIMIT;
+    let sample_limit = params.sample_limit;
     if morsels.is_empty() || sample_limit == 0 {
         return Ok(0.0);
     }
@@ -280,10 +281,11 @@ impl SampleState {
         len: &mut usize,
         this_final_len: Arc<RelaxedCell<usize>>,
         other_final_len: Arc<RelaxedCell<usize>>,
+        join_sample_limit: usize,
     ) -> PolarsResult<()> {
         while let Ok(mut morsel) = recv.recv().await {
             *len += morsel.df().height();
-            if *len >= *JOIN_SAMPLE_LIMIT
+            if *len >= join_sample_limit
                 || *len
                     >= other_final_len
                         .load()
@@ -305,8 +307,8 @@ impl SampleState {
         params: &mut EquiJoinParams,
         state: &StreamingExecutionState,
     ) -> PolarsResult<Option<BuildState>> {
-        let left_saturated = self.left_len >= *JOIN_SAMPLE_LIMIT;
-        let right_saturated = self.right_len >= *JOIN_SAMPLE_LIMIT;
+        let left_saturated = self.left_len >= params.sample_limit;
+        let right_saturated = self.right_len >= params.sample_limit;
         let left_done = recv[0] == PortState::Done || left_saturated;
         let right_done = recv[1] == PortState::Done || right_saturated;
         #[expect(clippy::nonminimal_bool)]
@@ -1207,12 +1209,16 @@ impl EquiJoinNode {
         args: JoinArgs,
         num_pipelines: usize,
     ) -> PolarsResult<Self> {
+        let sample_limit: usize = polars_config::config()
+            .join_sample_limit()
+            .try_into()
+            .unwrap();
         let left_is_build = match args.maintain_order {
             MaintainOrderJoin::None => match args.build_side {
                 Some(JoinBuildSide::ForceLeft) => Some(true),
                 Some(JoinBuildSide::ForceRight) => Some(false),
                 Some(JoinBuildSide::PreferLeft) | Some(JoinBuildSide::PreferRight) | None => {
-                    if *JOIN_SAMPLE_LIMIT == 0 {
+                    if sample_limit == 0 {
                         Some(args.build_side != Some(JoinBuildSide::PreferRight))
                     } else {
                         None
@@ -1285,6 +1291,7 @@ impl EquiJoinNode {
                 right_payload_schema,
                 args,
                 random_state: PlRandomState::default(),
+                sample_limit,
             },
             table: new_idx_table(unique_key_schema),
         })
@@ -1375,14 +1382,14 @@ impl ComputeNode for EquiJoinNode {
             EquiJoinState::Sample(sample_state) => {
                 send[0] = PortState::Blocked;
                 if recv[0] != PortState::Done {
-                    recv[0] = if sample_state.left_len < *JOIN_SAMPLE_LIMIT {
+                    recv[0] = if sample_state.left_len < self.params.sample_limit {
                         PortState::Ready
                     } else {
                         PortState::Blocked
                     };
                 }
                 if recv[1] != PortState::Done {
-                    recv[1] = if sample_state.right_len < *JOIN_SAMPLE_LIMIT {
+                    recv[1] = if sample_state.right_len < self.params.sample_limit {
                         PortState::Ready
                     } else {
                         PortState::Blocked
@@ -1481,6 +1488,7 @@ impl ComputeNode for EquiJoinNode {
                             &mut sample_state.left_len,
                             left_final_len.clone(),
                             right_final_len.clone(),
+                            self.params.sample_limit,
                         ),
                     ));
                 }
@@ -1493,6 +1501,7 @@ impl ComputeNode for EquiJoinNode {
                             &mut sample_state.right_len,
                             right_final_len,
                             left_final_len,
+                            self.params.sample_limit,
                         ),
                     ));
                 }
