@@ -1033,7 +1033,15 @@ impl Column {
         Ok(self)
     }
 
+    /// Retrieve the indexes needed to sort this column
     pub fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        self.arg_sort_with_limit(options, None)
+    }
+
+    /// Retrieve the indexes needed to sort this column.
+    ///
+    /// `limit` limits a sort output, this is for optimization purposes and might be ignored.
+    pub fn arg_sort_with_limit(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
         if self.is_empty() {
             return IdxCa::from_vec(self.name().clone(), Vec::new());
         }
@@ -1168,7 +1176,7 @@ impl Column {
 
         // @NOTE: This can theoretically be pushed into the previous operation but it is really
         // worth it... probably not...
-        if let Some(limit) = options.limit {
+        if let Some(limit) = limit {
             let limit = limit.min(length);
             values.truncate(limit as usize);
         }

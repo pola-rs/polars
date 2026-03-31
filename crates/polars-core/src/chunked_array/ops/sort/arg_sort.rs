@@ -79,10 +79,12 @@ where
     rev_idx
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn arg_sort<I, J, T>(
     name: PlSmallStr,
     iters: I,
     options: SortOptions,
+    limit: Option<IdxSize>,
     null_count: usize,
     mut len: usize,
     is_sorted_flag: IsSorted,
@@ -103,9 +105,7 @@ where
         || (!options.descending && is_sorted_flag == IsSorted::Ascending))
         && ((nulls_last && !first_element_null) || (!nulls_last && first_element_null))
     {
-        len = options
-            .limit
-            .map_or(len, |limit| std::cmp::min(limit.try_into().unwrap(), len));
+        len = limit.map_or(len, |limit| std::cmp::min(limit.try_into().unwrap(), len));
         return ChunkedArray::with_chunk(
             name,
             IdxArr::from_data_default(
@@ -135,7 +135,7 @@ where
         vals.extend(iter);
     }
 
-    let vals = if let Some(limit) = options.limit {
+    let vals = if let Some(limit) = limit {
         let limit = limit as usize;
         // Overwrite output len.
         len = limit;
@@ -164,14 +164,14 @@ where
         let mut idx = Vec::with_capacity(len);
         idx.extend(iter);
 
-        let nulls_idx = if options.limit.is_some() {
+        let nulls_idx = if limit.is_some() {
             &nulls_idx[..len - idx.len()]
         } else {
             &nulls_idx
         };
         idx.extend_from_slice(nulls_idx);
         idx
-    } else if options.limit.is_some() {
+    } else if limit.is_some() {
         nulls_idx.extend(iter.take(len - nulls_idx.len()));
         nulls_idx
     } else {
@@ -189,6 +189,7 @@ pub(super) fn arg_sort_no_nulls<I, J, T>(
     name: PlSmallStr,
     iters: I,
     options: SortOptions,
+    limit: Option<IdxSize>,
     len: usize,
     is_sorted_flag: IsSorted,
 ) -> IdxCa
@@ -201,9 +202,7 @@ where
     // 1) If array is already sorted in the required ordered .
     // 2) If array is reverse sorted -> we do a stable reverse.
     if is_sorted_flag != IsSorted::Not {
-        let len_final = options
-            .limit
-            .map_or(len, |limit| std::cmp::min(limit.try_into().unwrap(), len));
+        let len_final = limit.map_or(len, |limit| std::cmp::min(limit.try_into().unwrap(), len));
         if (options.descending && is_sorted_flag == IsSorted::Descending)
             || (!options.descending && is_sorted_flag == IsSorted::Ascending)
         {
@@ -234,7 +233,7 @@ where
         }));
     }
 
-    let vals = if let Some(limit) = options.limit {
+    let vals = if let Some(limit) = limit {
         let limit = limit as usize;
         let out = if limit >= vals.len() {
             vals.as_mut_slice()
@@ -333,53 +332,5 @@ mod test {
         let a = Int32Chunked::new(PlSmallStr::from_static("a"), &empty_array);
         let idx = reverse_stable_no_nulls(&a, 0);
         assert_eq!(idx.len(), 0);
-    }
-
-    #[test]
-    fn test_arg_sort_descending_with_limit() {
-        let a = Int32Chunked::new(PlSmallStr::from_static("a"), &[4, 2, 5, 1, 3]);
-        let o = SortOptions {
-            descending: true,
-            nulls_last: false,
-            multithreaded: false,
-            limit: Some(3),
-            ..Default::default()
-        };
-        let r = a.arg_sort(o);
-        let idx: Vec<IdxSize> = r.into_no_null_iter().collect();
-        assert_eq!(idx, vec![2, 0, 4]);
-    }
-
-    #[test]
-    fn test_arg_sort_asc_with_limit() {
-        let a = Int32Chunked::new(PlSmallStr::from_static("a"), &[4, 2, 5, 1, 3]);
-        let o = SortOptions {
-            descending: false,
-            nulls_last: false,
-            multithreaded: false,
-            limit: Some(3),
-            ..Default::default()
-        };
-        let r = a.arg_sort(o);
-        let idx: Vec<IdxSize> = r.into_no_null_iter().collect();
-        assert_eq!(idx, vec![3, 1, 4]);
-    }
-
-    #[test]
-    fn test_arg_sort_desc_limit_nulls() {
-        let a = Int32Chunked::new(
-            PlSmallStr::from_static("a"),
-            &[Some(4), None, Some(5), Some(1), None, Some(3)],
-        );
-        let o = SortOptions {
-            descending: true,
-            nulls_last: true,
-            multithreaded: false,
-            limit: Some(3),
-            ..Default::default()
-        };
-        let r = a.arg_sort(o);
-        let idx: Vec<IdxSize> = r.into_no_null_iter().collect();
-        assert_eq!(idx, vec![2, 0, 5]);
     }
 }

@@ -322,7 +322,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        self.0.physical().arg_sort(options)
+        self.0.physical().arg_sort(options, None)
     }
 
     fn null_count(&self) -> usize {

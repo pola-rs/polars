@@ -196,7 +196,7 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        ChunkSort::arg_sort(&self.0, options)
+        ChunkSort::arg_sort(&self.0, options, None)
     }
 
     fn null_count(&self) -> usize {

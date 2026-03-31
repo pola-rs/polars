@@ -221,7 +221,6 @@ pub(super) fn arg_sort(s: &Column, descending: bool, nulls_last: bool) -> Polars
             nulls_last,
             multithreaded: true,
             maintain_order: false,
-            limit: None,
         })
         .into_column())
 }

@@ -292,7 +292,6 @@ impl PyExpr {
                 nulls_last,
                 multithreaded: true,
                 maintain_order: false,
-                limit: None,
             })
             .into()
     }

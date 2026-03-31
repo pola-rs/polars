@@ -42,8 +42,6 @@ pub struct SortOptions {
     /// If true maintain the order of equal elements.
     /// Default `false`.
     pub maintain_order: bool,
-    /// Limit a sort output, this is for optimization purposes and might be ignored.
-    pub limit: Option<IdxSize>,
 }
 
 /// Sort options for multi-series sorting.
@@ -109,7 +107,6 @@ impl Default for SortOptions {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
-            limit: None,
         }
     }
 }
@@ -240,7 +237,6 @@ impl From<&SortMultipleOptions> for SortOptions {
             nulls_last: value.nulls_last.first().copied().unwrap_or(false),
             multithreaded: value.multithreaded,
             maintain_order: value.maintain_order,
-            limit: None,
         }
     }
 }

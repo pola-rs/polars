@@ -66,25 +66,32 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
             descending,
             multithreaded: true,
             maintain_order: false,
-            limit: None,
         })
     }
 
     /// Retrieve the indexes needed to sort this array.
     pub fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        self.arg_sort_with_limit(options, None)
+    }
+
+    /// Retrieve the indexes needed to sort this array.
+    ///
+    /// `limit` limits a sort output, this is for optimization purposes and might be ignored.
+    pub fn arg_sort_with_limit(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
         if self.uses_lexical_ordering() {
             let iters = [self.iter_str()];
             arg_sort::arg_sort(
                 self.name().clone(),
                 iters,
                 options,
+                limit,
                 self.physical().null_count(),
                 self.len(),
                 IsSorted::Not,
                 false,
             )
         } else {
-            self.physical().arg_sort(options)
+            self.physical().arg_sort(options, limit)
         }
     }
 

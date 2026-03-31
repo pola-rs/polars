@@ -158,9 +158,9 @@ macro_rules! sort_with_fast_path {
 }
 
 macro_rules! arg_sort_fast_path {
-    ($ca:ident,  $options:expr) => {{
+    ($ca:ident, $options:expr, $limit:expr) => {{
         // if already sorted in required order we can just return 0..len
-        if $options.limit.is_none() &&
+        if $limit.is_none() &&
         ($options.descending && $ca.is_sorted_descending_flag() || ($ca.is_sorted_ascending_flag() && !$options.descending)) {
             // there are nulls
             if $ca.null_count() > 0 {
@@ -245,12 +245,16 @@ where
     }
 }
 
-fn arg_sort_numeric<T>(ca: &ChunkedArray<T>, mut options: SortOptions) -> IdxCa
+fn arg_sort_numeric<T>(
+    ca: &ChunkedArray<T>,
+    mut options: SortOptions,
+    limit: Option<IdxSize>,
+) -> IdxCa
 where
     T: PolarsNumericType,
 {
     options.multithreaded &= POOL.current_num_threads() > 1;
-    arg_sort_fast_path!(ca, options);
+    arg_sort_fast_path!(ca, options, limit);
     if ca.null_count() == 0 {
         let iter = ca
             .downcast_iter()
@@ -259,6 +263,7 @@ where
             ca.name().clone(),
             iter,
             options,
+            limit,
             ca.len(),
             ca.is_sorted_flag(),
         )
@@ -270,6 +275,7 @@ where
             ca.name().clone(),
             iter,
             options,
+            limit,
             ca.null_count(),
             ca.len(),
             ca.is_sorted_flag(),
@@ -328,8 +334,8 @@ where
         })
     }
 
-    fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        arg_sort_numeric(self, options)
+    fn arg_sort(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
+        arg_sort_numeric(self, options, limit)
     }
 
     /// # Panics
@@ -376,12 +382,11 @@ impl ChunkSort<StringType> for StringChunked {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
-            limit: None,
         })
     }
 
-    fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        self.as_binary().arg_sort(options)
+    fn arg_sort(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
+        self.as_binary().arg_sort(options, limit)
     }
 
     /// # Panics
@@ -448,17 +453,17 @@ impl ChunkSort<BinaryType> for BinaryChunked {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
-            limit: None,
         })
     }
 
-    fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        arg_sort_fast_path!(self, options);
+    fn arg_sort(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
+        arg_sort_fast_path!(self, options, limit);
         if self.null_count() == 0 {
             arg_sort::arg_sort_no_nulls(
                 self.name().clone(),
                 self.downcast_iter().map(|arr| arr.values_iter()),
                 options,
+                limit,
                 self.len(),
                 self.is_sorted_flag(),
             )
@@ -467,6 +472,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                 self.name().clone(),
                 self.downcast_iter().map(|arr| arr.iter()),
                 options,
+                limit,
                 self.null_count(),
                 self.len(),
                 self.is_sorted_flag(),
@@ -583,11 +589,10 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
-            limit: None,
         })
     }
 
-    fn arg_sort(&self, mut options: SortOptions) -> IdxCa {
+    fn arg_sort(&self, mut options: SortOptions, _limit: Option<IdxSize>) -> IdxCa {
         options.multithreaded &= POOL.current_num_threads() > 1;
         let ca = self.rechunk();
         let arr = ca.downcast_as_array();
@@ -662,7 +667,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
 impl ChunkSort<StructType> for StructChunked {
     fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<StructType> {
         options.multithreaded &= POOL.current_num_threads() > 1;
-        let idx = self.arg_sort(options);
+        let idx = self.arg_sort(options, None);
         let mut out = unsafe { self.take_unchecked(&idx) };
 
         let s = if options.descending {
@@ -678,16 +683,16 @@ impl ChunkSort<StructType> for StructChunked {
         self.sort_with(SortOptions::new().with_order_descending(descending))
     }
 
-    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+    fn arg_sort(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
         let bin = self.get_row_encoded(options).unwrap();
-        bin.arg_sort(Default::default())
+        bin.arg_sort(Default::default(), limit)
     }
 }
 
 impl ChunkSort<ListType> for ListChunked {
     fn sort_with(&self, mut options: SortOptions) -> ListChunked {
         options.multithreaded &= POOL.current_num_threads() > 1;
-        let idx = self.arg_sort(options);
+        let idx = self.arg_sort(options, None);
         let mut out = unsafe { self.take_unchecked(&idx) };
 
         let s = if options.descending {
@@ -703,7 +708,7 @@ impl ChunkSort<ListType> for ListChunked {
         self.sort_with(SortOptions::new().with_order_descending(descending))
     }
 
-    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+    fn arg_sort(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
         let bin = _get_rows_encoded_ca(
             self.name().clone(),
             &[self.clone().into_column()],
@@ -712,7 +717,7 @@ impl ChunkSort<ListType> for ListChunked {
             false,
         )
         .unwrap();
-        bin.arg_sort(Default::default())
+        bin.arg_sort(Default::default(), limit)
     }
 }
 
@@ -772,17 +777,17 @@ impl ChunkSort<BooleanType> for BooleanChunked {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
-            limit: None,
         })
     }
 
-    fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        arg_sort_fast_path!(self, options);
+    fn arg_sort(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
+        arg_sort_fast_path!(self, options, limit);
         if self.null_count() == 0 {
             arg_sort::arg_sort_no_nulls(
                 self.name().clone(),
                 self.downcast_iter().map(|arr| arr.values_iter()),
                 options,
+                limit,
                 self.len(),
                 self.is_sorted_flag(),
             )
@@ -791,6 +796,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
                 self.name().clone(),
                 self.downcast_iter().map(|arr| arr.iter()),
                 options,
+                limit,
                 self.null_count(),
                 self.len(),
                 self.is_sorted_flag(),
@@ -843,7 +849,6 @@ pub fn arg_sort(columns: &[Column], mut sort_options: SortMultipleOptions) -> Po
             nulls_last: sort_options.nulls_last[0],
             multithreaded: sort_options.multithreaded,
             maintain_order: sort_options.maintain_order,
-            limit: None,
         }))
     } else if sort_options.nulls_last.iter().all(|&x| x)
         || columns.iter().any(|c| c.dtype().is_nested())
@@ -924,19 +929,25 @@ mod test {
                 Some(1), // 7
             ],
         );
-        let idx = a.arg_sort(SortOptions {
-            descending: false,
-            ..Default::default()
-        });
+        let idx = a.arg_sort(
+            SortOptions {
+                descending: false,
+                ..Default::default()
+            },
+            None,
+        );
         let idx = idx.cont_slice().unwrap();
 
         let expected = [2, 4, 0, 3, 7, 6, 5, 1];
         assert_eq!(idx, expected);
 
-        let idx = a.arg_sort(SortOptions {
-            descending: true,
-            ..Default::default()
-        });
+        let idx = a.arg_sort(
+            SortOptions {
+                descending: true,
+                ..Default::default()
+            },
+            None,
+        );
         let idx = idx.cont_slice().unwrap();
         // the duplicates are in reverse order of appearance, so we cannot reverse expected
         let expected = [2, 4, 1, 5, 6, 0, 3, 7];
@@ -963,7 +974,6 @@ mod test {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
-            limit: None,
         });
         assert_eq!(
             Vec::from(&out),
@@ -983,7 +993,6 @@ mod test {
             nulls_last: true,
             multithreaded: true,
             maintain_order: false,
-            limit: None,
         });
         assert_eq!(
             Vec::from(&out),
@@ -1093,7 +1102,6 @@ mod test {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
-            limit: None,
         });
         let expected = &[None, None, Some("a"), Some("b"), Some("c")];
         assert_eq!(Vec::from(&out), expected);
@@ -1103,7 +1111,6 @@ mod test {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
-            limit: None,
         });
 
         let expected = &[None, None, Some("c"), Some("b"), Some("a")];
@@ -1114,7 +1121,6 @@ mod test {
             nulls_last: true,
             multithreaded: true,
             maintain_order: false,
-            limit: None,
         });
         let expected = &[Some("a"), Some("b"), Some("c"), None, None];
         assert_eq!(Vec::from(&out), expected);
@@ -1124,7 +1130,6 @@ mod test {
             nulls_last: true,
             multithreaded: true,
             maintain_order: false,
-            limit: None,
         });
         let expected = &[Some("c"), Some("b"), Some("a"), None, None];
         assert_eq!(Vec::from(&out), expected);

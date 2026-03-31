@@ -425,7 +425,6 @@ impl PySeries {
             nulls_last,
             multithreaded: true,
             maintain_order: false,
-            limit: None,
         };
         py.enter_polars(|| self.series.read().is_sorted(options))
     }

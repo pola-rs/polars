@@ -41,11 +41,8 @@ pub fn _arg_bottom_k(
 
     // Don't go into row encoding.
     if by_column.len() == 1 && !sort_options.maintain_order {
-        let sort_single_options = SortOptions {
-            limit: Some(k as IdxSize),
-            ..(&*sort_options).into()
-        };
-        let mut sorted = by_column[0].arg_sort(sort_single_options);
+        let sort_options: SortOptions = (&(*sort_options)).into();
+        let mut sorted = by_column[0].arg_sort_with_limit(sort_options, Some(k as IdxSize));
         // SortOptions::limit may be ignored so we have to make sure that the
         // array is properly truncated.
         if k < sorted.len() {

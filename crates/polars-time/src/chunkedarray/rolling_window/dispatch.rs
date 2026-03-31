@@ -127,7 +127,8 @@ where
     let by_logical = by.datetime().unwrap();
     let tu = by_logical.time_unit();
     let mut by_physical = Cow::Borrowed(by_logical.physical());
-    let sorting_indices_opt = (!by_is_sorted).then(|| by_physical.arg_sort(Default::default()));
+    let sorting_indices_opt =
+        (!by_is_sorted).then(|| by_physical.arg_sort(Default::default(), None));
 
     if let Some(sorting_indices) = &sorting_indices_opt {
         // SAFETY: `sorting_indices` is in-bounds because we checked that `ca.len() == by.len()` and

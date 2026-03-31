@@ -179,7 +179,7 @@ where
     }
 
     polars_ensure!(by.null_count() == 0, InvalidOperation: "null values in `by` column are not yet supported in 'interpolate_by' expression");
-    let sorting_indices = by.arg_sort(Default::default());
+    let sorting_indices = by.arg_sort(Default::default(), None);
     let sorting_indices = sorting_indices
         .cont_slice()
         .expect("arg sort produces single chunk");

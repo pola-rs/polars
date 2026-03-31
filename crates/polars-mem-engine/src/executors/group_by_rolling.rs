@@ -22,10 +22,13 @@ pub(super) fn sort_and_groups(
     let encoded = row_encode::encode_rows_vertical_par_unordered(keys)?;
     let encoded = encoded.rechunk().into_owned();
     let encoded = encoded.with_name(unique_column_name());
-    let idx = encoded.arg_sort(SortOptions {
-        maintain_order: true,
-        ..Default::default()
-    });
+    let idx = encoded.arg_sort(
+        SortOptions {
+            maintain_order: true,
+            ..Default::default()
+        },
+        None,
+    );
 
     let encoded = unsafe {
         df.push_column_unchecked(encoded.into_series().into());
