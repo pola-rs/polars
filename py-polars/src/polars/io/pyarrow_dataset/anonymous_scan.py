@@ -22,20 +22,21 @@ _BINOP_DISPATCH = {
     "gte": "__ge__",
     "and": "__and__",
     "or": "__or__",
-    "xor": "__xor__",
 }
 
 
-def _build_pyarrow_expr(node: list) -> Any:
+def _build_pyarrow_expr(node: list[Any]) -> Any:
     """Recursively build pyarrow expr from json."""
-    tag = node[0]
+    tag: str = node[0]  # first position will always be the tag
 
     if tag == "field":
-        return pa.compute.field(node[1])
+        name: str = node[1]
+        return pa.compute.field(name)
     if tag == "binop":
+        binop: str = node[1]
         left = _build_pyarrow_expr(node[2])
         right = _build_pyarrow_expr(node[3])
-        return getattr(left, _BINOP_DISPATCH[node[1]])(right)
+        return getattr(left, _BINOP_DISPATCH[binop])(right)
     if tag == "is_null":
         return _build_pyarrow_expr(node[1]).is_null()
     if tag == "is_not_null":
