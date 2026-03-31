@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use polars_core::config;
-use polars_error::polars_bail;
 use polars_plan::plans::{ExpandedPythonScan, python_df_to_rust};
 use polars_utils::format_pl_smallstr;
 use pyo3::exceptions::PyStopIteration;
@@ -37,14 +36,9 @@ pub fn python_dataset_scan_to_reader_builder(
                             Err(err) if err.matches(py, PyStopIteration::type_object(py))? => {
                                 Ok(None)
                             },
-                            Err(err) => {
-                                let mut msg = format!(
-                                    "caught exception during execution of a Python source, exception: {err}"
-                                );
-                                if let Some(Ok(tbk)) = err.traceback(py).map(|tbk| tbk.format()) {
-                                    msg = format!("{msg}\n{tbk}");
-                                };
-                                polars_bail!(ComputeError: "caught exception during execution of a Python source, exception")
+                            err => {
+                                let _ = err?;
+                                unreachable!()
                             },
                         }
                     })
