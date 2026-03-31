@@ -1,5 +1,7 @@
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
+#[cfg(all(feature = "csv", feature = "new_streaming"))]
+use polars_core::SINGLE_LOCK;
 
 use super::*;
 
@@ -265,6 +267,19 @@ fn test_lazy_query_3() {
         .agg([col("fats_g").max()])
         .collect()
         .unwrap();
+}
+
+#[test]
+#[cfg(all(feature = "csv", feature = "new_streaming"))]
+fn test_scan_csv_open_ended_slice_offset() -> PolarsResult<()> {
+    let _guard = SINGLE_LOCK.lock().unwrap();
+
+    let expected = scan_foods_csv().collect()?.slice(1, IdxSize::MAX as usize);
+    let result = scan_foods_csv().slice(1, IdxSize::MAX).collect()?;
+
+    assert!(result.equals_missing(&expected));
+
+    Ok(())
 }
 
 #[test]

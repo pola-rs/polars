@@ -1,11 +1,10 @@
-use std::ops::Range;
-
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_io::prelude::_csv_read_internal::CountLines;
 use polars_io::utils::compression::ByteSourceReader;
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_io::utils::stream_buf_reader::ReaderSource;
+use polars_utils::IdxSize;
 use polars_utils::mem::prefetch::prefetch_l2;
 use polars_utils::slice_enum::Slice;
 
@@ -33,6 +32,56 @@ pub(super) struct LineBatchSource {
     pub(super) verbose: bool,
 }
 
+#[derive(Clone, Copy)]
+struct GlobalPositiveSlice {
+    start: usize,
+    end: Option<usize>,
+}
+
+impl GlobalPositiveSlice {
+    fn from_slice(slice: Slice) -> Self {
+        let Slice::Positive { offset, len } = slice else {
+            panic!("cannot convert negative slice into csv pre-slice");
+        };
+
+        // `IdxSize::MAX` is also used to represent an unspecified/open-ended slice length.
+        let end = if len == IdxSize::MAX as usize {
+            None
+        } else {
+            Some(offset.saturating_add(len))
+        };
+
+        Self { start: offset, end }
+    }
+
+    fn split_at_file(
+        self,
+        current_row_offset: usize,
+        n_rows_this_file: usize,
+    ) -> SplitSlicePosition {
+        match self.end {
+            Some(end) => SplitSlicePosition::split_slice_at_file(
+                current_row_offset,
+                n_rows_this_file,
+                self.start..end,
+            ),
+            None => {
+                let next_row_offset = current_row_offset + n_rows_this_file;
+
+                if next_row_offset <= self.start {
+                    SplitSlicePosition::Before
+                } else {
+                    let n_rows_to_skip = self.start.saturating_sub(current_row_offset);
+                    SplitSlicePosition::Overlapping(
+                        n_rows_to_skip,
+                        n_rows_this_file - n_rows_to_skip,
+                    )
+                }
+            },
+        }
+    }
+}
+
 impl LineBatchSource {
     /// Returns the number of rows skipped from the start of the file according to CountLines.
     pub(crate) async fn run(self) -> PolarsResult<usize> {
@@ -48,7 +97,7 @@ impl LineBatchSource {
 
         let global_slice = if let Some(pre_slice) = pre_slice {
             match pre_slice {
-                Slice::Positive { .. } => Some(Range::<usize>::from(pre_slice)),
+                Slice::Positive { .. } => Some(GlobalPositiveSlice::from_slice(pre_slice)),
                 // IR lowering puts negative slice in separate node.
                 // TODO: Native line buffering for negative slice
                 Slice::Negative { .. } => unreachable!(),
@@ -94,11 +143,7 @@ impl LineBatchSource {
             row_offset += n_lines;
 
             let slice = if let Some(global_slice) = &global_slice {
-                match SplitSlicePosition::split_slice_at_file(
-                    prev_row_offset,
-                    n_lines,
-                    global_slice.clone(),
-                ) {
+                match global_slice.split_at_file(prev_row_offset, n_lines) {
                     // Note that we don't check that the skipped line batches actually contain this many
                     // lines.
                     SplitSlicePosition::Before => {
