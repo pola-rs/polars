@@ -1,6 +1,6 @@
 pub mod expr;
-pub(crate) mod ir_graph;
-pub(crate) mod ir_node_key;
+pub mod ir_graph;
+pub mod ir_node_key;
 
 use std::sync::Arc;
 
