@@ -226,7 +226,9 @@ pub fn int96_to_i64_ns(value: [u32; 3]) -> i64 {
     let nanoseconds = ((value[1] as i64) << 32) + value[0] as i64;
     let seconds = (day - JULIAN_DAY_OF_EPOCH) * SECONDS_PER_DAY;
 
-    seconds.saturating_mul(NANOS_PER_SECOND).saturating_add(nanoseconds)
+    seconds
+        .saturating_mul(NANOS_PER_SECOND)
+        .saturating_add(nanoseconds)
 }
 
 #[inline]
