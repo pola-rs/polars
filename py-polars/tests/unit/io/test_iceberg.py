@@ -260,6 +260,26 @@ class TestIcebergScanIO:
             (3, "3", datetime(2023, 3, 2, 22, 0)),
         ]
 
+    def test_scan_iceberg_filter_is_in_empty(self, tmp_path: Path) -> None:
+        tbl, _ = new_iceberg_table(
+            tmp_path,
+            schema=IcebergSchema(
+                NestedField(1, "my_column", LongType(), required=False)
+            ),
+        )
+
+        tbl.append(
+            pa.table(
+                {"my_column": [1, 2, 3, 4, 5]},
+                schema=pa.schema([("my_column", pa.int64())]),
+            )
+        )
+
+        result = pl.scan_iceberg(tbl).filter(pl.col("my_column").is_in([])).collect()
+
+        assert result.is_empty()
+        assert result.schema == {"my_column": pl.Int64}
+
 
 @pytest.mark.ci_only
 class TestIcebergExpressions:
