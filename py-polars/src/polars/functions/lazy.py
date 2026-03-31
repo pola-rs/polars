@@ -2715,14 +2715,15 @@ def rolling_corr(
         The number of values in the window that should be non-null before computing
         a result. If None, it will be set equal to window size.
     ddof
-        Delta degrees of freedom. The divisor used in calculations
-        is `N - ddof`, where `N` represents the number of elements.
+        Has no effect, do not use.
+
+        .. deprecated:: 1.40.0
     """
     if ddof != 1:
         issue_deprecation_warning(
             "the `ddof` parameter for `rolling_corr` is deprecated."
             " Correlation is invariant of `ddof`.",
-            version="1.39.4",
+            version="1.40.0",
         )
 
     if min_samples is None:
