@@ -104,7 +104,7 @@ def read_lines(
     >>> pl.read_lines(b"Hello\nworld")
     shape: (2, 1)
     ┌───────┐
-    │ lines │
+    │ line  │
     │ ---   │
     │ str   │
     ╞═══════╡
@@ -206,7 +206,7 @@ def scan_lines(
     >>> pl.scan_lines(b"Hello\nworld").collect()
     shape: (2, 1)
     ┌───────┐
-    │ lines │
+    │ line  │
     │ ---   │
     │ str   │
     ╞═══════╡
