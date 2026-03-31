@@ -1545,14 +1545,12 @@ def test_scan_sink_metrics_multiple_phases(
         .select(
             node_name=pl.col("line").str.extract(r"^([^:]*)"),
             io_total_bytes_requested=pl.col("line").str.extract(
-                r"total_bytes_requested=([\d\.]*)"
+                r"total_bytes_requested=([\d]*)"
             ),
             io_total_bytes_received=pl.col("line").str.extract(
-                r"total_bytes_received=([\d\.]*)"
+                r"total_bytes_received=([\d]*)"
             ),
-            io_total_bytes_sent=pl.col("line").str.extract(
-                r"total_bytes_sent=([\d\.]*)"
-            ),
+            io_total_bytes_sent=pl.col("line").str.extract(r"total_bytes_sent=([\d]*)"),
         )
         .join(
             pl.LazyFrame(
