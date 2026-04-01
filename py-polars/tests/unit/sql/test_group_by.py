@@ -589,10 +589,43 @@ def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
         pl.DataFrame({"len": pl.Series([5], dtype=pl.get_index_type())}),
     )
 
+    q = lf.group_by().agg("a")
+    plan = q.explain()
+
+    assert plan.startswith("SELECT")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": pl.Series([[0, 1, 2, 3, 4]])}),
+    )
+
+    q = lf.group_by().agg("a")
+    plan = q.explain()
+
+    assert plan.startswith("SELECT")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": pl.Series([[0, 1, 2, 3, 4]])}),
+    )
+
+    q = lf.group_by().agg("a", a_sum=pl.sum("a"))
+    plan = q.explain()
+
+    assert plan.startswith("SELECT")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {"a": pl.Series([[0, 1, 2, 3, 4]]), "a_sum": 10},
+            schema_overrides={"a_sum": pl.Int64},
+        ),
+    )
+
     q = lf.group_by(
         pl.lit(1).alias("1"),
         pl.lit(2).alias("2"),
-        pl.lit(3).alias("3"),
+        a_sum=pl.sum("a"),
     ).agg(pl.len())
     plan = q.explain()
 
@@ -604,9 +637,10 @@ def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
             {
                 "1": 1,
                 "2": 2,
-                "3": 3,
+                "a_sum": 10,
                 "len": pl.Series([5], dtype=pl.get_index_type()),
-            }
+            },
+            schema_overrides={"a_sum": pl.Int64},
         ),
     )
 
