@@ -3017,3 +3017,10 @@ def test_group_by_arg_max_boolean_26978() -> None:
             }
         ),
     )
+
+
+def test_structify_keyword_27147() -> None:
+    df = pl.DataFrame({"b": [1, 1, 2]})
+    result = df.group_by("b").agg(__structify=pl.len()).sort("b")
+    expected = pl.DataFrame({"b": [1, 2], "__structify": [2, 1]})
+    assert_frame_equal(result, expected)
