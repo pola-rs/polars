@@ -617,26 +617,20 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     .iter()
                     .all(|eir| is_scalar_ae(eir.node(), ctxt.expr_arena))
             {
-                if apply.is_some() {
-                    polars_bail!(
-                        ComputeError:
-                        "not implemented: map_groups with empty key exprs"
-                    )
-                } else {
-                    let exprs = if !keys.is_empty() {
-                        let mut keys = keys;
-                        keys.extend(aggs);
-                        keys
-                    } else {
-                        aggs
-                    };
+                polars_ensure!(
+                    apply.is_none(),
+                    ComputeError:
+                    "not implemented: map_groups with empty key exprs"
+                );
 
-                    IR::Select {
-                        input,
-                        expr: exprs,
-                        schema,
-                        options: ProjectionOptions::default(),
-                    }
+                let mut exprs = keys;
+                exprs.extend(aggs);
+
+                IR::Select {
+                    input,
+                    expr: exprs,
+                    schema,
+                    options: ProjectionOptions::default(),
                 }
             } else {
                 IR::GroupBy {
