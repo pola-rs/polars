@@ -231,7 +231,6 @@ impl FunctionIR {
             },
             RowIndex { name, offset, .. } => df.with_row_index(name.clone(), *offset),
             Hint(hint) => {
-                #[expect(irrefutable_let_patterns)]
                 if let HintIR::Sorted(s) = &hint
                     && let Some(s) = s.first()
                 {
