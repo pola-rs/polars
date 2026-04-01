@@ -457,14 +457,20 @@ impl SimplifyIRNodeOrder<'_> {
                 }
             },
 
-            IR::HConcat { .. }
-            | IR::SimpleProjection { .. }
-            | IR::Slice { .. }
-            | IR::ExtContext { .. } => {
+            IR::HConcat { .. } | IR::Slice { .. } | IR::ExtContext { .. } => {
                 if in_edges.iter().all(|k| get_edge!(*k).is_unordered()) {
                     for k in out_edges.iter() {
                         *get_edge_mut!(*k) = Edge::Unordered
                     }
+                }
+            },
+
+            IR::SimpleProjection { .. } => {
+                let ([in_edge], [out_edge]) = unpack_edges!(2);
+
+                if in_edge.is_unordered() || out_edge.is_unordered() {
+                    *in_edge = Edge::Unordered;
+                    *out_edge = Edge::Unordered;
                 }
             },
 

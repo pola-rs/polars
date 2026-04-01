@@ -673,6 +673,32 @@ def test_order_optimize_cspe_26277() -> None:
     )
 
 
+def test_order_optimize_simple_projection_bidirectional_propagation() -> None:
+    q = (
+        pl.LazyFrame({"a": 1, "b": 1})
+        .group_by("a", maintain_order=True)
+        .agg(pl.first("b"))
+        .select("b", "a")
+        .unique(maintain_order=False)
+    )
+
+    plan = q.explain()
+
+    assert "AGGREGATE[maintain_order: false]" in plan
+
+    q = (
+        pl.LazyFrame({"a": 1, "b": 1})
+        .group_by("a", maintain_order=False)
+        .agg(pl.first("b"))
+        .select("b", "a")
+        .unique(maintain_order=True)
+    )
+
+    plan = q.explain()
+
+    assert "UNIQUE[maintain_order: false" in plan
+
+
 def test_order_simplify_exprs() -> None:
     lf = pl.LazyFrame({"a": [0, 1, 2, 3, 4]})
 
