@@ -1,4 +1,5 @@
 //! APIs exposing `crate::parquet`'s statistics as arrow's statistics.
+
 use arrow::array::{
     Array, BinaryViewArray, BooleanArray, FixedSizeBinaryArray, MutableBinaryViewArray,
     MutableBooleanArray, MutableFixedSizeBinaryArray, MutablePrimitiveArray, NullArray,
@@ -210,7 +211,7 @@ impl ColumnStatistics {
 
             (D::Timestamp(time_unit, _), PPT::Int96) => {
                 rmap!(expect_int96, @prim [u32; 3], |x| {
-                    timestamp(self.logical_type.as_ref(), *time_unit, int96_to_i64_ns(x))
+                    timestamp(self.logical_type.as_ref(), *time_unit, int96_to_i64_ns(x).unwrap_or(i64::MAX))
                 })
             },
             (D::Timestamp(time_unit, _), PPT::Int64) => {
@@ -460,7 +461,7 @@ pub fn deserialize_all(
 
                 (D::Timestamp(time_unit, _), PPT::Int96) => {
                     rmap!(expect_int96, MutablePrimitiveArray::<i64>, @prim [u32; 3], |x| {
-                        timestamp(logical_type.as_ref(), *time_unit, int96_to_i64_ns(x))
+                        timestamp(logical_type.as_ref(), *time_unit, int96_to_i64_ns(x).unwrap_or(i64::MAX))
                     })
                 },
                 (D::Timestamp(time_unit, _), PPT::Int64) => {

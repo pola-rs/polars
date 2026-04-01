@@ -133,8 +133,8 @@ fn read_int96_timestamps() -> PolarsResult<()> {
     };
 
     // This data contains int96 timestamps in the year 1000 and 3000, which are out of range for
-    // Timestamp(TimeUnit::Nanoseconds). With saturating arithmetic, out-of-range values clamp
-    // to i64::MIN/i64::MAX instead of panicking. All time units should now work without error.
+    // Timestamp(TimeUnit::Nanoseconds). With checked arithmetic, out-of-range values return None
+    // instead of panicking. All time units should now work without error.
     for time_unit in [
         arrow::datatypes::TimeUnit::Nanosecond,
         arrow::datatypes::TimeUnit::Microsecond,
