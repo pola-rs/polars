@@ -832,9 +832,11 @@ impl Expr {
     /// │ 1      ┆ 16     │
     /// ╰────────┴────────╯
     /// ```
-    pub fn over<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, partition_by: E) -> Self {
+    pub fn over<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
+        self,
+        partition_by: E,
+    ) -> PolarsResult<Self> {
         self.over_with_options(Some(partition_by), None, Default::default())
-            .expect("We explicitly passed `partition_by`")
     }
 
     pub fn over_with_options<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
