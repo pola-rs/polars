@@ -154,7 +154,7 @@ jobs:
       fail-fast: false
       matrix:
         package: [polars-runtime-32, polars-runtime-64, polars-runtime-compat]
-        job_config: [linux-x64, linux-arm64, linux-musl-x64, linux-musl-arm64, macos-x64, macos-arm64, win-x64, win-arm64]
+        job_config: [linux-x64, linux-arm64, linux-riscv64, linux-musl-x64, linux-musl-arm64, macos-x64, macos-arm64, win-x64, win-arm64]
         include:
           - job_config: linux-x64
             os: ubuntu-latest
@@ -164,6 +164,10 @@ jobs:
             os: linux-arm-large
             architecture: aarch64
             target: aarch64-unknown-linux-gnu
+          - job_config: linux-riscv64
+            os: ubuntu-24.04-riscv
+            architecture: riscv64
+            target: riscv64gc-unknown-linux-gnu
           - job_config: linux-musl-x64
             os: ubuntu-latest
             architecture: x86-64
