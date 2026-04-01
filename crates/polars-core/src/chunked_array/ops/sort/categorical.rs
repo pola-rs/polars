@@ -91,7 +91,7 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
                 false,
             )
         } else {
-            self.physical().arg_sort(options, limit)
+            self.physical().arg_sort_with_limit(options, limit)
         }
     }
 

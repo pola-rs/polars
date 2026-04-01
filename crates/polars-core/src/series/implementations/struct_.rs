@@ -339,6 +339,6 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        self.0.arg_sort(options, None)
+        self.0.arg_sort(options)
     }
 }

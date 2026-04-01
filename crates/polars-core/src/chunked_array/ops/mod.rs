@@ -413,7 +413,14 @@ pub trait ChunkSort<T: PolarsDataType> {
     fn sort(&self, descending: bool) -> ChunkedArray<T>;
 
     /// Retrieve the indexes needed to sort this array.
-    fn arg_sort(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa;
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        self.arg_sort_with_limit(options, None)
+    }
+
+    /// Retrieve the indexes needed to sort this array with an optional limit.
+    ///
+    /// This limit can be used for performance but may be ignored by the implementor.
+    fn arg_sort_with_limit(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa;
 
     /// Retrieve the indexes need to sort this and the other arrays.
     #[allow(unused_variables)]

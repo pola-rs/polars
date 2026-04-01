@@ -116,7 +116,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        self.0.arg_sort(options, None)
+        self.0.arg_sort(options)
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {

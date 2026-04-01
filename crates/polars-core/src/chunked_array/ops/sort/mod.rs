@@ -334,7 +334,7 @@ where
         })
     }
 
-    fn arg_sort(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
+    fn arg_sort_with_limit(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
         arg_sort_numeric(self, options, limit)
     }
 
@@ -385,8 +385,8 @@ impl ChunkSort<StringType> for StringChunked {
         })
     }
 
-    fn arg_sort(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
-        self.as_binary().arg_sort(options, limit)
+    fn arg_sort_with_limit(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
+        self.as_binary().arg_sort_with_limit(options, limit)
     }
 
     /// # Panics
@@ -456,7 +456,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         })
     }
 
-    fn arg_sort(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
+    fn arg_sort_with_limit(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
         arg_sort_fast_path!(self, options, limit);
         if self.null_count() == 0 {
             arg_sort::arg_sort_no_nulls(
@@ -592,7 +592,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
         })
     }
 
-    fn arg_sort(&self, mut options: SortOptions, _limit: Option<IdxSize>) -> IdxCa {
+    fn arg_sort_with_limit(&self, mut options: SortOptions, _limit: Option<IdxSize>) -> IdxCa {
         options.multithreaded &= POOL.current_num_threads() > 1;
         let ca = self.rechunk();
         let arr = ca.downcast_as_array();
@@ -667,7 +667,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
 impl ChunkSort<StructType> for StructChunked {
     fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<StructType> {
         options.multithreaded &= POOL.current_num_threads() > 1;
-        let idx = self.arg_sort(options, None);
+        let idx = self.arg_sort(options);
         let mut out = unsafe { self.take_unchecked(&idx) };
 
         let s = if options.descending {
@@ -683,16 +683,16 @@ impl ChunkSort<StructType> for StructChunked {
         self.sort_with(SortOptions::new().with_order_descending(descending))
     }
 
-    fn arg_sort(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
+    fn arg_sort_with_limit(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
         let bin = self.get_row_encoded(options).unwrap();
-        bin.arg_sort(Default::default(), limit)
+        bin.arg_sort_with_limit(Default::default(), limit)
     }
 }
 
 impl ChunkSort<ListType> for ListChunked {
     fn sort_with(&self, mut options: SortOptions) -> ListChunked {
         options.multithreaded &= POOL.current_num_threads() > 1;
-        let idx = self.arg_sort(options, None);
+        let idx = self.arg_sort(options);
         let mut out = unsafe { self.take_unchecked(&idx) };
 
         let s = if options.descending {
@@ -708,7 +708,7 @@ impl ChunkSort<ListType> for ListChunked {
         self.sort_with(SortOptions::new().with_order_descending(descending))
     }
 
-    fn arg_sort(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
+    fn arg_sort_with_limit(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
         let bin = _get_rows_encoded_ca(
             self.name().clone(),
             &[self.clone().into_column()],
@@ -717,7 +717,7 @@ impl ChunkSort<ListType> for ListChunked {
             false,
         )
         .unwrap();
-        bin.arg_sort(Default::default(), limit)
+        bin.arg_sort_with_limit(Default::default(), limit)
     }
 }
 
@@ -780,7 +780,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
         })
     }
 
-    fn arg_sort(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
+    fn arg_sort_with_limit(&self, options: SortOptions, limit: Option<IdxSize>) -> IdxCa {
         arg_sort_fast_path!(self, options, limit);
         if self.null_count() == 0 {
             arg_sort::arg_sort_no_nulls(
@@ -929,25 +929,19 @@ mod test {
                 Some(1), // 7
             ],
         );
-        let idx = a.arg_sort(
-            SortOptions {
-                descending: false,
-                ..Default::default()
-            },
-            None,
-        );
+        let idx = a.arg_sort(SortOptions {
+            descending: false,
+            ..Default::default()
+        });
         let idx = idx.cont_slice().unwrap();
 
         let expected = [2, 4, 0, 3, 7, 6, 5, 1];
         assert_eq!(idx, expected);
 
-        let idx = a.arg_sort(
-            SortOptions {
-                descending: true,
-                ..Default::default()
-            },
-            None,
-        );
+        let idx = a.arg_sort(SortOptions {
+            descending: true,
+            ..Default::default()
+        });
         let idx = idx.cont_slice().unwrap();
         // the duplicates are in reverse order of appearance, so we cannot reverse expected
         let expected = [2, 4, 1, 5, 6, 0, 3, 7];

@@ -232,7 +232,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        ChunkSort::arg_sort(&self.0, options, None)
+        ChunkSort::arg_sort(&self.0, options)
     }
 
     fn null_count(&self) -> usize {

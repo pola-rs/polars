@@ -103,7 +103,7 @@ where
     T::Native: Float + Zero + One,
     ChunkedArray<T>: ChunkTakeUnchecked<IdxCa>,
 {
-    let sorting_indices = times.arg_sort(Default::default(), None);
+    let sorting_indices = times.arg_sort(Default::default());
     let sorted_values = unsafe { values.take_unchecked(&sorting_indices) };
     let sorted_times = unsafe { times.take_unchecked(&sorting_indices) };
     let sorting_indices = sorting_indices
