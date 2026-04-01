@@ -1265,6 +1265,8 @@ fn to_graph_rec<'a>(
             right_on,
             tmp_left_key_col,
             tmp_right_key_col,
+            left_by,
+            right_by,
             args,
         } => {
             let args = args.clone();
@@ -1282,6 +1284,8 @@ fn to_graph_rec<'a>(
                         right_on.clone(),
                         tmp_left_key_col.clone(),
                         tmp_right_key_col.clone(),
+                        left_by.clone(),
+                        right_by.clone(),
                         args,
                     ),
                     [

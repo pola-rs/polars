@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::VecDeque;
 
 use polars_core::prelude::*;
@@ -19,6 +20,7 @@ use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 pub struct AsOfJoinSideParams {
     pub on: PlSmallStr,
     pub tmp_key_col: Option<PlSmallStr>,
+    pub by: Vec<PlSmallStr>,
 }
 
 impl AsOfJoinSideParams {
@@ -64,6 +66,7 @@ pub struct AsOfJoinNode {
 }
 
 impl AsOfJoinNode {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         left_input_schema: SchemaRef,
         right_input_schema: SchemaRef,
@@ -71,6 +74,8 @@ impl AsOfJoinNode {
         right_on: PlSmallStr,
         tmp_left_key_col: Option<PlSmallStr>,
         tmp_right_key_col: Option<PlSmallStr>,
+        left_by: Option<Vec<PlSmallStr>>,
+        right_by: Option<Vec<PlSmallStr>>,
         args: JoinArgs,
     ) -> Self {
         let left_key_col = tmp_left_key_col.as_ref().unwrap_or(&left_on);
@@ -81,10 +86,12 @@ impl AsOfJoinNode {
         let left = AsOfJoinSideParams {
             on: left_on,
             tmp_key_col: tmp_left_key_col,
+            by: left_by.unwrap_or_default(),
         };
         let right = AsOfJoinSideParams {
             on: right_on,
             tmp_key_col: tmp_right_key_col,
+            by: right_by.unwrap_or_default(),
         };
 
         let params = AsOfJoinParams { left, right, args };
@@ -283,11 +290,36 @@ fn need_more_right_side(
     params: &AsOfJoinParams,
 ) -> PolarsResult<bool> {
     let options = params.as_of_options();
-    let left_key = left.column(params.left.key_col())?.as_materialized_series();
-    if left_key.is_empty() {
+    if left.height() == 0 {
         return Ok(false);
     }
-    // SAFETY: We just checked that left_key is not empty
+    if right.height() == 0 {
+        return Ok(true);
+    }
+    let mut left_last_group_keys = Vec::with_capacity(params.left.by.len());
+    for by in &params.left.by {
+        let col = left.column(by)?;
+        left_last_group_keys.push(unsafe { col.get_unchecked(col.len() - 1) });
+    }
+    // If there are `by` groups, first check that the right side has reached the
+    // group of the last left row before checking the key range.  Data arrives
+    // sorted by (by..., on), so if the last right row's group is still less than
+    // the last left row's group, we must wait for more right-side data.
+    for (left_by, right_by) in Iterator::zip(params.left.by.iter(), params.right.by.iter()) {
+        let left_by_col = left.column(left_by)?.as_materialized_series();
+        // SAFETY: We checked earlier that the dataframes are not empty
+        let left_last_group = unsafe { left_by_col.get_unchecked(left_by_col.len() - 1) };
+        let right_last_group = unsafe { right.get_unchecked(right_by, right.height() - 1) };
+        match PartialOrd::partial_cmp(&left_last_group, &right_last_group) {
+            Some(Ordering::Less) => return Ok(false),
+            Some(Ordering::Equal) => {},
+            Some(Ordering::Greater) => return Ok(true),
+            None => unreachable!(),
+        }
+    }
+
+    let left_key = left.column(params.left.key_col())?.as_materialized_series();
+    // SAFETY: We checked earlier that the dataframe is not empty
     let left_last_val = unsafe { left_key.get_unchecked(left_key.len() - 1) };
     let right_range_end = match (options.strategy, options.allow_eq) {
         (AsofStrategy::Forward, true) => {
@@ -308,7 +340,7 @@ fn need_more_right_side(
 
             // SAFETY: We just checked that right_range_end is in bounds
             let fst_greater_val =
-                unsafe { right.get_bypass_validity(params.right.key_col(), first_greater, false) };
+                unsafe { right.get_unchecked(params.right.key_col(), first_greater) };
             right.binary_search(|x| *x > fst_greater_val, params.right.key_col(), false)
         },
     };
@@ -320,6 +352,8 @@ fn prune_right_side(
     right: &mut DataFrameSearchBuffer,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
+    // TODO: [amber] Add the grouping logic here
+
     let left_key = left.column(params.left.key_col())?.as_materialized_series();
     if left.len() == 0 {
         return Ok(());
@@ -338,6 +372,8 @@ async fn compute_and_emit_task(
     mut send: PortSender,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
+    // TODO: [amber] Add the grouping logic here
+
     let options = params.as_of_options();
     while let Ok((left_df, right_buffer, seq, st)) = dist_recv.recv().await {
         let right_df = right_buffer.into_df();
