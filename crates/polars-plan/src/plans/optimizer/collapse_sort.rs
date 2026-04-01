@@ -151,7 +151,7 @@ fn try_prune_sort_with_sortedness(
     }
 
     // We can safely prune this sort node
-    if let Some((offset, len, None)) = slice {
+    if let Some((offset, len, _dyn_pred)) = slice {
         Some(IR::Slice {
             input: *input,
             offset: *offset,
