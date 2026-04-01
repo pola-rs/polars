@@ -625,7 +625,7 @@ def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
     q = lf.group_by(
         pl.lit(1).alias("1"),
         pl.lit(2).alias("2"),
-        a_sum=pl.sum("a"),
+        a_max=pl.max("a"),
     ).agg(pl.len())
     plan = q.explain()
 
@@ -637,10 +637,10 @@ def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
             {
                 "1": 1,
                 "2": 2,
-                "a_sum": 10,
+                "a_max": 4,
                 "len": pl.Series([5], dtype=pl.get_index_type()),
             },
-            schema_overrides={"a_sum": pl.Int64},
+            schema_overrides={"a_max": pl.Int64},
         ),
     )
 
