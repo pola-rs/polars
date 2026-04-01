@@ -117,6 +117,10 @@ bitflags!(
 
             /// Indicates that this expression does not produce any ordering into its output.
             const NON_ORDER_PRODUCING = 1 << 12;
+
+            /// In case there are multiple inputs some functions preserve the length
+            /// of the first input, irrespective of other inputs.
+            const LENGTH_PRESERVING_FIRST_INPUT = 1 << 13;
         }
 );
 
@@ -135,6 +139,10 @@ impl FunctionFlags {
 
     pub fn is_length_preserving(self) -> bool {
         self.contains(Self::LENGTH_PRESERVING)
+    }
+
+    pub fn preserves_length_of_first_input(self) -> bool {
+        self.contains(Self::LENGTH_PRESERVING_FIRST_INPUT)
     }
 
     pub fn observes_input_order(self) -> bool {

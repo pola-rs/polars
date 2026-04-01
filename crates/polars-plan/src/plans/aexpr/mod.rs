@@ -306,9 +306,12 @@ impl AExpr {
             | AExpr::AnonymousFunction { options, input, .. } => {
                 if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
                     true
-                } else if options.is_elementwise()
-                    || options.flags.contains(FunctionFlags::LENGTH_PRESERVING)
+                } else if options
+                    .flags
+                    .contains(FunctionFlags::LENGTH_PRESERVING_FIRST_INPUT)
                 {
+                    input[..1].iter().all(|e| e.is_scalar(arena))
+                } else if options.flags.contains(FunctionFlags::LENGTH_PRESERVING) {
                     input.iter().all(|e| e.is_scalar(arena))
                 } else {
                     false

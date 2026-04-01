@@ -29,7 +29,8 @@ impl IRBusinessFunction {
             B::BusinessDayCount { .. } => {
                 FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
-            B::AddBusinessDay { .. } | B::IsBusinessDay { .. } => FunctionOptions::elementwise(),
+            B::AddBusinessDay { .. } | B::IsBusinessDay { .. } => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::LENGTH_PRESERVING_FIRST_INPUT),
         }
     }
 }
