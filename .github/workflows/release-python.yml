@@ -19,6 +19,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.10'
+  PYTHON_VERSION_LINUX_RISCV64: '3.11'
   PYTHON_VERSION_WIN_ARM64: '3.11' # ARM64 Windows doesn't have older versions
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
@@ -263,7 +264,7 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
-        if: matrix.os != 'windows-11-arm'
+        if: matrix.os != 'windows-11-arm' && matrix.os != 'ubuntu-24.04-riscv'
         uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -273,6 +274,12 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION_WIN_ARM64 }}
+
+      - name: Set up Python (RISCV64 Linux)
+        if: matrix.os == 'ubuntu-24.04-riscv'
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION_LINUX_RISCV64 }}
 
       # Otherwise can't find `tomlq` after `pip install yq`
       - name: Add Python scripts folder to GITHUB_PATH (ARM64 Windows)
