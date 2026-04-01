@@ -176,6 +176,15 @@ impl OptimizationRule for SimplifyBooleanRule {
                 let ae = expr_arena.get(input.node());
                 eval_negate(ae)
             },
+            AExpr::Function {
+                input,
+                function: IRFunctionExpr::DynamicPred { pred },
+                options,
+            } if pred.id().is_none() => {
+                // The sender of this dynamic predicate was dropped,
+                // so the result is always true.
+                Some(AExpr::Literal(Scalar::from(true).into()))
+            },
             _ => None,
         };
         Ok(out)

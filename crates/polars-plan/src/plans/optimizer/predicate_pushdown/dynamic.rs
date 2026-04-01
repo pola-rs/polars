@@ -58,7 +58,7 @@ impl Debug for DynamicPredRef {
         if let Some(id) = self.id() {
             write!(f, "dynamic_pred: {:}", id)
         } else {
-            write!(f, "dynamic_pred: [dropped]")
+            write!(f, "dynamic_pred: dropped")
         }
     }
 }
