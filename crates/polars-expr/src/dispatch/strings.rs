@@ -744,6 +744,8 @@ pub(super) fn replace(s: &[Column], literal: bool, n: i64) -> PolarsResult<Colum
     let all = n < 0;
 
     let column = column.str()?;
+    let pat = pat.as_materialized_series_maintain_scalar();
+    let val = val.as_materialized_series_maintain_scalar();
     let pat = pat.str()?;
     let val = val.str()?;
 

@@ -1696,6 +1696,34 @@ fn test_single_group_result() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(all(feature = "new_streaming", feature = "regex", feature = "strings"))]
+fn test_streaming_string_replace_with_scalar_agg_pattern() -> PolarsResult<()> {
+    let df = df![
+        "foo" => ["123 bla 45 asd", "xyz 678 910t"],
+        "value" => ["A", "B"],
+    ]?;
+
+    let query = df.lazy().select([col("foo")
+        .str()
+        .replace(col("foo").first(), col("value"), false)
+        .alias("foo")]);
+
+    let expected = df!["foo" => ["A", "xyz 678 910t"]]?;
+    let in_memory = query
+        .clone()
+        .collect_with_engine(Engine::InMemory)?
+        .unwrap_single();
+    let streaming = query
+        .collect_with_engine(Engine::Streaming)?
+        .unwrap_single();
+
+    assert!(in_memory.equals_missing(&expected));
+    assert!(streaming.equals_missing(&expected));
+    assert!(streaming.equals_missing(&in_memory));
+    Ok(())
+}
+
+#[test]
 #[cfg(feature = "rank")]
 fn test_single_ranked_group() -> PolarsResult<()> {
     // tests type consistency of rank algorithm
