@@ -348,6 +348,9 @@ pub(super) fn optimize_functions(
                 length: length_node,
             })
         },
+        IRFunctionExpr::DynamicPred { pred } if pred.id().is_none() => {
+            Some(AExpr::Literal(Scalar::from(true).into()))
+        },
         _ => None,
     };
     Ok(out)
