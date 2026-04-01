@@ -574,3 +574,62 @@ def test_group_by_select_alias(query: str) -> None:
         }
     )
     assert_sql_matches(df, query=query, compare_with="sqlite")
+
+
+def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2, 3, 4]})
+
+    q = lf.group_by().agg(pl.len())
+    plan = q.explain()
+
+    assert plan.startswith("SELECT")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"len": pl.Series([5], dtype=pl.get_index_type())}),
+    )
+
+    q = lf.group_by(
+        pl.lit(1).alias("1"),
+        pl.lit(2).alias("2"),
+        pl.lit(3).alias("3"),
+    ).agg(pl.len())
+    plan = q.explain()
+
+    assert plan.startswith("SELECT")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "1": 1,
+                "2": 2,
+                "3": 3,
+                "len": pl.Series([5], dtype=pl.get_index_type()),
+            }
+        ),
+    )
+
+    q = lf.group_by().map_groups(lambda df: df, schema=lf.collect_schema())
+
+    with pytest.raises(pl.exceptions.ComputeError, match="not implemented"):
+        q.collect()
+
+    q = lf.group_by().having(pl.len() != 5).agg(pl.len())
+
+    plan = q.explain()
+
+    assert "AGGREGATE" not in plan
+
+    assert q.collect().shape == (0, 1)
+
+    q = lf.group_by().having(pl.len() == 5).agg(pl.len())
+
+    plan = q.explain()
+
+    assert "AGGREGATE" not in plan
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"len": pl.Series([5], dtype=pl.get_index_type())}),
+    )
