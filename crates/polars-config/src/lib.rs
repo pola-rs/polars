@@ -52,6 +52,9 @@ const DEFAULT_OOC_SPILL_POLICY: SpillPolicy = SpillPolicy::NoSpill;
 const OOC_SPILL_FORMAT: &str = "POLARS_OOC_SPILL_FORMAT";
 const DEFAULT_OOC_SPILL_FORMAT: SpillFormat = SpillFormat::Ipc;
 
+const JOIN_SAMPLE_LIMIT: &str = "POLARS_JOIN_SAMPLE_LIMIT";
+const DEFAULT_JOIN_SAMPLE_LIMIT: u64 = 10_000_000;
+
 static KNOWN_OPTIONS: &[&str] = &[
     // Public.
     VERBOSE,
@@ -90,6 +93,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_DRIFT_THRESHOLD,
     OOC_SPILL_POLICY,
     OOC_SPILL_FORMAT,
+    JOIN_SAMPLE_LIMIT,
 ];
 
 pub struct Config {
@@ -107,6 +111,7 @@ pub struct Config {
     import_interval_as_struct: AtomicBool,
     ooc_spill_policy: AtomicU8,
     ooc_spill_format: AtomicU8,
+    join_sample_limit: AtomicU64,
 }
 
 impl Config {
@@ -128,6 +133,7 @@ impl Config {
             import_interval_as_struct: AtomicBool::new(DEFAULT_IMPORT_INTERVAL_AS_STRUCT),
             ooc_spill_policy: AtomicU8::new(DEFAULT_OOC_SPILL_POLICY as u8),
             ooc_spill_format: AtomicU8::new(DEFAULT_OOC_SPILL_FORMAT as u8),
+            join_sample_limit: AtomicU64::new(DEFAULT_JOIN_SAMPLE_LIMIT),
         };
         cfg.reload_env_vars();
         cfg
@@ -215,6 +221,11 @@ impl Config {
                     .unwrap_or(DEFAULT_OOC_SPILL_FORMAT) as u8,
                 Ordering::Relaxed,
             ),
+            JOIN_SAMPLE_LIMIT => self.join_sample_limit.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_JOIN_SAMPLE_LIMIT),
+                Ordering::Relaxed,
+            ),
 
             _ => {
                 if var.starts_with("POLARS_") {
@@ -277,6 +288,10 @@ impl Config {
 
     pub fn ooc_spill_format(&self) -> SpillFormat {
         SpillFormat::from_discriminant(self.ooc_spill_format.load(Ordering::Relaxed))
+    }
+
+    pub fn join_sample_limit(&self) -> u64 {
+        self.join_sample_limit.load(Ordering::Relaxed)
     }
 }
 

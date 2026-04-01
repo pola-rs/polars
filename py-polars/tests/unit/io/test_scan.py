@@ -1517,6 +1517,78 @@ def test_scan_metrics(
     assert_frame_equal(out, df)
 
 
+@pytest.mark.write_disk
+def test_scan_sink_metrics_multiple_phases(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "a"
+    df = pl.DataFrame({"a": range(500)})
+
+    plmonkeypatch.setenv("POLARS_LOG_METRICS", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "1")
+
+    df.write_parquet(path, row_group_size=1)
+    expected_read_amount_bytes = 44000
+
+    capfd.readouterr()
+    pl.scan_parquet(path).collect()
+    capture = capfd.readouterr().err
+
+    assert (
+        sum(
+            1
+            for line in capture.splitlines()
+            if line.startswith("multi-scan[parquet]")
+            and f"total_bytes_received={expected_read_amount_bytes}" in line
+        )
+        == 1
+    )
+
+    capfd.readouterr()
+    (
+        pl.scan_parquet(path)
+        .join(pl.scan_parquet(path), on="a")
+        .sink_parquet(tmp_path / "b", row_group_size=1)
+    )
+    capture = capfd.readouterr().err
+
+    assert_frame_equal(
+        pl.scan_lines(io.StringIO(capture))
+        .select(
+            node_name=pl.col("line").str.extract(r"^([^:]*)"),
+            io_total_bytes_requested=pl.col("line").str.extract(
+                r"total_bytes_requested=([\d]*)"
+            ),
+            io_total_bytes_received=pl.col("line").str.extract(
+                r"total_bytes_received=([\d]*)"
+            ),
+            io_total_bytes_sent=pl.col("line").str.extract(r"total_bytes_sent=([\d]*)"),
+        )
+        .join(
+            pl.LazyFrame(
+                {"node_name": ["multi-scan[parquet]", "io-sink[single-file[parquet]]"]}
+            ),
+            on="node_name",
+            how="right",
+            maintain_order="right",
+        )
+        .collect(),
+        pl.DataFrame(
+            {
+                "io_total_bytes_requested": [f"{expected_read_amount_bytes}", "0"],
+                "io_total_bytes_received": [f"{expected_read_amount_bytes}", "0"],
+                "io_total_bytes_sent": ["0", "137260"],
+                "node_name": ["multi-scan[parquet]", "io-sink[single-file[parquet]]"],
+            }
+        ),
+    )
+
+    capfd.readouterr()
+
+
 def test_scan_slice_filter_pushdown_22790() -> None:
     f = io.BytesIO()
     df = pl.DataFrame({"a": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]})

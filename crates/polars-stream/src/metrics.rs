@@ -49,10 +49,20 @@ impl NodeMetrics {
     }
 
     fn add_io(&mut self, io_metrics: &IOMetrics) {
-        self.io_total_active_ns += io_metrics.io_timer.total_time_live_ns();
-        self.io_total_bytes_requested += io_metrics.bytes_requested.load();
-        self.io_total_bytes_received += io_metrics.bytes_received.load();
-        self.io_total_bytes_sent += io_metrics.bytes_sent.load();
+        // We consume the IOMetrics counters as they get re-used across phases.
+        let io_total_active_ns = io_metrics.io_timer.total_time_live_ns();
+
+        let io_total_active_ns_prev_call =
+            io_metrics.io_timer_consumed.fetch_max(io_total_active_ns);
+
+        let io_total_active_ns_delta = io_total_active_ns - io_total_active_ns_prev_call;
+        self.io_total_active_ns += io_total_active_ns_delta;
+
+        // Load-swap received before requested to ensure received<=requested.
+        self.io_total_bytes_received += io_metrics.bytes_received.swap(0);
+        self.io_total_bytes_requested += io_metrics.bytes_requested.swap(0);
+
+        self.io_total_bytes_sent += io_metrics.bytes_sent.swap(0);
     }
 
     fn start_state_update(&mut self) {
@@ -165,23 +175,27 @@ impl GraphMetrics {
     }
 }
 
-pub struct MetricsBuilder {
+pub struct NodeMetricsRegistrator {
     pub graph_key: GraphNodeKey,
     pub graph_metrics: Arc<parking_lot::Mutex<GraphMetrics>>,
 }
 
-impl MetricsBuilder {
-    pub fn new_io_metrics(&self) -> Arc<IOMetrics> {
-        let io_metrics: Arc<IOMetrics> = Default::default();
-
-        self.graph_metrics
-            .lock()
+impl NodeMetricsRegistrator {
+    /// # Panics
+    /// When debug_assertions enabled, panics if called more than once for a node within a single
+    /// phase.
+    pub fn register_io_metrics(&self, io_metrics: Arc<IOMetrics>) {
+        let mut guard = self.graph_metrics.lock();
+        let metrics_vec = guard
             .in_progress_io_metrics
             .entry(self.graph_key)
             .unwrap()
-            .or_default()
-            .push(Arc::clone(&io_metrics));
+            .or_default();
 
-        io_metrics
+        // Currently not expecting a single compute node to register multiple
+        // IO metrics.
+        debug_assert!(metrics_vec.is_empty());
+
+        metrics_vec.push(io_metrics);
     }
 }
