@@ -604,7 +604,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             // Should not be constructable from Python API, as it has mutually exclusive
             // `group_by().agg()` or `group_by().map_groups()`.
-            debug_assert!(!(apply.is_some() && !aggs.is_empty()));
+            let has_aggs = !aggs.is_empty();
+            debug_assert!(!(apply.is_some() && has_aggs));
             debug_assert!(
                 aggs.iter()
                     .all(|eir| is_scalar_ae(eir.node(), ctxt.expr_arena))
