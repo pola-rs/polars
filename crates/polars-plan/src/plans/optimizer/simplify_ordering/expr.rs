@@ -150,7 +150,8 @@ impl ExprOrderSimplifier<'_> {
 
     #[recursive::recursive]
     fn rec(&mut self, current_ae_node: Node, recursion: RecursionState) -> ObservableOrders {
-        use {ObservableOrders as O, RecursionState as RS};
+        use ObservableOrders as O;
+        use RecursionState as RS;
 
         macro_rules! check_return_cached {
             () => {

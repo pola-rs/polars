@@ -250,10 +250,10 @@ fn create_physical_expr_inner(
                     AExpr::Agg(_) => {
                         agg_col = true;
                     },
-                    AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
-                        if options.flags.returns_scalar() {
-                            agg_col = true;
-                        }
+                    AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. }
+                        if options.flags.returns_scalar() =>
+                    {
+                        agg_col = true;
                     },
                     _ => {},
                 }
