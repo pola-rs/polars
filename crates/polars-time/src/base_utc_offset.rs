@@ -21,10 +21,11 @@ pub fn base_utc_offset(
         TimeUnit::Microseconds => timestamp_us_to_datetime,
         TimeUnit::Milliseconds => timestamp_ms_to_datetime,
     };
-    ca.0.apply_values(|t| {
-        let ndt = timestamp_to_datetime(t);
-        let dt = time_zone.from_utc_datetime(&ndt);
-        dt.offset().base_utc_offset().num_milliseconds()
-    })
-    .into_duration(TimeUnit::Milliseconds)
+    ca.phys
+        .apply_values(|t| {
+            let ndt = timestamp_to_datetime(t);
+            let dt = time_zone.from_utc_datetime(&ndt);
+            dt.offset().base_utc_offset().num_milliseconds()
+        })
+        .into_duration(TimeUnit::Milliseconds)
 }

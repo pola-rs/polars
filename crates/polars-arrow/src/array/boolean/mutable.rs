@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::BooleanArray;
 use crate::array::physical_binary::extend_validity;
@@ -61,7 +61,7 @@ impl MutableBooleanArray {
     ) -> PolarsResult<Self> {
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != values.len())
+            .is_some_and(|validity| validity.len() != values.len())
         {
             polars_bail!(ComputeError:
                 "validity mask length must match the number of values",
@@ -69,8 +69,8 @@ impl MutableBooleanArray {
         }
 
         if dtype.to_physical_type() != PhysicalType::Boolean {
-            polars_bail!(oos =
-                "MutableBooleanArray can only be initialized with a DataType whose physical type is Boolean",
+            polars_bail!(
+                oos = "MutableBooleanArray can only be initialized with a DataType whose physical type is Boolean",
             )
         }
 
@@ -211,19 +211,20 @@ impl MutableBooleanArray {
                     validity.extend_constant(additional, true);
                 }
             },
-            None => {
-                self.values.extend_constant(additional, false);
-                if let Some(validity) = self.validity.as_mut() {
-                    validity.extend_constant(additional, false)
-                } else {
-                    self.init_validity();
-                    self.validity
-                        .as_mut()
-                        .unwrap()
-                        .extend_constant(additional, false)
-                };
-            },
+            None => self.extend_null(additional),
         };
+    }
+
+    pub fn extend_null(&mut self, additional: usize) {
+        if let Some(validity) = self.validity.as_mut() {
+            validity.extend_constant(additional, false)
+        } else {
+            let mut validity = MutableBitmap::with_capacity(self.values.capacity());
+            validity.extend_constant(self.len(), true);
+            validity.extend_constant(additional, false);
+            self.validity = Some(validity);
+        };
+        self.values.extend_constant(additional, false);
     }
 
     fn init_validity(&mut self) {
@@ -265,9 +266,10 @@ impl MutableBooleanArray {
         if value.is_none() && self.validity.is_none() {
             // When the validity is None, all elements so far are valid. When one of the elements is set of null,
             // the validity must be initialized.
-            self.validity = Some(MutableBitmap::from_trusted_len_iter(
-                std::iter::repeat(true).take(self.len()),
-            ));
+            self.validity = Some(MutableBitmap::from_trusted_len_iter(std::iter::repeat_n(
+                true,
+                self.len(),
+            )));
         }
         if let Some(x) = self.validity.as_mut() {
             x.set(index, value.is_some())

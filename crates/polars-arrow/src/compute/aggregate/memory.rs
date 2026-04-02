@@ -1,6 +1,7 @@
 use crate::array::*;
 use crate::bitmap::Bitmap;
 use crate::datatypes::PhysicalType;
+use crate::types::Index;
 pub use crate::types::PrimitiveType;
 use crate::{match_integer_type, with_match_primitive_type_full};
 fn validity_size(validity: Option<&Bitmap>) -> usize {
@@ -18,7 +19,7 @@ macro_rules! dyn_binary {
         let values_end = offsets[offsets.len() - 1] as usize;
 
         values_end - values_start
-            + offsets.len() * std::mem::size_of::<$o>()
+            + offsets.len() * size_of::<$o>()
             + validity_size(array.validity())
     }};
 }
@@ -50,7 +51,7 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
         },
         Primitive(PrimitiveType::DaysMs) => {
             let array = array.as_any().downcast_ref::<DaysMsArray>().unwrap();
-            array.values().len() * std::mem::size_of::<i32>() * 2 + validity_size(array.validity())
+            array.values().len() * size_of::<i32>() * 2 + validity_size(array.validity())
         },
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             let array = array
@@ -58,7 +59,7 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
                 .downcast_ref::<PrimitiveArray<$T>>()
                 .unwrap();
 
-            array.values().len() * std::mem::size_of::<$T>() + validity_size(array.validity())
+            array.values().len() * size_of::<$T>() + validity_size(array.validity())
         }),
         Binary => dyn_binary!(array, BinaryArray<i32>, i32),
         FixedSizeBinary => {
@@ -73,8 +74,15 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
         LargeUtf8 => dyn_binary!(array, Utf8Array<i64>, i64),
         List => {
             let array = array.as_any().downcast_ref::<ListArray<i32>>().unwrap();
-            estimated_bytes_size(array.values().as_ref())
-                + array.offsets().len_proxy() * std::mem::size_of::<i32>()
+            estimated_bytes_size(
+                array
+                    .values()
+                    .sliced(
+                        array.offsets().first().to_usize(),
+                        array.offsets().range().to_usize(),
+                    )
+                    .as_ref(),
+            ) + array.offsets().len_proxy() * size_of::<i32>()
                 + validity_size(array.validity())
         },
         FixedSizeList => {
@@ -83,8 +91,15 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
         },
         LargeList => {
             let array = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
-            estimated_bytes_size(array.values().as_ref())
-                + array.offsets().len_proxy() * std::mem::size_of::<i64>()
+            estimated_bytes_size(
+                array
+                    .values()
+                    .sliced(
+                        array.offsets().first().to_usize(),
+                        array.offsets().range().to_usize(),
+                    )
+                    .as_ref(),
+            ) + array.offsets().len_proxy() * size_of::<i64>()
                 + validity_size(array.validity())
         },
         Struct => {
@@ -99,11 +114,11 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
         },
         Union => {
             let array = array.as_any().downcast_ref::<UnionArray>().unwrap();
-            let types = array.types().len() * std::mem::size_of::<i8>();
+            let types = array.types().len() * size_of::<i8>();
             let offsets = array
                 .offsets()
                 .as_ref()
-                .map(|x| x.len() * std::mem::size_of::<i32>())
+                .map(|x| x.len() * size_of::<i32>())
                 .unwrap_or_default();
             let fields = array
                 .fields()
@@ -124,7 +139,7 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
         BinaryView => binview_size::<[u8]>(array.as_any().downcast_ref().unwrap()),
         Map => {
             let array = array.as_any().downcast_ref::<MapArray>().unwrap();
-            let offsets = array.offsets().len_proxy() * std::mem::size_of::<i32>();
+            let offsets = array.offsets().len_proxy() * size_of::<i32>();
             offsets + estimated_bytes_size(array.field().as_ref()) + validity_size(array.validity())
         },
     }

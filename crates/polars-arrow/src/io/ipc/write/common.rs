@@ -1,10 +1,14 @@
 use std::borrow::{Borrow, Cow};
 
+use arrow_format::ipc;
+use arrow_format::ipc::KeyValue;
 use arrow_format::ipc::planus::Builder;
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use bytes::Bytes;
+use polars_error::{PolarsResult, polars_bail, polars_err};
+use polars_utils::compression::ZstdLevel;
 
 use super::super::IpcField;
-use super::{write, write_dictionary};
+use super::write;
 use crate::array::*;
 use crate::datatypes::*;
 use crate::io::ipc::endianness::is_native_little_endian;
@@ -12,6 +16,7 @@ use crate::io::ipc::read::Dictionaries;
 use crate::legacy::prelude::LargeListArray;
 use crate::match_integer_type;
 use crate::record_batch::RecordBatchT;
+use crate::types::Index;
 
 /// Compression codec
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -19,7 +24,7 @@ pub enum Compression {
     /// LZ4 (framed)
     LZ4,
     /// ZSTD
-    ZSTD,
+    ZSTD(ZstdLevel),
 }
 
 /// Options declaring the behaviour of writing to IPC
@@ -30,12 +35,12 @@ pub struct WriteOptions {
     pub compression: Option<Compression>,
 }
 
-fn encode_dictionary(
+/// Find the dictionary that are new and need to be encoded.
+pub fn dictionaries_to_encode(
     field: &IpcField,
     array: &dyn Array,
-    options: &WriteOptions,
     dictionary_tracker: &mut DictionaryTracker,
-    encoded_dictionaries: &mut Vec<EncodedData>,
+    dicts_to_encode: &mut Vec<(i64, Box<dyn Array>)>,
 ) -> PolarsResult<()> {
     use PhysicalType::*;
     match array.dtype().to_physical_type() {
@@ -45,45 +50,36 @@ fn encode_dictionary(
             let dict_id = field.dictionary_id
                 .ok_or_else(|| polars_err!(InvalidOperation: "Dictionaries must have an associated id"))?;
 
-            let emit = dictionary_tracker.insert(dict_id, array)?;
+            if dictionary_tracker.insert(dict_id, array)? {
+                dicts_to_encode.push((dict_id, array.to_boxed()));
+            }
 
             let array = array.as_any().downcast_ref::<DictionaryArray<$T>>().unwrap();
             let values = array.values();
-            encode_dictionary(field,
+            // @Q? Should this not pick fields[0]?
+            dictionaries_to_encode(field,
                 values.as_ref(),
-                options,
                 dictionary_tracker,
-                encoded_dictionaries
+                dicts_to_encode,
             )?;
 
-            if emit {
-                encoded_dictionaries.push(dictionary_batch_to_bytes::<$T>(
-                    dict_id,
-                    array,
-                    options,
-                    is_native_little_endian(),
-                ));
-            };
             Ok(())
         }),
         Struct => {
             let array = array.as_any().downcast_ref::<StructArray>().unwrap();
             let fields = field.fields.as_slice();
             if array.fields().len() != fields.len() {
-                polars_bail!(InvalidOperation:
-                    "The number of fields in a struct must equal the number of children in IpcField".to_string(),
-                );
+                polars_bail!(InvalidOperation: "The number of fields in a struct must equal the number of children in IpcField");
             }
             fields
                 .iter()
                 .zip(array.values().iter())
                 .try_for_each(|(field, values)| {
-                    encode_dictionary(
+                    dictionaries_to_encode(
                         field,
                         values.as_ref(),
-                        options,
                         dictionary_tracker,
-                        encoded_dictionaries,
+                        dicts_to_encode,
                     )
                 })
         },
@@ -93,14 +89,8 @@ fn encode_dictionary(
                 .downcast_ref::<ListArray<i32>>()
                 .unwrap()
                 .values();
-            let field = &field.fields[0]; // todo: error instead
-            encode_dictionary(
-                field,
-                values.as_ref(),
-                options,
-                dictionary_tracker,
-                encoded_dictionaries,
-            )
+            let field = field.fields.first().ok_or_else(|| polars_err!(ComputeError: "Invalid IPC field structure: expected nested field but fields vector is empty"))?;
+            dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
         LargeList => {
             let values = array
@@ -108,14 +98,8 @@ fn encode_dictionary(
                 .downcast_ref::<ListArray<i64>>()
                 .unwrap()
                 .values();
-            let field = &field.fields[0]; // todo: error instead
-            encode_dictionary(
-                field,
-                values.as_ref(),
-                options,
-                dictionary_tracker,
-                encoded_dictionaries,
-            )
+            let field = field.fields.first().ok_or_else(|| polars_err!(ComputeError: "Invalid IPC field structure: expected nested field but fields vector is empty"))?;
+            dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
         FixedSizeList => {
             let values = array
@@ -123,14 +107,8 @@ fn encode_dictionary(
                 .downcast_ref::<FixedSizeListArray>()
                 .unwrap()
                 .values();
-            let field = &field.fields[0]; // todo: error instead
-            encode_dictionary(
-                field,
-                values.as_ref(),
-                options,
-                dictionary_tracker,
-                encoded_dictionaries,
-            )
+            let field = field.fields.first().ok_or_else(|| polars_err!(ComputeError: "Invalid IPC field structure: expected nested field but fields vector is empty"))?;
+            dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
         Union => {
             let values = array
@@ -138,7 +116,7 @@ fn encode_dictionary(
                 .downcast_ref::<UnionArray>()
                 .unwrap()
                 .fields();
-            let fields = &field.fields[..]; // todo: error instead
+            let fields = field.fields.as_slice();
             if values.len() != fields.len() {
                 polars_bail!(InvalidOperation:
                     "The number of fields in a union must equal the number of children in IpcField"
@@ -148,27 +126,56 @@ fn encode_dictionary(
                 .iter()
                 .zip(values.iter())
                 .try_for_each(|(field, values)| {
-                    encode_dictionary(
+                    dictionaries_to_encode(
                         field,
                         values.as_ref(),
-                        options,
                         dictionary_tracker,
-                        encoded_dictionaries,
+                        dicts_to_encode,
                     )
                 })
         },
         Map => {
             let values = array.as_any().downcast_ref::<MapArray>().unwrap().field();
-            let field = &field.fields[0]; // todo: error instead
-            encode_dictionary(
-                field,
-                values.as_ref(),
-                options,
-                dictionary_tracker,
-                encoded_dictionaries,
-            )
+            let field = field.fields.first().ok_or_else(|| polars_err!(ComputeError: "Invalid IPC field structure: expected nested field but fields vector is empty"))?;
+            dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
     }
+}
+
+/// Encode a dictionary array with a certain id.
+///
+/// # Panics
+///
+/// This will panic if the given array is not a [`DictionaryArray`].
+pub fn encode_dictionary(
+    dict_id: i64,
+    array: &dyn Array,
+    options: &WriteOptions,
+) -> PolarsResult<EncodedData> {
+    let PhysicalType::Dictionary(key_type) = array.dtype().to_physical_type() else {
+        panic!("Given array is not a DictionaryArray")
+    };
+
+    match_integer_type!(key_type, |$T| {
+        let array: &DictionaryArray<$T> = array.as_any().downcast_ref().unwrap();
+
+        encode_dictionary_values(dict_id, array.values().as_ref(), options)
+    })
+}
+
+pub fn encode_new_dictionaries(
+    field: &IpcField,
+    array: &dyn Array,
+    options: &WriteOptions,
+    dictionary_tracker: &mut DictionaryTracker,
+    encoded_dictionaries: &mut Vec<EncodedData>,
+) -> PolarsResult<()> {
+    let mut dicts_to_encode = Vec::new();
+    dictionaries_to_encode(field, array, dictionary_tracker, &mut dicts_to_encode)?;
+    for (dict_id, dict_array) in dicts_to_encode {
+        encoded_dictionaries.push(encode_dictionary(dict_id, dict_array.as_ref(), options)?);
+    }
+    Ok(())
 }
 
 pub fn encode_chunk(
@@ -199,7 +206,7 @@ pub fn encode_chunk_amortized(
     let mut encoded_dictionaries = vec![];
 
     for (field, array) in fields.iter().zip(chunk.as_ref()) {
-        encode_dictionary(
+        encode_new_dictionaries(
             field,
             array.as_ref(),
             options,
@@ -207,8 +214,7 @@ pub fn encode_chunk_amortized(
             &mut encoded_dictionaries,
         )?;
     }
-
-    chunk_to_bytes_amortized(chunk, options, encoded_message);
+    encode_record_batch(chunk, options, encoded_message);
 
     Ok(encoded_dictionaries)
 }
@@ -219,7 +225,7 @@ fn serialize_compression(
     if let Some(compression) = compression {
         let codec = match compression {
             Compression::LZ4 => arrow_format::ipc::CompressionType::Lz4Frame,
-            Compression::ZSTD => arrow_format::ipc::CompressionType::Zstd,
+            Compression::ZSTD(_) => arrow_format::ipc::CompressionType::Zstd,
         };
         Some(Box::new(arrow_format::ipc::BodyCompression {
             codec,
@@ -231,7 +237,7 @@ fn serialize_compression(
 }
 
 fn set_variadic_buffer_counts(counts: &mut Vec<i64>, array: &dyn Array) {
-    match array.dtype() {
+    match array.dtype().to_storage() {
         ArrowDataType::Utf8View => {
             let array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
             counts.push(array.data_buffers().len() as i64);
@@ -247,20 +253,24 @@ fn set_variadic_buffer_counts(counts: &mut Vec<i64>, array: &dyn Array) {
             }
         },
         ArrowDataType::LargeList(_) => {
+            // Subslicing can change the variadic buffer count, so we have to
+            // slice here as well to stay synchronized.
             let array = array.as_any().downcast_ref::<LargeListArray>().unwrap();
-            set_variadic_buffer_counts(counts, array.values().as_ref())
+            let offsets = array.offsets().buffer();
+            let first = *offsets.first().unwrap();
+            let last = *offsets.last().unwrap();
+            let subslice = array
+                .values()
+                .sliced(first.to_usize(), last.to_usize() - first.to_usize());
+            set_variadic_buffer_counts(counts, &*subslice)
         },
         ArrowDataType::FixedSizeList(_, _) => {
             let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             set_variadic_buffer_counts(counts, array.values().as_ref())
         },
-        ArrowDataType::Dictionary(_, _, _) => {
-            let array = array
-                .as_any()
-                .downcast_ref::<DictionaryArray<u32>>()
-                .unwrap();
-            set_variadic_buffer_counts(counts, array.values().as_ref())
-        },
+        // Don't traverse dictionary values as those are set when the `Dictionary` IPC struct
+        // is read.
+        ArrowDataType::Dictionary(_, _, _) => (),
         _ => (),
     }
 }
@@ -281,48 +291,87 @@ fn gc_bin_view<'a, T: ViewType + ?Sized>(
     }
 }
 
+pub fn encode_array(
+    array: &Box<dyn Array>,
+    options: &WriteOptions,
+    variadic_buffer_counts: &mut Vec<i64>,
+    buffers: &mut Vec<ipc::Buffer>,
+    arrow_data: &mut Vec<u8>,
+    nodes: &mut Vec<ipc::FieldNode>,
+    offset: &mut i64,
+) {
+    // We don't want to write all buffers in sliced arrays.
+    let array = match array.dtype() {
+        ArrowDataType::BinaryView => {
+            let concrete_arr = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+            gc_bin_view(array, concrete_arr)
+        },
+        ArrowDataType::Utf8View => {
+            let concrete_arr = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+            gc_bin_view(array, concrete_arr)
+        },
+        _ => Cow::Borrowed(array),
+    };
+    let array = array.as_ref().as_ref();
+
+    set_variadic_buffer_counts(variadic_buffer_counts, array);
+
+    write(
+        array,
+        buffers,
+        arrow_data,
+        nodes,
+        offset,
+        is_native_little_endian(),
+        options.compression,
+    )
+}
+
 /// Write [`RecordBatchT`] into two sets of bytes, one for the header (ipc::Schema::Message) and the
 /// other for the batch's data
-fn chunk_to_bytes_amortized(
+pub fn encode_record_batch(
     chunk: &RecordBatchT<Box<dyn Array>>,
     options: &WriteOptions,
     encoded_message: &mut EncodedData,
 ) {
     let mut nodes: Vec<arrow_format::ipc::FieldNode> = vec![];
     let mut buffers: Vec<arrow_format::ipc::Buffer> = vec![];
-    let mut arrow_data = std::mem::take(&mut encoded_message.arrow_data);
-    arrow_data.clear();
+    encoded_message.arrow_data.clear();
 
     let mut offset = 0;
     let mut variadic_buffer_counts = vec![];
     for array in chunk.arrays() {
-        // We don't want to write all buffers in sliced arrays.
-        let array = match array.dtype() {
-            ArrowDataType::BinaryView => {
-                let concrete_arr = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
-                gc_bin_view(array, concrete_arr)
-            },
-            ArrowDataType::Utf8View => {
-                let concrete_arr = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-                gc_bin_view(array, concrete_arr)
-            },
-            _ => Cow::Borrowed(array),
-        };
-        let array = array.as_ref().as_ref();
-
-        set_variadic_buffer_counts(&mut variadic_buffer_counts, array);
-
-        write(
+        encode_array(
             array,
+            options,
+            &mut variadic_buffer_counts,
             &mut buffers,
-            &mut arrow_data,
+            &mut encoded_message.arrow_data,
             &mut nodes,
             &mut offset,
-            is_native_little_endian(),
-            options.compression,
-        )
+        );
     }
 
+    commit_encoded_arrays(
+        chunk.len(),
+        options,
+        variadic_buffer_counts,
+        buffers,
+        nodes,
+        None,
+        encoded_message,
+    );
+}
+
+pub fn commit_encoded_arrays(
+    array_len: usize,
+    options: &WriteOptions,
+    variadic_buffer_counts: Vec<i64>,
+    buffers: Vec<ipc::Buffer>,
+    nodes: Vec<ipc::FieldNode>,
+    custom_metadata: Option<Vec<KeyValue>>,
+    encoded_message: &mut EncodedData,
+) {
     let variadic_buffer_counts = if variadic_buffer_counts.is_empty() {
         None
     } else {
@@ -335,36 +384,32 @@ fn chunk_to_bytes_amortized(
         version: arrow_format::ipc::MetadataVersion::V5,
         header: Some(arrow_format::ipc::MessageHeader::RecordBatch(Box::new(
             arrow_format::ipc::RecordBatch {
-                length: chunk.len() as i64,
+                length: array_len as i64,
                 nodes: Some(nodes),
                 buffers: Some(buffers),
                 compression,
                 variadic_buffer_counts,
             },
         ))),
-        body_length: arrow_data.len() as i64,
-        custom_metadata: None,
+        body_length: encoded_message.arrow_data.len() as i64,
+        custom_metadata,
     };
 
     let mut builder = Builder::new();
     let ipc_message = builder.finish(&message, None);
     encoded_message.ipc_message = ipc_message.to_vec();
-    encoded_message.arrow_data = arrow_data
 }
 
-/// Write dictionary values into two sets of bytes, one for the header (ipc::Schema::Message) and the
-/// other for the data
-fn dictionary_batch_to_bytes<K: DictionaryKey>(
+pub fn encode_dictionary_values(
     dict_id: i64,
-    array: &DictionaryArray<K>,
+    values_array: &dyn Array,
     options: &WriteOptions,
-    is_little_endian: bool,
-) -> EncodedData {
+) -> PolarsResult<EncodedData> {
     let mut nodes: Vec<arrow_format::ipc::FieldNode> = vec![];
     let mut buffers: Vec<arrow_format::ipc::Buffer> = vec![];
     let mut arrow_data: Vec<u8> = vec![];
     let mut variadic_buffer_counts = vec![];
-    set_variadic_buffer_counts(&mut variadic_buffer_counts, array.values().as_ref());
+    set_variadic_buffer_counts(&mut variadic_buffer_counts, values_array);
 
     let variadic_buffer_counts = if variadic_buffer_counts.is_empty() {
         None
@@ -372,15 +417,14 @@ fn dictionary_batch_to_bytes<K: DictionaryKey>(
         Some(variadic_buffer_counts)
     };
 
-    let length = write_dictionary(
-        array,
+    write(
+        values_array,
         &mut buffers,
         &mut arrow_data,
         &mut nodes,
         &mut 0,
-        is_little_endian,
+        is_native_little_endian(),
         options.compression,
-        false,
     );
 
     let compression = serialize_compression(options.compression);
@@ -391,7 +435,7 @@ fn dictionary_batch_to_bytes<K: DictionaryKey>(
             arrow_format::ipc::DictionaryBatch {
                 id: dict_id,
                 data: Some(Box::new(arrow_format::ipc::RecordBatch {
-                    length: length as i64,
+                    length: values_array.len() as i64,
                     nodes: Some(nodes),
                     buffers: Some(buffers),
                     compression,
@@ -407,10 +451,10 @@ fn dictionary_batch_to_bytes<K: DictionaryKey>(
     let mut builder = Builder::new();
     let ipc_message = builder.finish(&message, None);
 
-    EncodedData {
+    Ok(EncodedData {
         ipc_message: ipc_message.to_vec(),
         arrow_data,
-    }
+    })
 }
 
 /// Keeps track of dictionaries that have been written, to avoid emitting the same dictionary
@@ -432,7 +476,7 @@ impl DictionaryTracker {
     ///   has never been seen before, return `Ok(true)` to indicate that the dictionary was just
     ///   inserted.
     pub fn insert(&mut self, dict_id: i64, array: &dyn Array) -> PolarsResult<bool> {
-        let values = match array.dtype() {
+        let values = match array.dtype().to_storage() {
             ArrowDataType::Dictionary(key_type, _, _) => {
                 match_integer_type!(key_type, |$T| {
                     let array = array
@@ -473,6 +517,15 @@ pub struct EncodedData {
     pub arrow_data: Vec<u8>,
 }
 
+/// Stores the encoded data, which is an ipc::Schema::Message, and optional Arrow data
+#[derive(Debug, Default)]
+pub struct EncodedDataBytes {
+    /// An encoded ipc::Schema::Message
+    pub ipc_message: Bytes,
+    /// Arrow buffers to be written, should be an empty vec for schema messages
+    pub arrow_data: Bytes,
+}
+
 /// Calculate an 8-byte boundary and return the number of bytes needed to pad to 8 bytes
 #[inline]
 pub(crate) fn pad_to_64(len: usize) -> usize {
@@ -486,7 +539,7 @@ pub struct Record<'a> {
     fields: Option<Cow<'a, [IpcField]>>,
 }
 
-impl<'a> Record<'a> {
+impl Record<'_> {
     /// Get the IPC fields for this record.
     pub fn fields(&self) -> Option<&[IpcField]> {
         self.fields.as_deref()
@@ -528,5 +581,18 @@ where
             columns: Cow::Borrowed(columns),
             fields: fields.map(|f| f.into()),
         }
+    }
+}
+
+/// Create an IPC Block. Will panic when size limitations are not met.
+pub fn arrow_ipc_block(
+    offset: usize,
+    meta_data_length: usize,
+    body_length: usize,
+) -> arrow_format::ipc::Block {
+    arrow_format::ipc::Block {
+        offset: i64::try_from(offset).unwrap(),
+        meta_data_length: i32::try_from(meta_data_length).unwrap(),
+        body_length: i64::try_from(body_length).unwrap(),
     }
 }

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::FixedSizeListArray;
@@ -14,6 +14,7 @@ use crate::datatypes::{ArrowDataType, Field};
 pub struct MutableFixedSizeListArray<M: MutableArray> {
     dtype: ArrowDataType,
     size: usize,
+    length: usize,
     values: M,
     validity: Option<MutableBitmap>,
 }
@@ -22,6 +23,7 @@ impl<M: MutableArray> From<MutableFixedSizeListArray<M>> for FixedSizeListArray 
     fn from(mut other: MutableFixedSizeListArray<M>) -> Self {
         FixedSizeListArray::new(
             other.dtype,
+            other.length,
             other.values.as_box(),
             other.validity.map(|x| x.into()),
         )
@@ -53,10 +55,17 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
         };
         Self {
             size,
+            length: 0,
             dtype,
             values,
             validity: None,
         }
+    }
+
+    #[inline]
+    fn has_valid_invariants(&self) -> bool {
+        (self.size == 0 && self.values().len() == 0)
+            || (self.size > 0 && self.values.len() / self.size == self.length)
     }
 
     /// Returns the size (number of elements per slot) of this [`FixedSizeListArray`].
@@ -66,17 +75,13 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
 
     /// The length of this array
     pub fn len(&self) -> usize {
-        self.values.len() / self.size
+        debug_assert!(self.has_valid_invariants());
+        self.length
     }
 
     /// The inner values
     pub fn values(&self) -> &M {
         &self.values
-    }
-
-    /// The values as a mutable reference
-    pub fn mut_values(&mut self) -> &mut M {
-        &mut self.values
     }
 
     fn init_validity(&mut self) {
@@ -92,12 +97,16 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
     /// Needs to be called when a valid value was extended to this array.
     /// This is a relatively low level function, prefer `try_push` when you can.
     pub fn try_push_valid(&mut self) -> PolarsResult<()> {
-        if self.values.len() % self.size != 0 {
+        if !self.values.len().is_multiple_of(self.size) {
             polars_bail!(ComputeError: "overflow")
         };
         if let Some(validity) = &mut self.validity {
             validity.push(true)
         }
+        self.length += 1;
+
+        debug_assert!(self.has_valid_invariants());
+
         Ok(())
     }
 
@@ -108,6 +117,9 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
         if let Some(validity) = &mut self.validity {
             validity.push(true)
         }
+        self.length += 1;
+
+        debug_assert!(self.has_valid_invariants());
     }
 
     #[inline]
@@ -117,6 +129,9 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
             Some(validity) => validity.push(false),
             None => self.init_validity(),
         }
+        self.length += 1;
+
+        debug_assert!(self.has_valid_invariants());
     }
 
     /// Reserves `additional` slots.
@@ -134,11 +149,21 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
             validity.shrink_to_fit()
         }
     }
+
+    pub fn freeze(mut self) -> FixedSizeListArray {
+        FixedSizeListArray::new(
+            self.dtype,
+            self.length,
+            self.values.as_box(),
+            self.validity.map(|b| b.freeze()),
+        )
+    }
 }
 
 impl<M: MutableArray + 'static> MutableArray for MutableFixedSizeListArray<M> {
     fn len(&self) -> usize {
-        self.values.len() / self.size
+        debug_assert!(self.has_valid_invariants());
+        self.length
     }
 
     fn validity(&self) -> Option<&MutableBitmap> {
@@ -148,6 +173,7 @@ impl<M: MutableArray + 'static> MutableArray for MutableFixedSizeListArray<M> {
     fn as_box(&mut self) -> Box<dyn Array> {
         FixedSizeListArray::new(
             self.dtype.clone(),
+            self.length,
             self.values.as_box(),
             std::mem::take(&mut self.validity).map(|x| x.into()),
         )
@@ -157,6 +183,7 @@ impl<M: MutableArray + 'static> MutableArray for MutableFixedSizeListArray<M> {
     fn as_arc(&mut self) -> Arc<dyn Array> {
         FixedSizeListArray::new(
             self.dtype.clone(),
+            self.length,
             self.values.as_box(),
             std::mem::take(&mut self.validity).map(|x| x.into()),
         )
@@ -185,6 +212,9 @@ impl<M: MutableArray + 'static> MutableArray for MutableFixedSizeListArray<M> {
         } else {
             self.init_validity()
         }
+        self.length += 1;
+
+        debug_assert!(self.has_valid_invariants());
     }
 
     fn reserve(&mut self, additional: usize) {
@@ -206,6 +236,9 @@ where
         for items in iter {
             self.try_push(items)?;
         }
+
+        debug_assert!(self.has_valid_invariants());
+
         Ok(())
     }
 }
@@ -223,6 +256,9 @@ where
         } else {
             self.push_null();
         }
+
+        debug_assert!(self.has_valid_invariants());
+
         Ok(())
     }
 }
@@ -243,6 +279,8 @@ where
         } else {
             self.push_null();
         }
+
+        debug_assert!(self.has_valid_invariants());
     }
 }
 
@@ -253,6 +291,11 @@ where
     fn try_extend_from_self(&mut self, other: &Self) -> PolarsResult<()> {
         extend_validity(self.len(), &mut self.validity, &other.validity);
 
-        self.values.try_extend_from_self(&other.values)
+        self.values.try_extend_from_self(&other.values)?;
+        self.length += other.len();
+
+        debug_assert!(self.has_valid_invariants());
+
+        Ok(())
     }
 }

@@ -1,15 +1,17 @@
 use either::Either;
+use polars_buffer::Buffer;
 
 use super::specification::try_check_offsets_bounds;
 use super::{Array, GenericBinaryArray, Splitable};
 use crate::array::iterator::NonNullValuesIter;
-use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
-use crate::buffer::Buffer;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 use crate::trusted_len::TrustedLen;
 
+mod builder;
+pub use builder::*;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
@@ -19,10 +21,9 @@ mod mutable_values;
 pub use mutable_values::*;
 mod mutable;
 pub use mutable::*;
-use polars_error::{polars_bail, PolarsResult};
-
-#[cfg(feature = "arrow_rs")]
-mod data;
+use polars_error::{PolarsResult, polars_bail};
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
 /// A [`BinaryArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<Vec<u8>>>`.
 /// It implements [`Array`].
@@ -32,7 +33,7 @@ mod data;
 /// ```
 /// use polars_arrow::array::BinaryArray;
 /// use polars_arrow::bitmap::Bitmap;
-/// use polars_arrow::buffer::Buffer;
+/// use polars_buffer::Buffer;
 ///
 /// let array = BinaryArray::<i32>::from([Some([1, 2].as_ref()), None, Some([3].as_ref())]);
 /// assert_eq!(array.value(0), &[1, 2]);
@@ -52,7 +53,7 @@ mod data;
 ///
 /// # Safety
 /// The following invariants hold:
-/// * Two consecutives `offsets` casted (`as`) to `usize` are valid slices of `values`.
+/// * Two consecutive `offsets` cast (`as`) to `usize` are valid slices of `values`.
 /// * `len` is equal to `validity.len()`, when defined.
 #[derive(Clone)]
 pub struct BinaryArray<O: Offset> {
@@ -82,7 +83,7 @@ impl<O: Offset> BinaryArray<O> {
 
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != offsets.len_proxy())
+            .is_some_and(|validity| validity.len() != offsets.len_proxy())
         {
             polars_bail!(ComputeError: "validity mask length must match the number of values")
         }
@@ -130,12 +131,12 @@ impl<O: Offset> BinaryArray<O> {
     }
 
     /// Returns an iterator of `Option<&[u8]>` over every element of this array.
-    pub fn iter(&self) -> ZipValidity<&[u8], BinaryValueIter<O>, BitmapIter> {
+    pub fn iter(&self) -> ZipValidity<&[u8], BinaryValueIter<'_, O>, BitmapIter<'_>> {
         ZipValidity::new_with_validity(self.values_iter(), self.validity.as_ref())
     }
 
     /// Returns an iterator of `&[u8]` over every element of this array, ignoring the validity
-    pub fn values_iter(&self) -> BinaryValueIter<O> {
+    pub fn values_iter(&self) -> BinaryValueIter<'_, O> {
         BinaryValueIter::new(self)
     }
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime, time
 from typing import Any
 
 import pytest
@@ -61,7 +62,7 @@ def test_array_literals() -> None:
             FROM (
               SELECT
                 -- declare array literals
-                [10,20,30] AS a1,
+                ARRAY[10,20,30] AS a1,
                 ['a','b','c'] AS a2,
               FROM df
             ) tbl
@@ -173,68 +174,55 @@ def test_array_to_string() -> None:
         pl.sql_expr("ARRAY_TO_STRING(arr)")
 
 
-@pytest.mark.parametrize(
-    "array_keyword",
-    ["ARRAY", ""],
-)
-def test_unnest_table_function(array_keyword: str) -> None:
-    with pl.SQLContext(df=None, eager=True) as ctx:
-        res = ctx.execute(
-            f"""
-            SELECT * FROM
-              UNNEST(
-                {array_keyword}[1, 2, 3, 4],
-                {array_keyword}['ww','xx','yy','zz'],
-                {array_keyword}[23.0, 24.5, 28.0, 27.5]
-              ) AS tbl (x,y,z);
-            """
-        )
-        assert_frame_equal(
-            res,
-            pl.DataFrame(
-                {
-                    "x": [1, 2, 3, 4],
-                    "y": ["ww", "xx", "yy", "zz"],
-                    "z": [23.0, 24.5, 28.0, 27.5],
-                }
-            ),
-        )
+def test_array_typed_literals() -> None:
+    res = pl.sql(
+        """
+        SELECT
+          -- typed temporal literals
+          ARRAY[DATE '2024-01-01', DATE '1969-07-20'] AS dt,
+          ARRAY[TIME '08:30:00', TIME '23:59:59'] AS tm,
+          ARRAY[TIMESTAMP(3) '2024-01-01 12:00:00'] AS dtm,
+          -- cast syntax (::type and CAST)
+          ARRAY['2024-01-01'::date, '1969-07-20'::date] AS dt_cast,
+          ARRAY['08:30:00'::time, '23:59:59'::time] AS tm_cast,
+          ARRAY[CAST('2024-01-01' AS DATE)] AS dt_explicit,
+          -- numeric literal casts
+          ARRAY[100::bigint, -50::bigint] AS i64_cast,
+          ARRAY[1.5::double, -2.7::double] AS f64_cast,
+          ARRAY[['42'::int16], ['-7'::int16]] AS str_to_nested_int16,
+        FROM (VALUES (0)) tbl (x)
+        """,
+        eager=True,
+    )
+    # values are typed properly
+    assert res.to_dict(as_series=False) == {
+        "dt": [[date(2024, 1, 1), date(1969, 7, 20)]],
+        "tm": [[time(8, 30), time(23, 59, 59)]],
+        "dtm": [[datetime(2024, 1, 1, 12, 0)]],
+        "dt_cast": [[date(2024, 1, 1), date(1969, 7, 20)]],
+        "tm_cast": [[time(8, 30), time(23, 59, 59)]],
+        "dt_explicit": [[date(2024, 1, 1)]],
+        "i64_cast": [[100, -50]],
+        "f64_cast": [[1.5, -2.7]],
+        "str_to_nested_int16": [[[42], [-7]]],
+    }
+    # schema exactly matches the casts
+    assert res.schema == {
+        "dt": pl.List(pl.Date),
+        "tm": pl.List(pl.Time),
+        "dtm": pl.List(pl.Datetime("ms", time_zone=None)),
+        "dt_cast": pl.List(pl.Date),
+        "tm_cast": pl.List(pl.Time),
+        "dt_explicit": pl.List(pl.Date),
+        "i64_cast": pl.List(pl.Int64),
+        "f64_cast": pl.List(pl.Float64),
+        "str_to_nested_int16": pl.List(pl.List(pl.Int16)),
+    }
 
 
-def test_unnest_table_function_errors() -> None:
-    with pl.SQLContext(df=None, eager=True) as ctx:
-        with pytest.raises(
-            SQLSyntaxError,
-            match=r'UNNEST table alias must also declare column names, eg: "frame data" \(a,b,c\)',
-        ):
-            ctx.execute('SELECT * FROM UNNEST([1, 2, 3]) AS "frame data"')
-
-        with pytest.raises(
-            SQLSyntaxError,
-            match="UNNEST table alias requires 1 column name, found 2",
-        ):
-            ctx.execute("SELECT * FROM UNNEST([1, 2, 3]) AS tbl (a, b)")
-
-        with pytest.raises(
-            SQLSyntaxError,
-            match="UNNEST table alias requires 2 column names, found 1",
-        ):
-            ctx.execute("SELECT * FROM UNNEST([1,2,3], [3,4,5]) AS tbl (a)")
-
-        with pytest.raises(
-            SQLSyntaxError,
-            match=r"UNNEST table must have an alias",
-        ):
-            ctx.execute("SELECT * FROM UNNEST([1, 2, 3])")
-
-        with pytest.raises(
-            SQLInterfaceError,
-            match=r"UNNEST tables do not \(yet\) support WITH OFFSET/ORDINALITY",
-        ):
-            ctx.execute("SELECT * FROM UNNEST([1, 2, 3]) tbl (colx) WITH OFFSET")
-
-        with pytest.raises(
-            SQLInterfaceError,
-            match="nested array literals are not currently supported",
-        ):
-            pl.sql_expr("[[1,2,3]] AS nested")
+def test_array_typed_literals_mixed_error() -> None:
+    with pytest.raises(
+        SQLInterfaceError,
+        match="expected consistent dtypes",
+    ):
+        pl.sql("SELECT ARRAY[DATE '2024-01-01', TIME '12:00:00']")

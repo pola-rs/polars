@@ -1,6 +1,5 @@
 use arrow::types::NativeType;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use crate::prelude::*;
 
@@ -46,8 +45,8 @@ impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
         let arr = arr
             .as_any()
             .downcast_ref::<PrimitiveArray<T>>()
-            .unwrap_unchecked_release();
-        let inner = self.inner.as_mut().unwrap_unchecked_release();
+            .unwrap_unchecked();
+        let inner = self.inner.as_mut().unwrap_unchecked();
 
         let values = arr.values().as_slice();
         let validity = arr.validity();
@@ -68,7 +67,7 @@ impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
 
     #[inline]
     unsafe fn push_null(&mut self) {
-        let inner = self.inner.as_mut().unwrap_unchecked_release();
+        let inner = self.inner.as_mut().unwrap_unchecked();
         inner.push_null()
     }
 
@@ -140,7 +139,7 @@ pub(crate) fn get_fixed_size_list_builder(
 ) -> PolarsResult<Box<dyn FixedSizeListBuilder>> {
     let phys_dtype = inner_type_logical.to_physical();
 
-    let builder = if phys_dtype.is_numeric() {
+    let builder = if phys_dtype.is_primitive_numeric() {
         with_match_physical_numeric_type!(phys_dtype, |$T| {
         // SAFETY: physical type match logical type
         unsafe {

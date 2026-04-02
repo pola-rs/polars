@@ -1,42 +1,92 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use polars_core::error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;
 
-#[derive(Clone)]
-pub struct LenReduce {}
+#[derive(Default)]
+pub struct LenReduce {
+    groups: Vec<u64>,
+    evictions: Vec<u64>,
+}
 
-impl LenReduce {
-    pub fn new() -> Self {
-        Self {}
+impl GroupedReduction for LenReduce {
+    fn new_empty(&self) -> Box<dyn GroupedReduction> {
+        Box::new(Self::default())
     }
-}
 
-impl Reduction for LenReduce {
-    fn new_reducer(&self) -> Box<dyn ReductionState> {
-        Box::new(LenReduceState { len: 0 })
+    fn reserve(&mut self, additional: usize) {
+        self.groups.reserve(additional);
     }
-}
 
-pub struct LenReduceState {
-    len: u64,
-}
+    fn resize(&mut self, num_groups: IdxSize) {
+        self.groups.resize(num_groups as usize, 0);
+    }
 
-impl ReductionState for LenReduceState {
-    fn update(&mut self, batch: &Series) -> PolarsResult<()> {
-        self.len += batch.len() as u64;
+    fn update_group(
+        &mut self,
+        values: &[&Column],
+        group_idx: IdxSize,
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
+        self.groups[group_idx as usize] += values.len() as u64;
         Ok(())
     }
 
-    fn combine(&mut self, other: &dyn ReductionState) -> PolarsResult<()> {
+    unsafe fn update_groups_while_evicting(
+        &mut self,
+        _values: &[&Column],
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        assert!(subset.len() == group_idxs.len());
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            for g in group_idxs.iter() {
+                let grp = self.groups.get_unchecked_mut(g.idx());
+                if g.should_evict() {
+                    self.evictions.push(*grp);
+                    *grp = 0;
+                }
+                *grp += 1;
+            }
+        }
+        Ok(())
+    }
+
+    unsafe fn combine_subset(
+        &mut self,
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
-        self.len += other.len;
+        assert!(subset.len() == group_idxs.len());
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            for (i, g) in subset.iter().zip(group_idxs) {
+                *self.groups.get_unchecked_mut(*g as usize) +=
+                    *other.groups.get_unchecked(*i as usize);
+            }
+        }
         Ok(())
     }
 
-    fn finalize(&self) -> PolarsResult<Scalar> {
-        #[allow(clippy::useless_conversion)]
-        let as_idx: IdxSize = self.len.try_into().expect(LENGTH_LIMIT_MSG);
-        Ok(Scalar::new(IDX_DTYPE, as_idx.into()))
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            groups: core::mem::take(&mut self.evictions),
+            evictions: Vec::new(),
+        })
+    }
+
+    fn finalize(&mut self) -> PolarsResult<Series> {
+        let ca: IdxCa = self
+            .groups
+            .drain(..)
+            .map(|l| IdxSize::try_from(l).expect(LENGTH_LIMIT_MSG))
+            .collect_ca(PlSmallStr::EMPTY);
+        Ok(ca.into_series())
     }
 
     fn as_any(&self) -> &dyn Any {

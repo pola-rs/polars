@@ -1,5 +1,5 @@
-use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 
 #[test]
 fn basic() {

@@ -2,23 +2,23 @@ use std::io::Write;
 
 #[cfg(feature = "async")]
 use futures::AsyncWrite;
-use parquet_format_safe::thrift::protocol::TCompactOutputProtocol;
+use polars_parquet_format::thrift::protocol::TCompactOutputProtocol;
 #[cfg(feature = "async")]
-use parquet_format_safe::thrift::protocol::TCompactOutputStreamProtocol;
-use parquet_format_safe::{ColumnChunk, ColumnMetaData, Type};
+use polars_parquet_format::thrift::protocol::TCompactOutputStreamProtocol;
+use polars_parquet_format::{ColumnChunk, ColumnMetaData, Type};
 use polars_utils::aliases::PlHashSet;
 
+use super::DynStreamingIterator;
 #[cfg(feature = "async")]
 use super::page::write_page_async;
-use super::page::{write_page, PageWriteSpec};
+use super::page::{PageWriteSpec, is_dict_page, write_page};
 use super::statistics::reduce;
-use super::DynStreamingIterator;
+use crate::parquet::FallibleStreamingIterator;
 use crate::parquet::compression::Compression;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::ColumnDescriptor;
 use crate::parquet::page::{CompressedPage, PageType};
-use crate::parquet::FallibleStreamingIterator;
 
 pub fn write_column_chunk<W, E>(
     writer: &mut W,
@@ -123,7 +123,20 @@ fn build_column_chunk(
         .iter()
         .map(|x| x.header_size as i64 + x.header.uncompressed_page_size as i64)
         .sum();
-    let data_page_offset = specs.first().map(|spec| spec.offset).unwrap_or(0) as i64;
+    // Per the Parquet spec, if a dictionary page exists it is always the first page
+    // in a column chunk. So we check specs[0] for a dictionary page.
+    // Ref: https://github.com/apache/parquet-format/blob/master/README.md#column-chunks
+    let dictionary_page_offset = specs
+        .first()
+        .filter(|spec| is_dict_page(spec))
+        .map(|spec| spec.offset as i64);
+
+    // If we found a dictionary page at specs[0], the first data page is at specs[1].
+    let data_page_offset = if dictionary_page_offset.is_some() {
+        specs.get(1).map(|spec| spec.offset).unwrap_or(0) as i64
+    } else {
+        specs.first().map(|spec| spec.offset).unwrap_or(0) as i64
+    };
     let num_values = specs
         .iter()
         .map(|spec| {
@@ -191,10 +204,12 @@ fn build_column_chunk(
         key_value_metadata: None,
         data_page_offset,
         index_page_offset: None,
-        dictionary_page_offset: None,
+        dictionary_page_offset,
         statistics,
         encoding_stats: None,
         bloom_filter_offset: None,
+        bloom_filter_length: None,
+        size_statistics: None,
     };
 
     Ok(ColumnChunk {

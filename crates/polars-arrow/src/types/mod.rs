@@ -16,14 +16,12 @@
 //! represent chunks of bits (e.g. 8 bits via `u8`, 16 via `u16`), and [`BitChunkIter`],
 //! that can be used to iterate over bitmaps in [`BitChunk`]s according to
 //! Arrow's definition of bitmaps.
-//!
-//! Finally, this module contains traits used to compile code based on [`NativeType`] optimized
-//! for SIMD, at [`mod@simd`].
 
+mod aligned_bytes;
+pub use aligned_bytes::*;
 mod bit_chunk;
 pub use bit_chunk::{BitChunk, BitChunkIter, BitChunkOnes};
 mod index;
-pub mod simd;
 pub use index::*;
 mod native;
 pub use native::*;
@@ -68,9 +66,15 @@ pub enum PrimitiveType {
     DaysMs,
     /// months_days_ns(i32, i32, i64)
     MonthDayNano,
+    /// months_days_ms(i32, i32, i32)
+    /// Used when reading INTERVAL from Parquet. Should be unreachable otherwise.
+    MonthDayMillis,
 }
 
 mod private {
+    use polars_utils::float16::pf16;
+
+    use super::*;
     use crate::array::View;
 
     pub trait Sealed {}
@@ -85,8 +89,8 @@ mod private {
     impl Sealed for i64 {}
     impl Sealed for i128 {}
     impl Sealed for u128 {}
-    impl Sealed for super::i256 {}
-    impl Sealed for super::f16 {}
+    impl Sealed for i256 {}
+    impl Sealed for pf16 {}
     impl Sealed for f32 {}
     impl Sealed for f64 {}
     impl Sealed for super::days_ms {}

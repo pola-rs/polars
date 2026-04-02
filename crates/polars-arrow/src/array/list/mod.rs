@@ -1,19 +1,24 @@
 use super::specification::try_check_offsets_bounds;
-use super::{new_empty_array, Array, Splitable};
+use super::{Array, Splitable, new_empty_array};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 
-#[cfg(feature = "arrow_rs")]
-mod data;
+mod builder;
+pub use builder::*;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
 pub use iterator::*;
 mod mutable;
 pub use mutable::*;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "proptest")]
+pub mod proptest;
+
+/// Name used for the values array within List/FixedSizeList arrays.
+pub const LIST_VALUES_NAME: PlSmallStr = PlSmallStr::from_static("item");
 
 /// An [`Array`] semantically equivalent to `Vec<Option<Vec<Option<T>>>>` with Arrow's in-memory.
 #[derive(Clone)]
@@ -29,8 +34,8 @@ impl<O: Offset> ListArray<O> {
     ///
     /// # Errors
     /// This function returns an error iff:
-    /// * The last offset is not equal to the values' length.
-    /// * the validity's length is not equal to `offsets.len()`.
+    /// * `offsets.last()` is greater than `values.len()`.
+    /// * the validity's length is not equal to `offsets.len_proxy()`.
     /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either [`crate::datatypes::PhysicalType::List`] or [`crate::datatypes::PhysicalType::LargeList`].
     /// * The `dtype`'s inner field's data type is not equal to `values.dtype`.
     /// # Implementation
@@ -45,7 +50,7 @@ impl<O: Offset> ListArray<O> {
 
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != offsets.len_proxy())
+            .is_some_and(|validity| validity.len() != offsets.len_proxy())
         {
             polars_bail!(ComputeError: "validity mask length must match the number of values")
         }
@@ -68,8 +73,8 @@ impl<O: Offset> ListArray<O> {
     ///
     /// # Panics
     /// This function panics iff:
-    /// * The last offset is not equal to the values' length.
-    /// * the validity's length is not equal to `offsets.len()`.
+    /// * `offsets.last()` is greater than `values.len()`.
+    /// * the validity's length is not equal to `offsets.len_proxy()`.
     /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either [`crate::datatypes::PhysicalType::List`] or [`crate::datatypes::PhysicalType::LargeList`].
     /// * The `dtype`'s inner field's data type is not equal to `values.dtype`.
     /// # Implementation
@@ -99,6 +104,17 @@ impl<O: Offset> ListArray<O> {
             new_empty_array(child),
             Some(Bitmap::new_zeroed(length)),
         )
+    }
+
+    pub fn into_inner(
+        self,
+    ) -> (
+        ArrowDataType,
+        Box<dyn Array>,
+        OffsetsBuffer<O>,
+        Option<Bitmap>,
+    ) {
+        (self.dtype, self.values, self.offsets, self.validity)
     }
 }
 
@@ -186,7 +202,7 @@ impl<O: Offset> ListArray<O> {
 impl<O: Offset> ListArray<O> {
     /// Returns a default [`ArrowDataType`]: inner field is named "item" and is nullable
     pub fn default_datatype(dtype: ArrowDataType) -> ArrowDataType {
-        let field = Box::new(Field::new(PlSmallStr::from_static("item"), dtype, true));
+        let field = Box::new(Field::new(LIST_VALUES_NAME, dtype, true));
         if O::IS_LARGE {
             ArrowDataType::LargeList(field)
         } else {
@@ -206,12 +222,12 @@ impl<O: Offset> ListArray<O> {
     /// Panics iff the logical type is not consistent with this struct.
     pub fn try_get_child(dtype: &ArrowDataType) -> PolarsResult<&Field> {
         if O::IS_LARGE {
-            match dtype.to_logical_type() {
+            match dtype.to_storage() {
                 ArrowDataType::LargeList(child) => Ok(child.as_ref()),
                 _ => polars_bail!(ComputeError: "ListArray<i64> expects DataType::LargeList"),
             }
         } else {
-            match dtype.to_logical_type() {
+            match dtype.to_storage() {
                 ArrowDataType::List(child) => Ok(child.as_ref()),
                 _ => polars_bail!(ComputeError: "ListArray<i32> expects DataType::List"),
             }

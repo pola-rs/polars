@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::error::Error;
 
 use arrow::array::{Array, MutablePlString, StaticArray};
@@ -5,10 +6,48 @@ use arrow::compute::utils::combine_validities_and;
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::chunked_array::metadata::MetadataProperties;
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter};
 use crate::prelude::{ChunkedArray, CompatLevel, PolarsDataType, Series, StringChunked};
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned, align_chunks_ternary};
+
+#[macro_export]
+macro_rules! binary_output_height {
+    ($a:expr, $b:expr, op = $op:expr) => {
+        match ($a.len(), $b.len()) {
+            (a, 1) | (1, a) => Ok(a),
+            (a, b) if a == b => Ok(a),
+            (a, b) => Err(polars_err!(
+                ShapeMismatch:
+                "{} got differing lengths \
+                ({}: {}, {}: {})",
+                $op,
+                stringify!($a.len()), $a.len(),
+                stringify!($b.len()), $b.len(),
+            )),
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! ternary_output_height {
+    ($a:expr, $b:expr, $c:expr, op = $op:expr) => {
+        match ($a.len(), $b.len(), $c.len()) {
+            (a, 1, 1) | (1, a, 1) | (1, 1, a) => Ok(a),
+            (a, b, 1) | (a, 1, b) | (1, a, b) if a == b => Ok(a),
+            (a, b, c) if a == b && b == c => Ok(a),
+            (a, b, c) => Err(polars_err!(
+                ShapeMismatch:
+                "{} got differing lengths \
+                ({}: {}, {}: {}, {}: {})",
+                $op,
+                stringify!($a.len()), $a.len(),
+                stringify!($b.len()), $b.len(),
+                stringify!($c.len()), $c.len(),
+            )),
+        }
+    }
+}
 
 // We need this helper because for<'a> notation can't yet be applied properly
 // on the return type.
@@ -114,7 +153,10 @@ where
     V::Array: ArrayFromIter<<F as UnaryFnMut<T::Physical<'a>>>::Ret>,
 {
     if ca.null_count() == ca.len() {
-        let arr = V::Array::full_null(ca.len(), V::get_dtype().to_arrow(CompatLevel::newest()));
+        let arr = V::Array::full_null(
+            ca.len(),
+            V::get_static_dtype().to_arrow(CompatLevel::newest()),
+        );
         return ChunkedArray::with_chunk(ca.name().clone(), arr);
     }
 
@@ -138,7 +180,10 @@ where
     V::Array: ArrayFromIter<K>,
 {
     if ca.null_count() == ca.len() {
-        let arr = V::Array::full_null(ca.len(), V::get_dtype().to_arrow(CompatLevel::newest()));
+        let arr = V::Array::full_null(
+            ca.len(),
+            V::get_static_dtype().to_arrow(CompatLevel::newest()),
+        );
         return Ok(ChunkedArray::with_chunk(ca.name().clone(), arr));
     }
 
@@ -316,7 +361,7 @@ where
 {
     if lhs.null_count() == lhs.len() || rhs.null_count() == rhs.len() {
         let len = lhs.len().min(rhs.len());
-        let arr = V::Array::full_null(len, V::get_dtype().to_arrow(CompatLevel::newest()));
+        let arr = V::Array::full_null(len, V::get_static_dtype().to_arrow(CompatLevel::newest()));
 
         return ChunkedArray::with_chunk(lhs.name().clone(), arr);
     }
@@ -540,17 +585,27 @@ where
 
     let mut ca = lhs.copy_with_chunks(chunks);
 
-    use MetadataProperties as P;
-
-    let mut properties = P::empty();
-    properties.set(P::SORTED, keep_sorted);
-    properties.set(P::FAST_EXPLODE_LIST, keep_fast_explode);
-    ca.copy_metadata(&lhs, properties);
+    let mut retain_flags = StatisticsFlags::empty();
+    use StatisticsFlags as F;
+    retain_flags.set(F::IS_SORTED_ANY, keep_sorted);
+    retain_flags.set(F::CAN_FAST_EXPLODE_LIST, keep_fast_explode);
+    ca.retain_flags_from(lhs.as_ref(), retain_flags);
 
     ca
 }
 
-#[inline]
+pub fn try_unary_to_series<T, F>(ca: &ChunkedArray<T>, op: F) -> PolarsResult<Series>
+where
+    T: PolarsDataType,
+    F: FnMut(&T::Array) -> PolarsResult<Box<dyn Array>>,
+{
+    let chunks = ca
+        .downcast_iter()
+        .map(op)
+        .collect::<PolarsResult<Vec<_>>>()?;
+    Series::try_from((ca.name().clone(), chunks))
+}
+
 pub fn binary_to_series<T, U, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
@@ -567,6 +622,25 @@ where
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
         .collect::<Vec<_>>();
+    Series::try_from((lhs.name().clone(), chunks))
+}
+
+pub fn try_binary_to_series<T, U, F>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+) -> PolarsResult<Series>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    F: FnMut(&T::Array, &U::Array) -> PolarsResult<Box<dyn Array>>,
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    let chunks = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
+        .collect::<PolarsResult<Vec<_>>>()?;
     Series::try_from((lhs.name().clone(), chunks))
 }
 
@@ -596,11 +670,11 @@ where
         .collect::<Result<Vec<_>, E>>()?;
     let mut ca = lhs.copy_with_chunks(chunks);
 
-    use MetadataProperties as P;
-    let mut properties = P::empty();
-    properties.set(P::SORTED, keep_sorted);
-    properties.set(P::FAST_EXPLODE_LIST, keep_fast_explode);
-    ca.copy_metadata(&lhs, properties);
+    let mut retain_flags = StatisticsFlags::empty();
+    use StatisticsFlags as F;
+    retain_flags.set(F::IS_SORTED_ANY, keep_sorted);
+    retain_flags.set(F::CAN_FAST_EXPLODE_LIST, keep_fast_explode);
+    ca.retain_flags_from(lhs.as_ref(), retain_flags);
 
     Ok(ca)
 }
@@ -653,10 +727,10 @@ where
     G: PolarsDataType,
     V: PolarsDataType,
     F: for<'a> TernaryFnMut<
-        Option<T::Physical<'a>>,
-        Option<U::Physical<'a>>,
-        Option<G::Physical<'a>>,
-    >,
+            Option<T::Physical<'a>>,
+            Option<U::Physical<'a>>,
+            Option<G::Physical<'a>>,
+        >,
     V::Array: for<'a> ArrayFromIter<
         <F as TernaryFnMut<
             Option<T::Physical<'a>>,
@@ -749,7 +823,7 @@ where
         let min = lhs.len().min(rhs.len());
         let max = lhs.len().max(rhs.len());
         let len = if min == 1 { max } else { min };
-        let arr = V::Array::full_null(len, V::get_dtype().to_arrow(CompatLevel::newest()));
+        let arr = V::Array::full_null(len, V::get_static_dtype().to_arrow(CompatLevel::newest()));
 
         return ChunkedArray::with_chunk(lhs.name().clone(), arr);
     }
@@ -792,7 +866,7 @@ where
                 None => {
                     let arr = O::Array::full_null(
                         lhs.len(),
-                        O::get_dtype().to_arrow(CompatLevel::newest()),
+                        O::get_static_dtype().to_arrow(CompatLevel::newest()),
                     );
                     ChunkedArray::<O>::with_chunk(lhs.name().clone(), arr)
                 },
@@ -805,7 +879,7 @@ where
                 None => {
                     let arr = O::Array::full_null(
                         rhs.len(),
-                        O::get_dtype().to_arrow(CompatLevel::newest()),
+                        O::get_static_dtype().to_arrow(CompatLevel::newest()),
                     );
                     ChunkedArray::<O>::with_chunk(lhs.name().clone(), arr)
                 },
@@ -842,7 +916,7 @@ where
                 None => {
                     let arr = O::Array::full_null(
                         lhs.len(),
-                        O::get_dtype().to_arrow(CompatLevel::newest()),
+                        O::get_static_dtype().to_arrow(CompatLevel::newest()),
                     );
                     ChunkedArray::<O>::with_chunk(lhs.name().clone(), arr)
                 },
@@ -855,7 +929,7 @@ where
                 None => {
                     let arr = O::Array::full_null(
                         rhs.len(),
-                        O::get_dtype().to_arrow(CompatLevel::newest()),
+                        O::get_static_dtype().to_arrow(CompatLevel::newest()),
                     );
                     ChunkedArray::<O>::with_chunk(lhs.name().clone(), arr)
                 },

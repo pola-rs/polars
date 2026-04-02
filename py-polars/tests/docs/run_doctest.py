@@ -37,11 +37,12 @@ import unittest
 import warnings
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
-import polars
+import polars as pl
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from types import ModuleType
 
 
@@ -55,11 +56,11 @@ if sys.version_info < (3, 12):
     )
 
 # associate specific doctest method names with optional modules.
-# if the module is found in the environment those doctests will
+# if the module is found in the environment, those doctests will
 # run; if the module is not found, their doctests are skipped.
 OPTIONAL_MODULES_AND_METHODS: dict[str, set[str]] = {
     "jax": {"to_jax"},
-    "torch": {"to_torch"},
+    "torch": {"to_torch", "from_torch"},
 }
 OPTIONAL_MODULES: set[str] = set()
 SKIP_METHODS: set[str] = set()
@@ -67,15 +68,14 @@ SKIP_METHODS: set[str] = set()
 for mod, methods in OPTIONAL_MODULES_AND_METHODS.items():
     try:
         importlib.import_module(mod)
-    except ImportError:
+    except ImportError:  # noqa: PERF203
         SKIP_METHODS.update(methods)
         OPTIONAL_MODULES.add(mod)
 
 
 def doctest_teardown(d: doctest.DocTest) -> None:
     # don't let config changes or string cache state leak between tests
-    polars.Config.restore_defaults()
-    polars.disable_string_cache()
+    pl.Config.restore_defaults()
 
 
 def modules_in_path(p: Path) -> Iterator[ModuleType]:
@@ -86,7 +86,7 @@ def modules_in_path(p: Path) -> Iterator[ModuleType]:
             file_name_import = ".".join(file.relative_to(p).parts)[:-3]
             temp_module = importlib.import_module(p.name + "." + file_name_import)
             yield temp_module
-        except ImportError as err:
+        except ImportError as err:  # noqa: PERF203
             if not any(re.search(rf"\b{mod}\b", str(err)) for mod in OPTIONAL_MODULES):
                 raise
 
@@ -142,33 +142,33 @@ if __name__ == "__main__":
 
     doctest.OutputChecker = IgnoreResultOutputChecker  # type: ignore[misc]
 
-    # We want to be relaxed about whitespace, but strict on True vs 1
-    doctest.NORMALIZE_WHITESPACE = True
-    doctest.DONT_ACCEPT_TRUE_FOR_1 = True
-
     # If REPORT_NDIFF is turned on, it will report on line by line, character by
     # character, differences. The disadvantage is that you cannot just copy the output
     # directly into the docstring.
     # doctest.REPORT_NDIFF = True
 
     # __file__ returns the __init__.py, so grab the parent
-    src_dir = Path(polars.__file__).parent
+    src_dir = Path(pl.__file__).parent
 
     with TemporaryDirectory() as tmpdir:
         # collect all tests
         tests = [
             doctest.DocTestSuite(
                 m,
-                extraglobs={"pl": polars, "dirpath": Path(tmpdir)},
+                extraglobs={"pl": pl, "dirpath": Path(tmpdir)},
                 tearDown=doctest_teardown,
-                optionflags=1,
+                optionflags=(
+                    doctest.NORMALIZE_WHITESPACE  # relaxed about whitespace
+                    | doctest.DONT_ACCEPT_TRUE_FOR_1  # strict on True vs 1,
+                    | doctest.ELLIPSIS  #  allow '...' pattern
+                ),
             )
             for m in modules_in_path(src_dir)
         ]
         test_suite = FilteredTestSuite(tests)
 
         # Ensure that we clean up any artifacts produced by the doctests
-        # with patch(polars.DataFrame.write_csv):
+        # with patch(pl.DataFrame.write_csv):
         # run doctests and report
         result = unittest.TextTestRunner().run(test_suite)
         success_flag = (result.testsRun > 0) & (len(result.failures) == 0)

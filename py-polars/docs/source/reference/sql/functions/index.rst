@@ -1,12 +1,14 @@
-=============
-SQL Functions
-=============
-
+=========
+Functions
+=========
 
 .. raw:: html
 
     <style>
       div.sd-card-body.docutils li.toctree-l1 > :first-child {display: none;}
+      .invisible-card {
+        visibility: hidden;
+      }
     </style>
 
 
@@ -34,6 +36,18 @@ SQL Functions
 
     .. grid-item-card::
 
+        **Bitwise**
+        ^^^^^^^^^^^
+
+        .. toctree::
+           :maxdepth: 2
+
+           bitwise
+
+.. grid::
+
+    .. grid-item-card::
+
         **Conditional**
         ^^^^^^^^^^^^^^^
 
@@ -52,8 +66,6 @@ SQL Functions
 
            math
 
-.. grid::
-
     .. grid-item-card::
 
         **String**
@@ -63,6 +75,8 @@ SQL Functions
            :maxdepth: 2
 
            string
+
+.. grid::
 
     .. grid-item-card::
 
@@ -93,3 +107,21 @@ SQL Functions
            :maxdepth: 2
 
            types
+
+.. grid::
+
+    .. grid-item-card::
+
+        **Window**
+        ^^^^^^^^^^
+
+        .. toctree::
+           :maxdepth: 2
+
+           window
+
+    .. grid-item-card::
+        :class-card: invisible-card
+
+    .. grid-item-card::
+        :class-card: invisible-card

@@ -85,6 +85,14 @@ def test_series_getitem_multiple_indices(indices: Any) -> None:
     assert_series_equal(result, expected)
 
 
+def test_series_getitem_numpy() -> None:
+    s = pl.Series([9, 8, 7])
+
+    assert s[np.array([0, 2])].to_list() == [9, 7]
+    assert s[np.array([-1, -3])].to_list() == [7, 9]
+    assert s[np.array(-2)].to_list() == [8]
+
+
 @pytest.mark.parametrize(
     ("input", "match"),
     [

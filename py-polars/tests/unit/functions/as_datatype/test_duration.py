@@ -181,3 +181,31 @@ def test_duration_time_unit_ms() -> None:
     result = pl.duration(milliseconds=4)
     expected = pl.duration(milliseconds=4, time_unit="us")
     assert_frame_equal(pl.select(result), pl.select(expected))
+
+
+def test_duration_wildcard_expansion() -> None:
+    # Test that wildcard expansions occurs correctly in pl.duration
+    # https://github.com/pola-rs/polars/issues/19007
+    df = df = pl.DataFrame({"a": [1], "b": [2]})
+    assert df.select(pl.duration(hours=pl.all()).name.keep()).to_dict(
+        as_series=False
+    ) == {"a": [timedelta(seconds=3600)], "b": [timedelta(seconds=7200)]}
+
+
+def test_duration_from_i128_23050() -> None:
+    assert_frame_equal(
+        pl.DataFrame(
+            [
+                pl.Series("a", [1478262, 84879], pl.Int128),
+                pl.Series("b", [532440, 309209], pl.Int128),
+            ]
+        ).select(
+            pl.duration(microseconds=pl.col.a + pl.col.b).alias("c"),
+        ),
+        pl.select(
+            c=pl.duration(
+                seconds=pl.lit(pl.Series([2, 0])),
+                microseconds=pl.lit(pl.Series([10702, 394088])),
+            )
+        ),
+    )

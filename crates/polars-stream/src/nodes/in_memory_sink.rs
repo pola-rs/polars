@@ -3,12 +3,14 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_ooc::AccessPattern::NoPattern;
 
 use super::compute_node_prelude::*;
 use crate::utils::in_memory_linearize::linearize;
 
+#[derive(Debug)]
 pub struct InMemorySinkNode {
-    morsels_per_pipe: Mutex<Vec<Vec<Morsel>>>,
+    morsels_per_pipe: Mutex<Vec<Vec<(MorselSeq, Token)>>>,
     schema: Arc<Schema>,
 }
 
@@ -23,10 +25,15 @@ impl InMemorySinkNode {
 
 impl ComputeNode for InMemorySinkNode {
     fn name(&self) -> &str {
-        "in_memory_sink"
+        "in-memory-sink"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert!(send.is_empty());
         assert!(recv.len() == 1);
 
@@ -45,13 +52,13 @@ impl ComputeNode for InMemorySinkNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(recv.len() == 1 && send.is_empty());
-        let receivers = recv[0].take().unwrap().parallel();
+        assert!(recv_ports.len() == 1 && send_ports.is_empty());
+        let receivers = recv_ports[0].take().unwrap().parallel();
 
         for mut recv in receivers {
             let slf = &*self;
@@ -59,7 +66,7 @@ impl ComputeNode for InMemorySinkNode {
                 let mut morsels = Vec::new();
                 while let Ok(mut morsel) = recv.recv().await {
                     morsel.take_consume_token();
-                    morsels.push(morsel);
+                    morsels.push(morsel.store_into_token_and_seq(NoPattern).await);
                 }
 
                 slf.morsels_per_pipe.lock().push(morsels);
@@ -70,11 +77,13 @@ impl ComputeNode for InMemorySinkNode {
 
     fn get_output(&mut self) -> PolarsResult<Option<DataFrame>> {
         let morsels_per_pipe = core::mem::take(&mut *self.morsels_per_pipe.get_mut());
-        let dataframes = linearize(morsels_per_pipe);
-        if dataframes.is_empty() {
+        let tokens = linearize(morsels_per_pipe);
+        if tokens.is_empty() {
             Ok(Some(DataFrame::empty_with_schema(&self.schema)))
         } else {
-            Ok(Some(accumulate_dataframes_vertical_unchecked(dataframes)))
+            let mm = polars_ooc::mm();
+            let dfs: Vec<_> = tokens.into_iter().map(|t| mm.df_blocking(&t)).collect();
+            Ok(Some(accumulate_dataframes_vertical_unchecked(dfs)))
         }
     }
 }

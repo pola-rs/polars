@@ -1,10 +1,12 @@
 //! Functionality to mmap in-memory data regions.
 use std::sync::Arc;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_buffer::{Buffer, SharedStorage};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::{ArrowArray, InternalArrowArray};
 use crate::array::{BooleanArray, FromFfi, PrimitiveArray};
+use crate::bitmap::Bitmap;
 use crate::datatypes::ArrowDataType;
 use crate::types::NativeType;
 
@@ -18,11 +20,11 @@ struct PrivateData<T> {
 }
 
 pub(crate) unsafe fn create_array<
-    T,
+    O: Send + 'static,
     I: Iterator<Item = Option<*const u8>>,
     II: Iterator<Item = ArrowArray>,
 >(
-    data: Arc<T>,
+    data: Arc<O>,
     num_rows: usize,
     null_count: usize,
     buffers: I,
@@ -45,7 +47,7 @@ pub(crate) unsafe fn create_array<
 
     let dictionary_ptr = dictionary.map(|array| Box::into_raw(Box::new(array)));
 
-    let mut private_data = Box::new(PrivateData::<Arc<T>> {
+    let mut private_data = Box::new(PrivateData::<Arc<O>> {
         data,
         buffers_ptr,
         children_ptr,
@@ -61,7 +63,7 @@ pub(crate) unsafe fn create_array<
         buffers: private_data.buffers_ptr.as_mut_ptr(),
         children: private_data.children_ptr.as_mut_ptr(),
         dictionary: private_data.dictionary_ptr.unwrap_or(std::ptr::null_mut()),
-        release: Some(release::<Arc<T>>),
+        release: Some(release::<Arc<O>>),
         private_data: Box::into_raw(private_data) as *mut ::std::os::raw::c_void,
     }
 }
@@ -96,8 +98,11 @@ unsafe extern "C" fn release<T>(array: *mut ArrowArray) {
 ///
 /// Using this function is not unsafe, but the returned PrimitiveArray's lifetime is bound to the lifetime
 /// of the slice. The returned [`PrimitiveArray`] _must not_ outlive the passed slice.
-pub unsafe fn slice<T: NativeType>(slice: &[T]) -> PrimitiveArray<T> {
-    slice_and_owner(slice, ())
+pub unsafe fn slice<T: NativeType>(values: &[T]) -> PrimitiveArray<T> {
+    let static_values = std::mem::transmute::<&[T], &'static [T]>(values);
+    let storage = SharedStorage::from_static(static_values);
+    let buffer = Buffer::from_storage(storage);
+    PrimitiveArray::new_unchecked(T::PRIMITIVE.into(), buffer, None)
 }
 
 /// Creates a (non-null) [`PrimitiveArray`] from a slice of values.
@@ -109,7 +114,10 @@ pub unsafe fn slice<T: NativeType>(slice: &[T]) -> PrimitiveArray<T> {
 /// # Safety
 ///
 /// The caller must ensure the passed `owner` ensures the data remains alive.
-pub unsafe fn slice_and_owner<T: NativeType, O>(slice: &[T], owner: O) -> PrimitiveArray<T> {
+pub unsafe fn slice_and_owner<T: NativeType, O: Send + 'static>(
+    slice: &[T],
+    owner: O,
+) -> PrimitiveArray<T> {
     let num_rows = slice.len();
     let null_count = 0;
     let validity = None;
@@ -149,7 +157,16 @@ pub unsafe fn slice_and_owner<T: NativeType, O>(slice: &[T], owner: O) -> Primit
 /// is bound to the lifetime of the slice. The returned [`BooleanArray`] _must
 /// not_ outlive the passed slice.
 pub unsafe fn bitmap(data: &[u8], offset: usize, length: usize) -> PolarsResult<BooleanArray> {
-    bitmap_and_owner(data, offset, length, ())
+    if offset >= 8 {
+        polars_bail!(InvalidOperation: "offset should be < 8")
+    };
+    if length > data.len() * 8 - offset {
+        polars_bail!(InvalidOperation: "given length is oob")
+    }
+    let static_data = std::mem::transmute::<&[u8], &'static [u8]>(data);
+    let storage = SharedStorage::from_static(static_data);
+    let bitmap = Bitmap::from_inner_unchecked(storage, offset, length, None);
+    Ok(BooleanArray::new(ArrowDataType::Boolean, bitmap, None))
 }
 
 /// Creates a (non-null) [`BooleanArray`] from a slice of bits.
@@ -163,7 +180,7 @@ pub unsafe fn bitmap(data: &[u8], offset: usize, length: usize) -> PolarsResult<
 /// # Safety
 ///
 /// The caller must ensure the passed `owner` ensures the data remains alive.
-pub unsafe fn bitmap_and_owner<O>(
+pub unsafe fn bitmap_and_owner<O: Send + 'static>(
     data: &[u8],
     offset: usize,
     length: usize,

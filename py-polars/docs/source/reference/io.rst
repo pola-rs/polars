@@ -56,6 +56,7 @@ Delta Lake
    read_delta
    scan_delta
    DataFrame.write_delta
+   LazyFrame.sink_delta
 
 Excel / ODS
 ~~~~~~~~~~~
@@ -85,6 +86,8 @@ Iceberg
    :toctree: api/
 
    scan_iceberg
+   DataFrame.write_iceberg
+   LazyFrame.sink_iceberg
 
 JSON
 ~~~~
@@ -98,12 +101,40 @@ JSON
    DataFrame.write_ndjson
    LazyFrame.sink_ndjson
 
+Lines
+~~~~~
+.. autosummary::
+   :toctree: api/
+
+   read_lines
+   scan_lines
+
+
+Partition
+~~~~~~~~~
+Sink to disk with differing partitioning strategies.
+
+.. autosummary::
+   :toctree: api/
+
+   PartitionBy
+
+.. currentmodule:: polars.io.partition
+
+.. autosummary::
+   :toctree: api/
+
+   FileProviderArgs
+
+.. currentmodule:: polars
+
 Parquet
 ~~~~~~~
 .. autosummary::
    :toctree: api/
 
    read_parquet
+   read_parquet_metadata
    read_parquet_schema
    scan_parquet
    DataFrame.write_parquet
@@ -117,3 +148,24 @@ Connect to pyarrow datasets.
    :toctree: api/
 
    scan_pyarrow_dataset
+
+Cloud Credentials
+~~~~~~~~~~~~~~~~~
+Configuration for cloud credential provisioning.
+
+.. autosummary::
+   :toctree: api/
+
+   CredentialProvider
+   CredentialProviderAWS
+   CredentialProviderAzure
+   CredentialProviderGCP
+
+Scan Cast Options
+~~~~~~~~~~~~~~~~~
+Configuration for type-casting during scans.
+
+.. autosummary::
+   :toctree: api/
+
+   ScanCastOptions

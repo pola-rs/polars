@@ -1,13 +1,16 @@
-use polars_error::PolarsResult;
+use arrow::datatypes::ArrowSchemaRef;
+use polars_core::prelude::CompatLevel;
 use polars_parquet::write::{
-    BrotliLevel as BrotliLevelParquet, CompressionOptions, GzipLevel as GzipLevelParquet,
-    StatisticsOptions, ZstdLevel as ZstdLevelParquet,
+    BrotliLevel, CompressionOptions, GzipLevel, StatisticsOptions, ZstdLevel,
 };
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
+use super::KeyValueMetadata;
+
+#[derive(Default, Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct ParquetWriteOptions {
     /// Data page compression
     pub compression: ParquetCompression,
@@ -17,18 +20,27 @@ pub struct ParquetWriteOptions {
     pub row_group_size: Option<usize>,
     /// if `None` will be 1024^2 bytes
     pub data_page_size: Option<usize>,
-    /// maintain the order the data was processed
-    pub maintain_order: bool,
+    /// Custom file-level key value metadata
+    pub key_value_metadata: Option<KeyValueMetadata>,
+    pub arrow_schema: Option<ArrowSchemaRef>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub compat_level: Option<CompatLevel>,
+}
+
+impl ParquetWriteOptions {
+    pub fn compat_level(&self) -> CompatLevel {
+        self.compat_level.unwrap_or(CompatLevel::oldest())
+    }
 }
 
 /// The compression strategy to use for writing Parquet files.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ParquetCompression {
     Uncompressed,
     Snappy,
     Gzip(Option<GzipLevel>),
-    Lzo,
     Brotli(Option<BrotliLevel>),
     Zstd(Option<ZstdLevel>),
     Lz4Raw,
@@ -40,59 +52,16 @@ impl Default for ParquetCompression {
     }
 }
 
-/// A valid Gzip compression level.
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct GzipLevel(u8);
-
-impl GzipLevel {
-    pub fn try_new(level: u8) -> PolarsResult<Self> {
-        GzipLevelParquet::try_new(level)?;
-        Ok(GzipLevel(level))
-    }
-}
-
-/// A valid Brotli compression level.
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct BrotliLevel(u32);
-
-impl BrotliLevel {
-    pub fn try_new(level: u32) -> PolarsResult<Self> {
-        BrotliLevelParquet::try_new(level)?;
-        Ok(BrotliLevel(level))
-    }
-}
-
-/// A valid Zstandard compression level.
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct ZstdLevel(i32);
-
-impl ZstdLevel {
-    pub fn try_new(level: i32) -> PolarsResult<Self> {
-        ZstdLevelParquet::try_new(level)?;
-        Ok(ZstdLevel(level))
-    }
-}
-
 impl From<ParquetCompression> for CompressionOptions {
     fn from(value: ParquetCompression) -> Self {
         use ParquetCompression::*;
         match value {
             Uncompressed => CompressionOptions::Uncompressed,
             Snappy => CompressionOptions::Snappy,
-            Gzip(level) => {
-                CompressionOptions::Gzip(level.map(|v| GzipLevelParquet::try_new(v.0).unwrap()))
-            },
-            Lzo => CompressionOptions::Lzo,
-            Brotli(level) => {
-                CompressionOptions::Brotli(level.map(|v| BrotliLevelParquet::try_new(v.0).unwrap()))
-            },
+            Gzip(level) => CompressionOptions::Gzip(level),
+            Brotli(level) => CompressionOptions::Brotli(level),
             Lz4Raw => CompressionOptions::Lz4Raw,
-            Zstd(level) => {
-                CompressionOptions::Zstd(level.map(|v| ZstdLevelParquet::try_new(v.0).unwrap()))
-            },
+            Zstd(level) => CompressionOptions::Zstd(level),
         }
     }
 }

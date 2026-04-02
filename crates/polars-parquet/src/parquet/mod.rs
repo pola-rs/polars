@@ -15,9 +15,9 @@ pub mod write;
 
 use std::ops::Deref;
 
-use parquet_format_safe as thrift_format;
-use polars_utils::mmap::MemSlice;
-pub use streaming_decompression::{fallible_streaming_iterator, FallibleStreamingIterator};
+use polars_buffer::Buffer;
+use polars_parquet_format as thrift_format;
+pub use streaming_decompression::{FallibleStreamingIterator, fallible_streaming_iterator};
 
 pub const HEADER_SIZE: u64 = PARQUET_MAGIC.len() as u64;
 pub const FOOTER_SIZE: u64 = 8;
@@ -29,7 +29,7 @@ const DEFAULT_FOOTER_READ_SIZE: u64 = 64 * 1024;
 /// A copy-on-write buffer over bytes
 #[derive(Debug, Clone)]
 pub enum CowBuffer {
-    Borrowed(MemSlice),
+    Borrowed(Buffer<u8>),
     Owned(Vec<u8>),
 }
 

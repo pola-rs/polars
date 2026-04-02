@@ -1,21 +1,21 @@
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
+use polars_ooc::{AccessPattern, Token, mm};
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::async_primitives::wait_group::WaitToken;
 
-static IDEAL_MORSEL_SIZE: OnceLock<usize> = OnceLock::new();
-
 pub fn get_ideal_morsel_size() -> usize {
-    *IDEAL_MORSEL_SIZE.get_or_init(|| {
-        std::env::var("POLARS_IDEAL_MORSEL_SIZE")
-            .map(|m| m.parse().unwrap())
-            .unwrap_or(100_000)
-    })
+    polars_config::config().ideal_morsel_size() as usize
 }
 
+/// A token indicating the order of morsels in a stream.
+///
+/// The sequence tokens going through a pipe are monotonely non-decreasing and are allowed to be
+/// discontinuous. Consequently, `1 -> 1 -> 2` and `1 -> 3 -> 5` are valid streams of sequence
+/// tokens.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug, Default)]
 pub struct MorselSeq(u64);
 
@@ -38,6 +38,10 @@ impl MorselSeq {
         Self(self.0 + offset.0)
     }
 
+    pub fn offset_by_u64(self, offset: u64) -> Self {
+        Self(self.0 + 2 * offset)
+    }
+
     pub fn to_u64(self) -> u64 {
         self.0
     }
@@ -48,22 +52,28 @@ impl MorselSeq {
 /// to stop with passing new morsels this execution phase.
 #[derive(Clone, Debug)]
 pub struct SourceToken {
-    stop: Arc<AtomicBool>,
+    stop: Arc<RelaxedCell<bool>>,
+}
+
+impl Default for SourceToken {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SourceToken {
     pub fn new() -> Self {
         Self {
-            stop: Arc::new(AtomicBool::new(false)),
+            stop: Arc::default(),
         }
     }
 
     pub fn stop(&self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.stop.store(true);
     }
 
     pub fn stop_requested(&self) -> bool {
-        self.stop.load(Ordering::Relaxed)
+        self.stop.load()
     }
 }
 
@@ -155,5 +165,25 @@ impl Morsel {
 
     pub fn replace_source_token(&mut self, new_token: SourceToken) -> SourceToken {
         core::mem::replace(&mut self.source_token, new_token)
+    }
+
+    /// Store the DataFrame in the memory manager, consuming the morsel.
+    pub async fn into_token(self, pattern: AccessPattern) -> Token {
+        mm().store(self.df, pattern).await
+    }
+
+    /// Store the DataFrame in the global memory manager (async), consuming the morsel.
+    /// Returns the Token and SourceToken. Drops seq and consume_token.
+    pub async fn store_into_token_and_source(self, pattern: AccessPattern) -> (Token, SourceToken) {
+        let token = mm().store(self.df, pattern).await;
+        (token, self.source_token)
+    }
+
+    /// Store the DataFrame in the global memory manager (async), consuming the morsel.
+    /// Returns the Token and MorselSeq. Drops source_token and consume_token.
+    pub async fn store_into_token_and_seq(self, pattern: AccessPattern) -> (MorselSeq, Token) {
+        let seq = self.seq;
+        let token = mm().store(self.df, pattern).await;
+        (seq, token)
     }
 }

@@ -27,8 +27,7 @@ impl NullChunkedBuilder {
 
     pub fn finish(mut self) -> NullChunked {
         let arr = self.array_builder.as_box();
-        let ca = NullChunked::new(self.field.name().clone(), arr.len());
-        ca
+        NullChunked::new(self.field.name().clone(), arr.len())
     }
 
     pub fn shrink_to_fit(&mut self) {

@@ -1,22 +1,24 @@
 use either::Either;
+use polars_error::{PolarsResult, polars_bail};
 
 use super::{Array, Splitable};
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::compute::utils::{combine_validities_and, combine_validities_or};
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::trusted_len::TrustedLen;
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod from;
 mod iterator;
 mod mutable;
-
 pub use mutable::*;
-use polars_error::{polars_bail, PolarsResult};
+mod builder;
+pub use builder::*;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
 /// A [`BooleanArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<bool>>`.
 /// It implements [`Array`].
@@ -32,7 +34,7 @@ use polars_error::{polars_bail, PolarsResult};
 /// ```
 /// use polars_arrow::array::BooleanArray;
 /// use polars_arrow::bitmap::Bitmap;
-/// use polars_arrow::buffer::Buffer;
+/// use polars_buffer::Buffer;
 ///
 /// let array = BooleanArray::from([Some(true), None, Some(false)]);
 /// assert_eq!(array.value(0), true);
@@ -63,7 +65,7 @@ impl BooleanArray {
     ) -> PolarsResult<Self> {
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != values.len())
+            .is_some_and(|validity| validity.len() != values.len())
         {
             polars_bail!(ComputeError: "validity mask length must match the number of values")
         }
@@ -86,13 +88,13 @@ impl BooleanArray {
 
     /// Returns an iterator over the optional values of this [`BooleanArray`].
     #[inline]
-    pub fn iter(&self) -> ZipValidity<bool, BitmapIter, BitmapIter> {
+    pub fn iter(&self) -> ZipValidity<bool, BitmapIter<'_>, BitmapIter<'_>> {
         ZipValidity::new_with_validity(self.values().iter(), self.validity())
     }
 
     /// Returns an iterator over the values of this [`BooleanArray`].
     #[inline]
-    pub fn values_iter(&self) -> BitmapIter {
+    pub fn values_iter(&self) -> BitmapIter<'_> {
         self.values().iter()
     }
 
@@ -222,7 +224,7 @@ impl BooleanArray {
     /// if it is being shared (since it results in a `O(N)` memcopy).
     /// # Panics
     /// This function panics if the function modifies the length of the [`MutableBitmap`].
-    pub fn apply_values_mut<F: Fn(&mut MutableBitmap)>(&mut self, f: F) {
+    pub fn apply_values_mut<F: FnOnce(&mut MutableBitmap)>(&mut self, f: F) {
         let values = std::mem::take(&mut self.values);
         let mut values = values.make_mut();
         f(&mut values);
@@ -348,6 +350,20 @@ impl BooleanArray {
         Ok(MutableBooleanArray::try_from_trusted_len_iter(iterator)?.into())
     }
 
+    pub fn true_and_valid(&self) -> Bitmap {
+        match &self.validity {
+            None => self.values.clone(),
+            Some(validity) => combine_validities_and(Some(&self.values), Some(validity)).unwrap(),
+        }
+    }
+
+    pub fn true_or_valid(&self) -> Bitmap {
+        match &self.validity {
+            None => self.values.clone(),
+            Some(validity) => combine_validities_or(Some(&self.values), Some(validity)).unwrap(),
+        }
+    }
+
     /// Returns its internal representation
     #[must_use]
     pub fn into_inner(self) -> (ArrowDataType, Bitmap, Option<Bitmap>) {
@@ -359,8 +375,8 @@ impl BooleanArray {
         (dtype, values, validity)
     }
 
-    /// Creates a `[BooleanArray]` from its internal representation.
-    /// This is the inverted from `[BooleanArray::into_inner]`
+    /// Creates a [`BooleanArray`] from its internal representation.
+    /// This is the inverted from [`BooleanArray::into_inner`]
     ///
     /// # Safety
     /// Callers must ensure all invariants of this struct are upheld.

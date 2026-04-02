@@ -17,13 +17,5 @@ pub fn arg_sort_by<E: AsRef<[Expr]>>(by: E, sort_options: SortMultipleOptions) -
 #[cfg(feature = "arg_where")]
 /// Get the indices where `condition` evaluates `true`.
 pub fn arg_where<E: Into<Expr>>(condition: E) -> Expr {
-    let condition = condition.into();
-    Expr::Function {
-        input: vec![condition],
-        function: FunctionExpr::ArgWhere,
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            ..Default::default()
-        },
-    }
+    condition.into().map_unary(FunctionExpr::ArgWhere)
 }

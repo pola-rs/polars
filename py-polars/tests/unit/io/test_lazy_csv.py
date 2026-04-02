@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import io
 import tempfile
 from collections import OrderedDict
 from pathlib import Path
+from typing import IO, TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -10,6 +12,10 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import CsvCompression
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
@@ -24,7 +30,9 @@ def test_scan_csv(io_files_path: Path) -> None:
 
 def test_scan_csv_no_cse_deadlock(io_files_path: Path) -> None:
     dfs = [pl.scan_csv(io_files_path / "small.csv")] * (pl.thread_pool_size() + 1)
-    pl.concat(dfs, parallel=True).collect(comm_subplan_elim=False)
+    pl.concat(dfs, parallel=True).collect(
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=False)
+    )
 
 
 def test_scan_empty_csv(io_files_path: Path) -> None:
@@ -75,15 +83,21 @@ def test_row_index(foods_file_path: Path) -> None:
 
 
 @pytest.mark.parametrize("file_name", ["foods1.csv", "foods*.csv"])
+@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_scan_csv_schema_overwrite_and_dtypes_overwrite(
     io_files_path: Path, file_name: str
 ) -> None:
     file_path = io_files_path / file_name
-    df = pl.scan_csv(
+    q = pl.scan_csv(
         file_path,
         schema_overrides={"calories_foo": pl.String, "fats_g_foo": pl.Float32},
         with_column_names=lambda names: [f"{a}_foo" for a in names],
-    ).collect()
+    )
+
+    assert q.collect_schema().dtypes() == [pl.String, pl.String, pl.Float32, pl.Int64]
+
+    df = q.collect()
+
     assert df.dtypes == [pl.String, pl.String, pl.Float32, pl.Int64]
     assert df.columns == [
         "category_foo",
@@ -95,6 +109,7 @@ def test_scan_csv_schema_overwrite_and_dtypes_overwrite(
 
 @pytest.mark.parametrize("file_name", ["foods1.csv", "foods*.csv"])
 @pytest.mark.parametrize("dtype", [pl.Int8, pl.UInt8, pl.Int16, pl.UInt16])
+@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_scan_csv_schema_overwrite_and_small_dtypes_overwrite(
     io_files_path: Path, file_name: str, dtype: pl.DataType
 ) -> None:
@@ -114,6 +129,7 @@ def test_scan_csv_schema_overwrite_and_small_dtypes_overwrite(
 
 
 @pytest.mark.parametrize("file_name", ["foods1.csv", "foods*.csv"])
+@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_scan_csv_schema_new_columns_dtypes(
     io_files_path: Path, file_name: str
 ) -> None:
@@ -168,7 +184,7 @@ def test_scan_csv_schema_new_columns_dtypes(
         ).collect()
 
     # cannot set both 'new_columns' and 'with_column_names'
-    with pytest.raises(ValueError, match="mutually.exclusive"):
+    with pytest.raises(ValueError, match=r"mutually.exclusive"):
         pl.scan_csv(
             file_path,
             schema_overrides=[pl.String, pl.String],
@@ -193,17 +209,33 @@ def test_lazy_n_rows(foods_file_path: Path) -> None:
 
 
 def test_lazy_row_index_no_push_down(foods_file_path: Path) -> None:
-    plan = (
+    q = (
         pl.scan_csv(foods_file_path)
         .with_row_index()
-        .filter(pl.col("index") == 1)
+        .filter(pl.col("index") > 13)
         .filter(pl.col("category") == pl.lit("vegetables"))
-        .explain(predicate_pushdown=True)
     )
-    # related to row count is not pushed.
-    assert 'FILTER [(col("index")) == (1)] FROM' in plan
-    # unrelated to row count is pushed.
-    assert 'SELECTION: [(col("category")) == (String(vegetables))]' in plan
+
+    plan = q.explain()
+
+    assert "FILTER" not in plan
+
+    assert_frame_equal(
+        q,
+        pl.LazyFrame(
+            [
+                pl.Series("index", [14, 20, 25], dtype=pl.get_index_type()),
+                pl.Series(
+                    "category",
+                    ["vegetables", "vegetables", "vegetables"],
+                    dtype=pl.String,
+                ),
+                pl.Series("calories", [25, 25, 30], dtype=pl.Int64),
+                pl.Series("fats_g", [0.0, 0.0, 0.0], dtype=pl.Float64),
+                pl.Series("sugars_g", [4, 3, 5], dtype=pl.Int64),
+            ]
+        ),
+    )
 
 
 @pytest.mark.write_disk
@@ -255,7 +287,7 @@ def test_scan_csv_schema_overwrite_not_projected_8483(foods_file_path: Path) -> 
         .select(pl.len())
         .collect()
     )
-    expected = pl.DataFrame({"len": 27}, schema={"len": pl.UInt32})
+    expected = pl.DataFrame({"len": 27}, schema={"len": pl.get_index_type()})
     assert_frame_equal(df, expected)
 
 
@@ -279,7 +311,7 @@ def test_scan_csv_slice_offset_zero(io_files_path: Path) -> None:
 @pytest.mark.write_disk
 def test_scan_empty_csv_with_row_index(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
-    file_path = tmp_path / "small.parquet"
+    file_path = tmp_path / "small.csv"
     df = pl.DataFrame({"a": []})
     df.write_csv(file_path)
 
@@ -345,6 +377,7 @@ A,B,C
         ],
     ],
 )
+@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_file_list_schema_mismatch(
     tmp_path: Path, dfs: list[pl.DataFrame], streaming: bool
 ) -> None:
@@ -352,20 +385,42 @@ def test_file_list_schema_mismatch(
 
     paths = [f"{tmp_path}/{i}.csv" for i in range(len(dfs))]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_csv(path)
 
     lf = pl.scan_csv(paths)
-    with pytest.raises(ComputeError):
-        lf.collect(streaming=streaming)
+    with pytest.raises((ComputeError, pl.exceptions.ColumnNotFoundError)):
+        lf.collect(engine="streaming" if streaming else "in-memory")
+
+    if streaming:
+        pytest.xfail(reason="missing_columns parameter for CSV")
 
     if len({df.width for df in dfs}) == 1:
         expect = pl.concat(df.select(x=pl.first().cast(pl.Int8)) for df in dfs)
-        out = pl.scan_csv(paths, schema={"x": pl.Int8}).collect(streaming=streaming)
+        out = pl.scan_csv(paths, schema={"x": pl.Int8}).collect(  # type: ignore[call-overload]
+            engine="streaming" if streaming else "in-memory"  # type: ignore[redundant-expr]
+        )
 
         assert_frame_equal(out, expect)
 
 
+def test_scan_csv_missing_columns_insert() -> None:
+    # Union of all columns, NULLs where a file lacks a column
+    result = pl.scan_csv(
+        [b"x,y\n1,2", b"x,z\n3,4"],
+        missing_columns="insert",
+    ).collect()
+    expected = pl.DataFrame(
+        {
+            "x": [1, 3],
+            "y": [2, None],
+            "z": [None, 4],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize("streaming", [True, False])
 def test_file_list_schema_supertype(tmp_path: Path, streaming: bool) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -385,12 +440,12 @@ c
 
     paths = [f"{tmp_path}/{i}.csv" for i in range(len(data_lst))]
 
-    for data, path in zip(data_lst, paths):
+    for data, path in zip(data_lst, paths, strict=True):
         with Path(path).open("w") as f:
             f.write(data)
 
     expect = pl.Series("a", ["1", "2", "b", "c"]).to_frame()
-    out = pl.scan_csv(paths).collect(streaming=streaming)
+    out = pl.scan_csv(paths).collect(engine="streaming" if streaming else "in-memory")
 
     assert_frame_equal(out, expect)
 
@@ -415,12 +470,14 @@ c
 
     paths = [f"{tmp_path}/{i}.csv" for i in range(len(data_lst))]
 
-    for data, path in zip(data_lst, paths):
+    for data, path in zip(data_lst, paths, strict=True):
         with Path(path).open("w") as f:
             f.write(data)
 
     expect = pl.Series("a", ["b", "c", "b", "c"]).to_frame()
-    out = pl.scan_csv(paths, comment_prefix="#").collect(streaming=streaming)
+    out = pl.scan_csv(paths, comment_prefix="#").collect(
+        engine="streaming" if streaming else "in-memory"
+    )
 
     assert_frame_equal(out, expect)
 
@@ -438,3 +495,123 @@ def test_scan_csv_with_column_names_nonexistent_file() -> None:
     # Upon collection, it should fail
     with pytest.raises(FileNotFoundError):
         result.collect()
+
+
+def test_select_nonexistent_column() -> None:
+    csv = "a\n1"
+    f = io.StringIO(csv)
+
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        pl.scan_csv(f).select("b").collect()
+
+
+def test_scan_csv_provided_schema_with_extra_fields_22531() -> None:
+    data = b"""\
+a,b,c
+a,b,c
+"""
+
+    schema = dict.fromkeys(["a", "b", "c", "d", "e"], pl.String)
+
+    assert_frame_equal(
+        pl.scan_csv(data, schema=schema).collect(),
+        pl.DataFrame(
+            {
+                "a": "a",
+                "b": "b",
+                "c": "c",
+                "d": None,
+                "e": None,
+            },
+            schema=schema,
+        ),
+    )
+
+
+def test_csv_negative_slice_comment_char_22996() -> None:
+    f = b"""\
+a,b
+1,1
+"""
+
+    q = pl.scan_csv(2 * [f], comment_prefix="#").tail(100)
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 1], "b": [1, 1]}))
+
+
+def test_csv_io_object_utf8_23629() -> None:
+    n_repeats = 10_000
+    for df in [
+        pl.DataFrame({"a": ["é,è"], "b": ["c,d"]}),
+        pl.DataFrame({"a": ["Ú;и"], "b": ["c;d"]}),
+        pl.DataFrame({"a": ["a,b"], "b": ["c,d"]}),
+        pl.DataFrame({"a": ["é," * n_repeats + "è"], "b": ["c," * n_repeats + "d"]}),
+    ]:
+        # bytes
+        f_bytes = io.BytesIO()
+        df.write_csv(f_bytes)
+        f_bytes.seek(0)
+        df_bytes = pl.read_csv(f_bytes)
+        assert_frame_equal(df, df_bytes)
+
+        # str
+        f_str = io.StringIO()
+        df.write_csv(f_str)
+        f_str.seek(0)
+        df_str = pl.read_csv(f_str)
+        assert_frame_equal(df, df_str)
+
+
+def test_scan_csv_multiple_files_skip_rows_overflow_26127() -> None:
+    files: list[IO[bytes]] = [
+        io.BytesIO(b"foo,bar,baz\n1,2,3\n4,5,6") for _ in range(2)
+    ]
+    assert_frame_equal(
+        pl.scan_csv(
+            files,
+            n_rows=4,
+            skip_rows=2,
+        ).collect(),
+        pl.DataFrame(schema={"4": pl.String, "5": pl.String, "6": pl.String}),
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize("compression", ["uncompressed", "zstd", "gzip"])
+def test_scan_csv_progressive_infer_schema_length(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, compression: CsvCompression
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    n_rows = 60_000
+    df = (
+        pl.DataFrame()
+        .with_columns(pl.int_range(n_rows).alias("a"))
+        .with_columns(pl.col.a.cast(pl.Float64).alias("b"))
+    )
+
+    df.lazy().sink_csv(file_path, compression=compression, check_extension=False)
+
+    for infer_len in [1, 2, 100, n_rows - 1, n_rows, n_rows + 1, None]:
+        out = pl.scan_csv(file_path, infer_schema_length=infer_len).collect()
+        assert df.schema == out.schema
+
+
+@pytest.mark.write_disk
+def test_scan_csv_count_rows_async_with_schema(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "test.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    df = pl.DataFrame({"a": range(10)})
+    df.write_csv(file_path)
+
+    schema = pl.Schema({"a": pl.Int64})
+    out = pl.scan_csv(file_path, schema=schema).select(pl.len()).collect()
+    assert out.item() == 10

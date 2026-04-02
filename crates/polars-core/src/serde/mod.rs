@@ -1,10 +1,10 @@
 pub mod chunked_array;
-mod df;
+pub mod df;
 pub mod series;
 
 #[cfg(test)]
 mod test {
-    use crate::chunked_array::metadata::MetadataFlags;
+    use crate::chunked_array::flags::StatisticsFlags;
     use crate::prelude::*;
     use crate::series::IsSorted;
 
@@ -12,14 +12,14 @@ mod test {
     fn test_serde() -> PolarsResult<()> {
         let ca = UInt32Chunked::new("foo".into(), &[Some(1), None, Some(2)]);
 
-        let json = serde_json::to_string(&ca).unwrap();
+        let json = serde_json::to_string(&ca.clone().into_series()).unwrap();
 
         let out = serde_json::from_str::<Series>(&json).unwrap();
         assert!(ca.into_series().equals_missing(&out));
 
         let ca = StringChunked::new("foo".into(), &[Some("foo"), None, Some("bar")]);
 
-        let json = serde_json::to_string(&ca).unwrap();
+        let json = serde_json::to_string(&ca.clone().into_series()).unwrap();
 
         let out = serde_json::from_str::<Series>(&json).unwrap(); // uses `Deserialize<'de>`
         assert!(ca.into_series().equals_missing(&out));
@@ -32,7 +32,7 @@ mod test {
     fn test_serde_owned() {
         let ca = UInt32Chunked::new("foo".into(), &[Some(1), None, Some(2)]);
 
-        let json = serde_json::to_string(&ca).unwrap();
+        let json = serde_json::to_string(&ca.clone().into_series()).unwrap();
 
         let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap(); // uses `DeserializeOwned`
         assert!(ca.into_series().equals_missing(&out));
@@ -42,21 +42,21 @@ mod test {
         let s1 = Series::new("foo".into(), &[1, 2, 3]);
         let s2 = Series::new("bar".into(), &[Some(true), None, Some(false)]);
         let s3 = Series::new("string".into(), &["mouse", "elephant", "dog"]);
-        let s_list = Series::new("list".into(), &[s1.clone(), s1.clone(), s1.clone()]);
+        let s_list = Column::new("list".into(), &[s1.clone(), s1.clone(), s1.clone()]);
 
-        DataFrame::new(vec![s1, s2, s3, s_list]).unwrap()
+        DataFrame::new_infer_height(vec![s1.into(), s2.into(), s3.into(), s_list]).unwrap()
     }
 
     #[test]
     fn test_serde_flags() {
         let df = sample_dataframe();
 
-        for mut column in df.columns {
+        for mut column in df.into_columns() {
             column.set_sorted_flag(IsSorted::Descending);
             let json = serde_json::to_string(&column).unwrap();
-            let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap();
+            let out = serde_json::from_reader::<_, Column>(json.as_bytes()).unwrap();
             let f = out.get_flags();
-            assert_ne!(f, MetadataFlags::empty());
+            assert_ne!(f, StatisticsFlags::empty());
             assert_eq!(column.get_flags(), out.get_flags());
         }
     }
@@ -69,14 +69,6 @@ mod test {
         assert!(df.equals_missing(&out));
     }
 
-    #[test]
-    fn test_serde_df_bincode() {
-        let df = sample_dataframe();
-        let bytes = bincode::serialize(&df).unwrap();
-        let out = bincode::deserialize::<DataFrame>(&bytes).unwrap(); // uses `Deserialize<'de>`
-        assert!(df.equals_missing(&out));
-    }
-
     /// test using the `DeserializedOwned` trait
     #[test]
     fn test_serde_df_owned_json() {
@@ -84,22 +76,6 @@ mod test {
         let json = serde_json::to_string(&df).unwrap();
 
         let out = serde_json::from_reader::<_, DataFrame>(json.as_bytes()).unwrap(); // uses `DeserializeOwned`
-        assert!(df.equals_missing(&out));
-    }
-
-    #[test]
-    fn test_serde_binary_series_owned_bincode() {
-        let s1 = Series::new(
-            "foo".into(),
-            &[
-                vec![1u8, 2u8, 3u8],
-                vec![4u8, 5u8, 6u8, 7u8],
-                vec![8u8, 9u8],
-            ],
-        );
-        let df = DataFrame::new(vec![s1]).unwrap();
-        let bytes = bincode::serialize(&df).unwrap();
-        let out = bincode::deserialize_from::<_, DataFrame>(bytes.as_slice()).unwrap();
         assert!(df.equals_missing(&out));
     }
 
@@ -142,18 +118,10 @@ mod test {
         let s =
             Series::from_any_values_and_dtype("item".into(), &[row_1, row_2, row_3], &dtype, false)
                 .unwrap();
-        let df = DataFrame::new(vec![s]).unwrap();
+        let df = DataFrame::new_infer_height(vec![s.into()]).unwrap();
 
         let df_str = serde_json::to_string(&df).unwrap();
         let out = serde_json::from_str::<DataFrame>(&df_str).unwrap();
-        assert!(df.equals_missing(&out));
-    }
-    /// test using the `DeserializedOwned` trait
-    #[test]
-    fn test_serde_df_owned_bincode() {
-        let df = sample_dataframe();
-        let bytes = bincode::serialize(&df).unwrap();
-        let out = bincode::deserialize_from::<_, DataFrame>(bytes.as_slice()).unwrap(); // uses `DeserializeOwned`
         assert!(df.equals_missing(&out));
     }
 }

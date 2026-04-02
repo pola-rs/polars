@@ -5,9 +5,9 @@ use super::*;
 pub(super) fn evaluate_aggs(
     df: &DataFrame,
     aggs: &[Arc<dyn PhysicalExpr>],
-    groups: &GroupsProxy,
+    groups: &GroupPositions,
     state: &ExecutionState,
-) -> PolarsResult<Vec<Series>> {
+) -> PolarsResult<Vec<Column>> {
     POOL.install(|| {
         aggs.par_iter()
             .map(|expr| {
@@ -24,9 +24,10 @@ pub struct GroupByExec {
     input: Box<dyn Executor>,
     keys: Vec<Arc<dyn PhysicalExpr>>,
     aggs: Vec<Arc<dyn PhysicalExpr>>,
-    apply: Option<Arc<dyn DataFrameUdf>>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
     maintain_order: bool,
     input_schema: SchemaRef,
+    output_schema: SchemaRef,
     slice: Option<(i64, usize)>,
 }
 
@@ -36,9 +37,10 @@ impl GroupByExec {
         input: Box<dyn Executor>,
         keys: Vec<Arc<dyn PhysicalExpr>>,
         aggs: Vec<Arc<dyn PhysicalExpr>>,
-        apply: Option<Arc<dyn DataFrameUdf>>,
+        apply: Option<PlanCallback<DataFrame, DataFrame>>,
         maintain_order: bool,
         input_schema: SchemaRef,
+        output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
         Self {
@@ -48,6 +50,7 @@ impl GroupByExec {
             apply,
             maintain_order,
             input_schema,
+            output_schema,
             slice,
         }
     }
@@ -56,18 +59,19 @@ impl GroupByExec {
 #[allow(clippy::too_many_arguments)]
 pub(super) fn group_by_helper(
     mut df: DataFrame,
-    keys: Vec<Series>,
+    keys: Vec<Column>,
     aggs: &[Arc<dyn PhysicalExpr>],
-    apply: Option<Arc<dyn DataFrameUdf>>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
     state: &ExecutionState,
     maintain_order: bool,
+    output_schema: &SchemaRef,
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
-    df.as_single_chunk_par();
+    df.rechunk_mut_par();
     let gb = df.group_by_with_series(keys, true, maintain_order)?;
 
     if let Some(f) = apply {
-        return gb.apply(move |df| f.call_udf(df));
+        return gb.apply_sliced(slice, move |df| f.call(df), Some(output_schema));
     }
 
     let mut groups = gb.get_groups();
@@ -78,7 +82,7 @@ pub(super) fn group_by_helper(
 
     if let Some((offset, len)) = slice {
         sliced_groups = Some(groups.slice(offset, len));
-        groups = sliced_groups.as_deref().unwrap();
+        groups = sliced_groups.as_ref().unwrap();
     }
 
     let (mut columns, agg_columns) = POOL.install(|| {
@@ -88,10 +92,9 @@ pub(super) fn group_by_helper(
 
         rayon::join(get_columns, get_agg)
     });
-    let agg_columns = agg_columns?;
 
-    columns.extend_from_slice(&agg_columns);
-    DataFrame::new(columns)
+    columns.extend(agg_columns?);
+    DataFrame::new_infer_height(columns)
 }
 
 impl GroupByExec {
@@ -108,6 +111,7 @@ impl GroupByExec {
             self.apply.take(),
             state,
             self.maintain_order,
+            &self.output_schema,
             self.slice,
         )
     }

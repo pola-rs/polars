@@ -9,6 +9,8 @@ pub fn negate(s: &Series) -> PolarsResult<Series> {
         Int16 => s.i16().unwrap().wrapping_neg().into_series(),
         Int32 => s.i32().unwrap().wrapping_neg().into_series(),
         Int64 => s.i64().unwrap().wrapping_neg().into_series(),
+        #[cfg(feature = "dtype-f16")]
+        Float16 => s.f16().unwrap().wrapping_neg().into_series(),
         Float32 => s.f32().unwrap().wrapping_neg().into_series(),
         Float64 => s.f64().unwrap().wrapping_neg().into_series(),
         #[cfg(feature = "dtype-decimal")]
@@ -17,7 +19,7 @@ pub fn negate(s: &Series) -> PolarsResult<Series> {
             let precision = ca.precision();
             let scale = ca.scale();
 
-            let out = ca.as_ref().wrapping_neg();
+            let out = ca.physical().wrapping_neg();
             out.into_decimal_unchecked(precision, scale).into_series()
         },
         #[cfg(feature = "dtype-duration")]

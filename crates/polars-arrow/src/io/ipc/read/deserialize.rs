@@ -3,12 +3,14 @@ use std::io::{Read, Seek};
 
 use arrow_format::ipc::{BodyCompressionRef, MetadataVersion};
 use polars_error::PolarsResult;
+use polars_utils::bool::UnsafeBool;
 
 use super::array::*;
 use super::{Dictionaries, IpcBuffer, Node};
 use crate::array::*;
 use crate::datatypes::{ArrowDataType, Field, PhysicalType};
 use crate::io::ipc::IpcField;
+use crate::types::{PrimitiveType, months_days_ns};
 use crate::{match_integer_type, with_match_primitive_type_full};
 
 #[allow(clippy::too_many_arguments)]
@@ -26,6 +28,7 @@ pub fn read<R: Read + Seek>(
     limit: Option<usize>,
     version: MetadataVersion,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<Box<dyn Array>> {
     use PhysicalType::*;
     let dtype = field.dtype.clone();
@@ -33,6 +36,18 @@ pub fn read<R: Read + Seek>(
     match dtype.to_physical_type() {
         Null => read_null(field_nodes, dtype, limit).map(|x| x.boxed()),
         Boolean => read_boolean(
+            field_nodes,
+            dtype,
+            buffers,
+            reader,
+            block_offset,
+            is_little_endian,
+            compression,
+            limit,
+            scratch,
+        )
+        .map(|x| x.boxed()),
+        Primitive(PrimitiveType::MonthDayNano) => read_primitive::<months_days_ns, _>(
             field_nodes,
             dtype,
             buffers,
@@ -68,6 +83,7 @@ pub fn read<R: Read + Seek>(
             compression,
             limit,
             scratch,
+            checked,
         )
         .map(|x| x.boxed()),
         LargeBinary => read_binary::<i64, _>(
@@ -80,6 +96,7 @@ pub fn read<R: Read + Seek>(
             compression,
             limit,
             scratch,
+            checked,
         )
         .map(|x| x.boxed()),
         FixedSizeBinary => read_fixed_size_binary(
@@ -104,6 +121,7 @@ pub fn read<R: Read + Seek>(
             compression,
             limit,
             scratch,
+            checked,
         )
         .map(|x| x.boxed()),
         LargeUtf8 => read_utf8::<i64, _>(
@@ -116,6 +134,7 @@ pub fn read<R: Read + Seek>(
             compression,
             limit,
             scratch,
+            checked,
         )
         .map(|x| x.boxed()),
         List => read_list::<i32, _>(
@@ -132,6 +151,7 @@ pub fn read<R: Read + Seek>(
             limit,
             version,
             scratch,
+            checked,
         )
         .map(|x| x.boxed()),
         LargeList => read_list::<i64, _>(
@@ -148,6 +168,7 @@ pub fn read<R: Read + Seek>(
             limit,
             version,
             scratch,
+            checked,
         )
         .map(|x| x.boxed()),
         FixedSizeList => read_fixed_size_list(
@@ -164,6 +185,7 @@ pub fn read<R: Read + Seek>(
             limit,
             version,
             scratch,
+            checked,
         )
         .map(|x| x.boxed()),
         Struct => read_struct(
@@ -180,6 +202,7 @@ pub fn read<R: Read + Seek>(
             limit,
             version,
             scratch,
+            checked,
         )
         .map(|x| x.boxed()),
         Dictionary(key_type) => {
@@ -214,6 +237,7 @@ pub fn read<R: Read + Seek>(
             limit,
             version,
             scratch,
+            checked,
         )
         .map(|x| x.boxed()),
         Map => read_map(
@@ -230,6 +254,7 @@ pub fn read<R: Read + Seek>(
             limit,
             version,
             scratch,
+            checked,
         )
         .map(|x| x.boxed()),
         Utf8View => read_binview::<str, _>(
@@ -243,6 +268,7 @@ pub fn read<R: Read + Seek>(
             compression,
             limit,
             scratch,
+            checked,
         ),
         BinaryView => read_binview::<[u8], _>(
             field_nodes,
@@ -255,6 +281,7 @@ pub fn read<R: Read + Seek>(
             compression,
             limit,
             scratch,
+            checked,
         ),
     }
 }

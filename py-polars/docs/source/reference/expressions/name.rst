@@ -14,6 +14,7 @@ The following methods are available under the `expr.name` attribute.
     Expr.name.map_fields
     Expr.name.prefix
     Expr.name.prefix_fields
+    Expr.name.replace
     Expr.name.suffix
     Expr.name.suffix_fields
     Expr.name.to_lowercase

@@ -39,7 +39,7 @@ mod tests {
     fn many_numbers() -> Result<(), ParquetError> {
         let mut data = vec![];
         for i in 0..136 {
-            data.push(format!("a{}", i))
+            data.push(format!("a{i}"))
         }
 
         let expected = data

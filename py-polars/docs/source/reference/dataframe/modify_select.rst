@@ -7,12 +7,14 @@ Manipulation/selection
    :toctree: api/
 
     DataFrame.__getitem__
+    DataFrame.__setitem__
     DataFrame.bottom_k
     DataFrame.cast
     DataFrame.clear
     DataFrame.clone
     DataFrame.drop
     DataFrame.drop_in_place
+    DataFrame.drop_nans
     DataFrame.drop_nulls
     DataFrame.explode
     DataFrame.extend
@@ -37,12 +39,14 @@ Manipulation/selection
     DataFrame.join_asof
     DataFrame.join_where
     DataFrame.limit
+    DataFrame.match_to_schema
     DataFrame.melt
     DataFrame.merge_sorted
     DataFrame.partition_by
     DataFrame.pipe
     DataFrame.pivot
     DataFrame.rechunk
+    DataFrame.remove
     DataFrame.rename
     DataFrame.replace_column
     DataFrame.reverse

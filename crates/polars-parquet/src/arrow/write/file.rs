@@ -4,22 +4,9 @@ use arrow::datatypes::ArrowSchema;
 use polars_error::{PolarsError, PolarsResult};
 
 use super::schema::schema_to_metadata_key;
-use super::{to_parquet_schema, ThriftFileMetaData, WriteOptions};
+use super::{ThriftFileMetadata, WriteOptions, to_parquet_schema};
 use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
 use crate::parquet::write::{RowGroupIterColumns, WriteOptions as FileWriteOptions};
-
-/// Attaches [`ArrowSchema`] to `key_value_metadata`
-pub fn add_arrow_schema(
-    schema: &ArrowSchema,
-    key_value_metadata: Option<Vec<KeyValue>>,
-) -> Option<Vec<KeyValue>> {
-    key_value_metadata
-        .map(|mut x| {
-            x.push(schema_to_metadata_key(schema));
-            x
-        })
-        .or_else(|| Some(vec![schema_to_metadata_key(schema)]))
-}
 
 /// An interface to write a parquet to a [`Write`]
 pub struct FileWriter<W: Write> {
@@ -50,12 +37,15 @@ impl<W: Write> FileWriter<W> {
     /// Returns a new [`FileWriter`].
     /// # Error
     /// If it is unable to derive a parquet schema from [`ArrowSchema`].
-    pub fn try_new(writer: W, schema: ArrowSchema, options: WriteOptions) -> PolarsResult<Self> {
-        let parquet_schema = to_parquet_schema(&schema)?;
-
+    pub fn new_with_parquet_schema(
+        writer: W,
+        schema: ArrowSchema,
+        parquet_schema: SchemaDescriptor,
+        options: WriteOptions,
+    ) -> Self {
         let created_by = Some("Polars".to_string());
 
-        Ok(Self {
+        Self {
             writer: crate::parquet::write::FileWriter::new(
                 writer,
                 parquet_schema,
@@ -67,18 +57,38 @@ impl<W: Write> FileWriter<W> {
             ),
             schema,
             options,
-        })
+        }
+    }
+
+    /// Returns a new [`FileWriter`].
+    /// # Error
+    /// If it is unable to derive a parquet schema from [`ArrowSchema`].
+    pub fn try_new(writer: W, schema: ArrowSchema, options: WriteOptions) -> PolarsResult<Self> {
+        let parquet_schema = to_parquet_schema(&schema)?;
+        Ok(Self::new_with_parquet_schema(
+            writer,
+            schema,
+            parquet_schema,
+            options,
+        ))
     }
 
     /// Writes a row group to the file.
-    pub fn write(&mut self, row_group: RowGroupIterColumns<'_, PolarsError>) -> PolarsResult<()> {
-        Ok(self.writer.write(row_group)?)
+    pub fn write(
+        &mut self,
+        num_rows: u64,
+        row_group: RowGroupIterColumns<'_, PolarsError>,
+    ) -> PolarsResult<()> {
+        Ok(self.writer.write(num_rows, row_group)?)
     }
 
     /// Writes the footer of the parquet file. Returns the total size of the file.
+    /// If `key_value_metadata` is provided, the value is taken as-is. If it is not provided,
+    /// the Arrow schema is added to the metadata.
     pub fn end(&mut self, key_value_metadata: Option<Vec<KeyValue>>) -> PolarsResult<u64> {
-        let key_value_metadata = add_arrow_schema(&self.schema, key_value_metadata);
-        Ok(self.writer.end(key_value_metadata)?)
+        let key_value_metadata =
+            key_value_metadata.unwrap_or_else(|| vec![schema_to_metadata_key(&self.schema)]);
+        Ok(self.writer.end(Some(key_value_metadata))?)
     }
 
     /// Consumes this writer and returns the inner writer
@@ -86,10 +96,10 @@ impl<W: Write> FileWriter<W> {
         self.writer.into_inner()
     }
 
-    /// Returns the underlying writer and [`ThriftFileMetaData`]
+    /// Returns the underlying writer and [`ThriftFileMetadata`]
     /// # Panics
     /// This function panics if [`Self::end`] has not yet been called
-    pub fn into_inner_and_metadata(self) -> (W, ThriftFileMetaData) {
+    pub fn into_inner_and_metadata(self) -> (W, ThriftFileMetadata) {
         self.writer.into_inner_and_metadata()
     }
 }

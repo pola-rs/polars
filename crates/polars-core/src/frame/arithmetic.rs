@@ -2,14 +2,14 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use rayon::prelude::*;
 
+use crate::POOL;
 use crate::prelude::*;
 use crate::utils::try_get_supertype;
-use crate::POOL;
 
 /// Get the supertype that is valid for all columns in the [`DataFrame`].
 /// This reduces casting of the rhs in arithmetic.
 fn get_supertype_all(df: &DataFrame, rhs: &Series) -> PolarsResult<DataType> {
-    df.columns.iter().try_fold(rhs.dtype().clone(), |dt, s| {
+    df.columns().iter().try_fold(rhs.dtype().clone(), |dt, s| {
         try_get_supertype(s.dtype(), &dt)
     })
 }
@@ -18,14 +18,11 @@ macro_rules! impl_arithmetic {
     ($self:expr, $rhs:expr, $operand:expr) => {{
         let st = get_supertype_all($self, $rhs)?;
         let rhs = $rhs.cast(&st)?;
-        let cols = POOL.install(|| {
-            $self
-                .columns
-                .par_iter()
-                .map(|s| $operand(&s.cast(&st)?, &rhs))
-                .collect::<PolarsResult<_>>()
+        let cols = $self.try_apply_columns_par(|c| {
+            let s = c.as_materialized_series();
+            $operand(&s.cast(&st)?, &rhs).map(Column::from)
         })?;
-        Ok(unsafe { DataFrame::new_no_checks(cols) })
+        Ok(unsafe { DataFrame::new_unchecked($self.height(), cols) })
     }};
 }
 
@@ -118,10 +115,13 @@ impl DataFrame {
         let max_len = std::cmp::max(self.height(), other.height());
         let max_width = std::cmp::max(self.width(), other.width());
         let cols = self
-            .get_columns()
+            .columns()
             .par_iter()
-            .zip(other.get_columns().par_iter())
+            .zip(other.columns().par_iter())
             .map(|(l, r)| {
+                let l = l.as_materialized_series();
+                let r = r.as_materialized_series();
+
                 let diff_l = max_len - l.len();
                 let diff_r = max_len - r.len();
 
@@ -136,7 +136,7 @@ impl DataFrame {
                     r = r.extend_constant(AnyValue::Null, diff_r)?;
                 };
 
-                f(&l, &r)
+                f(&l, &r).map(Column::from)
             });
         let mut cols = POOL.install(|| cols.collect::<PolarsResult<Vec<_>>>())?;
 
@@ -145,17 +145,18 @@ impl DataFrame {
             let df = if col_len < self.width() { self } else { other };
 
             for i in col_len..max_len {
-                let s = &df.get_columns().get(i).ok_or_else(|| polars_err!(InvalidOperation: "cannot do arithmetic on DataFrames with shapes: {:?} and {:?}", self.shape(), other.shape()))?;
+                let s = &df.columns().get(i).ok_or_else(|| polars_err!(InvalidOperation: "cannot do arithmetic on DataFrames with shapes: {:?} and {:?}", self.shape(), other.shape()))?;
                 let name = s.name();
                 let dtype = s.dtype();
 
                 // trick to fill a series with nulls
                 let vals: &[Option<i32>] = &[None];
                 let s = Series::new(name.clone(), vals).cast(dtype)?;
-                cols.push(s.new_from_index(0, max_len))
+                cols.push(s.new_from_index(0, max_len).into())
             }
         }
-        DataFrame::new(cols)
+
+        DataFrame::new_infer_height(cols)
     }
 }
 

@@ -1,195 +1,20 @@
-use std::fs::File;
 use std::io::Cursor;
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
 
 pub use arrow::array::StructArray;
 use num_traits::pow::Pow;
+use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
-use polars_core::POOL;
 use rayon::prelude::*;
 
-use crate::mmap::{MmapBytesReader, ReaderBytes};
+use crate::RowIndex;
+use crate::mmap::ReaderBytes;
 use crate::ndjson::buffer::*;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
-use crate::{RowIndex, SerReader};
 const NEWLINE: u8 = b'\n';
 const CLOSING_BRACKET: u8 = b'}';
-
-#[must_use]
-pub struct JsonLineReader<'a, R>
-where
-    R: MmapBytesReader,
-{
-    reader: R,
-    rechunk: bool,
-    n_rows: Option<usize>,
-    n_threads: Option<usize>,
-    infer_schema_len: Option<NonZeroUsize>,
-    chunk_size: NonZeroUsize,
-    schema: Option<SchemaRef>,
-    schema_overwrite: Option<&'a Schema>,
-    path: Option<PathBuf>,
-    low_memory: bool,
-    ignore_errors: bool,
-    row_index: Option<&'a mut RowIndex>,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    projection: Option<Arc<[PlSmallStr]>>,
-}
-
-impl<'a, R> JsonLineReader<'a, R>
-where
-    R: 'a + MmapBytesReader,
-{
-    pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
-        self.n_rows = num_rows;
-        self
-    }
-    pub fn with_schema(mut self, schema: SchemaRef) -> Self {
-        self.schema = Some(schema);
-        self
-    }
-
-    pub fn with_schema_overwrite(mut self, schema: &'a Schema) -> Self {
-        self.schema_overwrite = Some(schema);
-        self
-    }
-
-    pub fn with_rechunk(mut self, rechunk: bool) -> Self {
-        self.rechunk = rechunk;
-        self
-    }
-
-    pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
-        self.predicate = predicate;
-        self
-    }
-
-    pub fn with_projection(mut self, projection: Option<Arc<[PlSmallStr]>>) -> Self {
-        self.projection = projection;
-        self
-    }
-
-    pub fn with_row_index(mut self, row_index: Option<&'a mut RowIndex>) -> Self {
-        self.row_index = row_index;
-        self
-    }
-
-    pub fn infer_schema_len(mut self, infer_schema_len: Option<NonZeroUsize>) -> Self {
-        self.infer_schema_len = infer_schema_len;
-        self
-    }
-
-    pub fn with_n_threads(mut self, n: Option<usize>) -> Self {
-        self.n_threads = n;
-        self
-    }
-
-    pub fn with_path<P: Into<PathBuf>>(mut self, path: Option<P>) -> Self {
-        self.path = path.map(|p| p.into());
-        self
-    }
-    /// Sets the chunk size used by the parser. This influences performance
-    pub fn with_chunk_size(mut self, chunk_size: Option<NonZeroUsize>) -> Self {
-        if let Some(chunk_size) = chunk_size {
-            self.chunk_size = chunk_size;
-        };
-
-        self
-    }
-    /// Reduce memory consumption at the expense of performance
-    pub fn low_memory(mut self, toggle: bool) -> Self {
-        self.low_memory = toggle;
-        self
-    }
-
-    /// Set values as `Null` if parsing fails because of schema mismatches.
-    pub fn with_ignore_errors(mut self, ignore_errors: bool) -> Self {
-        self.ignore_errors = ignore_errors;
-        self
-    }
-
-    pub fn count(mut self) -> PolarsResult<usize> {
-        let reader_bytes = get_reader_bytes(&mut self.reader)?;
-        let json_reader = CoreJsonReader::new(
-            reader_bytes,
-            self.n_rows,
-            self.schema,
-            self.schema_overwrite,
-            self.n_threads,
-            1024, // sample size
-            self.chunk_size,
-            self.low_memory,
-            self.infer_schema_len,
-            self.ignore_errors,
-            self.row_index,
-            self.predicate,
-            self.projection,
-        )?;
-
-        json_reader.count()
-    }
-}
-
-impl<'a> JsonLineReader<'a, File> {
-    /// This is the recommended way to create a json reader as this allows for fastest parsing.
-    pub fn from_path<P: Into<PathBuf>>(path: P) -> PolarsResult<Self> {
-        let path = crate::resolve_homedir(&path.into());
-        let f = polars_utils::open_file(&path)?;
-        Ok(Self::new(f).with_path(Some(path)))
-    }
-}
-impl<'a, R> SerReader<R> for JsonLineReader<'a, R>
-where
-    R: MmapBytesReader,
-{
-    /// Create a new JsonLineReader from a file/ stream
-    fn new(reader: R) -> Self {
-        JsonLineReader {
-            reader,
-            rechunk: true,
-            n_rows: None,
-            n_threads: None,
-            infer_schema_len: Some(NonZeroUsize::new(100).unwrap()),
-            schema: None,
-            schema_overwrite: None,
-            path: None,
-            chunk_size: NonZeroUsize::new(1 << 18).unwrap(),
-            low_memory: false,
-            ignore_errors: false,
-            row_index: None,
-            predicate: None,
-            projection: None,
-        }
-    }
-    fn finish(mut self) -> PolarsResult<DataFrame> {
-        let rechunk = self.rechunk;
-        let reader_bytes = get_reader_bytes(&mut self.reader)?;
-        let mut json_reader = CoreJsonReader::new(
-            reader_bytes,
-            self.n_rows,
-            self.schema,
-            self.schema_overwrite,
-            self.n_threads,
-            1024, // sample size
-            self.chunk_size,
-            self.low_memory,
-            self.infer_schema_len,
-            self.ignore_errors,
-            self.row_index,
-            self.predicate,
-            self.projection,
-        )?;
-
-        let mut df: DataFrame = json_reader.as_df()?;
-        if rechunk && df.n_chunks() > 1 {
-            df.as_single_chunk_par();
-        }
-        Ok(df)
-    }
-}
 
 pub(crate) struct CoreJsonReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
@@ -251,19 +76,6 @@ impl<'a> CoreJsonReader<'a> {
         })
     }
 
-    fn count(mut self) -> PolarsResult<usize> {
-        let bytes = self.reader_bytes.take().unwrap();
-        let n_threads = self.n_threads.unwrap_or(POOL.current_num_threads());
-        let file_chunks = get_file_chunks_json(bytes.as_ref(), n_threads);
-
-        let iter = file_chunks.par_iter().map(|(start_pos, stop_at_nbytes)| {
-            let bytes = &bytes[*start_pos..*stop_at_nbytes];
-            let iter = json_lines(bytes);
-            iter.count()
-        });
-        Ok(POOL.install(|| iter.sum()))
-    }
-
     fn parse_json(&mut self, mut n_threads: usize, bytes: &[u8]) -> PolarsResult<DataFrame> {
         let mut bytes = bytes;
         let mut total_rows = 128;
@@ -304,13 +116,11 @@ impl<'a> CoreJsonReader<'a> {
             file_chunks
                 .into_par_iter()
                 .map(|(start_pos, stop_at_nbytes)| {
-                    let mut buffers = init_buffers(&self.schema, capacity, self.ignore_errors)?;
-                    parse_lines(&bytes[start_pos..stop_at_nbytes], &mut buffers)?;
-                    let mut local_df = DataFrame::new(
-                        buffers
-                            .into_values()
-                            .map(|buf| buf.into_series())
-                            .collect::<_>(),
+                    let mut local_df = parse_ndjson(
+                        &bytes[start_pos..stop_at_nbytes],
+                        Some(capacity),
+                        &self.schema,
+                        self.ignore_errors,
                     )?;
 
                     let prepredicate_height = local_df.height() as IdxSize;
@@ -365,6 +175,7 @@ fn parse_impl(
     bytes: &[u8],
     buffers: &mut PlIndexMap<BufferKey, Buffer>,
     scratch: &mut Scratch,
+    ignore_errors: bool,
 ) -> PolarsResult<usize> {
     scratch.json.clear();
     scratch.json.extend_from_slice(bytes);
@@ -381,8 +192,11 @@ fn parse_impl(
                 PolarsResult::Ok(())
             })?;
         },
-        _ => {
+        _ if ignore_errors => {
             buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
+        },
+        v => {
+            polars_bail!(ComputeError: "NDJSON line expected to contain JSON object: {v}");
         },
     };
     Ok(n)
@@ -394,27 +208,89 @@ struct Scratch {
     buffers: simd_json::Buffers,
 }
 
-fn json_lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
+pub fn json_lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
     // This previously used `serde_json`'s `RawValue` to deserialize chunks without really deserializing them.
     // However, this convenience comes at a cost. serde_json allocates and parses and does UTF-8 validation, all
     // things we don't need since we use simd_json for them. Also, `serde_json::StreamDeserializer` has a more
     // ambitious goal: it wants to parse potentially *non-delimited* sequences of JSON values, while we know
     // our values are line-delimited. Turns out, custom splitting is very easy, and gives a very nice performance boost.
-    bytes.split(|&byte| byte == b'\n').filter(|&bytes| {
-        bytes
-            .iter()
-            .any(|&byte| !matches!(byte, b' ' | b'\t' | b'\r'))
-    })
+    bytes
+        .split(|&byte| byte == b'\n')
+        .filter(|bytes| is_json_line(bytes))
 }
 
-fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> PolarsResult<()> {
+#[inline]
+pub fn is_json_line(bytes: &[u8]) -> bool {
+    bytes
+        .iter()
+        .any(|byte| !matches!(*byte, b' ' | b'\t' | b'\r'))
+}
+
+fn parse_lines(
+    bytes: &[u8],
+    buffers: &mut PlIndexMap<BufferKey, Buffer>,
+    ignore_errors: bool,
+) -> PolarsResult<()> {
     let mut scratch = Scratch::default();
 
     let iter = json_lines(bytes);
     for bytes in iter {
-        parse_impl(bytes, buffers, &mut scratch)?;
+        parse_impl(bytes, buffers, &mut scratch, ignore_errors)?;
     }
     Ok(())
+}
+
+pub fn parse_ndjson(
+    bytes: &[u8],
+    n_rows_hint: Option<usize>,
+    schema: &Schema,
+    ignore_errors: bool,
+) -> PolarsResult<DataFrame> {
+    let capacity = n_rows_hint.unwrap_or_else(|| estimate_n_lines_in_chunk(bytes));
+
+    let mut buffers = init_buffers(schema, capacity, ignore_errors)?;
+    parse_lines(bytes, &mut buffers, ignore_errors)?;
+
+    DataFrame::new_infer_height(
+        buffers
+            .into_values()
+            .map(|buf| Ok(buf.into_series()?.into_column()))
+            .collect::<PolarsResult<_>>()
+            .map_err(|e| match e {
+                // Nested types raise SchemaMismatch instead of ComputeError, we map it back here to
+                // be consistent.
+                PolarsError::ComputeError(..) => e,
+                PolarsError::SchemaMismatch(e) => PolarsError::ComputeError(e),
+                e => e,
+            })?,
+    )
+}
+
+pub fn estimate_n_lines_in_file(file_bytes: &[u8], sample_size: usize) -> usize {
+    if let Some((mean, std)) = get_line_stats_json(file_bytes, sample_size) {
+        (file_bytes.len() as f32 / (mean - 0.01 * std)) as usize
+    } else {
+        estimate_n_lines_in_chunk(file_bytes)
+    }
+}
+
+/// Total len divided by max len of first and last non-empty lines. This is intended to be cheaper
+/// than `estimate_n_lines_in_file`.
+pub fn estimate_n_lines_in_chunk(chunk: &[u8]) -> usize {
+    chunk
+        .split(|&c| c == b'\n')
+        .find(|x| !x.is_empty())
+        .map_or(1, |x| {
+            chunk.len().div_ceil(
+                x.len().max(
+                    chunk
+                        .rsplit(|&c| c == b'\n')
+                        .find(|x| !x.is_empty())
+                        .unwrap()
+                        .len(),
+                ),
+            )
+        })
 }
 
 /// Find the nearest next line position.

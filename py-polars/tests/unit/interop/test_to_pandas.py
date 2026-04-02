@@ -11,6 +11,8 @@ import pytest
 from hypothesis import given
 
 import polars as pl
+from polars._utils.various import parse_version
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -42,22 +44,27 @@ def test_to_pandas() -> None:
 
     pd_out = df.to_pandas()
 
+    pd_version = parse_version(pd.__version__)
+    string_dtype = (
+        pd.StringDtype(na_value=float("nan")) if pd_version >= (3,) else np.object_
+    )
     pd_out_dtypes_expected = [
         np.dtype(np.uint8),
         np.dtype(np.float64),
         np.dtype(np.float64),
         np.dtype("datetime64[ms]"),
-        np.dtype(np.object_),
-        np.dtype(np.object_),
+        string_dtype,
+        string_dtype,
         np.dtype("datetime64[us]"),
-        pd.CategoricalDtype(categories=["a", "b", "c"], ordered=False),
-        pd.CategoricalDtype(categories=["e", "f"], ordered=False),
     ]
-    assert pd_out_dtypes_expected == pd_out.dtypes.to_list()
+    assert pd_out_dtypes_expected == pd_out.dtypes.to_list()[:-2]
+    assert all(
+        isinstance(dt, pd.CategoricalDtype) for dt in pd_out.dtypes.to_list()[-2:]
+    )
 
     pd_out_dtypes_expected[3] = np.dtype("O")
     pd_out = df.to_pandas(date_as_object=True)
-    assert pd_out_dtypes_expected == pd_out.dtypes.to_list()
+    assert pd_out_dtypes_expected == pd_out.dtypes.to_list()[:-2]
 
     pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
     pd_pa_dtypes_names = [dtype.name for dtype in pd_pa_out.dtypes]
@@ -88,6 +95,10 @@ def test_cat_to_pandas(dtype: pl.DataType) -> None:
         pa.dictionary(pa.int64(), pa.large_string())
     )
 
+    assert pl.Series(dtype=pl.Enum(["A"])).to_pandas().dtype.categories.tolist() == [  # type: ignore[union-attr]
+        "A"
+    ]
+
 
 @given(
     column_type_names=st.lists(
@@ -103,7 +114,7 @@ def test_object_to_pandas(column_type_names: list[Literal["Object", "Int32"]]) -
     """
     column_types = [getattr(pl, name) for name in column_type_names]
     data = {
-        f"col_{i}": [object()] if dtype == pl.Object else [-i]
+        f"col_{i}": [object()] if dtype.is_object() else [-i]
         for i, dtype in enumerate(column_types)
     }
     df = pl.DataFrame(
@@ -187,7 +198,8 @@ def test_series_to_pandas_categorical(polars_dtype: PolarsDataType) -> None:
     s = pl.Series("x", ["a", "b", "a"], dtype=polars_dtype)
     result = s.to_pandas()
     expected = pd.Series(["a", "b", "a"], name="x", dtype="category")
-    pd.testing.assert_series_equal(result, expected)
+    assert isinstance(result.dtype, pd.CategoricalDtype)
+    pd.testing.assert_series_equal(result, expected, check_categorical=False)
 
 
 @pytest.mark.parametrize("polars_dtype", [pl.Categorical, pl.Enum(["a", "b"])])
@@ -195,3 +207,12 @@ def test_series_to_pandas_categorical_pyarrow(polars_dtype: PolarsDataType) -> N
     s = pl.Series("x", ["a", "b", "a"], dtype=polars_dtype)
     result = s.to_pandas(use_pyarrow_extension_array=True)
     assert s.to_list() == result.to_list()
+
+
+def test_filter_with_pandas_timedelta_26620() -> None:
+    actual = pl.select(x=pd.Timedelta(days=1))
+    expected = pl.DataFrame(
+        {"x": pl.Series(values=[86_400_000_000], dtype=pl.Duration("us"))}
+    )
+
+    assert_frame_equal(actual, expected)

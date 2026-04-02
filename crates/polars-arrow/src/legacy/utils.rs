@@ -1,6 +1,6 @@
 use crate::array::PrimitiveArray;
-use crate::bitmap::utils::set_bit_unchecked;
 use crate::bitmap::MutableBitmap;
+use crate::bitmap::utils::set_bit_unchecked;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::trusted_len::{FromIteratorReversed, TrustedLenPush};
 use crate::trusted_len::{TrustMyLength, TrustedLen};

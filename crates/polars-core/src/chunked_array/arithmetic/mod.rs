@@ -1,4 +1,4 @@
-//! Implementations of arithmetic operations on ChunkedArray's.
+//! Implementations of arithmetic operations on ChunkedArrays.
 #[cfg(feature = "dtype-decimal")]
 mod decimal;
 mod numeric;

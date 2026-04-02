@@ -1,7 +1,10 @@
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
 
+@pytest.mark.may_fail_cloud  # reason: eager execution
 def test_fold_reduce() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
 
@@ -17,6 +20,7 @@ def test_fold_reduce() -> None:
     assert out["foo"].to_list() == [2, 4, 6]
 
 
+@pytest.mark.may_fail_cloud  # reason: eager execution
 def test_cum_fold() -> None:
     df = pl.DataFrame(
         {
@@ -25,7 +29,7 @@ def test_cum_fold() -> None:
             "c": [10, 20, 30, 40],
         }
     )
-    result = df.select(pl.cum_fold(pl.lit(0), lambda a, b: a + b, pl.all()))
+    result = df.select(pl.cum_fold(pl.lit(0, pl.Int64), lambda a, b: a + b, pl.all()))
     expected = pl.DataFrame(
         {
             "cum_fold": [
@@ -65,7 +69,9 @@ def test_alias_prune_in_fold_15438() -> None:
     df = pl.DataFrame({"x": [1, 2], "expected_result": ["first", "second"]}).select(
         actual_result=pl.fold(
             acc=pl.lit("other", dtype=pl.Utf8),
-            function=lambda acc, x: pl.when(x).then(pl.lit(x.name)).otherwise(acc),  # type: ignore[arg-type, return-value]
+            function=lambda acc, x: pl.select(
+                pl.when(x).then(pl.lit(x.name)).otherwise(acc)
+            ).to_series(),
             exprs=[
                 (pl.col("x") == 1).alias("first"),
                 (pl.col("x") == 2).alias("second"),

@@ -1,13 +1,12 @@
-use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_core::prelude::*;
 #[cfg(feature = "round_series")]
 use polars_ops::prelude::floor_div_series;
 
 use super::*;
-use crate::expressions::{
-    AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
-};
+use crate::expressions::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
 
+#[derive(Clone)]
 pub struct BinaryExpr {
     left: Arc<dyn PhysicalExpr>,
     op: Operator,
@@ -15,9 +14,12 @@ pub struct BinaryExpr {
     expr: Expr,
     has_literal: bool,
     allow_threading: bool,
+    is_scalar: bool,
+    output_field: Field,
 }
 
 impl BinaryExpr {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         left: Arc<dyn PhysicalExpr>,
         op: Operator,
@@ -25,6 +27,8 @@ impl BinaryExpr {
         expr: Expr,
         has_literal: bool,
         allow_threading: bool,
+        is_scalar: bool,
+        output_field: Field,
     ) -> Self {
         Self {
             left,
@@ -33,44 +37,53 @@ impl BinaryExpr {
             expr,
             has_literal,
             allow_threading,
+            is_scalar,
+            output_field,
         }
     }
 }
 
 /// Can partially do operations in place.
-fn apply_operator_owned(left: Series, right: Series, op: Operator) -> PolarsResult<Series> {
+fn apply_operator_owned(left: Column, right: Column, op: Operator) -> PolarsResult<Column> {
     match op {
         Operator::Plus => left.try_add_owned(right),
         Operator::Minus => left.try_sub_owned(right),
-        Operator::Multiply if left.dtype().is_numeric() && right.dtype().is_numeric() => {
+        Operator::Multiply
+            if left.dtype().is_primitive_numeric() && right.dtype().is_primitive_numeric() =>
+        {
             left.try_mul_owned(right)
         },
         _ => apply_operator(&left, &right, op),
     }
 }
 
-pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResult<Series> {
+pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResult<Column> {
     use DataType::*;
     match op {
-        Operator::Gt => ChunkCompare::gt(left, right).map(|ca| ca.into_series()),
-        Operator::GtEq => ChunkCompare::gt_eq(left, right).map(|ca| ca.into_series()),
-        Operator::Lt => ChunkCompare::lt(left, right).map(|ca| ca.into_series()),
-        Operator::LtEq => ChunkCompare::lt_eq(left, right).map(|ca| ca.into_series()),
-        Operator::Eq => ChunkCompare::equal(left, right).map(|ca| ca.into_series()),
-        Operator::NotEq => ChunkCompare::not_equal(left, right).map(|ca| ca.into_series()),
+        Operator::Gt => ChunkCompareIneq::gt(left, right).map(|ca| ca.into_column()),
+        Operator::GtEq => ChunkCompareIneq::gt_eq(left, right).map(|ca| ca.into_column()),
+        Operator::Lt => ChunkCompareIneq::lt(left, right).map(|ca| ca.into_column()),
+        Operator::LtEq => ChunkCompareIneq::lt_eq(left, right).map(|ca| ca.into_column()),
+        Operator::Eq => ChunkCompareEq::equal(left, right).map(|ca| ca.into_column()),
+        Operator::NotEq => ChunkCompareEq::not_equal(left, right).map(|ca| ca.into_column()),
         Operator::Plus => left + right,
         Operator::Minus => left - right,
         Operator::Multiply => left * right,
-        Operator::Divide => left / right,
+        Operator::RustDivide => left / right,
         Operator::TrueDivide => match left.dtype() {
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => left / right,
+            #[cfg(feature = "dtype-f16")]
+            Float16 => left / right,
             Duration(_) | Date | Datetime(_, _) | Float32 | Float64 => left / right,
             #[cfg(feature = "dtype-array")]
-            dt @ Array(_, _) => {
-                let left_dt = dt.cast_leaf(Float64);
-                let right_dt = right.dtype().cast_leaf(Float64);
-                left.cast(&left_dt)? / right.cast(&right_dt)?
+            Array(..) => left / right,
+            #[cfg(feature = "dtype-array")]
+            _ if right.dtype().is_array() => left / right,
+            List(_) => left / right,
+            _ if right.dtype().is_list() => left / right,
+            _ if left.dtype().is_string() || right.dtype().is_string() => {
+                polars_bail!(InvalidOperation: "cannot divide using strings")
             },
             _ => {
                 if right.dtype().is_temporal() {
@@ -82,7 +95,11 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
         Operator::FloorDivide => {
             #[cfg(feature = "round_series")]
             {
-                floor_div_series(left, right)
+                floor_div_series(
+                    left.as_materialized_series(),
+                    right.as_materialized_series(),
+                )
+                .map(Column::from)
             }
             #[cfg(not(feature = "round_series"))]
             {
@@ -99,8 +116,8 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
             .bitand(&right.cast(&DataType::Boolean)?),
         Operator::Xor => left.bitxor(right),
         Operator::Modulus => left % right,
-        Operator::EqValidity => left.equal_missing(right).map(|ca| ca.into_series()),
-        Operator::NotEqValidity => left.not_equal_missing(right).map(|ca| ca.into_series()),
+        Operator::EqValidity => left.equal_missing(right).map(|ca| ca.into_column()),
+        Operator::NotEqValidity => left.not_equal_missing(right).map(|ca| ca.into_column()),
     }
 }
 
@@ -108,40 +125,73 @@ impl BinaryExpr {
     fn apply_elementwise<'a>(
         &self,
         mut ac_l: AggregationContext<'a>,
-        ac_r: AggregationContext,
+        mut ac_r: AggregationContext<'a>,
         aggregated: bool,
     ) -> PolarsResult<AggregationContext<'a>> {
-        // We want to be able to mutate in place, so we take the lhs to make sure that we drop.
-        let lhs = ac_l.series().clone();
-        let rhs = ac_r.series().clone();
+        // At this stage, there is no combination of AggregatedList and NotAggregated ACs.
 
-        // Drop lhs so that we might operate in place.
-        drop(ac_l.take());
+        // Check group lengths in case of all AggList
+        if [&ac_l, &ac_r]
+            .iter()
+            .all(|ac| matches!(ac.state, AggState::AggregatedList(_)))
+        {
+            ac_l.groups().check_lengths(ac_r.groups())?;
+        }
 
-        let out = apply_operator_owned(lhs, rhs, self.op)?;
-        ac_l.with_series(out, aggregated, Some(&self.expr))?;
-        Ok(ac_l)
+        match (ac_l.agg_state(), ac_r.agg_state()) {
+            (AggState::AggregatedList(s), _) | (_, AggState::AggregatedList(s)) => {
+                let ca = s.list().unwrap();
+                let [col_l, col_r] = [&ac_l, &ac_r].map(|ac| ac.flat_naive().into_owned());
+
+                let out = ca.apply_to_inner(&|_| {
+                    apply_operator(&col_l, &col_r, self.op).map(|c| c.take_materialized_series())
+                })?;
+                let out = out.into_column();
+
+                if ac_l.is_literal() {
+                    std::mem::swap(&mut ac_l, &mut ac_r);
+                }
+
+                ac_l.with_values(out.into_column(), true, Some(&self.expr))?;
+                Ok(ac_l)
+            },
+
+            _ => {
+                // We want to be able to mutate in place, so we take the lhs to make sure that we drop.
+                let lhs = ac_l.get_values().clone();
+                let rhs = ac_r.get_values().clone();
+
+                let out = apply_operator_owned(lhs, rhs, self.op)?;
+
+                if ac_l.is_literal() {
+                    std::mem::swap(&mut ac_l, &mut ac_r);
+                }
+
+                // Drop lhs so that we might operate in place.
+                drop(ac_l.take());
+
+                ac_l.with_values(out, aggregated, Some(&self.expr))?;
+                Ok(ac_l)
+            },
+        }
     }
 
     fn apply_all_literal<'a>(
         &self,
         mut ac_l: AggregationContext<'a>,
-        mut ac_r: AggregationContext<'a>,
+        ac_r: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let name = ac_l.series().name().clone();
-        ac_l.groups();
-        ac_r.groups();
-        polars_ensure!(ac_l.groups.len() == ac_r.groups.len(), ComputeError: "lhs and rhs should have same group length");
-        let left_s = ac_l.series().rechunk();
-        let right_s = ac_r.series().rechunk();
-        let res_s = apply_operator(&left_s, &right_s, self.op)?;
-        ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
-        let res_s = if res_s.len() == 1 {
-            res_s.new_from_index(0, ac_l.groups.len())
-        } else {
-            ListChunked::full(name, &res_s, ac_l.groups.len()).into_series()
-        };
-        ac_l.with_series(res_s, true, Some(&self.expr))?;
+        debug_assert!(ac_l.is_literal() && ac_r.is_literal());
+        polars_ensure!(ac_l.groups.len() == ac_r.groups.len(),
+            ComputeError: "lhs and rhs should have same number of groups");
+
+        let left_c = ac_l.get_values().rechunk().into_column();
+        let right_c = ac_r.get_values().rechunk().into_column();
+        let res_c = apply_operator(&left_c, &right_c, self.op)?;
+        polars_ensure!(res_c.len() == 1,
+            ComputeError: "binary operation on literals expected 1 value, found {}", res_c.len());
+
+        ac_l.with_literal(res_c);
         Ok(ac_l)
     }
 
@@ -150,17 +200,26 @@ impl BinaryExpr {
         mut ac_l: AggregationContext<'a>,
         mut ac_r: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let name = ac_l.series().name().clone();
-        let ca = ac_l
+        let name = self.output_field.name().clone();
+        let mut ca = ac_l
             .iter_groups(false)
             .zip(ac_r.iter_groups(false))
-            .map(|(l, r)| Some(apply_operator(l?.as_ref(), r?.as_ref(), self.op)))
+            .map(|(l, r)| {
+                Some(apply_operator(
+                    &l?.as_ref().clone().into_column(),
+                    &r?.as_ref().clone().into_column(),
+                    self.op,
+                ))
+            })
             .map(|opt_res| opt_res.transpose())
             .collect::<PolarsResult<ListChunked>>()?
-            .with_name(name);
+            .with_name(name.clone());
+        if ca.is_empty() {
+            ca = ListChunked::full_null_with_dtype(name, 0, self.output_field.dtype());
+        }
 
         ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
-        ac_l.with_agg_state(AggState::AggregatedList(ca.into_series()));
+        ac_l.with_agg_state(AggState::AggregatedList(ca.into_column()));
         Ok(ac_l)
     }
 }
@@ -170,7 +229,7 @@ impl PhysicalExpr for BinaryExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         // Window functions may set a global state that determine their output
         // state, so we don't let them run in parallel as they race
         // they also saturate the thread pool by themselves, so that's fine.
@@ -198,17 +257,17 @@ impl PhysicalExpr for BinaryExpr {
         polars_ensure!(
             lhs.len() == rhs.len() || lhs.len() == 1 || rhs.len() == 1,
             expr = self.expr,
-            ComputeError: "cannot evaluate two Series of different lengths ({} and {})",
+            ShapeMismatch: "cannot evaluate two Series of different lengths ({} and {})",
             lhs.len(), rhs.len(),
         );
         apply_operator_owned(lhs, rhs, self.op)
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let (result_a, result_b) = POOL.install(|| {
@@ -218,273 +277,101 @@ impl PhysicalExpr for BinaryExpr {
             )
         });
         let mut ac_l = result_a?;
-        let ac_r = result_b?;
+        let mut ac_r = result_b?;
 
-        match (ac_l.agg_state(), ac_r.agg_state()) {
-            (AggState::Literal(s), AggState::NotAggregated(_))
-            | (AggState::NotAggregated(_), AggState::Literal(s)) => match s.len() {
-                1 => self.apply_elementwise(ac_l, ac_r, false),
-                _ => self.apply_group_aware(ac_l, ac_r),
-            },
-            (AggState::Literal(_), AggState::Literal(_)) => self.apply_all_literal(ac_l, ac_r),
-            (AggState::NotAggregated(_), AggState::NotAggregated(_)) => {
-                self.apply_elementwise(ac_l, ac_r, false)
-            },
-            (
-                AggState::AggregatedScalar(_) | AggState::Literal(_),
-                AggState::AggregatedScalar(_) | AggState::Literal(_),
-            ) => self.apply_elementwise(ac_l, ac_r, true),
-            (AggState::AggregatedScalar(_), AggState::NotAggregated(_))
-            | (AggState::NotAggregated(_), AggState::AggregatedScalar(_)) => {
-                self.apply_group_aware(ac_l, ac_r)
-            },
-            (AggState::AggregatedList(lhs), AggState::AggregatedList(rhs)) => {
-                let lhs = lhs.list().unwrap();
-                let rhs = rhs.list().unwrap();
-                let out =
-                    lhs.apply_to_inner(&|lhs| apply_operator(&lhs, &rhs.get_inner(), self.op))?;
-                ac_l.with_series(out.into_series(), true, Some(&self.expr))?;
-                Ok(ac_l)
-            },
-            _ => self.apply_group_aware(ac_l, ac_r),
-        }
-    }
+        // Aggregate NotAggregated into AggregatedList, but only if strictly required AND
+        // when there is no risk of memory explosion.
+        // See ApplyExpr for additional context
+        let mut has_agg_list = false;
+        let mut has_agg_scalar = false;
+        let mut has_not_agg = false;
+        let mut has_not_agg_with_overlapping_groups = false;
+        let mut not_agg_groups_may_diverge = false;
 
-    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.expr.to_field(input_schema, Context::Default)
-    }
-
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        Some(self)
-    }
-
-    #[cfg(feature = "parquet")]
-    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
-        Some(self)
-    }
-}
-
-#[cfg(feature = "parquet")]
-mod stats {
-    use polars_io::predicates::{BatchStats, StatsEvaluator};
-
-    use super::*;
-
-    fn apply_operator_stats_eq(min_max: &Series, literal: &Series) -> bool {
-        use ChunkCompare as C;
-        // Literal is greater than max, don't need to read.
-        if C::gt(literal, min_max).map(|s| s.all()).unwrap_or(false) {
-            return false;
+        let mut previous: Option<&AggregationContext<'_>> = None;
+        for ac in [&ac_l, &ac_r] {
+            match ac.state {
+                AggState::AggregatedList(_) => {
+                    has_agg_list = true;
+                },
+                AggState::AggregatedScalar(_) => has_agg_scalar = true,
+                AggState::NotAggregated(_) => {
+                    has_not_agg = true;
+                    if let Some(p) = previous {
+                        not_agg_groups_may_diverge |= !p.groups.is_same(&ac.groups)
+                    }
+                    previous = Some(ac);
+                    if ac.groups.is_overlapping() {
+                        has_not_agg_with_overlapping_groups = true;
+                    }
+                },
+                _ => {},
+            }
         }
 
-        // Literal is smaller than min, don't need to read.
-        if C::lt(literal, min_max).map(|s| s.all()).unwrap_or(false) {
-            return false;
-        }
+        let all_literal = !(has_agg_list || has_agg_scalar || has_not_agg);
+        let elementwise_must_aggregate =
+            has_not_agg && (has_agg_list || not_agg_groups_may_diverge);
+        let mut aggregated = has_agg_list || has_agg_scalar;
 
-        true
-    }
+        // Arithmetic on Decimal is fallible
+        let has_decimal_dtype =
+            ac_l.get_values().dtype().is_decimal() || ac_r.get_values().dtype().is_decimal();
+        let is_fallible = has_decimal_dtype && self.op.is_arithmetic();
 
-    fn apply_operator_stats_neq(min_max: &Series, literal: &Series) -> bool {
-        if min_max.len() < 2 || min_max.null_count() > 0 {
-            return true;
-        }
-        use ChunkCompare as C;
+        // Broadcast in NotAgg or AggList requires group_aware
+        let check_broadcast = [&ac_l, &ac_r].iter().all(|ac| {
+            matches!(
+                ac.agg_state(),
+                AggState::NotAggregated(_) | AggState::AggregatedList(_)
+            )
+        });
+        let has_broadcast = check_broadcast
+            && ac_l
+                .groups()
+                .iter()
+                .zip(ac_r.groups().iter())
+                .any(|(l, r)| l.len() != r.len() && (l.len() == 1 || r.len() == 1));
 
-        // First check proofs all values are the same (e.g. min/max is the same)
-        // Second check proofs all values are equal, so we can skip as we search
-        // for non-equal values.
-        if min_max.get(0).unwrap() == min_max.get(1).unwrap()
-            && C::equal(literal, min_max).map(|s| s.all()).unwrap_or(false)
+        // Dispatch
+        // See ApplyExpr for reference logic, except that we do any required
+        // aggregation inline. All BinaryExprs are elementwise.
+        if all_literal {
+            // Fast path
+            self.apply_all_literal(ac_l, ac_r)
+        } else if has_agg_scalar && (has_agg_list || has_not_agg) {
+            // Not compatible
+            self.apply_group_aware(ac_l, ac_r)
+        } else if elementwise_must_aggregate && has_not_agg_with_overlapping_groups {
+            // Compatible but calling aggregated() is too expensive
+            self.apply_group_aware(ac_l, ac_r)
+        } else if is_fallible
+            && (!ac_l.groups_cover_all_values() || !ac_r.groups_cover_all_values())
         {
-            return false;
-        }
-        true
-    }
-
-    fn apply_operator_stats_rhs_lit(min_max: &Series, literal: &Series, op: Operator) -> bool {
-        use ChunkCompare as C;
-        match op {
-            Operator::Eq => apply_operator_stats_eq(min_max, literal),
-            Operator::NotEq => apply_operator_stats_neq(min_max, literal),
-            // col > lit
-            // e.g.
-            // [min, max] > 0
-            //
-            // [-1, 2] > 0
-            //
-            // [false, true] -> true -> read
-            Operator::Gt => {
-                // Literal is bigger than max value, selection needs all rows.
-                C::gt(min_max, literal).map(|s| s.any()).unwrap_or(false)
-            },
-            // col >= lit
-            Operator::GtEq => {
-                // Literal is bigger than max value, selection needs all rows.
-                C::gt_eq(min_max, literal).map(|s| s.any()).unwrap_or(false)
-            },
-            // col < lit
-            Operator::Lt => {
-                // Literal is smaller than min value, selection needs all rows.
-                C::lt(min_max, literal).map(|s| s.any()).unwrap_or(false)
-            },
-            // col <= lit
-            Operator::LtEq => {
-                // Literal is smaller than min value, selection needs all rows.
-                C::lt_eq(min_max, literal).map(|s| s.any()).unwrap_or(false)
-            },
-            // Default: read the file
-            _ => true,
-        }
-    }
-
-    fn apply_operator_stats_lhs_lit(literal: &Series, min_max: &Series, op: Operator) -> bool {
-        use ChunkCompare as C;
-        match op {
-            Operator::Eq => apply_operator_stats_eq(min_max, literal),
-            Operator::NotEq => apply_operator_stats_eq(min_max, literal),
-            Operator::Gt => {
-                // Literal is bigger than max value, selection needs all rows.
-                C::gt(literal, min_max).map(|ca| ca.any()).unwrap_or(false)
-            },
-            Operator::GtEq => {
-                // Literal is bigger than max value, selection needs all rows.
-                C::gt_eq(literal, min_max)
-                    .map(|ca| ca.any())
-                    .unwrap_or(false)
-            },
-            Operator::Lt => {
-                // Literal is smaller than min value, selection needs all rows.
-                C::lt(literal, min_max).map(|ca| ca.any()).unwrap_or(false)
-            },
-            Operator::LtEq => {
-                // Literal is smaller than min value, selection needs all rows.
-                C::lt_eq(literal, min_max)
-                    .map(|ca| ca.any())
-                    .unwrap_or(false)
-            },
-            // Default: read the file.
-            _ => true,
-        }
-    }
-
-    impl BinaryExpr {
-        fn impl_should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
-            // See: #5864 for the rationale behind this.
-            use Expr::*;
-            use Operator::*;
-            if !self.expr.into_iter().all(|e| match e {
-                BinaryExpr { op, .. } => {
-                    !matches!(op, Multiply | Divide | TrueDivide | FloorDivide | Modulus)
-                },
-                Column(_) | Literal(_) | Alias(_, _) => true,
-                _ => false,
-            }) {
-                return Ok(true);
-            }
-            let schema = stats.schema();
-            let Some(fld_l) = self.left.to_field(schema).ok() else {
-                return Ok(true);
-            };
-            let Some(fld_r) = self.right.to_field(schema).ok() else {
-                return Ok(true);
-            };
-
-            #[cfg(debug_assertions)]
-            {
-                match (fld_l.dtype(), fld_r.dtype()) {
-                    #[cfg(feature = "dtype-categorical")]
-                    (DataType::String, DataType::Categorical(_, _) | DataType::Enum(_, _)) => {},
-                    #[cfg(feature = "dtype-categorical")]
-                    (DataType::Categorical(_, _) | DataType::Enum(_, _), DataType::String) => {},
-                    (l, r) if l != r => panic!("implementation error: {l:?}, {r:?}"),
-                    _ => {},
-                }
-            }
-
-            let dummy = DataFrame::empty();
-            let state = ExecutionState::new();
-
-            let out = match (self.left.is_literal(), self.right.is_literal()) {
-                (false, true) => {
-                    let l = stats.get_stats(fld_l.name())?;
-                    match l.to_min_max() {
-                        None => Ok(true),
-                        Some(min_max_s) => {
-                            // will be incorrect if not
-                            debug_assert_eq!(min_max_s.null_count(), 0);
-                            let lit_s = self.right.evaluate(&dummy, &state).unwrap();
-                            Ok(apply_operator_stats_rhs_lit(&min_max_s, &lit_s, self.op))
-                        },
+            // Fallible expression and there are elements that are masked out.
+            self.apply_group_aware(ac_l, ac_r)
+        } else {
+            if elementwise_must_aggregate {
+                for ac in [&mut ac_l, &mut ac_r] {
+                    if matches!(ac.state, AggState::NotAggregated(_)) {
+                        ac.aggregated();
                     }
-                },
-                (true, false) => {
-                    let r = stats.get_stats(fld_r.name())?;
-                    match r.to_min_max() {
-                        None => Ok(true),
-                        Some(min_max_s) => {
-                            // will be incorrect if not
-                            debug_assert_eq!(min_max_s.null_count(), 0);
-                            let lit_s = self.left.evaluate(&dummy, &state).unwrap();
-                            Ok(apply_operator_stats_lhs_lit(&lit_s, &min_max_s, self.op))
-                        },
-                    }
-                },
-                // Default: read the file
-                _ => Ok(true),
-            };
-            out.inspect(|&read| {
-                if state.verbose() && read {
-                    eprintln!("parquet file must be read, statistics not sufficient for predicate.")
-                } else if state.verbose() && !read {
-                    eprintln!("parquet file can be skipped, the statistics were sufficient to apply the predicate.")
                 }
-            })
-        }
-    }
-
-    impl StatsEvaluator for BinaryExpr {
-        fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
-            if std::env::var("POLARS_NO_PARQUET_STATISTICS").is_ok() {
-                return Ok(true);
+                aggregated = true;
             }
-
-            use Operator::*;
-            match (
-                self.left.as_stats_evaluator(),
-                self.right.as_stats_evaluator(),
-            ) {
-                (Some(l), Some(r)) => match self.op {
-                    And | LogicalAnd => Ok(l.should_read(stats)? && r.should_read(stats)?),
-                    Or | LogicalOr => Ok(l.should_read(stats)? || r.should_read(stats)?),
-                    _ => Ok(true),
-                },
-                _ => self.impl_should_read(stats),
+            if has_broadcast {
+                self.apply_group_aware(ac_l, ac_r)
+            } else {
+                self.apply_elementwise(ac_l, ac_r, aggregated)
             }
         }
     }
-}
 
-impl PartitionedAggregation for BinaryExpr {
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> PolarsResult<Series> {
-        let left = self.left.as_partitioned_aggregator().unwrap();
-        let right = self.right.as_partitioned_aggregator().unwrap();
-        let left = left.evaluate_partitioned(df, groups, state)?;
-        let right = right.evaluate_partitioned(df, groups, state)?;
-        apply_operator(&left, &right, self.op)
+    fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
+        Ok(self.output_field.clone())
     }
 
-    fn finalize(
-        &self,
-        partitioned: Series,
-        _groups: &GroupsProxy,
-        _state: &ExecutionState,
-    ) -> PolarsResult<Series> {
-        Ok(partitioned)
+    fn is_scalar(&self) -> bool {
+        self.is_scalar
     }
 }

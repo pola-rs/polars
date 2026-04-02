@@ -7,7 +7,11 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.testing import assert_frame_equal, assert_frame_not_equal
+from polars.testing import (
+    assert_frame_equal,
+    assert_frame_not_equal,
+    assert_schema_equal,
+)
 from polars.testing.parametric import dataframes
 
 nan = float("nan")
@@ -25,26 +29,26 @@ def test_equal(df: pl.DataFrame) -> None:
         pytest.param(
             pl.DataFrame({"a": [0.2, 0.3]}),
             pl.DataFrame({"a": [0.2, 0.3]}),
-            {"atol": 1e-15},
-            id="equal_floats_low_atol",
+            {"abs_tol": 1e-15},
+            id="equal_floats_low_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [0.2, 0.3]}),
             pl.DataFrame({"a": [0.2, 0.3000000000000001]}),
-            {"atol": 1e-15},
-            id="approx_equal_float_low_atol",
+            {"abs_tol": 1e-15},
+            id="approx_equal_float_low_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [0.2, 0.3]}),
             pl.DataFrame({"a": [0.2, 0.31]}),
-            {"atol": 0.1},
-            id="approx_equal_float_high_atol",
+            {"abs_tol": 0.1},
+            id="approx_equal_float_high_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [0.2, 1.3]}),
             pl.DataFrame({"a": [0.2, 0.9]}),
-            {"atol": 1},
-            id="approx_equal_float_integer_atol",
+            {"abs_tol": 1},
+            id="approx_equal_float_integer_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [0.0, 1.0, 2.0]}, schema={"a": pl.Float64}),
@@ -73,50 +77,50 @@ def test_equal(df: pl.DataFrame) -> None:
         pytest.param(
             pl.DataFrame({"a": [[0.2, 0.3]]}),
             pl.DataFrame({"a": [[0.2, 0.300001]]}),
-            {"atol": 1e-5},
-            id="list_of_float_low_atol",
+            {"abs_tol": 1e-5},
+            id="list_of_float_low_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[0.2, 0.3]]}),
             pl.DataFrame({"a": [[0.2, 0.31]]}),
-            {"atol": 0.1},
-            id="list_of_float_high_atol",
+            {"abs_tol": 0.1},
+            id="list_of_float_high_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[0.2, 1.3]]}),
             pl.DataFrame({"a": [[0.2, 0.9]]}),
-            {"atol": 1},
-            id="list_of_float_integer_atol",
+            {"abs_tol": 1},
+            id="list_of_float_integer_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[0.2, 0.3]]}),
             pl.DataFrame({"a": [[0.2, 0.300000001]]}),
-            {"rtol": 1e-5},
-            id="list_of_float_low_rtol",
+            {"rel_tol": 1e-5},
+            id="list_of_float_low_rel_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[0.2, 0.3]]}),
             pl.DataFrame({"a": [[0.2, 0.301]]}),
-            {"rtol": 0.1},
-            id="list_of_float_high_rtol",
+            {"rel_tol": 0.1},
+            id="list_of_float_high_rel_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[0.2, 1.3]]}),
             pl.DataFrame({"a": [[0.2, 0.9]]}),
-            {"rtol": 1},
-            id="list_of_float_integer_rtol",
+            {"rel_tol": 1},
+            id="list_of_float_integer_rel_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[None, 1.3]]}),
             pl.DataFrame({"a": [[None, 0.9]]}),
-            {"rtol": 1},
-            id="list_of_none_and_float_integer_rtol",
+            {"rel_tol": 1},
+            id="list_of_none_and_float_integer_rel_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[[0.2, 3.0]]]}),
             pl.DataFrame({"a": [[[0.2, 3.00000001]]]}),
-            {"atol": 0.1},
-            id="nested_list_of_float_atol_high",
+            {"abs_tol": 0.1},
+            id="nested_list_of_float_abs_tol_high",
         ),
     ],
 )
@@ -148,14 +152,14 @@ def test_assert_frame_equal_passes_assertion(
         pytest.param(
             pl.DataFrame({"a": [[0.2, 0.3]]}),
             pl.DataFrame({"a": [[0.2, 0.300001]]}),
-            {"atol": 1e-15, "rtol": 0},
-            id="list_of_float_too_low_atol",
+            {"abs_tol": 1e-15, "rel_tol": 0},
+            id="list_of_float_too_low_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[0.2, 0.3]]}),
             pl.DataFrame({"a": [[0.2, 0.30000001]]}),
-            {"atol": -1, "rtol": 0},
-            id="list_of_float_negative_atol",
+            {"abs_tol": -1, "rel_tol": 0},
+            id="list_of_float_negative_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[2.0, 3.0]]}),
@@ -166,20 +170,20 @@ def test_assert_frame_equal_passes_assertion(
         pytest.param(
             pl.DataFrame({"a": [[[0.2, math.nan, 3.0]]]}),
             pl.DataFrame({"a": [[[0.2, math.nan, 3.11]]]}),
-            {"atol": 0.1, "rtol": 0},
-            id="nested_list_of_float_and_nan_atol_high",
+            {"abs_tol": 0.1, "rel_tol": 0},
+            id="nested_list_of_float_and_nan_abs_tol_high",
         ),
         pytest.param(
             pl.DataFrame({"a": [[[[0.2, 3.0]]]]}),
             pl.DataFrame({"a": [[[[0.2, 3.11]]]]}),
-            {"atol": 0.1, "rtol": 0},
-            id="double_nested_list_of_float_atol_high",
+            {"abs_tol": 0.1, "rel_tol": 0},
+            id="double_nested_list_of_float_abs_tol_high",
         ),
         pytest.param(
             pl.DataFrame({"a": [[[[[0.2, 3.0]]]]]}),
             pl.DataFrame({"a": [[[[[0.2, 3.11]]]]]}),
-            {"atol": 0.1, "rtol": 0},
-            id="triple_nested_list_of_float_atol_high",
+            {"abs_tol": 0.1, "rel_tol": 0},
+            id="triple_nested_list_of_float_abs_tol_high",
         ),
     ],
 )
@@ -205,7 +209,7 @@ def test_compare_frame_equal_nans() -> None:
         schema=[("x", pl.Float32), ("y", pl.Float64)],
     )
     assert_frame_not_equal(df1, df2)
-    with pytest.raises(AssertionError, match="value mismatch for column 'y'"):
+    with pytest.raises(AssertionError, match='value mismatch for column "y"'):
         assert_frame_equal(df1, df2, check_exact=True)
 
 
@@ -222,7 +226,7 @@ def test_compare_frame_equal_nested_nans() -> None:
         schema=[("x", pl.List(pl.Float32)), ("y", pl.List(pl.Float64))],
     )
     assert_frame_not_equal(df1, df2)
-    with pytest.raises(AssertionError, match="value mismatch for column 'y'"):
+    with pytest.raises(AssertionError, match='value mismatch for column "y"'):
         assert_frame_equal(df1, df2, check_exact=True)
 
     # struct dtype
@@ -268,7 +272,7 @@ def test_compare_frame_equal_nested_nans() -> None:
 
     assert_frame_not_equal(df3, df4)
     for check_dtype in (True, False):
-        with pytest.raises(AssertionError, match="mismatch|different"):
+        with pytest.raises(AssertionError, match=r"mismatch|different"):
             assert_frame_equal(df3, df4, check_dtypes=check_dtype)
 
 
@@ -296,7 +300,7 @@ def test_assert_frame_equal_length_mismatch() -> None:
     df2 = pl.DataFrame({"a": [1, 2, 3]})
     with pytest.raises(
         AssertionError,
-        match=r"DataFrames are different \(number of rows does not match\)",
+        match=r"DataFrames are different \(height \(row count\) mismatch\)",
     ):
         assert_frame_equal(df1, df2)
     assert_frame_not_equal(df1, df2)
@@ -306,7 +310,8 @@ def test_assert_frame_equal_column_mismatch() -> None:
     df1 = pl.DataFrame({"a": [1, 2]})
     df2 = pl.DataFrame({"b": [1, 2]})
     with pytest.raises(
-        AssertionError, match="columns \\['a'\\] in left DataFrame, but not in right"
+        AssertionError,
+        match=r'DataFrames are different \(columns mismatch: \["a"\] in left, but not in right\)',
     ):
         assert_frame_equal(df1, df2)
     assert_frame_not_equal(df1, df2)
@@ -317,7 +322,7 @@ def test_assert_frame_equal_column_mismatch2() -> None:
     df2 = pl.LazyFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
     with pytest.raises(
         AssertionError,
-        match="columns \\['b', 'c'\\] in right LazyFrame, but not in left",
+        match=r"columns mismatch.*in right.*but not in left",
     ):
         assert_frame_equal(df1, df2)
     assert_frame_not_equal(df1, df2)
@@ -337,7 +342,7 @@ def test_assert_frame_equal_check_row_order() -> None:
     df1 = pl.DataFrame({"a": [1, 2], "b": [4, 3]})
     df2 = pl.DataFrame({"a": [2, 1], "b": [3, 4]})
 
-    with pytest.raises(AssertionError, match="value mismatch for column 'a'"):
+    with pytest.raises(AssertionError, match='value mismatch for column "a"'):
         assert_frame_equal(df1, df2)
 
     assert_frame_equal(df1, df2, check_row_order=False)
@@ -363,7 +368,8 @@ def test_assert_frame_equal_check_row_order_unsortable(assert_function: Any) -> 
     df1 = pl.DataFrame({"a": [object(), object()], "b": [3, 4]})
     df2 = pl.DataFrame({"a": [object(), object()], "b": [4, 3]})
     with pytest.raises(
-        TypeError, match="cannot set `check_row_order=False`.*unsortable columns"
+        pl.exceptions.InvalidOperationError,
+        match=r"column '.*' has a dtype of '.*', which does not support sorting",
     ):
         assert_function(df1, df2, check_row_order=False)
 
@@ -399,6 +405,54 @@ def test_assert_frame_equal_check_dtype_deprecated() -> None:
 
     with pytest.deprecated_call():
         assert_frame_not_equal(df1, df3, check_dtype=False)  # type: ignore[call-arg]
+
+
+def test_assert_dataframe_equal_all_nulls_passes_when_ignoring_dtypes() -> None:
+    x = pl.from_dict({"A": [None, None, None]})
+    y = pl.from_dict(
+        {"A": [None, None, None]}, schema_overrides={"A": pl.List(pl.Float64())}
+    )
+
+    assert_frame_equal(x, y, check_dtypes=False)
+
+
+def test_assert_dataframe_equal_all_nulls_fails_when_checking_dtypes() -> None:
+    x = pl.from_dict({"A": [None, None, None]})
+    y = pl.from_dict(
+        {"A": [None, None, None]}, schema_overrides={"A": pl.List(pl.Float64())}
+    )
+
+    with pytest.raises(AssertionError, match="dtypes do not match"):
+        assert_frame_equal(x, y, check_dtypes=True)
+
+
+def test_assert_schema_equal_column_mismatch_order() -> None:
+    df1 = pl.DataFrame({"b": [3, 4], "a": [1, 2]})
+    df2 = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+
+    df1_schema = df1.schema
+    df2_schema = df2.schema
+    with pytest.raises(
+        AssertionError,
+        match=r"Schemas are different.*columns are not in the same order",
+    ):
+        assert_schema_equal(df1_schema, df2_schema)
+
+    assert_schema_equal(df1_schema, df2_schema, check_column_order=False)
+
+
+def test_assert_schema_equal_dtypes_mismatch() -> None:
+    data = {"a": [1, 2], "b": [3, 4]}
+    df1 = pl.DataFrame(data, schema={"a": pl.Int8, "b": pl.Int16})
+    df2 = pl.DataFrame(data, schema={"b": pl.Int16, "a": pl.Int16})
+
+    df1_schema = df1.schema
+    df2_schema = df2.schema
+
+    with pytest.raises(
+        AssertionError, match=r"Schemas are different.*dtypes do not match"
+    ):
+        assert_schema_equal(df1_schema, df2_schema, check_column_order=False)
 
 
 def test_tracebackhide(testdir: pytest.Testdir) -> None:
@@ -442,23 +496,51 @@ def test_frame_schema_fail():
     assert "def assert_frame_equal" not in stdout
     assert "def assert_frame_not_equal" not in stdout
     assert "def _assert_correct_input_type" not in stdout
-    assert "def _assert_frame_schema_equal" not in stdout
 
     assert "def assert_series_equal" not in stdout
     assert "def assert_series_not_equal" not in stdout
-    assert "def _assert_series_values_equal" not in stdout
-    assert "def _assert_series_nested_values_equal" not in stdout
-    assert "def _assert_series_null_values_match" not in stdout
-    assert "def _assert_series_nan_values_match" not in stdout
-    assert "def _assert_series_values_within_tolerance" not in stdout
 
     # Make sure the tests are failing for the expected reason (e.g. not because
     # an import is missing or something like that):
 
     assert (
-        "AssertionError: DataFrames are different (value mismatch for column 'a')"
+        'AssertionError: DataFrames are different (value mismatch for column "a")'
         in stdout
     )
     assert "AssertionError: DataFrames are equal" in stdout
     assert "AssertionError: inputs are different (unexpected input types)" in stdout
     assert "AssertionError: DataFrames are different (dtypes do not match)" in stdout
+
+
+def test_dtype_check_for_assert_frame_26507() -> None:
+    schema_a = {
+        "int_a": pl.Int16,
+        "int_b": pl.Int16,
+        "int_c": pl.Int64,
+    }
+
+    schema_b = {
+        "int_a": pl.Int64,
+        "int_b": pl.Int16,
+        "int_c": pl.Int64,
+    }
+
+    a = pl.DataFrame({}, schema=schema_a)
+    b = pl.DataFrame({}, schema=schema_b)
+
+    # SHOULD NOT raise an error since frames have different dtypes
+    assert_frame_not_equal(
+        left=a,
+        right=b,
+        check_column_order=False,
+        check_dtypes=True,
+    )
+
+    # SHOULD raise an error since frames have different dtypes
+    with pytest.raises(AssertionError):
+        assert_frame_equal(
+            left=a,
+            right=b,
+            check_column_order=False,
+            check_dtypes=True,
+        )

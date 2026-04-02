@@ -1,17 +1,17 @@
 use std::io::Write;
 use std::sync::Mutex;
 
-use arrow::datatypes::PhysicalType;
+use polars_buffer::Buffer;
+use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
 use polars_parquet::write::{
-    to_parquet_schema, transverse, CompressionOptions, Encoding, FileWriter, StatisticsOptions,
-    Version, WriteOptions,
+    CompressionOptions, Encoding, FileWriter, StatisticsOptions, Version, WriteOptions,
+    get_dtype_encoding, to_parquet_schema,
 };
 
 use super::batched_writer::BatchedWriter;
 use super::options::ParquetCompression;
-use super::ParquetWriteOptions;
-use crate::prelude::chunk_df_for_writing;
+use super::{KeyValueMetadata, ParquetWriteOptions};
 use crate::shared::schema_to_arrow_checked;
 
 impl ParquetWriteOptions {
@@ -24,6 +24,7 @@ impl ParquetWriteOptions {
             .with_statistics(self.statistics)
             .with_row_group_size(self.row_group_size)
             .with_data_page_size(self.data_page_size)
+            .with_key_value_metadata(self.key_value_metadata.clone())
     }
 }
 
@@ -41,6 +42,10 @@ pub struct ParquetWriter<W> {
     data_page_size: Option<usize>,
     /// Serialize columns in parallel
     parallel: bool,
+    /// Custom file-level key value metadata
+    key_value_metadata: Option<KeyValueMetadata>,
+    /// Context info for the Parquet file being written.
+    context_info: Option<PlHashMap<String, String>>,
 }
 
 impl<W> ParquetWriter<W>
@@ -59,6 +64,8 @@ where
             row_group_size: None,
             data_page_size: None,
             parallel: true,
+            key_value_metadata: None,
+            context_info: None,
         }
     }
 
@@ -96,6 +103,18 @@ where
         self
     }
 
+    /// Set custom file-level key value metadata for the Parquet file
+    pub fn with_key_value_metadata(mut self, key_value_metadata: Option<KeyValueMetadata>) -> Self {
+        self.key_value_metadata = key_value_metadata;
+        self
+    }
+
+    /// Set context information for the writer
+    pub fn with_context_info(mut self, context_info: Option<PlHashMap<String, String>>) -> Self {
+        self.context_info = context_info;
+        self
+    }
+
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let schema = schema_to_arrow_checked(schema, CompatLevel::newest(), "parquet")?;
         let parquet_schema = to_parquet_schema(&schema)?;
@@ -109,6 +128,7 @@ where
             encodings,
             options,
             parallel: self.parallel,
+            key_value_metadata: self.key_value_metadata,
         })
     }
 
@@ -121,39 +141,19 @@ where
         }
     }
 
-    /// Write the given DataFrame in the writer `W`. Returns the total size of the file.
+    /// Write the given DataFrame in the writer `W`.
+    /// Returns the total size of the file.
     pub fn finish(self, df: &mut DataFrame) -> PolarsResult<u64> {
         let chunked_df = chunk_df_for_writing(df, self.row_group_size.unwrap_or(512 * 512))?;
-        let mut batched = self.batched(&chunked_df.schema())?;
+        let mut batched = self.batched(chunked_df.schema())?;
         batched.write_batch(&chunked_df)?;
         batched.finish()
     }
 }
 
-fn get_encodings(schema: &ArrowSchema) -> Vec<Vec<Encoding>> {
+pub fn get_encodings(schema: &ArrowSchema) -> Buffer<Vec<Encoding>> {
     schema
         .iter_values()
-        .map(|f| transverse(&f.dtype, encoding_map))
+        .map(|f| get_dtype_encoding(&f.dtype))
         .collect()
-}
-
-/// Declare encodings
-fn encoding_map(dtype: &ArrowDataType) -> Encoding {
-    match dtype.to_physical_type() {
-        PhysicalType::Dictionary(_)
-        | PhysicalType::LargeBinary
-        | PhysicalType::LargeUtf8
-        | PhysicalType::Utf8View
-        | PhysicalType::BinaryView => Encoding::RleDictionary,
-        PhysicalType::Boolean => Encoding::Rle,
-        PhysicalType::Primitive(dt) => {
-            use arrow::types::PrimitiveType::*;
-            match dt {
-                Float32 | Float64 | Float16 => Encoding::Plain,
-                _ => Encoding::RleDictionary,
-            }
-        },
-        // remaining is plain
-        _ => Encoding::Plain,
-    }
 }

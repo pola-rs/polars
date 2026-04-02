@@ -1,7 +1,7 @@
 use arrow::array::BinaryArray;
 use arrow::bitmap::Bitmap;
-use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
+use polars_buffer::Buffer;
 
 #[test]
 fn not_shared() {

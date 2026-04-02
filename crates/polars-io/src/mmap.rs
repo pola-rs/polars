@@ -1,84 +1,9 @@
-#[cfg(target_family = "unix")]
-use std::collections::btree_map::Entry;
-#[cfg(target_family = "unix")]
-use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek};
-use std::sync::Arc;
-#[cfg(target_family = "unix")]
-use std::sync::Mutex;
 
-use memmap::Mmap;
-#[cfg(target_family = "unix")]
-use once_cell::sync::Lazy;
+use polars_buffer::Buffer;
 use polars_core::config::verbose;
-#[cfg(target_family = "unix")]
-use polars_error::polars_bail;
-use polars_error::PolarsResult;
-use polars_utils::mmap::MemSlice;
-
-// Keep track of memory mapped files so we don't write to them while reading
-// Use a btree as it uses less memory than a hashmap and this thing never shrinks.
-// Write handle in Windows is exclusive, so this is only necessary in Unix.
-#[cfg(target_family = "unix")]
-static MEMORY_MAPPED_FILES: Lazy<Mutex<BTreeMap<(u64, u64), u32>>> =
-    Lazy::new(|| Mutex::new(Default::default()));
-
-pub(crate) struct MMapSemaphore {
-    #[cfg(target_family = "unix")]
-    key: (u64, u64),
-    mmap: Mmap,
-}
-
-impl MMapSemaphore {
-    #[cfg(target_family = "unix")]
-    pub(super) fn new(dev: u64, ino: u64, mmap: Mmap) -> Self {
-        let mut guard = MEMORY_MAPPED_FILES.lock().unwrap();
-        let key = (dev, ino);
-        guard.insert(key, 1);
-        Self { key, mmap }
-    }
-
-    #[cfg(not(target_family = "unix"))]
-    pub(super) fn new(mmap: Mmap) -> Self {
-        Self { mmap }
-    }
-}
-
-impl AsRef<[u8]> for MMapSemaphore {
-    #[inline]
-    fn as_ref(&self) -> &[u8] {
-        self.mmap.as_ref()
-    }
-}
-
-#[cfg(target_family = "unix")]
-impl Drop for MMapSemaphore {
-    fn drop(&mut self) {
-        let mut guard = MEMORY_MAPPED_FILES.lock().unwrap();
-        if let Entry::Occupied(mut e) = guard.entry(self.key) {
-            let v = e.get_mut();
-            *v -= 1;
-
-            if *v == 0 {
-                e.remove_entry();
-            }
-        }
-    }
-}
-
-pub fn ensure_not_mapped(#[allow(unused)] file: &File) -> PolarsResult<()> {
-    #[cfg(target_family = "unix")]
-    {
-        use std::os::unix::fs::MetadataExt;
-        let guard = MEMORY_MAPPED_FILES.lock().unwrap();
-        let metadata = file.metadata()?;
-        if guard.contains_key(&(metadata.dev(), metadata.ino())) {
-            polars_bail!(ComputeError: "cannot write to file: already memory mapped");
-        }
-    }
-    Ok(())
-}
+use polars_utils::mmap::MMapSemaphore;
 
 /// Trait used to get a hold to file handler or to the underlying bytes
 /// without performing a Read.
@@ -99,6 +24,12 @@ impl MmapBytesReader for File {
 }
 
 impl MmapBytesReader for BufReader<File> {
+    fn to_file(&self) -> Option<&File> {
+        Some(self.get_ref())
+    }
+}
+
+impl MmapBytesReader for BufReader<&File> {
     fn to_file(&self) -> Option<&File> {
         Some(self.get_ref())
     }
@@ -133,11 +64,11 @@ impl<T: MmapBytesReader> MmapBytesReader for &mut T {
     }
 }
 
-// Handle various forms of input bytes
+// Handle various forms of input bytes.
+// TODO: we should just remove this and use Buffer.
 pub enum ReaderBytes<'a> {
     Borrowed(&'a [u8]),
-    Owned(Vec<u8>),
-    Mapped(memmap::Mmap, &'a File),
+    Owned(Buffer<u8>),
 }
 
 impl std::ops::Deref for ReaderBytes<'_> {
@@ -146,19 +77,6 @@ impl std::ops::Deref for ReaderBytes<'_> {
         match self {
             Self::Borrowed(ref_bytes) => ref_bytes,
             Self::Owned(vec) => vec,
-            Self::Mapped(mmap, _) => mmap,
-        }
-    }
-}
-
-/// Require 'static to force the caller to do any transmute as it's usually much
-/// clearer to see there whether it's sound.
-impl ReaderBytes<'static> {
-    pub fn into_mem_slice(self) -> MemSlice {
-        match self {
-            ReaderBytes::Borrowed(v) => MemSlice::from_slice(v),
-            ReaderBytes::Owned(v) => MemSlice::from_vec(v),
-            ReaderBytes::Mapped(v, _) => MemSlice::from_mmap(Arc::new(v)),
         }
     }
 }
@@ -173,16 +91,15 @@ impl<'a, T: 'a + MmapBytesReader> From<&'a mut T> for ReaderBytes<'a> {
             },
             None => {
                 if let Some(f) = m.to_file() {
-                    let f = unsafe { std::mem::transmute::<&File, &'a File>(f) };
-                    let mmap = unsafe { memmap::Mmap::map(f).unwrap() };
-                    ReaderBytes::Mapped(mmap, f)
+                    let mmap = MMapSemaphore::new_from_file(f).unwrap();
+                    ReaderBytes::Owned(Buffer::from_owner(mmap))
                 } else {
                     if verbose() {
                         eprintln!("could not memory map file; read to buffer.")
                     }
                     let mut buf = vec![];
                     m.read_to_end(&mut buf).expect("could not read");
-                    ReaderBytes::Owned(buf)
+                    ReaderBytes::Owned(Buffer::from_vec(buf))
                 }
             },
         }

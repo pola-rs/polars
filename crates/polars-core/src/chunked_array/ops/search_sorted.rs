@@ -7,11 +7,23 @@ use crate::prelude::*;
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum SearchSortedSide {
     #[default]
     Any,
     Left,
     Right,
+}
+
+impl SearchSortedSide {
+    pub fn flip(self) -> Self {
+        use SearchSortedSide::*;
+        match self {
+            Any => Any,
+            Left => Right,
+            Right => Left,
+        }
+    }
 }
 
 /// Computes the first point on [lo, hi) where f is true, assuming it is first

@@ -12,15 +12,20 @@ Aggregation
     Expr.approx_n_unique
     Expr.arg_max
     Expr.arg_min
+    Expr.bitwise_and
+    Expr.bitwise_or
+    Expr.bitwise_xor
     Expr.count
     Expr.first
     Expr.implode
     Expr.last
     Expr.len
     Expr.max
+    Expr.max_by
     Expr.mean
     Expr.median
     Expr.min
+    Expr.min_by
     Expr.n_unique
     Expr.nan_max
     Expr.nan_min

@@ -249,6 +249,47 @@ def test_string_like(pattern: str, like: str, expected: list[int]) -> None:
             assert res == expected
 
 
+def test_string_like_multiline() -> None:
+    s1 = "Hello World"
+    s2 = "Hello\nWorld"
+    s3 = "hello\nWORLD"
+
+    df = pl.DataFrame({"idx": [0, 1, 2], "txt": [s1, s2, s3]})
+
+    # starts with...
+    res1 = df.sql("SELECT * FROM self WHERE txt LIKE 'Hello%' ORDER BY idx")
+    res2 = df.sql("SELECT * FROM self WHERE txt ILIKE 'HELLO%' ORDER BY idx")
+
+    assert res1["txt"].to_list() == [s1, s2]
+    assert res2["txt"].to_list() == [s1, s2, s3]
+
+    # ends with...
+    res3 = df.sql("SELECT * FROM self WHERE txt LIKE '%WORLD' ORDER BY idx")
+    res4 = df.sql("SELECT * FROM self WHERE txt ILIKE '%\nWORLD' ORDER BY idx")
+
+    assert res3["txt"].to_list() == [s3]
+    assert res4["txt"].to_list() == [s2, s3]
+
+    # exact match
+    for s in (s1, s2, s3):
+        assert df.sql(f"SELECT txt FROM self WHERE txt LIKE '{s}'").item() == s
+
+
+@pytest.mark.parametrize("form", ["NFKC", "NFKD"])
+def test_string_normalize(form: str) -> None:
+    df = pl.DataFrame({"txt": ["Ｔｅｓｔ", "𝕋𝕖𝕤𝕥", "𝕿𝖊𝖘𝖙", "𝗧𝗲𝘀𝘁", "Ⓣⓔⓢⓣ"]})  # noqa: RUF001
+    res = df.sql(
+        f"""
+        SELECT txt, NORMALIZE(txt,{form}) AS norm_txt
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "txt": ["Ｔｅｓｔ", "𝕋𝕖𝕤𝕥", "𝕿𝖊𝖘𝖙", "𝗧𝗲𝘀𝘁", "Ⓣⓔⓢⓣ"],  # noqa: RUF001
+        "norm_txt": ["Test", "Test", "Test", "Test", "Test"],
+    }
+
+
 def test_string_position() -> None:
     df = pl.Series(
         name="city",
@@ -329,59 +370,130 @@ def test_string_replace() -> None:
             ctx.execute("SELECT REPLACE(words,'coffee') FROM df")
 
 
+def test_string_split() -> None:
+    df = pl.DataFrame({"s": ["xx,yy,zz", "abc,,xyz", "", None]})
+    res = df.sql("SELECT *, STRING_TO_ARRAY(s,',') AS s_array FROM self")
+
+    assert res.schema == {"s": pl.String, "s_array": pl.List(pl.String)}
+    assert res.to_dict(as_series=False) == {
+        "s": ["xx,yy,zz", "abc,,xyz", "", None],
+        "s_array": [["xx", "yy", "zz"], ["abc", "", "xyz"], [""], None],
+    }
+
+
+def test_string_split_part() -> None:
+    df = pl.DataFrame({"s": ["xx,yy,zz", "abc,,xyz,???,hmm", "", None]})
+    res = df.sql(
+        """
+        SELECT
+          SPLIT_PART(s,',',1) AS "s+1",
+          SPLIT_PART(s,',',3) AS "s+3",
+          SPLIT_PART(s,',',-2) AS "s-2",
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "s+1": ["xx", "abc", "", None],
+        "s+3": ["zz", "xyz", "", None],
+        "s-2": ["yy", "???", "", None],
+    }
+
+
 def test_string_substr() -> None:
     df = pl.DataFrame(
-        {"scol": ["abcdefg", "abcde", "abc", None], "n": [-2, 3, 2, None]}
+        {
+            "scol": ["abcdefg", "abcde", "abc", None],
+            "n": [-2, 3, 2, None],
+        }
     )
-    with pl.SQLContext(df=df) as ctx:
-        res = ctx.execute(
-            """
-            SELECT
-              -- note: sql is 1-indexed
-              SUBSTR(scol,1)    AS s1,
-              SUBSTR(scol,2)    AS s2,
-              SUBSTR(scol,3)    AS s3,
-              SUBSTR(scol,1,5)  AS s1_5,
-              SUBSTR(scol,2,2)  AS s2_2,
-              SUBSTR(scol,3,1)  AS s3_1,
-              SUBSTR(scol,-3)   AS "s-3",
-              SUBSTR(scol,-3,3) AS "s-3_3",
-              SUBSTR(scol,-3,4) AS "s-3_4",
-              SUBSTR(scol,-3,5) AS "s-3_5",
-              SUBSTR(scol,-10,13) AS "s-10_13",
-              SUBSTR(scol,"n",2) AS "s-n2",
-              SUBSTR(scol,2,"n"+3) AS "s-2n3"
-            FROM df
-            """
-        ).collect()
+    # test both forms of SUBSTRING:
+    # >> SUBSTR(s, pos [, len]) and SUBSTRING(s FROM pos [FOR len])
+    for func, sep1, sep2 in (
+        ("SUBSTR", ",", ","),
+        ("SUBSTRING", " FROM ", " FOR "),
+    ):
+        with pl.SQLContext(df=df) as ctx:
+            res = ctx.execute(
+                f"""
+                SELECT
+                  -- note: sql is 1-indexed
+                  {func}(scol{sep1}1) AS s1,
+                  {func}(scol{sep1}2) AS s2,
+                  {func}(scol{sep1}3) AS s3,
+                  {func}(scol{sep1}1{sep2}5) AS s1_5,
+                  {func}(scol{sep1}2{sep2}2) AS s2_2,
+                  {func}(scol{sep1}3{sep2}1) AS s3_1,
+                  {func}(scol{sep1}-3) AS "s-3",
+                  {func}(scol{sep1}-3{sep2}3) AS "s-3_3",
+                  {func}(scol{sep1}-3{sep2}4) AS "s-3_4",
+                  {func}(scol{sep1}-3{sep2}5) AS "s-3_5",
+                  {func}(scol{sep1}-10{sep2}13) AS "s-10_13",
+                  {func}(scol{sep1}"n"{sep2}2) AS "s-n2",
+                  {func}(scol{sep1}2{sep2}"n"+3) AS "s-2n3"
+                FROM df
+                """
+            ).collect()
 
-        with pytest.raises(
-            SQLSyntaxError,
-            match=r"SUBSTR does not support negative length \(-99\)",
-        ):
-            ctx.execute("SELECT SUBSTR(scol,2,-99) FROM df")
+            with pytest.raises(
+                SQLSyntaxError,
+                match=r"SUBSTR does not support negative length \(-99\)",
+            ):
+                ctx.execute("SELECT SUBSTR(scol,2,-99) FROM df")
 
-        with pytest.raises(
-            SQLSyntaxError,
-            match=r"SUBSTR expects 2-3 arguments \(found 1\)",
-        ):
-            pl.sql_expr("SUBSTR(s)")
+            with pytest.raises(
+                SQLSyntaxError,
+                match=r"SUBSTR expects 2-3 arguments \(found 1\)",
+            ):
+                pl.sql_expr("SUBSTR(s)")
 
+        assert res.to_dict(as_series=False) == {
+            "s1": ["abcdefg", "abcde", "abc", None],
+            "s2": ["bcdefg", "bcde", "bc", None],
+            "s3": ["cdefg", "cde", "c", None],
+            "s1_5": ["abcde", "abcde", "abc", None],
+            "s2_2": ["bc", "bc", "bc", None],
+            "s3_1": ["c", "c", "c", None],
+            "s-3": ["abcdefg", "abcde", "abc", None],
+            "s-3_3": ["", "", "", None],
+            "s-3_4": ["", "", "", None],
+            "s-3_5": ["a", "a", "a", None],
+            "s-10_13": ["ab", "ab", "ab", None],
+            "s-n2": ["", "cd", "bc", None],
+            "s-2n3": ["b", "bcde", "bc", None],
+        }
+
+
+def test_string_lpad_rpad() -> None:
+    df = pl.DataFrame({"txt": ["hello", "hi", "a", None, "longstring"]})
+
+    res = df.sql(
+        """
+        SELECT
+          LPAD(txt, 7, 'x')  AS lpad_x,
+          LPAD(txt, 7)        AS lpad_sp,
+          RPAD(txt, 7, '-')   AS rpad_d,
+          RPAD(txt, 7)        AS rpad_sp,
+          LPAD(txt, 4, '#')   AS lpad_trunc,
+          RPAD(txt, 4, '#')   AS rpad_trunc
+        FROM self
+        """
+    )
     assert res.to_dict(as_series=False) == {
-        "s1": ["abcdefg", "abcde", "abc", None],
-        "s2": ["bcdefg", "bcde", "bc", None],
-        "s3": ["cdefg", "cde", "c", None],
-        "s1_5": ["abcde", "abcde", "abc", None],
-        "s2_2": ["bc", "bc", "bc", None],
-        "s3_1": ["c", "c", "c", None],
-        "s-3": ["abcdefg", "abcde", "abc", None],
-        "s-3_3": ["", "", "", None],
-        "s-3_4": ["", "", "", None],
-        "s-3_5": ["a", "a", "a", None],
-        "s-10_13": ["ab", "ab", "ab", None],
-        "s-n2": ["", "cd", "bc", None],
-        "s-2n3": ["b", "bcde", "bc", None],
+        "lpad_x": ["xxhello", "xxxxxhi", "xxxxxxa", None, "longstr"],
+        "lpad_sp": ["  hello", "     hi", "      a", None, "longstr"],
+        "rpad_d": ["hello--", "hi-----", "a------", None, "longstr"],
+        "rpad_sp": ["hello  ", "hi     ", "a      ", None, "longstr"],
+        "lpad_trunc": ["hell", "##hi", "###a", None, "long"],
+        "rpad_trunc": ["hell", "hi##", "a###", None, "long"],
     }
+
+    # error: multi-char fill string
+    for pad_func in ("LPAD", "RPAD"):
+        with pytest.raises(
+            SQLSyntaxError,
+            match=f"{pad_func} fill value must be a single character",
+        ):
+            df.sql(f"SELECT {pad_func}(txt, 5, 'xy') FROM self")
 
 
 def test_string_trim(foods_ipc_path: Path) -> None:

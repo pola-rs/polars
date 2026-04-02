@@ -10,8 +10,9 @@ pub(crate) struct GroupByDynamicExec {
     #[cfg(feature = "dynamic_group_by")]
     pub(crate) options: DynamicGroupOptions,
     pub(crate) input_schema: SchemaRef,
+    pub(crate) output_schema: SchemaRef,
     pub(crate) slice: Option<(i64, usize)>,
-    pub(crate) apply: Option<Arc<dyn DataFrameUdf>>,
+    pub(crate) apply: Option<PlanCallback<DataFrame, DataFrame>>,
 }
 
 impl GroupByDynamicExec {
@@ -21,23 +22,33 @@ impl GroupByDynamicExec {
         state: &ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
-        df.as_single_chunk_par();
-        let keys = self
+        use crate::executors::group_by_rolling::sort_and_groups;
+
+        df.rechunk_mut_par();
+
+        let mut keys = self
             .keys
             .iter()
             .map(|e| e.evaluate(&df, state))
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        let (mut time_key, mut keys, groups) = df.group_by_dynamic(keys, &self.options)?;
+        let group_by = if !self.keys.is_empty() {
+            Some(sort_and_groups(&mut df, &mut keys)?)
+        } else {
+            None
+        };
+
+        let (mut time_key, bounds, groups) = df.group_by_dynamic(group_by, &self.options)?;
+        POOL.install(|| {
+            keys.iter_mut().for_each(|key| {
+                unsafe { *key = key.agg_first(&groups) };
+            })
+        });
+        keys.extend(bounds);
 
         if let Some(f) = &self.apply {
             let gb = GroupBy::new(&df, vec![], groups, None);
-            let out = gb.apply(move |df| f.call_udf(df))?;
-            return Ok(if let Some((offset, len)) = self.slice {
-                out.slice(offset, len)
-            } else {
-                out
-            });
+            return gb.apply_sliced(self.slice, move |df| f.call(df), Some(&self.output_schema));
         }
 
         let mut groups = &groups;
@@ -47,7 +58,7 @@ impl GroupByDynamicExec {
 
         if let Some((offset, len)) = self.slice {
             sliced_groups = Some(groups.slice(offset, len));
-            groups = sliced_groups.as_deref().unwrap();
+            groups = sliced_groups.as_ref().unwrap();
 
             time_key = time_key.slice(offset, len);
 
@@ -63,9 +74,9 @@ impl GroupByDynamicExec {
         let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());
         columns.extend_from_slice(&keys);
         columns.push(time_key);
-        columns.extend_from_slice(&agg_columns);
+        columns.extend(agg_columns);
 
-        DataFrame::new(columns)
+        DataFrame::new_infer_height(columns)
     }
 }
 

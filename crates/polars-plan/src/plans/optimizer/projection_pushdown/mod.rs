@@ -5,16 +5,12 @@ mod hconcat;
 mod hstack;
 mod joins;
 mod projection;
-mod rename;
-#[cfg(feature = "semi_anti_join")]
-mod semi_anti_join;
 
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 use polars_io::RowIndex;
+use polars_utils::idx_vec::UnitVec;
 use recursive::recursive;
-#[cfg(feature = "semi_anti_join")]
-use semi_anti_join::process_semi_anti_join;
 
 use crate::prelude::optimizer::projection_pushdown::generic::process_generic;
 use crate::prelude::optimizer::projection_pushdown::group_by::process_group_by;
@@ -22,15 +18,70 @@ use crate::prelude::optimizer::projection_pushdown::hconcat::process_hconcat;
 use crate::prelude::optimizer::projection_pushdown::hstack::process_hstack;
 use crate::prelude::optimizer::projection_pushdown::joins::process_join;
 use crate::prelude::optimizer::projection_pushdown::projection::process_projection;
-use crate::prelude::optimizer::projection_pushdown::rename::process_rename;
 use crate::prelude::*;
 use crate::utils::aexpr_to_leaf_names;
 
-fn init_vec() -> Vec<ColumnNode> {
-    Vec::with_capacity(16)
+#[derive(Default, Copy, Clone)]
+struct ProjectionCopyState {
+    projections_seen: usize,
+    is_count_star: bool,
 }
-fn init_set() -> PlHashSet<PlSmallStr> {
-    PlHashSet::with_capacity(32)
+
+#[derive(Clone, Default)]
+struct ProjectionContext {
+    acc_projections: Vec<ColumnNode>,
+    projected_names: PlHashSet<PlSmallStr>,
+    inner: ProjectionCopyState,
+}
+
+impl ProjectionContext {
+    fn new(
+        acc_projections: Vec<ColumnNode>,
+        projected_names: PlHashSet<PlSmallStr>,
+        inner: ProjectionCopyState,
+    ) -> Self {
+        Self {
+            acc_projections,
+            projected_names,
+            inner,
+        }
+    }
+
+    /// If this is `true`, other nodes should add the columns
+    /// they need to the push down state
+    fn has_pushed_down(&self) -> bool {
+        // count star also acts like a pushdown as we will select a single column at the source
+        // when there were no other projections.
+        !self.acc_projections.is_empty() || self.inner.is_count_star
+    }
+
+    fn process_count_star_at_scan(&mut self, schema: &Schema, expr_arena: &mut Arena<AExpr>) {
+        if self.acc_projections.is_empty() {
+            let (name, _dt) = match schema.len() {
+                0 => return,
+                1 => schema.get_at_index(0).unwrap(),
+                _ => {
+                    // skip first as that can be the row index.
+                    // We look for a relative cheap type, such as a numeric or bool
+                    schema
+                        .iter()
+                        .skip(1)
+                        .find(|(_name, dt)| {
+                            let phys = dt;
+                            phys.is_null()
+                                || phys.is_primitive_numeric()
+                                || phys.is_bool()
+                                || phys.is_temporal()
+                        })
+                        .unwrap_or_else(|| schema.get_at_index(schema.len() - 1).unwrap())
+                },
+            };
+
+            let node = expr_arena.add(AExpr::Column(name.clone()));
+            self.acc_projections.push(ColumnNode(node));
+            self.projected_names.insert(name.clone());
+        }
+    }
 }
 
 /// utility function to get names of the columns needed in projection at scan level
@@ -39,33 +90,39 @@ fn get_scan_columns(
     expr_arena: &Arena<AExpr>,
     row_index: Option<&RowIndex>,
     file_path_col: Option<&str>,
+    // When set, the column order will match the order from the provided schema
+    normalize_order_schema: Option<&Schema>,
 ) -> Option<Arc<[PlSmallStr]>> {
-    if !acc_projections.is_empty() {
-        Some(
-            acc_projections
-                .iter()
-                .filter_map(|node| {
-                    let name = column_node_to_name(*node, expr_arena);
-
-                    if let Some(ri) = row_index {
-                        if ri.name == name {
-                            return None;
-                        }
-                    }
-
-                    if let Some(file_path_col) = file_path_col {
-                        if file_path_col == name.as_str() {
-                            return None;
-                        }
-                    }
-
-                    Some(name.clone())
-                })
-                .collect::<Arc<[_]>>(),
-        )
-    } else {
-        None
+    if acc_projections.is_empty() {
+        return None;
     }
+
+    let mut column_names = acc_projections
+        .iter()
+        .filter_map(|node| {
+            let name = column_node_to_name(*node, expr_arena);
+
+            if let Some(ri) = row_index {
+                if ri.name == name {
+                    return None;
+                }
+            }
+
+            if let Some(file_path_col) = file_path_col {
+                if file_path_col == name.as_str() {
+                    return None;
+                }
+            }
+
+            Some(name.clone())
+        })
+        .collect::<Vec<_>>();
+
+    if let Some(schema) = normalize_order_schema {
+        column_names.sort_unstable_by_key(|name| schema.try_get_full(name).unwrap().0);
+    }
+
+    Some(column_names.into_iter().collect::<Arc<[_]>>())
 }
 
 /// split in a projection vec that can be pushed down and a projection vec that should be used
@@ -89,7 +146,7 @@ fn split_acc_projections(
         let (acc_projections, local_projections): (Vec<_>, Vec<_>) = acc_projections
             .into_iter()
             .partition(|expr| check_input_column_node(*expr, down_schema, expr_arena));
-        let mut names = init_set();
+        let mut names = PlHashSet::default();
         for proj in &acc_projections {
             let name = column_node_to_name(*proj, expr_arena).clone();
             names.insert(name);
@@ -115,14 +172,18 @@ fn add_expr_to_accumulated(
 
 fn add_str_to_accumulated(
     name: PlSmallStr,
-    acc_projections: &mut Vec<ColumnNode>,
-    projected_names: &mut PlHashSet<PlSmallStr>,
+    ctx: &mut ProjectionContext,
     expr_arena: &mut Arena<AExpr>,
 ) {
-    // if empty: all columns are already projected.
-    if !acc_projections.is_empty() && !projected_names.contains(&name) {
+    // if not pushed down: all columns are already projected.
+    if ctx.has_pushed_down() && !ctx.projected_names.contains(&name) {
         let node = expr_arena.add(AExpr::Column(name));
-        add_expr_to_accumulated(node, acc_projections, projected_names, expr_arena);
+        add_expr_to_accumulated(
+            node,
+            &mut ctx.acc_projections,
+            &mut ctx.projected_names,
+            expr_arena,
+        );
     }
 }
 
@@ -164,34 +225,26 @@ impl ProjectionPushDown {
     fn no_pushdown_restart_opt(
         &mut self,
         lp: IR,
-        acc_projections: Vec<ColumnNode>,
-        projections_seen: usize,
+        ctx: ProjectionContext,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
         let inputs = lp.get_inputs();
-        let exprs = lp.get_exprs();
 
         let new_inputs = inputs
-            .iter()
-            .map(|&node| {
+            .into_iter()
+            .map(|node| {
                 let alp = lp_arena.take(node);
-                let alp = self.push_down(
-                    alp,
-                    Default::default(),
-                    Default::default(),
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )?;
+                let ctx = ProjectionContext::new(Default::default(), Default::default(), ctx.inner);
+                let alp = self.push_down(alp, ctx, lp_arena, expr_arena)?;
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
-            .collect::<PolarsResult<Vec<_>>>()?;
-        let lp = lp.with_exprs_and_input(exprs, new_inputs);
+            .collect::<PolarsResult<UnitVec<_>>>()?;
+        let lp = lp.with_inputs(new_inputs);
 
         let builder = IRBuilder::from_lp(lp, expr_arena, lp_arena);
-        Ok(self.finish_node_simple_projection(&acc_projections, builder))
+        Ok(self.finish_node_simple_projection(&ctx.acc_projections, builder))
     }
 
     fn finish_node_simple_projection(
@@ -220,6 +273,7 @@ impl ProjectionPushDown {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(unused)]
     fn join_push_down(
         &mut self,
         schema_left: &Schema,
@@ -258,21 +312,12 @@ impl ProjectionPushDown {
     fn pushdown_and_assign(
         &mut self,
         input: Node,
-        acc_projections: Vec<ColumnNode>,
-        names: PlHashSet<PlSmallStr>,
-        projections_seen: usize,
+        ctx: ProjectionContext,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<()> {
         let alp = lp_arena.take(input);
-        let lp = self.push_down(
-            alp,
-            acc_projections,
-            names,
-            projections_seen,
-            lp_arena,
-            expr_arena,
-        )?;
+        let lp = self.push_down(alp, ctx, lp_arena, expr_arena)?;
         lp_arena.replace(input, lp);
         Ok(())
     }
@@ -285,8 +330,7 @@ impl ProjectionPushDown {
     fn pushdown_and_assign_check_schema(
         &mut self,
         input: Node,
-        acc_projections: Vec<ColumnNode>,
-        projections_seen: usize,
+        mut ctx: ProjectionContext,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         // an unnest changes/expands the schema
@@ -295,17 +339,17 @@ impl ProjectionPushDown {
         let alp = lp_arena.take(input);
         let down_schema = alp.schema(lp_arena);
 
-        let (acc_projections, local_projections, names) =
-            split_acc_projections(acc_projections, &down_schema, expr_arena, expands_schema);
-
-        let lp = self.push_down(
-            alp,
-            acc_projections,
-            names,
-            projections_seen,
-            lp_arena,
+        let (acc_projections, local_projections, names) = split_acc_projections(
+            ctx.acc_projections,
+            &down_schema,
             expr_arena,
-        )?;
+            expands_schema,
+        );
+
+        ctx.acc_projections = acc_projections;
+        ctx.projected_names = names;
+
+        let lp = self.push_down(alp, ctx, lp_arena, expr_arena)?;
         lp_arena.replace(input, lp);
         Ok(local_projections)
     }
@@ -324,207 +368,265 @@ impl ProjectionPushDown {
     fn push_down(
         &mut self,
         logical_plan: IR,
-        mut acc_projections: Vec<ColumnNode>,
-        mut projected_names: PlHashSet<PlSmallStr>,
-        projections_seen: usize,
+        mut ctx: ProjectionContext,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
         use IR::*;
 
         match logical_plan {
-            // Should not yet be here
-            Reduce { .. } => unreachable!(),
-            Select { expr, input, .. } => process_projection(
-                self,
-                input,
-                expr,
-                acc_projections,
-                projected_names,
-                projections_seen,
-                lp_arena,
-                expr_arena,
-            ),
+            Select { expr, input, .. } => {
+                process_projection(self, input, expr, ctx, lp_arena, expr_arena, false)
+            },
             SimpleProjection { columns, input, .. } => {
-                let exprs = names_to_expr_irs(columns.iter_names().cloned(), expr_arena);
-                process_projection(
-                    self,
-                    input,
-                    exprs,
-                    acc_projections,
-                    projected_names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )
+                let exprs = names_to_expr_irs(columns.iter_names_cloned(), expr_arena);
+                process_projection(self, input, exprs, ctx, lp_arena, expr_arena, true)
             },
             DataFrameScan {
                 df,
                 schema,
                 mut output_schema,
-                filter: selection,
                 ..
             } => {
-                if !acc_projections.is_empty() {
-                    output_schema = Some(Arc::new(update_scan_schema(
-                        &acc_projections,
+                // TODO: Just project 0-width morsels.
+                if self.is_count_star {
+                    ctx.process_count_star_at_scan(&schema, expr_arena);
+                }
+                if ctx.has_pushed_down() {
+                    let new_schema = Arc::new(update_scan_schema(
+                        &ctx.acc_projections,
                         expr_arena,
                         &schema,
                         false,
-                    )?));
+                    )?);
+                    // If the projected schema is identical to the full schema, there is no
+                    // need to keep an explicit output_schema — leave it as None (project all).
+                    if *new_schema != *schema {
+                        output_schema = Some(new_schema);
+                    }
                 }
                 let lp = DataFrameScan {
                     df,
                     schema,
                     output_schema,
-                    filter: selection,
                 };
                 Ok(lp)
             },
             #[cfg(feature = "python")]
             PythonScan { mut options } => {
-                options.with_columns = get_scan_columns(&acc_projections, expr_arena, None, None);
+                if self.is_count_star {
+                    ctx.process_count_star_at_scan(&options.schema, expr_arena);
+                }
 
-                options.output_schema = if options.with_columns.is_none() {
-                    None
+                let pred = if let PythonPredicate::Polars(pred) = &options.predicate {
+                    Some(pred.clone())
                 } else {
-                    Some(Arc::new(update_scan_schema(
-                        &acc_projections,
-                        expr_arena,
-                        &options.schema,
-                        true,
-                    )?))
+                    None
                 };
-                Ok(PythonScan { options })
+
+                pre_post_predicate(
+                    pred,
+                    ctx,
+                    expr_arena,
+                    lp_arena,
+                    move |ctx,
+                          expr_arena: &mut Arena<AExpr>,
+                          _lp_arena: &mut Arena<IR>,
+                          _predicate| {
+                        let normalize_order_schema = Some(&*options.schema);
+
+                        options.with_columns = get_scan_columns(
+                            &ctx.acc_projections,
+                            expr_arena,
+                            None,
+                            None,
+                            normalize_order_schema,
+                        );
+
+                        options.output_schema = if options.with_columns.is_none() {
+                            None
+                        } else {
+                            let new_schema = Arc::new(update_scan_schema(
+                                &ctx.acc_projections,
+                                expr_arena,
+                                &options.schema,
+                                true,
+                            )?);
+                            // If the projected schema equals the full schema, clear the
+                            // explicit projection — it is a no-op.
+                            if *new_schema == *options.schema {
+                                options.with_columns = None;
+                                None
+                            } else {
+                                Some(new_schema)
+                            }
+                        };
+                        Ok(PythonScan { options })
+                    },
+                )
             },
             Scan {
-                paths,
+                sources,
                 mut file_info,
-                mut hive_parts,
+                hive_parts,
                 scan_type,
                 predicate,
-                mut file_options,
+                predicate_file_skip_applied,
+                mut unified_scan_args,
                 mut output_schema,
             } => {
-                let do_optimization = match scan_type {
-                    FileScan::Anonymous { ref function, .. } => {
-                        function.allows_projection_pushdown()
-                    },
-                    #[cfg(feature = "json")]
-                    FileScan::NDJson { .. } => true,
-                    #[cfg(feature = "ipc")]
-                    FileScan::Ipc { .. } => true,
-                    #[cfg(feature = "csv")]
-                    FileScan::Csv { .. } => true,
-                    #[cfg(feature = "parquet")]
-                    FileScan::Parquet { .. } => true,
-                };
-
-                if do_optimization {
-                    file_options.with_columns = get_scan_columns(
-                        &acc_projections,
-                        expr_arena,
-                        file_options.row_index.as_ref(),
-                        file_options.include_file_paths.as_deref(),
-                    );
-
-                    output_schema = if let Some(ref with_columns) = file_options.with_columns {
-                        let mut schema = update_scan_schema(
-                            &acc_projections,
-                            expr_arena,
-                            &file_info.schema,
-                            scan_type.sort_projection(&file_options),
-                        )?;
-
-                        hive_parts = if let Some(hive_parts) = hive_parts {
-                            let (new_schema, projected_indices) = hive_parts[0]
-                                .get_projection_schema_and_indices(
-                                    &with_columns.iter().cloned().collect::<PlHashSet<_>>(),
-                                );
-
-                            Some(Arc::new(
-                                hive_parts
-                                    .iter()
-                                    .cloned()
-                                    .map(|mut hp| {
-                                        hp.apply_projection(
-                                            new_schema.clone(),
-                                            projected_indices.as_ref(),
-                                        );
-                                        hp
-                                    })
-                                    .collect::<Vec<_>>(),
-                            ))
-                        } else {
-                            None
+                pre_post_predicate(
+                    predicate,
+                    ctx,
+                    expr_arena,
+                    lp_arena,
+                    |mut ctx,
+                     expr_arena: &mut Arena<AExpr>,
+                     _lp_arena: &mut Arena<IR>,
+                     predicate| {
+                        let do_optimization = match &*scan_type {
+                            FileScanIR::Anonymous { function, .. } => {
+                                function.allows_projection_pushdown()
+                            },
+                            FileScanIR::ExpandedPaths { .. } => true,
+                            #[cfg(feature = "json")]
+                            FileScanIR::NDJson { .. } => true,
+                            #[cfg(feature = "ipc")]
+                            FileScanIR::Ipc { .. } => true,
+                            #[cfg(feature = "csv")]
+                            FileScanIR::Csv { .. } => true,
+                            #[cfg(feature = "parquet")]
+                            FileScanIR::Parquet { .. } => true,
+                            #[cfg(feature = "scan_lines")]
+                            FileScanIR::Lines { .. } => true,
+                            // MultiScan will handle it if the PythonDataset cannot do projections.
+                            #[cfg(feature = "python")]
+                            FileScanIR::PythonDataset { .. } => true,
                         };
 
-                        // Hive partitions are created AFTER the projection, so the output
-                        // schema is incorrect. Here we ensure the columns that are projected and hive
-                        // parts are added at the proper place in the schema, which is at the end.
-                        if let Some(ref hive_parts) = hive_parts {
-                            let partition_schema = hive_parts.first().unwrap().schema();
+                        'set_projection: {
+                            if !do_optimization {
+                                break 'set_projection;
+                            }
 
-                            file_options.with_columns = file_options.with_columns.map(|x| {
-                                x.iter()
-                                    .filter(|x| !partition_schema.contains(x))
-                                    .cloned()
-                                    .collect::<Arc<[_]>>()
-                            });
+                            if self.is_count_star {
+                                if let FileScanIR::Anonymous { .. } = &*scan_type {
+                                    // Anonymous scan is not controlled by us, we don't know if it can support
+                                    // 0-column projections, so we always project one.
+                                    use either::Either;
 
-                            for (name, _) in partition_schema.iter() {
-                                if let Some(dt) = schema.shift_remove(name) {
-                                    schema.with_column(name.clone(), dt);
+                                    let projection: Arc<[PlSmallStr]> =
+                                        match &file_info.reader_schema {
+                                            Some(Either::Left(s)) => s.iter_names().next(),
+                                            Some(Either::Right(s)) => s.iter_names().next(),
+                                            None => None,
+                                        }
+                                        .into_iter()
+                                        .cloned()
+                                        .collect();
+
+                                    unified_scan_args.projection = Some(projection.clone());
+
+                                    if projection.is_empty() {
+                                        output_schema = Some(Default::default());
+                                        break 'set_projection;
+                                    }
+
+                                    ctx.acc_projections.push(ColumnNode(
+                                        expr_arena.add(AExpr::Column(projection[0].clone())),
+                                    ));
+
+                                    unified_scan_args.projection = Some(projection)
+                                } else if ctx.acc_projections.is_empty() {
+                                    // All nodes in new-streaming support projecting empty morsels with the correct height
+                                    // from the file.
+                                    unified_scan_args.projection = Some(Arc::from([]));
+                                    output_schema = Some(Default::default());
+                                    break 'set_projection;
+                                };
+                            }
+
+                            unified_scan_args.projection = get_scan_columns(
+                                &ctx.acc_projections,
+                                expr_arena,
+                                unified_scan_args.row_index.as_ref(),
+                                unified_scan_args.include_file_paths.as_deref(),
+                                None,
+                            );
+
+                            output_schema = if unified_scan_args.projection.is_some() {
+                                let mut schema = update_scan_schema(
+                                    &ctx.acc_projections,
+                                    expr_arena,
+                                    &file_info.schema,
+                                    scan_type
+                                        .sort_projection(unified_scan_args.row_index.is_some()),
+                                )?;
+
+                                if let Some(ref file_path_col) =
+                                    unified_scan_args.include_file_paths
+                                {
+                                    if let Some(i) = schema.index_of(file_path_col) {
+                                        let (name, dtype) = schema.shift_remove_index(i).unwrap();
+                                        schema.insert_at_index(schema.len(), name, dtype)?;
+                                    }
                                 }
-                            }
-                        }
-                        if let Some(ref file_path_col) = file_options.include_file_paths {
-                            if let Some(i) = schema.index_of(file_path_col) {
-                                let (name, dtype) = schema.shift_remove_index(i).unwrap();
-                                schema.insert_at_index(schema.len(), name, dtype)?;
-                            }
-                        }
-                        Some(Arc::new(schema))
-                    } else {
-                        file_options.with_columns = maybe_init_projection_excluding_hive(
-                            file_info.reader_schema.as_ref().unwrap(),
-                            hive_parts.as_ref().map(|x| &x[0]),
-                        );
-                        None
-                    };
-                }
 
-                // File builder has a row index, but projected columns
-                // do not include it, so cull.
-                if let Some(RowIndex { ref name, .. }) = file_options.row_index {
-                    if output_schema
-                        .as_ref()
-                        .map_or(false, |schema| !schema.contains(name))
-                    {
-                        // Need to remove it from the input schema so
-                        // that projection indices are correct.
-                        let mut file_schema = Arc::unwrap_or_clone(file_info.schema);
-                        file_schema.shift_remove(name);
-                        file_info.schema = Arc::new(file_schema);
-                        file_options.row_index = None;
-                    }
-                };
-                let lp = Scan {
-                    paths,
-                    file_info,
-                    hive_parts,
-                    output_schema,
-                    scan_type,
-                    predicate,
-                    file_options,
-                };
-                if !do_optimization {
-                    let builder = IRBuilder::from_lp(lp, expr_arena, lp_arena);
-                    let builder = builder.project_simple_nodes(acc_projections)?;
-                    Ok(builder.build())
-                } else {
-                    Ok(lp)
-                }
+                                // If the projected schema is identical to the full file schema,
+                                // the projection is a no-op — clear it.
+                                if schema == *file_info.schema {
+                                    unified_scan_args.projection = None;
+                                    None
+                                } else {
+                                    Some(Arc::new(schema))
+                                }
+                            } else {
+                                None
+                            };
+                        }
+
+                        // File builder has a row index, but projected columns
+                        // do not include it, so cull.
+                        if let Some(RowIndex { ref name, .. }) = unified_scan_args.row_index {
+                            if output_schema
+                                .as_ref()
+                                .is_some_and(|schema| !schema.contains(name))
+                            {
+                                // Need to remove it from the input schema so
+                                // that projection indices are correct.
+                                let mut file_schema = Arc::unwrap_or_clone(file_info.schema);
+                                file_schema.shift_remove(name);
+                                file_info.schema = Arc::new(file_schema);
+                                unified_scan_args.row_index = None;
+                            }
+                        };
+
+                        if let Some(col_name) = &unified_scan_args.include_file_paths {
+                            if output_schema
+                                .as_ref()
+                                .is_some_and(|schema| !schema.contains(col_name))
+                            {
+                                // Need to remove it from the input schema so
+                                // that projection indices are correct.
+                                let mut file_schema = Arc::unwrap_or_clone(file_info.schema);
+                                file_schema.shift_remove(col_name);
+                                file_info.schema = Arc::new(file_schema);
+                                unified_scan_args.include_file_paths = None;
+                            }
+                        };
+
+                        Ok(Scan {
+                            sources,
+                            file_info,
+                            hive_parts,
+                            output_schema,
+                            scan_type,
+                            predicate,
+                            predicate_file_skip_applied,
+                            unified_scan_args,
+                        })
+                    },
+                )
             },
             Sort {
                 input,
@@ -532,26 +634,19 @@ impl ProjectionPushDown {
                 slice,
                 sort_options,
             } => {
-                if !acc_projections.is_empty() {
+                if ctx.has_pushed_down() {
                     // Make sure that the column(s) used for the sort is projected
                     by_column.iter().for_each(|node| {
                         add_expr_to_accumulated(
                             node.node(),
-                            &mut acc_projections,
-                            &mut projected_names,
+                            &mut ctx.acc_projections,
+                            &mut ctx.projected_names,
                             expr_arena,
                         );
                     });
                 }
 
-                self.pushdown_and_assign(
-                    input,
-                    acc_projections,
-                    projected_names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )?;
+                self.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
                 Ok(Sort {
                     input,
                     by_column,
@@ -561,60 +656,36 @@ impl ProjectionPushDown {
             },
             Distinct { input, options } => {
                 // make sure that the set of unique columns is projected
-                if !acc_projections.is_empty() {
+                if ctx.has_pushed_down() {
                     if let Some(subset) = options.subset.as_ref() {
                         subset.iter().for_each(|name| {
-                            add_str_to_accumulated(
-                                name.clone(),
-                                &mut acc_projections,
-                                &mut projected_names,
-                                expr_arena,
-                            )
+                            add_str_to_accumulated(name.clone(), &mut ctx, expr_arena)
                         })
                     } else {
                         // distinct needs all columns
                         let input_schema = lp_arena.get(input).schema(lp_arena);
                         for name in input_schema.iter_names() {
-                            add_str_to_accumulated(
-                                name.clone(),
-                                &mut acc_projections,
-                                &mut projected_names,
-                                expr_arena,
-                            )
+                            add_str_to_accumulated(name.clone(), &mut ctx, expr_arena)
                         }
                     }
                 }
 
-                self.pushdown_and_assign(
-                    input,
-                    acc_projections,
-                    projected_names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )?;
+                self.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
                 Ok(Distinct { input, options })
             },
-            Filter { predicate, input } => {
-                if !acc_projections.is_empty() {
-                    // make sure that the filter column is projected
-                    add_expr_to_accumulated(
-                        predicate.node(),
-                        &mut acc_projections,
-                        &mut projected_names,
-                        expr_arena,
-                    );
-                };
-                self.pushdown_and_assign(
-                    input,
-                    acc_projections,
-                    projected_names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )?;
-                Ok(Filter { predicate, input })
-            },
+            Filter { predicate, input } => pre_post_predicate(
+                Some(predicate),
+                ctx,
+                expr_arena,
+                lp_arena,
+                |ctx, expr_arena: &mut Arena<AExpr>, lp_arena: &mut Arena<IR>, predicate| {
+                    self.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
+                    Ok(Filter {
+                        predicate: predicate.unwrap(),
+                        input,
+                    })
+                },
+            ),
             GroupBy {
                 input,
                 keys,
@@ -632,78 +703,24 @@ impl ProjectionPushDown {
                 schema,
                 maintain_order,
                 options,
-                acc_projections,
-                projected_names,
-                projections_seen,
+                ctx,
                 lp_arena,
                 expr_arena,
             ),
-            Join {
-                input_left,
-                input_right,
-                left_on,
-                right_on,
-                options,
-                schema,
-            } => match options.args.how {
-                #[cfg(feature = "semi_anti_join")]
-                JoinType::Semi | JoinType::Anti => process_semi_anti_join(
-                    self,
-                    input_left,
-                    input_right,
-                    left_on,
-                    right_on,
-                    options,
-                    acc_projections,
-                    projected_names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                ),
-                _ => process_join(
-                    self,
-                    input_left,
-                    input_right,
-                    left_on,
-                    right_on,
-                    options,
-                    acc_projections,
-                    projected_names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                    &schema,
-                ),
-            },
+            join_ir @ Join { .. } => process_join(join_ir, ctx, self, lp_arena, expr_arena),
             HStack {
                 input,
                 exprs,
                 options,
                 ..
-            } => process_hstack(
-                self,
-                input,
-                exprs,
-                options,
-                acc_projections,
-                projected_names,
-                projections_seen,
-                lp_arena,
-                expr_arena,
-            ),
+            } => process_hstack(self, input, exprs, options, ctx, lp_arena, expr_arena),
             ExtContext {
                 input, contexts, ..
             } => {
                 // local projections are ignored. These are just root nodes
                 // complex expression will still be done later
-                let _local_projections = self.pushdown_and_assign_check_schema(
-                    input,
-                    acc_projections,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                    false,
-                )?;
+                let _local_projections =
+                    self.pushdown_and_assign_check_schema(input, ctx, lp_arena, expr_arena, false)?;
 
                 let mut new_schema = lp_arena
                     .get(input)
@@ -727,62 +744,55 @@ impl ProjectionPushDown {
                     schema: Arc::new(new_schema),
                 })
             },
-            MapFunction { input, function } => functions::process_functions(
-                self,
-                input,
-                function,
-                acc_projections,
-                projected_names,
-                projections_seen,
-                lp_arena,
-                expr_arena,
-            ),
+            MapFunction { input, function } => {
+                functions::process_functions(self, input, function, ctx, lp_arena, expr_arena)
+            },
             HConcat {
                 inputs,
                 schema,
                 options,
-            } => process_hconcat(
-                self,
-                inputs,
-                schema,
-                options,
-                acc_projections,
-                projections_seen,
-                lp_arena,
-                expr_arena,
-            ),
-            lp @ Union { .. } => process_generic(
-                self,
-                lp,
-                acc_projections,
-                projected_names,
-                projections_seen,
-                lp_arena,
-                expr_arena,
-            ),
+            } => process_hconcat(self, inputs, schema, options, ctx, lp_arena, expr_arena),
+            lp @ Union { .. } => process_generic(self, lp, ctx, lp_arena, expr_arena, false),
             // These nodes only have inputs and exprs, so we can use same logic.
-            lp @ Slice { .. } | lp @ Sink { .. } => process_generic(
-                self,
-                lp,
-                acc_projections,
-                projected_names,
-                projections_seen,
-                lp_arena,
-                expr_arena,
-            ),
+            lp @ Slice { .. } | lp @ Sink { .. } => {
+                process_generic(self, lp, ctx, lp_arena, expr_arena, false)
+            },
+            lp @ SinkMultiple { .. } => process_generic(self, lp, ctx, lp_arena, expr_arena, true),
             Cache { .. } => {
+                // Important: Stop optimization at cache, this behavior is relied on by set_cache_states.
+                //
                 // projections above this cache will be accumulated and pushed down
                 // later
                 // the redundant projection will be cleaned in the fast projection optimization
                 // phase.
-                if acc_projections.is_empty() {
+                if ctx.acc_projections.is_empty() {
                     Ok(logical_plan)
                 } else {
                     Ok(IRBuilder::from_lp(logical_plan, expr_arena, lp_arena)
-                        .project_simple_nodes(acc_projections)
+                        .project_simple_nodes(ctx.acc_projections)
                         .unwrap()
                         .build())
                 }
+            },
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left,
+                input_right,
+                key,
+            } => {
+                if ctx.has_pushed_down() {
+                    // make sure that the filter column is projected
+                    add_str_to_accumulated(key.clone(), &mut ctx, expr_arena);
+                };
+
+                self.pushdown_and_assign(input_left, ctx.clone(), lp_arena, expr_arena)?;
+                self.pushdown_and_assign(input_right, ctx, lp_arena, expr_arena)?;
+
+                Ok(MergeSorted {
+                    input_left,
+                    input_right,
+                    key,
+                })
             },
             Invalid => unreachable!(),
         }
@@ -794,15 +804,56 @@ impl ProjectionPushDown {
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
-        let acc_projections = init_vec();
-        let names = init_set();
-        self.push_down(
-            logical_plan,
-            acc_projections,
-            names,
-            0,
-            lp_arena,
+        let ctx = ProjectionContext::default();
+        self.push_down(logical_plan, ctx, lp_arena, expr_arena)
+    }
+}
+
+// Push down predicate in the node, but don't keep the predicate columns if it isn't needed.
+fn pre_post_predicate<
+    F: FnOnce(
+        ProjectionContext,
+        &mut Arena<AExpr>,
+        &mut Arena<IR>,
+        Option<ExprIR>,
+    ) -> PolarsResult<IR>,
+>(
+    predicate: Option<ExprIR>,
+    mut ctx: ProjectionContext,
+    expr_arena: &mut Arena<AExpr>,
+    lp_arena: &mut Arena<IR>,
+    func: F,
+) -> PolarsResult<IR> {
+    // If we have a predicate, load those columns, but drop
+    // them after loading the file.
+    let post_project = if let Some(pred) = &predicate
+        && ctx.has_pushed_down()
+    {
+        let post_project = ctx.acc_projections.clone();
+
+        add_expr_to_accumulated(
+            pred.node(),
+            &mut ctx.acc_projections,
+            &mut ctx.projected_names,
             expr_arena,
-        )
+        );
+        if post_project.len() != ctx.projected_names.len() {
+            Some(post_project)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let lp = func(ctx, expr_arena, lp_arena, predicate)?;
+
+    if let Some(post_project) = post_project {
+        let root = lp_arena.add(lp);
+        Ok(IRBuilder::new(root, expr_arena, lp_arena)
+            .project_simple_nodes(post_project)?
+            .build())
+    } else {
+        Ok(lp)
     }
 }

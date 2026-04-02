@@ -11,7 +11,7 @@ pub(crate) unsafe fn drop_list(ca: &ListChunked) {
         inner = a;
     }
 
-    if matches!(inner, DataType::Object(_, _)) {
+    if matches!(inner, DataType::Object(_)) {
         if nested_count != 0 {
             panic!("multiple nested objects not yet supported")
         }
@@ -21,7 +21,7 @@ pub(crate) unsafe fn drop_list(ca: &ListChunked) {
             if let ArrowDataType::LargeList(fld) = lst_arr.dtype() {
                 let dtype = fld.dtype();
 
-                assert!(matches!(dtype, ArrowDataType::Extension(_, _, _)));
+                assert!(matches!(dtype, ArrowDataType::Extension(_)));
 
                 // recreate the polars extension so that the content is dropped
                 let arr = lst_arr.as_any().downcast_ref::<LargeListArray>().unwrap();
@@ -41,7 +41,7 @@ pub(crate) unsafe fn drop_object_array(values: &dyn Array) {
 
     // If the buf is not shared with anyone but us we can deallocate.
     let buf = arr.values();
-    if buf.shared_count_strong() == 1 && !buf.is_empty() {
+    if buf.storage_refcount() == 1 && !buf.is_empty() {
         PolarsExtension::new(arr.clone());
     };
 }

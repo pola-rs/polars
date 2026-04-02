@@ -7,10 +7,13 @@ Manipulation/selection
    :toctree: api/
 
     Series.__getitem__
+    Series.__setitem__
     Series.alias
     Series.append
     Series.arg_sort
+    Series.backward_fill
     Series.bottom_k
+    Series.bottom_k_by
     Series.cast
     Series.ceil
     Series.clear
@@ -26,6 +29,7 @@ Manipulation/selection
     Series.fill_null
     Series.filter
     Series.floor
+    Series.forward_fill
     Series.gather
     Series.gather_every
     Series.head
@@ -37,6 +41,7 @@ Manipulation/selection
     Series.qcut
     Series.rechunk
     Series.rename
+    Series.repeat_by
     Series.reshape
     Series.reverse
     Series.rle
@@ -52,8 +57,11 @@ Manipulation/selection
     Series.shuffle
     Series.slice
     Series.sort
+    Series.sql
     Series.tail
     Series.to_dummies
     Series.top_k
+    Series.top_k_by
+    Series.truncate
     Series.unique
     Series.zip_with

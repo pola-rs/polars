@@ -1,26 +1,38 @@
+#![allow(clippy::disallowed_types)]
+
 mod park_group;
 mod task;
 
 use std::cell::{Cell, UnsafeCell};
 use std::future::Future;
 use std::marker::PhantomData;
-use std::panic::AssertUnwindSafe;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::panic::{AssertUnwindSafe, Location};
+use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
+use std::task::{Context, Poll};
+use std::time::Instant;
 
 use crossbeam_deque::{Injector, Steal, Stealer, Worker as WorkQueue};
 use crossbeam_utils::CachePadded;
 use park_group::ParkGroup;
 use parking_lot::Mutex;
+use polars_core::ALLOW_RAYON_THREADS;
+use polars_utils::relaxed_cell::RelaxedCell;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use slotmap::SlotMap;
-pub use task::{AbortOnDropHandle, JoinHandle};
-use task::{CancelHandle, Runnable};
+use task::{Cancellable, DynTask, Runnable};
 
-static NUM_EXECUTOR_THREADS: AtomicUsize = AtomicUsize::new(0);
+static NUM_EXECUTOR_THREADS: RelaxedCell<usize> = RelaxedCell::new_usize(0);
 pub fn set_num_threads(t: usize) {
-    NUM_EXECUTOR_THREADS.store(t, Ordering::Relaxed);
+    NUM_EXECUTOR_THREADS.store(t);
+}
+
+static TRACK_METRICS: RelaxedCell<bool> = RelaxedCell::new_bool(false);
+
+pub fn track_task_metrics(should_track: bool) {
+    TRACK_METRICS.store(should_track);
 }
 
 static GLOBAL_SCHEDULER: OnceLock<Executor> = OnceLock::new();
@@ -47,14 +59,30 @@ struct ScopedTaskMetadata {
     completed_tasks: Weak<Mutex<Vec<TaskKey>>>,
 }
 
+#[derive(Default)]
+#[repr(align(128))]
+pub struct TaskMetrics {
+    pub total_polls: RelaxedCell<u64>,
+    pub total_stolen_polls: RelaxedCell<u64>,
+    pub total_poll_time_ns: RelaxedCell<u64>,
+    pub max_poll_time_ns: RelaxedCell<u64>,
+    pub done: RelaxedCell<bool>,
+}
+
 struct TaskMetadata {
+    spawn_location: &'static Location<'static>,
     priority: TaskPriority,
     freshly_spawned: AtomicBool,
     scoped: Option<ScopedTaskMetadata>,
+    metrics: Option<Arc<TaskMetrics>>,
 }
 
 impl Drop for TaskMetadata {
     fn drop(&mut self) {
+        if let Some(metrics) = self.metrics.as_ref() {
+            metrics.done.store(true);
+        }
+
         if let Some(scoped) = &self.scoped {
             if let Some(completed_tasks) = scoped.completed_tasks.upgrade() {
                 completed_tasks.lock().push(scoped.task_key);
@@ -63,8 +91,72 @@ impl Drop for TaskMetadata {
     }
 }
 
+pub struct JoinHandle<T>(Arc<dyn DynTask<T, TaskMetadata>>);
+pub struct CancelHandle(Weak<dyn Cancellable>);
+
+impl<T> JoinHandle<T> {
+    pub fn metrics(&self) -> Option<&Arc<TaskMetrics>> {
+        self.0.metadata().metrics.as_ref()
+    }
+
+    #[allow(unused)]
+    pub fn spawn_location(&self) -> &'static Location<'static> {
+        self.0.metadata().spawn_location
+    }
+
+    pub fn cancel_handle(&self) -> CancelHandle {
+        let coerce: Weak<dyn DynTask<T, TaskMetadata>> = Arc::downgrade(&self.0);
+        CancelHandle(coerce)
+    }
+}
+
+impl<T> Future for JoinHandle<T> {
+    type Output = T;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.0.poll_join(ctx)
+    }
+}
+
+impl CancelHandle {
+    pub fn cancel(&self) {
+        if let Some(t) = self.0.upgrade() {
+            t.cancel();
+        }
+    }
+}
+
+pub struct AbortOnDropHandle<T> {
+    join_handle: JoinHandle<T>,
+    cancel_handle: CancelHandle,
+}
+
+impl<T> AbortOnDropHandle<T> {
+    pub fn new(join_handle: JoinHandle<T>) -> Self {
+        let cancel_handle = join_handle.cancel_handle();
+        Self {
+            join_handle,
+            cancel_handle,
+        }
+    }
+}
+
+impl<T> Future for AbortOnDropHandle<T> {
+    type Output = T;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.join_handle).poll(cx)
+    }
+}
+
+impl<T> Drop for AbortOnDropHandle<T> {
+    fn drop(&mut self) {
+        self.cancel_handle.cancel();
+    }
+}
+
 /// A task ready to run.
-type ReadyTask = Runnable<TaskMetadata>;
+type ReadyTask = Arc<dyn Runnable<TaskMetadata>>;
 
 /// A per-thread task list.
 struct ThreadLocalTaskList {
@@ -179,12 +271,14 @@ impl Executor {
 
     fn runner(&self, thread: usize) {
         TLS_THREAD_ID.set(thread);
+        ALLOW_RAYON_THREADS.set(false);
 
-        let mut rng = SmallRng::from_rng(&mut rand::thread_rng()).unwrap();
+        let mut rng = SmallRng::from_rng(&mut rand::rng());
         let mut worker = self.park_group.new_worker();
 
         loop {
             let ttl = &self.thread_task_lists[thread];
+            let mut local = true;
             let task = (|| {
                 // Try to get a task from LIFO slot.
                 if let Some(task) = unsafe { (*ttl.local_slot.get()).take() } {
@@ -197,6 +291,7 @@ impl Executor {
                 }
 
                 // Try to steal a task.
+                local = false;
                 if let Some(task) = self.try_steal_task(thread, &mut rng) {
                     return Some(task);
                 }
@@ -206,20 +301,33 @@ impl Executor {
                 if let Some(task) = self.try_steal_task(thread, &mut rng) {
                     return Some(task);
                 }
+
                 park.park();
                 None
             })();
 
             if let Some(task) = task {
                 worker.recruit_next();
-                task.run();
+                if let Some(metrics) = task.metadata().metrics.clone() {
+                    let start = Instant::now();
+                    task.run();
+                    let elapsed_ns = start.elapsed().as_nanos() as u64;
+                    metrics.total_polls.fetch_add(1);
+                    if !local {
+                        metrics.total_stolen_polls.fetch_add(1);
+                    }
+                    metrics.total_poll_time_ns.fetch_add(elapsed_ns);
+                    metrics.max_poll_time_ns.fetch_max(elapsed_ns);
+                } else {
+                    task.run();
+                }
             }
         }
     }
 
     fn global() -> &'static Executor {
         GLOBAL_SCHEDULER.get_or_init(|| {
-            let mut n_threads = NUM_EXECUTOR_THREADS.load(Ordering::Relaxed);
+            let mut n_threads = NUM_EXECUTOR_THREADS.load();
             if n_threads == 0 {
                 n_threads = std::thread::available_parallelism()
                     .map(|n| n.get())
@@ -264,7 +372,7 @@ pub struct TaskScope<'scope, 'env: 'scope> {
     env: PhantomData<&'env mut &'env ()>,
 }
 
-impl<'scope, 'env> TaskScope<'scope, 'env> {
+impl<'scope> TaskScope<'scope, '_> {
     // Not Drop because that extends lifetimes.
     fn destroy(&self) {
         // Make sure all tasks are cancelled.
@@ -280,6 +388,7 @@ impl<'scope, 'env> TaskScope<'scope, 'env> {
         }
     }
 
+    #[track_caller]
     pub fn spawn_task<F: Future + Send + 'scope>(
         &self,
         priority: TaskPriority,
@@ -288,12 +397,14 @@ impl<'scope, 'env> TaskScope<'scope, 'env> {
     where
         <F as Future>::Output: Send + 'static,
     {
+        let spawn_location = Location::caller();
         self.clear_completed_tasks();
 
         let mut runnable = None;
         let mut join_handle = None;
         self.cancel_handles.lock().insert_with_key(|task_key| {
-            let (run, jh) = unsafe {
+            let metrics = TRACK_METRICS.load().then(Arc::default);
+            let dyn_task = unsafe {
                 // SAFETY: we make sure to cancel this task before 'scope ends.
                 let executor = Executor::global();
                 let on_wake = move |task| executor.schedule_task(task);
@@ -301,17 +412,20 @@ impl<'scope, 'env> TaskScope<'scope, 'env> {
                     fut,
                     on_wake,
                     TaskMetadata {
+                        spawn_location,
                         priority,
                         freshly_spawned: AtomicBool::new(true),
                         scoped: Some(ScopedTaskMetadata {
                             task_key,
                             completed_tasks: Arc::downgrade(&self.completed_tasks),
                         }),
+                        metrics,
                     },
                 )
             };
+            runnable = Some(Arc::clone(&dyn_task));
+            let jh = JoinHandle(dyn_task);
             let cancel_handle = jh.cancel_handle();
-            runnable = Some(run);
             join_handle = Some(jh);
             cancel_handle
         });
@@ -345,33 +459,38 @@ where
     }
 }
 
+#[track_caller]
 pub fn spawn<F: Future + Send + 'static>(priority: TaskPriority, fut: F) -> JoinHandle<F::Output>
 where
     <F as Future>::Output: Send + 'static,
 {
+    let spawn_location = Location::caller();
     let executor = Executor::global();
     let on_wake = move |task| executor.schedule_task(task);
-    let (runnable, join_handle) = task::spawn(
+    let metrics = TRACK_METRICS.load().then(Arc::default);
+    let dyn_task = task::spawn(
         fut,
         on_wake,
         TaskMetadata {
+            spawn_location,
             priority,
             freshly_spawned: AtomicBool::new(true),
             scoped: None,
+            metrics,
         },
     );
-    runnable.schedule();
-    join_handle
+    Arc::clone(&dyn_task).schedule();
+    JoinHandle(dyn_task)
 }
 
 fn random_permutation<R: Rng>(len: u32, rng: &mut R) -> impl Iterator<Item = u32> {
     let modulus = len.next_power_of_two();
     let halfwidth = modulus.trailing_zeros() / 2;
     let mask = modulus - 1;
-    let displace_zero = rng.gen::<u32>();
-    let odd1 = rng.gen::<u32>() | 1;
-    let odd2 = rng.gen::<u32>() | 1;
-    let uniform_first = ((rng.gen::<u32>() as u64 * len as u64) >> 32) as u32;
+    let displace_zero = rng.random::<u32>();
+    let odd1 = rng.random::<u32>() | 1;
+    let odd2 = rng.random::<u32>() | 1;
+    let uniform_first = ((rng.random::<u32>() as u64 * len as u64) >> 32) as u32;
 
     (0..modulus)
         .map(move |mut i| {

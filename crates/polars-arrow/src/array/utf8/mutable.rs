@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::{MutableUtf8ValuesArray, MutableUtf8ValuesIter, StrAsBytes, Utf8Array};
 use crate::array::physical_binary::*;
@@ -65,7 +65,7 @@ impl<O: Offset> MutableUtf8Array<O> {
 
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != values.len())
+            .is_some_and(|validity| validity.len() != values.len())
         {
             polars_bail!(ComputeError: "validity's length must be equal to the number of values")
         }
@@ -178,7 +178,7 @@ impl<O: Offset> MutableUtf8Array<O> {
     }
 
     /// Returns an iterator of `Option<&str>`
-    pub fn iter(&self) -> ZipValidity<&str, MutableUtf8ValuesIter<O>, BitmapIter> {
+    pub fn iter(&self) -> ZipValidity<&str, MutableUtf8ValuesIter<'_, O>, BitmapIter<'_>> {
         ZipValidity::new(self.values_iter(), self.validity.as_ref().map(|x| x.iter()))
     }
 
@@ -203,7 +203,7 @@ impl<O: Offset> MutableUtf8Array<O> {
     }
 
     /// Returns an iterator of `&str`
-    pub fn values_iter(&self) -> MutableUtf8ValuesIter<O> {
+    pub fn values_iter(&self) -> MutableUtf8ValuesIter<'_, O> {
         self.values.iter()
     }
 

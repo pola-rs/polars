@@ -1,4 +1,4 @@
-use polars_error::{polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_err};
 
 use super::{DictionaryArray, DictionaryKey};
 use crate::array::{FromFfi, PrimitiveArray, ToFfi};

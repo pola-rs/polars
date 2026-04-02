@@ -1,11 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
-
-import pytest
-
 import polars as pl
-from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -43,17 +38,6 @@ def test_map_rows_dataframe_return() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_map_rows_error_return_type() -> None:
-    df = pl.DataFrame({"a": [[1, 2], [2, 3]], "b": [[4, 5], [6, 7]]})
-
-    def combine(row: tuple[Any, ...]) -> list[Any]:
-        res = [x + y for x, y in zip(row[0], row[1])]
-        return [res]
-
-    with pytest.raises(ComputeError, match="expected tuple, got list"):
-        df.map_rows(combine)
-
-
 def test_map_rows_shifted_chunks() -> None:
     df = pl.DataFrame(pl.Series("texts", ["test", "test123", "tests"]))
     df = df.select(pl.col("texts"), pl.col("texts").shift(1).alias("texts_shifted"))
@@ -67,3 +51,31 @@ def test_map_rows_shifted_chunks() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_map_elements_infer() -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [1, 2, 3],
+        }
+    )
+    lf = lf.select(pl.col.a.map_elements(lambda v: f"pre-{v}"))
+
+    # this should not go through execution, solely through the planner
+    schema = lf.collect_schema()
+
+    assert schema.names() == ["a"]
+    assert schema.dtypes() == [pl.String]
+
+
+def test_map_rows_object_dtype() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [0, 0, 1, 2, 2],
+            "b": [object(), 2, 0, 0, 1],
+        },
+        schema={"a": pl.Int64, "b": pl.Object},
+    )
+
+    out = df.map_rows(lambda _d: 1)
+    assert_frame_equal(out, pl.DataFrame({"map": [1, 1, 1, 1, 1]}))

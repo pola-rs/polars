@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::marker::PhantomData;
 
 use arrow::array::*;
@@ -83,8 +84,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// # Safety
     /// The caller must ensure:
-    ///     * the length remains correct.
-    ///     * the flags (sorted, etc) remain correct.
+    /// * The length remains correct.
+    /// * The flags (sorted, etc) remain correct.
+    /// * The dtype remains the same.
     #[inline]
     pub unsafe fn downcast_iter_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut T::Array> {
         self.chunks.iter_mut().map(|arr| {
@@ -107,10 +109,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         unsafe { Some(&*(arr as *const dyn Array as *const T::Array)) }
     }
 
+    /// # Panics
+    /// Panics if `self.chunks().len() != 1`.
     #[inline]
-    pub fn downcast_into_array(self) -> T::Array {
+    pub fn downcast_as_array(&self) -> &T::Array {
         assert_eq!(self.chunks.len(), 1);
-        self.downcast_get(0).unwrap().clone()
+        self.downcast_get(0).unwrap()
     }
 
     #[inline]

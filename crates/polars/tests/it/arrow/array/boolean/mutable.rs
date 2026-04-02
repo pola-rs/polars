@@ -76,14 +76,14 @@ fn pop_all_some() {
 
 #[test]
 fn from_trusted_len_iter() {
-    let iter = std::iter::repeat(true).take(2).map(Some);
+    let iter = std::iter::repeat_n(true, 2).map(Some);
     let a = MutableBooleanArray::from_trusted_len_iter(iter);
     assert_eq!(a, MutableBooleanArray::from([Some(true), Some(true)]));
 }
 
 #[test]
 fn from_iter() {
-    let iter = std::iter::repeat(true).take(2).map(Some);
+    let iter = std::iter::repeat_n(true, 2).map(Some);
     let a: MutableBooleanArray = iter.collect();
     assert_eq!(a, MutableBooleanArray::from([Some(true), Some(true)]));
 }
@@ -173,5 +173,27 @@ fn extend_from_self() {
     assert_eq!(
         a,
         MutableBooleanArray::from([Some(true), None, Some(true), None])
+    );
+}
+
+#[test]
+fn extend_constant_with_none_validity_empty() {
+    let mut a = MutableBooleanArray::new();
+
+    a.extend_constant(2, None);
+
+    assert_eq!(a.validity(), Some(&MutableBitmap::from([false, false])));
+}
+
+#[test]
+fn extend_constant_with_none_validity_nonempty() {
+    let mut a = MutableBooleanArray::new();
+    a.push_value(true);
+
+    a.extend_constant(2, None);
+
+    assert_eq!(
+        a.validity(),
+        Some(&MutableBitmap::from([true, false, false]))
     );
 }

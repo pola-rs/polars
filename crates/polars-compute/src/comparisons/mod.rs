@@ -15,24 +15,22 @@ pub trait TotalEqKernel: Sized + Array {
     // to anything else.
     fn tot_eq_missing_kernel(&self, other: &Self) -> Bitmap {
         let q = self.tot_eq_kernel(other);
-        let combined = match (self.validity(), other.validity()) {
+        match (self.validity(), other.validity()) {
             (None, None) => q,
             (None, Some(r)) => &q & r,
             (Some(l), None) => &q & l,
             (Some(l), Some(r)) => bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | !(l | r)),
-        };
-        combined
+        }
     }
 
     fn tot_ne_missing_kernel(&self, other: &Self) -> Bitmap {
         let q = self.tot_ne_kernel(other);
-        let combined = match (self.validity(), other.validity()) {
+        match (self.validity(), other.validity()) {
             (None, None) => q,
             (None, Some(r)) => &q | &!r,
             (Some(l), None) => &q | &!l,
             (Some(l), Some(r)) => bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | (l ^ r)),
-        };
-        combined
+        }
     }
     fn tot_eq_missing_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
         let q = self.tot_eq_kernel_broadcast(other);
@@ -89,11 +87,10 @@ mod view;
 
 #[cfg(feature = "simd")]
 mod _simd_dtypes {
-    use arrow::types::{days_ms, f16, i256, months_days_ns};
+    use arrow::types::{days_ms, i256, months_days_ns};
 
     use crate::NotSimdPrimitive;
 
-    impl NotSimdPrimitive for f16 {}
     impl NotSimdPrimitive for i256 {}
     impl NotSimdPrimitive for days_ms {}
     impl NotSimdPrimitive for months_days_ns {}

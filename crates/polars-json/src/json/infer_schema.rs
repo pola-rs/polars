@@ -16,7 +16,11 @@ const ITEM_NAME: &str = "item";
 pub fn infer(json: &BorrowedValue) -> PolarsResult<ArrowDataType> {
     Ok(match json {
         BorrowedValue::Static(StaticNode::Bool(_)) => ArrowDataType::Boolean,
-        BorrowedValue::Static(StaticNode::U64(_) | StaticNode::I64(_)) => ArrowDataType::Int64,
+        BorrowedValue::Static(StaticNode::I64(_)) => ArrowDataType::Int64,
+        BorrowedValue::Static(StaticNode::U64(x)) if *x <= i64::MAX as u64 => ArrowDataType::Int64,
+        BorrowedValue::Static(StaticNode::U64(_) | StaticNode::U128(_) | StaticNode::I128(_)) => {
+            ArrowDataType::Int128
+        },
         BorrowedValue::Static(StaticNode::F64(_)) => ArrowDataType::Float64,
         BorrowedValue::Static(StaticNode::Null) => ArrowDataType::Null,
         BorrowedValue::Array(array) => infer_array(array)?,
@@ -42,7 +46,7 @@ fn infer_array(values: &[BorrowedValue]) -> PolarsResult<ArrowDataType> {
         .iter()
         .map(infer)
         // deduplicate entries
-        .collect::<PolarsResult<PlHashSet<_>>>()?;
+        .collect::<PolarsResult<PlIndexSet<_>>>()?;
 
     let dt = if !types.is_empty() {
         let types = types.into_iter().collect::<Vec<_>>();
@@ -134,11 +138,15 @@ pub(crate) fn coerce_dtype<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> ArrowDa
             true,
         )));
     } else if datatypes.len() > 2 {
-        return coerce_dtype(datatypes);
+        return datatypes
+            .iter()
+            .map(|t| t.borrow().clone())
+            .reduce(|a, b| coerce_dtype(&[a, b]))
+            .expect("not empty");
     }
     let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());
 
-    return match (lhs, rhs) {
+    match (lhs, rhs) {
         (lhs, rhs) if lhs == rhs => lhs.clone(),
         (LargeList(lhs), LargeList(rhs)) => {
             let inner = coerce_dtype(&[lhs.dtype(), rhs.dtype()]);
@@ -171,5 +179,5 @@ pub(crate) fn coerce_dtype<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> ArrowDa
         (Null, rhs) => rhs.clone(),
         (lhs, Null) => lhs.clone(),
         (_, _) => LargeUtf8,
-    };
+    }
 }

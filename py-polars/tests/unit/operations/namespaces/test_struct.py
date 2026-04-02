@@ -3,8 +3,11 @@ from __future__ import annotations
 import datetime
 from collections import OrderedDict
 
+import pytest
+
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.exceptions import ColumnNotFoundError, InvalidOperationError
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_struct_various() -> None:
@@ -95,3 +98,85 @@ def test_empty_list_eval_schema_5734() -> None:
     assert df.filter(False).select(
         pl.col("a").list.eval(pl.element().struct.field("b"))
     ).schema == {"a": pl.List(pl.Int64)}
+
+
+def test_field_by_index_18732() -> None:
+    df = pl.DataFrame({"foo": [{"a": 1, "b": 2}, {"a": 2, "b": 1}]})
+
+    # illegal upper bound
+    with pytest.raises(ColumnNotFoundError):
+        df.filter(pl.col.foo.struct[2] == 1)
+
+    # legal
+    expected_df = pl.DataFrame({"foo": [{"a": 1, "b": 2}]})
+    result_df = df.filter(pl.col.foo.struct[0] == 1)
+    assert_frame_equal(expected_df, result_df)
+
+    expected_df = pl.DataFrame({"foo": [{"a": 2, "b": 1}]})
+    result_df = df.filter(pl.col.foo.struct[-1] == 1)
+    assert_frame_equal(expected_df, result_df)
+
+
+def test_unnest_raises_on_non_struct_23654() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1],
+            "b": [1.1],
+            "c": ["abc"],
+            "d": [True],
+            "e": [datetime.datetime(2025, 1, 1)],
+            "f": [datetime.datetime(2025, 1, 2).date()],
+        }
+    )
+    for z in "abcdef":
+        with pytest.raises(InvalidOperationError):
+            df.unnest(z)
+
+
+def test_json_encode_decimal_25881() -> None:
+    s = pl.Series(
+        [{"a": 1.23}, {"a": 4.56}, {"a": None}, {"a": 30.13}],
+        dtype=pl.Struct({"a": pl.Decimal(4, 2)}),
+    )
+    result = s.struct.json_encode()
+    expected = pl.Series(
+        ['{"a":"1.23"}', '{"a":"4.56"}', '{"a":null}', '{"a":"30.13"}']
+    )
+    assert_series_equal(result, expected)
+
+
+def test_json_encode_i128() -> None:
+    s = pl.Series(
+        [{"a": 2**127 - 5}, {"a": None}, {"a": -(2**127) + 124912489}],
+        dtype=pl.Struct({"a": pl.Int128}),
+    )
+    result = s.struct.json_encode()
+    expected = pl.Series(
+        [
+            '{"a":170141183460469231731687303715884105723}',
+            '{"a":null}',
+            '{"a":-170141183460469231731687303715759193239}',
+        ]
+    )
+    assert_series_equal(result, expected)
+
+
+def test_json_encode_u128() -> None:
+    s = pl.Series(
+        [{"a": 2**128 - 5}, {"a": None}],
+        dtype=pl.Struct({"a": pl.UInt128}),
+    )
+    result = s.struct.json_encode()
+    expected = pl.Series(
+        ['{"a":340282366920938463463374607431768211451}', '{"a":null}']
+    )
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("dtype", [pl.Enum(["bar", "foo"]), pl.Categorical])
+def test_json_encode_categorical(dtype: pl.DataType) -> None:
+    s = pl.Series("a", ["foo", "bar"], dtype=dtype)
+    assert_series_equal(
+        s.to_frame().select(c=pl.struct("a").struct.json_encode()).to_series(),
+        pl.Series("c", ['{"a":"foo"}', '{"a":"bar"}'], pl.String),
+    )

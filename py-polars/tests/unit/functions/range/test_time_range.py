@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -38,12 +38,8 @@ def test_time_ranges_eager() -> None:
 
 
 def test_time_range_eager_explode() -> None:
-    start = pl.Series("start", [time(9, 0)])
-    end = pl.Series("end", [time(11, 0)])
-
-    result = pl.time_range(start, end, eager=True)
-
-    expected = pl.Series("start", [time(9, 0), time(10, 0), time(11, 0)])
+    result = pl.time_range(time(9, 0), time(11, 0), eager=True)
+    expected = pl.Series("literal", [time(9, 0), time(10, 0), time(11, 0)])
     assert_series_equal(result, expected)
 
 
@@ -51,17 +47,11 @@ def test_time_range_input_shape_empty() -> None:
     empty = pl.Series(dtype=pl.Time)
     single = pl.Series([time(12, 0)])
 
-    with pytest.raises(
-        ComputeError, match="`start` must contain exactly one value, got 0 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.time_range(empty, single, eager=True)
-    with pytest.raises(
-        ComputeError, match="`end` must contain exactly one value, got 0 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.time_range(single, empty, eager=True)
-    with pytest.raises(
-        ComputeError, match="`start` must contain exactly one value, got 0 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.time_range(empty, empty, eager=True)
 
 
@@ -69,17 +59,11 @@ def test_time_range_input_shape_multiple_values() -> None:
     single = pl.Series([time(12, 0)])
     multiple = pl.Series([time(11, 0), time(12, 0)])
 
-    with pytest.raises(
-        ComputeError, match="`start` must contain exactly one value, got 2 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.time_range(multiple, single, eager=True)
-    with pytest.raises(
-        ComputeError, match="`end` must contain exactly one value, got 2 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.time_range(single, multiple, eager=True)
-    with pytest.raises(
-        ComputeError, match="`start` must contain exactly one value, got 2 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.time_range(multiple, multiple, eager=True)
 
 
@@ -235,7 +219,7 @@ def test_time_range_name() -> None:
     expected_name = "s1"
     result_lazy = pl.select(
         pl.time_range(
-            pl.Series("s1", [time(10)]), pl.Series("s2", [time(12)]), eager=False
+            pl.lit(time(10)).alias("s1"), pl.lit(time(12)).alias("s2"), eager=False
         )
     ).to_series()
     assert result_lazy.name == expected_name

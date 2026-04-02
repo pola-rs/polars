@@ -1,16 +1,17 @@
 use arrow::array::Array;
 use arrow::datatypes::ArrowSchema;
 use arrow::record_batch::RecordBatchT;
-use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
+use polars_buffer::Buffer;
+use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 
 use super::{
-    array_to_columns, to_parquet_schema, DynIter, DynStreamingIterator, Encoding,
-    RowGroupIterColumns, SchemaDescriptor, WriteOptions,
+    DynIter, DynStreamingIterator, Encoding, RowGroupIterColumns, SchemaDescriptor, WriteOptions,
+    array_to_columns, to_parquet_schema,
 };
+use crate::parquet::FallibleStreamingIterator;
 use crate::parquet::error::ParquetError;
 use crate::parquet::schema::types::ParquetType;
 use crate::parquet::write::Compressor;
-use crate::parquet::FallibleStreamingIterator;
 
 /// Maps a [`RecordBatchT`] and parquet-specific options to an [`RowGroupIterColumns`] used to
 /// write to parquet
@@ -20,7 +21,7 @@ use crate::parquet::FallibleStreamingIterator;
 /// * `encodings.len() != chunk.arrays().len()`
 pub fn row_group_iter<A: AsRef<dyn Array> + 'static + Send + Sync>(
     chunk: RecordBatchT<A>,
-    encodings: Vec<Vec<Encoding>>,
+    encodings: Buffer<Vec<Encoding>>,
     fields: Vec<ParquetType>,
     options: WriteOptions,
 ) -> RowGroupIterColumns<'static, PolarsError> {
@@ -31,9 +32,10 @@ pub fn row_group_iter<A: AsRef<dyn Array> + 'static + Send + Sync>(
             .into_arrays()
             .into_iter()
             .zip(fields)
-            .zip(encodings)
-            .flat_map(move |((array, type_), encoding)| {
-                let encoded_columns = array_to_columns(array, type_, options, &encoding).unwrap();
+            .enumerate()
+            .flat_map(move |(i, (array, type_))| {
+                let encoding = encodings[i].as_slice();
+                let encoded_columns = array_to_columns(array, type_, options, encoding).unwrap();
                 encoded_columns
                     .into_iter()
                     .map(|encoded_pages| {
@@ -64,7 +66,7 @@ pub struct RowGroupIterator<
     iter: I,
     options: WriteOptions,
     parquet_schema: SchemaDescriptor,
-    encodings: Vec<Vec<Encoding>>,
+    encodings: Buffer<Vec<Encoding>>,
 }
 
 impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<RecordBatchT<A>>>>
@@ -80,11 +82,11 @@ impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<RecordBatchT
         iter: I,
         schema: &ArrowSchema,
         options: WriteOptions,
-        encodings: Vec<Vec<Encoding>>,
+        encodings: Buffer<Vec<Encoding>>,
     ) -> PolarsResult<Self> {
         if encodings.len() != schema.len() {
             polars_bail!(InvalidOperation:
-                "The number of encodings must equal the number of fields".to_string(),
+                "The number of encodings must equal the number of fields",
             )
         }
         let parquet_schema = to_parquet_schema(schema)?;
@@ -103,10 +105,8 @@ impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<RecordBatchT
     }
 }
 
-impl<
-        A: AsRef<dyn Array> + 'static + Send + Sync,
-        I: Iterator<Item = PolarsResult<RecordBatchT<A>>>,
-    > Iterator for RowGroupIterator<A, I>
+impl<A: AsRef<dyn Array> + 'static + Send + Sync, I: Iterator<Item = PolarsResult<RecordBatchT<A>>>>
+    Iterator for RowGroupIterator<A, I>
 {
     type Item = PolarsResult<RowGroupIterColumns<'static, PolarsError>>;
 

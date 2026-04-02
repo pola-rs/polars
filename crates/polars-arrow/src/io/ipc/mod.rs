@@ -31,9 +31,11 @@ mod endianness;
 pub mod append;
 pub mod read;
 pub mod write;
+pub use arrow_format as format;
 
 const ARROW_MAGIC_V1: [u8; 4] = [b'F', b'E', b'A', b'1'];
 const ARROW_MAGIC_V2: [u8; 6] = [b'A', b'R', b'R', b'O', b'W', b'1'];
+const ARROW_MAGIC_V2_PADDED: [u8; 8] = [b'A', b'R', b'R', b'O', b'W', b'1', b'\0', b'\0'];
 pub(crate) const CONTINUATION_MARKER: [u8; 4] = [0xff; 4];
 
 /// Struct containing `dictionary_id` and nested `IpcField`, allowing users
@@ -44,6 +46,13 @@ pub struct IpcField {
     pub fields: Vec<IpcField>,
     /// dictionary id
     pub dictionary_id: Option<i64>,
+}
+
+impl IpcField {
+    /// Check (recursively) whether the [`IpcField`] contains a dictionary.
+    pub fn contains_dictionary(&self) -> bool {
+        self.dictionary_id.is_some() || self.fields.iter().any(|f| f.contains_dictionary())
+    }
 }
 
 /// Struct containing fields and whether the file is written in little or big endian.

@@ -2,11 +2,11 @@ use std::fmt::Debug;
 
 use arrow::array::{Array, FixedSizeListArray, ListArray, MapArray, StructArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::datatypes::PhysicalType;
+use arrow::datatypes::{ArrowDataType, PhysicalType};
 use arrow::offset::{Offset, OffsetsBuffer};
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
-use super::{array_to_pages, Encoding, WriteOptions};
+use super::{Encoding, WriteOptions, array_to_pages};
 use crate::arrow::read::schema::is_nullable;
 use crate::parquet::page::Page;
 use crate::parquet::schema::types::{ParquetType, PrimitiveType as ParquetPrimitiveType};
@@ -141,6 +141,10 @@ fn to_nested_recursive(
 ) -> PolarsResult<()> {
     let is_optional = is_nullable(type_.get_field_info());
 
+    if !is_optional && array.null_count() > 0 {
+        polars_bail!(InvalidOperation: "writing a missing value to required field '{}'", type_.name());
+    }
+
     use PhysicalType::*;
     match array.dtype().to_physical_type() {
         Struct => {
@@ -148,6 +152,19 @@ fn to_nested_recursive(
             let fields = if let ParquetType::GroupType { fields, .. } = type_ {
                 fields
             } else {
+                // @NOTE: Support empty struct by mapping to Boolean array.
+                if let ArrowDataType::Struct(fs) = array.dtype()
+                    && fs.is_empty()
+                {
+                    parents.push(Nested::Primitive(PrimitiveNested {
+                        validity: array.validity().cloned(),
+                        is_optional,
+                        length: array.len(),
+                    }));
+                    nested.push(parents);
+                    return Ok(());
+                }
+
                 polars_bail!(InvalidOperation:
                     "Parquet type must be a group for a struct array",
                 )
@@ -393,7 +410,7 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
         let validity = (&child_validity) & (&inherited_validity);
 
         match array.dtype().to_physical_type() {
-            P::Struct => {
+            P::Struct if !matches!(array.dtype(), ArrowDataType::Struct(fs) if fs.is_empty()) => {
                 let array = array.as_any().downcast_ref::<StructArray>().unwrap();
 
                 leaves.reserve(array.len().saturating_sub(1));
@@ -467,7 +484,8 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
             | P::LargeUtf8
             | P::Dictionary(_)
             | P::BinaryView
-            | P::Utf8View => {
+            | P::Utf8View
+            | P::Struct => {
                 leaves.push(array.with_validity(validity.into()));
             },
 
@@ -512,7 +530,7 @@ pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
 
     assert_eq!(encoding.len(), types.len());
 
-    values
+    let x = values
         .iter()
         .zip(nested)
         .zip(types)
@@ -520,7 +538,8 @@ pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
         .map(|(((values, nested), type_), encoding)| {
             array_to_pages(values.as_ref(), type_, &nested, options, *encoding)
         })
-        .collect()
+        .collect::<PolarsResult<Vec<DynIter<'static, PolarsResult<Page>>>>>()?;
+    Ok(x)
 }
 
 pub fn arrays_to_columns<A: AsRef<dyn Array> + Send + Sync>(
@@ -583,10 +602,10 @@ mod tests {
 
     use super::super::{FieldInfo, ParquetPhysicalType};
     use super::*;
+    use crate::parquet::schema::Repetition;
     use crate::parquet::schema::types::{
         GroupLogicalType, PrimitiveConvertedType, PrimitiveLogicalType,
     };
-    use crate::parquet::schema::Repetition;
 
     #[test]
     fn test_struct() {
@@ -600,6 +619,7 @@ mod tests {
 
         let array = StructArray::new(
             ArrowDataType::Struct(fields),
+            4,
             vec![boolean.clone(), int.clone()],
             Some(Bitmap::from([true, true, false, true])),
         );
@@ -664,6 +684,7 @@ mod tests {
 
         let array = StructArray::new(
             ArrowDataType::Struct(fields),
+            4,
             vec![boolean.clone(), int.clone()],
             Some(Bitmap::from([true, true, false, true])),
         );
@@ -675,6 +696,7 @@ mod tests {
 
         let array = StructArray::new(
             ArrowDataType::Struct(fields),
+            4,
             vec![Box::new(array.clone()), Box::new(array)],
             None,
         );
@@ -767,6 +789,7 @@ mod tests {
 
         let array = StructArray::new(
             ArrowDataType::Struct(fields),
+            4,
             vec![boolean.clone(), int.clone()],
             Some(Bitmap::from([true, true, false, true])),
         );
@@ -872,7 +895,7 @@ mod tests {
 
         let key_array = Utf8Array::<i32>::from_slice(["k1", "k2", "k3", "k4", "k5", "k6"]).boxed();
         let val_array = Int32Array::from_slice([42, 28, 19, 31, 21, 17]).boxed();
-        let kv_array = StructArray::try_new(kv_type, vec![key_array, val_array], None)
+        let kv_array = StructArray::try_new(kv_type, 6, vec![key_array, val_array], None)
             .unwrap()
             .boxed();
         let offsets = OffsetsBuffer::try_from(vec![0, 2, 3, 4, 6]).unwrap();

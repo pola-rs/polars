@@ -1,5 +1,6 @@
 // Reads an uleb128 encoded integer with at most 56 bits (8 bytes with 7 bits worth of payload each).
 /// Returns the integer and the number of bytes that made up this integer.
+///
 /// If the returned length is bigger than 8 this means the integer required more than 8 bytes and the remaining bytes need to be read sequentially and combined with the return value.
 ///
 /// # Safety
@@ -61,6 +62,7 @@ pub fn decode(values: &[u8]) -> (u64, usize) {
 /// # Panic
 /// This function may panic if `container.len() < 10` and `value` requires more bytes.
 pub fn encode(mut value: u64, container: &mut [u8]) -> usize {
+    assert!(container.len() >= 10);
     let mut consumed = 0;
     let mut iter = container.iter_mut();
     loop {

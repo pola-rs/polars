@@ -1,15 +1,15 @@
-use std::io::Read;
+use std::io::{Read, Seek};
 
 use arrow_format::ipc::planus::ReadAsRoot;
-use polars_error::{polars_bail, polars_err, PolarsError, PolarsResult};
-use polars_utils::aliases::PlHashMap;
+use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err};
+use polars_utils::bool::UnsafeBool;
 
 use super::super::CONTINUATION_MARKER;
 use super::common::*;
 use super::schema::deserialize_stream_metadata;
 use super::{Dictionaries, OutOfSpecKind};
 use crate::array::Array;
-use crate::datatypes::ArrowSchema;
+use crate::datatypes::{ArrowSchema, Metadata};
 use crate::io::ipc::IpcSchema;
 use crate::record_batch::RecordBatchT;
 
@@ -19,6 +19,9 @@ pub struct StreamMetadata {
     /// The schema that is read from the stream's first message
     pub schema: ArrowSchema,
 
+    /// The custom metadata that is read from the schema
+    pub custom_schema_metadata: Option<Metadata>,
+
     /// The IPC version of the stream
     pub version: arrow_format::ipc::MetadataVersion,
 
@@ -27,7 +30,7 @@ pub struct StreamMetadata {
 }
 
 /// Reads the metadata of the stream
-pub fn read_stream_metadata<R: Read>(reader: &mut R) -> PolarsResult<StreamMetadata> {
+pub fn read_stream_metadata(reader: &mut dyn std::io::Read) -> PolarsResult<StreamMetadata> {
     // determine metadata length
     let mut meta_size: [u8; 4] = [0; 4];
     reader.read_exact(&mut meta_size)?;
@@ -46,10 +49,7 @@ pub fn read_stream_metadata<R: Read>(reader: &mut R) -> PolarsResult<StreamMetad
 
     let mut buffer = vec![];
     buffer.try_reserve(length)?;
-    reader
-        .by_ref()
-        .take(length as u64)
-        .read_to_end(&mut buffer)?;
+    reader.take(length as u64).read_to_end(&mut buffer)?;
 
     deserialize_stream_metadata(&buffer)
 }
@@ -87,14 +87,14 @@ impl StreamState {
 
 /// Reads the next item, yielding `None` if the stream is done,
 /// and a [`StreamState`] otherwise.
-fn read_next<R: Read>(
+fn read_next<R: Read + Seek>(
     reader: &mut R,
     metadata: &StreamMetadata,
     dictionaries: &mut Dictionaries,
     message_buffer: &mut Vec<u8>,
-    data_buffer: &mut Vec<u8>,
-    projection: &Option<(Vec<usize>, PlHashMap<usize, usize>, ArrowSchema)>,
+    projection: &Option<ProjectionInfo>,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<Option<StreamState>> {
     // determine metadata length
     let mut meta_length: [u8; 4] = [0; 4];
@@ -154,32 +154,30 @@ fn read_next<R: Read>(
 
     match header {
         arrow_format::ipc::MessageHeaderRef::RecordBatch(batch) => {
-            data_buffer.clear();
-            data_buffer.try_reserve(block_length)?;
-            reader
-                .by_ref()
-                .take(block_length as u64)
-                .read_to_end(data_buffer)?;
-
-            let file_size = data_buffer.len() as u64;
-
-            let mut reader = std::io::Cursor::new(data_buffer);
+            let cur_pos = reader.stream_position()?;
 
             let chunk = read_record_batch(
                 batch,
                 &metadata.schema,
                 &metadata.ipc_schema,
-                projection.as_ref().map(|x| x.0.as_ref()),
+                projection.as_ref().map(|x| x.columns.as_ref()),
                 None,
                 dictionaries,
                 metadata.version,
-                &mut reader,
+                &mut (&mut *reader).take(block_length as u64),
                 0,
-                file_size,
                 scratch,
+                checked,
             );
 
-            if let Some((_, map, _)) = projection {
+            let new_pos = reader.stream_position()?;
+            let read_size = new_pos - cur_pos;
+
+            reader.seek(std::io::SeekFrom::Current(
+                block_length as i64 - read_size as i64,
+            ))?;
+
+            if let Some(ProjectionInfo { map, .. }) = projection {
                 // re-order according to projection
                 chunk
                     .map(|chunk| apply_projection(chunk, map))
@@ -189,26 +187,25 @@ fn read_next<R: Read>(
             }
         },
         arrow_format::ipc::MessageHeaderRef::DictionaryBatch(batch) => {
-            data_buffer.clear();
-            data_buffer.try_reserve(block_length)?;
-            reader
-                .by_ref()
-                .take(block_length as u64)
-                .read_to_end(data_buffer)?;
-
-            let file_size = data_buffer.len() as u64;
-            let mut dict_reader = std::io::Cursor::new(&data_buffer);
+            let cur_pos = reader.stream_position()?;
 
             read_dictionary(
                 batch,
                 &metadata.schema,
                 &metadata.ipc_schema,
                 dictionaries,
-                &mut dict_reader,
+                &mut (&mut *reader).take(block_length as u64),
                 0,
-                file_size,
                 scratch,
+                checked,
             )?;
+
+            let new_pos = reader.stream_position()?;
+            let read_size = new_pos - cur_pos;
+
+            reader.seek(std::io::SeekFrom::Current(
+                block_length as i64 - read_size as i64,
+            ))?;
 
             // read the next message until we encounter a RecordBatch message
             read_next(
@@ -216,9 +213,9 @@ fn read_next<R: Read>(
                 metadata,
                 dictionaries,
                 message_buffer,
-                data_buffer,
                 projection,
                 scratch,
+                checked,
             )
         },
         _ => polars_bail!(oos = OutOfSpecKind::UnexpectedMessageType),
@@ -236,34 +233,42 @@ pub struct StreamReader<R: Read> {
     metadata: StreamMetadata,
     dictionaries: Dictionaries,
     finished: bool,
-    data_buffer: Vec<u8>,
     message_buffer: Vec<u8>,
-    projection: Option<(Vec<usize>, PlHashMap<usize, usize>, ArrowSchema)>,
+    projection: Option<ProjectionInfo>,
     scratch: Vec<u8>,
+    checked: UnsafeBool,
 }
 
-impl<R: Read> StreamReader<R> {
+impl<R: Read + Seek> StreamReader<R> {
     /// Try to create a new stream reader
     ///
     /// The first message in the stream is the schema, the reader will fail if it does not
     /// encounter a schema.
     /// To check if the reader is done, use `is_finished(self)`
     pub fn new(reader: R, metadata: StreamMetadata, projection: Option<Vec<usize>>) -> Self {
-        let projection = projection.map(|projection| {
-            let (p, h, schema) = prepare_projection(&metadata.schema, projection);
-            (p, h, schema)
-        });
+        let projection =
+            projection.map(|projection| prepare_projection(&metadata.schema, projection));
 
         Self {
             reader,
             metadata,
             dictionaries: Default::default(),
             finished: false,
-            data_buffer: Default::default(),
             message_buffer: Default::default(),
             projection,
             scratch: Default::default(),
+            checked: UnsafeBool::default(),
         }
+    }
+
+    /// # Safety
+    /// Don't do expensive checks.
+    /// This means the data source has to be trusted to be correct.
+    pub unsafe fn unchecked(mut self) -> Self {
+        unsafe {
+            self.checked = UnsafeBool::new_false();
+        }
+        self
     }
 
     /// Return the schema of the stream
@@ -275,7 +280,7 @@ impl<R: Read> StreamReader<R> {
     pub fn schema(&self) -> &ArrowSchema {
         self.projection
             .as_ref()
-            .map(|x| &x.2)
+            .map(|x| &x.schema)
             .unwrap_or(&self.metadata.schema)
     }
 
@@ -293,9 +298,9 @@ impl<R: Read> StreamReader<R> {
             &self.metadata,
             &mut self.dictionaries,
             &mut self.message_buffer,
-            &mut self.data_buffer,
             &self.projection,
             &mut self.scratch,
+            self.checked,
         )?;
         if batch.is_none() {
             self.finished = true;
@@ -304,7 +309,7 @@ impl<R: Read> StreamReader<R> {
     }
 }
 
-impl<R: Read> Iterator for StreamReader<R> {
+impl<R: Read + Seek> Iterator for StreamReader<R> {
     type Item = PolarsResult<StreamState>;
 
     fn next(&mut self) -> Option<Self::Item> {

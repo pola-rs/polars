@@ -1,5 +1,6 @@
 //! Traits for miscellaneous operations on ChunkedArray
 use arrow::offset::OffsetsBuffer;
+use polars_compute::rolling::QuantileMethod;
 
 use crate::prelude::*;
 
@@ -7,8 +8,13 @@ pub(crate) mod aggregate;
 pub(crate) mod any_value;
 pub(crate) mod append;
 mod apply;
+#[cfg(feature = "approx_unique")]
+mod approx_n_unique;
 pub mod arity;
 mod bit_repr;
+mod bits;
+#[cfg(feature = "bitwise")]
+mod bitwise_reduce;
 pub(crate) mod chunkops;
 pub(crate) mod compare_inner;
 #[cfg(feature = "dtype-decimal")]
@@ -23,12 +29,12 @@ pub mod float_sorted_arg_max;
 mod for_each;
 pub mod full;
 pub mod gather;
-#[cfg(feature = "zip_with")]
-pub(crate) mod min_max_binary;
+mod nesting_utils;
 pub(crate) mod nulls;
 mod reverse;
 #[cfg(feature = "rolling_window")]
 pub(crate) mod rolling_window;
+pub mod row_encode;
 pub mod search_sorted;
 mod set;
 mod shift;
@@ -38,23 +44,15 @@ pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub mod zip;
 
-use polars_utils::no_call_const;
+pub use bit_repr::reinterpret;
+pub use chunkops::_set_check_length;
+pub use nesting_utils::ChunkNestingUtils;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 pub use sort::options::*;
 
 use crate::chunked_array::cast::CastOptions;
 use crate::series::{BitRepr, IsSorted};
-#[cfg(feature = "reinterpret")]
-pub trait Reinterpret {
-    fn reinterpret_signed(&self) -> Series {
-        unimplemented!()
-    }
-
-    fn reinterpret_unsigned(&self) -> Series {
-        unimplemented!()
-    }
-}
 
 /// Transmute [`ChunkedArray`] to bit representation.
 /// This is useful in hashing context and reduces no.
@@ -69,19 +67,40 @@ pub trait ChunkAnyValue {
     ///
     /// # Safety
     /// Does not do any bounds checking.
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue;
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_>;
 
     /// Get a single value. Beware this is slow.
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue>;
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>>;
+}
+
+pub trait ChunkAnyValueBypassValidity {
+    /// Get a single value bypassing the validity map. Beware this is slow.
+    ///
+    /// # Safety
+    /// Does not do any bounds checking.
+    unsafe fn get_any_value_bypass_validity(&self, index: usize) -> AnyValue<'_>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct ExplodeOptions {
+    /// Explode an empty list into a `null`.
+    pub empty_as_null: bool,
+    /// Explode a `null` into a `null`.
+    pub keep_nulls: bool,
 }
 
 /// Explode/flatten a List or String Series
 pub trait ChunkExplode {
-    fn explode(&self) -> PolarsResult<Series> {
-        self.explode_and_offsets().map(|t| t.0)
+    fn explode(&self, options: ExplodeOptions) -> PolarsResult<Series> {
+        self.explode_and_offsets(options).map(|t| t.0)
     }
     fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>>;
-    fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
+    fn explode_and_offsets(
+        &self,
+        options: ExplodeOptions,
+    ) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
 }
 
 pub trait ChunkBytes {
@@ -95,14 +114,11 @@ pub trait ChunkBytes {
 pub trait ChunkRollApply: AsRefDataType {
     fn rolling_map(
         &self,
-        _f: &dyn Fn(&Series) -> Series,
-        _options: RollingOptionsFixedWindow,
+        f: &dyn Fn(&Series) -> PolarsResult<Series>,
+        options: RollingOptionsFixedWindow,
     ) -> PolarsResult<Series>
     where
-        Self: Sized,
-    {
-        polars_bail!(opq = rolling_map, self.as_ref_dtype());
-    }
+        Self: Sized;
 }
 
 pub trait ChunkTake<Idx: ?Sized>: ChunkTakeUnchecked<Idx> {
@@ -274,12 +290,16 @@ pub trait ChunkQuantile<T> {
     }
     /// Aggregate a given quantile of the ChunkedArray.
     /// Returns `None` if the array is empty or only contains null values.
-    fn quantile(
-        &self,
-        _quantile: f64,
-        _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Option<T>> {
+    fn quantile(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Option<T>> {
         Ok(None)
+    }
+    /// Aggregate a given set of quantiles of the ChunkedArray.
+    /// Returns `None` if the array is empty or only contains null values.
+    fn quantiles(&self, quantiles: &[f64], _method: QuantileMethod) -> PolarsResult<Vec<Option<T>>>
+    where
+        T: Clone,
+    {
+        Ok(vec![None; quantiles.len()])
     }
 }
 
@@ -296,6 +316,16 @@ pub trait ChunkVar {
     }
 }
 
+/// Bitwise Reduction Operations.
+#[cfg(feature = "bitwise")]
+pub trait ChunkBitwiseReduce {
+    type Physical;
+
+    fn and_reduce(&self) -> Option<Self::Physical>;
+    fn or_reduce(&self) -> Option<Self::Physical>;
+    fn xor_reduce(&self) -> Option<Self::Physical>;
+}
+
 /// Compare [`Series`] and [`ChunkedArray`]'s and get a `boolean` mask that
 /// can be used to filter rows.
 ///
@@ -306,12 +336,13 @@ pub trait ChunkVar {
 /// fn filter_all_ones(df: &DataFrame) -> PolarsResult<DataFrame> {
 ///     let mask = df
 ///     .column("column_a")?
+///     .as_materialized_series()
 ///     .equal(1)?;
 ///
 ///     df.filter(&mask)
 /// }
 /// ```
-pub trait ChunkCompare<Rhs> {
+pub trait ChunkCompareEq<Rhs> {
     type Item;
 
     /// Check for equality.
@@ -325,30 +356,24 @@ pub trait ChunkCompare<Rhs> {
 
     /// Check for inequality where `None == None`.
     fn not_equal_missing(&self, rhs: Rhs) -> Self::Item;
+}
+
+/// Compare [`Series`] and [`ChunkedArray`]'s using inequality operators (`<`, `>=`, etc.) and get
+/// a `boolean` mask that can be used to filter rows.
+pub trait ChunkCompareIneq<Rhs> {
+    type Item;
 
     /// Greater than comparison.
-    #[allow(unused_variables)]
-    fn gt(&self, rhs: Rhs) -> Self::Item {
-        no_call_const!()
-    }
+    fn gt(&self, rhs: Rhs) -> Self::Item;
 
     /// Greater than or equal comparison.
-    #[allow(unused_variables)]
-    fn gt_eq(&self, rhs: Rhs) -> Self::Item {
-        no_call_const!()
-    }
+    fn gt_eq(&self, rhs: Rhs) -> Self::Item;
 
     /// Less than comparison.
-    #[allow(unused_variables)]
-    fn lt(&self, rhs: Rhs) -> Self::Item {
-        no_call_const!()
-    }
+    fn lt(&self, rhs: Rhs) -> Self::Item;
 
     /// Less than or equal comparison
-    #[allow(unused_variables)]
-    fn lt_eq(&self, rhs: Rhs) -> Self::Item {
-        no_call_const!()
-    }
+    fn lt_eq(&self, rhs: Rhs) -> Self::Item;
 }
 
 /// Get unique values in a `ChunkedArray`
@@ -367,6 +392,16 @@ pub trait ChunkUnique {
     fn n_unique(&self) -> PolarsResult<usize> {
         self.arg_unique().map(|v| v.len())
     }
+
+    /// Get dense ids for each unique value.
+    ///
+    /// Returns: (n_unique, unique_ids)
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)>;
+}
+
+#[cfg(feature = "approx_unique")]
+pub trait ChunkApproxNUnique {
+    fn approx_n_unique(&self) -> IdxSize;
 }
 
 /// Sort operations on `ChunkedArray`.
@@ -384,10 +419,10 @@ pub trait ChunkSort<T: PolarsDataType> {
     #[allow(unused_variables)]
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         _options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
-        polars_bail!(opq = arg_sort_multiple, T::get_dtype());
+        polars_bail!(opq = arg_sort_multiple, T::get_static_dtype());
     }
 }
 
@@ -395,6 +430,7 @@ pub type FillNullLimit = Option<IdxSize>;
 
 #[derive(Copy, Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum FillNullStrategy {
     /// previous value in array
     Backward(FillNullLimit),
@@ -410,11 +446,14 @@ pub enum FillNullStrategy {
     Zero,
     /// replace with the value one
     One,
-    /// replace with the maximum value of that data type
-    MaxBound,
-    /// replace with the minimal value of that data type
-    MinBound,
 }
+
+impl FillNullStrategy {
+    pub fn is_elementwise(&self) -> bool {
+        matches!(self, Self::One | Self::Zero)
+    }
+}
+
 /// Replace None values with a value
 pub trait ChunkFillNullValue<T> {
     /// Replace None values with a give value `T`.
@@ -556,7 +595,7 @@ impl ChunkExpandAtIndex<StructType> for StructChunked {
                 })
                 .collect::<Vec<_>>();
 
-            StructArray::new(chunk.dtype().clone(), values, None).boxed()
+            StructArray::new(chunk.dtype().clone(), length, values, None).boxed()
         };
 
         // SAFETY: chunks are from self.
@@ -633,7 +672,7 @@ pub trait ChunkApplyKernel<A: Array> {
 /// Mask the first unique values as `true`
 pub trait IsFirstDistinct<T: PolarsDataType> {
     fn is_first_distinct(&self) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_first_distinct, T::get_dtype());
+        polars_bail!(opq = is_first_distinct, T::get_static_dtype());
     }
 }
 
@@ -641,6 +680,6 @@ pub trait IsFirstDistinct<T: PolarsDataType> {
 /// Mask the last unique values as `true`
 pub trait IsLastDistinct<T: PolarsDataType> {
     fn is_last_distinct(&self) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_last_distinct, T::get_dtype());
+        polars_bail!(opq = is_last_distinct, T::get_static_dtype());
     }
 }

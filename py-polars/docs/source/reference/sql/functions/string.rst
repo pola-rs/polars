@@ -18,17 +18,23 @@ String
    * - :ref:`ENDS_WITH <ends_with>`
      - Returns True if the value ends with the second argument.
    * - :ref:`INITCAP <initcap>`
-     - Returns the value with the first letter capitalized.
+     - Converts the first letter of each word to uppercase, and the rest to lowercase.
    * - :ref:`LEFT <left>`
      - Returns the first (leftmost) `n` characters.
    * - :ref:`LENGTH <length>`
      - Returns the character length of the string.
    * - :ref:`LOWER <lower>`
      - Returns a lowercased column.
+   * - :ref:`LPAD <lpad>`
+     - Pads a string on the left to a specified length using an optional fill character (default is a space).
    * - :ref:`LTRIM <ltrim>`
      - Strips whitespaces from the left.
+   * - :ref:`NORMALIZE <normalize>`
+     - Convert string to the specified Unicode normalization form (one of NFC, NFD, NFKC, NFKD).
    * - :ref:`OCTET_LENGTH <octet_length>`
      - Returns the length of a given string in bytes.
+   * - :ref:`POSITION <position>`
+     - Returns the position of a substring within a string.
    * - :ref:`REGEXP_LIKE <regexp_like>`
      - Returns True if `pattern` matches the value (optional: `flags`).
    * - :ref:`REPLACE <replace>`
@@ -37,18 +43,27 @@ String
      - Returns the reversed string.
    * - :ref:`RIGHT <right>`
      - Returns the last (rightmost) `n` characters.
+   * - :ref:`RPAD <rpad>`
+     - Pads a string on the right to a specified length using an optional fill character (default is a space).
    * - :ref:`RTRIM <rtrim>`
      - Strips whitespaces from the right.
+   * - :ref:`SPLIT_PART <split_part>`
+     - Splits a string by another substring/delimiter, returning the `n`-th part; note that `n` is 1-indexed.
    * - :ref:`STARTS_WITH <starts_with>`
      - Returns True if the value starts with the second argument.
-   * - :ref:`STRPOST <strpos>`
-     - Returns the index of the given substring in the target string.
+   * - :ref:`STRING_TO_ARRAY <string_to_array>`
+     - Splits a string by another substring/delimiter, returning an array of strings.
+   * - :ref:`STRPOS <strpos>`
+     - Returns the index of the given substring in the target string; note that the result is 1-indexed
+       (returning 0 indicates that the given string was not found).
    * - :ref:`STRPTIME <strptime>`
      - Converts a string to a Datetime using a strftime-compatible formatting string.
-   * - :ref:`SUBSTRING <substring>`
-     - Returns a portion of the data (first character = 0) in the range [start, start + length].
+   * - :ref:`SUBSTR <substr>`, :ref:`SUBSTRING <substring>`
+     - Returns a slice of the string data (from a start index, with an optional length); note that `start` is 1-indexed.
    * - :ref:`TIMESTAMP <timestamp>`
      - Converts a formatted timestamp/datetime string to an actual Datetime value.
+   * - :ref:`TRIM <trim>`
+     - Strips characters from the left and/or right of a string.
    * - :ref:`UPPER <upper>`
      - Returns an uppercased column.
 
@@ -217,27 +232,26 @@ Returns True if the value ends with the second argument.
 
 INITCAP
 -------
-Returns the value with the first letter capitalized.
+Converts the first letter of each word to uppercase, and the rest to lowercase.
 
 **Example:**
 
 .. code-block:: python
 
-    df = pl.DataFrame({"bar": ["zz", "yy", "xx", "ww"]})
+    df = pl.DataFrame({"bar": ["hello world", "HELLO", "wOrLd"]})
     df.sql("""
       SELECT bar, INITCAP(bar) AS baz FROM self
     """)
-    # shape: (4, 2)
-    # ┌─────┬─────┐
-    # │ bar ┆ baz │
-    # │ --- ┆ --- │
-    # │ str ┆ str │
-    # ╞═════╪═════╡
-    # │ zz  ┆ Zz  │
-    # │ yy  ┆ Yy  │
-    # │ xx  ┆ Xx  │
-    # │ ww  ┆ Ww  │
-    # └─────┴─────┘
+    # shape: (3, 2)
+    # ┌─────────────┬─────────────┐
+    # │ bar         ┆ baz         │
+    # │ ---         ┆ ---         │
+    # │ str         ┆ str         │
+    # ╞═════════════╪═════════════╡
+    # │ hello world ┆ Hello World │
+    # │ HELLO       ┆ Hello       │
+    # │ wOrLd       ┆ World       │
+    # └─────────────┴─────────────┘
 
 .. _left:
 
@@ -340,6 +354,39 @@ Returns a lowercased column.
     # │ DD  ┆ dd        │
     # └─────┴───────────┘
 
+.. _lpad:
+
+LPAD
+----
+Pads a string on the left to a specified length using an optional fill character (default is a space).
+If the string is longer than the target length it is truncated.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["hello", "hi", "a", None, "longstr"]})
+    df.sql("""
+      SELECT
+        foo,
+        LPAD(foo, 7) AS lpad,
+        LPAD(foo, 7, 'x') AS lpad_x,
+        LPAD(foo, 4, '#') AS lpad_trunc
+      FROM self
+    """)
+    # shape: (5, 4)
+    # ┌─────────┬─────────┬─────────┬────────────┐
+    # │ foo     ┆ lpad    ┆ lpad_x  ┆ lpad_trunc │
+    # │ ---     ┆ ---     ┆ ---     ┆ ---        │
+    # │ str     ┆ str     ┆ str     ┆ str        │
+    # ╞═════════╪═════════╪═════════╪════════════╡
+    # │ hello   ┆   hello ┆ xxhello ┆ hell       │
+    # │ hi      ┆      hi ┆ xxxxxhi ┆ ##hi       │
+    # │ a       ┆       a ┆ xxxxxxa ┆ ###a       │
+    # │ null    ┆ null    ┆ null    ┆ null       │
+    # │ longstr ┆ longstr ┆ longstr ┆ long       │
+    # └─────────┴─────────┴─────────┴────────────┘
+
 .. _ltrim:
 
 LTRIM
@@ -365,6 +412,39 @@ Strips whitespaces from the left.
     # │ CC    ┆ CC      │
     # │   DD  ┆ DD      │
     # └───────┴─────────┘
+
+.. _normalize:
+
+NORMALIZE
+---------
+Convert string to the specified Unicode normalization form (one of NFC, NFD, NFKC, NFKD).
+If the normalization form is not provided, NFC is used by default.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({
+        "txt": [
+            "Ｔｅｓｔ",
+            "Ⓣⓔⓢⓣ",
+            "𝕿𝖊𝖘𝖙",
+            "𝕋𝕖𝕤𝕥",
+            "𝗧𝗲𝘀𝘁",
+        ],
+    })
+    df.sql("""
+      SELECT NORMALIZE(txt, NFKC) FROM self
+    """).to_series()
+    # shape: (5,)
+    # Series: 'txt' [str]
+    # [
+    #   "Test"
+    #   "Test"
+    #   "Test"
+    #   "Test"
+    #   "Test"
+    # ]
 
 .. _octet_length:
 
@@ -400,6 +480,37 @@ Returns the length of a given string in bytes.
     # │ ru       ┆ синий    ┆ 10      ┆ 5       │
     # │ es       ┆ amarillo ┆ 8       ┆ 8       │
     # └──────────┴──────────┴─────────┴─────────┘
+
+.. _position:
+
+POSITION
+--------
+Returns the position of a substring within a string. The result is 1-indexed,
+returning 0 if the substring is not found.
+
+.. seealso::
+
+   :ref:`STRPOS <strpos>` for the equivalent function-call syntax.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["apple", "banana", "orange", "grape"]})
+    df.sql("""
+      SELECT foo, POSITION('an' IN foo) AS pos FROM self
+    """)
+    # shape: (4, 2)
+    # ┌────────┬─────┐
+    # │ foo    ┆ pos │
+    # │ ---    ┆ --- │
+    # │ str    ┆ u32 │
+    # ╞════════╪═════╡
+    # │ apple  ┆ 0   │
+    # │ banana ┆ 2   │
+    # │ orange ┆ 3   │
+    # │ grape  ┆ 0   │
+    # └────────┴─────┘
 
 .. _regexp_like:
 
@@ -504,6 +615,39 @@ Returns the last (rightmost) `n` characters.
     # │ jklmn ┆ mn  │
     # └───────┴─────┘
 
+.. _rpad:
+
+RPAD
+----
+Pads a string on the right to a specified length using an optional fill character (default is a space).
+If the string is longer than the target length it is truncated.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["hello", "hi", "a", None, "longstr"]})
+    df.sql("""
+      SELECT
+        foo,
+        RPAD(foo, 7) AS rpad,
+        RPAD(foo, 7, '-') AS rpad_dash,
+        RPAD(foo, 4, '#') AS rpad_trunc
+      FROM self
+    """)
+    # shape: (5, 4)
+    # ┌─────────┬─────────┬───────────┬────────────┐
+    # │ foo     ┆ rpad    ┆ rpad_dash ┆ rpad_trunc │
+    # │ ---     ┆ ---     ┆ ---       ┆ ---        │
+    # │ str     ┆ str     ┆ str       ┆ str        │
+    # ╞═════════╪═════════╪═══════════╪════════════╡
+    # │ hello   ┆ hello   ┆ hello--   ┆ hell       │
+    # │ hi      ┆ hi      ┆ hi-----   ┆ hi##       │
+    # │ a       ┆ a       ┆ a------   ┆ a###       │
+    # │ null    ┆ null    ┆ null      ┆ null       │
+    # │ longstr ┆ longstr ┆ longstr   ┆ long       │
+    # └─────────┴─────────┴───────────┴────────────┘
+
 .. _rtrim:
 
 RTRIM
@@ -530,6 +674,37 @@ Strips whitespaces from the right.
     # │ ww     ┆ ww  │
     # └────────┴─────┘
 
+.. _split_part:
+
+SPLIT_PART
+----------
+Splits a string by another substring/delimiter, returning the `n`-th part; note that `n` is 1-indexed.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"s": ["xx,yy,zz", "abc,,xyz,???,hmm", None, ""]})
+    df.sql("""
+      SELECT
+        s,
+        SPLIT_PART(s,',',1) AS "s+1",
+        SPLIT_PART(s,',',3) AS "s+3",
+        SPLIT_PART(s,',',-2) AS "s-2",
+      FROM self
+    """)
+    # shape: (4, 4)
+    # ┌──────────────────┬──────┬──────┬──────┐
+    # │ s                ┆ s+1  ┆ s+3  ┆ s-2  │
+    # │ ---              ┆ ---  ┆ ---  ┆ ---  │
+    # │ str              ┆ str  ┆ str  ┆ str  │
+    # ╞══════════════════╪══════╪══════╪══════╡
+    # │ xx,yy,zz         ┆ xx   ┆ zz   ┆ yy   │
+    # │ abc,,xyz,???,hmm ┆ abc  ┆ xyz  ┆ ???  │
+    # │ null             ┆ null ┆ null ┆ null │
+    # │                  ┆      ┆      ┆      │
+    # └──────────────────┴──────┴──────┴──────┘
+
 .. _starts_with:
 
 STARTS_WITH
@@ -555,6 +730,30 @@ Returns True if the value starts with the second argument.
     # │ avocado ┆ true     │
     # │ grape   ┆ false    │
     # └─────────┴──────────┘
+
+.. _string_to_array:
+
+STRING_TO_ARRAY
+---------------
+Splits a string by another substring/delimiter, returning an array of strings.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["aa,bb,cc", "x,y"]})
+    df.sql("""
+      SELECT foo, STRING_TO_ARRAY(foo, ',') AS arr FROM self
+    """)
+    # shape: (2, 2)
+    # ┌──────────┬────────────────────┐
+    # │ foo      ┆ arr                │
+    # │ ---      ┆ ---                │
+    # │ str      ┆ list[str]          │
+    # ╞══════════╪════════════════════╡
+    # │ aa,bb,cc ┆ ["aa", "bb", "cc"] │
+    # │ x,y      ┆ ["x", "y"]         │
+    # └──────────┴────────────────────┘
 
 .. _strpos:
 
@@ -617,11 +816,15 @@ Converts a string to a Datetime using a `chrono strftime <https://docs.rs/chrono
     # │ 2077 Feb 28 ┆ 10.45.00 ┆ 2077-02-28 10:45:00 │
     # └─────────────┴──────────┴─────────────────────┘
 
-.. _substring:
+.. _substr:
 
-SUBSTRING
----------
-Returns a slice of the string data (1-indexed) in the range [start, start + length].
+SUBSTR
+------
+Returns a slice of the string data (from a start index, with an optional length); note that `start` is 1-indexed.
+
+.. seealso::
+
+   :ref:`SUBSTRING <substring>` supports the additional form (``FROM ... FOR ...``).
 
 **Example:**
 
@@ -641,6 +844,45 @@ Returns a slice of the string data (1-indexed) in the range [start, start + leng
     # │ banana ┆ nana    │
     # │ orange ┆ ange    │
     # │ grape  ┆ ape     │
+    # └────────┴─────────┘
+
+.. _substring:
+
+SUBSTRING
+---------
+Returns a slice of the string data (from a start index, with an optional length); note that `start` is 1-indexed.
+
+.. seealso::
+
+   :ref:`SUBSTR <substr>` for the simpler function-call syntax.
+
+Supports multiple forms:
+
+* ``SUBSTRING(str, start)``
+* ``SUBSTRING(str, start, length)``
+* ``SUBSTRING(str FROM start)``
+* ``SUBSTRING(str FROM start FOR length)``
+
+Note that `start` is 1-indexed.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["apple", "banana", "orange", "grape"]})
+    df.sql("""
+      SELECT foo, SUBSTRING(foo FROM 2 FOR 3) AS foo_2_3 FROM self
+    """)
+    # shape: (4, 2)
+    # ┌────────┬─────────┐
+    # │ foo    ┆ foo_2_3 │
+    # │ ---    ┆ ---     │
+    # │ str    ┆ str     │
+    # ╞════════╪═════════╡
+    # │ apple  ┆ ppl     │
+    # │ banana ┆ ana     │
+    # │ orange ┆ ran     │
+    # │ grape  ┆ rap     │
     # └────────┴─────────┘
 
 
@@ -689,6 +931,44 @@ unless a strftime-compatible formatting string is provided as the second paramet
     # │ 2024.07.05 ┆ 2024-07-05 │
     # │ 2077.02.28 ┆ 2077-02-28 │
     # └────────────┴────────────┘
+
+
+.. _trim:
+
+TRIM
+----
+Strips characters from the left and/or right of a string.
+
+**Syntax:**
+
+* ``TRIM(expr)`` - strip whitespace from both sides.
+* ``TRIM(BOTH char FROM expr)`` - strip ``char`` from both sides.
+* ``TRIM(LEADING char FROM expr)`` - strip ``char`` from the left.
+* ``TRIM(TRAILING char FROM expr)`` - strip ``char`` from the right.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["  hello  ", "  world  ", "  test  "]})
+    df.sql("""
+      SELECT
+        foo,
+        TRIM(foo) AS trimmed,
+        TRIM(LEADING ' ' FROM foo) AS ltrimmed,
+        TRIM(TRAILING ' ' FROM foo) AS rtrimmed
+      FROM self
+    """)
+    # shape: (3, 4)
+    # ┌───────────┬─────────┬──────────┬──────────┐
+    # │ foo       ┆ trimmed ┆ ltrimmed ┆ rtrimmed │
+    # │ ---       ┆ ---     ┆ ---      ┆ ---      │
+    # │ str       ┆ str     ┆ str      ┆ str      │
+    # ╞═══════════╪═════════╪══════════╪══════════╡
+    # │   hello   ┆ hello   ┆ hello    ┆   hello  │
+    # │   world   ┆ world   ┆ world    ┆   world  │
+    # │   test    ┆ test    ┆ test     ┆   test   │
+    # └───────────┴─────────┴──────────┴──────────┘
 
 
 .. _upper:

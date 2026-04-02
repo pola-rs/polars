@@ -18,9 +18,9 @@ Trigonometry
    * - :ref:`ATAND <atand>`
      - Compute inverse tangent of the input column (in degrees).
    * - :ref:`ATAN2 <atan2>`
-     - Compute the inverse tangent of column_2/column_1 (in radians).
+     - Compute the inverse tangent of column_1/column_2 (in radians).
    * - :ref:`ATAN2D <atan2d>`
-     - Compute the inverse tangent of column_2/column_1 (in degrees).
+     - Compute the inverse tangent of column_1/column_2 (in degrees).
    * - :ref:`COT <cot>`
      - Compute the cotangent of the input column (in radians).
    * - :ref:`COTD <cotd>`
@@ -187,7 +187,7 @@ Compute inverse tangent of the input column (in degrees).
 
 ATAN2
 -----
-Compute the inverse tangent of column_2/column_1 (in radians).
+Compute the inverse tangent of column_1/column_2 (in radians).
 
 **Example:**
 
@@ -216,7 +216,7 @@ Compute the inverse tangent of column_2/column_1 (in radians).
 
 ATAN2D
 ------
-Compute the inverse tangent of column_2/column_1 (in degrees).
+Compute the inverse tangent of column_1/column_2 (in degrees).
 
 **Example:**
 
@@ -224,22 +224,22 @@ Compute the inverse tangent of column_2/column_1 (in degrees).
 
     df = pl.DataFrame(
         {
-            "a": [0, 90, 180, 360],
-            "b": [360, 270, 180, 90],
+            "a": [-1.0, 0.0, 1.0, 1.0],
+            "b": [1.0, 1.0, 0.0, -1.0],
         }
     )
     df.sql("SELECT a, b, ATAN2D(a, b) AS atan2d_ab FROM self")
     # shape: (4, 3)
-    # ┌─────┬─────┬───────────┐
-    # │ a   ┆ b   ┆ atan2d_ab │
-    # │ --- ┆ --- ┆ ---       │
-    # │ i64 ┆ i64 ┆ f64       │
-    # ╞═════╪═════╪═══════════╡
-    # │ 0   ┆ 360 ┆ 0.0       │
-    # │ 90  ┆ 270 ┆ 18.434949 │
-    # │ 180 ┆ 180 ┆ 45.0      │
-    # │ 360 ┆ 90  ┆ 75.963757 │
-    # └─────┴─────┴───────────┘
+    # ┌──────┬──────┬───────────┐
+    # │ a    ┆ b    ┆ atan2d_ab │
+    # │ ---  ┆ ---  ┆ ---       │
+    # │ f64  ┆ f64  ┆ f64       │
+    # ╞══════╪══════╪═══════════╡
+    # │ -1.0 ┆ 1.0  ┆ -45.0     │
+    # │ 0.0  ┆ 1.0  ┆ 0.0       │
+    # │ 1.0  ┆ 0.0  ┆ 90.0      │
+    # │ 1.0  ┆ -1.0 ┆ 135.0     │
+    # └──────┴──────┴───────────┘
 
 .. _cot:
 
@@ -276,20 +276,18 @@ Compute cotangent of the input column (in degrees).
 
 .. code-block:: python
 
-    df = pl.DataFrame({"degs": [0, 90, 180, 270, 360]})
+    df = pl.DataFrame({"degs": [30, 45, 60]})
     df.sql("SELECT degs, COTD(degs) AS cotd FROM self")
-    # shape: (5, 2)
-    # ┌──────┬────────────┐
-    # │ degs ┆ cotd       │
-    # │ ---  ┆ ---        │
-    # │ f64  ┆ f64        │
-    # ╞══════╪════════════╡
-    # │ -2.0 ┆ -28.636253 │
-    # │ -1.0 ┆ -57.289962 │
-    # │ 0.0  ┆ inf        │
-    # │ 1.0  ┆ 57.289962  │
-    # │ 2.0  ┆ 28.636253  │
-    # └──────┴────────────┘
+    # shape: (3, 2)
+    # ┌──────┬──────────┐
+    # │ degs ┆ cotd     │
+    # │ ---  ┆ ---      │
+    # │ i64  ┆ f64      │
+    # ╞══════╪══════════╡
+    # │ 30   ┆ 1.732051 │
+    # │ 45   ┆ 1.0      │
+    # │ 60   ┆ 0.57735  │
+    # └──────┴──────────┘
 
 .. _cos:
 
@@ -462,7 +460,6 @@ Compute the tangent of the input column (in radians).
     # ╞══════════╪═══════════╡
     # │ 0.0      ┆ 0.0       │
     # │ 0.785398 ┆ 1.0       │
-    # │ 1.570796 ┆ 1.6331e16 │
     # │ 2.356194 ┆ -1.0      │
     # └──────────┴───────────┘
 

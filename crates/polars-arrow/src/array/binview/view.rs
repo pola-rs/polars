@@ -1,17 +1,14 @@
 use std::cmp::Ordering;
 use std::fmt::{self, Display, Formatter};
-use std::ops::Add;
 
 use bytemuck::{Pod, Zeroable};
 use polars_error::*;
 use polars_utils::min_max::MinMax;
 use polars_utils::nulls::IsNull;
-use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
 
-use crate::buffer::Buffer;
 use crate::datatypes::PrimitiveType;
-use crate::types::NativeType;
+use crate::types::{Bytes16Alignment4, NativeType};
 
 // We use this instead of u128 because we want alignment of <= 8 bytes.
 /// A reference to a set of bytes.
@@ -56,6 +53,11 @@ impl fmt::Debug for View {
 
 impl View {
     pub const MAX_INLINE_SIZE: u32 = 12;
+
+    #[inline(always)]
+    pub fn is_inline(&self) -> bool {
+        self.length <= Self::MAX_INLINE_SIZE
+    }
 
     #[inline(always)]
     pub fn as_u128(self) -> u128 {
@@ -125,7 +127,7 @@ impl View {
 
     #[inline]
     pub fn new_from_bytes(bytes: &[u8], buffer_idx: u32, offset: u32) -> Self {
-        debug_assert!(bytes.len() <= u32::MAX as usize);
+        assert!(bytes.len() <= u32::MAX as usize);
 
         // SAFETY: We verify the invariant with the outer if statement
         unsafe {
@@ -137,21 +139,118 @@ impl View {
         }
     }
 
+    #[inline]
+    pub fn new_with_buffers(
+        bytes: &[u8],
+        buffer_idx_offset: u32,
+        buffers: &mut Vec<Vec<u8>>,
+    ) -> Self {
+        unsafe {
+            if bytes.len() <= Self::MAX_INLINE_SIZE as usize {
+                Self::new_inline_unchecked(bytes)
+            } else {
+                assert!(bytes.len() <= u32::MAX as usize);
+                let num_buffers = buffers.len();
+                if let Some(buf) = buffers.last_mut() {
+                    if buf.len() + bytes.len() <= buf.capacity() {
+                        let buf_idx = buffer_idx_offset + num_buffers as u32 - 1;
+                        let offset = buf.len() as u32;
+                        buf.extend_from_slice(bytes);
+                        return Self::new_noninline_unchecked(bytes, buf_idx, offset);
+                    }
+                }
+
+                Self::new_with_buffers_slow(bytes, buffer_idx_offset, buffers)
+            }
+        }
+    }
+
+    /// # Safety
+    ///
+    /// It needs to hold that `bytes.len() > View::MAX_INLINE_SIZE`.
+    #[cold]
+    unsafe fn new_with_buffers_slow(
+        bytes: &[u8],
+        buffer_idx_offset: u32,
+        buffers: &mut Vec<Vec<u8>>,
+    ) -> Self {
+        // Resize last buffer instead of making new buffer.
+        const RESIZE_LIMIT: usize = 8192;
+
+        if buffers.is_empty() {
+            buffers.push(bytes.to_vec());
+            return View::new_noninline_unchecked(bytes, buffer_idx_offset, 0);
+        }
+
+        let num_buffers = buffers.len();
+        let old_cap = buffers.last().unwrap().capacity();
+        let new_cap = (old_cap + old_cap).clamp(bytes.len(), u32::MAX as usize);
+        if new_cap <= RESIZE_LIMIT {
+            let buffer_idx = buffer_idx_offset + num_buffers as u32 - 1;
+            let buf = buffers.last_mut().unwrap();
+            let offset = buf.len() as u32;
+            buf.reserve(new_cap - buf.len());
+            buf.extend_from_slice(bytes);
+            View::new_noninline_unchecked(bytes, buffer_idx, offset)
+        } else {
+            let buffer_idx = buffer_idx_offset + num_buffers as u32;
+            let mut buf = Vec::with_capacity(new_cap);
+            buf.extend_from_slice(bytes);
+            buffers.push(buf);
+            View::new_noninline_unchecked(bytes, buffer_idx, 0)
+        }
+    }
+
     /// Constructs a byteslice from this view.
     ///
     /// # Safety
     /// Assumes that this view is valid for the given buffers.
-    pub unsafe fn get_slice_unchecked<'a>(&'a self, buffers: &'a [Buffer<u8>]) -> &'a [u8] {
+    #[inline]
+    pub unsafe fn get_slice_unchecked<'a, B: AsRef<[u8]>>(&'a self, buffers: &'a [B]) -> &'a [u8] {
         unsafe {
             if self.length <= Self::MAX_INLINE_SIZE {
-                let ptr = self as *const View as *const u8;
-                std::slice::from_raw_parts(ptr.add(4), self.length as usize)
+                self.get_inlined_slice_unchecked()
             } else {
-                let data = buffers.get_unchecked_release(self.buffer_idx as usize);
-                let offset = self.offset as usize;
-                data.get_unchecked_release(offset..offset + self.length as usize)
+                self.get_external_slice_unchecked(buffers)
             }
         }
+    }
+
+    /// Construct a byte slice from an inline view, if it is inline.
+    #[inline]
+    pub fn get_inlined_slice(&self) -> Option<&[u8]> {
+        if self.length <= Self::MAX_INLINE_SIZE {
+            unsafe { Some(self.get_inlined_slice_unchecked()) }
+        } else {
+            None
+        }
+    }
+
+    /// Construct a byte slice from an inline view.
+    ///
+    /// # Safety
+    /// Assumes that this view is inlinable.
+    #[inline]
+    pub unsafe fn get_inlined_slice_unchecked(&self) -> &[u8] {
+        debug_assert!(self.length <= View::MAX_INLINE_SIZE);
+        let ptr = self as *const View as *const u8;
+        unsafe { std::slice::from_raw_parts(ptr.add(4), self.length as usize) }
+    }
+
+    /// Construct a byte slice from an external view.
+    ///
+    /// # Safety
+    /// Assumes that this view is in the external buffers.
+    #[inline]
+    pub unsafe fn get_external_slice_unchecked<'a, B: AsRef<[u8]>>(
+        &self,
+        buffers: &'a [B],
+    ) -> &'a [u8] {
+        debug_assert!(self.length > View::MAX_INLINE_SIZE);
+        let data = buffers.get_unchecked(self.buffer_idx as usize);
+        let offset = self.offset as usize;
+        data.as_ref()
+            .get_unchecked(offset..offset + self.length as usize)
     }
 
     /// Extend a `Vec<View>` with inline views slices of `src` with `width`.
@@ -290,7 +389,7 @@ impl IsNull for View {
 
 impl Display for View {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -298,30 +397,14 @@ unsafe impl Zeroable for View {}
 
 unsafe impl Pod for View {}
 
-impl Add<Self> for View {
-    type Output = View;
-
-    fn add(self, _rhs: Self) -> Self::Output {
-        unimplemented!()
-    }
-}
-
-impl num_traits::Zero for View {
-    fn zero() -> Self {
-        Default::default()
-    }
-
-    fn is_zero(&self) -> bool {
-        *self == Self::zero()
-    }
-}
-
 impl PartialEq for View {
     fn eq(&self, other: &Self) -> bool {
         self.as_u128() == other.as_u128()
     }
 }
 
+// These are 'implemented' because we want to implement NativeType
+// for View, that should probably not be done.
 impl TotalOrd for View {
     fn tot_cmp(&self, _other: &Self) -> Ordering {
         unimplemented!()
@@ -346,7 +429,9 @@ impl MinMax for View {
 
 impl NativeType for View {
     const PRIMITIVE: PrimitiveType = PrimitiveType::UInt128;
+
     type Bytes = [u8; 16];
+    type AlignedBytes = Bytes16Alignment4;
 
     #[inline]
     fn to_le_bytes(&self) -> Self::Bytes {
@@ -383,40 +468,44 @@ impl From<View> for u128 {
     }
 }
 
-fn validate_view<F>(views: &[View], buffers: &[Buffer<u8>], validate_bytes: F) -> PolarsResult<()>
+pub fn validate_views<B: AsRef<[u8]>, F>(
+    views: &[View],
+    buffers: &[B],
+    validate_bytes: F,
+) -> PolarsResult<()>
 where
     F: Fn(&[u8]) -> PolarsResult<()>,
 {
     for view in views {
-        let len = view.length;
-        if len <= View::MAX_INLINE_SIZE {
-            if len < View::MAX_INLINE_SIZE && view.as_u128() >> (32 + len * 8) != 0 {
+        if let Some(inline_slice) = view.get_inlined_slice() {
+            if view.length < View::MAX_INLINE_SIZE && view.as_u128() >> (32 + view.length * 8) != 0
+            {
                 polars_bail!(ComputeError: "view contained non-zero padding in prefix");
             }
 
-            validate_bytes(&view.to_le_bytes()[4..4 + len as usize])?;
+            validate_bytes(inline_slice)?;
         } else {
             let data = buffers.get(view.buffer_idx as usize).ok_or_else(|| {
                 polars_err!(OutOfBounds: "view index out of bounds\n\nGot: {} buffers and index: {}", buffers.len(), view.buffer_idx)
             })?;
 
             let start = view.offset as usize;
-            let end = start + len as usize;
+            let end = start + view.length as usize;
             let b = data
-                .as_slice()
+                .as_ref()
                 .get(start..end)
                 .ok_or_else(|| polars_err!(OutOfBounds: "buffer slice out of bounds"))?;
 
             polars_ensure!(b.starts_with(&view.prefix.to_le_bytes()), ComputeError: "prefix does not match string data");
             validate_bytes(b)?;
-        };
+        }
     }
 
     Ok(())
 }
 
-pub(super) fn validate_binary_view(views: &[View], buffers: &[Buffer<u8>]) -> PolarsResult<()> {
-    validate_view(views, buffers, |_| Ok(()))
+pub fn validate_binary_views<B: AsRef<[u8]>>(views: &[View], buffers: &[B]) -> PolarsResult<()> {
+    validate_views(views, buffers, |_| Ok(()))
 }
 
 fn validate_utf8(b: &[u8]) -> PolarsResult<()> {
@@ -426,60 +515,43 @@ fn validate_utf8(b: &[u8]) -> PolarsResult<()> {
     }
 }
 
-pub fn validate_utf8_view(views: &[View], buffers: &[Buffer<u8>]) -> PolarsResult<()> {
-    validate_view(views, buffers, validate_utf8)
+pub fn validate_utf8_views<B: AsRef<[u8]>>(views: &[View], buffers: &[B]) -> PolarsResult<()> {
+    validate_views(views, buffers, validate_utf8)
 }
 
+/// Checks the views for valid UTF-8. Assumes the first num_trusted_buffers are
+/// valid UTF-8 without checking.
 /// # Safety
 /// The views and buffers must uphold the invariants of BinaryView otherwise we will go OOB.
-pub(super) unsafe fn validate_utf8_only(
+pub unsafe fn validate_views_utf8_only<B: AsRef<[u8]>>(
     views: &[View],
-    buffers_to_check: &[Buffer<u8>],
-    all_buffers: &[Buffer<u8>],
+    buffers: &[B],
+    mut num_trusted_buffers: usize,
 ) -> PolarsResult<()> {
-    // If we have no buffers, we don't have to branch.
-    if all_buffers.is_empty() {
-        for view in views {
-            let len = view.length;
-            validate_utf8(
-                view.to_le_bytes()
-                    .get_unchecked_release(4..4 + len as usize),
-            )?;
+    unsafe {
+        while num_trusted_buffers < buffers.len()
+            && buffers[num_trusted_buffers].as_ref().is_ascii()
+        {
+            num_trusted_buffers += 1;
         }
-        return Ok(());
-    }
 
-    // Fast path if all buffers are ascii
-    if buffers_to_check.iter().all(|buf| buf.is_ascii()) {
-        for view in views {
-            let len = view.length;
-            if len <= 12 {
-                validate_utf8(
-                    view.to_le_bytes()
-                        .get_unchecked_release(4..4 + len as usize),
-                )?;
+        // Fast path if all buffers are ASCII (or there are no buffers).
+        if num_trusted_buffers >= buffers.len() {
+            for view in views {
+                if let Some(inlined_slice) = view.get_inlined_slice() {
+                    validate_utf8(inlined_slice)?;
+                }
+            }
+        } else {
+            for view in views {
+                if view.length <= View::MAX_INLINE_SIZE
+                    || view.buffer_idx as usize >= num_trusted_buffers
+                {
+                    validate_utf8(view.get_slice_unchecked(buffers))?;
+                }
             }
         }
-    } else {
-        for view in views {
-            let len = view.length;
-            if len <= 12 {
-                validate_utf8(
-                    view.to_le_bytes()
-                        .get_unchecked_release(4..4 + len as usize),
-                )?;
-            } else {
-                let buffer_idx = view.buffer_idx;
-                let offset = view.offset;
-                let data = all_buffers.get_unchecked_release(buffer_idx as usize);
 
-                let start = offset as usize;
-                let end = start + len as usize;
-                let b = &data.as_slice().get_unchecked_release(start..end);
-                validate_utf8(b)?;
-            };
-        }
+        Ok(())
     }
-
-    Ok(())
 }

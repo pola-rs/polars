@@ -24,6 +24,7 @@ These functions are available from the Polars module root and can be used as exp
    arg_where
    business_day_count
    coalesce
+   concat_arr
    concat_list
    concat_str
    corr
@@ -43,6 +44,7 @@ These functions are available from the Polars module root and can be used as exp
    duration
    element
    exclude
+   field
    first
    fold
    format
@@ -54,6 +56,8 @@ These functions are available from the Polars module root and can be used as exp
    int_ranges
    last
    len
+   linear_space
+   linear_spaces
    lit
    map_batches
    map_groups
@@ -72,6 +76,7 @@ These functions are available from the Polars module root and can be used as exp
    repeat
    rolling_corr
    rolling_cov
+   row_index
    select
    sql
    sql_expr

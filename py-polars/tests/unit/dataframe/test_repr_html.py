@@ -1,3 +1,5 @@
+import pytest
+
 import polars as pl
 
 
@@ -77,3 +79,20 @@ def test_series_repr_html_max_rows_default() -> None:
 
     expected_rows = 10
     assert html.count("<td>") - 2 == expected_rows
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("single space", "single space"),
+        ("multiple   spaces", "multiple&nbsp;&nbsp;&nbsp;spaces"),
+        (
+            "  trailing & leading spaces  ",
+            "&nbsp;&nbsp;trailing &amp; leading spaces&nbsp;&nbsp;",
+        ),
+    ],
+)
+def test_html_representation_multiple_spaces(text: str, expected: str) -> None:
+    with pl.Config(fmt_str_lengths=100):
+        html_repr = pl.DataFrame({"s": [text]})._repr_html_()
+        assert f"<td>&quot;{expected}&quot;</td>" in html_repr

@@ -1,9 +1,9 @@
 use polars::lazy::dsl;
 use pyo3::prelude::*;
 
+use crate::PyExpr;
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
-use crate::PyExpr;
 
 #[pyfunction]
 pub fn all_horizontal(exprs: Vec<PyExpr>) -> PyResult<PyExpr> {
@@ -34,15 +34,15 @@ pub fn min_horizontal(exprs: Vec<PyExpr>) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-pub fn sum_horizontal(exprs: Vec<PyExpr>) -> PyResult<PyExpr> {
+pub fn sum_horizontal(exprs: Vec<PyExpr>, ignore_nulls: bool) -> PyResult<PyExpr> {
     let exprs = exprs.to_exprs();
-    let e = dsl::sum_horizontal(exprs).map_err(PyPolarsErr::from)?;
+    let e = dsl::sum_horizontal(exprs, ignore_nulls).map_err(PyPolarsErr::from)?;
     Ok(e.into())
 }
 
 #[pyfunction]
-pub fn mean_horizontal(exprs: Vec<PyExpr>) -> PyResult<PyExpr> {
+pub fn mean_horizontal(exprs: Vec<PyExpr>, ignore_nulls: bool) -> PyResult<PyExpr> {
     let exprs = exprs.to_exprs();
-    let e = dsl::mean_horizontal(exprs).map_err(PyPolarsErr::from)?;
+    let e = dsl::mean_horizontal(exprs, ignore_nulls).map_err(PyPolarsErr::from)?;
     Ok(e.into())
 }

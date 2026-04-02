@@ -6,7 +6,6 @@
 use polars_core::prelude::*;
 pub use polars_plan::dsl::functions::*;
 use polars_plan::prelude::UnionArgs;
-use rayon::prelude::*;
 
 use crate::prelude::*;
 
@@ -22,17 +21,13 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
             .ok_or_else(|| polars_err!(NoData: "empty container given"))?,
     );
 
-    let mut opt_state = lf.opt_state;
+    let opt_state = lf.opt_state;
     let cached_arenas = lf.cached_arena.clone();
 
     let mut lps = Vec::with_capacity(inputs.len());
     lps.push(lf.logical_plan);
 
     for lf in &mut inputs[1..] {
-        // Ensure we enable file caching if any lf has it enabled.
-        if lf.opt_state.contains(OptFlags::FILE_CACHING) {
-            opt_state |= OptFlags::FILE_CACHING;
-        }
         let lp = std::mem::take(&mut lf.logical_plan);
         lps.push(lp)
     }
@@ -55,26 +50,16 @@ pub fn concat_lf_diagonal<L: AsRef<[LazyFrame]>>(
 /// Concat [LazyFrame]s horizontally.
 pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
     inputs: L,
-    args: UnionArgs,
+    options: HConcatOptions,
 ) -> PolarsResult<LazyFrame> {
     let lfs = inputs.as_ref();
-    let (mut opt_state, cached_arena) = lfs
+    let (opt_state, cached_arena) = lfs
         .first()
         .map(|lf| (lf.opt_state, lf.cached_arena.clone()))
         .ok_or_else(
             || polars_err!(NoData: "Require at least one LazyFrame for horizontal concatenation"),
         )?;
 
-    for lf in &lfs[1..] {
-        // Ensure we enable file caching if any lf has it enabled.
-        if lf.opt_state.contains(OptFlags::FILE_CACHING) {
-            opt_state |= OptFlags::FILE_CACHING;
-        }
-    }
-
-    let options = HConcatOptions {
-        parallel: args.parallel,
-    };
     let lp = DslPlan::HConcat {
         inputs: lfs.iter().map(|lf| lf.logical_plan.clone()).collect(),
         options,
@@ -85,16 +70,6 @@ pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
 /// Concat multiple [`LazyFrame`]s vertically.
 pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, args: UnionArgs) -> PolarsResult<LazyFrame> {
     concat_impl(inputs, args)
-}
-
-/// Collect all [`LazyFrame`] computations.
-pub fn collect_all<I>(lfs: I) -> PolarsResult<Vec<DataFrame>>
-where
-    I: IntoParallelIterator<Item = LazyFrame>,
-{
-    let iter = lfs.into_par_iter();
-
-    polars_core::POOL.install(|| iter.map(|lf| lf.collect()).collect())
 }
 
 #[cfg(test)]

@@ -67,7 +67,8 @@ def test_concat_str_ignore_nulls() -> None:
 )
 def test_simplify_str_addition_concat_str(expr: pl.Expr) -> None:
     ldf = pl.LazyFrame({}).select(expr)
-    print(ldf.collect(simplify_expression=True))
+    print(ldf.collect(optimizations=pl.QueryOptFlags(simplify_expression=True)))
     assert_frame_equal(
-        ldf.collect(simplify_expression=True), ldf.collect(simplify_expression=False)
+        ldf.collect(optimizations=pl.QueryOptFlags(simplify_expression=True)),
+        ldf.collect(optimizations=pl.QueryOptFlags(simplify_expression=False)),
     )

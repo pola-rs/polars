@@ -1,6 +1,7 @@
+use polars_buffer::Buffer;
+
 use crate::array::{BinaryArray, BooleanArray, PrimitiveArray, Utf8Array};
 use crate::bitmap::Bitmap;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::offset::OffsetsBuffer;
 use crate::types::NativeType;

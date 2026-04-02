@@ -13,9 +13,9 @@ mod stream;
 pub use stream::FileStreamer;
 
 mod dyn_iter;
-pub use compression::{compress, Compressor};
+pub use compression::{Compressor, compress};
 pub use dyn_iter::{DynIter, DynStreamingIterator};
-pub use file::{write_metadata_sidecar, FileWriter};
+pub use file::{FileWriter, write_metadata_sidecar};
 pub use row_group::ColumnOffsetsMetadata;
 
 use crate::parquet::page::CompressedPage;

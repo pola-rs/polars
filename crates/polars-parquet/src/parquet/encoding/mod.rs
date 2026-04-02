@@ -14,6 +14,7 @@ pub use crate::parquet::parquet_bridge::Encoding;
 /// This function panics iff `values.len() < 4`.
 #[inline]
 pub fn get_length(values: &[u8]) -> Option<usize> {
+    assert!(values.len() >= 4);
     values
         .get(0..4)
         .map(|x| u32::from_le_bytes(x.try_into().unwrap()) as usize)
@@ -22,5 +23,5 @@ pub fn get_length(values: &[u8]) -> Option<usize> {
 /// Returns the ceil of value / 8
 #[inline]
 pub fn ceil8(value: usize) -> usize {
-    value / 8 + ((value % 8 != 0) as usize)
+    value / 8 + (!value.is_multiple_of(8) as usize)
 }

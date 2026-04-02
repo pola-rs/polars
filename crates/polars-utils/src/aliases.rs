@@ -1,10 +1,24 @@
-pub type PlRandomState = ahash::RandomState;
-pub type PlRandomStateQuality = ahash::RandomState;
+use foldhash::SharedSeed;
+
+pub type PlRandomState = foldhash::quality::RandomState;
+pub type PlSeedableRandomStateQuality = foldhash::quality::SeedableRandomState;
+pub type PlRandomStateQuality = foldhash::quality::RandomState;
+pub type PlFixedStateQuality = foldhash::quality::FixedState;
 
 pub type PlHashMap<K, V> = hashbrown::HashMap<K, V, PlRandomState>;
 pub type PlHashSet<V> = hashbrown::HashSet<V, PlRandomState>;
 pub type PlIndexMap<K, V> = indexmap::IndexMap<K, V, PlRandomState>;
 pub type PlIndexSet<K> = indexmap::IndexSet<K, PlRandomState>;
+
+pub trait SeedableFromU64SeedExt {
+    fn seed_from_u64(seed: u64) -> Self;
+}
+
+impl SeedableFromU64SeedExt for PlSeedableRandomStateQuality {
+    fn seed_from_u64(seed: u64) -> Self {
+        PlSeedableRandomStateQuality::with_seed(seed, SharedSeed::global_fixed())
+    }
+}
 
 pub trait InitHashMaps {
     type HashMap;

@@ -1,6 +1,6 @@
 use crate::array::BooleanArray;
 use crate::bitmap::utils::set_bit_unchecked;
-use crate::bitmap::MutableBitmap;
+use crate::bitmap::{BitmapBuilder, MutableBitmap};
 use crate::datatypes::ArrowDataType;
 use crate::legacy::array::default_arrays::FromData;
 use crate::legacy::trusted_len::FromIteratorReversed;
@@ -26,7 +26,7 @@ impl FromTrustedLenIterator<bool> for BooleanArray {
         // Trait system bounded to TrustedLen
         unsafe {
             BooleanArray::from_data_default(
-                MutableBitmap::from_trusted_len_iter_unchecked(iter.into_iter()).into(),
+                BitmapBuilder::from_trusted_len_iter(iter.into_iter()).freeze(),
                 None,
             )
         }

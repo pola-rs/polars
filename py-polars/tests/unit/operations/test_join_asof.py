@@ -1,11 +1,23 @@
+from __future__ import annotations
+
+import itertools
+import math
+import random
+import warnings
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
+from hypothesis import given
 
 import polars as pl
+from polars.exceptions import DuplicateError, InvalidOperationError
 from polars.testing import assert_frame_equal
+from polars.testing.parametric.strategies.core import dataframes
+
+if TYPE_CHECKING:
+    from polars._typing import AsofJoinStrategy, PolarsIntegerType
 
 
 def test_asof_join_singular_right_11966() -> None:
@@ -137,11 +149,11 @@ def test_join_asof_mismatched_dtypes() -> None:
         {"a": pl.Series([1, 2, 3], dtype=pl.Int64), "b": ["a", "b", "c"]}
     )
     df2 = pl.DataFrame(
-        {"a": pl.Series([1, 2, 3], dtype=pl.Int32), "c": ["d", "e", "f"]}
+        {"a": pl.Series([1.0, 2.0, 3.0], dtype=pl.Float64), "c": ["d", "e", "f"]}
     )
 
     with pytest.raises(
-        pl.exceptions.ComputeError, match="datatypes of join keys don't match"
+        pl.exceptions.SchemaError, match="datatypes of join keys don't match"
     ):
         df1.join_asof(df2, on="a", strategy="forward")
 
@@ -262,6 +274,18 @@ def test_join_asof_tolerance() -> None:
         "trade": [101, 299, 301, 500],
         "quote": [100, None, 300, None],
     }
+
+    for invalid_tolerance, match in [
+        ("foo", "expected leading integer"),
+        ([None], "could not extract number"),
+    ]:
+        with pytest.raises(pl.exceptions.PolarsError, match=match):
+            df_trades.join_asof(
+                df_quotes,
+                on="time",
+                by="stock",
+                tolerance=invalid_tolerance,  # type: ignore[arg-type]
+            )
 
 
 def test_join_asof_tolerance_forward() -> None:
@@ -497,6 +521,73 @@ def test_asof_join_nearest() -> None:
 
     out = df1.join_asof(df2, on="asof_key", strategy="nearest")
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("allow_exact_matches", [True, False])
+def test_asof_join_nearest_reference(allow_exact_matches: bool) -> None:
+    def asof_join_nearest_reference(
+        df_left: pl.DataFrame, df_right: pl.DataFrame
+    ) -> pl.DataFrame:
+        schema = {"key": pl.Int32, "value": pl.Int32, "value_right": pl.Int32}
+        result = pl.DataFrame(schema=schema)
+        for left_row in df_left.iter_rows():
+            cross_product_sorted = (
+                pl.DataFrame(
+                    {
+                        "key": pl.Series([left_row[0]] * len(df_right), dtype=pl.Int32),
+                        "value": pl.Series(
+                            [left_row[1]] * len(df_right), dtype=pl.Int32
+                        ),
+                        "key_right": df_right["key"],
+                        "value_right": df_right["value"],
+                    },
+                )
+                .with_row_index()
+                .filter(
+                    pl.when(allow_exact_matches)
+                    .then(pl.lit(True))
+                    .otherwise(pl.col("key") != pl.col("key_right"))
+                )
+                .sort(
+                    (pl.col("key") - pl.col("key_right")).abs(),
+                    -pl.col("index").cast(pl.Int32),
+                )
+                .drop("index", "key_right")
+            )
+            if len(cross_product_sorted) == 0:
+                result = result.vstack(
+                    pl.DataFrame([left_row + (None,)], schema=schema, orient="row"),
+                )
+            else:
+                best_match = cross_product_sorted[0]
+                result = result.vstack(best_match)
+        return result
+
+    test_dfs = []
+    rng = random.Random()
+    for n_a, n_b, n_c, n_d in itertools.product([0, 1, 2], repeat=4):
+        a = rng.randint(0, 10)
+        b = rng.randint(0, 10)
+        c = rng.randint(0, 10)
+        d = rng.randint(0, 10)
+        keys = [a] * n_a + [b] * n_b + [c] * n_c + [d] * n_d
+        values = [rng.randint(0, 100000) for _ in keys]
+
+        df = pl.DataFrame(
+            {"key": keys, "value": values}, schema={"key": pl.Int32, "value": pl.Int32}
+        ).sort(by="key")
+        test_dfs.append(df)
+
+    for df_left, df_right in itertools.product(test_dfs, repeat=2):
+        expected = asof_join_nearest_reference(df_left, df_right)
+        actual = df_left.join_asof(
+            df_right,
+            on="key",
+            strategy="nearest",
+            allow_exact_matches=allow_exact_matches,
+        )
+        assert_frame_equal(actual, expected)
 
 
 def test_asof_join_nearest_with_tolerance() -> None:
@@ -1091,6 +1182,7 @@ def test_asof_join_nearest_by_date() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.may_fail_auto_streaming  # See #18927.
 def test_asof_join_string() -> None:
     left = pl.DataFrame({"x": [None, "a", "b", "c", None, "d", None]}).set_sorted("x")
     right = pl.DataFrame({"x": ["apple", None, "chutney"], "y": [0, 1, 2]}).set_sorted(
@@ -1195,3 +1287,383 @@ def test_asof_join_by_schema() -> None:
     )
 
     assert q.collect_schema() == q.collect().schema
+
+
+def test_raise_invalid_by_arg_13020() -> None:
+    df1 = pl.DataFrame({"asOfDate": [date(2020, 1, 1)]})
+    df2 = pl.DataFrame(
+        {
+            "endityId": [date(2020, 1, 1)],
+            "eventDate": ["A"],
+        }
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="expected both"):
+        df1.sort("asOfDate").join_asof(
+            df2.sort("eventDate"),
+            left_on="asOfDate",
+            right_on="eventDate",
+            by_left=None,
+            by_right=["entityId"],
+        )
+
+
+def test_join_asof_no_exact_matches() -> None:
+    trades = pl.DataFrame(
+        {
+            "time": [
+                "2016-05-25 13:30:00.023",
+                "2016-05-25 13:30:00.038",
+                "2016-05-25 13:30:00.048",
+                "2016-05-25 13:30:00.048",
+                "2016-05-25 13:30:00.048",
+            ],
+            "ticker": ["MSFT", "MSFT", "GOOG", "GOOG", "AAPL"],
+            "price": [51.95, 51.95, 720.77, 720.92, 98.0],
+            "quantity": [75, 155, 100, 100, 100],
+        }
+    ).with_columns(pl.col("time").str.to_datetime())
+
+    quotes = pl.DataFrame(
+        {
+            "time": [
+                "2016-05-25 13:30:00.023",
+                "2016-05-25 13:30:00.023",
+                "2016-05-25 13:30:00.030",
+                "2016-05-25 13:30:00.041",
+                "2016-05-25 13:30:00.048",
+                "2016-05-25 13:30:00.049",
+                "2016-05-25 13:30:00.072",
+                "2016-05-25 13:30:00.075",
+            ],
+            "ticker": ["GOOG", "MSFT", "MSFT", "MSFT", "GOOG", "AAPL", "GOOG", "MSFT"],
+            "bid": [720.50, 51.95, 51.97, 51.99, 720.50, 97.99, 720.50, 52.01],
+            "ask": [720.93, 51.96, 51.98, 52.00, 720.93, 98.01, 720.88, 52.03],
+        }
+    ).with_columns(pl.col("time").str.to_datetime())
+
+    assert trades.join_asof(
+        quotes, on="time", by="ticker", tolerance="10ms", allow_exact_matches=False
+    ).to_dict(as_series=False) == {
+        "time": [
+            datetime(2016, 5, 25, 13, 30, 0, 23000),
+            datetime(2016, 5, 25, 13, 30, 0, 38000),
+            datetime(2016, 5, 25, 13, 30, 0, 48000),
+            datetime(2016, 5, 25, 13, 30, 0, 48000),
+            datetime(2016, 5, 25, 13, 30, 0, 48000),
+        ],
+        "ticker": ["MSFT", "MSFT", "GOOG", "GOOG", "AAPL"],
+        "price": [51.95, 51.95, 720.77, 720.92, 98.0],
+        "quantity": [75, 155, 100, 100, 100],
+        "bid": [None, 51.97, None, None, None],
+        "ask": [None, 51.98, None, None, None],
+    }
+
+
+@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+@given(
+    df_left=dataframes(cols=1, allowed_dtypes=pl.Int32),
+    df_right=dataframes(cols=1, allowed_dtypes=pl.Int32),
+)
+def test_join_asof_no_exact_matches_parametric(
+    strategy: AsofJoinStrategy, df_left: pl.DataFrame, df_right: pl.DataFrame
+) -> None:
+    df_left = df_left.sort("col0")
+    df_right = df_right.sort("col0")
+
+    out = df_left.join_asof(
+        df_right,
+        on="col0",
+        strategy=strategy,
+        suffix="_right",
+        coalesce=False,
+        allow_exact_matches=False,
+    )
+
+    for l_val, r_val in zip(
+        out["col0"],
+        out["col0_right"],
+        strict=False,
+    ):
+        assert l_val != r_val or r_val is None
+
+
+def test_join_asof_not_sorted() -> None:
+    df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 2], "b": [2, 1, 3, 1, 2, 3]})
+    with pytest.raises(InvalidOperationError, match="is not sorted"):
+        df.join_asof(df, on="b")
+
+    # When 'by' is provided, we do not check sortedness, but a warning is received
+    with pytest.warns(
+        UserWarning,
+        match="Sortedness of columns cannot be checked when 'by' groups provided",
+    ):
+        df.join_asof(df, on="b", by="a")
+
+    # When sortedness is False, we should get no warning
+    with warnings.catch_warnings(record=True) as w:
+        df.join_asof(df, on="b", check_sortedness=False)
+        df.join_asof(df, on="b", by="a", check_sortedness=False)
+        assert len(w) == 0  # no warnings caught
+
+
+@pytest.mark.parametrize(
+    "dtypes",
+    [
+        (pl.Int64, pl.Int64),
+        (pl.Int64, pl.UInt64),
+        (pl.Int64, pl.Int128),
+        (pl.UInt64, pl.Int64),
+        (pl.UInt64, pl.UInt64),
+        (pl.UInt64, pl.Int128),
+        (pl.UInt64, pl.UInt128),
+        (pl.Int128, pl.Int64),
+        (pl.Int128, pl.UInt64),
+        (pl.Int128, pl.Int128),
+        (pl.UInt128, pl.UInt64),
+        (pl.UInt128, pl.UInt128),
+    ],
+)
+@pytest.mark.parametrize("swap", [False, True])
+@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+def test_join_asof_large_int_21276(
+    dtypes: tuple[PolarsIntegerType, PolarsIntegerType],
+    swap: bool,
+    strategy: AsofJoinStrategy,
+) -> None:
+    left_dtype, right_dtype = reversed(dtypes) if swap else dtypes
+    large_int64 = 1608129000134000123  # it only happen when "on" column is large
+    left = pl.DataFrame({"ts": pl.Series([large_int64 + 2], dtype=left_dtype)})
+    right = pl.DataFrame(
+        {
+            "ts": pl.Series([large_int64 + 1, large_int64 + 3], dtype=right_dtype),
+            "value": [111, 333],
+        }
+    )
+    result = left.join_asof(right, on="ts", strategy=strategy)
+    idx = 0 if strategy == "backward" else 1
+    expected = pl.DataFrame(
+        {
+            "ts": left["ts"],
+            "value": right["value"].gather(idx),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("by", ["constant", None])
+def test_join_asof_slice_23583(by: str | None) -> None:
+    lhs = pl.LazyFrame(
+        {
+            "index": [0],
+            "constant": 0,
+            "date": [date(2025, 1, 1)],
+        },
+    ).set_sorted("date")
+
+    rhs = pl.LazyFrame(
+        {
+            "index": [0, 1],
+            "constant": 0,
+            "date": [date(1970, 1, 1), date(2025, 1, 1)],
+        },
+    ).set_sorted("date")
+
+    q = (
+        lhs.join_asof(rhs, on="date", by=by, check_sortedness=False)
+        .head(1)
+        .select(pl.exclude("constant_right"))
+    )
+
+    expect = pl.DataFrame(
+        {
+            "index": [0],
+            "constant": 0,
+            "date": [date(2025, 1, 1)],
+            "index_right": [1],
+        },
+    )
+
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+    assert_frame_equal(q.collect(), expect)
+
+
+def test_join_asof_23751() -> None:
+    a = pl.DataFrame(
+        [
+            pl.Series([1, 2, 3, 4, 5]).alias("index") * int(1e10),
+            pl.Series([1, -1, 1, 1, -1]).alias("side"),
+        ]
+    )
+
+    b = pl.DataFrame(
+        [
+            pl.Series([0, 1, 1, 3, 3, 5]).alias("index_right").cast(pl.UInt64)
+            * int(1e10),
+            pl.Series([-1, 1, -1, 1, 1, -1]).alias("side"),
+            pl.Series([0, 10, 20, 30, 40, 50]).alias("value"),
+        ]
+    )
+
+    assert a.join_asof(b, left_on="index", right_on="index_right", by="side").to_dict(
+        as_series=False
+    ) == {
+        "index": [10000000000, 20000000000, 30000000000, 40000000000, 50000000000],
+        "side": [1, -1, 1, 1, -1],
+        "index_right": [
+            10000000000,
+            10000000000,
+            30000000000,
+            30000000000,
+            50000000000,
+        ],
+        "value": [10, 20, 40, 40, 50],
+    }
+
+
+def test_join_asof_nosuffix_dup_col_23834() -> None:
+    a = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    b = pl.DataFrame({"b": [1, 2, 3], "c": [9, 10, 11]})
+    with pytest.raises(DuplicateError):
+        a.join_asof(b, left_on="a", right_on="b", suffix="")
+
+
+def test_join_asof_planner_schema_24000() -> None:
+    a = pl.DataFrame([pl.Series("index", [1, 2, 3]) * 10])
+    b = pl.DataFrame(
+        [
+            pl.Series("value", [10, 20, 30]),
+            pl.Series("index_right", [1, 2, 3]).cast(pl.UInt64) * 10,
+        ]
+    )
+    q = a.lazy().join_asof(b.lazy(), left_on="index", right_on="index_right")
+
+    assert q.collect().schema == q.collect_schema()
+
+    b = pl.DataFrame(
+        [
+            pl.Series("index_right", [1, 2, 3]).cast(pl.UInt64) * 10,
+            pl.Series("value", [10, 20, 30]),
+        ]
+    )
+    q = a.lazy().join_asof(b.lazy(), left_on="index", right_on="index_right")
+
+    assert q.collect().schema == q.collect_schema()
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64, pl.Int8, pl.Int16, pl.Int32, pl.Int64],
+)
+def test_join_asof_int_dtypes_24383(dtype: PolarsIntegerType) -> None:
+    lf1 = pl.LazyFrame(
+        {
+            "id": pl.Series([1], dtype=dtype),
+            "date": pl.Series([date(2025, 12, 31)], dtype=pl.Date),
+        }
+    )
+
+    lf2 = pl.LazyFrame(
+        {
+            "id": pl.Series([1], dtype=dtype),
+            "date": pl.Series([date(2025, 12, 31)], dtype=pl.Date),
+            "value": pl.Series([2.5], dtype=pl.Float32),
+        }
+    )
+
+    result = lf1.join_asof(
+        other=lf2,
+        on="date",
+        by="id",
+        check_sortedness=False,
+    )
+    expected = pl.DataFrame(
+        {
+            "id": pl.Series([1], dtype=dtype),
+            "date": pl.Series([date(2025, 12, 31)], dtype=pl.Date),
+            "value": pl.Series([2.5], dtype=pl.Float32),
+        }
+    )
+    assert result.collect_schema() == expected.schema
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("by", [None, "one"])
+def test_join_asof_on_cast_expr_24999(by: str | None) -> None:
+    q = pl.LazyFrame({"x": date(2025, 10, 13), "one": 1}).join_asof(
+        pl.LazyFrame({"x_right": datetime(2025, 10, 10, 2), "one": 1}),
+        left_on=pl.col("x").cast(pl.Datetime),
+        right_on=pl.col("x_right"),
+        tolerance=timedelta(days=100),
+        by=by,
+    )
+
+    expect = pl.DataFrame(
+        {
+            "x": date(2025, 10, 13),
+            "one": 1,
+            "x_right": datetime(2025, 10, 10, 2),
+        }
+    )
+
+    if by is None:
+        expect = expect.with_columns(pl.col("one").alias("one_right"))
+
+    assert_frame_equal(q.collect(), expect)
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "expected_right"),
+    [
+        ([], [], []),
+        ([1], [2], [2]),
+        ([], [1, 2], []),
+        ([1, 2], [], [None, None]),
+        ([1, 2], [1, 2], [2, 1]),
+        ([1, 1], [1, 1], [None, None]),
+        ([1, 2, 2, 2, 3], [1, 2, 2, 2, 3], [2, 3, 3, 3, 2]),
+    ],
+)
+def test_join_asof_nearest_no_exact_matches_25468(
+    left: list[int],
+    right: list[int],
+    expected_right: list[int],
+) -> None:
+    df_left = pl.DataFrame({"a": left}, schema={"a": pl.Int32})
+    df_right = pl.DataFrame({"a": right}, schema={"a": pl.Int32})
+    expected_df = pl.DataFrame(
+        {"a": left, "a_right": expected_right},
+        schema={"a": pl.Int32, "a_right": pl.Int32},
+    )
+    result = df_left.join_asof(
+        df_right, on="a", strategy="nearest", coalesce=False, allow_exact_matches=False
+    )
+    assert_frame_equal(result, expected_df)
+
+
+@pytest.mark.parametrize("strategy", ["backward", "nearest"])
+def test_join_asof_nans(strategy: AsofJoinStrategy) -> None:
+    df_left = pl.LazyFrame(
+        {
+            "time": [0.0, 6.0, math.nan, math.nan],
+            "value": [100, 101, 102, 103],
+        }
+    )
+    df_right = pl.LazyFrame(
+        {
+            "time": [0.0, 5.0, 10.0, 42.0],
+            "value": [100, 200, 300, 400],
+        }
+    )
+    actual = df_left.join_asof(
+        df_right,
+        on="time",
+        strategy=strategy,
+    ).collect()
+    expected = pl.DataFrame(
+        {
+            "time": [0.0, 6.0, math.nan, math.nan],
+            "value": [100, 101, 102, 103],
+            "value_right": [100, 200, 400, 400],
+        }
+    )
+    assert_frame_equal(actual, expected)

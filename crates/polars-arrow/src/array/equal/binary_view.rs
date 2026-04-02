@@ -1,5 +1,5 @@
-use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
 use crate::array::Array;
+use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
 
 pub(super) fn equal<T: ViewType + ?Sized>(
     lhs: &BinaryViewArrayGeneric<T>,

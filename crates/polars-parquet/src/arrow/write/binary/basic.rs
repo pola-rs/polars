@@ -3,12 +3,15 @@ use arrow::bitmap::Bitmap;
 use arrow::offset::Offset;
 use polars_error::PolarsResult;
 
-use super::super::{utils, WriteOptions};
+use super::super::{WriteOptions, utils};
 use crate::arrow::read::schema::is_nullable;
-use crate::parquet::encoding::{delta_bitpacked, Encoding};
+use crate::parquet::encoding::{Encoding, delta_bitpacked};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{BinaryStatistics, ParquetStatistics};
-use crate::write::utils::invalid_encoding;
+use crate::write::utils::{
+    invalid_encoding, is_utf8_type, truncate_max_binary_statistics_value,
+    truncate_min_binary_statistics_value,
+};
 use crate::write::{EncodeNullability, Page, StatisticsOptions};
 
 pub(crate) fn encode_non_null_values<'a, I: Iterator<Item = &'a [u8]>>(
@@ -30,15 +33,15 @@ pub(crate) fn encode_plain<O: Offset>(
 ) {
     if options.is_optional() && array.validity().is_some() {
         let len_before = buffer.len();
-        let capacity = array.get_values_size()
-            + (array.len() - array.null_count()) * std::mem::size_of::<u32>();
+        let capacity =
+            array.get_values_size() + (array.len() - array.null_count()) * size_of::<u32>();
         buffer.reserve(capacity);
         encode_non_null_values(array.non_null_values_iter(), buffer);
-        // Ensure we allocated properly.
-        debug_assert_eq!(buffer.len() - len_before, capacity);
+        // Assert <= as reserve size may include masked out values.
+        debug_assert!(buffer.len() - len_before <= capacity);
     } else {
         let len_before = buffer.len();
-        let capacity = array.get_values_size() + array.len() * std::mem::size_of::<u32>();
+        let capacity = array.get_values_size() + array.len() * size_of::<u32>();
         buffer.reserve(capacity);
         encode_non_null_values(array.values_iter(), buffer);
         // Ensure we allocated properly.
@@ -107,18 +110,27 @@ pub(crate) fn build_statistics<O: Offset>(
 ) -> ParquetStatistics {
     use polars_compute::min_max::MinMaxKernel;
 
+    let mut min_value = options
+        .min_value
+        .then(|| array.min_propagate_nan_kernel().map(<[u8]>::to_vec))
+        .flatten();
+    let mut max_value = options
+        .max_value
+        .then(|| array.max_propagate_nan_kernel().map(<[u8]>::to_vec))
+        .flatten();
+
+    if let Some(len) = options.binary_statistics_truncate_length_usize() {
+        let is_utf8 = is_utf8_type(&primitive_type);
+        min_value = min_value.map(|v| truncate_min_binary_statistics_value(v, len, is_utf8));
+        max_value = max_value.map(|v| truncate_max_binary_statistics_value(v, len, is_utf8));
+    }
+
     BinaryStatistics {
         primitive_type,
         null_count: options.null_count.then_some(array.null_count() as i64),
         distinct_count: None,
-        max_value: options
-            .max_value
-            .then(|| array.max_propagate_nan_kernel().map(<[u8]>::to_vec))
-            .flatten(),
-        min_value: options
-            .min_value
-            .then(|| array.min_propagate_nan_kernel().map(<[u8]>::to_vec))
-            .flatten(),
+        max_value,
+        min_value,
     }
     .serialize()
 }
@@ -153,11 +165,4 @@ pub(crate) fn encode_delta<O: Offset>(
     buffer.extend_from_slice(
         &values[offsets.first().unwrap().to_usize()..offsets.last().unwrap().to_usize()],
     )
-}
-
-/// Returns the ordering of two binary values. This corresponds to pyarrows' ordering
-/// of statistics.
-#[inline(always)]
-pub(crate) fn ord_binary<'a>(a: &'a [u8], b: &'a [u8]) -> std::cmp::Ordering {
-    a.cmp(b)
 }

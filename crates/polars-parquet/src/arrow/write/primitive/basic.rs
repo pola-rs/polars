@@ -1,13 +1,13 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::scalar::PrimitiveScalar;
 use arrow::types::NativeType;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
-use super::super::{utils, WriteOptions};
+use super::super::{WriteOptions, utils};
 use crate::arrow::read::schema::is_nullable;
 use crate::arrow::write::utils::ExactSizedIter;
-use crate::parquet::encoding::delta_bitpacked::encode;
 use crate::parquet::encoding::Encoding;
+use crate::parquet::encoding::delta_bitpacked::encode;
 use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::PrimitiveStatistics;
@@ -38,7 +38,7 @@ where
                 let mut iter = validity.iter();
                 let values = array.values().as_slice();
 
-                buffer.reserve(std::mem::size_of::<P::Bytes>() * (array.len() - null_count));
+                buffer.reserve(size_of::<P::Bytes>() * (array.len() - null_count));
 
                 let mut offset = 0;
                 let mut remaining_valid = array.len() - null_count;
@@ -61,7 +61,7 @@ where
         }
     }
 
-    buffer.reserve(std::mem::size_of::<P>() * array.len());
+    buffer.reserve(size_of::<P>() * array.len());
     buffer.extend(
         array
             .values()
@@ -223,14 +223,14 @@ where
             .downcast_ref::<PrimitiveScalar<T>>()
             .unwrap()
             .value()
-            .map(|x| x.as_())
+            .map(|x| x.as_().norm_min())
     });
     let max_value = max_value.and_then(|s| {
         s.as_any()
             .downcast_ref::<PrimitiveScalar<T>>()
             .unwrap()
             .value()
-            .map(|x| x.as_())
+            .map(|x| x.as_().norm_max())
     });
 
     PrimitiveStatistics::<P> {

@@ -27,7 +27,8 @@ def test_cast_list_array() -> None:
         s.cast(pl.Array(pl.Int64, 2))
 
 
-def test_array_in_group_by() -> None:
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_array_in_group_by_iter() -> None:
     df = pl.DataFrame(
         [
             pl.Series("id", [1, 2]),
@@ -35,9 +36,14 @@ def test_array_in_group_by() -> None:
         ]
     )
 
+    assert df.lazy().group_by("id").agg(b=pl.col("id").agg_groups()).collect_schema()[
+        "b"
+    ] == pl.List(pl.get_index_type())
     result = next(iter(df.group_by(["id"], maintain_order=True)))[1]["list"]
     assert result.to_list() == [[1, 2]]
 
+
+def test_array_in_group_by() -> None:
     df = pl.DataFrame(
         {"a": [[1, 2], [2, 2], [1, 4]], "g": [1, 1, 2]},
         schema={"a": pl.Array(pl.Int64, 2), "g": pl.Int64},
@@ -57,6 +63,7 @@ def test_array_in_group_by() -> None:
         }
 
 
+@pytest.mark.may_fail_cloud
 def test_array_invalid_operation() -> None:
     s = pl.Series(
         [[1, 2], [8, 9]],
@@ -198,18 +205,12 @@ def test_arr_var(data_dispersion: pl.DataFrame) -> None:
     result = df.select(
         pl.col("int").arr.var().name.suffix("_var"),
         pl.col("float").arr.var().name.suffix("_var"),
-        pl.col("duration").arr.var().name.suffix("_var"),
     )
 
     expected = pl.DataFrame(
         [
             pl.Series("int_var", [2.5], dtype=pl.Float64),
             pl.Series("float_var", [2.5], dtype=pl.Float64),
-            pl.Series(
-                "duration_var",
-                [timedelta(microseconds=2000)],
-                dtype=pl.Duration(time_unit="ms"),
-            ),
         ]
     )
 
@@ -232,6 +233,48 @@ def test_arr_std(data_dispersion: pl.DataFrame) -> None:
             pl.Series(
                 "duration_std",
                 [timedelta(microseconds=1581)],
+                dtype=pl.Duration(time_unit="us"),
+            ),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_arr_sum(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").arr.sum().name.suffix("_sum"),
+        pl.col("float").arr.sum().name.suffix("_sum"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_sum", [15], dtype=pl.Int64),
+            pl.Series("float_sum", [15.0], dtype=pl.Float64),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_arr_mean(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").arr.mean().name.suffix("_mean"),
+        pl.col("float").arr.mean().name.suffix("_mean"),
+        pl.col("duration").arr.mean().name.suffix("_mean"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_mean", [3.0], dtype=pl.Float64),
+            pl.Series("float_mean", [3.0], dtype=pl.Float64),
+            pl.Series(
+                "duration_mean",
+                [timedelta(microseconds=3000)],
                 dtype=pl.Duration(time_unit="us"),
             ),
         ]
@@ -291,6 +334,10 @@ def test_recursive_array_dtype() -> None:
     s = pl.Series(np.arange(6).reshape((2, 3)), dtype=dtype)
     assert s.dtype == dtype
     assert s.len() == 2
+    dtype = pl.Array(pl.List(pl.Array(pl.Int8, (2, 2))), 2)
+    s = pl.Series(dtype=dtype)
+    assert s.dtype == dtype
+    assert str(s) == "shape: (0,)\nSeries: '' [array[list[array[i8, (2, 2)]], 2]]\n[\n]"
 
 
 def test_ndarray_construction() -> None:
@@ -323,3 +370,100 @@ def test_array_inner_recursive_python_dtype() -> None:
 def test_array_missing_shape() -> None:
     with pytest.raises(TypeError):
         pl.Array(pl.Int8)
+
+
+def test_array_invalid_shape_type() -> None:
+    with pytest.raises(TypeError, match="invalid input for shape"):
+        pl.Array(pl.Int8, shape=("x",))  # type: ignore[arg-type]
+
+
+def test_array_invalid_physical_type_18920() -> None:
+    s1 = pl.Series("x", [[1000, 2000]], pl.List(pl.Datetime))
+    s2 = pl.Series("x", [None], pl.List(pl.Datetime))
+
+    df1 = s1.to_frame().with_columns(pl.col.x.list.to_array(2))
+    df2 = s2.to_frame().with_columns(pl.col.x.list.to_array(2))
+
+    df = pl.concat([df1, df2])
+
+    expected_s = pl.Series("x", [[1000, 2000], None], pl.List(pl.Datetime))
+
+    expected = expected_s.to_frame().with_columns(pl.col.x.list.to_array(2))
+    assert_frame_equal(df, expected)
+
+
+@pytest.mark.may_fail_cloud  # reason: zero-width array
+@pytest.mark.parametrize(
+    "fn",
+    [
+        "__add__",
+        "__sub__",
+        "__mul__",
+        "__truediv__",
+        "__mod__",
+        "__eq__",
+        "__ne__",
+    ],
+)
+def test_zero_width_array(fn: str) -> None:
+    series_f = getattr(pl.Series, fn)
+    expr_f = getattr(pl.Expr, fn)
+
+    values = [
+        [
+            [[]],
+            [None],
+        ],
+        [
+            [[], []],
+            [None, []],
+            [[], None],
+            [None, None],
+        ],
+    ]
+
+    for vs in values:
+        for lhs in vs:
+            for rhs in vs:
+                a = pl.Series("a", lhs, pl.Array(pl.Int8, 0))
+                b = pl.Series("b", rhs, pl.Array(pl.Int8, 0))
+
+                series_f(a, b)
+
+                df = pl.concat([a.to_frame(), b.to_frame()], how="horizontal")
+                df.select(c=expr_f(pl.col.a, pl.col.b))
+
+
+def test_sort() -> None:
+    def tc(a: list[Any], b: list[Any], w: int) -> None:
+        a_s = pl.Series("l", a, pl.Array(pl.Int64, w))
+        b_s = pl.Series("l", b, pl.Array(pl.Int64, w))
+
+        assert_series_equal(a_s.sort(), b_s)
+
+    tc([], [], 1)
+    tc([[1]], [[1]], 1)
+    tc([[2], [1]], [[1], [2]], 1)
+    tc([[2, 1]], [[2, 1]], 2)
+    tc([[2, 1], [1, 2]], [[1, 2], [2, 1]], 2)
+
+
+def test_array_sum_with_nulls() -> None:
+    for dt_in, dt_out in [
+        (pl.Int8, pl.Int64),
+        (pl.Int16, pl.Int64),
+        (pl.Int32, pl.Int32),
+        (pl.Int64, pl.Int64),
+        (pl.Int128, pl.Int128),
+        (pl.UInt8, pl.Int64),
+        (pl.UInt16, pl.Int64),
+        (pl.UInt32, pl.UInt32),
+        (pl.UInt64, pl.UInt64),
+        (pl.Float16, pl.Float16),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
+    ]:
+        s = pl.Series("a", [[1, 2, 3], None, [4, None, 6]], pl.Array(dt_in, 3))
+        result = s.arr.sum()
+        expected = pl.Series("a", [6, None, 10], dt_out)
+        assert_series_equal(result, expected)

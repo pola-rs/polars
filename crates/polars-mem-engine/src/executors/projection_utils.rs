@@ -1,3 +1,4 @@
+use polars_plan::constants::CSE_REPLACED;
 use polars_utils::itertools::Itertools;
 
 use super::*;
@@ -18,8 +19,8 @@ type IdAndExpression = (u32, Arc<dyn PhysicalExpr>);
 fn rolling_evaluate(
     df: &DataFrame,
     state: &ExecutionState,
-    rolling: PlHashMap<&RollingGroupOptions, Vec<IdAndExpression>>,
-) -> PolarsResult<Vec<Vec<(u32, Series)>>> {
+    rolling: PlHashMap<RollingGroupOptions, Vec<IdAndExpression>>,
+) -> PolarsResult<Vec<Vec<(u32, Column)>>> {
     POOL.install(|| {
         rolling
             .par_iter()
@@ -27,16 +28,13 @@ fn rolling_evaluate(
                 // clear the cache for every partitioned group
                 let state = state.split();
 
-                let (_time_key, _keys, groups) = df.rolling(vec![], options)?;
+                let (_time_key, groups) = df.rolling(None, options)?;
 
-                let groups_key = format!("{:?}", options);
+                let groups_key = format!("{options:?}");
                 // Set the groups so all expressions in partition can use it.
                 // Create a separate scope, so the lock is dropped, otherwise we deadlock when the
                 // rolling expression try to get read access.
-                {
-                    let mut groups_map = state.group_tuples.write().unwrap();
-                    groups_map.insert(groups_key, groups);
-                }
+                state.window_cache.insert_groups(groups_key, groups);
                 partition
                     .par_iter()
                     .map(|(idx, expr)| expr.evaluate(df, &state).map(|s| (*idx, s)))
@@ -50,55 +48,94 @@ fn window_evaluate(
     df: &DataFrame,
     state: &ExecutionState,
     window: PlHashMap<String, Vec<IdAndExpression>>,
-) -> PolarsResult<Vec<Vec<(u32, Series)>>> {
-    POOL.install(|| {
-        window
-            .par_iter()
-            .map(|(_, partition)| {
-                // clear the cache for every partitioned group
-                let mut state = state.split();
-                // inform the expression it has window functions.
-                state.insert_has_window_function_flag();
+) -> PolarsResult<Vec<Vec<(u32, Column)>>> {
+    if window.is_empty() {
+        return Ok(vec![]);
+    }
+    let n_threads = POOL.current_num_threads();
 
-                // don't bother caching if we only have a single window function in this partition
-                if partition.len() == 1 {
-                    state.remove_cache_window_flag();
-                } else {
-                    state.insert_cache_window_flag();
-                }
+    let max_hor = window.values().map(|v| v.len()).max().unwrap_or(0);
+    let vert = window.len();
 
-                let mut out = Vec::with_capacity(partition.len());
-                // Don't parallelize here, as this will hold a mutex and Deadlock.
-                for (index, e) in partition {
-                    if e.as_expression()
-                        .unwrap()
-                        .into_iter()
-                        .filter(|e| matches!(e, Expr::Window { .. }))
-                        .count()
-                        == 1
-                    {
-                        state.insert_cache_window_flag();
-                    }
-                    // caching more than one window expression is a complicated topic for another day
-                    // see issue #2523
-                    else {
-                        state.remove_cache_window_flag();
-                    }
+    // We don't want to cache and parallel horizontally and vertically as that keeps many cache
+    // states alive.
+    let (cache, par_vertical, par_horizontal) = if max_hor >= n_threads || max_hor >= vert {
+        (true, false, true)
+    } else {
+        (false, true, true)
+    };
 
-                    let s = e.evaluate(df, &state)?;
-                    out.push((*index, s));
-                }
-                Ok(out)
-            })
-            .collect()
-    })
+    let apply = |partition: &[(u32, Arc<dyn PhysicalExpr>)]| {
+        // clear the cache for every partitioned group
+        let mut state = state.split();
+        // inform the expression it has window functions.
+        state.insert_has_window_function_flag();
+
+        // caching more than one window expression is a complicated topic for another day
+        // see issue #2523
+        let cache = cache
+            && partition.len() > 1
+            && partition.iter().all(|(_, e)| {
+                e.as_expression()
+                    .unwrap()
+                    .into_iter()
+                    .filter(|e| {
+                        #[cfg(feature = "dynamic_group_by")]
+                        if matches!(e, Expr::Rolling { .. }) {
+                            return true;
+                        }
+                        matches!(e, Expr::Over { .. })
+                    })
+                    .count()
+                    == 1
+            });
+        let mut first_result = None;
+        // First run 1 to fill the cache. Condvars and such don't work as
+        //  rayon threads should not be blocked.
+        if cache {
+            let first = &partition[0];
+            let c = first.1.evaluate(df, &state)?;
+            first_result = Some((first.0, c));
+            state.insert_cache_window_flag();
+        } else {
+            state.remove_cache_window_flag();
+        }
+
+        let apply =
+            |index: &u32, e: &Arc<dyn PhysicalExpr>| e.evaluate(df, &state).map(|c| (*index, c));
+
+        let slice = &partition[first_result.is_some() as usize..];
+        let mut results = if par_horizontal {
+            slice
+                .par_iter()
+                .map(|(index, e)| apply(index, e))
+                .collect::<PolarsResult<Vec<_>>>()?
+        } else {
+            slice
+                .iter()
+                .map(|(index, e)| apply(index, e))
+                .collect::<PolarsResult<Vec<_>>>()?
+        };
+
+        if let Some(item) = first_result {
+            results.push(item)
+        }
+
+        Ok(results)
+    };
+
+    if par_vertical {
+        POOL.install(|| window.par_iter().map(|t| apply(t.1)).collect())
+    } else {
+        window.iter().map(|t| apply(t.1)).collect()
+    }
 }
 
 fn execute_projection_cached_window_fns(
     df: &DataFrame,
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &ExecutionState,
-) -> PolarsResult<Vec<Series>> {
+) -> PolarsResult<Vec<Column>> {
     // We partition by normal expression and window expression
     // - the normal expressions can run in parallel
     // - the window expression take more memory and often use the same group_by keys and join tuples
@@ -111,7 +148,7 @@ fn execute_projection_cached_window_fns(
     // u32: index,
     let mut windows: PlHashMap<String, Vec<IdAndExpression>> = PlHashMap::default();
     #[cfg(feature = "dynamic_group_by")]
-    let mut rolling: PlHashMap<&RollingGroupOptions, Vec<IdAndExpression>> = PlHashMap::default();
+    let mut rolling: PlHashMap<RollingGroupOptions, Vec<IdAndExpression>> = PlHashMap::default();
     let mut other = Vec::with_capacity(exprs.len());
 
     // first we partition the window function by the values they group over.
@@ -120,33 +157,49 @@ fn execute_projection_cached_window_fns(
         let mut is_window = false;
         if let Some(e) = phys.as_expression() {
             for e in e.into_iter() {
-                if let Expr::Window {
-                    partition_by,
-                    options,
-                    order_by,
-                    ..
-                } = e
-                {
-                    let entry = match options {
-                        WindowType::Over(_) => {
-                            let mut key = format!("{:?}", partition_by.as_slice());
-                            if let Some((e, k)) = order_by {
-                                polars_expr::prelude::window_function_format_order_by(
-                                    &mut key,
-                                    e.as_ref(),
-                                    k,
-                                )
-                            }
-                            windows.entry(key).or_insert_with(Vec::new)
-                        },
-                        #[cfg(feature = "dynamic_group_by")]
-                        WindowType::Rolling(options) => {
-                            rolling.entry(options).or_insert_with(Vec::new)
-                        },
-                    };
-                    entry.push((index, phys.clone()));
-                    is_window = true;
-                    break;
+                match e {
+                    #[cfg(feature = "dynamic_group_by")]
+                    Expr::Rolling {
+                        function: _,
+                        index_column,
+                        period,
+                        offset,
+                        closed_window,
+                    } => {
+                        if let Expr::Column(index_column) = index_column.as_ref() {
+                            let options = RollingGroupOptions {
+                                index_column: index_column.clone(),
+                                period: *period,
+                                offset: *offset,
+                                closed_window: *closed_window,
+                            };
+                            let entry = rolling.entry(options).or_default();
+                            entry.push((index, phys.clone()));
+                            is_window = true;
+                            break;
+                        }
+                    },
+                    Expr::Over {
+                        function: _,
+                        partition_by,
+                        order_by,
+                        mapping,
+                    } => {
+                        let mapping: &str = mapping.into();
+                        let mut key = format!("{:?}_{mapping}", partition_by.as_slice());
+                        if let Some((e, k)) = order_by {
+                            polars_expr::prelude::window_function_format_order_by(
+                                &mut key,
+                                e.as_ref(),
+                                k,
+                            )
+                        }
+                        let entry = windows.entry(key).or_insert_with(Vec::new);
+                        entry.push((index, phys.clone()));
+                        is_window = true;
+                        break;
+                    },
+                    _ => {},
                 }
             }
         } else {
@@ -201,7 +254,7 @@ fn run_exprs_par(
     df: &DataFrame,
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &ExecutionState,
-) -> PolarsResult<Vec<Series>> {
+) -> PolarsResult<Vec<Column>> {
     POOL.install(|| {
         exprs
             .par_iter()
@@ -214,7 +267,7 @@ fn run_exprs_seq(
     df: &DataFrame,
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &ExecutionState,
-) -> PolarsResult<Vec<Series>> {
+) -> PolarsResult<Vec<Column>> {
     exprs.iter().map(|expr| expr.evaluate(df, state)).collect()
 }
 
@@ -224,7 +277,7 @@ pub(super) fn evaluate_physical_expressions(
     state: &ExecutionState,
     has_windows: bool,
     run_parallel: bool,
-) -> PolarsResult<Vec<Series>> {
+) -> PolarsResult<Vec<Column>> {
     let expr_runner = if has_windows {
         execute_projection_cached_window_fns
     } else if run_parallel && exprs.len() > 1 {
@@ -243,8 +296,10 @@ pub(super) fn evaluate_physical_expressions(
 }
 
 pub(super) fn check_expand_literals(
-    mut selected_columns: Vec<Series>,
-    zero_length: bool,
+    df: &DataFrame,
+    phys_expr: &[Arc<dyn PhysicalExpr>],
+    mut selected_columns: Vec<Column>,
+    is_empty: bool,
     options: ProjectionOptions,
 ) -> PolarsResult<DataFrame> {
     let Some(first_len) = selected_columns.first().map(|s| s.len()) else {
@@ -252,6 +307,16 @@ pub(super) fn check_expand_literals(
     };
     let duplicate_check = options.duplicate_check;
     let should_broadcast = options.should_broadcast;
+
+    // When we have CSE we cannot verify scalars yet.
+    let verify_scalar = if !df.columns().is_empty() {
+        !df.columns()[df.width() - 1]
+            .name()
+            .starts_with(CSE_REPLACED)
+    } else {
+        true
+    };
+
     let mut df_height = 0;
     let mut has_empty = false;
     let mut all_equal_len = true;
@@ -268,36 +333,47 @@ pub(super) fn check_expand_literals(
 
             if duplicate_check && !names.insert(name) {
                 let msg = format!(
-                    "the name '{}' is duplicate\n\n\
+                    "the name '{name}' is duplicate\n\n\
                     It's possible that multiple expressions are returning the same default column \
                     name. If this is the case, try renaming the columns with \
-                    `.alias(\"new_name\")` to avoid duplicate column names.",
-                    name
+                    `.alias(\"new_name\")` to avoid duplicate column names."
                 );
                 return Err(PolarsError::Duplicate(msg.into()));
             }
         }
     }
+
     // If all series are the same length it is ok. If not we can broadcast Series of length one.
     if !all_equal_len && should_broadcast {
         selected_columns = selected_columns
             .into_iter()
-            .map(|series| {
+            .zip(phys_expr)
+            .map(|(series, phys)| {
                 Ok(match series.len() {
                     0 if df_height == 1 => series,
                     1 => {
-                        if has_empty {
-
-                        polars_ensure!(df_height == 1,
-                        ComputeError: "Series length {} doesn't match the DataFrame height of {}",
-                        series.len(), df_height
-                    );
-
-                            series.slice(0, 0)
-                        } else if df_height == 1 {
+                         if !has_empty && df_height == 1 {
                             series
                         } else {
-                            series.new_from_index(0, df_height)
+                            if has_empty {
+                                polars_ensure!(df_height == 1,
+                                ShapeMismatch: "Series length {} doesn't match the DataFrame height of {}",
+                                series.len(), df_height
+                            );
+
+                            }
+
+                            if verify_scalar && !phys.is_scalar() && std::env::var("POLARS_ALLOW_NON_SCALAR_EXP").as_deref() != Ok("1") {
+                                    let identifier = match phys.as_expression() {
+                                        Some(e) => format!("expression: {e}"),
+                                        None => "this Series".to_string(),
+                                    };
+                                    polars_bail!(ShapeMismatch: "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
+                                        If you want {} to be broadcasted, ensure it is a scalar (for instance by adding '.first()').",
+                                        series.name(), series.len(), df_height *(!has_empty as usize), identifier
+                                    );
+                            }
+                            series.new_from_index(0, df_height * (!has_empty as usize) )
                         }
                     },
                     len if len == df_height => {
@@ -305,7 +381,7 @@ pub(super) fn check_expand_literals(
                     },
                     _ => {
                         polars_bail!(
-                        ComputeError: "Series length {} doesn't match the DataFrame height of {}",
+                        ShapeMismatch: "Series length {} doesn't match the DataFrame height of {}",
                         series.len(), df_height
                     )
                     }
@@ -314,17 +390,16 @@ pub(super) fn check_expand_literals(
             .collect::<PolarsResult<_>>()?
     }
 
-    let df = unsafe { DataFrame::new_no_checks(selected_columns) };
+    // @scalar-opt
+    let selected_columns = selected_columns.into_iter().collect::<Vec<_>>();
+
+    let df = unsafe { DataFrame::new_unchecked_infer_height(selected_columns) };
 
     // a literal could be projected to a zero length dataframe.
     // This prevents a panic.
-    let df = if zero_length {
-        let min = df.get_columns().iter().map(|s| s.len()).min();
-        if min.is_some() {
-            df.head(min)
-        } else {
-            df
-        }
+    let df = if is_empty {
+        let min = df.columns().iter().map(|s| s.len()).min();
+        if min.is_some() { df.head(min) } else { df }
     } else {
         df
     };

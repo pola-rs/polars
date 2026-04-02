@@ -48,7 +48,7 @@ macro_rules! impl_op_overload {
 impl_op_overload!(Add, add, wrapping_add, wrapping_add_scalar);
 impl_op_overload!(Sub, sub, wrapping_sub, wrapping_sub_scalar);
 impl_op_overload!(Mul, mul, wrapping_mul, wrapping_mul_scalar);
-impl_op_overload!(Div, div, legacy_div, legacy_div_scalar); // FIXME: replace this with true division.
+impl_op_overload!(Div, div, legacy_div, legacy_div_scalar); // TODO: replace this with true division.
 impl_op_overload!(Rem, rem, wrapping_mod, wrapping_mod_scalar);
 
 pub trait ArithmeticChunked {
@@ -75,6 +75,8 @@ pub trait ArithmeticChunked {
     fn wrapping_trunc_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out;
     fn wrapping_mod_scalar(self, rhs: Self::Scalar) -> Self::Out;
     fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out;
+
+    fn checked_mul_scalar(self, rhs: Self::Scalar) -> Self::Out;
 
     fn true_div(self, rhs: Self) -> Self::TrueDivOut;
     fn true_div_scalar(self, rhs: Self::Scalar) -> Self::TrueDivOut;
@@ -206,6 +208,10 @@ impl<T: PolarsNumericType> ArithmeticChunked for ChunkedArray<T> {
 
     fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
         unary_kernel_owned(rhs, |a| ArithmeticKernel::wrapping_mod_scalar_lhs(lhs, a))
+    }
+
+    fn checked_mul_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel_owned(self, |a| ArithmeticKernel::checked_mul_scalar(a, rhs))
     }
 
     fn true_div(self, rhs: Self) -> Self::TrueDivOut {
@@ -375,6 +381,12 @@ impl<T: PolarsNumericType> ArithmeticChunked for &ChunkedArray<T> {
     fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
         unary_kernel(rhs, |a| {
             ArithmeticKernel::wrapping_mod_scalar_lhs(lhs, a.clone())
+        })
+    }
+
+    fn checked_mul_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel(self, |a| {
+            ArithmeticKernel::checked_mul_scalar(a.clone(), rhs)
         })
     }
 

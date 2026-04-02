@@ -15,21 +15,21 @@ impl DataFrame {
         let new_height = self.width();
         // Allocate space for the transposed columns, putting the "row names" first if needed
         let mut cols_t = match keep_names_as {
-            None => Vec::<Series>::with_capacity(new_width),
+            None => Vec::<Column>::with_capacity(new_width),
             Some(name) => {
-                let mut tmp = Vec::<Series>::with_capacity(new_width + 1);
+                let mut tmp = Vec::<Column>::with_capacity(new_width + 1);
                 tmp.push(
                     StringChunked::from_iter_values(
                         name,
                         self.get_column_names_owned().into_iter(),
                     )
-                    .into(),
+                    .into_column(),
                 );
                 tmp
             },
         };
 
-        let cols = &self.columns;
+        let cols = self.columns();
         match dtype {
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => numeric_transpose::<Int8Type>(cols, names_out, &mut cols_t),
@@ -46,7 +46,7 @@ impl DataFrame {
             DataType::Float32 => numeric_transpose::<Float32Type>(cols, names_out, &mut cols_t),
             DataType::Float64 => numeric_transpose::<Float64Type>(cols, names_out, &mut cols_t),
             #[cfg(feature = "object")]
-            DataType::Object(_, _) => {
+            DataType::Object(_) => {
                 // this requires to support `Object` in Series::iter which we don't yet
                 polars_bail!(InvalidOperation: "Object dtype not supported in 'transpose'")
             },
@@ -60,32 +60,35 @@ impl DataFrame {
                     .collect::<Vec<_>>();
 
                 let columns = self
-                    .columns
-                    .iter()
+                    .materialized_column_iter()
                     // first cast to supertype before casting to physical to ensure units are correct
-                    .map(|s| s.cast(dtype).unwrap().cast(&phys_dtype).unwrap())
-                    .collect::<Vec<_>>();
+                    .map(|s| s.cast(dtype)?.cast(&phys_dtype))
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
                 // this is very expensive. A lot of cache misses here.
                 // This is the part that is performance critical.
-                for s in columns {
-                    polars_ensure!(s.dtype() == &phys_dtype, ComputeError: "cannot transpose with supertype: {}", dtype);
-                    s.iter().zip(buffers.iter_mut()).for_each(|(av, buf)| {
+                for series in &columns {
+                    polars_ensure!(
+                        series.dtype() == &phys_dtype,
+                        ComputeError: "cannot transpose with supertype: {}", dtype
+                    );
+                    for (av, buf) in series.iter().zip(buffers.iter_mut()) {
                         // SAFETY: we checked the type and we borrow
                         unsafe {
                             buf.add_unchecked_borrowed_physical(&av);
                         }
-                    });
+                    }
                 }
                 cols_t.extend(buffers.into_iter().zip(names_out).map(|(buf, name)| {
                     // SAFETY: we are casting back to the supertype
                     let mut s = unsafe { buf.into_series().cast_unchecked(dtype).unwrap() };
                     s.rename(name.clone());
-                    s
+                    s.into()
                 }));
             },
         };
-        Ok(unsafe { DataFrame::new_no_checks(cols_t) })
+
+        DataFrame::new(new_height, cols_t)
     }
 
     pub fn transpose(
@@ -110,7 +113,7 @@ impl DataFrame {
         new_col_names: Option<Either<PlSmallStr, Vec<PlSmallStr>>>,
     ) -> PolarsResult<DataFrame> {
         // We must iterate columns as [`AnyValue`], so we must be contiguous.
-        self.as_single_chunk_par();
+        self.rechunk_mut_par();
 
         let mut df = Cow::Borrowed(self); // Can't use self because we might drop a name column
         let names_out = match new_col_names {
@@ -143,27 +146,6 @@ impl DataFrame {
             NoData: "unable to transpose an empty DataFrame"
         );
         let dtype = df.get_supertype().unwrap()?;
-        match dtype {
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_, _) | DataType::Enum(_, _) => {
-                let mut valid = true;
-                let mut rev_map: Option<&Arc<RevMapping>> = None;
-                for s in self.columns.iter() {
-                    if let DataType::Categorical(Some(col_rev_map), _)
-                    | DataType::Enum(Some(col_rev_map), _) = &s.dtype()
-                    {
-                        match rev_map {
-                            Some(rev_map) => valid = valid && rev_map.same_src(col_rev_map),
-                            None => {
-                                rev_map = Some(col_rev_map);
-                            },
-                        }
-                    }
-                }
-                polars_ensure!(valid, string_cache_mismatch);
-            },
-            _ => {},
-        }
         df.transpose_from_dtype(&dtype, keep_names_as.map(PlSmallStr::from_str), &names_out)
     }
 }
@@ -175,22 +157,19 @@ unsafe fn add_value<T: NumericNative>(
     row_idx: usize,
     value: T,
 ) {
-    let column = (*(values_buf_ptr as *mut Vec<Vec<T>>)).get_unchecked_mut(col_idx);
+    let vec_ref: &mut Vec<Vec<T>> = &mut *(values_buf_ptr as *mut Vec<Vec<T>>);
+    let column = vec_ref.get_unchecked_mut(col_idx);
     let el_ptr = column.as_mut_ptr();
     *el_ptr.add(row_idx) = value;
 }
 
 // This just fills a pre-allocated mutable series vector, which may have a name column.
 // Nothing is returned and the actual DataFrame is constructed above.
-pub(super) fn numeric_transpose<T>(
-    cols: &[Series],
+pub(super) fn numeric_transpose<T: PolarsNumericType>(
+    cols: &[Column],
     names_out: &[PlSmallStr],
-    cols_t: &mut Vec<Series>,
-) where
-    T: PolarsNumericType,
-    //S: AsRef<str>,
-    ChunkedArray<T>: IntoSeries,
-{
+    cols_t: &mut Vec<Column>,
+) {
     let new_width = cols[0].len();
     let new_height = cols.len();
 
@@ -211,43 +190,47 @@ pub(super) fn numeric_transpose<T>(
     let validity_buf_ptr = &mut validity_buf as *mut Vec<Vec<bool>> as usize;
 
     POOL.install(|| {
-        cols.iter().enumerate().for_each(|(row_idx, s)| {
-            let s = s.cast(&T::get_dtype()).unwrap();
-            let ca = s.unpack::<T>().unwrap();
+        cols.iter()
+            .map(Column::as_materialized_series)
+            .enumerate()
+            .for_each(|(row_idx, s)| {
+                let s = s.cast(&T::get_static_dtype()).unwrap();
+                let ca = s.unpack::<T>().unwrap();
 
-            // SAFETY:
-            // we access in parallel, but every access is unique, so we don't break aliasing rules
-            // we also ensured we allocated enough memory, so we never reallocate and thus
-            // the pointers remain valid.
-            if has_nulls {
-                for (col_idx, opt_v) in ca.iter().enumerate() {
-                    match opt_v {
-                        None => unsafe {
-                            let column = (*(validity_buf_ptr as *mut Vec<Vec<bool>>))
-                                .get_unchecked_mut(col_idx);
-                            let el_ptr = column.as_mut_ptr();
-                            *el_ptr.add(row_idx) = false;
-                            // we must initialize this memory otherwise downstream code
-                            // might access uninitialized memory when the masked out values
-                            // are changed.
-                            add_value(values_buf_ptr, col_idx, row_idx, T::Native::default());
-                        },
-                        Some(v) => unsafe {
-                            add_value(values_buf_ptr, col_idx, row_idx, v);
-                        },
+                // SAFETY:
+                // we access in parallel, but every access is unique, so we don't break aliasing rules
+                // we also ensured we allocated enough memory, so we never reallocate and thus
+                // the pointers remain valid.
+                if has_nulls {
+                    for (col_idx, opt_v) in ca.iter().enumerate() {
+                        match opt_v {
+                            None => unsafe {
+                                let validity_vec: &mut Vec<Vec<bool>> =
+                                    &mut *(validity_buf_ptr as *mut Vec<Vec<bool>>);
+                                let column = validity_vec.get_unchecked_mut(col_idx);
+                                let el_ptr = column.as_mut_ptr();
+                                *el_ptr.add(row_idx) = false;
+                                // we must initialize this memory otherwise downstream code
+                                // might access uninitialized memory when the masked out values
+                                // are changed.
+                                add_value(values_buf_ptr, col_idx, row_idx, T::Native::default());
+                            },
+                            Some(v) => unsafe {
+                                add_value(values_buf_ptr, col_idx, row_idx, v);
+                            },
+                        }
+                    }
+                } else {
+                    for (col_idx, v) in ca.into_no_null_iter().enumerate() {
+                        unsafe {
+                            let column: &mut Vec<Vec<T::Native>> =
+                                &mut *(values_buf_ptr as *mut Vec<Vec<T::Native>>);
+                            let el_ptr = column.get_unchecked_mut(col_idx).as_mut_ptr();
+                            *el_ptr.add(row_idx) = v;
+                        }
                     }
                 }
-            } else {
-                for (col_idx, v) in ca.into_no_null_iter().enumerate() {
-                    unsafe {
-                        let column = (*(values_buf_ptr as *mut Vec<Vec<T::Native>>))
-                            .get_unchecked_mut(col_idx);
-                        let el_ptr = column.as_mut_ptr();
-                        *el_ptr.add(row_idx) = v;
-                    }
-                }
-            }
-        })
+            })
     });
 
     let par_iter = values_buf
@@ -273,11 +256,11 @@ pub(super) fn numeric_transpose<T>(
             };
 
             let arr = PrimitiveArray::<T::Native>::new(
-                T::get_dtype().to_arrow(CompatLevel::newest()),
+                T::get_static_dtype().to_arrow(CompatLevel::newest()),
                 values.into(),
                 validity,
             );
-            ChunkedArray::with_chunk(name.clone(), arr).into_series()
+            ChunkedArray::<T>::with_chunk(name.clone(), arr).into_column()
         });
     POOL.install(|| cols_t.par_extend(par_iter));
 }

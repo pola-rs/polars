@@ -18,7 +18,6 @@ extern crate core;
 #[macro_use]
 pub mod array;
 pub mod bitmap;
-pub mod buffer;
 #[cfg(feature = "io_ipc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_ipc")))]
 pub mod mmap;

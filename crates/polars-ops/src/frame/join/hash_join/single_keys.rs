@@ -1,4 +1,4 @@
-use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::nulls::IsNull;
 use polars_utils::sync::SyncPtr;
@@ -7,7 +7,7 @@ use polars_utils::unitvec;
 
 use super::*;
 
-// FIXME: we should compute the number of threads / partition size we'll use.
+// TODO: we should compute the number of threads / partition size we'll use.
 // let avail_threads = POOL.current_num_threads();
 // let n_threads = (num_keys / MIN_ELEMS_PER_THREAD).clamp(1, avail_threads);
 // Use a small element per thread threshold for debugging/testing purposes.
@@ -15,14 +15,14 @@ const MIN_ELEMS_PER_THREAD: usize = if cfg!(debug_assertions) { 1 } else { 128 }
 
 pub(crate) fn build_tables<T, I>(
     keys: Vec<I>,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> Vec<PlHashMap<<T as ToTotalOrd>::TotalOrdItem, IdxVec>>
 where
     T: TotalHash + TotalEq + ToTotalOrd,
     <T as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
     I: IntoIterator<Item = T> + Send + Sync + Clone,
 {
-    // FIXME: change interface to split the input here, instead of taking
+    // TODO: change interface to split the input here, instead of taking
     // pre-split input iterators.
     let n_partitions = keys.len();
     let n_threads = n_partitions;
@@ -38,7 +38,7 @@ where
         for it in keys {
             for k in it {
                 let k = k.to_total_ord();
-                if !k.is_null() || join_nulls {
+                if !k.is_null() || nulls_equal {
                     hm.entry(k).or_default().push(offset);
                 }
                 offset += 1;
@@ -80,15 +80,16 @@ where
         per_thread_partition_offsets[n_threads * n_partitions] = num_keys;
         partition_offsets[n_partitions] = num_keys;
 
-        // FIXME: we wouldn't need this if we changed our interface to split the
+        // TODO: we wouldn't need this if we changed our interface to split the
         // input in this function, instead of taking a vec of iterators.
         let mut per_thread_input_offsets = vec![0; n_partitions];
         cum_offset = 0;
         for t in 0..n_threads {
             per_thread_input_offsets[t] = cum_offset;
-            for p in 0..n_partitions {
-                cum_offset += per_thread_partition_sizes[t][p];
-            }
+            cum_offset += per_thread_partition_sizes[t]
+                .iter()
+                .take(n_partitions)
+                .sum::<usize>();
         }
 
         // Scatter values into partitions.
@@ -144,7 +145,7 @@ where
 
                         let key = *scatter_keys.get_unchecked(i);
 
-                        if !key.is_null() || join_nulls {
+                        if !key.is_null() || nulls_equal {
                             let idx = *scatter_idxs.get_unchecked(i);
                             match hm.entry(key) {
                                 Entry::Occupied(mut o) => {

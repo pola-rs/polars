@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pytest
@@ -25,11 +26,9 @@ from polars._utils.various import (
 )
 
 if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo
+    from collections.abc import Sequence
 
     from polars._typing import TimeUnit
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @pytest.mark.parametrize(
@@ -81,7 +80,7 @@ def test_date_to_int(d: date, expected: int) -> None:
         (time(12, 0, tzinfo=None), 43_200_000_000_000),
         (time(12, 0, tzinfo=ZoneInfo("UTC")), 43_200_000_000_000),
         (time(12, 0, tzinfo=ZoneInfo("Asia/Shanghai")), 43_200_000_000_000),
-        (time(12, 0, tzinfo=ZoneInfo("US/Central")), 43_200_000_000_000),
+        (time(12, 0, tzinfo=ZoneInfo("America/Chicago")), 43_200_000_000_000),
     ],
 )
 def test_time_to_int(t: time, expected: int) -> None:
@@ -89,7 +88,8 @@ def test_time_to_int(t: time, expected: int) -> None:
 
 
 @pytest.mark.parametrize(
-    "tzinfo", [None, ZoneInfo("UTC"), ZoneInfo("Asia/Shanghai"), ZoneInfo("US/Central")]
+    "tzinfo",
+    [None, ZoneInfo("UTC"), ZoneInfo("Asia/Shanghai"), ZoneInfo("America/Chicago")],
 )
 def test_time_to_int_with_time_zone(tzinfo: Any) -> None:
     t = time(12, 0, tzinfo=tzinfo)
@@ -130,7 +130,7 @@ def test_datetime_to_int(dt: datetime, time_unit: TimeUnit, expected: int) -> No
             946_699_200_000_000,
         ),
         (
-            datetime(2000, 1, 1, 12, 0, tzinfo=ZoneInfo("US/Central")),
+            datetime(2000, 1, 1, 12, 0, tzinfo=ZoneInfo("America/Chicago")),
             946_749_600_000_000,
         ),
     ],
@@ -169,6 +169,12 @@ def test_estimated_size() -> None:
 
     with pytest.raises(ValueError):
         s.estimated_size("milkshake")  # type: ignore[arg-type]
+
+
+def test_estimated_size_sliced_list_25068() -> None:
+    df = pl.select(pl.int_range(10000).cast(pl.List(pl.Int64)))
+
+    assert df.slice(5000).estimated_size() / df.estimated_size() <= 0.5
 
 
 @pytest.mark.parametrize(

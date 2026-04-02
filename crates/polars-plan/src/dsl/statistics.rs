@@ -29,6 +29,16 @@ impl Expr {
         .into()
     }
 
+    /// Get minimum value, ordered by another expression.
+    pub fn min_by(self, by: Self) -> Self {
+        Expr::n_ary(FunctionExpr::MinBy, vec![self, by])
+    }
+
+    /// Get maximum value, ordered by another expression.
+    pub fn max_by(self, by: Self) -> Self {
+        Expr::n_ary(FunctionExpr::MaxBy, vec![self, by])
+    }
+
     /// Reduce groups to minimal value.
     pub fn nan_min(self) -> Self {
         AggExpr::Min {
@@ -72,21 +82,15 @@ impl Expr {
         include_breakpoint: bool,
     ) -> Self {
         let mut input = vec![self];
-        if let Some(bins) = bins {
-            input.push(bins)
-        }
+        input.extend(bins);
 
-        Expr::Function {
-            input,
-            function: FunctionExpr::Hist {
+        Expr::n_ary(
+            FunctionExpr::Hist {
                 bin_count,
                 include_category,
                 include_breakpoint,
             },
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::GroupWise,
-                ..Default::default()
-            },
-        }
+            input,
+        )
     }
 }

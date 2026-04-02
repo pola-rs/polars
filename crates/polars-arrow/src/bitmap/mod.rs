@@ -19,3 +19,9 @@ pub use assign_ops::*;
 pub mod utils;
 
 pub mod bitmask;
+
+mod builder;
+pub use builder::*;
+
+#[cfg(feature = "proptest")]
+pub mod proptest;

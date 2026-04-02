@@ -1,15 +1,15 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
-use polars_error::{polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_err};
+use polars_utils::bool::UnsafeBool;
 
 use super::super::super::IpcField;
 use super::super::deserialize::{read, skip};
 use super::super::read_basic::*;
 use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
 use crate::array::UnionArray;
-use crate::datatypes::ArrowDataType;
-use crate::datatypes::UnionMode::Dense;
+use crate::datatypes::{ArrowDataType, UnionMode};
 use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
 
 #[allow(clippy::too_many_arguments)]
@@ -27,6 +27,7 @@ pub fn read_union<R: Read + Seek>(
     limit: Option<usize>,
     version: Version,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<UnionArray> {
     let field_node = try_get_field_node(field_nodes, &dtype)?;
 
@@ -48,8 +49,8 @@ pub fn read_union<R: Read + Seek>(
         scratch,
     )?;
 
-    let offsets = if let ArrowDataType::Union(_, _, mode) = dtype {
-        if !mode.is_sparse() {
+    let offsets = if let ArrowDataType::Union(u) = &dtype {
+        if !u.mode.is_sparse() {
             Some(read_buffer(
                 buffers,
                 length,
@@ -86,6 +87,7 @@ pub fn read_union<R: Read + Seek>(
                 None,
                 version,
                 scratch,
+                checked,
             )
         })
         .collect::<PolarsResult<Vec<_>>>()?;
@@ -108,7 +110,8 @@ pub fn skip_union(
     let _ = buffers
         .pop_front()
         .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
-    if let ArrowDataType::Union(_, _, Dense) = dtype {
+    if let ArrowDataType::Union(u) = dtype {
+        assert!(u.mode == UnionMode::Dense);
         let _ = buffers
             .pop_front()
             .ok_or_else(|| polars_err!(oos = "IPC: missing offsets buffer."))?;

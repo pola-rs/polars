@@ -2,7 +2,7 @@ use super::*;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_group_by(
-    opt: &PredicatePushDown,
+    opt: &mut PredicatePushDown,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     input: Node,
@@ -10,7 +10,7 @@ pub(super) fn process_group_by(
     aggs: Vec<ExprIR>,
     schema: SchemaRef,
     maintain_order: bool,
-    apply: Option<Arc<dyn DataFrameUdf>>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
     options: Arc<GroupbyOptions>,
     acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
 ) -> PolarsResult<IR> {
@@ -36,24 +36,33 @@ pub(super) fn process_group_by(
         return opt.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
     }
 
-    // If the predicate only resolves to the keys we can push it down.
+    // If the predicate only resolves to the keys we can push it down, on the condition
+    // that the key values are not modified from their original values.
     // When it filters the aggregations, the predicate should be done after aggregation.
+    //
+    // For aliased column keys (e.g. col("A").alias("key")), we can still push down by
+    // rewriting the predicate to reference the original column name.
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
-    let key_schema = aexprs_to_schema(
-        &keys,
-        lp_arena.get(input).schema(lp_arena).as_ref(),
-        Context::Default,
-        expr_arena,
-    );
+    let input_schema = lp_arena.get(input).schema(lp_arena);
+    let mut alias_rename_map: PlHashMap<PlSmallStr, PlSmallStr> = PlHashMap::new();
+    let mut key_schema = Schema::with_capacity(keys.len());
+    for key in &keys {
+        if let AExpr::Column(c) = expr_arena.get(key.node()) {
+            let output = key.output_name();
+            if let Some(dtype) = input_schema.get(c) {
+                key_schema.insert(output.clone(), dtype.clone());
+                if c != output {
+                    alias_rename_map.insert(output.clone(), c.clone());
+                }
+            }
+        }
+    }
 
     let mut new_acc_predicates = PlHashMap::with_capacity(acc_predicates.len());
 
     for (pred_name, predicate) in acc_predicates {
         // Counts change due to groupby's
-        // TODO! handle aliases, so that the predicate that is pushed down refers to the column before alias.
-        let mut push_down = !has_aexpr(predicate.node(), expr_arena, |ae| {
-            matches!(ae, AExpr::Len | AExpr::Alias(_, _))
-        });
+        let mut push_down = !has_aexpr(predicate.node(), expr_arena, |ae| matches!(ae, AExpr::Len));
 
         for name in aexpr_to_leaf_names_iter(predicate.node(), expr_arena) {
             push_down &= key_schema.contains(name.as_ref());
@@ -66,6 +75,12 @@ pub(super) fn process_group_by(
             local_predicates.push(predicate)
         } else {
             new_acc_predicates.insert(pred_name.clone(), predicate.clone());
+        }
+    }
+
+    if !alias_rename_map.is_empty() {
+        for (_, predicate) in new_acc_predicates.iter_mut() {
+            map_column_references(predicate, expr_arena, &alias_rename_map);
         }
     }
 

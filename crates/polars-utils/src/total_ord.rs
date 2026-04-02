@@ -1,10 +1,25 @@
 use std::cmp::Ordering;
-use std::hash::{Hash, Hasher};
+use std::hash::{BuildHasher, Hash, Hasher};
 
 use bytemuck::TransparentWrapper;
+use num_traits::Zero;
 
+use crate::float16::pf16;
 use crate::hashing::{BytesHash, DirtyHash};
 use crate::nulls::IsNull;
+
+/// Converts an pf16 into a canonical form, where -0 == 0 and all NaNs map to
+/// the same value.
+#[inline]
+pub fn canonical_f16(x: pf16) -> pf16 {
+    // -0.0 + 0.0 becomes 0.0.
+    let convert_zero = x + pf16::zero(); // zero out the sign bit if the f16 is zero.
+    if convert_zero.is_nan() {
+        pf16(half::f16::from_bits(0x7e00)) // Canonical quiet NaN.
+    } else {
+        convert_zero
+    }
+}
 
 /// Converts an f32 into a canonical form, where -0 == 0 and all NaNs map to
 /// the same value.
@@ -87,6 +102,32 @@ pub trait TotalHash {
     }
 }
 
+pub trait BuildHasherTotalExt: BuildHasher {
+    fn tot_hash_one<T>(&self, x: T) -> u64
+    where
+        T: TotalHash,
+        Self: Sized,
+        <Self as BuildHasher>::Hasher: Hasher,
+    {
+        let mut hasher = self.build_hasher();
+        x.tot_hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
+impl<T: BuildHasher> BuildHasherTotalExt for T {}
+
+#[derive(Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(transparent)
+)]
+#[cfg_attr(
+    feature = "dsl-schema",
+    derive(schemars::JsonSchema),
+    schemars(transparent)
+)]
 #[repr(transparent)]
 pub struct TotalOrdWrap<T>(pub T);
 unsafe impl<T> TransparentWrapper<T> for TotalOrdWrap<T> {}
@@ -171,6 +212,13 @@ impl<T: IsNull> IsNull for TotalOrdWrap<T> {
     }
 }
 
+impl DirtyHash for pf16 {
+    #[inline(always)]
+    fn dirty_hash(&self) -> u64 {
+        canonical_f16(*self).0.to_bits().dirty_hash()
+    }
+}
+
 impl DirtyHash for f32 {
     #[inline(always)]
     fn dirty_hash(&self) -> u64 {
@@ -247,6 +295,7 @@ macro_rules! impl_trivial_total {
 
 // We can't do a blanket impl because Rust complains f32 might implement
 // Ord / Eq someday.
+impl_trivial_total!(());
 impl_trivial_total!(bool);
 impl_trivial_total!(u8);
 impl_trivial_total!(u16);
@@ -318,8 +367,19 @@ macro_rules! impl_float_eq_ord {
     };
 }
 
+impl_float_eq_ord!(pf16);
 impl_float_eq_ord!(f32);
 impl_float_eq_ord!(f64);
+
+impl TotalHash for pf16 {
+    #[inline(always)]
+    fn tot_hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        canonical_f16(*self).to_bits().hash(state)
+    }
+}
 
 impl TotalHash for f32 {
     #[inline(always)]
@@ -453,7 +513,7 @@ impl<T: TotalOrd, U: TotalOrd> TotalOrd for (T, U) {
     }
 }
 
-impl<'a> TotalHash for BytesHash<'a> {
+impl TotalHash for BytesHash<'_> {
     #[inline(always)]
     fn tot_hash<H>(&self, state: &mut H)
     where
@@ -463,7 +523,7 @@ impl<'a> TotalHash for BytesHash<'a> {
     }
 }
 
-impl<'a> TotalEq for BytesHash<'a> {
+impl TotalEq for BytesHash<'_> {
     #[inline(always)]
     fn tot_eq(&self, other: &Self) -> bool {
         self == other
@@ -472,7 +532,7 @@ impl<'a> TotalEq for BytesHash<'a> {
 
 /// This elides creating a [`TotalOrdWrap`] for types that don't need it.
 pub trait ToTotalOrd {
-    type TotalOrdItem;
+    type TotalOrdItem: Hash + Eq;
     type SourceItem;
 
     fn to_total_ord(&self) -> Self::TotalOrdItem;
@@ -556,6 +616,7 @@ macro_rules! impl_to_total_ord_wrapped {
     };
 }
 
+impl_to_total_ord_wrapped!(pf16);
 impl_to_total_ord_wrapped!(f32);
 impl_to_total_ord_wrapped!(f64);
 
@@ -564,7 +625,7 @@ impl_to_total_ord_wrapped!(f64);
 /// `TotalOrdWrap<Option<T>>` implements `Eq + Hash`, iff:
 /// `Option<T>` implements `TotalEq + TotalHash`, iff:
 /// `T` implements `TotalEq + TotalHash`
-impl<T: Copy> ToTotalOrd for Option<T> {
+impl<T: Copy + TotalEq + TotalHash> ToTotalOrd for Option<T> {
     type TotalOrdItem = TotalOrdWrap<Option<T>>;
     type SourceItem = Option<T>;
 

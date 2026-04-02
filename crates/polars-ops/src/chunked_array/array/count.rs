@@ -1,6 +1,6 @@
 use arrow::array::{Array, BooleanArray};
-use arrow::bitmap::utils::count_zeros;
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::utils::count_zeros;
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::arity::unary_mut_with_options;
 
@@ -11,7 +11,7 @@ pub fn array_count_matches(ca: &ArrayChunked, value: AnyValue) -> PolarsResult<S
     let value = Series::new(PlSmallStr::EMPTY, [value]);
 
     let ca = ca.apply_to_inner(&|s| {
-        ChunkCompare::<&Series>::equal_missing(&s, &value).map(|ca| ca.into_series())
+        ChunkCompareEq::<&Series>::equal_missing(&s, &value).map(|ca| ca.into_series())
     })?;
     let out = count_boolean_bits(&ca);
     Ok(out.into_series())

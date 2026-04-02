@@ -1,6 +1,5 @@
-use std::sync::Arc;
-
 use polars_error::{PolarsError, PolarsResult};
+use polars_utils::pl_path::PlRefPath;
 
 use super::metadata::FileVersion;
 use super::utils::last_modified_u64;
@@ -8,7 +7,7 @@ use crate::cloud::PolarsObjectStore;
 use crate::pl_async;
 
 pub trait FileFetcher: Send + Sync {
-    fn get_uri(&self) -> &Arc<str>;
+    fn get_uri(&self) -> &PlRefPath;
     fn fetch_metadata(&self) -> PolarsResult<RemoteMetadata>;
     /// Fetches the object to a `local_path`.
     fn fetch(&self, local_path: &std::path::Path) -> PolarsResult<()>;
@@ -23,25 +22,26 @@ pub struct RemoteMetadata {
 /// A struct that fetches data from local disk and stores it into the `cache`.
 /// Mostly used for debugging, it only ever gets called if `POLARS_FORCE_ASYNC` is set.
 pub(super) struct LocalFileFetcher {
-    uri: Arc<str>,
-    path: Box<std::path::Path>,
+    path: PlRefPath,
 }
 
 impl LocalFileFetcher {
-    pub(super) fn from_uri(uri: Arc<str>) -> Self {
-        let path = std::path::PathBuf::from(uri.as_ref()).into_boxed_path();
+    pub(super) fn from_uri(uri: PlRefPath) -> Self {
         debug_assert_eq!(
-            path,
-            std::fs::canonicalize(&path).unwrap().into_boxed_path()
+            std::fs::canonicalize(uri.as_str())
+                .ok()
+                .and_then(|x| PlRefPath::try_from_pathbuf(x).ok())
+                .as_ref(),
+            Some(&uri),
         );
 
-        Self { uri, path }
+        Self { path: uri }
     }
 }
 
 impl FileFetcher for LocalFileFetcher {
-    fn get_uri(&self) -> &Arc<str> {
-        &self.uri
+    fn get_uri(&self) -> &PlRefPath {
+        &self.path
     }
 
     fn fetches_as_symlink(&self) -> bool {
@@ -78,13 +78,13 @@ impl FileFetcher for LocalFileFetcher {
 }
 
 pub(super) struct CloudFileFetcher {
-    pub(super) uri: Arc<str>,
+    pub(super) uri: PlRefPath,
     pub(super) cloud_path: object_store::path::Path,
     pub(super) object_store: PolarsObjectStore,
 }
 
 impl FileFetcher for CloudFileFetcher {
-    fn get_uri(&self) -> &Arc<str> {
+    fn get_uri(&self) -> &PlRefPath {
         &self.uri
     }
 
@@ -93,11 +93,11 @@ impl FileFetcher for CloudFileFetcher {
     }
 
     fn fetch_metadata(&self) -> PolarsResult<RemoteMetadata> {
-        let metadata = pl_async::get_runtime()
-            .block_on_potential_spawn(self.object_store.head(&self.cloud_path))?;
+        let metadata =
+            pl_async::get_runtime().block_in_place_on(self.object_store.head(&self.cloud_path))?;
 
         Ok(RemoteMetadata {
-            size: metadata.size as u64,
+            size: metadata.size,
             version: metadata
                 .e_tag
                 .map(|x| FileVersion::ETag(blake3::hash(x.as_bytes()).to_hex()[..32].to_string()))
@@ -108,7 +108,7 @@ impl FileFetcher for CloudFileFetcher {
     }
 
     fn fetch(&self, local_path: &std::path::Path) -> PolarsResult<()> {
-        pl_async::get_runtime().block_on_potential_spawn(async {
+        pl_async::get_runtime().block_in_place_on(async {
             let file = &mut tokio::fs::OpenOptions::new()
                 .write(true)
                 .truncate(true)
@@ -116,12 +116,7 @@ impl FileFetcher for CloudFileFetcher {
                 .await
                 .map_err(PolarsError::from)?;
 
-            self.object_store.download(&self.cloud_path, file).await?;
-            // Dropping is delayed for tokio async files so we need to explicitly
-            // flush here (https://github.com/tokio-rs/tokio/issues/2307#issuecomment-596336451).
-            file.sync_all().await.map_err(PolarsError::from)?;
-            PolarsResult::Ok(())
-        })?;
-        Ok(())
+            self.object_store.download(&self.cloud_path, file).await
+        })
     }
 }

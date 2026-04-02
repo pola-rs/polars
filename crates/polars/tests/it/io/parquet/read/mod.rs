@@ -15,16 +15,16 @@ mod utils;
 use std::fs::File;
 
 use dictionary::DecodedDictPage;
-use polars_parquet::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use polars_buffer::Buffer;
+use polars_parquet::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
 use polars_parquet::parquet::metadata::ColumnChunkMetadata;
 use polars_parquet::parquet::page::DataPage;
-use polars_parquet::parquet::read::{get_column_iterator, read_metadata, BasicDecompressor};
-use polars_parquet::parquet::schema::types::{GroupConvertedType, ParquetType};
+use polars_parquet::parquet::read::{BasicDecompressor, get_column_iterator, read_metadata};
 use polars_parquet::parquet::schema::Repetition;
+use polars_parquet::parquet::schema::types::{GroupConvertedType, ParquetType};
 use polars_parquet::parquet::types::int96_to_i64_ns;
 use polars_parquet::read::PageReader;
-use polars_utils::mmap::MemReader;
 
 use super::*;
 
@@ -32,9 +32,40 @@ pub fn hybrid_rle_iter(d: HybridRleDecoder) -> ParquetResult<std::vec::IntoIter<
     Ok(d.collect()?.into_iter())
 }
 
+pub fn hybrid_rle_fn_collect<T: Clone>(
+    d: HybridRleDecoder,
+    mut f: impl FnMut(u32) -> ParquetResult<T>,
+) -> ParquetResult<Vec<T>> {
+    let mut target = Vec::with_capacity(d.len());
+
+    for chunk in d.into_chunk_iter() {
+        match chunk? {
+            HybridRleChunk::Rle(value, size) => {
+                target.resize(target.len() + size, f(value)?);
+            },
+            HybridRleChunk::Bitpacked(mut decoder) => {
+                let mut chunked = decoder.chunked();
+                for dchunk in chunked.by_ref() {
+                    for v in dchunk {
+                        target.push(f(v)?);
+                    }
+                }
+
+                if let Some((dchunk, l)) = chunked.remainder() {
+                    for &v in &dchunk[..l] {
+                        target.push(f(v)?);
+                    }
+                }
+            },
+        }
+    }
+
+    Ok(target)
+}
+
 pub fn get_path() -> PathBuf {
     let dir = env!("CARGO_MANIFEST_DIR");
-    PathBuf::from(dir).join("../../docs/data")
+    PathBuf::from(dir).join("../../docs/assets/data")
 }
 
 /// Reads a page into an [`Array`].
@@ -183,7 +214,7 @@ where
 }
 
 pub fn read_column(
-    mut reader: MemReader,
+    mut reader: Cursor<Buffer<u8>>,
     row_group: usize,
     field_name: &str,
 ) -> ParquetResult<(Array, Option<Statistics>)> {
@@ -205,6 +236,7 @@ pub fn read_column(
 
     let mut statistics = metadata.row_groups[row_group]
         .columns_under_root_iter(field.name())
+        .unwrap()
         .map(|column_meta| column_meta.statistics().transpose())
         .collect::<ParquetResult<Vec<_>>>()?;
 
@@ -214,8 +246,8 @@ pub fn read_column(
 }
 
 fn get_column(path: &str, column: &str) -> ParquetResult<(Array, Option<Statistics>)> {
-    let file = File::open(path).unwrap();
-    let memreader = MemReader::from_reader(file).unwrap();
+    let file = std::fs::read(path).unwrap();
+    let memreader = Cursor::new(Buffer::from_vec(file));
     read_column(memreader, 0, column)
 }
 

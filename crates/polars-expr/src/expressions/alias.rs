@@ -1,7 +1,7 @@
 use polars_core::prelude::*;
 
 use super::*;
-use crate::expressions::{AggregationContext, PartitionedAggregation, PhysicalExpr};
+use crate::expressions::{AggregationContext, PhysicalExpr};
 
 pub struct AliasExpr {
     pub(crate) physical_expr: Arc<dyn PhysicalExpr>,
@@ -18,7 +18,7 @@ impl AliasExpr {
         }
     }
 
-    fn finish(&self, input: Series) -> Series {
+    fn finish(&self, input: Column) -> Column {
         input.with_name(self.name.clone())
     }
 }
@@ -28,26 +28,26 @@ impl PhysicalExpr for AliasExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series = self.physical_expr.evaluate(df, state)?;
         Ok(self.finish(series))
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
-        let s = ac.take();
-        let s = self.finish(s);
+        let c = ac.take();
+        let c = self.finish(c);
 
         if ac.is_literal() {
-            ac.with_literal(s);
+            ac.with_literal(c);
         } else {
-            ac.with_series(s, ac.is_aggregated(), Some(&self.expr))?;
+            ac.with_values(c, ac.is_aggregated(), Some(&self.expr))?;
         }
         Ok(ac)
     }
@@ -59,31 +59,11 @@ impl PhysicalExpr for AliasExpr {
         ))
     }
 
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        Some(self)
-    }
-}
-
-impl PartitionedAggregation for AliasExpr {
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> PolarsResult<Series> {
-        let agg = self.physical_expr.as_partitioned_aggregator().unwrap();
-        let s = agg.evaluate_partitioned(df, groups, state)?;
-        Ok(s.with_name(self.name.clone()))
+    fn is_literal(&self) -> bool {
+        self.physical_expr.is_literal()
     }
 
-    fn finalize(
-        &self,
-        partitioned: Series,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> PolarsResult<Series> {
-        let agg = self.physical_expr.as_partitioned_aggregator().unwrap();
-        let s = agg.finalize(partitioned, groups, state)?;
-        Ok(s.with_name(self.name.clone()))
+    fn is_scalar(&self) -> bool {
+        self.physical_expr.is_scalar()
     }
 }

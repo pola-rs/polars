@@ -1,11 +1,11 @@
-use parquet_format_safe::ConvertedType;
-#[cfg(feature = "serde_types")]
+use polars_parquet_format::ConvertedType;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::parquet::error::ParquetError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum PrimitiveConvertedType {
     Utf8,
     /// an enum is converted into a binary field
@@ -87,7 +87,7 @@ pub enum PrimitiveConvertedType {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum GroupConvertedType {
     /// a map is converted as an optional field containing a repeated key/value pair
     Map,
@@ -132,9 +132,8 @@ impl TryFrom<(ConvertedType, Option<(i32, i32)>)> for PrimitiveConvertedType {
             ConvertedType::INTERVAL => Interval,
             _ => {
                 return Err(ParquetError::oos(format!(
-                    "Converted type \"{:?}\" cannot be applied to a primitive type",
-                    ty
-                )))
+                    "Converted type \"{ty:?}\" cannot be applied to a primitive type"
+                )));
             },
         })
     }

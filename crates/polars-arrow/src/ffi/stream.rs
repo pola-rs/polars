@@ -1,11 +1,11 @@
 use std::ffi::{CStr, CString};
 use std::ops::DerefMut;
 
-use polars_error::{polars_bail, polars_err, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err};
 
 use super::{
-    export_array_to_c, export_field_to_c, import_array_from_c, import_field_from_c, ArrowArray,
-    ArrowArrayStream, ArrowSchema,
+    ArrowArray, ArrowArrayStream, ArrowSchema, export_array_to_c, export_field_to_c,
+    import_array_from_c, import_field_from_c,
 };
 use crate::array::Array;
 use crate::datatypes::Field;

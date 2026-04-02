@@ -8,14 +8,14 @@ pub struct ProjectionSimple {
 impl ProjectionSimple {
     fn execute_impl(&mut self, df: DataFrame, columns: &[PlSmallStr]) -> PolarsResult<DataFrame> {
         // No duplicate check as that an invariant of this node.
-        df._select_impl_unchecked(columns.as_ref())
+        unsafe { df.select_unchecked(columns) }
     }
 }
 
 impl Executor for ProjectionSimple {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         state.should_stop()?;
-        let columns = self.columns.get_names_owned();
+        let columns = self.columns.iter_names_cloned().collect::<Vec<_>>();
 
         let profile_name = if state.has_node_timer() {
             let name = comma_delimited("simple-projection".to_string(), columns.as_slice());

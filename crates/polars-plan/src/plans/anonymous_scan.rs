@@ -3,7 +3,6 @@ use std::fmt::{Debug, Formatter};
 
 use polars_core::prelude::*;
 
-pub use super::options::AnonymousScanOptions;
 use crate::dsl::Expr;
 
 pub struct AnonymousScanArgs {
@@ -18,12 +17,6 @@ pub trait AnonymousScan: Send + Sync {
     fn as_any(&self) -> &dyn Any;
     /// Creates a DataFrame from the supplied function & scan options.
     fn scan(&self, scan_opts: AnonymousScanArgs) -> PolarsResult<DataFrame>;
-
-    /// Produce the next batch Polars can consume. Implement this method to get proper
-    /// streaming support.
-    fn next_batch(&self, scan_opts: AnonymousScanArgs) -> PolarsResult<Option<DataFrame>> {
-        self.scan(scan_opts).map(Some)
-    }
 
     /// function to supply the schema.
     /// Allows for an optional infer schema argument for data sources with dynamic schemas
@@ -40,12 +33,6 @@ pub trait AnonymousScan: Send + Sync {
     ///
     /// Defaults to `false`
     fn allows_projection_pushdown(&self) -> bool {
-        false
-    }
-    /// Specify if the scan provider should allow slice pushdowns.
-    ///
-    /// Defaults to `false`
-    fn allows_slice_pushdown(&self) -> bool {
         false
     }
 }

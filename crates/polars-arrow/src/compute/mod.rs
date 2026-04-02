@@ -19,21 +19,9 @@ pub mod arity_assign;
 #[cfg(feature = "compute_bitwise")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_bitwise")))]
 pub mod bitwise;
-#[cfg(feature = "compute_boolean")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compute_boolean")))]
-pub mod boolean;
-#[cfg(feature = "compute_boolean_kleene")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compute_boolean_kleene")))]
-pub mod boolean_kleene;
-#[cfg(feature = "compute_cast")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compute_cast")))]
-pub mod cast;
 pub mod concatenate;
 #[cfg(feature = "dtype-decimal")]
 pub mod decimal;
-#[cfg(feature = "compute_take")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compute_take")))]
-pub mod take;
 #[cfg(feature = "compute_temporal")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_temporal")))]
 pub mod temporal;

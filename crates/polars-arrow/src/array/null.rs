@@ -1,8 +1,10 @@
 use std::any::Any;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
+use polars_utils::IdxSize;
 
 use super::Splitable;
+use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
 use crate::array::{Array, FromFfi, MutableArray, ToFfi};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::{ArrowDataType, PhysicalType};
@@ -82,7 +84,7 @@ impl NullArray {
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.length
     }
 }
@@ -214,23 +216,86 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for NullArray {
     }
 }
 
-#[cfg(feature = "arrow_rs")]
-mod arrow {
-    use arrow_data::{ArrayData, ArrayDataBuilder};
+pub struct NullArrayBuilder {
+    dtype: ArrowDataType,
+    length: usize,
+}
 
-    use super::*;
-    impl NullArray {
-        /// Convert this array into [`arrow_data::ArrayData`]
-        pub fn to_data(&self) -> ArrayData {
-            let builder = ArrayDataBuilder::new(arrow_schema::DataType::Null).len(self.len());
+impl NullArrayBuilder {
+    pub fn new(dtype: ArrowDataType) -> Self {
+        Self { dtype, length: 0 }
+    }
+}
 
-            // SAFETY: safe by construction
-            unsafe { builder.build_unchecked() }
-        }
+impl StaticArrayBuilder for NullArrayBuilder {
+    type Array = NullArray;
 
-        /// Create this array from [`ArrayData`]
-        pub fn from_data(data: &ArrayData) -> Self {
-            Self::new(ArrowDataType::Null, data.len())
-        }
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
+    }
+
+    fn reserve(&mut self, _additional: usize) {}
+
+    fn freeze(self) -> NullArray {
+        NullArray::new(self.dtype, self.length)
+    }
+
+    fn freeze_reset(&mut self) -> Self::Array {
+        let out = NullArray::new(self.dtype.clone(), self.length);
+        self.length = 0;
+        out
+    }
+
+    fn len(&self) -> usize {
+        self.length
+    }
+
+    fn extend_nulls(&mut self, length: usize) {
+        self.length += length;
+    }
+
+    fn subslice_extend(
+        &mut self,
+        _other: &NullArray,
+        _start: usize,
+        length: usize,
+        _share: ShareStrategy,
+    ) {
+        self.length += length;
+    }
+
+    fn subslice_extend_repeated(
+        &mut self,
+        _other: &NullArray,
+        _start: usize,
+        length: usize,
+        repeats: usize,
+        _share: ShareStrategy,
+    ) {
+        self.length += length * repeats;
+    }
+
+    fn subslice_extend_each_repeated(
+        &mut self,
+        _other: &NullArray,
+        _start: usize,
+        length: usize,
+        repeats: usize,
+        _share: ShareStrategy,
+    ) {
+        self.length += length * repeats;
+    }
+
+    unsafe fn gather_extend(
+        &mut self,
+        _other: &NullArray,
+        idxs: &[IdxSize],
+        _share: ShareStrategy,
+    ) {
+        self.length += idxs.len();
+    }
+
+    fn opt_gather_extend(&mut self, _other: &NullArray, idxs: &[IdxSize], _share: ShareStrategy) {
+        self.length += idxs.len();
     }
 }

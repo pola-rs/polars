@@ -86,13 +86,14 @@ fn test_rolling_mean() {
     .into_series();
 
     // check err on wrong input
-    assert!(s
-        .rolling_mean(RollingOptionsFixedWindow {
+    assert!(
+        s.rolling_mean(RollingOptionsFixedWindow {
             window_size: 1,
             min_periods: 2,
             ..Default::default()
         })
-        .is_err());
+        .is_err()
+    );
 
     // validate that we divide by the proper window length. (same as pandas)
     let a = s
@@ -156,7 +157,7 @@ fn test_rolling_mean() {
     let out = out.f64().unwrap();
     assert_eq!(
         Vec::from(out),
-        &[None, Some(4.5), Some(7.0), Some(4.0), Some(9.0), Some(13.0),]
+        &[None, Some(4.5), Some(7.0), Some(4.0), Some(9.0), Some(13.0)]
     );
 }
 
@@ -177,7 +178,7 @@ fn test_rolling_map() {
 
     let out = ca
         .rolling_map(
-            &|s| s.sum_reduce().unwrap().into_series(s.name().clone()),
+            &|s| Ok(s.sum_reduce()?.into_series(s.name().clone())),
             RollingOptionsFixedWindow {
                 window_size: 3,
                 min_periods: 3,
@@ -190,7 +191,7 @@ fn test_rolling_map() {
 
     assert_eq!(
         Vec::from(out),
-        &[None, None, Some(3.0), None, None, None, None,]
+        &[None, None, Some(3.0), None, None, None, None]
     );
 }
 
@@ -234,7 +235,7 @@ fn test_rolling_var() {
     let out = out.i32().unwrap();
     assert_eq!(
         Vec::from(out),
-        &[None, None, Some(1), None, None, None, None,]
+        &[None, None, Some(1), None, None, None, None]
     );
 
     let s = Float64Chunked::from_slice("".into(), &[0.0, 2.0, 8.0, 3.0, 12.0, 1.0]).into_series();
@@ -247,7 +248,7 @@ fn test_rolling_var() {
 
     assert_eq!(
         Vec::from(out),
-        &[None, None, Some(17), Some(10), Some(20), Some(34),]
+        &[None, None, Some(17), Some(10), Some(20), Some(34)]
     );
 
     // check centered rolling window
@@ -276,7 +277,6 @@ fn test_rolling_var() {
     });
     assert!(
         test_res,
-        "{:?} is not approximately equal to {:?}",
-        out, exp_res
+        "{out:?} is not approximately equal to {exp_res:?}"
     );
 }

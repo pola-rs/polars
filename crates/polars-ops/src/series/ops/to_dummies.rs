@@ -13,20 +13,41 @@ type DummyType = i32;
 type DummyCa = Int32Chunked;
 
 pub trait ToDummies {
-    fn to_dummies(&self, separator: Option<&str>, drop_first: bool) -> PolarsResult<DataFrame>;
+    fn to_dummies(
+        &self,
+        separator: Option<&str>,
+        drop_first: bool,
+        drop_nulls: bool,
+    ) -> PolarsResult<DataFrame>;
 }
 
 impl ToDummies for Series {
-    fn to_dummies(&self, separator: Option<&str>, drop_first: bool) -> PolarsResult<DataFrame> {
+    fn to_dummies(
+        &self,
+        separator: Option<&str>,
+        drop_first: bool,
+        drop_nulls: bool,
+    ) -> PolarsResult<DataFrame> {
         let sep = separator.unwrap_or("_");
         let col_name = self.name();
-        let groups = self.group_tuples(true, drop_first)?;
 
-        // SAFETY: groups are in bounds
+        // We only need to maintain order if we need to drop the first non-null item.
+        let maintain_order = drop_first;
+        let groups = self.group_tuples(true, maintain_order)?;
+
+        // SAFETY: groups are in bounds.
         let columns = unsafe { self.agg_first(&groups) };
-        let columns = columns.iter().zip(groups.iter()).skip(drop_first as usize);
+        let columns = columns.iter().zip(groups.iter());
+        let mut seen_first = false;
         let columns = columns
-            .map(|(av, group)| {
+            .filter_map(|(av, group)| {
+                if av.is_null() && drop_nulls {
+                    return None;
+                } else if !seen_first && !av.is_null() && drop_first {
+                    // The position of the first non-null item could be either 0 or 1.
+                    seen_first = true;
+                    return None;
+                }
                 // strings are formatted with extra \" \" in polars, so we
                 // extract the string
                 let name = if let Some(s) = av.get_str() {
@@ -42,11 +63,11 @@ impl ToDummies for Series {
                         dummies_helper_slice(offset, len, self.len(), name)
                     },
                 };
-                ca.into_series()
+                Some(ca.into_column())
             })
-            .collect();
+            .collect::<Vec<_>>();
 
-        Ok(unsafe { DataFrame::new_no_checks(sort_columns(columns)) })
+        DataFrame::new_infer_height(sort_columns(columns))
     }
 }
 
@@ -77,7 +98,7 @@ fn dummies_helper_slice(
     ChunkedArray::from_vec(name, av)
 }
 
-fn sort_columns(mut columns: Vec<Series>) -> Vec<Series> {
+fn sort_columns(mut columns: Vec<Column>) -> Vec<Column> {
     columns.sort_by(|a, b| a.name().partial_cmp(b.name()).unwrap());
     columns
 }

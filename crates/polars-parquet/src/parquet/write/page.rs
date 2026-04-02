@@ -2,10 +2,10 @@ use std::io::Write;
 
 #[cfg(feature = "async")]
 use futures::{AsyncWrite, AsyncWriteExt};
-use parquet_format_safe::thrift::protocol::TCompactOutputProtocol;
+use polars_parquet_format::thrift::protocol::TCompactOutputProtocol;
 #[cfg(feature = "async")]
-use parquet_format_safe::thrift::protocol::TCompactOutputStreamProtocol;
-use parquet_format_safe::{DictionaryPageHeader, Encoding, PageType};
+use polars_parquet_format::thrift::protocol::TCompactOutputStreamProtocol;
+use polars_parquet_format::{DictionaryPageHeader, Encoding, PageType};
 
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -18,18 +18,20 @@ pub(crate) fn is_data_page(page: &PageWriteSpec) -> bool {
     page.header.type_ == PageType::DATA_PAGE || page.header.type_ == PageType::DATA_PAGE_V2
 }
 
+pub(crate) fn is_dict_page(page: &PageWriteSpec) -> bool {
+    page.header.type_ == PageType::DICTIONARY_PAGE
+}
+
 fn maybe_bytes(uncompressed: usize, compressed: usize) -> ParquetResult<(i32, i32)> {
     let uncompressed_page_size: i32 = uncompressed.try_into().map_err(|_| {
         ParquetError::oos(format!(
-            "A page can only contain i32::MAX uncompressed bytes. This one contains {}",
-            uncompressed
+            "A page can only contain i32::MAX uncompressed bytes. This one contains {uncompressed}"
         ))
     })?;
 
     let compressed_page_size: i32 = compressed.try_into().map_err(|_| {
         ParquetError::oos(format!(
-            "A page can only contain i32::MAX compressed bytes. This one contains {}",
-            compressed
+            "A page can only contain i32::MAX compressed bytes. This one contains {compressed}"
         ))
     })?;
 

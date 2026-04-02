@@ -22,7 +22,7 @@ def test_date_func() -> None:
         }
     )
     with pl.SQLContext(df=df, eager=True) as ctx:
-        result = ctx.execute("SELECT date < DATE('2021-03-20') from df")
+        result = ctx.execute("SELECT date < DATE('2021-03-20') FROM df")
 
     expected = pl.DataFrame({"date": [True, False, False]})
     assert_frame_equal(result, expected)
@@ -43,25 +43,34 @@ def test_date_func() -> None:
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_datetime_to_time(time_unit: Literal["ns", "us", "ms"]) -> None:
-    df = pl.DataFrame(  # noqa: F841
-        {
-            "dtm": [
-                datetime(2099, 12, 31, 23, 59, 59),
-                datetime(1999, 12, 31, 12, 30, 30),
-                datetime(1969, 12, 31, 1, 1, 1),
-                datetime(1899, 12, 31, 0, 0, 0),
-            ],
-        },
-        schema={"dtm": pl.Datetime(time_unit)},
+    s = pl.Series(
+        name="dtm",
+        values=[
+            datetime(2099, 12, 31, 23, 59, 59),
+            datetime(1999, 12, 31, 12, 30, 30),
+            datetime(1969, 12, 31, 1, 1, 1),
+            datetime(1899, 12, 31, 0, 0, 0),
+        ],
+        dtype=pl.Datetime(time_unit),
     )
+    df = s.to_frame()
+    lf = df.lazy()
 
-    res = pl.sql("SELECT dtm::time AS tm from df").collect()
-    assert res["tm"].to_list() == [
-        time(23, 59, 59),
-        time(12, 30, 30),
-        time(1, 1, 1),
-        time(0, 0, 0),
-    ]
+    select = "SELECT dtm::time AS tm"
+    for res in (
+        pl.sql(f"{select} FROM df").collect(),
+        pl.sql(f"{select} FROM s").collect(),
+        lf.sql(f"{select} FROM self").collect(),
+        df.sql(f"{select} FROM self"),
+        s.sql(f"{select} FROM self"),
+    ):
+        assert isinstance(res, pl.DataFrame)
+        assert res["tm"].to_list() == [
+            time(23, 59, 59),
+            time(12, 30, 30),
+            time(1, 1, 1),
+            time(0, 0, 0),
+        ]
 
 
 @pytest.mark.parametrize(
@@ -197,12 +206,15 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
         ("dtm <= '2006-01-01'", []),  # << implies '2006-01-01 00:00:00'
         ("dt != '1960-01-07'", [0, 1]),
         ("tm != '22:10:30'", [0, 2]),
-        ("tm >= '11:00:00' AND tm < '22:00:00'", [0]),
+        ("tm >= '11:00:00' AND tm < '22:00'", [0]),
+        ("tm >= '11:00' AND tm < '22:00:00.000'", [0]),
+        ("tm BETWEEN '12:00' AND '23:59:58'", [0, 1]),
         ("tm BETWEEN '12:00:00' AND '23:59:58'", [0, 1]),
         ("dt BETWEEN '2050-01-01' AND '2100-12-31'", [1]),
         ("dt::datetime = '1960-01-07'", [2]),
+        ("dt::datetime = '1960-01-07 00:00'", [2]),
         ("dt::datetime = '1960-01-07 00:00:00'", [2]),
-        ("dtm BETWEEN '2020-12-30 10:30:44' AND '2023-01-01 00:00:00'", [2]),
+        ("dtm BETWEEN '2020-12-30 10:30:44' AND '2023-01-01 00:00'", [2]),
         ("dt IN ('1960-01-07','2077-01-01','2222-02-22')", [1, 2]),
         (
             "dtm = '2024-01-07 01:02:03.123456000' OR dtm = '2020-12-30 10:30:45.987654'",
@@ -239,10 +251,12 @@ def test_implicit_temporal_strings(constraint: str, expected: list[int]) -> None
 @pytest.mark.parametrize(
     "dtval",
     [
+        # none of these are valid dates
         "2020-12-30T10:30:45",
         "yyyy-mm-dd",
         "2222-22-22",
         "10:30:45",
+        "foo",
     ],
 )
 def test_implicit_temporal_string_errors(dtval: str) -> None:
@@ -250,7 +264,7 @@ def test_implicit_temporal_string_errors(dtval: str) -> None:
 
     with pytest.raises(
         InvalidOperationError,
-        match="(conversion.*failed)|(cannot compare.*string.*temporal)",
+        match=r"(conversion.*failed)|(cannot compare.*string.*temporal)",
     ):
         df.sql(f"SELECT * FROM self WHERE dt = '{dtval}'")
 
@@ -376,7 +390,6 @@ def test_temporal_stings_to_datetime() -> None:
             time(23, 59, 59, 123456),
         ),
     ]
-
     for fn in ("DATE", "TIME", "DATETIME"):
         with pytest.raises(
             SQLSyntaxError,
@@ -389,11 +402,15 @@ def test_temporal_typed_literals() -> None:
     res = pl.sql(
         """
         SELECT
+          -- typed literals
           DATE '2020-12-30' AS dt,
           TIME '00:01:02' AS tm1,
           TIME '23:59:59.123456' AS tm2,
           TIMESTAMP '1930-01-01 12:30:00' AS dtm1,
-          TIMESTAMP '2077-04-27T23:45:30.123456' AS dtm2
+          TIMESTAMP '2077-04-27T23:45:30.123456' AS dtm2,
+          -- arrays of typed literals
+          ARRAY[DATE '1960-10-10', DATE '2000-01-23', DATE '2067-07-20'] AS arr_dt,
+          [[DATE '1960-10-10', DATE '2000-01-23'], [DATE '2067-07-20']] AS arr_dt_nested,
         FROM
           (VALUES (0)) tbl (x)
         """,
@@ -405,6 +422,13 @@ def test_temporal_typed_literals() -> None:
         "tm2": [time(23, 59, 59, 123456)],
         "dtm1": [datetime(1930, 1, 1, 12, 30)],
         "dtm2": [datetime(2077, 4, 27, 23, 45, 30, 123456)],
+        "arr_dt": [[date(1960, 10, 10), date(2000, 1, 23), date(2067, 7, 20)]],
+        "arr_dt_nested": [
+            [  # array of arrays
+                [date(1960, 10, 10), date(2000, 1, 23)],
+                [date(2067, 7, 20)],
+            ]
+        ],
     }
 
 

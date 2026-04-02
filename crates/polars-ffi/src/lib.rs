@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 pub mod version_0;
 
 use std::mem::ManuallyDrop;
@@ -6,7 +7,7 @@ use arrow::array::ArrayRef;
 use arrow::ffi;
 use arrow::ffi::{ArrowArray, ArrowSchema};
 use polars_core::error::PolarsResult;
-use polars_core::prelude::{ArrowField, Series};
+use polars_core::prelude::Series;
 
 pub const MAJOR: u16 = 0;
 pub const MINOR: u16 = 1;

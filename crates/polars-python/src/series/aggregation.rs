@@ -1,148 +1,164 @@
+use DataType::*;
 use polars::prelude::*;
 use pyo3::prelude::*;
-use DataType::*;
 
 use super::PySeries;
 use crate::conversion::Wrap;
-use crate::error::PyPolarsErr;
+use crate::utils::EnterPolarsExt;
+
+fn scalar_to_py(scalar: PyResult<Scalar>, py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
+    Wrap(scalar?.as_any_value()).into_pyobject(py)
+}
 
 #[pymethods]
 impl PySeries {
-    fn any(&self, ignore_nulls: bool) -> PyResult<Option<bool>> {
-        let s = self.series.bool().map_err(PyPolarsErr::from)?;
-        Ok(if ignore_nulls {
-            Some(s.any())
-        } else {
-            s.any_kleene()
+    fn any(&self, py: Python<'_>, ignore_nulls: bool) -> PyResult<Option<bool>> {
+        py.enter_polars(|| {
+            let s = self.series.read();
+            let s = s.bool()?;
+            PolarsResult::Ok(if ignore_nulls {
+                Some(s.any())
+            } else {
+                s.any_kleene()
+            })
         })
     }
 
-    fn all(&self, ignore_nulls: bool) -> PyResult<Option<bool>> {
-        let s = self.series.bool().map_err(PyPolarsErr::from)?;
-        Ok(if ignore_nulls {
-            Some(s.all())
-        } else {
-            s.all_kleene()
+    fn all(&self, py: Python<'_>, ignore_nulls: bool) -> PyResult<Option<bool>> {
+        py.enter_polars(|| {
+            let s = self.series.read();
+            let s = s.bool()?;
+            PolarsResult::Ok(if ignore_nulls {
+                Some(s.all())
+            } else {
+                s.all_kleene()
+            })
         })
     }
 
-    fn arg_max(&self) -> Option<usize> {
-        self.series.arg_max()
+    fn arg_max(&self, py: Python) -> PyResult<Option<usize>> {
+        py.enter_polars_ok(|| self.series.read().arg_max())
     }
 
-    fn arg_min(&self) -> Option<usize> {
-        self.series.arg_min()
+    fn arg_min(&self, py: Python) -> PyResult<Option<usize>> {
+        py.enter_polars_ok(|| self.series.read().arg_min())
     }
 
-    fn max(&self, py: Python) -> PyResult<PyObject> {
-        Ok(Wrap(
-            self.series
-                .max_reduce()
-                .map_err(PyPolarsErr::from)?
-                .as_any_value(),
-        )
-        .into_py(py))
+    fn min<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        scalar_to_py(py.enter_polars(|| self.series.read().min_reduce()), py)
     }
 
-    fn mean(&self, py: Python) -> PyResult<PyObject> {
-        match self.series.dtype() {
-            Boolean => Ok(Wrap(
-                self.series
-                    .cast(&DataType::UInt8)
-                    .unwrap()
-                    .mean_reduce()
-                    .as_any_value(),
-            )
-            .into_py(py)),
+    fn max<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        scalar_to_py(py.enter_polars(|| self.series.read().max_reduce()), py)
+    }
+
+    fn mean<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let s = self.series.read();
+        match s.dtype() {
+            Boolean => scalar_to_py(
+                py.enter_polars(|| s.cast(&DataType::UInt8).unwrap().mean_reduce()),
+                py,
+            ),
             // For non-numeric output types we require mean_reduce.
-            dt if dt.is_temporal() => {
-                Ok(Wrap(self.series.mean_reduce().as_any_value()).into_py(py))
-            },
-            _ => Ok(self.series.mean().into_py(py)),
+            dt if dt.is_temporal() => scalar_to_py(py.enter_polars(|| s.mean_reduce()), py),
+            _ => Ok(s.mean().into_pyobject(py)?),
         }
     }
 
-    fn median(&self, py: Python) -> PyResult<PyObject> {
-        match self.series.dtype() {
-            Boolean => Ok(Wrap(
-                self.series
-                    .cast(&DataType::UInt8)
-                    .unwrap()
-                    .median_reduce()
-                    .map_err(PyPolarsErr::from)?
-                    .as_any_value(),
-            )
-            .into_py(py)),
+    fn median<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let s = self.series.read();
+        match s.dtype() {
+            Boolean => scalar_to_py(
+                py.enter_polars(|| s.cast(&DataType::UInt8).unwrap().median_reduce()),
+                py,
+            ),
             // For non-numeric output types we require median_reduce.
-            dt if dt.is_temporal() => Ok(Wrap(
-                self.series
-                    .median_reduce()
-                    .map_err(PyPolarsErr::from)?
-                    .as_any_value(),
-            )
-            .into_py(py)),
-            _ => Ok(self.series.median().into_py(py)),
+            dt if dt.is_temporal() => scalar_to_py(py.enter_polars(|| s.median_reduce()), py),
+            _ => Ok(s.median().into_pyobject(py)?),
         }
     }
 
-    fn min(&self, py: Python) -> PyResult<PyObject> {
-        Ok(Wrap(
-            self.series
-                .min_reduce()
-                .map_err(PyPolarsErr::from)?
-                .as_any_value(),
-        )
-        .into_py(py))
+    fn product<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        scalar_to_py(py.enter_polars(|| self.series.read().product()), py)
     }
 
-    fn product(&self, py: Python) -> PyResult<PyObject> {
-        Ok(Wrap(
-            self.series
-                .product()
-                .map_err(PyPolarsErr::from)?
-                .as_any_value(),
-        )
-        .into_py(py))
-    }
-
-    fn quantile(
+    fn quantile<'py>(
         &self,
-        quantile: f64,
-        interpolation: Wrap<QuantileInterpolOptions>,
-    ) -> PyResult<PyObject> {
-        let bind = self.series.quantile_reduce(quantile, interpolation.0);
-        let sc = bind.map_err(PyPolarsErr::from)?;
-
-        Ok(Python::with_gil(|py| Wrap(sc.as_any_value()).into_py(py)))
+        py: Python<'py>,
+        quantile: Bound<'py, PyAny>,
+        interpolation: Wrap<QuantileMethod>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        // Accept either a single float or a list of floats
+        if let Ok(q_float) = quantile.extract::<f64>() {
+            // Single quantile: use quantile_reduce
+            scalar_to_py(
+                py.enter_polars(|| self.series.read().quantile_reduce(q_float, interpolation.0)),
+                py,
+            )
+        } else if let Ok(q_list) = quantile.extract::<Vec<f64>>() {
+            // Multiple quantiles: use quantiles_reduce
+            scalar_to_py(
+                py.enter_polars(|| {
+                    self.series
+                        .read()
+                        .quantiles_reduce(&q_list, interpolation.0)
+                }),
+                py,
+            )
+        } else {
+            Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                "quantile must be a float or a list of floats",
+            ))
+        }
     }
 
-    fn std(&self, py: Python, ddof: u8) -> PyResult<PyObject> {
-        Ok(Wrap(
-            self.series
-                .std_reduce(ddof)
-                .map_err(PyPolarsErr::from)?
-                .as_any_value(),
-        )
-        .into_py(py))
+    fn std<'py>(&self, py: Python<'py>, ddof: u8) -> PyResult<Bound<'py, PyAny>> {
+        scalar_to_py(py.enter_polars(|| self.series.read().std_reduce(ddof)), py)
     }
 
-    fn var(&self, py: Python, ddof: u8) -> PyResult<PyObject> {
-        Ok(Wrap(
-            self.series
-                .var_reduce(ddof)
-                .map_err(PyPolarsErr::from)?
-                .as_any_value(),
-        )
-        .into_py(py))
+    fn var<'py>(&self, py: Python<'py>, ddof: u8) -> PyResult<Bound<'py, PyAny>> {
+        scalar_to_py(py.enter_polars(|| self.series.read().var_reduce(ddof)), py)
     }
 
-    fn sum(&self, py: Python) -> PyResult<PyObject> {
-        Ok(Wrap(
-            self.series
-                .sum_reduce()
-                .map_err(PyPolarsErr::from)?
-                .as_any_value(),
-        )
-        .into_py(py))
+    fn sum<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        scalar_to_py(py.enter_polars(|| self.series.read().sum_reduce()), py)
+    }
+
+    fn first<'py>(&self, py: Python<'py>, ignore_nulls: bool) -> PyResult<Bound<'py, PyAny>> {
+        let result = if ignore_nulls {
+            py.enter_polars_ok(|| self.series.read().first_non_null())
+        } else {
+            py.enter_polars_ok(|| self.series.read().first())
+        };
+        scalar_to_py(result, py)
+    }
+
+    fn last<'py>(&self, py: Python<'py>, ignore_nulls: bool) -> PyResult<Bound<'py, PyAny>> {
+        let result = if ignore_nulls {
+            py.enter_polars_ok(|| self.series.read().last_non_null())
+        } else {
+            py.enter_polars_ok(|| self.series.read().last())
+        };
+        scalar_to_py(result, py)
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self, py: Python) -> PyResult<IdxSize> {
+        py.enter_polars(|| self.series.read().approx_n_unique())
+    }
+
+    #[cfg(feature = "bitwise")]
+    fn bitwise_and<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        scalar_to_py(py.enter_polars(|| self.series.read().and_reduce()), py)
+    }
+
+    #[cfg(feature = "bitwise")]
+    fn bitwise_or<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        scalar_to_py(py.enter_polars(|| self.series.read().or_reduce()), py)
+    }
+
+    #[cfg(feature = "bitwise")]
+    fn bitwise_xor<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        scalar_to_py(py.enter_polars(|| self.series.read().xor_reduce()), py)
     }
 }

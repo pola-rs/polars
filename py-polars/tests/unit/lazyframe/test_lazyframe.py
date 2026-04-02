@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from functools import reduce
 from inspect import signature
 from operator import add
 from string import ascii_letters
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, cast
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 import numpy as np
 import pytest
@@ -19,12 +20,19 @@ from polars.exceptions import (
     PolarsInefficientMapWarning,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import FLOAT_DTYPES
+from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from _pytest.capture import CaptureFixture
 
-    from polars._typing import PolarsDataType
+    from polars._typing import (
+        EpochTimeUnit,
+        MapElementsStrategy,
+        PolarsDataType,
+    )
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_init_signature_match() -> None:
@@ -56,8 +64,8 @@ def test_implode() -> None:
         pl.DataFrame(
             {
                 "grp": [1, 2, 3],
-                "a_imp": [[[1]], [[2]], [[3]]],
-                "b_imp": [[[1.0]], [[2.0]], [[3.0]]],
+                "a_imp": [[1], [2], [3]],
+                "b_imp": [[1.0], [2.0], [3.0]],
             }
         ),
     )
@@ -65,8 +73,11 @@ def test_implode() -> None:
 
 def test_lazyframe_membership_operator() -> None:
     ldf = pl.LazyFrame({"name": ["Jane", "John"], "age": [20, 30]})
-    assert "name" in ldf
-    assert "phone" not in ldf
+
+    with pytest.raises(PerformanceWarning):
+        assert "name" in ldf
+
+    assert "phone" not in ldf.collect_schema()
 
     # note: cannot use lazyframe in boolean context
     with pytest.raises(TypeError, match="ambiguous"):
@@ -82,16 +93,21 @@ def test_apply() -> None:
     assert_frame_equal(new, expected)
     assert_frame_equal(new.collect(), expected.collect())
 
-    with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
-        for strategy in ["thread_local", "threading"]:
-            ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
-            new = ldf.with_columns(
+    ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
+    strategy: MapElementsStrategy
+    for strategy in ("thread_local", "threading"):
+        with pytest.warns(
+            PolarsInefficientMapWarning,
+            match="with this one instead",
+        ):
+            df_new = ldf.with_columns(
                 pl.col("a")
-                .map_elements(lambda s: s * 2, strategy=strategy, return_dtype=pl.Int64)  # type: ignore[arg-type]
+                .map_elements(lambda s: s * 2, strategy=strategy, return_dtype=pl.Int64)
                 .alias("foo")
-            )
-            expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
-            assert_frame_equal(new.collect(), expected.collect())
+            ).collect()
+
+    df_expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo")).collect()
+    assert_frame_equal(df_new, df_expected)
 
 
 def test_add_eager_column() -> None:
@@ -247,9 +263,11 @@ def test_apply_custom_function() -> None:
         .agg(
             [
                 pl.col("cars")
+                .implode()
                 .map_elements(lambda groups: groups.len(), return_dtype=pl.Int64)
                 .alias("custom_1"),
                 pl.col("cars")
+                .implode()
                 .map_elements(lambda groups: groups.len(), return_dtype=pl.Int64)
                 .alias("custom_2"),
                 pl.count("cars").alias("cars_count"),
@@ -266,7 +284,7 @@ def test_apply_custom_function() -> None:
             "cars_count": [3, 2],
         }
     )
-    expected = expected.with_columns(pl.col("cars_count").cast(pl.UInt32))
+    expected = expected.with_columns(pl.col("cars_count").cast(pl.get_index_type()))
     assert_frame_equal(df, expected)
 
 
@@ -294,7 +312,7 @@ def test_group_by() -> None:
 def test_arg_unique() -> None:
     ldf = pl.LazyFrame({"a": [4, 1, 4]})
     col_a_unique = ldf.select(pl.col("a").arg_unique()).collect()["a"]
-    assert_series_equal(col_a_unique, pl.Series("a", [0, 1]).cast(pl.UInt32))
+    assert_series_equal(col_a_unique, pl.Series("a", [0, 1]).cast(pl.get_index_type()))
 
 
 def test_arg_sort() -> None:
@@ -343,6 +361,7 @@ def test_describe_plan() -> None:
     assert isinstance(pl.LazyFrame({"a": [1]}).explain(optimized=False), str)
 
 
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_inspect(capsys: CaptureFixture[str]) -> None:
     ldf = pl.LazyFrame({"a": [1]})
     ldf.inspect().collect()
@@ -354,8 +373,13 @@ def test_inspect(capsys: CaptureFixture[str]) -> None:
     assert len(res.out) > 0
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_fetch(fruits_cars: pl.DataFrame) -> None:
-    res = fruits_cars.lazy().select("*")._fetch(2)
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"use `LazyFrame\.collect` instead",
+    ):
+        res = fruits_cars.lazy().select("*").fetch(2)
     assert_frame_equal(res, res[:2])
 
 
@@ -429,7 +453,7 @@ def test_head_group_by() -> None:
         ldf.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
         .agg([pl.col("*").exclude(keys).head(2).name.keep()])
-        .explode(pl.col("*").exclude(keys))
+        .explode(cs.all().exclude(keys))
     )
 
     assert out.collect().rows() == [
@@ -484,28 +508,58 @@ def test_is_finite_is_infinite() -> None:
 
 def test_len() -> None:
     ldf = pl.LazyFrame({"nrs": [1, 2, 3]})
-    assert cast(int, ldf.select(pl.col("nrs").len()).collect().item()) == 3
+    assert cast("int", ldf.select(pl.col("nrs").len()).collect().item()) == 3
 
 
-def test_cum_agg() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2, 3, 2]})
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+def test_cum_agg(dtype: PolarsDataType) -> None:
+    ldf = pl.LazyFrame({"a": [1, 2, 3, 2]}, schema={"a": dtype})
     assert_series_equal(
-        ldf.select(pl.col("a").cum_sum()).collect()["a"], pl.Series("a", [1, 3, 6, 8])
+        ldf.select(pl.col("a").cum_min()).collect()["a"],
+        pl.Series("a", [1, 1, 1, 1], dtype=dtype),
     )
     assert_series_equal(
-        ldf.select(pl.col("a").cum_min()).collect()["a"], pl.Series("a", [1, 1, 1, 1])
+        ldf.select(pl.col("a").cum_max()).collect()["a"],
+        pl.Series("a", [1, 2, 3, 3], dtype=dtype),
+    )
+
+    expected_dtype = (
+        pl.Int64 if dtype in [pl.Int8, pl.Int16, pl.UInt8, pl.UInt16] else dtype
     )
     assert_series_equal(
-        ldf.select(pl.col("a").cum_max()).collect()["a"], pl.Series("a", [1, 2, 3, 3])
+        ldf.select(pl.col("a").cum_sum()).collect()["a"],
+        pl.Series("a", [1, 3, 6, 8], dtype=expected_dtype),
+    )
+
+    expected_dtype = (
+        pl.Int64
+        if dtype in [pl.Int8, pl.Int16, pl.Int32, pl.UInt8, pl.UInt16, pl.UInt32]
+        else dtype
     )
     assert_series_equal(
-        ldf.select(pl.col("a").cum_prod()).collect()["a"], pl.Series("a", [1, 2, 6, 12])
+        ldf.select(pl.col("a").cum_prod()).collect()["a"],
+        pl.Series("a", [1, 2, 6, 12], dtype=expected_dtype),
     )
+
+
+def test_ceil() -> None:
+    ldf = pl.LazyFrame({"a": [1.8, 1.2, 3.0]})
+    result = ldf.select(pl.col("a").ceil()).collect()
+    assert_frame_equal(result, pl.DataFrame({"a": [2.0, 2.0, 3.0]}))
+
+    ldf = pl.LazyFrame({"a": [1, 2, 3]})
+    result = ldf.select(pl.col("a").ceil()).collect()
+    assert_frame_equal(ldf.collect(), result)
 
 
 def test_floor() -> None:
-    ldf = pl.LazyFrame({"a": [1.8, 1.2, 3.0]}).select(pl.col("a").floor())
-    assert_series_equal(ldf.collect()["a"], pl.Series("a", [1, 1, 3]).cast(pl.Float64))
+    ldf = pl.LazyFrame({"a": [1.8, 1.2, 3.0]})
+    result = ldf.select(pl.col("a").floor()).collect()
+    assert_frame_equal(result, pl.DataFrame({"a": [1.0, 1.0, 3.0]}))
+
+    ldf = pl.LazyFrame({"a": [1, 2, 3]})
+    result = ldf.select(pl.col("a").floor()).collect()
+    assert_frame_equal(ldf.collect(), result)
 
 
 @pytest.mark.parametrize(
@@ -515,7 +569,7 @@ def test_floor() -> None:
         (1234.00000254495, 10, 1234.000002545),
         (1835.665, 2, 1835.67),
         (-1835.665, 2, -1835.67),
-        (1.27499, 2, 1.27),
+        (2.49, 0, 2.0),
         (123.45678, 2, 123.46),
         (1254, 2, 1254.0),
         (1254, 0, 1254.0),
@@ -536,11 +590,67 @@ def test_round(n: float, ndigits: int, expected: float, dtype: pl.DataType) -> N
     )
 
 
+@pytest.mark.parametrize(
+    ("n", "ndigits", "expected"),
+    [
+        (1.005, 2, 1.0),
+        (1835.665, 2, 1835.66),
+        (-1835.665, 2, -1835.66),
+        (2.49, 0, 2.0),
+        (123.45678, 2, 123.45),
+        (1254, 2, 1254.0),
+        (1254, 0, 1254.0),
+        (123.55, 0, 123.0),
+        (123.55, 1, 123.5),
+        (1.0e20, 2, 100000000000000000000.0),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_truncate(n: float, ndigits: int, expected: float, dtype: pl.DataType) -> None:
+    ldf = pl.LazyFrame({"value": [n]}, schema_overrides={"value": dtype})
+    assert_series_equal(
+        ldf.select(pl.col("value").truncate(decimals=ndigits)).collect().to_series(),
+        pl.Series("value", [expected], dtype=dtype),
+    )
+
+
+@pytest.mark.parametrize(
+    ("n", "ndigits", "expected1", "expected2"),
+    [
+        (0.5, 0, 0.0, 1.0),
+        (1.5, 0, 2.0, 2.0),
+        (2.5, 0, 2.0, 3.0),
+        (-0.5, 0, -0.0, -1.0),
+        (-1.5, 0, -2.0, -2.0),
+        (2.25, 1, 2.2, 2.3),
+        (2.75, 1, 2.8, 2.8),
+        (-2.25, 1, -2.2, -2.3),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_round_mode(
+    n: float, ndigits: int, expected1: float, expected2: float, dtype: pl.DataType
+) -> None:
+    ldf = pl.LazyFrame({"value": [n]}, schema_overrides={"value": dtype})
+    assert_series_equal(
+        ldf.select(pl.col("value").round(ndigits, mode="half_to_even"))
+        .collect()
+        .to_series(),
+        pl.Series("value", [expected1], dtype=dtype),
+    )
+    assert_series_equal(
+        ldf.select(pl.col("value").round(ndigits, mode="half_away_from_zero"))
+        .collect()
+        .to_series(),
+        pl.Series("value", [expected2], dtype=dtype),
+    )
+
+
 def test_dot() -> None:
     ldf = pl.LazyFrame({"a": [1.8, 1.2, 3.0], "b": [3.2, 1, 2]}).select(
         pl.col("a").dot(pl.col("b"))
     )
-    assert cast(float, ldf.collect().item()) == 12.96
+    assert cast("float", ldf.collect().item()) == 12.96
 
 
 def test_sort() -> None:
@@ -552,7 +662,13 @@ def test_custom_group_by() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     out = (
         ldf.group_by("b", maintain_order=True)
-        .agg([pl.col("a").map_elements(lambda x: x.sum(), return_dtype=pl.Int64)])
+        .agg(
+            [
+                pl.col("a")
+                .implode()
+                .map_elements(lambda x: x.sum(), return_dtype=pl.Int64)
+            ]
+        )
         .collect()
     )
     assert out.rows() == [("a", 1), ("b", 2), ("c", 2)]
@@ -624,7 +740,7 @@ def test_cast_frame() -> None:
     # test 'strict' mode
     lf = pl.LazyFrame({"a": [1000, 2000, 3000]})
 
-    with pytest.raises(InvalidOperationError, match="conversion .* failed"):
+    with pytest.raises(InvalidOperationError, match=r"conversion .* failed"):
         lf.cast(pl.UInt8).collect()
 
     assert lf.cast(pl.UInt8, strict=False).collect().rows() == [
@@ -676,20 +792,22 @@ def test_fill_null() -> None:
 
 def test_backward_fill() -> None:
     ldf = pl.LazyFrame({"a": [1.0, None, 3.0]})
-    col_a_backward_fill = ldf.select([pl.col("a").backward_fill()]).collect()["a"]
+    col_a_backward_fill = ldf.select(
+        [pl.col("a").fill_null(strategy="backward")]
+    ).collect()["a"]
     assert_series_equal(col_a_backward_fill, pl.Series("a", [1, 3, 3]).cast(pl.Float64))
 
 
 def test_rolling(fruits_cars: pl.DataFrame) -> None:
     ldf = fruits_cars.lazy()
     out = ldf.select(
-        pl.col("A").rolling_min(3, min_periods=1).alias("1"),
+        pl.col("A").rolling_min(3, min_samples=1).alias("1"),
         pl.col("A").rolling_min(3).alias("1b"),
-        pl.col("A").rolling_mean(3, min_periods=1).alias("2"),
+        pl.col("A").rolling_mean(3, min_samples=1).alias("2"),
         pl.col("A").rolling_mean(3).alias("2b"),
-        pl.col("A").rolling_max(3, min_periods=1).alias("3"),
+        pl.col("A").rolling_max(3, min_samples=1).alias("3"),
         pl.col("A").rolling_max(3).alias("3b"),
-        pl.col("A").rolling_sum(3, min_periods=1).alias("4"),
+        pl.col("A").rolling_sum(3, min_samples=1).alias("4"),
         pl.col("A").rolling_sum(3).alias("4b"),
         # below we use .round purely for the ability to do assert frame equality
         pl.col("A").rolling_std(3).round(1).alias("std"),
@@ -715,12 +833,12 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
     )
 
     out_single_val_variance = ldf.select(
-        pl.col("A").rolling_std(3, min_periods=1).round(decimals=4).alias("std"),
-        pl.col("A").rolling_var(3, min_periods=1).round(decimals=1).alias("var"),
+        pl.col("A").rolling_std(3, min_samples=1).round(decimals=4).alias("std"),
+        pl.col("A").rolling_var(3, min_samples=1).round(decimals=1).alias("var"),
     ).collect()
 
-    assert cast(float, out_single_val_variance[0, "std"]) is None
-    assert cast(float, out_single_val_variance[0, "var"]) is None
+    assert cast("float", out_single_val_variance[0, "std"]) is None
+    assert cast("float", out_single_val_variance[0, "var"]) is None
 
 
 def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
@@ -848,12 +966,6 @@ def test_argminmax() -> None:
     assert out["min"][0] == 0
 
 
-def test_reverse() -> None:
-    out = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).reverse()
-    expected = pl.DataFrame({"a": [2, 1], "b": [4, 3]})
-    assert_frame_equal(out.collect(), expected)
-
-
 def test_limit(fruits_cars: pl.DataFrame) -> None:
     assert_frame_equal(fruits_cars.lazy().limit(1).collect(), fruits_cars[0, :])
 
@@ -897,13 +1009,10 @@ def test_join_suffix() -> None:
     assert out.columns == ["a", "b", "c", "b_bar", "c_bar"]
 
 
-@pytest.mark.parametrize("no_optimization", [False, True])
-def test_collect_all(df: pl.DataFrame, no_optimization: bool) -> None:
-    lf1 = df.lazy().select(pl.col("int").sum())
-    lf2 = df.lazy().select((pl.col("floats") * 2).sum())
-    out = pl.collect_all([lf1, lf2], no_optimization=no_optimization)
-    assert cast(int, out[0].item()) == 6
-    assert cast(float, out[1].item()) == 12.0
+@pytest.mark.may_fail_cloud  # reason: no
+def test_collect_unexpected_kwargs(df: pl.DataFrame) -> None:
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        df.lazy().collect(common_subexpr_elim=False)  # type: ignore[call-overload]
 
 
 def test_spearman_corr() -> None:
@@ -940,7 +1049,7 @@ def test_spearman_corr_ties() -> None:
     df = pl.DataFrame({"a": [1, 1, 1, 2, 3, 7, 4], "b": [4, 3, 2, 2, 4, 3, 1]})
 
     result = df.select(
-        pl.corr("a", "b", method="spearman", ddof=0).alias("a1"),
+        pl.corr("a", "b", method="spearman").alias("a1"),
         pl.corr(pl.col("a").rank("min"), pl.col("b").rank("min")).alias("a2"),
         pl.corr(pl.col("a").rank(), pl.col("b").rank()).alias("a3"),
     )
@@ -966,7 +1075,9 @@ def test_pearson_corr() -> None:
     out = (
         ldf.group_by("era", maintain_order=True).agg(
             pl.corr(
-                pl.col("prediction"), pl.col("target"), method="pearson", ddof=0
+                pl.col("prediction"),
+                pl.col("target"),
+                method="pearson",
             ).alias("c"),
         )
     ).collect()["c"]
@@ -975,7 +1086,7 @@ def test_pearson_corr() -> None:
     # we can also pass in column names directly
     out = (
         ldf.group_by("era", maintain_order=True).agg(
-            pl.corr("prediction", "target", method="pearson", ddof=0).alias("c"),
+            pl.corr("prediction", "target", method="pearson").alias("c"),
         )
     ).collect()["c"]
     assert out.to_list() == pytest.approx([0.6546536707079772, -5.477514993831792e-1])
@@ -1043,7 +1154,7 @@ def test_group_lengths() -> None:
             "unique_counts_sum": [1.0, 1.0],
             "unique_len": [2, 3],
         },
-        schema_overrides={"unique_len": pl.UInt32},
+        schema_overrides={"unique_len": pl.get_index_type()},
     )
     assert_frame_equal(result.collect(), expected)
 
@@ -1113,11 +1224,13 @@ def test_lazy_cache_same_key() -> None:
         (pl.col("a") - pl.col("a_mult")).alias("a"), pl.col("c")
     )
     expected = pl.LazyFrame({"a": [-1, 2, 7], "c": ["x", "y", "z"]})
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
-def test_lazy_cache_hit(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+@pytest.mark.may_fail_auto_streaming
+def test_lazy_cache_hit(plmonkeypatch: PlMonkeyPatch, capfd: Any) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": ["x", "y", "z"]})
     add_node = ldf.select([(pl.col("a") + pl.col("b")).alias("a"), pl.col("c")]).cache()
@@ -1126,12 +1239,13 @@ def test_lazy_cache_hit(monkeypatch: Any, capfd: Any) -> None:
         (pl.col("a") - pl.col("a_mult")).alias("a"), pl.col("c")
     )
     expected = pl.LazyFrame({"a": [0, 0, 0], "c": ["x", "y", "z"]})
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
 
     (_, err) = capfd.readouterr()
     assert "CACHE HIT" in err
 
 
+@pytest.mark.may_fail_cloud  # reason: impure udf
 def test_lazy_cache_parallel() -> None:
     df_evaluated = 0
 
@@ -1157,6 +1271,7 @@ def test_lazy_cache_parallel() -> None:
     assert df_evaluated == 1
 
 
+@pytest.mark.may_fail_cloud  # reason: impure udf
 def test_lazy_cache_nested_parallel() -> None:
     df_inner_evaluated = 0
     df_outer_evaluated = 0
@@ -1211,10 +1326,11 @@ def test_from_epoch(input_dtype: PolarsDataType) -> None:
     exp_dt = datetime(2006, 5, 17, 15, 34, 4)
     expected = pl.DataFrame(
         [
+            # 'd' → Date, 'ns' → Datetime('ns'), otherwise → Datetime('us')
             pl.Series("timestamp_d", [date(2006, 5, 17)]),
-            pl.Series("timestamp_s", [exp_dt]),  # s is no Polars dtype, defaults to us
-            pl.Series("timestamp_ms", [exp_dt]).cast(pl.Datetime("ms")),
-            pl.Series("timestamp_us", [exp_dt]),  # us is Polars Datetime default
+            pl.Series("timestamp_s", [exp_dt]),
+            pl.Series("timestamp_ms", [exp_dt]),
+            pl.Series("timestamp_us", [exp_dt]),
             pl.Series("timestamp_ns", [exp_dt]).cast(pl.Datetime("ns")),
         ]
     )
@@ -1232,6 +1348,67 @@ def test_from_epoch(input_dtype: PolarsDataType) -> None:
     ts_col = pl.col("timestamp_s")
     with pytest.raises(ValueError):
         _ = ldf.select(pl.from_epoch(ts_col, time_unit="s2"))  # type: ignore[call-overload]
+
+
+@pytest.mark.parametrize(
+    ("input_dtype", "epoch_value", "time_unit", "expected_datetime"),
+    [
+        # 32-bit types with large positive values (original overflow case)
+        (pl.Int32, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        (pl.UInt32, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        # larger integer types
+        (pl.Int64, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        (pl.UInt64, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        (pl.Int128, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        (pl.UInt128, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        # small unsigned types
+        (pl.UInt8, 100, "s", datetime(1970, 1, 1, 0, 1, 40)),
+        (pl.UInt16, 32_000, "s", datetime(1970, 1, 1, 8, 53, 20)),
+        # small signed types (positive values)
+        (pl.Int8, 100, "s", datetime(1970, 1, 1, 0, 1, 40)),
+        (pl.Int16, 32_000, "ms", datetime(1970, 1, 1, 0, 0, 32)),
+        # signed types with negative values (pre-epoch)
+        (pl.Int8, -100, "s", datetime(1969, 12, 31, 23, 58, 20)),
+        (pl.Int16, -32_000, "s", datetime(1969, 12, 31, 15, 6, 40)),
+        (pl.Int32, -1_721_068_200, "s", datetime(1915, 6, 19, 5, 30)),
+        (pl.Int64, -1_721_068_200, "s", datetime(1915, 6, 19, 5, 30)),
+        # milliseconds (with subsecond component)
+        (pl.Int64, 1_721_068_200_456, "ms", datetime(2024, 7, 15, 18, 30, 0, 456000)),
+        (pl.Int32, 2_000_456, "ms", datetime(1970, 1, 1, 0, 33, 20, 456000)),
+        (pl.Int64, -1_721_068_200_456, "ms", datetime(1915, 6, 19, 5, 29, 59, 544000)),
+        # nanoseconds (with subsecond component)
+        (
+            pl.UInt128,
+            1_721_068_200_456_789_000,
+            "ns",
+            datetime(2024, 7, 15, 18, 30, 0, 456789),
+        ),
+        (
+            pl.UInt128,
+            2_721_068_200_999_999_000,
+            "ns",
+            datetime(2056, 3, 23, 20, 16, 40, 999999),
+        ),
+        (
+            pl.Int128,
+            -1_721_068_200_456_789_000,
+            "ns",
+            datetime(1915, 6, 19, 5, 29, 59, 543211),
+        ),
+    ],
+)
+def test_from_epoch_27107(
+    input_dtype: PolarsDataType,
+    epoch_value: int,
+    time_unit: EpochTimeUnit,
+    expected_datetime: datetime,
+) -> None:
+    ldf = pl.LazyFrame({"ts": [epoch_value]}, schema={"ts": input_dtype})
+    res = ldf.select(pl.from_epoch("ts", time_unit=time_unit))
+
+    dtype = pl.Datetime(time_unit if time_unit == "ns" else "us")
+    expected = pl.LazyFrame({"ts": [expected_datetime]}, schema={"ts": dtype})
+    assert_frame_equal(res, expected)
 
 
 def test_from_epoch_str() -> None:
@@ -1396,3 +1573,258 @@ def test_lf_properties() -> None:
         assert lf.dtypes == [pl.Int64, pl.Float64, pl.String]
     with pytest.warns(PerformanceWarning):
         assert lf.width == 3
+    with pytest.warns(PerformanceWarning):
+        assert "foo" in lf
+
+
+def test_lf_unnest() -> None:
+    lf = pl.DataFrame(
+        [
+            pl.Series(
+                "a",
+                [{"ab": [1, 2, 3], "ac": [3, 4, 5]}],
+                dtype=pl.Struct({"ab": pl.List(pl.Int64), "ac": pl.List(pl.Int64)}),
+            ),
+            pl.Series(
+                "b",
+                [{"ba": [5, 6, 7], "bb": [7, 8, 9]}],
+                dtype=pl.Struct({"ba": pl.List(pl.Int64), "bb": pl.List(pl.Int64)}),
+            ),
+        ]
+    ).lazy()
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("ab", [[1, 2, 3]], dtype=pl.List(pl.Int64)),
+            pl.Series("ac", [[3, 4, 5]], dtype=pl.List(pl.Int64)),
+            pl.Series("ba", [[5, 6, 7]], dtype=pl.List(pl.Int64)),
+            pl.Series("bb", [[7, 8, 9]], dtype=pl.List(pl.Int64)),
+        ]
+    )
+    assert_frame_equal(lf.unnest("a", "b").collect(), expected)
+
+
+def test_type_coercion_cast_boolean_after_comparison() -> None:
+    import operator
+
+    lf = pl.LazyFrame({"a": 1, "b": 2})
+
+    for op in [
+        operator.eq,
+        operator.ne,
+        operator.lt,
+        operator.le,
+        operator.gt,
+        operator.ge,
+        pl.Expr.eq_missing,
+        pl.Expr.ne_missing,
+    ]:
+        e = op(pl.col("a"), pl.col("b")).cast(pl.Boolean).alias("o")
+        assert "cast" not in lf.with_columns(e).explain()
+
+        e = op(pl.col("a"), pl.col("b")).cast(pl.Boolean).cast(pl.Boolean).alias("o")
+        assert "cast" not in lf.with_columns(e).explain()
+
+    for op in [operator.and_, operator.or_, operator.xor]:
+        e = op(pl.col("a"), pl.col("b")).cast(pl.Boolean)
+        assert "cast" in lf.with_columns(e).explain()
+
+
+def test_unique_length_multiple_columns() -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [1, 1, 1, 2, 3],
+            "b": [100, 100, 200, 100, 300],
+        }
+    )
+    assert lf.unique().select(pl.len()).collect().item() == 4
+
+
+def test_asof_cross_join() -> None:
+    left = pl.LazyFrame({"a": [-10, 5, 10], "left_val": ["a", "b", "c"]}).with_columns(
+        pl.col("a").set_sorted()
+    )
+    right = pl.LazyFrame(
+        {"a": [1, 2, 3, 6, 7], "right_val": [1, 2, 3, 6, 7]}
+    ).with_columns(pl.col("a").set_sorted())
+
+    out = left.join_asof(right, on="a").collect()
+    assert out.shape == (3, 3)
+
+
+def test_join_bad_input_type() -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3]})
+    right = pl.LazyFrame({"a": [1, 2, 3]})
+
+    with pytest.raises(
+        TypeError,
+        match=r"expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
+    ):
+        left.join(right.collect(), on="a")  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match=r"expected `other` .*to be a 'LazyFrame'.* not 'Series'",
+    ):
+        left.join(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
+
+    class DummyLazyFrameSubclass(pl.LazyFrame):
+        pass
+
+    a = DummyLazyFrameSubclass(left.collect())
+    b = DummyLazyFrameSubclass(right.collect())
+
+    a.join(b, on="a").collect()
+
+
+def test_join_where() -> None:
+    east = pl.LazyFrame(
+        {
+            "id": [100, 101, 102],
+            "dur": [120, 140, 160],
+            "rev": [12, 14, 16],
+            "cores": [2, 8, 4],
+        }
+    )
+    west = pl.LazyFrame(
+        {
+            "t_id": [404, 498, 676, 742],
+            "time": [90, 130, 150, 170],
+            "cost": [9, 13, 15, 16],
+            "cores": [4, 2, 1, 4],
+        }
+    )
+    out = east.join_where(
+        west,
+        pl.col("dur") < pl.col("time"),
+        pl.col("rev") < pl.col("cost"),
+    ).collect()
+
+    expected = pl.DataFrame(
+        {
+            "id": [100, 100, 100, 101, 101],
+            "dur": [120, 120, 120, 140, 140],
+            "rev": [12, 12, 12, 14, 14],
+            "cores": [2, 2, 2, 8, 8],
+            "t_id": [498, 676, 742, 676, 742],
+            "time": [130, 150, 170, 150, 170],
+            "cost": [13, 15, 16, 15, 16],
+            "cores_right": [2, 1, 4, 1, 4],
+        }
+    )
+
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
+def test_join_where_bad_input_type() -> None:
+    east = pl.LazyFrame(
+        {
+            "id": [100, 101, 102],
+            "dur": [120, 140, 160],
+            "rev": [12, 14, 16],
+            "cores": [2, 8, 4],
+        }
+    )
+    west = pl.LazyFrame(
+        {
+            "t_id": [404, 498, 676, 742],
+            "time": [90, 130, 150, 170],
+            "cost": [9, 13, 15, 16],
+            "cores": [4, 2, 1, 4],
+        }
+    )
+    with pytest.raises(
+        TypeError,
+        match=r"expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
+    ):
+        east.join_where(
+            west.collect(),  # type: ignore[arg-type]
+            pl.col("dur") < pl.col("time"),
+            pl.col("rev") < pl.col("cost"),
+        )
+
+    with pytest.raises(
+        TypeError,
+        match=r"expected `other` .*to be a 'LazyFrame'.* not 'Series'",
+    ):
+        east.join_where(
+            pl.Series(west.collect()),  # type: ignore[arg-type]
+            pl.col("dur") < pl.col("time"),
+            pl.col("rev") < pl.col("cost"),
+        )
+
+    class DummyLazyFrameSubclass(pl.LazyFrame):
+        pass
+
+    a = DummyLazyFrameSubclass(east.collect())
+    b = DummyLazyFrameSubclass(west.collect())
+
+    a.join_where(
+        b,
+        pl.col("dur") < pl.col("time"),
+        pl.col("rev") < pl.col("cost"),
+    ).collect()
+
+
+def test_cache_hit_with_proj_and_pred_pushdown() -> None:
+    rgx = re.compile(r"CACHE\[id: (.*)\]")
+
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": ["x", "y", "z"]}).cache()
+
+    q = pl.concat([lf, lf]).select("a", "b")
+    assert_frame_equal(
+        q.collect(), pl.DataFrame({"a": [1, 2, 3] * 2, "b": [3, 4, 5] * 2})
+    )
+    e = rgx.findall(q.explain())
+
+    assert len(e) == 2  # there are only 2 caches
+    assert e[0] == e[1]  # all caches are the same
+
+    q = pl.concat([lf, lf]).filter(pl.col.a != 0)
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {"a": [1, 2, 3] * 2, "b": [3, 4, 5] * 2, "c": ["x", "y", "z"] * 2}
+        ),
+    )
+    e = rgx.findall(q.explain())
+
+    assert len(e) == 2  # there are only 2 caches
+    assert e[0] == e[1]  # all caches are the same
+
+
+def test_cache_hit_child_removal() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+        }
+    )
+
+    q = df.lazy().sort("a").cache()
+
+    q1 = pl.concat([q.unique(), q.unique()])
+    q2 = pl.concat([q.unique(), q.unique(keep="none")])
+
+    e1 = q1.explain()
+    e2 = q2.explain()
+
+    assert "SORT" not in e1
+    assert "SORT" not in e2
+
+    rgx = re.compile(r"CACHE\[id: (.*)\]")
+
+    e1m = rgx.findall(e1)
+    e2m = rgx.findall(e2)
+
+    assert len(e1m) == 2  # there are only 2 caches
+    assert len(e2m) == 2  # there are only 2 caches
+    assert e1m[0] == e1m[1]  # all caches are the same
+    assert e2m[0] == e2m[1]  # all caches are the same
+
+    df1 = q1.collect()
+    df2 = q2.collect()
+
+    assert_frame_equal(df1.head(3), df, check_row_order=False)
+    assert_frame_equal(df1.tail(3), df, check_row_order=False)
+    assert_frame_equal(df2.head(3), df, check_row_order=False)
+    assert_frame_equal(df2.tail(3), df, check_row_order=False)

@@ -3,7 +3,6 @@ use chrono::{Datelike, NaiveDateTime, NaiveTime};
 use polars_core::chunked_array::temporal::time_to_time64ns;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_utils::format_pl_smallstr;
 
 use crate::prelude::*;
 
@@ -55,11 +54,11 @@ pub fn datetime_range_impl(
     );
     let mut out = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => out.into_datetime(tu, Some(format_pl_smallstr!("{}", tz))),
+        Some(tz) => out.into_datetime(tu, Some(TimeZone::from_chrono(tz))),
         _ => out.into_datetime(tu, None),
     };
 
-    out.set_sorted_flag(IsSorted::Ascending);
+    out.physical_mut().set_sorted_flag(IsSorted::Ascending);
     Ok(out)
 }
 
@@ -90,7 +89,7 @@ pub fn time_range_impl(
     )
     .into_time();
 
-    out.set_sorted_flag(IsSorted::Ascending);
+    out.physical_mut().set_sorted_flag(IsSorted::Ascending);
     Ok(out)
 }
 
@@ -100,8 +99,8 @@ pub(crate) fn datetime_range_i64(
     end: i64,
     interval: Duration,
     closed: ClosedWindow,
-    tu: TimeUnit,
-    tz: Option<&Tz>,
+    time_unit: TimeUnit,
+    time_zone: Option<&Tz>,
 ) -> PolarsResult<Vec<i64>> {
     if start > end {
         return Ok(Vec::new());
@@ -111,43 +110,61 @@ pub(crate) fn datetime_range_i64(
         ComputeError: "`interval` must be positive"
     );
 
-    let size: usize;
-    let offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>;
+    let duration = match time_unit {
+        TimeUnit::Nanoseconds => interval.duration_ns(),
+        TimeUnit::Microseconds => interval.duration_us(),
+        TimeUnit::Milliseconds => interval.duration_ms(),
+    };
+    let time_zone_opt: Option<TimeZone> = match time_zone {
+        #[cfg(feature = "timezones")]
+        Some(tz) => Some(TimeZone::from_chrono(tz)),
+        _ => None,
+    };
 
-    match tu {
-        TimeUnit::Nanoseconds => {
-            size = ((end - start) / interval.duration_ns() + 1) as usize;
-            offset_fn = Duration::add_ns;
-        },
-        TimeUnit::Microseconds => {
-            size = ((end - start) / interval.duration_us() + 1) as usize;
-            offset_fn = Duration::add_us;
-        },
-        TimeUnit::Milliseconds => {
-            size = ((end - start) / interval.duration_ms() + 1) as usize;
-            offset_fn = Duration::add_ms;
-        },
+    if interval.is_constant_duration(time_zone_opt.as_ref()) {
+        // Fast path!
+        let step: usize = duration.try_into().map_err(
+            |_err| polars_err!(ComputeError: "Could not convert {:?} to usize", duration),
+        )?;
+        polars_ensure!(
+            step != 0,
+            InvalidOperation: "interval {} is too small for time unit {} and was rounded down to zero",
+            interval,
+            time_unit,
+        );
+        return match closed {
+            ClosedWindow::Both => Ok((start..=end).step_by(step).collect::<Vec<i64>>()),
+            ClosedWindow::None => Ok((start + duration..end).step_by(step).collect::<Vec<i64>>()),
+            ClosedWindow::Left => Ok((start..end).step_by(step).collect::<Vec<i64>>()),
+            ClosedWindow::Right => Ok((start + duration..=end).step_by(step).collect::<Vec<i64>>()),
+        };
     }
-    let mut ts = Vec::with_capacity(size);
 
+    let size = ((end - start) / duration + 1) as usize;
+    let offset_fn = match time_unit {
+        TimeUnit::Nanoseconds => Duration::add_ns,
+        TimeUnit::Microseconds => Duration::add_us,
+        TimeUnit::Milliseconds => Duration::add_ms,
+    };
+    let mut ts = Vec::with_capacity(size);
     let mut i = match closed {
         ClosedWindow::Both | ClosedWindow::Left => 0,
         ClosedWindow::Right | ClosedWindow::None => 1,
     };
-    let mut t = offset_fn(&(interval * i), start, tz)?;
+    let mut t = offset_fn(&(interval * i), start, time_zone)?;
     i += 1;
     match closed {
         ClosedWindow::Both | ClosedWindow::Right => {
             while t <= end {
                 ts.push(t);
-                t = offset_fn(&(interval * i), start, tz)?;
+                t = offset_fn(&(interval * i), start, time_zone)?;
                 i += 1;
             }
         },
         ClosedWindow::Left | ClosedWindow::None => {
             while t < end {
                 ts.push(t);
-                t = offset_fn(&(interval * i), start, tz)?;
+                t = offset_fn(&(interval * i), start, time_zone)?;
                 i += 1;
             }
         },

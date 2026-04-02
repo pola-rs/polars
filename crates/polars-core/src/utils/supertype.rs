@@ -1,5 +1,7 @@
 use bitflags::bitflags;
 use num_traits::Signed;
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::{DEC128_MAX_PREC, i128_to_dec128};
 
 use super::*;
 
@@ -10,6 +12,90 @@ pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
     get_supertype(l, r).ok_or_else(
         || polars_err!(SchemaMismatch: "failed to determine supertype of {} and {}", l, r),
     )
+}
+
+pub fn try_get_supertype_with_options(
+    l: &DataType,
+    r: &DataType,
+    options: SuperTypeOptions,
+) -> PolarsResult<DataType> {
+    get_supertype_with_options(l, r, options).ok_or_else(
+        || polars_err!(SchemaMismatch: "failed to determine supertype of {} and {}", l, r),
+    )
+}
+
+/// Returns the smallest numeric dtype that `l` and `r` can both be casted to without loss of data.
+/// If no such dtype exists, or `l` and `r` are already matching, returns `None`.
+pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Option<DataType> {
+    use DataType::*;
+
+    if l.is_unknown() || r.is_unknown() || l.is_nested() || r.is_nested() || l == r {
+        None
+    } else if l.is_float() && r.is_float() {
+        match (l, r) {
+            (Float64, _) | (_, Float64) => Some(Float64),
+            (Float32, _) | (_, Float32) => Some(Float32),
+            v => {
+                // Did we add a new float type?
+                if cfg!(debug_assertions) {
+                    panic!("{v:?}")
+                } else {
+                    None
+                }
+            },
+        }
+    } else if l.is_signed_integer() && r.is_signed_integer() {
+        match (l, r) {
+            (Int128, _) | (_, Int128) => Some(Int128),
+            (Int64, _) | (_, Int64) => Some(Int64),
+            (Int32, _) | (_, Int32) => Some(Int32),
+            (Int16, _) | (_, Int16) => Some(Int16),
+            (Int8, _) | (_, Int8) => Some(Int8),
+            v => {
+                if cfg!(debug_assertions) {
+                    panic!("{v:?}")
+                } else {
+                    None
+                }
+            },
+        }
+    } else if l.is_unsigned_integer() && r.is_unsigned_integer() {
+        match (l, r) {
+            (UInt128, _) | (_, UInt128) => Some(UInt128),
+            (UInt64, _) | (_, UInt64) => Some(UInt64),
+            (UInt32, _) | (_, UInt32) => Some(UInt32),
+            (UInt16, _) | (_, UInt16) => Some(UInt16),
+            (UInt8, _) | (_, UInt8) => Some(UInt8),
+            v => {
+                if cfg!(debug_assertions) {
+                    panic!("{v:?}")
+                } else {
+                    None
+                }
+            },
+        }
+    } else if l.is_integer() && r.is_integer() {
+        // One side is signed, the other is unsigned. We just need to upcast the
+        // unsigned side to a signed integer with the next-largest bit width.
+        match (l, r) {
+            (UInt128, _) | (_, UInt128) => None, // No lossless cast possible
+            (UInt64, _) | (_, UInt64) | (Int128, _) | (_, Int128) => Some(Int128),
+            (UInt32, _) | (_, UInt32) | (Int64, _) | (_, Int64) => Some(Int64),
+            (UInt16, _) | (_, UInt16) | (Int32, _) | (_, Int32) => Some(Int32),
+            (UInt8, _) | (_, UInt8) | (Int16, _) | (_, Int16) => Some(Int16),
+            v => {
+                // One side was UInt and we should have already matched against
+                // all the UInt types
+                if cfg!(debug_assertions) {
+                    panic!("{v:?}")
+                } else {
+                    None
+                }
+            },
+        }
+    } else {
+        None
+    }
 }
 
 bitflags! {
@@ -55,7 +141,8 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
     get_supertype_with_options(l, r, SuperTypeOptions::default())
 }
 
-/// Given two data types, determine the data type that both types can safely be cast to.
+/// Given two data types, determine the data type that both types can reasonably safely be cast to.
+///
 ///
 /// Returns [`None`] if no such data type exists.
 pub fn get_supertype_with_options(
@@ -86,6 +173,8 @@ pub fn get_supertype_with_options(
             (Int8, UInt32) => Some(Int64),
             #[cfg(feature = "dtype-i8")]
             (Int8, UInt64) => Some(Float64), // Follow numpy
+            #[cfg(all(feature = "dtype-i8", feature = "dtype-f16"))]
+            (Int8, Float16) => Some(Float16),
             #[cfg(feature = "dtype-i8")]
             (Int8, Float32) => Some(Float32),
             #[cfg(feature = "dtype-i8")]
@@ -108,6 +197,8 @@ pub fn get_supertype_with_options(
             (Int16, UInt32) => Some(Int64),
             #[cfg(feature = "dtype-i16")]
             (Int16, UInt64) => Some(Float64), // Follow numpy
+            #[cfg(all(feature = "dtype-i16", feature = "dtype-f16"))]
+            (Int16, Float16) => Some(Float32),
             #[cfg(feature = "dtype-i16")]
             (Int16, Float32) => Some(Float32),
             #[cfg(feature = "dtype-i16")]
@@ -129,6 +220,8 @@ pub fn get_supertype_with_options(
             (Int32, UInt64) => Some(Float64), // Follow numpy
             #[cfg(feature = "bigidx")]
             (Int32, UInt64) => Some(Int64), // Needed for bigidx
+            #[cfg(feature = "dtype-f16")]
+            (Int32, Float16) => Some(Float64),
             (Int32, Float32) => Some(Float64), // Follow numpy
             (Int32, Float64) => Some(Float64),
 
@@ -148,8 +241,20 @@ pub fn get_supertype_with_options(
             (Int64, UInt64) => Some(Float64), // Follow numpy
             #[cfg(feature = "bigidx")]
             (Int64, UInt64) => Some(Int64), // Needed for bigidx
+            #[cfg(feature = "dtype-f16")]
+            (Int64, Float16) => Some(Float64), // Follow (Int64, Float32) case
             (Int64, Float32) => Some(Float64), // Follow numpy
             (Int64, Float64) => Some(Float64),
+
+            #[cfg(feature = "dtype-i128")]
+            (Int128, a) if a.is_integer() | a.is_bool() => Some(Int128),
+            #[cfg(feature = "dtype-i128")]
+            (Int128, a) if a.is_float() => Some(Float64),
+
+            #[cfg(feature = "dtype-u8")]
+            (UInt8, UInt32) => Some(UInt32),
+            #[cfg(feature = "dtype-u8")]
+            (UInt8, UInt64) => Some(UInt64),
 
             #[cfg(all(feature = "dtype-u16", feature = "dtype-u8"))]
             (UInt16, UInt8) => Some(UInt16),
@@ -158,12 +263,14 @@ pub fn get_supertype_with_options(
             #[cfg(feature = "dtype-u16")]
             (UInt16, UInt64) => Some(UInt64),
 
-            #[cfg(feature = "dtype-u8")]
-            (UInt8, UInt32) => Some(UInt32),
-            #[cfg(feature = "dtype-u8")]
-            (UInt8, UInt64) => Some(UInt64),
-
             (UInt32, UInt64) => Some(UInt64),
+
+            #[cfg(feature = "dtype-u128")]
+            (UInt128, a) if a.is_unsigned_integer() || a.is_bool() => Some(UInt128),
+            #[cfg(feature = "dtype-u128")]
+            (UInt128, a) if a.is_signed_integer() => Some(Int128),
+            #[cfg(feature = "dtype-u128")]
+            (UInt128, a) if a.is_float() => Some(Float64),
 
             #[cfg(feature = "dtype-u8")]
             (Boolean, UInt8) => Some(UInt8),
@@ -171,6 +278,15 @@ pub fn get_supertype_with_options(
             (Boolean, UInt16) => Some(UInt16),
             (Boolean, UInt32) => Some(UInt32),
             (Boolean, UInt64) => Some(UInt64),
+
+            #[cfg(all(feature = "dtype-f16", feature = "dtype-u8"))]
+            (Float16, UInt8) => Some(Float16),
+            #[cfg(all(feature = "dtype-f16", feature = "dtype-u16"))]
+            (Float16, UInt16) => Some(Float32),
+            #[cfg(feature = "dtype-f16")]
+            (Float16, UInt32) => Some(Float64),
+            #[cfg(feature = "dtype-f16")]
+            (Float16, UInt64) => Some(Float64),
 
             #[cfg(feature = "dtype-u8")]
             (Float32, UInt8) => Some(Float32),
@@ -186,6 +302,15 @@ pub fn get_supertype_with_options(
             (Float64, UInt32) => Some(Float64),
             (Float64, UInt64) => Some(Float64),
 
+            #[cfg(feature = "dtype-f16")]
+            (Float16, Float32) => Some(Float32),
+            #[cfg(feature = "dtype-f16")]
+            (Float16, Float64) => Some(Float64),
+            (Float32, Float64) => Some(Float64),
+            #[cfg(feature = "dtype-f16")]
+            (Float32, Float16) => Some(Float32),
+            #[cfg(feature = "dtype-f16")]
+            (Float64, Float16) => Some(Float64),
             (Float64, Float32) => Some(Float64),
 
             // Time related dtypes
@@ -197,6 +322,8 @@ pub fn get_supertype_with_options(
             (Date, Int32) => Some(Int32),
             #[cfg(feature = "dtype-date")]
             (Date, Int64) => Some(Int64),
+            #[cfg(all(feature = "dtype-date", feature = "dtype-f16"))]
+            (Date, Float16) => Some(Float32),
             #[cfg(feature = "dtype-date")]
             (Date, Float32) => Some(Float32),
             #[cfg(feature = "dtype-date")]
@@ -212,6 +339,8 @@ pub fn get_supertype_with_options(
             (Datetime(_, _), Int32) => Some(Int64),
             #[cfg(feature = "dtype-datetime")]
             (Datetime(_, _), Int64) => Some(Int64),
+            #[cfg(all(feature = "dtype-datetime", feature = "dtype-f16"))]
+            (Datetime(_, _), Float16) => Some(Float64),
             #[cfg(feature = "dtype-datetime")]
             (Datetime(_, _), Float32) => Some(Float64),
             #[cfg(feature = "dtype-datetime")]
@@ -219,6 +348,8 @@ pub fn get_supertype_with_options(
             #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
             (Datetime(tu, tz), Date) => Some(Datetime(*tu, tz.clone())),
 
+            #[cfg(feature = "dtype-f16")]
+            (Boolean, Float16) => Some(Float16),
             (Boolean, Float32) => Some(Float32),
             (Boolean, Float64) => Some(Float64),
 
@@ -230,6 +361,8 @@ pub fn get_supertype_with_options(
             (Duration(_), Int32) => Some(Int64),
             #[cfg(feature = "dtype-duration")]
             (Duration(_), Int64) => Some(Int64),
+            #[cfg(all(feature = "dtype-duration", feature = "dtype-f16"))]
+            (Duration(_), Float16) => Some(Float64),
             #[cfg(feature = "dtype-duration")]
             (Duration(_), Float32) => Some(Float64),
             #[cfg(feature = "dtype-duration")]
@@ -239,6 +372,8 @@ pub fn get_supertype_with_options(
             (Time, Int32) => Some(Int64),
             #[cfg(feature = "dtype-time")]
             (Time, Int64) => Some(Int64),
+            #[cfg(all(feature = "dtype-time", feature = "dtype-f16"))]
+            (Time, Float16) => Some(Float64),
             #[cfg(feature = "dtype-time")]
             (Time, Float32) => Some(Float64),
             #[cfg(feature = "dtype-time")]
@@ -316,23 +451,18 @@ pub fn get_supertype_with_options(
                             None
                         }
                     },
-                    // numeric vs float|str -> always float|str|decimal
-                    UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() | dt.is_decimal() => Some(dt.clone()),
-                    UnknownKind::Float if dt.is_integer() => Some(Unknown(UnknownKind::Float)),
-                    // Materialize float to float or decimal
-                    UnknownKind::Float if dt.is_float() | dt.is_decimal() => Some(dt.clone()),
+                    // Materialize float to float
+                    UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() => Some(dt.clone()),
+                    UnknownKind::Float if dt.is_integer() | dt.is_decimal() => Some(Unknown(UnknownKind::Float)),
                     // Materialize str
                     UnknownKind::Str if dt.is_string() | dt.is_enum() => Some(dt.clone()),
                     // Materialize str
                     #[cfg(feature = "dtype-categorical")]
-                    UnknownKind::Str if dt.is_categorical()  => {
-                        let Categorical(_, ord) = dt else { unreachable!()};
-                        Some(Categorical(None, *ord))
-                    },
+                    UnknownKind::Str if dt.is_categorical() => Some(dt.clone()),
                     // Keep unknown
                     dynam if dt.is_null() => Some(Unknown(*dynam)),
                     // Find integers sizes
-                    UnknownKind::Int(v) if dt.is_numeric() => {
+                    UnknownKind::Int(v) if dt.is_primitive_numeric() => {
                         // Both dyn int
                         if let Unknown(UnknownKind::Int(v_other)) = dt {
                             // Take the maximum value to ensure we bubble up the required minimal size.
@@ -356,7 +486,15 @@ pub fn get_supertype_with_options(
                             }
                         }
                     }
-                    UnknownKind::Int(_) if dt.is_decimal() => Some(dt.clone()),
+                    UnknownKind::Int(v) if dt.is_bool() => {
+                        let int_dtype = materialize_dyn_int(*v).dtype();
+                        get_supertype(dt, &int_dtype)
+                    },
+                    #[cfg(feature = "dtype-decimal")]
+                    UnknownKind::Int(_) if dt.is_decimal() => {
+                        let DataType::Decimal(_prec, scale) = dt else { unreachable!() };
+                        Some(DataType::Decimal(DEC128_MAX_PREC, *scale))
+                    }
                     _ => Some(Unknown(UnknownKind::Any))
                 }
             },
@@ -365,7 +503,7 @@ pub fn get_supertype_with_options(
                 super_type_structs(fields_a, fields_b)
             }
             #[cfg(feature = "dtype-struct")]
-            (Struct(fields_a), rhs) if rhs.is_numeric() => {
+            (Struct(fields_a), rhs) if rhs.is_primitive_numeric() => {
                 let mut new_fields = Vec::with_capacity(fields_a.len());
                 for a in fields_a {
                     let st = get_supertype(&a.dtype, rhs)?;
@@ -375,12 +513,34 @@ pub fn get_supertype_with_options(
             }
             #[cfg(feature = "dtype-decimal")]
             (Decimal(p1, s1), Decimal(p2, s2)) => {
-                Some(Decimal((*p1).zip(*p2).map(|(p1, p2)| p1.max(p2)), (*s1).max(*s2)))
+                Some(Decimal((*p1).max(*p2), (*s1).max(*s2)))
+            },
+            #[cfg(all(feature = "dtype-decimal", feature = "dtype-f16"))]
+            (Decimal(_, _), Float16) => Some(Float64),
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(_, _), Float32 | Float64) => Some(Float64),
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(prec, scale), dt) if dt.is_signed_integer() || dt.is_unsigned_integer() => {
+                let fits = |v| { i128_to_dec128(v, *prec, *scale).is_some() };
+                let fits_orig_prec_scale = match dt {
+                    UInt8 => fits(u8::MAX as i128),
+                    UInt16 => fits(u16::MAX as i128),
+                    UInt32 => fits(u32::MAX as i128),
+                    UInt64 => fits(u64::MAX as i128),
+                    UInt128 => false,
+                    Int8 => fits(i8::MAX as i128),
+                    Int16 => fits(i16::MAX as i128),
+                    Int32 => fits(i32::MAX as i128),
+                    Int64 => fits(i64::MAX as i128),
+                    Int128 => false,
+                    _ => unreachable!(),
+                };
+                if fits_orig_prec_scale {
+                    Some(Decimal(*prec, *scale))
+                } else {
+                    Some(Decimal(DEC128_MAX_PREC, *scale))
+                }
             }
-            #[cfg(feature = "dtype-decimal")]
-            (Decimal(_, _), f @ (Float32 | Float64)) => Some(f.clone()),
-            #[cfg(feature = "dtype-decimal")]
-            (d @ Decimal(_, _), dt) if dt.is_signed_integer() || dt.is_unsigned_integer() => Some(d.clone()),
             _ => None,
         }
     }
@@ -451,6 +611,53 @@ fn super_type_structs(fields_a: &[Field], fields_b: &[Field]) -> Option<DataType
 pub fn materialize_dyn_int(v: i128) -> AnyValue<'static> {
     // Try to get the "smallest" fitting value.
     // TODO! next breaking go to true smallest.
+    if let Ok(v) = i32::try_from(v) {
+        return AnyValue::Int32(v);
+    }
+    if let Ok(v) = i64::try_from(v) {
+        return AnyValue::Int64(v);
+    }
+    if let Ok(v) = u64::try_from(v) {
+        return AnyValue::UInt64(v);
+    }
+    #[cfg(feature = "dtype-i128")]
+    {
+        AnyValue::Int128(v)
+    }
+
+    #[cfg(not(feature = "dtype-i128"))]
+    AnyValue::Null
+}
+
+fn materialize_dyn_int_pos(v: i128) -> AnyValue<'static> {
+    // Try to get the "smallest" fitting value.
+    // TODO! next breaking go to true smallest.
+    #[cfg(feature = "dtype-u8")]
+    if let Ok(v) = u8::try_from(v) {
+        return AnyValue::UInt8(v);
+    }
+    #[cfg(feature = "dtype-u16")]
+    if let Ok(v) = u16::try_from(v) {
+        return AnyValue::UInt16(v);
+    }
+    match u32::try_from(v).ok() {
+        Some(v) => AnyValue::UInt32(v),
+        None => match u64::try_from(v).ok() {
+            Some(v) => AnyValue::UInt64(v),
+            None => AnyValue::Null,
+        },
+    }
+}
+
+fn materialize_smallest_dyn_int(v: i128) -> AnyValue<'static> {
+    #[cfg(feature = "dtype-i8")]
+    if let Ok(v) = i8::try_from(v) {
+        return AnyValue::Int8(v);
+    }
+    #[cfg(feature = "dtype-i16")]
+    if let Ok(v) = i16::try_from(v) {
+        return AnyValue::Int16(v);
+    }
     match i32::try_from(v).ok() {
         Some(v) => AnyValue::Int32(v),
         None => match i64::try_from(v).ok() {
@@ -462,39 +669,20 @@ pub fn materialize_dyn_int(v: i128) -> AnyValue<'static> {
         },
     }
 }
-fn materialize_dyn_int_pos(v: i128) -> AnyValue<'static> {
-    // Try to get the "smallest" fitting value.
-    // TODO! next breaking go to true smallest.
-    match u8::try_from(v).ok() {
-        Some(v) => AnyValue::UInt8(v),
-        None => match u16::try_from(v).ok() {
-            Some(v) => AnyValue::UInt16(v),
-            None => match u32::try_from(v).ok() {
-                Some(v) => AnyValue::UInt32(v),
-                None => match u64::try_from(v).ok() {
-                    Some(v) => AnyValue::UInt64(v),
-                    None => AnyValue::Null,
-                },
-            },
-        },
-    }
-}
 
-fn materialize_smallest_dyn_int(v: i128) -> AnyValue<'static> {
-    match i8::try_from(v).ok() {
-        Some(v) => AnyValue::Int8(v),
-        None => match i16::try_from(v).ok() {
-            Some(v) => AnyValue::Int16(v),
-            None => match i32::try_from(v).ok() {
-                Some(v) => AnyValue::Int32(v),
-                None => match i64::try_from(v).ok() {
-                    Some(v) => AnyValue::Int64(v),
-                    None => match u64::try_from(v).ok() {
-                        Some(v) => AnyValue::UInt64(v),
-                        None => AnyValue::Null,
-                    },
-                },
-            },
-        },
+pub fn merge_dtypes_many<I: IntoIterator<Item = D> + Clone, D: AsRef<DataType>>(
+    into_iter: I,
+) -> PolarsResult<DataType> {
+    let mut iter = into_iter.into_iter();
+
+    let mut st = iter
+        .next()
+        .ok_or_else(|| polars_err!(ComputeError: "expect at least 1 dtype"))
+        .map(|d| d.as_ref().clone())?;
+
+    for d in iter {
+        st = try_get_supertype(d.as_ref(), &st)?;
     }
+
+    Ok(st)
 }

@@ -6,7 +6,6 @@ use std::borrow::Borrow;
 use std::fmt::Debug;
 #[cfg(feature = "object")]
 use std::hash::{Hash, Hasher};
-use std::hint::unreachable_unchecked;
 
 use arrow::bitmap::Bitmap;
 pub use av_buffer::*;
@@ -15,9 +14,9 @@ use polars_utils::format_pl_smallstr;
 use polars_utils::total_ord::TotalHash;
 use rayon::prelude::*;
 
+use crate::POOL;
 use crate::prelude::*;
 use crate::utils::{dtypes_to_schema, dtypes_to_supertype, try_get_supertype};
-use crate::POOL;
 
 #[cfg(feature = "object")]
 pub(crate) struct AnyValueRows<'a> {
@@ -64,24 +63,12 @@ impl DataFrame {
     #[allow(clippy::wrong_self_convention)]
     // Create indexable rows in a single allocation.
     pub(crate) fn to_av_rows(&mut self) -> AnyValueRows<'_> {
-        self.as_single_chunk_par();
         let width = self.width();
         let size = width * self.height();
         let mut buf = vec![AnyValue::Null; size];
-        for (col_i, s) in self.columns.iter().enumerate() {
-            match s.dtype() {
-                #[cfg(feature = "object")]
-                DataType::Object(_, _) => {
-                    for row_i in 0..s.len() {
-                        let av = s.get(row_i).unwrap();
-                        buf[row_i * width + col_i] = av
-                    }
-                },
-                _ => {
-                    for (row_i, av) in s.iter().enumerate() {
-                        buf[row_i * width + col_i] = av
-                    }
-                },
+        for (col_i, s) in self.materialized_column_iter().enumerate() {
+            for (row_i, av) in s.iter().enumerate() {
+                buf[row_i * width + col_i] = av
             }
         }
         AnyValueRows { vals: buf, width }
@@ -116,10 +103,6 @@ pub fn infer_schema(
 }
 
 fn add_or_insert(values: &mut Tracker, key: PlSmallStr, dtype: DataType) {
-    if dtype == DataType::Null {
-        return;
-    }
-
     if values.contains_key(&key) {
         let x = values.get_mut(&key).unwrap();
         x.insert(dtype);
@@ -210,7 +193,7 @@ pub fn rows_to_schema_first_non_null(
             .iter_values()
             .enumerate()
             .filter_map(|(i, dtype)| {
-                // double check struct and list types types
+                // double check struct and list types
                 // nested null values can be wrongly inferred by front ends
                 match dtype {
                     DataType::Null | DataType::List(_) => Some(i),

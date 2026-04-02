@@ -1,9 +1,11 @@
-use arrow::legacy::kernels::float::*;
+use arrow::bitmap::Bitmap;
 use arrow::legacy::kernels::set::set_at_nulls;
 use num_traits::Float;
-use polars_utils::total_ord::{canonical_f32, canonical_f64};
+use polars_compute::nan::{is_nan, is_not_nan};
+use polars_utils::float16::pf16;
+use polars_utils::total_ord::{canonical_f16, canonical_f32, canonical_f64};
 
-use crate::prelude::arity::unary_elementwise_values;
+use crate::prelude::arity::{unary_elementwise_values, unary_kernel};
 use crate::prelude::*;
 
 impl<T> ChunkedArray<T>
@@ -12,16 +14,23 @@ where
     T::Native: Float,
 {
     pub fn is_nan(&self) -> BooleanChunked {
-        self.apply_kernel_cast(&is_nan::<T::Native>)
+        unary_kernel(self, |arr| {
+            let out = is_nan(arr.values()).unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
+            BooleanArray::from(out).with_validity(arr.validity().cloned())
+        })
     }
     pub fn is_not_nan(&self) -> BooleanChunked {
-        self.apply_kernel_cast(&is_not_nan::<T::Native>)
+        unary_kernel(self, |arr| {
+            let out =
+                is_not_nan(arr.values()).unwrap_or_else(|| Bitmap::new_with_value(true, arr.len()));
+            BooleanArray::from(out).with_validity(arr.validity().cloned())
+        })
     }
     pub fn is_finite(&self) -> BooleanChunked {
-        self.apply_kernel_cast(&is_finite)
+        unary_elementwise_values(self, |x| x.is_finite())
     }
     pub fn is_infinite(&self) -> BooleanChunked {
-        self.apply_kernel_cast(&is_infinite)
+        unary_elementwise_values(self, |x| x.is_infinite())
     }
 
     #[must_use]
@@ -36,6 +45,13 @@ where
 
 pub trait Canonical {
     fn canonical(self) -> Self;
+}
+
+impl Canonical for pf16 {
+    #[inline]
+    fn canonical(self) -> Self {
+        canonical_f16(self)
+    }
 }
 
 impl Canonical for f32 {

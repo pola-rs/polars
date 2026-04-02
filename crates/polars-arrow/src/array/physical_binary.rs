@@ -1,4 +1,4 @@
-use crate::bitmap::MutableBitmap;
+use crate::bitmap::{BitmapBuilder, MutableBitmap};
 use crate::offset::{Offset, Offsets};
 
 /// # Safety
@@ -16,7 +16,7 @@ where
     let (_, upper) = iterator.size_hint();
     let len = upper.expect("trusted_len_unzip requires an upper limit");
 
-    let mut null = MutableBitmap::with_capacity(len);
+    let mut null = BitmapBuilder::with_capacity(len);
     let mut offsets = Vec::<O>::with_capacity(len + 1);
     let mut values = Vec::<u8>::new();
 
@@ -44,7 +44,11 @@ where
     );
     offsets.set_len(len + 1);
 
-    Ok((null.into(), Offsets::new_unchecked(offsets), values))
+    Ok((
+        null.into_opt_mut_validity(),
+        Offsets::new_unchecked(offsets),
+        values,
+    ))
 }
 
 /// Creates [`MutableBitmap`] and two [`Vec`]s from an iterator of `Option`.

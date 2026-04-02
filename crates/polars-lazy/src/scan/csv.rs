@@ -1,48 +1,59 @@
-use std::path::{Path, PathBuf};
-
+#[cfg(feature = "csv")]
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
-    infer_file_schema, CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
+    CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
 };
 use polars_io::path_utils::expand_paths;
-use polars_io::utils::get_reader_bytes;
-use polars_io::RowIndex;
+use polars_io::{HiveOptions, RowIndex};
+use polars_utils::mmap::MMapSemaphore;
+use polars_utils::pl_path::PlRefPath;
+use polars_utils::slice_enum::Slice;
 
 use crate::prelude::*;
 
 #[derive(Clone)]
 #[cfg(feature = "csv")]
 pub struct LazyCsvReader {
-    paths: Arc<Vec<PathBuf>>,
+    sources: ScanSources,
     glob: bool,
     cache: bool,
     read_options: CsvReadOptions,
     cloud_options: Option<CloudOptions>,
     include_file_paths: Option<PlSmallStr>,
+    missing_columns_policy: Option<MissingColumnsPolicy>,
 }
 
 #[cfg(feature = "csv")]
 impl LazyCsvReader {
     /// Re-export to shorten code.
-    fn map_parse_options<F: Fn(CsvParseOptions) -> CsvParseOptions>(mut self, map_func: F) -> Self {
+    pub fn map_parse_options<F: Fn(CsvParseOptions) -> CsvParseOptions>(
+        mut self,
+        map_func: F,
+    ) -> Self {
         self.read_options = self.read_options.map_parse_options(map_func);
         self
     }
 
-    pub fn new_paths(paths: Arc<Vec<PathBuf>>) -> Self {
-        Self::new("").with_paths(paths)
+    pub fn new_paths(paths: Buffer<PlRefPath>) -> Self {
+        Self::new_with_sources(ScanSources::Paths(paths))
     }
 
-    pub fn new(path: impl AsRef<Path>) -> Self {
+    pub fn new_with_sources(sources: ScanSources) -> Self {
         LazyCsvReader {
-            paths: Arc::new(vec![path.as_ref().to_path_buf()]),
+            sources,
             glob: true,
             cache: true,
             read_options: Default::default(),
             cloud_options: Default::default(),
             include_file_paths: None,
+            missing_columns_policy: None,
         }
+    }
+
+    pub fn new(path: PlRefPath) -> Self {
+        Self::new_with_sources(ScanSources::Paths(Buffer::from_iter([path])))
     }
 
     /// Skip this number of rows after the header location.
@@ -67,9 +78,16 @@ impl LazyCsvReader {
         self
     }
 
+    /// Sets the number of threads used for CSV parsing.
+    #[must_use]
+    pub fn with_n_threads(mut self, n_threads: Option<usize>) -> Self {
+        self.read_options.n_threads = n_threads;
+        self
+    }
+
     /// Set the number of rows to use when inferring the csv schema.
-    /// the default is 100 rows.
-    /// Setting to `None` will do a full table scan, very slow.
+    /// The default is 100 rows.
+    /// Setting to [None] will do a full table scan, which is very slow.
     #[must_use]
     pub fn with_infer_schema_length(mut self, num_rows: Option<usize>) -> Self {
         self.read_options.infer_schema_length = num_rows;
@@ -91,9 +109,18 @@ impl LazyCsvReader {
     }
 
     /// Skip the first `n` rows during parsing. The header will be parsed at row `n`.
+    /// Note that by row we mean valid CSV, encoding and comments are respected.
     #[must_use]
     pub fn with_skip_rows(mut self, skip_rows: usize) -> Self {
         self.read_options.skip_rows = skip_rows;
+        self
+    }
+
+    /// Skip the first `n` lines during parsing. The header will be parsed at line `n`.
+    /// We don't respect CSV escaping when skipping lines.
+    #[must_use]
+    pub fn with_skip_lines(mut self, skip_lines: usize) -> Self {
+        self.read_options.skip_lines = skip_lines;
         self
     }
 
@@ -109,6 +136,13 @@ impl LazyCsvReader {
     #[must_use]
     pub fn with_has_header(mut self, has_header: bool) -> Self {
         self.read_options.has_header = has_header;
+        self
+    }
+
+    /// Sets the chunk size used by the parser. This influences performance.
+    /// This can be used as a way to reduce memory usage during the parsing at the cost of performance.
+    pub fn with_chunk_size(mut self, chunk_size: usize) -> Self {
+        self.read_options.chunk_size = chunk_size;
         self
     }
 
@@ -132,7 +166,7 @@ impl LazyCsvReader {
         })
     }
 
-    /// Set the `char` used as quote char. The default is `b'"'`. If set to `[None]` quoting is disabled.
+    /// Set the `char` used as quote char. The default is `b'"'`. If set to [`None`] quoting is disabled.
     #[must_use]
     pub fn with_quote_char(self, quote_char: Option<u8>) -> Self {
         self.map_parse_options(|opts| opts.with_quote_char(quote_char))
@@ -176,7 +210,7 @@ impl LazyCsvReader {
     }
 
     /// Automatically try to parse dates/datetimes and time.
-    /// If parsing fails, columns remain of dtype `[DataType::String]`.
+    /// If parsing fails, columns remain of dtype [`DataType::String`].
     #[cfg(feature = "temporal")]
     pub fn with_try_parse_dates(self, try_parse_dates: bool) -> Self {
         self.map_parse_options(|opts| opts.with_try_parse_dates(try_parse_dates))
@@ -219,38 +253,73 @@ impl LazyCsvReader {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        // TODO: Path expansion should happen when converting to the IR
-        // https://github.com/pola-rs/polars/issues/17634
-        let paths = expand_paths(self.paths(), self.glob(), self.cloud_options())?;
+        const ASSUMED_COMPRESSION_RATIO: usize = 4;
+        let n_threads = self.read_options.n_threads;
 
-        let Some(path) = paths.first() else {
-            polars_bail!(ComputeError: "no paths specified for this reader");
+        let infer_schema = |bytes: Buffer<u8>| {
+            use polars_io::prelude::streaming::read_until_start_and_infer_schema;
+            use polars_io::utils::compression::ByteSourceReader;
+
+            let bytes_len = bytes.len();
+            let mut reader = ByteSourceReader::from_memory(bytes)?;
+            let decompressed_size_hint = Some(
+                bytes_len
+                    * reader
+                        .compression()
+                        .map_or(1, |_| ASSUMED_COMPRESSION_RATIO),
+            );
+
+            let (inferred_schema, _) = read_until_start_and_infer_schema(
+                &self.read_options,
+                None,
+                decompressed_size_hint,
+                None,
+                &mut reader,
+            )?;
+
+            PolarsResult::Ok(inferred_schema)
         };
 
-        let mut file = polars_utils::open_file(path)?;
+        let schema = match self.sources.clone() {
+            ScanSources::Paths(paths) => {
+                // TODO: Path expansion should happen when converting to the IR
+                // https://github.com/pola-rs/polars/issues/17634
 
-        let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
-        let skip_rows = self.read_options.skip_rows;
-        let parse_options = self.read_options.get_parse_options();
+                use polars_io::pl_async::get_runtime;
 
-        let (schema, _, _) = infer_file_schema(
-            &reader_bytes,
-            parse_options.separator,
-            self.read_options.infer_schema_length,
-            self.read_options.has_header,
-            // we set it to None and modify them after the schema is updated
-            None,
-            skip_rows,
-            self.read_options.skip_rows_after_header,
-            parse_options.comment_prefix.as_ref(),
-            parse_options.quote_char,
-            parse_options.eol_char,
-            None,
-            parse_options.try_parse_dates,
-            self.read_options.raise_if_empty,
-            &mut self.read_options.n_threads,
-            parse_options.decimal_comma,
-        )?;
+                let paths = get_runtime().block_on(expand_paths(
+                    &paths[..],
+                    self.glob(),
+                    &[], // hidden_file_prefix
+                    &mut self.cloud_options,
+                ))?;
+
+                let Some(path) = paths.first() else {
+                    polars_bail!(ComputeError: "no paths specified for this reader");
+                };
+
+                let file = polars_utils::open_file(path.as_std_path())?;
+                let mmap = MMapSemaphore::new_from_file(&file)?;
+                infer_schema(Buffer::from_owner(mmap))?
+            },
+            ScanSources::Files(files) => {
+                let Some(file) = files.first() else {
+                    polars_bail!(ComputeError: "no buffers specified for this reader");
+                };
+
+                let mmap = MMapSemaphore::new_from_file(file)?;
+                infer_schema(Buffer::from_owner(mmap))?
+            },
+            ScanSources::Buffers(buffers) => {
+                let Some(buffer) = buffers.first() else {
+                    polars_bail!(ComputeError: "no buffers specified for this reader");
+                };
+
+                infer_schema(buffer.clone())?
+            },
+        };
+
+        self.read_options.n_threads = n_threads;
         let mut schema = f(schema)?;
 
         // the dtypes set may be for the new names, so update again
@@ -267,22 +336,50 @@ impl LazyCsvReader {
         self.include_file_paths = include_file_paths;
         self
     }
+
+    #[must_use]
+    pub fn with_missing_columns_policy(mut self, policy: Option<MissingColumnsPolicy>) -> Self {
+        self.missing_columns_policy = policy;
+        self
+    }
 }
 
 impl LazyFileListReader for LazyCsvReader {
     /// Get the final [LazyFrame].
     fn finish(self) -> PolarsResult<LazyFrame> {
-        let mut lf: LazyFrame = DslBuilder::scan_csv(
-            self.paths,
+        let rechunk = self.rechunk();
+        let row_index = self.row_index().cloned();
+        let pre_slice = self.n_rows().map(|len| Slice::Positive { offset: 0, len });
+
+        let missing_columns_policy = self.missing_columns_policy.unwrap_or_default();
+
+        let lf: LazyFrame = DslBuilder::scan_csv(
+            self.sources,
             self.read_options,
-            self.cache,
-            self.cloud_options,
-            self.glob,
-            self.include_file_paths,
+            UnifiedScanArgs {
+                schema: None,
+                cloud_options: self.cloud_options,
+                hive_options: HiveOptions::new_disabled(),
+                rechunk,
+                cache: self.cache,
+                glob: self.glob,
+                hidden_file_prefix: None,
+                projection: None,
+                column_mapping: None,
+                default_values: None,
+                row_index,
+                pre_slice,
+                cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
+                missing_columns_policy,
+                extra_columns_policy: ExtraColumnsPolicy::Raise,
+                include_file_paths: self.include_file_paths,
+                deletion_files: None,
+                table_statistics: None,
+                row_count: None,
+            },
         )?
         .build()
         .into();
-        lf.opt_state |= OptFlags::FILE_CACHING;
         Ok(lf)
     }
 
@@ -294,12 +391,12 @@ impl LazyFileListReader for LazyCsvReader {
         self.glob
     }
 
-    fn paths(&self) -> &[PathBuf] {
-        &self.paths
+    fn sources(&self) -> &ScanSources {
+        &self.sources
     }
 
-    fn with_paths(mut self, paths: Arc<Vec<PathBuf>>) -> Self {
-        self.paths = paths;
+    fn with_sources(mut self, sources: ScanSources) -> Self {
+        self.sources = sources;
         self
     }
 
@@ -318,7 +415,6 @@ impl LazyFileListReader for LazyCsvReader {
     }
 
     /// Rechunk the memory to contiguous chunks when parsing is done.
-    #[must_use]
     fn with_rechunk(mut self, rechunk: bool) -> Self {
         self.read_options.rechunk = rechunk;
         self

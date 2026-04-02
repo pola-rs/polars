@@ -2,7 +2,6 @@ use hashbrown::hash_map::{HashMap, RawEntryBuilder, RawEntryBuilderMut};
 
 use crate::aliases::PlRandomState;
 use crate::hashing::hash_to_partition;
-use crate::slice::GetSaferUnchecked;
 
 pub struct PartitionedHashMap<K, V, S = PlRandomState> {
     inner: Vec<HashMap<K, V, S>>,
@@ -26,7 +25,7 @@ impl<K, V, S> PartitionedHashMap<K, V, S> {
     #[inline]
     pub fn raw_entry_and_partition(&self, h: u64) -> (RawEntryBuilder<'_, K, V, S>, usize) {
         let partition = hash_to_partition(h, self.inner.len());
-        let current_table = unsafe { self.inner.get_unchecked_release(partition) };
+        let current_table = unsafe { self.inner.get_unchecked(partition) };
         (current_table.raw_entry(), partition)
     }
 
@@ -36,7 +35,7 @@ impl<K, V, S> PartitionedHashMap<K, V, S> {
         h: u64,
     ) -> (RawEntryBuilderMut<'_, K, V, S>, usize) {
         let partition = hash_to_partition(h, self.inner.len());
-        let current_table = unsafe { self.inner.get_unchecked_release_mut(partition) };
+        let current_table = unsafe { self.inner.get_unchecked_mut(partition) };
         (current_table.raw_entry_mut(), partition)
     }
 

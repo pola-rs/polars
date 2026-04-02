@@ -9,7 +9,9 @@ The following methods are available under the `expr.struct` attribute.
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
+    Expr.struct.__getitem__
     Expr.struct.field
+    Expr.struct.unnest
     Expr.struct.json_encode
     Expr.struct.rename_fields
     Expr.struct.with_fields

@@ -1,56 +1,59 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::rc::Rc;
 
 use polars_core::series::amortized_iter::AmortSeries;
+use rayon::iter::IntoParallelIterator;
+use rayon::prelude::*;
 
 use super::*;
 
-impl<'a> AggregationContext<'a> {
+impl AggregationContext<'_> {
     pub(super) fn iter_groups(
         &mut self,
         keep_names: bool,
     ) -> Box<dyn Iterator<Item = Option<AmortSeries>> + '_> {
         match self.agg_state() {
-            AggState::Literal(_) => {
+            AggState::LiteralScalar(_) => {
                 self.groups();
-                let s = self.series().rechunk();
+                let c = self.get_values().rechunk();
                 let name = if keep_names {
-                    s.name().clone()
+                    c.name().clone()
                 } else {
                     PlSmallStr::EMPTY
                 };
                 // SAFETY: dtype is correct
                 unsafe {
                     Box::new(LitIter::new(
-                        s.array_ref(0).clone(),
+                        c.as_materialized_series().array_ref(0).clone(),
                         self.groups.len(),
-                        s._dtype(),
+                        c.dtype(),
                         name,
                     ))
                 }
             },
             AggState::AggregatedScalar(_) => {
                 self.groups();
-                let s = self.series();
+                let c = self.get_values();
                 let name = if keep_names {
-                    s.name().clone()
+                    c.name().clone()
                 } else {
                     PlSmallStr::EMPTY
                 };
                 // SAFETY: dtype is correct
                 unsafe {
                     Box::new(FlatIter::new(
-                        s.chunks(),
+                        c.as_materialized_series().chunks(),
                         self.groups.len(),
-                        s.dtype(),
+                        c.dtype(),
                         name,
                     ))
                 }
             },
             AggState::AggregatedList(_) => {
-                let s = self.series();
-                let list = s.list().unwrap();
+                let c = self.get_values();
+                let list = c.list().unwrap();
                 let name = if keep_names {
-                    s.name().clone()
+                    c.name().clone()
                 } else {
                     PlSmallStr::EMPTY
                 };
@@ -59,15 +62,75 @@ impl<'a> AggregationContext<'a> {
             AggState::NotAggregated(_) => {
                 // we don't take the owned series as we want a reference
                 let _ = self.aggregated();
-                let s = self.series();
-                let list = s.list().unwrap();
+                let c = self.get_values();
+                let list = c.list().unwrap();
                 let name = if keep_names {
-                    s.name().clone()
+                    c.name().clone()
                 } else {
                     PlSmallStr::EMPTY
                 };
                 Box::new(list.amortized_iter_with_name(name))
             },
+        }
+    }
+}
+
+impl AggregationContext<'_> {
+    /// Iterate over groups lazily, i.e., without greedy aggregation into an AggList.
+    pub(super) fn iter_groups_lazy(&mut self) -> impl Iterator<Item = Option<Series>> + '_ {
+        match self.agg_state() {
+            AggState::NotAggregated(_) => {
+                let groups = self.groups();
+                let len = groups.len();
+                let groups = Arc::new(groups.clone());
+
+                let c = self.get_values().rechunk();
+
+                let col = Arc::new(c);
+
+                (0..len).map(move |idx| {
+                    let g = groups.get(idx);
+                    match g {
+                        GroupsIndicator::Idx(_) => unreachable!(),
+                        GroupsIndicator::Slice(s) => Some(
+                            col.slice(s[0] as i64, s[1] as usize)
+                                .into_materialized_series()
+                                .clone(),
+                        ),
+                    }
+                })
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    /// Iterate parallel over groups lazily, i.e., without greedy aggregation into an AggList.
+    pub(super) fn par_iter_groups_lazy(
+        &mut self,
+    ) -> impl IndexedParallelIterator<Item = Option<Series>> + '_ {
+        match self.agg_state() {
+            AggState::NotAggregated(_) => {
+                let groups = self.groups();
+                let len = groups.len();
+                let groups = Arc::new(groups.clone());
+
+                let c = self.get_values().rechunk();
+
+                let col = Arc::new(c);
+
+                (0..len).into_par_iter().map(move |idx| {
+                    let g = groups.get(idx);
+                    match g {
+                        GroupsIndicator::Idx(_) => unreachable!(),
+                        GroupsIndicator::Slice(s) => Some(
+                            col.slice(s[0] as i64, s[1] as usize)
+                                .into_materialized_series()
+                                .clone(),
+                        ),
+                    }
+                })
+            },
+            _ => unreachable!(),
         }
     }
 }
@@ -182,6 +245,6 @@ impl Iterator for FlatIter {
         }
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len, Some(self.offset))
+        (self.len - self.offset, Some(self.len - self.offset))
     }
 }

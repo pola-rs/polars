@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use avro_schema::file::Block;
 use avro_schema::schema::{Enum, Field as AvroField, Record, Schema as AvroSchema};
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 
 use super::nested::*;
 use super::util;
@@ -58,6 +60,7 @@ fn make_mutable(
                     .collect::<PolarsResult<Vec<_>>>()?;
                 Box::new(DynMutableStructArray::new(values, dtype.clone())) as Box<dyn MutableArray>
             },
+            ArrowDataType::Extension(ext) => make_mutable(&ext.inner, avro_field, capacity)?,
             other => {
                 polars_bail!(nyi = "Deserializing type {other:#?} is still not implemented")
             },
@@ -195,9 +198,8 @@ fn deserialize_value<'a>(
                     array.push(Some(value))
                 },
                 PrimitiveType::Float32 => {
-                    let value =
-                        f32::from_le_bytes(block[..std::mem::size_of::<f32>()].try_into().unwrap());
-                    block = &block[std::mem::size_of::<f32>()..];
+                    let value = f32::from_le_bytes(block[..size_of::<f32>()].try_into().unwrap());
+                    block = &block[size_of::<f32>()..];
                     let array = array
                         .as_mut_any()
                         .downcast_mut::<MutablePrimitiveArray<f32>>()
@@ -205,9 +207,8 @@ fn deserialize_value<'a>(
                     array.push(Some(value))
                 },
                 PrimitiveType::Float64 => {
-                    let value =
-                        f64::from_le_bytes(block[..std::mem::size_of::<f64>()].try_into().unwrap());
-                    block = &block[std::mem::size_of::<f64>()..];
+                    let value = f64::from_le_bytes(block[..size_of::<f64>()].try_into().unwrap());
+                    block = &block[size_of::<f64>()..];
                     let array = array
                         .as_mut_any()
                         .downcast_mut::<MutablePrimitiveArray<f64>>()
@@ -404,10 +405,10 @@ fn skip_item<'a>(
                     let _ = util::zigzag_i64(&mut block)?;
                 },
                 PrimitiveType::Float32 => {
-                    block = &block[std::mem::size_of::<f32>()..];
+                    block = &block[size_of::<f32>()..];
                 },
                 PrimitiveType::Float64 => {
-                    block = &block[std::mem::size_of::<f64>()..];
+                    block = &block[size_of::<f64>()..];
                 },
                 PrimitiveType::MonthDayNano => {
                     block = &block[12..];
@@ -507,7 +508,17 @@ pub fn deserialize(
             }?
         }
     }
+
+    let projected_schema = fields
+        .iter_values()
+        .zip(projection)
+        .filter_map(|(f, p)| (*p).then_some(f))
+        .cloned()
+        .collect();
+
     RecordBatchT::try_new(
+        rows,
+        Arc::new(projected_schema),
         arrays
             .iter_mut()
             .zip(projection.iter())

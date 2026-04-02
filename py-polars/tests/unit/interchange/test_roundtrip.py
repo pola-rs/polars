@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -12,8 +11,15 @@ from hypothesis import given
 
 import polars as pl
 from polars._utils.various import parse_version
-from polars.testing import assert_frame_equal
+from polars.interchange.from_dataframe import (
+    from_dataframe as from_dataframe_interchange_protocol,
+)
+from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes
+
+skip_if_broken_pandas_version = pytest.mark.skipif(
+    pd.__version__.startswith("2"), reason="bug. see #20316"
+)
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -27,13 +33,15 @@ protocol_dtypes: list[PolarsDataType] = [
     pl.UInt16,
     pl.UInt32,
     pl.UInt64,
+    pl.Float16,
     pl.Float32,
     pl.Float64,
     pl.Boolean,
     pl.String,
     pl.Datetime,
+    # This is broken for empty dataframes
     # TODO: Enable lexically ordered categoricals
-    pl.Categorical("physical"),
+    # pl.Categorical(),
     # TODO: Add Enum
     # pl.Enum,
 ]
@@ -49,11 +57,11 @@ def test_to_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
     dfi = df.__dataframe__()
     df_pa = pa.interchange.from_dataframe(dfi)
 
-    with pl.StringCache():
-        result: pl.DataFrame = pl.from_arrow(df_pa)  # type: ignore[assignment]
+    result: pl.DataFrame = pl.from_arrow(df_pa)  # type: ignore[assignment]
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
+@pytest.mark.may_fail_cloud  # reason: not-lazy, likely environment related
 @given(
     dataframes(
         allowed_dtypes=protocol_dtypes,
@@ -72,16 +80,14 @@ def test_to_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="The correct `from_dataframe` implementation for pandas is not available before Python 3.9",
-)
+@pytest.mark.filterwarnings("ignore:.*copy keyword is deprecated:Warning")
 @pytest.mark.filterwarnings(
     "ignore:.*PEP3118 format string that does not match its itemsize:RuntimeWarning"
 )
 @given(
     dataframes(
         allowed_dtypes=protocol_dtypes,
+        excluded_dtypes=[pl.Float16],  # Not yet supported by pandas
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
     )
 )
@@ -92,10 +98,7 @@ def test_to_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="The correct `from_dataframe` implementation for pandas is not available before Python 3.9",
-)
+@pytest.mark.may_fail_cloud  # reason: not-lazy, likely environment related
 @pytest.mark.filterwarnings(
     "ignore:.*PEP3118 format string that does not match its itemsize:RuntimeWarning"
 )
@@ -105,6 +108,7 @@ def test_to_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
         excluded_dtypes=[
             pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,
+            pl.Float16,  # Not yet supported by pandas
         ],
         allow_chunks=False,
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
@@ -127,7 +131,7 @@ def test_to_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
     df_pa = df.to_arrow()
-    result = pl.from_dataframe(df_pa)
+    result = from_dataframe_interchange_protocol(df_pa)
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
@@ -144,53 +148,45 @@ def test_from_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pa = df.to_arrow()
-    result = pl.from_dataframe(df_pa, allow_copy=False)
+    result = from_dataframe_interchange_protocol(df_pa, allow_copy=False)
     assert_frame_equal(result, df)
 
 
+@skip_if_broken_pandas_version
 @given(
     dataframes(
         allowed_dtypes=protocol_dtypes,
         excluded_dtypes=[
             pl.Categorical,  # Categoricals come back as Enums
-            pl.Float32,  # NaN values come back as nulls
-            pl.Float64,  # NaN values come back as nulls
         ],
+        allow_nan=False,  # NaN values come back as nulls
     )
-)
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="Older versions of pandas do not implement the required conversions",
 )
 def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
-    result = pl.from_dataframe(df_pd)
+    result = from_dataframe_interchange_protocol(df_pd)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
+@skip_if_broken_pandas_version
 @given(
     dataframes(
         allowed_dtypes=protocol_dtypes,
         excluded_dtypes=[
             pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,  # Categoricals come back as Enums
-            pl.Float32,  # NaN values come back as nulls
-            pl.Float64,  # NaN values come back as nulls
             pl.Boolean,  # pandas exports boolean buffers as byte-packed
         ],
         # Empty dataframes cause an error due to a bug in pandas.
         # https://github.com/pandas-dev/pandas/issues/56700
         min_size=1,
         allow_chunks=False,
+        allow_nan=False,  # NaN values come back as nulls
     )
-)
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="Older versions of pandas do not implement the required conversions",
 )
 def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
-    result = pl.from_dataframe(df_pd, allow_copy=False)
+    result = from_dataframe_interchange_protocol(df_pd, allow_copy=False)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df)
 
 
@@ -199,22 +195,17 @@ def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
         allowed_dtypes=protocol_dtypes,
         excluded_dtypes=[
             pl.Categorical,  # Categoricals come back as Enums
-            pl.Float32,  # NaN values come back as nulls
-            pl.Float64,  # NaN values come back as nulls
         ],
         # Empty string columns cause an error due to a bug in pandas.
         # https://github.com/pandas-dev/pandas/issues/56703
         min_size=1,
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
+        allow_nan=False,  # NaN values come back as nulls
     )
-)
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="Older versions of pandas do not implement the required conversions",
 )
 def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()
-    result = pl.from_dataframe(df_pd)
+    result = from_dataframe_interchange_protocol(df_pd)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
@@ -224,8 +215,6 @@ def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
         excluded_dtypes=[
             pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,  # Categoricals come back as Enums
-            pl.Float32,  # NaN values come back as nulls
-            pl.Float64,  # NaN values come back as nulls
             pl.Boolean,  # pandas exports boolean buffers as byte-packed
         ],
         # Empty dataframes cause an error due to a bug in pandas.
@@ -233,18 +222,16 @@ def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
         min_size=1,
         allow_chunks=False,
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
+        allow_nan=False,  # NaN values come back as nulls
     )
-)
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="Older versions of pandas do not implement the required conversions",
 )
 def test_from_dataframe_pandas_native_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()
-    result = pl.from_dataframe(df_pd, allow_copy=False)
+    result = from_dataframe_interchange_protocol(df_pd, allow_copy=False)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df)
 
 
+@pytest.mark.filterwarnings("ignore:.*copy keyword is deprecated:Warning")
 def test_to_dataframe_pandas_boolean_subchunks() -> None:
     df = pl.Series("a", [False, False]).to_frame()
     df_chunked = pl.concat([df[0, :], df[1, :]], rechunk=False)
@@ -286,3 +273,20 @@ def test_from_dataframe_pandas_timestamp_ns() -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
     result = pl.from_dataframe(df_pd)
     assert_frame_equal(result, df)
+
+
+def test_from_pyarrow_str_dict_with_null_values_20270() -> None:
+    tb = pa.table(
+        {
+            "col1": pa.DictionaryArray.from_arrays(
+                [0, 0, None, 1, 2], ["A", None, "B"]
+            ),
+        },
+        schema=pa.schema({"col1": pa.dictionary(pa.uint32(), pa.string())}),
+    )
+    df = pl.from_arrow(tb)
+    assert isinstance(df, pl.DataFrame)
+
+    assert_series_equal(
+        df.to_series(), pl.Series("col1", ["A", "A", None, None, "B"], pl.Categorical)
+    )

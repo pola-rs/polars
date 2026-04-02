@@ -87,7 +87,7 @@ pub trait Utf8JsonPathImpl: AsString {
             .take(number_of_rows.unwrap_or(ca.len()));
 
         polars_json::ndjson::infer_iter(values_iter)
-            .map(|d| DataType::from(&d))
+            .map(|d| DataType::from_arrow_dtype(&d))
             .map_err(|e| polars_err!(ComputeError: "error inferring JSON: {}", e))
     }
 
@@ -98,8 +98,21 @@ pub trait Utf8JsonPathImpl: AsString {
         infer_schema_len: Option<usize>,
     ) -> PolarsResult<Series> {
         let ca = self.as_string();
-        let dtype = match dtype {
-            Some(dt) => dt,
+        // Ignore extra fields instead of erroring if the dtype was explicitly given.
+        let allow_extra_fields_in_struct = dtype.is_some();
+        let mut needs_cast = false;
+        let decode_dtype = match &dtype {
+            Some(dt) => dt.clone().map_leaves(&mut |leaf_dt| {
+                match leaf_dt {
+                    #[cfg(feature = "dtype-categorical")]
+                    DataType::Enum(..) | DataType::Categorical(..) => {
+                        // Decode enums and categoricals as string, will cast later.
+                        needs_cast = true;
+                        DataType::String
+                    },
+                    leaf_dt => leaf_dt,
+                }
+            }),
             None => ca.json_infer(infer_schema_len)?,
         };
         let buf_size = ca.get_values_size() + ca.null_count() * "null".len();
@@ -107,12 +120,18 @@ pub trait Utf8JsonPathImpl: AsString {
 
         let array = polars_json::ndjson::deserialize::deserialize_iter(
             iter,
-            dtype.to_arrow(CompatLevel::newest()),
+            decode_dtype.to_arrow(CompatLevel::newest()),
             buf_size,
             ca.len(),
+            allow_extra_fields_in_struct,
         )
         .map_err(|e| polars_err!(ComputeError: "error deserializing JSON: {}", e))?;
-        Series::try_from((PlSmallStr::EMPTY, array))
+        let s = Series::try_from((PlSmallStr::EMPTY, array))?;
+        if needs_cast {
+            s.strict_cast(&dtype.unwrap())
+        } else {
+            Ok(s)
+        }
     }
 
     fn json_path_select(&self, json_path: &str) -> PolarsResult<StringChunked> {
@@ -138,6 +157,8 @@ impl Utf8JsonPathImpl for StringChunked {}
 
 #[cfg(test)]
 mod tests {
+    use arrow::bitmap::Bitmap;
+
     use super::*;
 
     #[test]
@@ -204,24 +225,28 @@ mod tests {
 
         let expected_series = StructChunked::from_series(
             "".into(),
-            &[
+            4,
+            [
                 Series::new("a".into(), &[None, Some(1), Some(2), None]),
                 Series::new("b".into(), &[None, Some("hello"), Some("goodbye"), None]),
-            ],
+            ]
+            .iter(),
         )
         .unwrap()
-        .with_outer_validity_chunked(BooleanChunked::new("".into(), [false, true, true, false]))
+        .with_outer_validity(Some(Bitmap::from_iter([false, true, true, false])))
         .into_series();
         let expected_dtype = expected_series.dtype().clone();
 
-        assert!(ca
-            .json_decode(None, None)
-            .unwrap()
-            .equals_missing(&expected_series));
-        assert!(ca
-            .json_decode(Some(expected_dtype), None)
-            .unwrap()
-            .equals_missing(&expected_series));
+        assert!(
+            ca.json_decode(None, None)
+                .unwrap()
+                .equals_missing(&expected_series)
+        );
+        assert!(
+            ca.json_decode(Some(expected_dtype), None)
+                .unwrap()
+                .equals_missing(&expected_series)
+        );
     }
 
     #[test]
@@ -237,11 +262,12 @@ mod tests {
         );
         let ca = s.str().unwrap();
 
-        assert!(ca
-            .json_path_select("$")
-            .unwrap()
-            .into_series()
-            .equals_missing(&s));
+        assert!(
+            ca.json_path_select("$")
+                .unwrap()
+                .into_series()
+                .equals_missing(&s)
+        );
 
         let b_series = Series::new(
             "json".into(),
@@ -252,21 +278,23 @@ mod tests {
                 None,
             ],
         );
-        assert!(ca
-            .json_path_select("$.b")
-            .unwrap()
-            .into_series()
-            .equals_missing(&b_series));
+        assert!(
+            ca.json_path_select("$.b")
+                .unwrap()
+                .into_series()
+                .equals_missing(&b_series)
+        );
 
         let c_series = Series::new(
             "json".into(),
             [None, Some(r#"[0,1]"#), Some(r#"[2,5]"#), None],
         );
-        assert!(ca
-            .json_path_select("$.b[:].c")
-            .unwrap()
-            .into_series()
-            .equals_missing(&c_series));
+        assert!(
+            ca.json_path_select("$.b[:].c")
+                .unwrap()
+                .into_series()
+                .equals_missing(&c_series)
+        );
     }
 
     #[test]
@@ -292,10 +320,11 @@ mod tests {
             ],
         );
 
-        assert!(ca
-            .json_path_extract("$.b[:].c", None, None)
-            .unwrap()
-            .into_series()
-            .equals_missing(&c_series));
+        assert!(
+            ca.json_path_extract("$.b[:].c", None, None)
+                .unwrap()
+                .into_series()
+                .equals_missing(&c_series)
+        );
     }
 }

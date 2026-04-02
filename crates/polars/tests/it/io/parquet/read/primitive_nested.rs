@@ -1,16 +1,16 @@
 use polars_parquet::parquet::encoding::bitpacked::{Unpackable, Unpacked};
 use polars_parquet::parquet::encoding::hybrid_rle::HybridRleDecoder;
-use polars_parquet::parquet::encoding::{bitpacked, uleb128, Encoding};
+use polars_parquet::parquet::encoding::{Encoding, bitpacked, uleb128};
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
-use polars_parquet::parquet::page::{split_buffer, DataPage, EncodedSplitBuffer};
+use polars_parquet::parquet::page::{DataPage, EncodedSplitBuffer, split_buffer};
 use polars_parquet::parquet::read::levels::get_bit_width;
 use polars_parquet::parquet::types::NativeType;
 
 use super::dictionary::PrimitivePageDict;
-use super::{hybrid_rle_iter, Array};
+use super::{Array, hybrid_rle_iter};
 
 fn read_buffer<T: NativeType>(values: &[u8]) -> impl Iterator<Item = T> + '_ {
-    let chunks = values.chunks_exact(std::mem::size_of::<T>());
+    let chunks = values.chunks_exact(size_of::<T>());
     chunks.map(|chunk| {
         // unwrap is infalible due to the chunk size.
         let chunk: T::Bytes = match chunk.try_into() {
@@ -37,7 +37,7 @@ fn compose_array<I: Iterator<Item = u32>, F: Iterator<Item = u32>, G: Iterator<I
     let mut prev_def = 0;
     rep_levels
         .into_iter()
-        .zip(def_levels.into_iter())
+        .zip(def_levels)
         .try_for_each(|(rep, def)| {
             match rep {
                 1 => {},
@@ -79,8 +79,8 @@ fn read_array_impl<I: Iterator<Item = i64>>(
         (def_level_encoding.0, max_def_level == 0),
     ) {
         ((Encoding::Rle, true), (Encoding::Rle, true)) => compose_array(
-            std::iter::repeat(0).take(length),
-            std::iter::repeat(0).take(length),
+            std::iter::repeat_n(0, length),
+            std::iter::repeat_n(0, length),
             max_rep_level,
             max_def_level,
             values,
@@ -90,7 +90,7 @@ fn read_array_impl<I: Iterator<Item = i64>>(
             let rep_levels = HybridRleDecoder::new(rep_levels, num_bits, length);
             compose_array(
                 hybrid_rle_iter(rep_levels)?,
-                std::iter::repeat(0).take(length),
+                std::iter::repeat_n(0, length),
                 max_rep_level,
                 max_def_level,
                 values,
@@ -100,7 +100,7 @@ fn read_array_impl<I: Iterator<Item = i64>>(
             let num_bits = get_bit_width(def_level_encoding.1);
             let def_levels = HybridRleDecoder::new(def_levels, num_bits, length);
             compose_array(
-                std::iter::repeat(0).take(length),
+                std::iter::repeat_n(0, length),
                 hybrid_rle_iter(def_levels)?,
                 max_rep_level,
                 max_def_level,
@@ -179,7 +179,7 @@ pub struct DecoderIter<'a, T: Unpackable> {
     pub(crate) unpacked_end: usize,
 }
 
-impl<'a, T: Unpackable> Iterator for DecoderIter<'a, T> {
+impl<T: Unpackable> Iterator for DecoderIter<'_, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -203,7 +203,7 @@ impl<'a, T: Unpackable> Iterator for DecoderIter<'a, T> {
     }
 }
 
-impl<'a, T: Unpackable> ExactSizeIterator for DecoderIter<'a, T> {}
+impl<T: Unpackable> ExactSizeIterator for DecoderIter<'_, T> {}
 
 impl<'a, T: Unpackable> DecoderIter<'a, T> {
     pub fn new(packed: &'a [u8], num_bits: usize, length: usize) -> ParquetResult<Self> {

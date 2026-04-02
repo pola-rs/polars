@@ -3,7 +3,10 @@ use std::io::Read;
 #[cfg(feature = "aws")]
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::LazyLock;
 
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+use object_store::ClientOptions;
 #[cfg(feature = "aws")]
 use object_store::aws::AmazonS3Builder;
 #[cfg(feature = "aws")]
@@ -16,34 +19,29 @@ use object_store::azure::MicrosoftAzureBuilder;
 use object_store::gcp::GoogleCloudStorageBuilder;
 #[cfg(feature = "gcp")]
 pub use object_store::gcp::GoogleConfigKey;
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-use object_store::ClientOptions;
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
-use object_store::{BackoffConfig, RetryConfig};
-#[cfg(feature = "aws")]
-use once_cell::sync::Lazy;
 use polars_error::*;
 #[cfg(feature = "aws")]
-use polars_utils::cache::FastFixedCache;
-#[cfg(feature = "aws")]
-use polars_utils::pl_str::PlSmallStr;
-#[cfg(feature = "aws")]
-use regex::Regex;
+use polars_utils::cache::LruCache;
+use polars_utils::pl_path::{CloudScheme, PlRefPath};
+use polars_utils::total_ord::TotalOrdWrap;
 #[cfg(feature = "http")]
 use reqwest::header::HeaderMap;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "cloud")]
-use url::Url;
 
+#[cfg(feature = "cloud")]
+use super::credential_provider::PlCredentialProvider;
+#[cfg(feature = "cloud")]
+use crate::cloud::ObjectStoreErrorContext;
 #[cfg(feature = "file_cache")]
 use crate::file_cache::get_env_file_cache_ttl;
 #[cfg(feature = "aws")]
 use crate::pl_async::with_concurrency_budget;
 
 #[cfg(feature = "aws")]
-static BUCKET_REGION: Lazy<std::sync::Mutex<FastFixedCache<PlSmallStr, PlSmallStr>>> =
-    Lazy::new(|| std::sync::Mutex::new(FastFixedCache::new(32)));
+static BUCKET_REGION: LazyLock<
+    std::sync::Mutex<LruCache<polars_utils::pl_str::PlSmallStr, polars_utils::pl_str::PlSmallStr>>,
+> = LazyLock::new(|| std::sync::Mutex::new(LruCache::with_capacity(32)));
 
 /// The type of the config keys must satisfy the following requirements:
 /// 1. must be easily collected into a HashMap, the type required by the object_crate API.
@@ -56,34 +54,132 @@ type Configs<T> = Vec<(T, String)>;
 
 #[derive(Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub(crate) enum CloudConfig {
     #[cfg(feature = "aws")]
-    Aws(Configs<AmazonS3ConfigKey>),
+    Aws(
+        #[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<(String, String)>"))]
+        Configs<AmazonS3ConfigKey>,
+    ),
     #[cfg(feature = "azure")]
-    Azure(Configs<AzureConfigKey>),
+    Azure(
+        #[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<(String, String)>"))]
+        Configs<AzureConfigKey>,
+    ),
     #[cfg(feature = "gcp")]
-    Gcp(Configs<GoogleConfigKey>),
+    Gcp(
+        #[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<(String, String)>"))]
+        Configs<GoogleConfigKey>,
+    ),
     #[cfg(feature = "http")]
     Http { headers: Vec<(String, String)> },
 }
 
 #[derive(Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 /// Options to connect to various cloud providers.
 pub struct CloudOptions {
-    pub max_retries: usize,
     #[cfg(feature = "file_cache")]
     pub file_cache_ttl: u64,
     pub(crate) config: Option<CloudConfig>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub retry_config: CloudRetryConfig,
+    #[cfg(feature = "cloud")]
+    /// Note: In most cases you will want to access this via [`CloudOptions::initialized_credential_provider`]
+    /// rather than directly.
+    pub(crate) credential_provider: Option<PlCredentialProvider>,
 }
 
 impl Default for CloudOptions {
     fn default() -> Self {
-        Self {
-            max_retries: 2,
+        Self::default_static_ref().clone()
+    }
+}
+
+impl CloudOptions {
+    pub fn default_static_ref() -> &'static Self {
+        static DEFAULT: LazyLock<CloudOptions> = LazyLock::new(|| CloudOptions {
             #[cfg(feature = "file_cache")]
             file_cache_ttl: get_env_file_cache_ttl(),
             config: None,
+            retry_config: CloudRetryConfig::default(),
+            #[cfg(feature = "cloud")]
+            credential_provider: None,
+        });
+
+        &DEFAULT
+    }
+}
+
+#[derive(Clone, Copy, Default, Debug, PartialEq, Hash, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct CloudRetryConfig {
+    pub max_retries: Option<usize>,
+    pub retry_timeout: Option<std::time::Duration>,
+    pub retry_init_backoff: Option<std::time::Duration>,
+    pub retry_max_backoff: Option<std::time::Duration>,
+    pub retry_base_multiplier: Option<TotalOrdWrap<f64>>,
+}
+
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
+impl From<CloudRetryConfig> for object_store::RetryConfig {
+    fn from(value: CloudRetryConfig) -> Self {
+        use std::time::Duration;
+
+        use polars_core::config::verbose;
+
+        let out = object_store::RetryConfig {
+            backoff: object_store::BackoffConfig {
+                init_backoff: value
+                    .retry_init_backoff
+                    .unwrap_or_else(|| DEFAULTS.backoff.init_backoff),
+                max_backoff: value
+                    .retry_max_backoff
+                    .unwrap_or_else(|| DEFAULTS.backoff.max_backoff),
+                base: value
+                    .retry_base_multiplier
+                    .map_or_else(|| DEFAULTS.backoff.base, |x| x.0),
+            },
+            max_retries: value.max_retries.unwrap_or_else(|| DEFAULTS.max_retries),
+            retry_timeout: value
+                .retry_timeout
+                .unwrap_or_else(|| DEFAULTS.retry_timeout),
+        };
+
+        if verbose() {
+            eprintln!("object-store retry config: {:?}", &out)
+        }
+
+        return out;
+
+        static DEFAULTS: LazyLock<object_store::RetryConfig> =
+            LazyLock::new(|| object_store::RetryConfig {
+                backoff: object_store::BackoffConfig {
+                    init_backoff: Duration::from_millis(parse_env_var(
+                        100,
+                        "POLARS_CLOUD_RETRY_INIT_BACKOFF_MS",
+                    )),
+                    max_backoff: Duration::from_millis(parse_env_var(
+                        15 * 1000,
+                        "POLARS_CLOUD_RETRY_MAX_BACKOFF_MS",
+                    )),
+                    base: parse_env_var(2., "POLARS_CLOUD_RETRY_BASE_MULTIPLIER"),
+                },
+                max_retries: parse_env_var(2, "POLARS_CLOUD_MAX_RETRIES"),
+                retry_timeout: Duration::from_millis(parse_env_var(
+                    10 * 1000,
+                    "POLARS_CLOUD_RETRY_TIMEOUT_MS",
+                )),
+            });
+
+        fn parse_env_var<T: FromStr>(default: T, name: &'static str) -> T {
+            std::env::var(name).map_or(default, |x| {
+                x.parse::<T>()
+                    .ok()
+                    .unwrap_or_else(|| panic!("invalid value for {name}: {x}"))
+            })
         }
     }
 }
@@ -108,103 +204,83 @@ pub(crate) fn try_build_http_header_map_from_items_slice<S: AsRef<str>>(
 
 #[allow(dead_code)]
 /// Parse an untype configuration hashmap to a typed configuration for the given configuration key type.
-fn parsed_untyped_config<T, I: IntoIterator<Item = (impl AsRef<str>, impl Into<String>)>>(
+fn parse_untyped_config<T, I: IntoIterator<Item = (impl AsRef<str>, impl Into<String>)>>(
     config: I,
 ) -> PolarsResult<Configs<T>>
 where
     T: FromStr + Eq + std::hash::Hash,
 {
-    config
+    Ok(config
         .into_iter()
-        .map(|(key, val)| {
-            T::from_str(key.as_ref())
-                .map_err(
-                    |_| polars_err!(ComputeError: "unknown configuration key: {}", key.as_ref()),
-                )
+        // Silently ignores custom upstream storage_options
+        .filter_map(|(key, val)| {
+            T::from_str(key.as_ref().to_ascii_lowercase().as_str())
+                .ok()
                 .map(|typed_key| (typed_key, val.into()))
         })
-        .collect::<PolarsResult<Configs<T>>>()
+        .collect::<Configs<T>>())
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CloudType {
     Aws,
     Azure,
+    /// URI with 'file:' scheme
     File,
+    /// Google cloud platform
     Gcp,
     Http,
+    /// HuggingFace
     Hf,
 }
 
 impl CloudType {
-    #[cfg(feature = "cloud")]
-    pub(crate) fn from_url(parsed: &Url) -> PolarsResult<Self> {
-        Ok(match parsed.scheme() {
-            "s3" | "s3a" => Self::Aws,
-            "az" | "azure" | "adl" | "abfs" | "abfss" => Self::Azure,
-            "gs" | "gcp" | "gcs" => Self::Gcp,
-            "file" => Self::File,
-            "http" | "https" => Self::Http,
-            "hf" => Self::Hf,
-            _ => polars_bail!(ComputeError: "unknown url scheme"),
-        })
+    pub fn from_cloud_scheme(scheme: CloudScheme) -> Self {
+        match scheme {
+            CloudScheme::Abfs
+            | CloudScheme::Abfss
+            | CloudScheme::Adl
+            | CloudScheme::Az
+            | CloudScheme::Azure => Self::Azure,
+
+            CloudScheme::File | CloudScheme::FileNoHostname => Self::File,
+
+            CloudScheme::Gcs | CloudScheme::Gs => Self::Gcp,
+
+            CloudScheme::Hf => Self::Hf,
+
+            CloudScheme::Http | CloudScheme::Https => Self::Http,
+
+            CloudScheme::S3 | CloudScheme::S3a => Self::Aws,
+        }
     }
 }
 
-#[cfg(feature = "cloud")]
-pub(crate) fn parse_url(input: &str) -> std::result::Result<url::Url, url::ParseError> {
-    Ok(if input.contains("://") {
-        if input.starts_with("http://") || input.starts_with("https://") {
-            url::Url::parse(input)
-        } else {
-            url::Url::parse(&input.replace("%", "%25"))
-        }?
-    } else {
-        let path = std::path::Path::new(input);
-        let mut tmp;
-        url::Url::from_file_path(if path.is_relative() {
-            tmp = std::env::current_dir().unwrap();
-            tmp.push(path);
-            tmp.as_path()
-        } else {
-            path
-        })
-        .unwrap()
-    })
-}
-
-impl FromStr for CloudType {
-    type Err = PolarsError;
-
-    #[cfg(feature = "cloud")]
-    fn from_str(url: &str) -> Result<Self, Self::Err> {
-        let parsed = parse_url(url).map_err(to_compute_err)?;
-        Self::from_url(&parsed)
-    }
-
-    #[cfg(not(feature = "cloud"))]
-    fn from_str(_s: &str) -> Result<Self, Self::Err> {
-        polars_bail!(ComputeError: "at least one of the cloud features must be enabled");
-    }
-}
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
-fn get_retry_config(max_retries: usize) -> RetryConfig {
-    RetryConfig {
-        backoff: BackoffConfig::default(),
-        max_retries,
-        retry_timeout: std::time::Duration::from_secs(10),
-    }
-}
+pub static USER_AGENT: &str = concat!("polars", "/", env!("CARGO_PKG_VERSION"),);
 
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
 pub(super) fn get_client_options() -> ClientOptions {
-    ClientOptions::default()
-        // We set request timeout super high as the timeout isn't reset at ACK,
-        // but starts from the moment we start downloading a body.
-        // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
+    use std::num::NonZeroU64;
+
+    use reqwest::header::HeaderValue;
+
+    ClientOptions::new()
+        // Disables the time limit for downloading the response body.
         .with_timeout_disabled()
-        // Concurrency can increase connection latency, so set to None, similar to default.
-        .with_connect_timeout_disabled()
+        // Set the time limit for establishing the connection.
+        .with_connect_timeout(std::time::Duration::from_secs(
+            std::env::var("POLARS_HTTP_CONNECT_TIMEOUT_SECONDS")
+                .map(|x| {
+                    x.parse::<NonZeroU64>()
+                        .ok()
+                        .unwrap_or_else(|| {
+                            panic!("invalid value for POLARS_HTTP_CONNECT_TIMEOUT_SECONDS: {x}")
+                        })
+                        .get()
+                })
+                .unwrap_or(5 * 60),
+        ))
+        .with_user_agent(HeaderValue::from_static(USER_AGENT))
         .with_allow_http(true)
 }
 
@@ -230,7 +306,7 @@ fn read_config(
 
         for (pattern, key) in keys.iter() {
             if builder.get_config_value(key).is_none() {
-                let reg = Regex::new(pattern).unwrap();
+                let reg = polars_utils::regex_cache::compile_regex(pattern).unwrap();
                 let cap = reg.captures(content)?;
                 let m = cap.get(1)?;
                 let parsed = m.as_str();
@@ -242,9 +318,17 @@ fn read_config(
 }
 
 impl CloudOptions {
-    /// Set the maximum number of retries.
-    pub fn with_max_retries(mut self, max_retries: usize) -> Self {
-        self.max_retries = max_retries;
+    pub fn with_retry_config(mut self, retry_config: CloudRetryConfig) -> Self {
+        self.retry_config = retry_config;
+        self
+    }
+
+    #[cfg(feature = "cloud")]
+    pub fn with_credential_provider(
+        mut self,
+        credential_provider: Option<PlCredentialProvider>,
+    ) -> Self {
+        self.credential_provider = credential_provider;
         self
     }
 
@@ -262,14 +346,30 @@ impl CloudOptions {
 
     /// Build the [`object_store::ObjectStore`] implementation for AWS.
     #[cfg(feature = "aws")]
-    pub async fn build_aws(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
-        let mut builder = AmazonS3Builder::from_env().with_url(url);
-        if let Some(options) = &self.config {
-            let CloudConfig::Aws(options) = options else {
-                panic!("impl error: cloud type mismatch")
-            };
-            for (key, value) in options.iter() {
-                builder = builder.with_config(*key, value);
+    pub async fn build_aws(
+        &self,
+        url: PlRefPath,
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<impl object_store::ObjectStore> {
+        use super::credential_provider::IntoCredentialProvider;
+
+        let opt_credential_provider =
+            self.initialized_credential_provider(clear_cached_credentials)?;
+
+        let mut builder = AmazonS3Builder::from_env()
+            .with_client_options(get_client_options())
+            .with_url(url.clone().to_string());
+
+        if let Some(credential_provider) = &opt_credential_provider {
+            let storage_update_options = parse_untyped_config::<AmazonS3ConfigKey, _>(
+                credential_provider
+                    .storage_update_options()?
+                    .into_iter()
+                    .map(|(k, v)| (k, v.to_string())),
+            )?;
+
+            for (key, value) in storage_update_options {
+                builder = builder.with_config(key, value);
             }
         }
 
@@ -277,25 +377,39 @@ impl CloudOptions {
             &mut builder,
             &[(
                 Path::new("~/.aws/config"),
-                &[("region\\s*=\\s*(.*)\n", AmazonS3ConfigKey::Region)],
+                &[("region\\s*=\\s*([^\r\n]*)", AmazonS3ConfigKey::Region)],
             )],
         );
+
         read_config(
             &mut builder,
             &[(
                 Path::new("~/.aws/credentials"),
                 &[
                     (
-                        "aws_access_key_id\\s*=\\s*(.*)\n",
+                        "aws_access_key_id\\s*=\\s*([^\\r\\n]*)",
                         AmazonS3ConfigKey::AccessKeyId,
                     ),
                     (
-                        "aws_secret_access_key\\s*=\\s*(.*)\n",
+                        "aws_secret_access_key\\s*=\\s*([^\\r\\n]*)",
                         AmazonS3ConfigKey::SecretAccessKey,
+                    ),
+                    (
+                        "aws_session_token\\s*=\\s*([^\\r\\n]*)",
+                        AmazonS3ConfigKey::Token,
                     ),
                 ],
             )],
         );
+
+        if let Some(options) = &self.config {
+            let CloudConfig::Aws(options) = options else {
+                panic!("impl error: cloud type mismatch")
+            };
+            for (key, value) in options {
+                builder = builder.with_config(*key, value);
+            }
+        }
 
         if builder
             .get_config_value(&AmazonS3ConfigKey::DefaultRegion)
@@ -304,9 +418,9 @@ impl CloudOptions {
                 .get_config_value(&AmazonS3ConfigKey::Region)
                 .is_none()
         {
-            let bucket = crate::cloud::CloudLocation::new(url, false)?.bucket;
+            let bucket = crate::cloud::CloudLocation::new(url.clone(), false)?.bucket;
             let region = {
-                let bucket_region = BUCKET_REGION.lock().unwrap();
+                let mut bucket_region = BUCKET_REGION.lock().unwrap();
                 bucket_region.get(bucket.as_str()).cloned()
             };
 
@@ -323,9 +437,12 @@ impl CloudOptions {
                         // See: #13042
                         builder = builder.with_config(AmazonS3ConfigKey::Region, "us-east-1");
                     } else {
-                        polars_warn!("'(default_)region' not set; polars will try to get it from bucket\n\nSet the region manually to silence this warning.");
+                        polars_warn!(
+                            "'(default_)region' not set; polars will try to get it from bucket\n\nSet the region manually to silence this warning."
+                        );
                         let result = with_concurrency_budget(1, || async {
                             reqwest::Client::builder()
+                                .user_agent(USER_AGENT)
                                 .build()
                                 .unwrap()
                                 .head(format!("https://{bucket}.s3.amazonaws.com"))
@@ -338,7 +455,7 @@ impl CloudOptions {
                             let region =
                                 std::str::from_utf8(region.as_bytes()).map_err(to_compute_err)?;
                             let mut bucket_region = BUCKET_REGION.lock().unwrap();
-                            bucket_region.insert(bucket.into(), region.into());
+                            bucket_region.insert(bucket, region.into());
                             builder = builder.with_config(AmazonS3ConfigKey::Region, region)
                         }
                     }
@@ -346,11 +463,43 @@ impl CloudOptions {
             };
         };
 
-        builder
-            .with_client_options(get_client_options())
-            .with_retry(get_retry_config(self.max_retries))
+        let builder = builder.with_retry(self.retry_config.into());
+
+        let opt_credential_provider = match opt_credential_provider {
+            #[cfg(feature = "python")]
+            Some(PlCredentialProvider::Python(object)) => {
+                if pyo3::Python::attach(|py| {
+                    let Ok(func_object) = object
+                        .unwrap_as_provider_ref()
+                        .getattr(py, "_can_use_as_provider")
+                    else {
+                        return PolarsResult::Ok(true);
+                    };
+
+                    Ok(func_object.call0(py)?.extract::<bool>(py).unwrap())
+                })? {
+                    Some(PlCredentialProvider::Python(object))
+                } else {
+                    None
+                }
+            },
+
+            v => v,
+        };
+
+        let builder = if let Some(credential_provider) = opt_credential_provider {
+            builder.with_credentials(credential_provider.into_aws_provider())
+        } else {
+            builder
+        };
+
+        let out = builder
+            .with_checksum_algorithm(object_store::aws::Checksum::CRC64NVME)
+            .with_unsigned_payload(true)
             .build()
-            .map_err(to_compute_err)
+            .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
+
+        Ok(out)
     }
 
     /// Set the configuration for Azure connections. This is the preferred API from rust.
@@ -367,8 +516,21 @@ impl CloudOptions {
 
     /// Build the [`object_store::ObjectStore`] implementation for Azure.
     #[cfg(feature = "azure")]
-    pub fn build_azure(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
-        let mut builder = MicrosoftAzureBuilder::from_env();
+    pub fn build_azure(
+        &self,
+        url: PlRefPath,
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<impl object_store::ObjectStore> {
+        use super::credential_provider::IntoCredentialProvider;
+        use crate::cloud::ObjectStoreErrorContext;
+
+        let verbose = polars_core::config::verbose();
+
+        // The credential provider `self.credentials` is prioritized if it is set. We also need
+        // `from_env()` as it may source environment configured storage account name.
+        let mut builder =
+            MicrosoftAzureBuilder::from_env().with_client_options(get_client_options());
+
         if let Some(options) = &self.config {
             let CloudConfig::Azure(options) = options else {
                 panic!("impl error: cloud type mismatch")
@@ -378,12 +540,28 @@ impl CloudOptions {
             }
         }
 
-        builder
-            .with_client_options(get_client_options())
-            .with_url(url)
-            .with_retry(get_retry_config(self.max_retries))
+        let builder = builder
+            .with_url(url.to_string())
+            .with_retry(self.retry_config.into());
+
+        let builder =
+            if let Some(v) = self.initialized_credential_provider(clear_cached_credentials)? {
+                if verbose {
+                    eprintln!(
+                        "[CloudOptions::build_azure]: Using credential provider {:?}",
+                        &v
+                    );
+                }
+                builder.with_credentials(v.into_azure_provider())
+            } else {
+                builder
+            };
+
+        let out = builder
             .build()
-            .map_err(to_compute_err)
+            .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
+
+        Ok(out)
     }
 
     /// Set the configuration for GCP connections. This is the preferred API from rust.
@@ -400,8 +578,23 @@ impl CloudOptions {
 
     /// Build the [`object_store::ObjectStore`] implementation for GCP.
     #[cfg(feature = "gcp")]
-    pub fn build_gcp(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
-        let mut builder = GoogleCloudStorageBuilder::from_env();
+    pub fn build_gcp(
+        &self,
+        url: PlRefPath,
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<impl object_store::ObjectStore> {
+        use super::credential_provider::IntoCredentialProvider;
+
+        let credential_provider = self.initialized_credential_provider(clear_cached_credentials)?;
+
+        let builder = if credential_provider.is_none() {
+            GoogleCloudStorageBuilder::from_env()
+        } else {
+            GoogleCloudStorageBuilder::new()
+        };
+
+        let mut builder = builder.with_client_options(get_client_options());
+
         if let Some(options) = &self.config {
             let CloudConfig::Gcp(options) = options else {
                 panic!("impl error: cloud type mismatch")
@@ -411,18 +604,27 @@ impl CloudOptions {
             }
         }
 
-        builder
-            .with_client_options(get_client_options())
-            .with_url(url)
-            .with_retry(get_retry_config(self.max_retries))
+        let builder = builder
+            .with_url(url.to_string())
+            .with_retry(self.retry_config.into());
+
+        let builder = if let Some(v) = credential_provider {
+            builder.with_credentials(v.into_gcp_provider())
+        } else {
+            builder
+        };
+
+        let out = builder
             .build()
-            .map_err(to_compute_err)
+            .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
+
+        Ok(out)
     }
 
     #[cfg(feature = "http")]
-    pub fn build_http(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
-        object_store::http::HttpBuilder::new()
-            .with_url(url)
+    pub fn build_http(&self, url: PlRefPath) -> PolarsResult<impl object_store::ObjectStore> {
+        let out = object_store::http::HttpBuilder::new()
+            .with_url(url.to_string())
             .with_client_options({
                 let mut opts = super::get_client_options();
                 if let Some(CloudConfig::Http { headers }) = &self.config {
@@ -433,20 +635,22 @@ impl CloudOptions {
                 opts
             })
             .build()
-            .map_err(to_compute_err)
+            .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
+
+        Ok(out)
     }
 
     /// Parse a configuration from a Hashmap. This is the interface from Python.
     #[allow(unused_variables)]
     pub fn from_untyped_config<I: IntoIterator<Item = (impl AsRef<str>, impl Into<String>)>>(
-        url: &str,
+        scheme: Option<CloudScheme>,
         config: I,
     ) -> PolarsResult<Self> {
-        match CloudType::from_str(url)? {
+        match scheme.map_or(CloudType::File, CloudType::from_cloud_scheme) {
             CloudType::Aws => {
                 #[cfg(feature = "aws")]
                 {
-                    parsed_untyped_config::<AmazonS3ConfigKey, _>(config)
+                    parse_untyped_config::<AmazonS3ConfigKey, _>(config)
                         .map(|aws| Self::default().with_aws(aws))
                 }
                 #[cfg(not(feature = "aws"))]
@@ -457,7 +661,7 @@ impl CloudOptions {
             CloudType::Azure => {
                 #[cfg(feature = "azure")]
                 {
-                    parsed_untyped_config::<AzureConfigKey, _>(config)
+                    parse_untyped_config::<AzureConfigKey, _>(config)
                         .map(|azure| Self::default().with_azure(azure))
                 }
                 #[cfg(not(feature = "azure"))]
@@ -470,7 +674,7 @@ impl CloudOptions {
             CloudType::Gcp => {
                 #[cfg(feature = "gcp")]
                 {
-                    parsed_untyped_config::<GoogleConfigKey, _>(config)
+                    parse_untyped_config::<GoogleConfigKey, _>(config)
                         .map(|gcp| Self::default().with_gcp(gcp))
                 }
                 #[cfg(not(feature = "gcp"))]
@@ -514,7 +718,7 @@ impl CloudOptions {
                             let hf_home = std::env::var("HF_HOME");
                             let hf_home = hf_home.as_deref();
                             let hf_home = hf_home.unwrap_or("~/.cache/huggingface");
-                            let hf_home = resolve_homedir(std::path::Path::new(&hf_home));
+                            let hf_home = resolve_homedir(hf_home);
                             let cached_token_path = hf_home.join("token");
 
                             let v = std::string::String::from_utf8(
@@ -524,10 +728,7 @@ impl CloudOptions {
                             .filter(|x| !x.is_empty());
 
                             if v.is_some() && verbose {
-                                eprintln!(
-                                    "HF token sourced from {}",
-                                    cached_token_path.to_str().unwrap()
-                                );
+                                eprintln!("HF token sourced from {:?}", cached_token_path);
                             }
 
                             v
@@ -535,7 +736,7 @@ impl CloudOptions {
 
                     if let Some(v) = token {
                         this.config = Some(CloudConfig::Http {
-                            headers: vec![("Authorization".into(), format!("Bearer {}", v))],
+                            headers: vec![("Authorization".into(), format!("Bearer {v}"))],
                         })
                     }
 
@@ -548,84 +749,62 @@ impl CloudOptions {
             },
         }
     }
+
+    /// Python passes a credential provider builder that needs to be called to get the actual credential
+    /// provider.
+    #[cfg(feature = "cloud")]
+    fn initialized_credential_provider(
+        &self,
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<Option<PlCredentialProvider>> {
+        if let Some(v) = self.credential_provider.clone() {
+            v.try_into_initialized(clear_cached_credentials)
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 #[cfg(feature = "cloud")]
 #[cfg(test)]
 mod tests {
-    use super::parse_url;
+    use hashbrown::HashMap;
 
+    use super::parse_untyped_config;
+
+    #[cfg(feature = "aws")]
     #[test]
-    fn test_parse_url() {
+    fn test_parse_untyped_config() {
+        use object_store::aws::AmazonS3ConfigKey;
+
+        let aws_config = [
+            ("aws_secret_access_key", "a_key"),
+            ("aws_s3_allow_unsafe_rename", "true"),
+        ]
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+        let aws_keys = parse_untyped_config::<AmazonS3ConfigKey, _>(aws_config)
+            .expect("Parsing keys shouldn't have thrown an error");
+
         assert_eq!(
-            parse_url(r"http://Users/Jane Doe/data.csv")
-                .unwrap()
-                .as_str(),
-            "http://users/Jane%20Doe/data.csv"
+            aws_keys.first().unwrap().0,
+            AmazonS3ConfigKey::SecretAccessKey
         );
+        assert_eq!(aws_keys.len(), 1);
+
+        let aws_config = [
+            ("AWS_SECRET_ACCESS_KEY", "a_key"),
+            ("aws_s3_allow_unsafe_rename", "true"),
+        ]
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+        let aws_keys = parse_untyped_config::<AmazonS3ConfigKey, _>(aws_config)
+            .expect("Parsing keys shouldn't have thrown an error");
+
         assert_eq!(
-            parse_url(r"http://Users/Jane Doe/data.csv")
-                .unwrap()
-                .as_str(),
-            "http://users/Jane%20Doe/data.csv"
+            aws_keys.first().unwrap().0,
+            AmazonS3ConfigKey::SecretAccessKey
         );
-        #[cfg(target_os = "windows")]
-        {
-            assert_eq!(
-                parse_url(r"file:///c:/Users/Jane Doe/data.csv")
-                    .unwrap()
-                    .as_str(),
-                "file:///c:/Users/Jane%20Doe/data.csv"
-            );
-            assert_eq!(
-                parse_url(r"file://\c:\Users\Jane Doe\data.csv")
-                    .unwrap()
-                    .as_str(),
-                "file:///c:/Users/Jane%20Doe/data.csv"
-            );
-            assert_eq!(
-                parse_url(r"c:\Users\Jane Doe\data.csv").unwrap().as_str(),
-                "file:///C:/Users/Jane%20Doe/data.csv"
-            );
-            assert_eq!(
-                parse_url(r"data.csv").unwrap().as_str(),
-                url::Url::from_file_path(
-                    [
-                        std::env::current_dir().unwrap().as_path(),
-                        std::path::Path::new("data.csv")
-                    ]
-                    .into_iter()
-                    .collect::<std::path::PathBuf>()
-                )
-                .unwrap()
-                .as_str()
-            );
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            assert_eq!(
-                parse_url(r"file:///home/Jane Doe/data.csv")
-                    .unwrap()
-                    .as_str(),
-                "file:///home/Jane%20Doe/data.csv"
-            );
-            assert_eq!(
-                parse_url(r"/home/Jane Doe/data.csv").unwrap().as_str(),
-                "file:///home/Jane%20Doe/data.csv"
-            );
-            assert_eq!(
-                parse_url(r"data.csv").unwrap().as_str(),
-                url::Url::from_file_path(
-                    [
-                        std::env::current_dir().unwrap().as_path(),
-                        std::path::Path::new("data.csv")
-                    ]
-                    .into_iter()
-                    .collect::<std::path::PathBuf>()
-                )
-                .unwrap()
-                .as_str()
-            );
-        }
+        assert_eq!(aws_keys.len(), 1);
     }
 }

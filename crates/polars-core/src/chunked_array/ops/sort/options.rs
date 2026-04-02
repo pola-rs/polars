@@ -28,6 +28,7 @@ use crate::prelude::*;
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct SortOptions {
     /// If true sort in descending order.
     /// Default `false`.
@@ -41,6 +42,8 @@ pub struct SortOptions {
     /// If true maintain the order of equal elements.
     /// Default `false`.
     pub maintain_order: bool,
+    /// Limit a sort output, this is for optimization purposes and might be ignored.
+    pub limit: Option<IdxSize>,
 }
 
 /// Sort options for multi-series sorting.
@@ -78,6 +81,7 @@ pub struct SortOptions {
 /// # }
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct SortMultipleOptions {
     /// Order of the columns. Default all `false``.
     ///
@@ -96,6 +100,8 @@ pub struct SortMultipleOptions {
     pub multithreaded: bool,
     /// Whether maintain the order of equal elements. Default `false`.
     pub maintain_order: bool,
+    /// Limit a sort output, this is for optimization purposes and might be ignored.
+    pub limit: Option<IdxSize>,
 }
 
 impl Default for SortOptions {
@@ -105,6 +111,7 @@ impl Default for SortOptions {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         }
     }
 }
@@ -116,6 +123,7 @@ impl Default for SortMultipleOptions {
             nulls_last: vec![false],
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         }
     }
 }
@@ -139,7 +147,7 @@ impl SortMultipleOptions {
         self
     }
 
-    /// Implement order for all columns. Default `false`.
+    /// Sort order for all columns. Default `false` which is ascending.
     pub fn with_order_descending(mut self, descending: bool) -> Self {
         self.descending = vec![descending];
         self
@@ -224,6 +232,7 @@ impl From<&SortOptions> for SortMultipleOptions {
             nulls_last: vec![value.nulls_last],
             multithreaded: value.multithreaded,
             maintain_order: value.maintain_order,
+            limit: value.limit,
         }
     }
 }
@@ -235,6 +244,7 @@ impl From<&SortMultipleOptions> for SortOptions {
             nulls_last: value.nulls_last.first().copied().unwrap_or(false),
             multithreaded: value.multithreaded,
             maintain_order: value.maintain_order,
+            limit: value.limit,
         }
     }
 }

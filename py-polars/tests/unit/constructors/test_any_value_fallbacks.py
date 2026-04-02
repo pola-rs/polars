@@ -7,10 +7,12 @@ from decimal import Decimal as D
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from numpy import array
 
 import polars as pl
+from polars._plr import PySeries
 from polars._utils.wrap import wrap_s
-from polars.polars import PySeries
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -211,7 +213,7 @@ def test_fallback_with_dtype_strict_failure(
             [
                 D("12"),
                 D("1.2345"),
-                # D("123456"),
+                D("123456"),
                 False,
                 True,
                 0,
@@ -224,14 +226,14 @@ def test_fallback_with_dtype_strict_failure(
             ],
             [
                 D("12.000"),
+                D("1.234"),
                 None,
-                # None,
                 None,
                 None,
                 D("0.000"),
                 D("-1.000"),
-                None,
-                None,
+                D("0.000"),
+                D("2.500"),
                 None,
                 None,
                 None,
@@ -351,35 +353,58 @@ def test_fallback_without_dtype_nonstrict_mixed_types(
 
 
 def test_fallback_without_dtype_large_int() -> None:
-    values = [1, 2**64, None]
+    values = [1, 2**128, None]
     with pytest.raises(
         OverflowError,
-        match="int value too large for Polars integer types: 18446744073709551616",
+        match="int value too large for Polars integer types",
     ):
         PySeries.new_from_any_values("", values, strict=True)
 
     result = wrap_s(PySeries.new_from_any_values("", values, strict=False))
-    assert result.dtype == pl.Float64
-    assert result.to_list() == [1.0, 1.8446744073709552e19, None]
+    assert result.dtype == pl.Int64
+    assert result.to_list() == [1, None, None]
 
 
 def test_fallback_with_dtype_large_int() -> None:
-    values = [1, 2**64, None]
+    values = [1, 2**128, None]
     with pytest.raises(OverflowError):
-        PySeries.new_from_any_values_and_dtype("", values, dtype=pl.Int64, strict=True)
+        PySeries.new_from_any_values_and_dtype("", values, dtype=pl.Int128, strict=True)
 
     result = wrap_s(
-        PySeries.new_from_any_values_and_dtype("", values, dtype=pl.Int64, strict=False)
+        PySeries.new_from_any_values_and_dtype(
+            "", values, dtype=pl.Int128, strict=False
+        )
     )
-    assert result.dtype == pl.Int64
+    assert result.dtype == pl.Int128
     assert result.to_list() == [1, None, None]
+
+
+def test_i128_overflow_to_null_26659() -> None:
+    i128_min = -(1 << 127)
+    values = [
+        i128_min,
+        i128_min - 1,
+        i128_min - 2,
+        i128_min - (1 << 63),
+        -(1 << 128),
+    ]
+    result = pl.DataFrame({"a": pl.Series(values, dtype=pl.Int128, strict=False)})
+    expected_values = [
+        i128_min,
+        None,
+        None,
+        None,
+        None,
+    ]
+    expected = pl.DataFrame({"a": pl.Series(expected_values, dtype=pl.Int128)})
+    assert_frame_equal(result, expected)
 
 
 def test_fallback_with_dtype_strict_failure_enum_casting() -> None:
     dtype = pl.Enum(["a", "b"])
     values = ["a", "b", "c", None]
 
-    with pytest.raises(TypeError, match="conversion from `str` to `enum` failed"):
+    with pytest.raises(TypeError, match="attempted to insert 'c'"):
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
 
 
@@ -391,3 +416,58 @@ def test_fallback_with_dtype_strict_failure_decimal_precision() -> None:
         TypeError, match="decimal precision 3 can't fit values with 5 digits"
     ):
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
+
+
+def test_categorical_lit_18874() -> None:
+    assert_frame_equal(
+        pl.DataFrame(
+            {"a": [1, 2, 3]},
+        ).with_columns(b=pl.lit("foo").cast(pl.Categorical)),
+        pl.DataFrame(
+            [
+                pl.Series("a", [1, 2, 3]),
+                pl.Series("b", ["foo"] * 3, pl.Categorical),
+            ]
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        # Float64 should have ~17; Float32 ~6 digits of precision preserved
+        ([0.123, 0.123456789], ["0.123", "0.123456789"]),
+        ([[0.123, 0.123456789]], ["[0.123,0.123456789]"]),
+        ([array([0.123, 0.123456789])], ["[0.123,0.123456789]"]),
+        ([{"a": 0.123, "b": 0.123456789}], ["{0.123,0.123456789}"]),
+        ([[{"a": 0.123, "b": 0.123456789}]], ["[{0.123,0.123456789}]"]),
+        ([{"x": [0.1, 0.2]}, [{"y": 0.3}]], ["{[0.1,0.2]}", "[{0.3}]"]),
+        (
+            [None, {"a": None, "b": 1.0}, [None, 2.0]],
+            [None, "{null,1.0}", "[null,2.0]"],
+        ),
+        ([[], {}], ["[]", "{}"]),
+        ([[0.5]], ["[0.5]"]),
+        ([{"a": 0.5}], ["{0.5}"]),
+    ],
+    ids=[
+        "basic_floats",
+        "nested_list",
+        "nested_array",
+        "basic_struct",
+        "list_of_structs",
+        "nested_mixed",
+        "mixed_nulls",
+        "empty_containers",
+        "single_element_list",
+        "single_element_struct",
+    ],
+)
+def test_float_to_string_precision_25257(
+    values: list[Any], expected: list[Any]
+) -> None:
+    # verify the conversion is decoupled from Display formatting
+    with pl.Config(float_precision=1):
+        s = pl.Series(values, strict=False, dtype=pl.String)
+
+    assert (s == pl.Series(expected)).all()

@@ -1,4 +1,4 @@
-use polars::export::chrono::NaiveDate;
+use chrono::NaiveDate;
 
 use super::*;
 
@@ -12,7 +12,7 @@ fn test_expand_datetimes_3042() -> PolarsResult<()> {
         .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap();
-    let date_range = polars_time::date_range(
+    let date_range_ = polars_time::date_range(
         "dt1".into(),
         low,
         high,
@@ -24,12 +24,14 @@ fn test_expand_datetimes_3042() -> PolarsResult<()> {
     .into_series();
 
     let out = df![
-        "dt1" => date_range.clone(),
-        "dt2" => date_range,
+        "dt1" => date_range_.clone(),
+        "dt2" => date_range_,
     ]?
     .lazy()
     .with_column(
         dtype_col(&DataType::Datetime(TimeUnit::Milliseconds, None))
+            .as_selector()
+            .as_expr()
             .dt()
             .to_string("%m/%d/%Y"),
     )

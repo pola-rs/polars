@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_error::PolarsResult;
 
-use super::{check, PrimitiveArray};
+use super::{PrimitiveArray, check};
 use crate::array::physical_binary::extend_validity;
 use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::{Bitmap, MutableBitmap};
@@ -171,17 +171,21 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
                 validity.extend_constant(additional, true)
             }
         } else {
-            if let Some(validity) = &mut self.validity {
-                validity.extend_constant(additional, false)
-            } else {
-                let mut validity = MutableBitmap::with_capacity(self.values.capacity());
-                validity.extend_constant(self.len(), true);
-                validity.extend_constant(additional, false);
-                self.validity = Some(validity)
-            }
-            self.values
-                .resize(self.values.len() + additional, T::default());
+            self.extend_null(additional);
         }
+    }
+
+    pub fn extend_null(&mut self, additional: usize) {
+        if let Some(validity) = &mut self.validity {
+            validity.extend_constant(additional, false)
+        } else {
+            let mut validity = MutableBitmap::with_capacity(self.values.capacity());
+            validity.extend_constant(self.len(), true);
+            validity.extend_constant(additional, false);
+            self.validity = Some(validity)
+        }
+        self.values
+            .resize(self.values.len() + additional, T::default());
     }
 
     /// Extends the [`MutablePrimitiveArray`] from an iterator of trusted len.
@@ -220,7 +224,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     where
         I: TrustedLen<Item = T>,
     {
-        unsafe { self.extend_trusted_len_values_unchecked(iterator) }
+        unsafe { self.extend_values(iterator) }
     }
 
     /// Extends the [`MutablePrimitiveArray`] from an iterator of values of trusted len.
@@ -229,7 +233,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     /// # Safety
     /// The iterator must be trusted len.
     #[inline]
-    pub unsafe fn extend_trusted_len_values_unchecked<I>(&mut self, iterator: I)
+    pub fn extend_values<I>(&mut self, iterator: I)
     where
         I: Iterator<Item = T>,
     {
@@ -370,7 +374,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
 
     /// Sets values.
     /// # Panic
-    /// Panics iff the values' length is not equal to the existing validity's len.
+    /// Panics iff the values' length is not equal to the existing values' len.
     pub fn set_values(&mut self, values: Vec<T>) {
         assert_eq!(values.len(), self.values.len());
         self.values = values;

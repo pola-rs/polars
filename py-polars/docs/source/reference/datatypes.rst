@@ -18,12 +18,14 @@ Numeric
     :nosignatures:
 
     Decimal
+    Float16
     Float32
     Float64
     Int8
     Int16
     Int32
     Int64
+    Int128
     UInt8
     UInt16
     UInt32
@@ -47,6 +49,7 @@ Nested
 
     Array
     List
+    Field
     Struct
 
 String
@@ -57,6 +60,7 @@ String
 
     String
     Categorical
+    Categories
     Enum
     Utf8
 
@@ -66,8 +70,10 @@ Other
     :toctree: api/
     :nosignatures:
 
+    BaseExtension
     Binary
     Boolean
+    Extension
     Null
     Object
     Unknown

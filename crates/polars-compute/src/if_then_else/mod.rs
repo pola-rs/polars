@@ -113,8 +113,8 @@ pub fn if_then_else_validity(
     }
 }
 
-fn if_then_else_extend<G, ET: Fn(&mut G, usize, usize), EF: Fn(&mut G, usize, usize)>(
-    growable: &mut G,
+fn if_then_else_extend<B, ET: Fn(&mut B, usize, usize), EF: Fn(&mut B, usize, usize)>(
+    builder: &mut B,
     mask: &Bitmap,
     extend_true: ET,
     extend_false: EF,
@@ -122,13 +122,13 @@ fn if_then_else_extend<G, ET: Fn(&mut G, usize, usize), EF: Fn(&mut G, usize, us
     let mut last_true_end = 0;
     for (start, len) in SlicesIterator::new(mask) {
         if start != last_true_end {
-            extend_false(growable, last_true_end, start - last_true_end);
+            extend_false(builder, last_true_end, start - last_true_end);
         };
-        extend_true(growable, start, len);
+        extend_true(builder, start, len);
         last_true_end = start + len;
     }
     if last_true_end != mask.len() {
-        extend_false(growable, last_true_end, mask.len() - last_true_end)
+        extend_false(builder, last_true_end, mask.len() - last_true_end)
     }
 }
 

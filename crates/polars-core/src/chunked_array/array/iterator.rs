@@ -2,7 +2,7 @@ use std::ptr::NonNull;
 
 use super::*;
 use crate::chunked_array::list::iterator::AmortizedListIter;
-use crate::series::amortized_iter::{unstable_series_container_and_ptr, AmortSeries, ArrayBox};
+use crate::series::amortized_iter::{AmortSeries, ArrayBox, unstable_series_container_and_ptr};
 
 impl ArrayChunked {
     /// This is an iterator over a [`ArrayChunked`] that save allocations.
@@ -25,7 +25,9 @@ impl ArrayChunked {
     /// # Safety
     /// The lifetime of [AmortSeries] is bound to the iterator. Keeping it alive
     /// longer than the iterator is UB.
-    pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
+    pub fn amortized_iter(
+        &self,
+    ) -> AmortizedListIter<'_, impl Iterator<Item = Option<ArrayBox>> + '_> {
         self.amortized_iter_with_name(PlSmallStr::EMPTY)
     }
 
@@ -45,7 +47,7 @@ impl ArrayChunked {
     pub fn amortized_iter_with_name(
         &self,
         name: PlSmallStr,
-    ) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
+    ) -> AmortizedListIter<'_, impl Iterator<Item = Option<ArrayBox>> + '_> {
         // we create the series container from the inner array
         // so that the container has the proper dtype.
         let arr = self.downcast_iter().next().unwrap();
@@ -119,7 +121,7 @@ impl ArrayChunked {
     /// Apply a closure `F` to each array.
     ///
     /// # Safety
-    /// Return series of `F` must has the same dtype and number of elements as input.
+    /// The closure `F` must return the same dtype and number of elements as the input.
     #[must_use]
     pub unsafe fn apply_amortized_same_type<F>(&self, mut f: F) -> Self
     where
@@ -141,7 +143,7 @@ impl ArrayChunked {
     /// Try apply a closure `F` to each array.
     ///
     /// # Safety
-    /// Return series of `F` must has the same dtype and number of elements as input if it is Ok.
+    /// The closure `F` must return the same dtype and number of elements as the input.
     pub unsafe fn try_apply_amortized_same_type<F>(&self, mut f: F) -> PolarsResult<Self>
     where
         F: FnMut(AmortSeries) -> PolarsResult<Series>,
@@ -164,7 +166,7 @@ impl ArrayChunked {
     /// Zip with a `ChunkedArray` then apply a binary function `F` elementwise.
     ///
     /// # Safety
-    //  Return series of `F` must has the same dtype and number of elements as input series.
+    /// The closure `F` must return the same dtype and number of elements as the input.
     #[must_use]
     pub unsafe fn zip_and_apply_amortized_same_type<'a, T, F>(
         &'a self,
@@ -195,9 +197,7 @@ impl ArrayChunked {
         F: FnMut(Option<AmortSeries>) -> Option<K> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
-        {
-            self.amortized_iter().map(f).collect_ca(self.name().clone())
-        }
+        self.amortized_iter().map(f).collect_ca(self.name().clone())
     }
 
     /// Try apply a closure `F` elementwise.
@@ -218,9 +218,7 @@ impl ArrayChunked {
     where
         F: FnMut(Option<AmortSeries>),
     {
-        {
-            self.amortized_iter().for_each(f)
-        }
+        self.amortized_iter().for_each(f)
     }
 }
 

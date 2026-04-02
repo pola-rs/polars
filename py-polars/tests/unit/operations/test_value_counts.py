@@ -11,7 +11,8 @@ def test_value_counts() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
     result = s.value_counts()
     expected = pl.DataFrame(
-        {"a": [1, 2, 3], "count": [1, 2, 1]}, schema_overrides={"count": pl.UInt32}
+        {"a": [1, 2, 3], "count": [1, 2, 1]},
+        schema_overrides={"count": pl.get_index_type()},
     )
     result_sorted = result.sort("a")
     assert_frame_equal(result_sorted, expected)
@@ -73,7 +74,7 @@ def test_value_counts_duplicate_name() -> None:
     # ... but can customize that
     result = s.value_counts(name="n", sort=True)
     expected = pl.DataFrame(
-        {"count": [1, 0], "n": [2, 1]}, schema_overrides={"n": pl.UInt32}
+        {"count": [1, 0], "n": [2, 1]}, schema_overrides={"n": pl.get_index_type()}
     )
     assert_frame_equal(result, expected)
 

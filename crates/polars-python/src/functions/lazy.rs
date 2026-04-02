@@ -1,17 +1,20 @@
 use polars::lazy::dsl;
 use polars::prelude::*;
+use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::UnionArgs;
+use polars_utils::python_function::PythonObject;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
 use crate::conversion::any_value::py_object_to_any_value;
-use crate::conversion::{get_lf, Wrap};
+use crate::conversion::{Wrap, get_lf};
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
-use crate::map::lazy::binary_lambda;
-use crate::prelude::{vec_extract_wrapped, ObjectValue};
-use crate::{map, PyDataFrame, PyExpr, PyLazyFrame, PySeries};
+use crate::expr::datatype::PyDataTypeExpr;
+use crate::lazyframe::PyOptFlags;
+use crate::utils::EnterPolarsExt;
+use crate::{PyDataFrame, PyExpr, PyLazyFrame, PySeries, map};
 
 macro_rules! set_unwrapped_or_0 {
     ($($var:ident),+ $(,)?) => {
@@ -75,6 +78,7 @@ pub fn arg_sort_by(
             nulls_last,
             multithreaded,
             maintain_order,
+            limit: None,
         },
     )
     .into()
@@ -112,55 +116,90 @@ pub fn col(name: &str) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFrame>> {
-    use polars_core::utils::rayon::prelude::*;
+pub fn element() -> PyExpr {
+    dsl::element().into()
+}
 
-    let out = py.allow_threads(|| {
-        polars_core::POOL.install(|| {
-            lfs.par_iter()
-                .map(|lf| {
-                    let df = lf.ldf.clone().collect()?;
-                    Ok(PyDataFrame::new(df))
-                })
-                .collect::<polars_core::error::PolarsResult<Vec<_>>>()
-                .map_err(PyPolarsErr::from)
-        })
-    });
-
-    Ok(out?)
+fn lfs_to_plans(lfs: Vec<PyLazyFrame>) -> Vec<DslPlan> {
+    lfs.into_iter()
+        .map(|lf| lf.ldf.into_inner().logical_plan)
+        .collect()
 }
 
 #[pyfunction]
-pub fn collect_all_with_callback(lfs: Vec<PyLazyFrame>, lambda: PyObject) {
-    use polars_core::utils::rayon::prelude::*;
+pub fn collect_all(
+    lfs: Vec<PyLazyFrame>,
+    engine: Wrap<Engine>,
+    optflags: PyOptFlags,
+    py: Python<'_>,
+) -> PyResult<Vec<PyDataFrame>> {
+    let plans = lfs_to_plans(lfs);
+    let dfs = py.enter_polars(|| {
+        LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner.into_inner())
+    })?;
+    Ok(dfs.into_iter().map(Into::into).collect())
+}
 
-    polars_core::POOL.spawn(move || {
-        let result = lfs
-            .par_iter()
-            .map(|lf| {
-                let df = lf.ldf.clone().collect()?;
-                Ok(PyDataFrame::new(df))
-            })
-            .collect::<polars_core::error::PolarsResult<Vec<_>>>()
-            .map_err(PyPolarsErr::from);
+#[pyfunction]
+pub fn collect_all_lazy(lfs: Vec<PyLazyFrame>, optflags: PyOptFlags) -> PyResult<PyLazyFrame> {
+    let plans = lfs_to_plans(lfs);
 
-        Python::with_gil(|py| match result {
-            Ok(dfs) => {
-                lambda.call1(py, (dfs,)).map_err(|err| err.restore(py)).ok();
-            },
-            Err(err) => {
-                lambda
-                    .call1(py, (PyErr::from(err).to_object(py),))
-                    .map_err(|err| err.restore(py))
-                    .ok();
-            },
+    for plan in &plans {
+        if !matches!(plan, DslPlan::Sink { .. }) {
+            return Err(PyValueError::new_err(
+                "all LazyFrames must end with a sink to use 'collect_all(lazy=True)'",
+            ));
+        }
+    }
+
+    Ok(LazyFrame::from_logical_plan(
+        DslPlan::SinkMultiple { inputs: plans },
+        optflags.inner.into_inner(),
+    )
+    .into())
+}
+
+#[pyfunction]
+pub fn explain_all(lfs: Vec<PyLazyFrame>, optflags: PyOptFlags, py: Python) -> PyResult<String> {
+    let plans = lfs_to_plans(lfs);
+    let explained =
+        py.enter_polars(|| LazyFrame::explain_all(plans, optflags.inner.into_inner()))?;
+    Ok(explained)
+}
+
+#[pyfunction]
+pub fn collect_all_with_callback(
+    lfs: Vec<PyLazyFrame>,
+    engine: Wrap<Engine>,
+    optflags: PyOptFlags,
+    lambda: Py<PyAny>,
+    py: Python<'_>,
+) {
+    let plans = lfs
+        .into_iter()
+        .map(|lf| lf.ldf.into_inner().logical_plan)
+        .collect();
+    let result = py
+        .enter_polars(|| {
+            LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner.into_inner())
         })
+        .map(|dfs| {
+            dfs.into_iter()
+                .map(Into::into)
+                .collect::<Vec<PyDataFrame>>()
+        });
+
+    Python::attach(|py| match result {
+        Ok(dfs) => {
+            lambda.call1(py, (dfs,)).map_err(|err| err.restore(py)).ok();
+        },
+        Err(err) => {
+            lambda
+                .call1(py, (PyErr::from(err),))
+                .map_err(|err| err.restore(py))
+                .ok();
+        },
     })
-}
-
-#[pyfunction]
-pub fn cols(names: Vec<String>) -> PyExpr {
-    dsl::cols(names).into()
 }
 
 #[pyfunction]
@@ -169,11 +208,12 @@ pub fn concat_lf(
     rechunk: bool,
     parallel: bool,
     to_supertypes: bool,
+    maintain_order: bool,
 ) -> PyResult<PyLazyFrame> {
     let len = seq.len()?;
     let mut lfs = Vec::with_capacity(len);
 
-    for res in seq.iter()? {
+    for res in seq.try_iter()? {
         let item = res?;
         let lf = get_lf(&item)?;
         lfs.push(lf);
@@ -185,6 +225,7 @@ pub fn concat_lf(
             rechunk,
             parallel,
             to_supertypes,
+            maintain_order,
             ..Default::default()
         },
     )
@@ -196,6 +237,13 @@ pub fn concat_lf(
 pub fn concat_list(s: Vec<PyExpr>) -> PyResult<PyExpr> {
     let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
     let expr = dsl::concat_list(s).map_err(PyPolarsErr::from)?;
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn concat_arr(s: Vec<PyExpr>) -> PyResult<PyExpr> {
+    let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+    let expr = dsl::concat_arr(s).map_err(PyPolarsErr::from)?;
     Ok(expr.into())
 }
 
@@ -222,23 +270,42 @@ pub fn arctan2(y: PyExpr, x: PyExpr) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn cum_fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
+pub fn cum_fold(
+    acc: PyExpr,
+    lambda: Py<PyAny>,
+    exprs: Vec<PyExpr>,
+    returns_scalar: bool,
+    return_dtype: Option<PyDataTypeExpr>,
+    include_init: bool,
+) -> PyExpr {
     let exprs = exprs.to_exprs();
-
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
-    dsl::cum_fold_exprs(acc.inner, func, exprs, include_init).into()
+    let func = PlanCallback::new_python(PythonObject(lambda));
+    dsl::cum_fold_exprs(
+        acc.inner,
+        func,
+        exprs,
+        returns_scalar,
+        return_dtype.map(|v| v.inner),
+        include_init,
+    )
+    .into()
 }
 
 #[pyfunction]
-pub fn cum_reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
+pub fn cum_reduce(
+    lambda: Py<PyAny>,
+    exprs: Vec<PyExpr>,
+    returns_scalar: bool,
+    return_dtype: Option<PyDataTypeExpr>,
+) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
-    dsl::cum_reduce_exprs(func, exprs).into()
+    let func = PlanCallback::new_python(PythonObject(lambda));
+    dsl::cum_reduce_exprs(func, exprs, returns_scalar, return_dtype.map(|v| v.inner)).into()
 }
 
 #[pyfunction]
-#[pyo3(signature = (year, month, day, hour=None, minute=None, second=None, microsecond=None, time_unit=Wrap(TimeUnit::Microseconds), time_zone=None, ambiguous=None))]
+#[pyo3(signature = (year, month, day, hour=None, minute=None, second=None, microsecond=None, time_unit=Wrap(TimeUnit::Microseconds), time_zone=Wrap(None), ambiguous=PyExpr::from(dsl::lit(String::from("raise")))))]
 pub fn datetime(
     year: PyExpr,
     month: PyExpr,
@@ -248,18 +315,16 @@ pub fn datetime(
     second: Option<PyExpr>,
     microsecond: Option<PyExpr>,
     time_unit: Wrap<TimeUnit>,
-    time_zone: Option<Wrap<TimeZone>>,
-    ambiguous: Option<PyExpr>,
+    time_zone: Wrap<Option<TimeZone>>,
+    ambiguous: PyExpr,
 ) -> PyExpr {
     let year = year.inner;
     let month = month.inner;
     let day = day.inner;
     set_unwrapped_or_0!(hour, minute, second, microsecond);
-    let ambiguous = ambiguous
-        .map(|e| e.inner)
-        .unwrap_or(dsl::lit(String::from("raise")));
+    let ambiguous = ambiguous.inner;
     let time_unit = time_unit.0;
-    let time_zone = time_zone.map(|x| x.0);
+    let time_zone = time_zone.0;
     let args = DatetimeArgs {
         year,
         month,
@@ -281,8 +346,9 @@ pub fn concat_lf_diagonal(
     rechunk: bool,
     parallel: bool,
     to_supertypes: bool,
+    maintain_order: bool,
 ) -> PyResult<PyLazyFrame> {
-    let iter = lfs.iter()?;
+    let iter = lfs.try_iter()?;
 
     let lfs = iter
         .map(|item| {
@@ -297,6 +363,7 @@ pub fn concat_lf_diagonal(
             rechunk,
             parallel,
             to_supertypes,
+            maintain_order,
             ..Default::default()
         },
     )
@@ -305,8 +372,12 @@ pub fn concat_lf_diagonal(
 }
 
 #[pyfunction]
-pub fn concat_lf_horizontal(lfs: &Bound<'_, PyAny>, parallel: bool) -> PyResult<PyLazyFrame> {
-    let iter = lfs.iter()?;
+pub fn concat_lf_horizontal(
+    lfs: &Bound<'_, PyAny>,
+    parallel: bool,
+    strict: bool,
+) -> PyResult<PyLazyFrame> {
+    let iter = lfs.try_iter()?;
 
     let lfs = iter
         .map(|item| {
@@ -315,13 +386,15 @@ pub fn concat_lf_horizontal(lfs: &Bound<'_, PyAny>, parallel: bool) -> PyResult<
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let args = UnionArgs {
-        rechunk: false, // No need to rechunk with horizontal concatenation
-        parallel,
-        to_supertypes: false,
-        ..Default::default()
-    };
-    let lf = dsl::functions::concat_lf_horizontal(lfs, args).map_err(PyPolarsErr::from)?;
+    let lf = dsl::functions::concat_lf_horizontal(
+        lfs,
+        HConcatOptions {
+            parallel,
+            strict,
+            broadcast_unit_length: Default::default(),
+        },
+    )
+    .map_err(PyPolarsErr::from)?;
     Ok(lf.into())
 }
 
@@ -330,22 +403,6 @@ pub fn concat_expr(e: Vec<PyExpr>, rechunk: bool) -> PyResult<PyExpr> {
     let e = e.to_exprs();
     let e = dsl::functions::concat_expr(e, rechunk).map_err(PyPolarsErr::from)?;
     Ok(e.into())
-}
-
-#[pyfunction]
-pub fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> PyResult<PyExpr> {
-    let dtypes = vec_extract_wrapped(dtypes);
-    Ok(dsl::dtype_cols(dtypes).into())
-}
-
-#[pyfunction]
-pub fn index_cols(indices: Vec<i64>) -> PyExpr {
-    if indices.len() == 1 {
-        dsl::nth(indices[0])
-    } else {
-        dsl::index_cols(indices)
-    }
-    .into()
 }
 
 #[pyfunction]
@@ -386,112 +443,121 @@ pub fn duration(
 }
 
 #[pyfunction]
-pub fn first() -> PyExpr {
-    dsl::first().into()
-}
-
-#[pyfunction]
-pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
+pub fn fold(
+    acc: PyExpr,
+    lambda: Py<PyAny>,
+    exprs: Vec<PyExpr>,
+    returns_scalar: bool,
+    return_dtype: Option<PyDataTypeExpr>,
+) -> PyExpr {
     let exprs = exprs.to_exprs();
-
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
-    dsl::fold_exprs(acc.inner, func, exprs).into()
+    let func = PlanCallback::new_python(PythonObject(lambda));
+    dsl::fold_exprs(
+        acc.inner,
+        func,
+        exprs,
+        returns_scalar,
+        return_dtype.map(|w| w.inner),
+    )
+    .into()
 }
 
 #[pyfunction]
-pub fn last() -> PyExpr {
-    dsl::last().into()
-}
-
-#[pyfunction]
-pub fn nth(n: i64) -> PyExpr {
-    dsl::nth(n).into()
-}
-
-#[pyfunction]
-pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool) -> PyResult<PyExpr> {
+pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyResult<PyExpr> {
+    let py = value.py();
     if value.is_instance_of::<PyBool>() {
-        let val = value.extract::<bool>().unwrap();
+        let val = value.extract::<bool>()?;
         Ok(dsl::lit(val).into())
-    } else if let Ok(int) = value.downcast::<PyInt>() {
+    } else if let Ok(int) = value.cast::<PyInt>() {
         let v = int
             .extract::<i128>()
             .map_err(|e| polars_err!(InvalidOperation: "integer too large for Polars: {e}"))
             .map_err(PyPolarsErr::from)?;
-        Ok(Expr::Literal(LiteralValue::Int(v)).into())
-    } else if let Ok(float) = value.downcast::<PyFloat>() {
-        let val = float.extract::<f64>().unwrap();
-        Ok(Expr::Literal(LiteralValue::Float(val)).into())
-    } else if let Ok(pystr) = value.downcast::<PyString>() {
+        Ok(Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(v))).into())
+    } else if let Ok(float) = value.cast::<PyFloat>() {
+        let val = float.extract::<f64>()?;
+        Ok(Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(val))).into())
+    } else if let Ok(pystr) = value.cast::<PyString>() {
         Ok(dsl::lit(pystr.to_string()).into())
     } else if let Ok(series) = value.extract::<PySeries>() {
-        Ok(dsl::lit(series.series).into())
+        let s = series.series.into_inner();
+        if is_scalar {
+            let av = s
+                .get(0)
+                .map_err(|_| PyValueError::new_err("expected at least 1 value"))?;
+            let av = av.into_static();
+            Ok(dsl::lit(Scalar::new(s.dtype().clone(), av)).into())
+        } else {
+            Ok(dsl::lit(s).into())
+        }
     } else if value.is_none() {
         Ok(dsl::lit(Null {}).into())
-    } else if let Ok(value) = value.downcast::<PyBytes>() {
+    } else if let Ok(value) = value.cast::<PyBytes>() {
         Ok(dsl::lit(value.as_bytes()).into())
-    } else if matches!(
-        value.get_type().qualname().unwrap().as_str(),
-        "date" | "datetime" | "time" | "timedelta" | "Decimal"
-    ) {
-        let av = py_object_to_any_value(value, true)?;
-        Ok(Expr::Literal(LiteralValue::try_from(av).unwrap()).into())
     } else {
-        Python::with_gil(|py| {
-            // One final attempt before erroring. Do we have a date/datetime subclass?
-            // E.g. pd.Timestamp, or Freezegun.
-            let datetime_module = PyModule::import_bound(py, "datetime")?;
-            let datetime_class = datetime_module.getattr("datetime")?;
-            let date_class = datetime_module.getattr("date")?;
-            if value.is_instance(&datetime_class)? || value.is_instance(&date_class)? {
-                let av = py_object_to_any_value(value, true)?;
-                Ok(Expr::Literal(LiteralValue::try_from(av).unwrap()).into())
-            } else if allow_object {
-                let s = Python::with_gil(|py| {
-                    PySeries::new_object(py, "", vec![ObjectValue::from(value.into_py(py))], false)
-                        .series
-                });
-                Ok(dsl::lit(s).into())
-            } else {
-                Err(PyTypeError::new_err(format!(
-                    "cannot create expression literal for value of type {}: {}\
+        let raise = || {
+            PyTypeError::new_err(format!(
+                "cannot create expression literal for value of type {}.\
                     \n\nHint: Pass `allow_object=True` to accept any value and create a literal of type Object.",
-                    value.get_type().qualname()?,
-                    value.repr()?
-                )))
-            }
-        })
+                value
+                    .get_type()
+                    .qualname()
+                    .map(|s| s.to_string())
+                    .unwrap_or("unknown".to_owned()),
+            ))
+        };
+
+        let av = py_object_to_any_value(value, true, allow_object).map_err(|_| raise())?;
+        match av {
+            #[cfg(feature = "object")]
+            AnyValue::ObjectOwned(_) => {
+                // Check again for object allowance as for cached addresses this is not checked.
+                if allow_object {
+                    let s = PySeries::new_object(py, "", vec![value.extract()?], false)
+                        .series
+                        .into_inner();
+                    Ok(dsl::lit(s).into())
+                } else {
+                    Err(raise())
+                }
+            },
+            _ => Ok(Expr::Literal(LiteralValue::from(av)).into()),
+        }
     }
 }
 
 #[pyfunction]
-#[pyo3(signature = (pyexpr, lambda, output_type, map_groups, returns_scalar))]
-pub fn map_mul(
-    py: Python,
+#[pyo3(signature = (pyexpr, lambda, output_type, is_elementwise, returns_scalar))]
+pub fn map_expr(
     pyexpr: Vec<PyExpr>,
-    lambda: PyObject,
-    output_type: Option<Wrap<DataType>>,
-    map_groups: bool,
+    lambda: Py<PyAny>,
+    output_type: Option<PyDataTypeExpr>,
+    is_elementwise: bool,
     returns_scalar: bool,
 ) -> PyExpr {
-    map::lazy::map_mul(&pyexpr, py, lambda, output_type, map_groups, returns_scalar)
+    map::lazy::map_expr(&pyexpr, lambda, output_type, is_elementwise, returns_scalar)
 }
 
 #[pyfunction]
-pub fn pearson_corr(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
-    dsl::pearson_corr(a.inner, b.inner, ddof).into()
+pub fn pearson_corr(a: PyExpr, b: PyExpr) -> PyExpr {
+    dsl::pearson_corr(a.inner, b.inner).into()
 }
 
 #[pyfunction]
-pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
+pub fn reduce(
+    lambda: Py<PyAny>,
+    exprs: Vec<PyExpr>,
+    returns_scalar: bool,
+    return_dtype: Option<PyDataTypeExpr>,
+) -> PyExpr {
     let exprs = exprs.to_exprs();
-
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
-    dsl::reduce_exprs(func, exprs).into()
+    let func = PlanCallback::new_python(PythonObject(lambda));
+    dsl::reduce_exprs(func, exprs, returns_scalar, return_dtype.map(|v| v.inner)).into()
 }
 
 #[pyfunction]
-pub fn repeat(value: PyExpr, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResult<PyExpr> {
+#[pyo3(signature = (value, n, dtype=None))]
+pub fn repeat(value: PyExpr, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyExpr {
     let mut value = value.inner;
     let n = n.inner;
 
@@ -499,14 +565,14 @@ pub fn repeat(value: PyExpr, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResu
         value = value.cast(dtype.0);
     }
 
-    Ok(dsl::repeat(value, n).into())
+    dsl::repeat(value, n).into()
 }
 
 #[pyfunction]
-pub fn spearman_rank_corr(a: PyExpr, b: PyExpr, ddof: u8, propagate_nans: bool) -> PyExpr {
+pub fn spearman_rank_corr(a: PyExpr, b: PyExpr, propagate_nans: bool) -> PyExpr {
     #[cfg(feature = "propagate_nans")]
     {
-        dsl::spearman_rank_corr(a.inner, b.inner, ddof, propagate_nans).into()
+        dsl::spearman_rank_corr(a.inner, b.inner, propagate_nans).into()
     }
     #[cfg(not(feature = "propagate_nans"))]
     {

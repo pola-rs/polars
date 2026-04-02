@@ -27,6 +27,8 @@ def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
     assert s_ptr == arr_ptr
 
 
+@pytest.mark.may_fail_cloud
+@pytest.mark.may_fail_auto_streaming
 @given(
     s=series(
         min_size=6,
@@ -153,12 +155,14 @@ def test_df_to_numpy_zero_copy_path() -> None:
     assert str(x[0, :]) == "[1. 2. 1. 1. 1.]"
 
 
+@pytest.mark.may_fail_cloud
+@pytest.mark.may_fail_auto_streaming
 def test_df_to_numpy_zero_copy_path_temporal() -> None:
     values = [datetime(1970 + i, 1, 1) for i in range(12)]
     s = pl.Series(values)
     df = pl.DataFrame({"a": s[:4], "b": s[4:8], "c": s[8:]})
 
-    result = df.to_numpy(allow_copy=False)
+    result: npt.NDArray[np.generic] = df.to_numpy(allow_copy=False)
     assert result.flags.f_contiguous is True
     assert result.flags.writeable is False
     assert result.tolist() == [list(row) for row in df.iter_rows()]
@@ -285,3 +289,20 @@ def test_to_numpy_c_order_1700() -> None:
         df_chunked,
         pl.from_numpy(df_chunked.to_numpy(order="c"), schema=df_chunked.schema),
     )
+
+
+def test_to_numpy_array_shape_23426() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [1, 2],
+            "y": [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            "z": [[[-1, -1, -2], [4, 5, 6]], [[-3, -5, -8], [10, 20, 30]]],
+        },
+        schema={
+            "x": pl.UInt8,
+            "y": pl.Array(pl.Float32, 3),
+            "z": pl.Array(pl.Int16, (2, 3)),
+        },
+    )
+
+    assert_frame_equal(df, pl.from_numpy(df.to_numpy(structured=True)))

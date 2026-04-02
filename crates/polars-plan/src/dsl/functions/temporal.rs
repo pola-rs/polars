@@ -1,4 +1,6 @@
+use arrow::temporal_conversions::{NANOSECONDS, NANOSECONDS_IN_DAY};
 use chrono::{Datelike, Timelike};
+use polars_utils::array;
 
 use super::*;
 
@@ -174,8 +176,11 @@ impl DatetimeArgs {
         };
 
         Some(
-            Expr::Literal(LiteralValue::DateTime(ts, self.time_unit, None))
-                .alias(PlSmallStr::from_static("datetime")),
+            Expr::Literal(LiteralValue::Scalar(Scalar::new(
+                DataType::Datetime(self.time_unit, None),
+                AnyValue::Datetime(ts, self.time_unit, None),
+            )))
+            .alias(PlSmallStr::from_static("datetime")),
         )
     }
 }
@@ -208,21 +213,17 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
         ambiguous,
     ];
 
-    Expr::Function {
-        input,
-        function: FunctionExpr::TemporalExpr(TemporalFunction::DatetimeFunction {
-            time_unit,
-            time_zone,
+    Expr::Alias(
+        Arc::new(Expr::Function {
+            input,
+            function: FunctionExpr::TemporalExpr(TemporalFunction::DatetimeFunction {
+                time_unit,
+                time_zone,
+            }),
         }),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                | FunctionFlags::ALLOW_RENAME,
-            fmt_str: "datetime",
-            ..Default::default()
-        },
-    }
+        // TODO: follow left-hand rule in Polars 2.0.
+        PlSmallStr::from_static("datetime"),
+    )
 }
 
 /// Arguments used by `duration` in order to produce an [`Expr`] of [`Duration`]
@@ -328,83 +329,91 @@ impl DurationArgs {
     impl_unit_setter!(with_microseconds(microseconds));
     impl_unit_setter!(with_nanoseconds(nanoseconds));
 
-    fn all_literal(&self) -> bool {
-        use Expr::*;
-        [
+    fn as_literal(&self) -> Option<Expr> {
+        use time_unit::convert_time_units;
+
+        let extract_i64_as_i128 = |e: &Expr| {
+            let Expr::Literal(lv) = e else { return None };
+            let av = lv.to_any_value()?;
+            if !av.is_integer() {
+                return None;
+            };
+            av.extract::<i64>().map(i128::from)
+        };
+        let extract_f64 = |e: &Expr| {
+            let Expr::Literal(lv) = e else { return None };
+            let av = lv.to_any_value()?;
+            av.extract::<f64>()
+        };
+        let overflows_i64 = |e: &&Expr| {
+            let Expr::Literal(lv) = e else { return false };
+            let av = lv.to_any_value();
+            match av {
+                Some(AnyValue::UInt128(x)) => x > i64::MAX as u128,
+                Some(AnyValue::UInt64(x)) => x > i64::MAX as u64,
+                Some(AnyValue::Int128(x)) => x < i64::MIN as i128 || x > i64::MAX as i128,
+                _ => false,
+            }
+        };
+
+        let fields = [
             &self.weeks,
             &self.days,
             &self.hours,
-            &self.seconds,
             &self.minutes,
+            &self.seconds,
             &self.milliseconds,
             &self.microseconds,
             &self.nanoseconds,
-        ]
-        .iter()
-        .all(|e| matches!(e, Literal(_)))
-    }
+        ];
 
-    fn as_literal(&self) -> Option<Expr> {
-        if !self.all_literal() {
+        // go into the function expr implementation to throw an error
+        if fields.iter().any(overflows_i64) {
             return None;
-        };
-        let Expr::Literal(lv) = &self.weeks else {
-            unreachable!()
-        };
-        let weeks = lv.to_any_value()?.extract()?;
-        let Expr::Literal(lv) = &self.days else {
-            unreachable!()
-        };
-        let days = lv.to_any_value()?.extract()?;
-        let Expr::Literal(lv) = &self.hours else {
-            unreachable!()
-        };
-        let hours = lv.to_any_value()?.extract()?;
-        let Expr::Literal(lv) = &self.seconds else {
-            unreachable!()
-        };
-        let seconds = lv.to_any_value()?.extract()?;
-        let Expr::Literal(lv) = &self.minutes else {
-            unreachable!()
-        };
-        let minutes = lv.to_any_value()?.extract()?;
-        let Expr::Literal(lv) = &self.milliseconds else {
-            unreachable!()
-        };
-        let milliseconds = lv.to_any_value()?.extract()?;
-        let Expr::Literal(lv) = &self.microseconds else {
-            unreachable!()
-        };
-        let microseconds = lv.to_any_value()?.extract()?;
-        let Expr::Literal(lv) = &self.nanoseconds else {
-            unreachable!()
-        };
-        let nanoseconds = lv.to_any_value()?.extract()?;
+        }
 
-        type D = chrono::Duration;
-        let delta = D::weeks(weeks)
-            + D::days(days)
-            + D::hours(hours)
-            + D::seconds(seconds)
-            + D::minutes(minutes)
-            + D::milliseconds(milliseconds)
-            + D::microseconds(microseconds)
-            + D::nanoseconds(nanoseconds);
+        let d = if let Some(fields) = array::try_map(fields, extract_i64_as_i128) {
+            let [w, d, h, m, s, ms, us, ns] = fields;
 
-        let d = match self.time_unit {
-            TimeUnit::Milliseconds => delta.num_milliseconds(),
-            TimeUnit::Microseconds => delta.num_microseconds()?,
-            TimeUnit::Nanoseconds => delta.num_nanoseconds()?,
+            let total_ns = w * 7 * NANOSECONDS_IN_DAY as i128
+                + d * NANOSECONDS_IN_DAY as i128
+                + h * 3600 * NANOSECONDS as i128
+                + m * 60 * NANOSECONDS as i128
+                + s * NANOSECONDS as i128
+                + ms * 1_000_000
+                + us * 1_000
+                + ns;
+
+            convert_time_units(total_ns, TimeUnit::Nanoseconds, self.time_unit) as i64
+        } else if let Some(fields) = array::try_map(fields, extract_f64) {
+            let [w, d, h, m, s, ms, us, ns] = fields;
+
+            let total_ns = w * 7.0 * NANOSECONDS_IN_DAY as f64
+                + d * NANOSECONDS_IN_DAY as f64
+                + h * 3600.0 * NANOSECONDS as f64
+                + m * 60.0 * NANOSECONDS as f64
+                + s * NANOSECONDS as f64
+                + ms * 1_000_000.0
+                + us * 1_000.0
+                + ns;
+
+            convert_time_units(total_ns, TimeUnit::Nanoseconds, self.time_unit) as i64
+        } else {
+            return None;
         };
 
         Some(
-            Expr::Literal(LiteralValue::Duration(d, self.time_unit))
-                .alias(PlSmallStr::from_static("duration")),
+            Expr::Literal(LiteralValue::Scalar(Scalar::new(
+                DataType::Duration(self.time_unit),
+                AnyValue::Duration(d, self.time_unit),
+            )))
+            .alias(PlSmallStr::from_static("duration")),
         )
     }
 }
 
 /// Construct a column of [`Duration`] from the provided [`DurationArgs`]
+#[cfg(feature = "dtype-duration")]
 pub fn duration(args: DurationArgs) -> Expr {
     if let Some(e) = args.as_literal() {
         return e;
@@ -421,10 +430,5 @@ pub fn duration(args: DurationArgs) -> Expr {
             args.nanoseconds,
         ],
         function: FunctionExpr::TemporalExpr(TemporalFunction::Duration(args.time_unit)),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
-            ..Default::default()
-        },
     }
 }

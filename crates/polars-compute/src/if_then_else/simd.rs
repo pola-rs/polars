@@ -1,15 +1,15 @@
 #[cfg(target_arch = "x86_64")]
 use std::mem::MaybeUninit;
 #[cfg(target_arch = "x86_64")]
-use std::simd::{Mask, Simd, SimdElement};
+use std::simd::{Mask, Select, Simd, SimdElement};
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 
 use super::{
-    if_then_else_loop, if_then_else_loop_broadcast_both, if_then_else_loop_broadcast_false,
-    if_then_else_validity, scalar, IfThenElseKernel,
+    IfThenElseKernel, if_then_else_loop, if_then_else_loop_broadcast_both,
+    if_then_else_loop_broadcast_false, if_then_else_validity, scalar,
 };
 
 #[cfg(target_arch = "x86_64")]

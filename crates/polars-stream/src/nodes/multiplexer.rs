@@ -1,13 +1,15 @@
 use std::collections::VecDeque;
 
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+use polars_ooc::AccessPattern::Fifo;
+use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use super::compute_node_prelude::*;
+use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
 
 // TODO: replace this with an out-of-core buffering solution.
 enum BufferedStream {
-    Open(VecDeque<Morsel>),
+    Open(VecDeque<(Token, MorselSeq)>),
     Closed,
 }
 
@@ -34,7 +36,12 @@ impl ComputeNode for MultiplexerNode {
         "multiplexer"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && !send.is_empty());
 
         // Initialize buffered streams, and mark those for which the receiver
@@ -92,17 +99,17 @@ impl ComputeNode for MultiplexerNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(recv.len() == 1 && !send.is_empty());
-        assert!(self.buffers.len() == send.len());
+        assert!(recv_ports.len() == 1 && !send_ports.is_empty());
+        assert!(self.buffers.len() == send_ports.len());
 
         enum Listener<'a> {
             Active(UnboundedSender<Morsel>),
-            Buffering(&'a mut VecDeque<Morsel>),
+            Buffering(&'a mut VecDeque<(Token, MorselSeq)>),
             Inactive,
         }
 
@@ -114,7 +121,7 @@ impl ComputeNode for MultiplexerNode {
             .enumerate()
             .map(|(port_idx, buffer)| {
                 if let BufferedStream::Open(buf) = buffer {
-                    if send[port_idx].is_some() {
+                    if send_ports[port_idx].is_some() {
                         // TODO: replace with a bounded channel and store data
                         // out-of-core beyond a certain size.
                         let (rx, tx) = unbounded_channel();
@@ -129,13 +136,14 @@ impl ComputeNode for MultiplexerNode {
             .unzip();
 
         // TODO: parallel multiplexing.
-        if let Some(mut receiver) = recv[0].take().map(|r| r.serial()) {
+        if let Some(mut receiver) = recv_ports[0].take().map(|r| r.serial()) {
             let buffered_source_token = buffered_source_token.clone();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 loop {
-                    let Ok(morsel) = receiver.recv().await else {
+                    let Ok(mut morsel) = receiver.recv().await else {
                         break;
                     };
+                    drop(morsel.take_consume_token());
 
                     let mut anyone_interested = false;
                     let mut active_listener_interested = false;
@@ -149,11 +157,7 @@ impl ComputeNode for MultiplexerNode {
                                 Err(_) => *buf_sender = Listener::Inactive,
                             },
                             Listener::Buffering(b) => {
-                                // Make sure to count buffered morsels as
-                                // consumed to not block the source.
-                                let mut m = morsel.clone();
-                                m.take_consume_token();
-                                b.push_front(m);
+                                b.push_front((morsel.clone().into_token(Fifo).await, morsel.seq()));
                                 anyone_interested = true;
                             },
                             Listener::Inactive => {},
@@ -176,27 +180,38 @@ impl ComputeNode for MultiplexerNode {
             }));
         }
 
-        for (send_port, opt_buf_recv) in send.iter_mut().zip(buf_receivers) {
+        for (send_port, opt_buf_recv) in send_ports.iter_mut().zip(buf_receivers) {
             if let Some((buf, mut rx)) = opt_buf_recv {
                 let mut sender = send_port.take().unwrap().serial();
 
+                let wait_group = WaitGroup::default();
                 let buffered_source_token = buffered_source_token.clone();
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     // First we try to flush all the old buffered data.
-                    while let Some(mut morsel) = buf.pop_back() {
-                        morsel.replace_source_token(buffered_source_token.clone());
-                        if sender.send(morsel).await.is_err()
-                            || buffered_source_token.stop_requested()
-                        {
-                            break;
+                    while let Some((token, seq)) = buf.pop_back() {
+                        let df = token.into_df().await;
+                        let mut morsel = Morsel::new(df, seq, buffered_source_token.clone());
+                        morsel.set_consume_token(wait_group.token());
+                        if sender.send(morsel).await.is_err() {
+                            return Ok(());
                         }
+                        if buffered_source_token.stop_requested()
+                            && let Ok(rx_morsel) = rx.try_recv()
+                        {
+                            rx_morsel.source_token().stop();
+                            let rx_seq = rx_morsel.seq();
+                            buf.push_front((rx_morsel.into_token(Fifo).await, rx_seq));
+                        }
+                        wait_group.wait().await;
                     }
 
                     // Then send along data from the multiplexer.
-                    while let Some(morsel) = rx.recv().await {
+                    while let Some(mut morsel) = rx.recv().await {
+                        morsel.set_consume_token(wait_group.token());
                         if sender.send(morsel).await.is_err() {
-                            break;
+                            return Ok(());
                         }
+                        wait_group.wait().await;
                     }
                     Ok(())
                 }));

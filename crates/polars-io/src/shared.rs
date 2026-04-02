@@ -1,7 +1,6 @@
 use std::io::{Read, Write};
 use std::sync::Arc;
 
-use arrow::array::new_empty_array;
 use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
 
@@ -13,7 +12,7 @@ pub trait SerReader<R>
 where
     R: Read,
 {
-    /// Create a new instance of the `[SerReader]`
+    /// Create a new instance of the [`SerReader`]
     fn new(reader: R) -> Self;
 
     /// Make sure that all columns are contiguous in memory by
@@ -40,10 +39,6 @@ where
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()>;
 }
 
-pub trait WriteDataFrameToFile {
-    fn write_df_to_file<W: std::io::Write>(&self, df: DataFrame, file: W) -> PolarsResult<()>;
-}
-
 pub trait ArrowReader {
     fn next_record_batch(&mut self) -> PolarsResult<Option<RecordBatch>>;
 }
@@ -65,10 +60,10 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     while let Some(batch) = reader.next_record_batch()? {
         let current_num_rows = num_rows as IdxSize;
         num_rows += batch.len();
-        let mut df = DataFrame::try_from((batch, arrow_schema))?;
+        let mut df = DataFrame::from(batch);
 
         if let Some(rc) = &row_index {
-            df.with_row_index_mut(rc.name.clone(), Some(current_num_rows + rc.offset));
+            unsafe { df.with_row_index_mut(rc.name.clone(), Some(current_num_rows + rc.offset)) };
         }
 
         if let Some(predicate) = &predicate {
@@ -84,7 +79,10 @@ pub(crate) fn finish_reader<R: ArrowReader>(
                     .map(|df: &DataFrame| df.height())
                     .sum::<usize>();
                 if polars_core::config::verbose() {
-                    eprintln!("sliced off {} rows of the 'DataFrame'. These lines were read because they were in a single chunk.", df.height().saturating_sub(n))
+                    eprintln!(
+                        "sliced off {} rows of the 'DataFrame'. These lines were read because they were in a single chunk.",
+                        df.height().saturating_sub(n)
+                    )
                 }
                 parsed_dfs.push(df.slice(0, len));
                 break;
@@ -95,12 +93,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
 
     let mut df = {
         if parsed_dfs.is_empty() {
-            // Create an empty dataframe with the correct data types
-            let empty_cols = arrow_schema
-                .iter_values()
-                .map(|fld| Series::try_from((fld.name.clone(), new_empty_array(fld.dtype.clone()))))
-                .collect::<PolarsResult<_>>()?;
-            DataFrame::new(empty_cols)?
+            DataFrame::empty_with_schema(&Schema::from_arrow_schema(arrow_schema))
         } else {
             // If there are any rows, accumulate them into a df
             accumulate_dataframes_vertical_unchecked(parsed_dfs)
@@ -108,12 +101,12 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     };
 
     if rechunk {
-        df.as_single_chunk_par();
+        df.rechunk_mut_par();
     }
     Ok(df)
 }
 
-pub(crate) fn schema_to_arrow_checked(
+pub fn schema_to_arrow_checked(
     schema: &Schema,
     compat_level: CompatLevel,
     _file_name: &str,
@@ -124,7 +117,7 @@ pub(crate) fn schema_to_arrow_checked(
             #[cfg(feature = "object")]
             {
                 polars_ensure!(
-                    !matches!(field.dtype(), DataType::Object(_, _)),
+                    !matches!(field.dtype(), DataType::Object(_)),
                     ComputeError: "cannot write 'Object' datatype to {}",
                     _file_name
                 );

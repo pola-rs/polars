@@ -30,7 +30,7 @@ where
         if truthy {
             av.extend_from_slice(&values[lower..upper])
         } else {
-            av.extend_trusted_len(std::iter::repeat(value).take(upper - lower))
+            av.extend_trusted_len(std::iter::repeat_n(value, upper - lower))
         }
     });
 
@@ -49,7 +49,7 @@ pub fn set_with_mask<T: NativeType>(
     let mut buf = Vec::with_capacity(array.len());
     BinaryMaskedSliceIterator::new(mask).for_each(|(lower, upper, truthy)| {
         if truthy {
-            buf.extend_trusted_len(std::iter::repeat(value).take(upper - lower))
+            buf.extend_trusted_len(std::iter::repeat_n(value, upper - lower))
         } else {
             buf.extend_from_slice(&values[lower..upper])
         }

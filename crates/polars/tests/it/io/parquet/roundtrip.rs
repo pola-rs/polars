@@ -1,8 +1,10 @@
 use std::io::Cursor;
+use std::sync::Arc;
 
 use arrow::array::{ArrayRef, Utf8ViewArray};
 use arrow::datatypes::{ArrowSchema, Field};
 use arrow::record_batch::RecordBatchT;
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_parquet::arrow::write::{FileWriter, WriteOptions};
 use polars_parquet::read::read_metadata;
@@ -28,16 +30,24 @@ fn round_trip(
         data_page_size: None,
     };
 
-    let iter = vec![RecordBatchT::try_new(vec![array.clone()])];
+    let iter = vec![RecordBatchT::try_new(
+        array.len(),
+        Arc::new(schema.clone()),
+        vec![array.clone()],
+    )];
 
-    let row_groups =
-        RowGroupIterator::try_new(iter.into_iter(), &schema, options, vec![encodings])?;
+    let row_groups = RowGroupIterator::try_new(
+        iter.into_iter(),
+        &schema,
+        options,
+        Buffer::from_iter([encodings]),
+    )?;
 
     let writer = Cursor::new(vec![]);
     let mut writer = FileWriter::try_new(writer, schema.clone(), options)?;
 
     for group in row_groups {
-        writer.write(group?)?;
+        writer.write(u64::MAX, group?)?;
     }
     writer.end(None)?;
 

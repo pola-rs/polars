@@ -1,9 +1,9 @@
-use std::path::PathBuf;
-
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
-use polars_io::cloud::CloudOptions;
 use polars_io::RowIndex;
+use polars_io::cloud::CloudOptions;
 use polars_plan::prelude::UnionArgs;
+use polars_utils::pl_path::PlRefPath;
 
 use crate::prelude::*;
 
@@ -18,8 +18,11 @@ pub trait LazyFileListReader: Clone {
             return self.finish_no_glob();
         }
 
-        let lfs = self
-            .paths()
+        let ScanSources::Paths(paths) = self.sources() else {
+            unreachable!("opened-files or in-memory buffers should never be globbed");
+        };
+
+        let lfs = paths
             .iter()
             .map(|path| {
                 self.clone()
@@ -27,12 +30,12 @@ pub trait LazyFileListReader: Clone {
                     .with_n_rows(None)
                     // Each individual reader should not apply a row index.
                     .with_row_index(None)
-                    .with_paths(Arc::new(vec![path.clone()]))
+                    .with_paths(Buffer::from_iter([path.clone()]))
                     .with_rechunk(false)
                     .finish_no_glob()
                     .map_err(|e| {
                         polars_err!(
-                            ComputeError: "error while reading {}: {}", path.display(), e
+                            ComputeError: "error while reading {}: {}", path, e
                         )
                     })
             })
@@ -40,7 +43,7 @@ pub trait LazyFileListReader: Clone {
 
         polars_ensure!(
             !lfs.is_empty(),
-            ComputeError: "no matching files found in {:?}", self.paths().iter().map(|x| x.to_str().unwrap()).collect::<Vec<_>>()
+            ComputeError: "no matching files found in {:?}", paths.iter().map(|x| x.as_str()).collect::<Vec<_>>()
         );
 
         let mut lf = self.concat_impl(lfs)?;
@@ -79,11 +82,18 @@ pub trait LazyFileListReader: Clone {
         true
     }
 
-    fn paths(&self) -> &[PathBuf];
+    /// Get the sources for this reader.
+    fn sources(&self) -> &ScanSources;
+
+    /// Set sources of the scanned files.
+    #[must_use]
+    fn with_sources(self, source: ScanSources) -> Self;
 
     /// Set paths of the scanned files.
     #[must_use]
-    fn with_paths(self, paths: Arc<Vec<PathBuf>>) -> Self;
+    fn with_paths(self, paths: Buffer<PlRefPath>) -> Self {
+        self.with_sources(ScanSources::Paths(paths))
+    }
 
     /// Configure the row limit.
     fn with_n_rows(self, n_rows: impl Into<Option<usize>>) -> Self;

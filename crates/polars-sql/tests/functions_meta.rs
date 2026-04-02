@@ -13,10 +13,14 @@ fn test_describe() {
     .lazy();
     let mut context = SQLContext::new();
     context.register("df", lf.clone());
-    let sql = r#"EXPLAIN SELECT year, country, MAX(year) FROM df"#;
+    let sql = r#"EXPLAIN SELECT year, country, MAX(year) as year_max FROM df"#;
     let res = context.execute(sql).unwrap();
     let df = res.collect().unwrap();
-    let lf = lf.select([col("year"), col("country"), col("year").max()]);
+    let lf = lf.select([
+        col("year"),
+        col("country"),
+        col("year").max().alias("year_max"),
+    ]);
     let expected = lf.describe_optimized_plan().unwrap();
 
     let expected = expected.split('\n').map(Some).collect::<Vec<_>>();

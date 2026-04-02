@@ -21,7 +21,7 @@ impl<'a, K: DictionaryKey> DictionaryValuesIter<'a, K> {
     }
 }
 
-impl<'a, K: DictionaryKey> Iterator for DictionaryValuesIter<'a, K> {
+impl<K: DictionaryKey> Iterator for DictionaryValuesIter<'_, K> {
     type Item = Box<dyn Scalar>;
 
     #[inline]
@@ -40,9 +40,9 @@ impl<'a, K: DictionaryKey> Iterator for DictionaryValuesIter<'a, K> {
     }
 }
 
-unsafe impl<'a, K: DictionaryKey> TrustedLen for DictionaryValuesIter<'a, K> {}
+unsafe impl<K: DictionaryKey> TrustedLen for DictionaryValuesIter<'_, K> {}
 
-impl<'a, K: DictionaryKey> DoubleEndedIterator for DictionaryValuesIter<'a, K> {
+impl<K: DictionaryKey> DoubleEndedIterator for DictionaryValuesIter<'_, K> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.index == self.end {

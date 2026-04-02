@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from math import ceil
-from typing import TYPE_CHECKING, Any, Iterable, overload
+from types import ModuleType
+from typing import TYPE_CHECKING, Any, overload
 
 import pytest
 import sqlalchemy
@@ -10,10 +11,14 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 import polars as pl
 from polars._utils.various import parse_version
+from polars.io.database._utils import _run_async
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import mock_module_import
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from pathlib import Path
+
 
 SURREAL_MOCK_DATA: list[dict[str, Any]] = [
     {
@@ -50,7 +55,7 @@ class MockSurrealConnection:
         await self.connect()
         return self
 
-    async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
+    async def __aexit__(self, *args: object, **kwargs: Any) -> None:
         await self.close()
 
     async def close(self) -> None:
@@ -63,9 +68,15 @@ class MockSurrealConnection:
         pass
 
     async def query(
-        self, sql: str, vars: dict[str, Any] | None = None
+        self, query: str, variables: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         return [{"result": self._mock_data, "status": "OK", "time": "32.083µs"}]
+
+
+class MockedSurrealModule(ModuleType):
+    """Mock SurrealDB module; enables internal `isinstance` check for AsyncSurrealDB."""
+
+    AsyncSurrealDB = MockSurrealConnection
 
 
 @pytest.mark.skipif(
@@ -74,61 +85,74 @@ class MockSurrealConnection:
 )
 def test_read_async(tmp_sqlite_db: Path) -> None:
     # confirm that we can load frame data from the core sqlalchemy async
-    # primitives: AsyncConnection, AsyncEngine, and async_sessionmaker
+    # primitives: AsyncEngine, AsyncConnection, async_sessionmaker, and AsyncSession
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    async_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_sqlite_db}")
-    async_connection = async_engine.connect()
-    async_session = async_sessionmaker(async_engine)
-    async_session_inst = async_session()
+    async def _test_impl() -> None:
+        async_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_sqlite_db}")
+        async_connection = await async_engine.connect()
+        try:
+            async_session = async_sessionmaker(async_engine)
+            async_session_inst = async_session()
 
-    expected_frame = pl.DataFrame(
-        {"id": [2, 1], "name": ["other", "misc"], "value": [-99.5, 100.0]}
-    )
-    async_conn: Any
-    for async_conn in (
-        async_engine,
-        async_connection,
-        async_session,
-        async_session_inst,
-    ):
-        if async_conn in (async_session, async_session_inst):
-            constraint, execute_opts = "", {}
-        else:
-            constraint = "WHERE value > :n"
-            execute_opts = {"parameters": {"n": -1000}}
+            expected_frame = pl.DataFrame(
+                {"id": [2, 1], "name": ["other", "misc"], "value": [-99.5, 100.0]}
+            )
+            async_conn: Any
+            for async_conn in (
+                async_engine,
+                async_connection,
+                async_session,
+                async_session_inst,
+            ):
+                if async_conn in (async_session, async_session_inst):
+                    constraint, execute_opts = "", {}
+                else:
+                    constraint = "WHERE value > :n"
+                    execute_opts = {"parameters": {"n": -1000}}
 
-        df = pl.read_database(
-            query=f"""
-                SELECT id, name, value
-                FROM test_data {constraint}
-                ORDER BY id DESC
-            """,
-            connection=async_conn,
-            execute_options=execute_opts,
-        )
-        assert_frame_equal(expected_frame, df)
+                df = pl.read_database(
+                    query=f"""
+                        SELECT id, name, value
+                        FROM test_data {constraint}
+                        ORDER BY id DESC
+                    """,
+                    connection=async_conn,
+                    execute_options=execute_opts,
+                )
+                assert_frame_equal(expected_frame, df)
+        finally:
+            await async_session_inst.close()
+            await async_connection.close()
+            await async_engine.dispose()
 
-
-async def _nested_async_test(tmp_sqlite_db: Path) -> pl.DataFrame:
-    async_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_sqlite_db}")
-    return pl.read_database(
-        query="SELECT id, name FROM test_data ORDER BY id",
-        connection=async_engine.connect(),
-    )
+    asyncio.run(_test_impl())
 
 
 @pytest.mark.skipif(
     parse_version(sqlalchemy.__version__) < (2, 0),
     reason="SQLAlchemy 2.0+ required for async tests",
 )
-def test_read_async_nested(tmp_sqlite_db: Path) -> None:
-    # this tests validates that we can handle nested async calls. without
-    # the nested asyncio handling provided by `nest_asyncio` this test
-    # would raise a RuntimeError
+@pytest.mark.parametrize("started", [True, False])
+def test_read_async_nested(tmp_sqlite_db: Path, started: bool) -> None:
+    # validate that we can handle nested async calls; check
+    # this works with connections that are started/unstarted
+    async def _test_impl() -> pl.DataFrame:
+        async_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_sqlite_db}")
+        async_connection = async_engine.connect()
+        if started:
+            async_connection = await async_connection
+        try:
+            return pl.read_database(
+                query="SELECT id, name FROM test_data ORDER BY id",
+                connection=async_connection,
+            )
+        finally:
+            await async_connection.close()
+            await async_engine.dispose()
 
     expected_frame = pl.DataFrame({"id": [1, 2], "name": ["misc", "other"]})
-    df = asyncio.run(_nested_async_test(tmp_sqlite_db))
+    df = asyncio.run(_test_impl())
     assert_frame_equal(expected_frame, df)
 
 
@@ -161,18 +185,65 @@ async def _surreal_query_as_frame(
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 4])
 def test_surrealdb_fetchall(batch_size: int | None) -> None:
-    df_expected = pl.DataFrame(SURREAL_MOCK_DATA)
-    res = asyncio.run(
-        _surreal_query_as_frame(
-            url="ws://localhost:8000/rpc",
-            query="SELECT * FROM item",
-            batch_size=batch_size,
+    with mock_module_import("surrealdb", MockedSurrealModule("surrealdb")):
+        df_expected = pl.DataFrame(SURREAL_MOCK_DATA)
+        res = asyncio.run(
+            _surreal_query_as_frame(
+                url="ws://localhost:8000/rpc",
+                query="SELECT * FROM item",
+                batch_size=batch_size,
+            )
         )
+        if batch_size:
+            frames = list(res)  # type: ignore[call-overload]
+            n_mock_rows = len(SURREAL_MOCK_DATA)
+            assert len(frames) == ceil(n_mock_rows / batch_size)
+            assert_frame_equal(df_expected[:batch_size], frames[0])
+        else:
+            assert_frame_equal(df_expected, res)  # type: ignore[arg-type]
+
+
+def test_async_nested_captured_loop_21263() -> None:
+    # tests awaiting a future that has "captured" the original event loop from
+    # within a `_run_async` context.
+    async def test_impl() -> None:
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(asyncio.sleep(0))
+
+        _run_async(await_task(task))
+
+    async def await_task(task: Any) -> None:
+        await task
+
+    asyncio.run(test_impl())
+
+
+def test_async_index_error_25209(tmp_sqlite_db: Path) -> None:
+    base_uri = f"sqlite:///{tmp_sqlite_db}"
+    table_name = "test_25209"
+
+    pl.select(x=1, y=2, z=3).write_database(
+        table_name,
+        connection=base_uri,
+        engine="sqlalchemy",
+        if_table_exists="replace",
     )
-    if batch_size:
-        frames = list(res)  # type: ignore[call-overload]
-        n_mock_rows = len(SURREAL_MOCK_DATA)
-        assert len(frames) == ceil(n_mock_rows / batch_size)
-        assert_frame_equal(df_expected[:batch_size], frames[0])
-    else:
-        assert_frame_equal(df_expected, res)  # type: ignore[arg-type]
+
+    async def run_async_query() -> Any:
+        async_engine = create_async_engine(f"sqlite+aio{base_uri}")
+        try:
+            return pl.read_database(
+                query=f"SELECT * FROM {table_name}",
+                connection=async_engine,
+            )
+        finally:
+            await async_engine.dispose()
+
+    async def testing() -> Any:
+        # return/await multiple queries
+        return await asyncio.gather(*(run_async_query(), run_async_query()))
+
+    df1, df2 = asyncio.run(testing())
+
+    assert_frame_equal(df1, df2)
+    assert df1.rows() == [(1, 2, 3)]

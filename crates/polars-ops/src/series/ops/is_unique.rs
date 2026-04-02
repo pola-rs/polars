@@ -56,6 +56,11 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
             let ca = s.binary().unwrap();
             is_unique_ca(ca, invert)
         },
+        #[cfg(feature = "dtype-f16")]
+        Float16 => {
+            let ca = s.f16().unwrap();
+            is_unique_ca(ca, invert)
+        },
         Float32 => {
             let ca = s.f32().unwrap();
             is_unique_ca(ca, invert)
@@ -79,7 +84,7 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
             1 => BooleanChunked::new(s.name().clone(), [!invert]),
             len => BooleanChunked::full(s.name().clone(), invert, len),
         },
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             with_match_physical_integer_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_unique_ca(ca, invert)
