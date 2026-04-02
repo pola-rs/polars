@@ -84,7 +84,7 @@ if TYPE_CHECKING:
     GreaterThanOrEqual = Any
     In = Any
     IsNull = Any
-    IsNotNull = Any
+    NotNull = Any
     LessThan = Any
     LessThanOrEqual = Any
     Not = Any
@@ -96,10 +96,10 @@ else:
         EqualTo,
         GreaterThan,
         GreaterThanOrEqual,
-        IsNotNull,
         IsNull,
         LessThan,
         LessThanOrEqual,
+        NotNull,
         Or,
         Reference,
     )
@@ -264,12 +264,15 @@ class TestIcebergExpressions:
         assert _build_iceberg_expr(["is_null", ["field", "id"]]) == IsNull("id")
 
     def test_is_not_null_expression(self) -> None:
-        assert _build_iceberg_expr(["is_not_null", ["field", "id"]]) == IsNotNull("id")
+        assert _build_iceberg_expr(["is_not_null", ["field", "id"]]) == NotNull("id")
 
     def test_parse_combined_expression(self) -> None:
         node = [
-            "binop", "or",
-            ["binop", "and",
+            "binop",
+            "or",
+            [
+                "binop",
+                "and",
                 ["binop", "eq", ["field", "str"], ["lit_str", "2"]],
                 ["binop", "gt", ["field", "id"], ["lit_i64", 10]],
             ],
@@ -284,23 +287,37 @@ class TestIcebergExpressions:
         )
 
     def test_parse_gt(self) -> None:
-        assert _build_iceberg_expr(["binop", "gt", ["field", "ts"], ["lit_str", "2023-08-08"]]) == GreaterThan("ts", "2023-08-08")
+        assert _build_iceberg_expr(
+            ["binop", "gt", ["field", "ts"], ["lit_str", "2023-08-08"]]
+        ) == GreaterThan("ts", "2023-08-08")
 
     def test_parse_gteq(self) -> None:
-        assert _build_iceberg_expr(["binop", "gte", ["field", "ts"], ["lit_str", "2023-08-08"]]) == GreaterThanOrEqual("ts", "2023-08-08")
+        assert _build_iceberg_expr(
+            ["binop", "gte", ["field", "ts"], ["lit_str", "2023-08-08"]]
+        ) == GreaterThanOrEqual("ts", "2023-08-08")
 
     def test_parse_eq(self) -> None:
-        assert _build_iceberg_expr(["binop", "eq", ["field", "ts"], ["lit_str", "2023-08-08"]]) == EqualTo("ts", "2023-08-08")
+        assert _build_iceberg_expr(
+            ["binop", "eq", ["field", "ts"], ["lit_str", "2023-08-08"]]
+        ) == EqualTo("ts", "2023-08-08")
 
     def test_parse_lt(self) -> None:
-        assert _build_iceberg_expr(["binop", "lt", ["field", "ts"], ["lit_str", "2023-08-08"]]) == LessThan("ts", "2023-08-08")
+        assert _build_iceberg_expr(
+            ["binop", "lt", ["field", "ts"], ["lit_str", "2023-08-08"]]
+        ) == LessThan("ts", "2023-08-08")
 
     def test_parse_lteq(self) -> None:
-        assert _build_iceberg_expr(["binop", "lte", ["field", "ts"], ["lit_str", "2023-08-08"]]) == LessThanOrEqual("ts", "2023-08-08")
+        assert _build_iceberg_expr(
+            ["binop", "lte", ["field", "ts"], ["lit_str", "2023-08-08"]]
+        ) == LessThanOrEqual("ts", "2023-08-08")
 
     def test_compare_boolean(self) -> None:
-        assert _build_iceberg_expr(["binop", "eq", ["field", "ts"], ["lit_bool", True]]) == EqualTo("ts", True)
-        assert _build_iceberg_expr(["binop", "eq", ["field", "ts"], ["lit_bool", False]]) == EqualTo("ts", False)
+        assert _build_iceberg_expr(
+            ["binop", "eq", ["field", "ts"], ["lit_bool", True]]
+        ) == EqualTo("ts", True)
+        assert _build_iceberg_expr(
+            ["binop", "eq", ["field", "ts"], ["lit_bool", False]]
+        ) == EqualTo("ts", False)
 
     def test_bare_boolean_field(self) -> None:
         expr = try_convert_pyarrow_predicate('["field","is_active"]')
