@@ -1667,3 +1667,13 @@ def test_join_asof_nans(strategy: AsofJoinStrategy) -> None:
         }
     )
     assert_frame_equal(actual, expected)
+
+
+def test_join_asof_by_nulls_27165() -> None:
+    left = pl.DataFrame({"key": [1.0], "group": [0]}).with_row_index()
+    right = pl.DataFrame({"key": [0.0, None], "group": [None, 0]}).with_row_index()
+    actual = left.join_asof(right, on="key", by="group", strategy="nearest")
+    expected = pl.DataFrame(
+        {"index": [0], "key": [1.0], "group": [0], "index_right": [None]},
+    )
+    assert_frame_equal(actual, expected, check_dtypes=False)
