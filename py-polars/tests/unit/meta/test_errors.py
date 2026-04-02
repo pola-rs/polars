@@ -28,13 +28,6 @@ if TYPE_CHECKING:
     from polars._typing import ConcatMethod
 
 
-def test_error_on_empty_group_by() -> None:
-    with pytest.raises(
-        ComputeError, match="at least one key is required in a group_by operation"
-    ):
-        pl.DataFrame({"x": [0, 0, 1, 1]}).group_by([]).agg(pl.len())
-
-
 def test_error_on_reducing_map() -> None:
     df = pl.DataFrame(
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}

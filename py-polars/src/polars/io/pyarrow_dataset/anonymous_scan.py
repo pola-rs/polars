@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars._dependencies import pyarrow as pa
@@ -37,42 +37,15 @@ def _scan_pyarrow_dataset(
     """
     # when `allow_pyarrow_filter=False`, the Rust side passes `batch_size`
     # positionally, so we set as `user_batch_size` to avoid collision
-    batch_size_key = "batch_size" if allow_pyarrow_filter else "user_batch_size"
     func = partial(
         _scan_pyarrow_dataset_impl,
         ds,
         allow_pyarrow_filter=allow_pyarrow_filter,
-        **{batch_size_key: batch_size},
+        user_batch_size=batch_size,
     )
     return pl.LazyFrame._scan_python_function(
         ds.schema, func, pyarrow=allow_pyarrow_filter
     )
-
-
-@overload
-def _scan_pyarrow_dataset_impl(
-    ds: pa.dataset.Dataset,
-    with_columns: list[str] | None,
-    predicate: str | bytes | None,
-    n_rows: int | None,
-    batch_size: int | None = ...,
-    *,
-    allow_pyarrow_filter: Literal[True] = ...,
-    user_batch_size: int | None = ...,
-) -> DataFrame: ...
-
-
-@overload
-def _scan_pyarrow_dataset_impl(
-    ds: pa.dataset.Dataset,
-    with_columns: list[str] | None,
-    predicate: str | bytes | None,
-    n_rows: int | None,
-    batch_size: int | None = ...,
-    *,
-    allow_pyarrow_filter: Literal[False],
-    user_batch_size: int | None = ...,
-) -> tuple[Iterator[DataFrame], bool]: ...
 
 
 def _scan_pyarrow_dataset_impl(
@@ -84,7 +57,7 @@ def _scan_pyarrow_dataset_impl(
     *,
     allow_pyarrow_filter: bool = True,
     user_batch_size: int | None = None,
-) -> DataFrame | tuple[Iterator[DataFrame], bool]:
+) -> tuple[Iterator[DataFrame], bool]:
     """
     Take the projected columns and materialize an arrow table.
 
@@ -115,7 +88,12 @@ def _scan_pyarrow_dataset_impl(
 
     Returns
     -------
-    DataFrame or tuple[Iterator[DataFrame], bool]
+    tuple[Iterator[DataFrame], bool]
+    A generator over the DataFrames and a boolean indicating if the
+    predicates could be parsed.
+    This boolean is always `False` as there might be some predicates
+    that could not be converted
+    to pyarrow and need to be applied as post-predicate.
     """
     filter_ = None
     filter_post_slice_ = None
@@ -164,9 +142,4 @@ def _scan_pyarrow_dataset_impl(
             else ds.to_table(**common_params)
         )
 
-    if allow_pyarrow_filter:
-        [x] = frames()
-        return x
-
-    else:
-        return frames(), False
+    return frames(), False

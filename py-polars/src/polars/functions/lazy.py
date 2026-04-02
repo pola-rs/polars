@@ -23,7 +23,7 @@ from polars._utils.parse import (
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import extend_bool, qualified_type_name
 from polars._utils.wrap import wrap_df, wrap_expr, wrap_s
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
 from polars.datatypes._parse import parse_into_datatype_expr
 from polars.lazyframe.opt_flags import (
     DEFAULT_QUERY_OPT_FLAGS,
@@ -2632,6 +2632,11 @@ def from_epoch(
     if time_unit == "d":
         return column.cast(Date)
     if time_unit in (scale := {"s": 1_000_000, "ms": 1_000}):
+        if isinstance(column, pl.Expr):
+            column = column * F.lit(scale[time_unit], dtype=Int64)
+            return column.cast(Datetime("us"))
+        if column.dtype.is_integer():
+            column = column.cast(Int64)
         return (column * scale[time_unit]).cast(Datetime("us"))
     if time_unit in DTYPE_TEMPORAL_UNITS:
         return column.cast(Datetime(time_unit))  # type: ignore[arg-type]
@@ -2715,9 +2720,17 @@ def rolling_corr(
         The number of values in the window that should be non-null before computing
         a result. If None, it will be set equal to window size.
     ddof
-        Delta degrees of freedom. The divisor used in calculations
-        is `N - ddof`, where `N` represents the number of elements.
+        Has no effect, do not use.
+
+        .. deprecated:: 1.40.0
     """
+    if ddof != 1:
+        issue_deprecation_warning(
+            "the `ddof` parameter for `rolling_corr` is deprecated."
+            " Correlation is invariant of `ddof`.",
+            version="1.40.0",
+        )
+
     if min_samples is None:
         min_samples = window_size
     if isinstance(a, str):

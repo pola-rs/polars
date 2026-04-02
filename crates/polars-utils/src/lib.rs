@@ -92,3 +92,4 @@ pub use either;
 pub use idx_vec::UnitVec;
 pub mod chunked_bytes_cursor;
 pub mod concat_vec;
+pub mod scratch_vec;

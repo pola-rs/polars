@@ -2407,3 +2407,24 @@ def test_rolling_empty_windows_streaming_26732() -> None:
     )
 
     assert_frame_equal(result, expected)
+
+
+def test_rolling_corr_ddof_invariant_27013() -> None:
+    x = [1.0, 2.0, 3.0, 4.0, 5.0]
+    y = [10.0, 20.0, 30.0, 40.0, 50.0]
+    df = pl.DataFrame({"x": x, "y": y})
+
+    r1 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5))["x"][-1]
+    assert r1 == pytest.approx(1.0)
+
+    with pytest.warns(DeprecationWarning, match="ddof"):
+        r0 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5, ddof=0))[
+            "x"
+        ][-1]
+    with pytest.warns(DeprecationWarning, match="ddof"):
+        r2 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5, ddof=2))[
+            "x"
+        ][-1]
+
+    assert r0 == pytest.approx(1.0)
+    assert r2 == pytest.approx(1.0)

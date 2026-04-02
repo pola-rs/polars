@@ -1,5 +1,3 @@
-use std::sync::LazyLock;
-
 use crossbeam_queue::ArrayQueue;
 use polars_core::POOL;
 use polars_error::PolarsResult;
@@ -24,12 +22,6 @@ pub mod range_join;
 #[cfg(feature = "semi_anti_join")]
 pub mod semi_anti_join;
 mod utils;
-
-static JOIN_SAMPLE_LIMIT: LazyLock<usize> = LazyLock::new(|| {
-    std::env::var("POLARS_JOIN_SAMPLE_LIMIT")
-        .map(|limit| limit.parse().unwrap())
-        .unwrap_or(10_000_000)
-});
 
 // If one side is this much bigger than the other side we'll always use the
 // smaller side as the build side without checking cardinalities.

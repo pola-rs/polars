@@ -1471,3 +1471,26 @@ def test_excel_read_columns_nonlist_sequence(engine: ExcelSpreadsheetEngine) -> 
     xldf = pl.read_excel(xls, engine=engine, columns="colx")
     expected = df.select("colx")
     assert_frame_equal(xldf, expected)
+
+
+@pytest.mark.parametrize(
+    ("read_spreadsheet", "source", "params"),
+    [
+        (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
+        (pl.read_ods, "path_ods", {}),
+    ],
+)
+def test_spreadsheet_no_resource_warning(
+    read_spreadsheet: Callable[..., pl.DataFrame],
+    source: str,
+    params: dict[str, str],
+    request: pytest.FixtureRequest,
+) -> None:
+    # ref: https://github.com/pola-rs/polars/issues/14466
+    spreadsheet_path = request.getfixturevalue(source)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ResourceWarning)
+        read_spreadsheet(spreadsheet_path, **params)
+        read_spreadsheet(spreadsheet_path, sheet_id=0, **params)

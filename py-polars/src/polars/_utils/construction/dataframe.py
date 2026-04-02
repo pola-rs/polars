@@ -439,7 +439,9 @@ def _expand_dict_data(
 
     (Note that `range` is sized, and will take a fast-path on Series init).
     """
-    expanded_data = {}
+    expanded_data: dict[
+        str, Sequence[object] | Mapping[str, Sequence[object]] | Series
+    ] = {}
     for name, val in data.items():
         expanded_data[name] = (
             pl.Series(name, val, dtypes.get(name), strict=strict)

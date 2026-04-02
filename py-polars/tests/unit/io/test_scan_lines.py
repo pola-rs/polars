@@ -56,7 +56,7 @@ def test_scan_lines(
 
     assert_frame_equal(
         pl.scan_lines(b"").collect(),
-        pl.DataFrame(schema={"lines": pl.String}),
+        pl.DataFrame(schema={"line": pl.String}),
     )
 
     assert_frame_equal(
@@ -66,7 +66,7 @@ def test_scan_lines(
 
     assert_frame_equal(
         pl.scan_lines(b"").collect(),
-        pl.DataFrame(schema={"lines": pl.String}),
+        pl.DataFrame(schema={"line": pl.String}),
     )
 
     lf = pl.scan_lines(b"""\
@@ -79,26 +79,26 @@ EEE
 
     assert_frame_equal(
         lf.slice(2, 1).collect(),
-        pl.DataFrame({"lines": ["CCC"]}),
+        pl.DataFrame({"line": ["CCC"]}),
     )
 
     assert_frame_equal(
         lf.with_row_index().slice(2, 1).collect(),
         pl.DataFrame(
-            {"index": [2], "lines": ["CCC"]},
+            {"index": [2], "line": ["CCC"]},
             schema_overrides={"index": pl.get_index_type()},
         ),
     )
 
     assert_frame_equal(
         lf.slice(-2, 1).collect(),
-        pl.DataFrame({"lines": ["DDD"]}),
+        pl.DataFrame({"line": ["DDD"]}),
     )
 
     assert_frame_equal(
         lf.with_row_index().slice(-2, 1).collect(),
         pl.DataFrame(
-            {"index": [3], "lines": ["DDD"]},
+            {"index": [3], "line": ["DDD"]},
             schema_overrides={"index": pl.get_index_type()},
         ),
     )
@@ -113,7 +113,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame({"lines": 5 * [v]}),
+            pl.DataFrame({"line": 5 * [v]}),
         )
 
         assert q.select(pl.len()).collect().item() == 5
@@ -122,7 +122,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame({"lines": [v]}),
+            pl.DataFrame({"line": [v]}),
         )
 
         assert q.select(pl.len()).collect().item() == 1
@@ -132,7 +132,7 @@ EEE
         assert_frame_equal(
             q.collect(),
             pl.DataFrame(
-                {"index": [4], "lines": [v]},
+                {"index": [4], "line": [v]},
                 schema_overrides={"index": pl.get_index_type()},
             ),
         )
@@ -143,7 +143,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame(schema={"lines": pl.String}),
+            pl.DataFrame(schema={"line": pl.String}),
         )
 
         assert q.select(pl.len()).collect().item() == 0
@@ -152,7 +152,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame({"lines": [v]}),
+            pl.DataFrame({"line": [v]}),
         )
 
         assert q.select(pl.len()).collect().item() == 1
@@ -162,7 +162,7 @@ EEE
         assert_frame_equal(
             q.collect(),
             pl.DataFrame(
-                {"index": [4], "lines": [v]},
+                {"index": [4], "line": [v]},
                 schema_overrides={"index": pl.get_index_type()},
             ),
         )
@@ -173,7 +173,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame({"lines": 4 * [v]}),
+            pl.DataFrame({"line": 4 * [v]}),
         )
 
         assert q.select(pl.len()).collect().item() == 4
@@ -182,7 +182,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame({"lines": 5 * [v]}),
+            pl.DataFrame({"line": 5 * [v]}),
         )
 
         assert q.select(pl.len()).collect().item() == 5
